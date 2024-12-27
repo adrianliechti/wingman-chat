@@ -82,7 +82,15 @@ function App() {
         ]);
       });
 
-      setCurrentMessages([...messages, completion]);
+      messages = [...messages, completion];
+      setCurrentMessages(messages);
+
+      if (messages.length % 4 === 0) {
+        summarize(model.id, messages).then((title) => {
+          chat!.title = title;
+        });
+      }
+
     } catch (error) {
       var content =
         "An error occurred while processing the request.\n" + error?.toString();
@@ -129,18 +137,6 @@ function App() {
     currentChat.messages = currentMessages;
 
     saveChats();
-  }, [currentMessages]);
-
-  useEffect(() => {
-    if (!currentChat || !currentModel) {
-      return;
-    }
-
-    if (currentMessages.length % 4) {
-      summarize(currentModel.id, currentMessages).then((title) => {
-        currentChat.title = title;
-      });
-    }
   }, [currentMessages]);
 
   useEffect(() => {
