@@ -1,4 +1,5 @@
 import { ChangeEvent, useState, FormEvent, useRef } from "react";
+import { Textarea } from '@headlessui/react'
 
 import { Send, Paperclip, ScreenShare, Image, X } from "lucide-react";
 
@@ -132,7 +133,7 @@ export function ChatInput({ onSend }: ChatInputProps) {
           onChange={handleFileChange}
         />
 
-        <textarea
+        <Textarea
           className="flex-1 border border-[#3a3a3c] bg-[#2c2c2e] text-[#e5e5e5] rounded px-3 py-2 focus:outline-none h-10.5 min-h-10.5"
           placeholder="Ask..."
           value={content}

@@ -10,7 +10,7 @@ import { Sidebar } from "./components/Sidebar";
 
 import { ChatInput } from "./components/ChatInput";
 import { ChatMessage } from "./components/ChatMessage";
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { Button, Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 
 import { Menu as MenuIcon, Plus as PlusIcon } from "lucide-react";
 
@@ -184,12 +184,12 @@ function App() {
           }`}
         >
           <div className="flex gap-2">
-            <button
+            <Button
               className="p-2 text-[#e5e5e5] hover:text-gray-300 bg-[#1c1c1e] rounded"
               onClick={toggleSidebar}
             >
               <MenuIcon size={20} />
-            </button>
+            </Button>
 
             {/* <div className="hidden sm:block"> */}
             <div>
@@ -205,12 +205,12 @@ function App() {
                 >
                   {models.map((model) => (
                     <MenuItem key={model.id}>
-                      <button
+                      <Button
                         onClick={() => setCurrentModel(model)}
                         className="group flex w-full items-center px-4 py-2 text-[#e5e5e5] data-[focus]:bg-[#2c2c2e] cursor-pointer"
                       >
                         {model.name ?? model.id}
-                      </button>
+                      </Button>
                     </MenuItem>
                   ))}
                 </MenuItems>
@@ -220,12 +220,12 @@ function App() {
         </header>
 
         <header className="fixed top-2 right-2 z-10">
-          <button
+          <Button
             className="p-2 text-[#e5e5e5] hover:text-gray-300 bg-[#1c1c1e] rounded"
             onClick={handleCreateChat}
           >
             <PlusIcon size={20} />
-          </button>
+          </Button>
         </header>
 
         <div
