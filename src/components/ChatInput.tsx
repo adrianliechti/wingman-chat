@@ -94,7 +94,9 @@ export function ChatInput({ onSend }: ChatInputProps) {
 
         if (partitionTypes.includes(file.type) || partitionTypes.includes(getFileExt(file.name))) {
           const parts = await partition(file);
-          const text = parts.map((part) => part.text).join("\n\n");
+          
+          let text = parts.map((part) => part.text).join("\n\n");
+          text = text.replace(/[\u0000-\u001F\u007F]/g, "");
 
           newAttachments.push({
             type: AttachmentType.Text,
