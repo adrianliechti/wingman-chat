@@ -25,7 +25,33 @@ export async function listModels(): Promise<Model[]> {
   });
 }
 
-export const textTypes = ["text/csv", "text/markdown", "text/plain"];
+export const textTypes = [
+  "text/csv",
+  "text/markdown",
+  "text/plain",
+
+  "application/json",
+  "application/sql",
+  "application/toml",
+  "application/x-yaml",
+  "application/xml",
+  "text/css",
+  "text/html",
+  "text/xml",
+  "text/yaml",
+
+  ".c",
+  ".cpp",
+  ".cs",
+  ".go",
+  ".html",
+  ".java",
+  ".js",
+  ".kt",
+  ".py",
+  ".rs",
+  ".ts",
+];
 
 export const imageTypes = [
   "image/jpeg",

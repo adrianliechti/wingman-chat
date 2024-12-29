@@ -6,6 +6,7 @@ import { Send, Paperclip, ScreenShare, Image, X } from "lucide-react";
 import { Attachment, AttachmentType, Message, Role } from "../models/chat";
 import {
   captureScreenshot,
+  getFileExt,
   readAsDataURL,
   readAsText,
   resizeImageBlob,
@@ -72,9 +73,7 @@ export function ChatInput({ onSend }: ChatInputProps) {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
 
-        console.log(file);
-
-        if (textTypes.includes(file.type)) {
+        if (textTypes.includes(file.type) || textTypes.includes(getFileExt(file.name))) {
           const text = await readAsText(file);
           newAttachments.push({
             type: AttachmentType.Text,
@@ -83,7 +82,7 @@ export function ChatInput({ onSend }: ChatInputProps) {
           });
         }
 
-        if (imageTypes.includes(file.type)) {
+        if (imageTypes.includes(file.type) || imageTypes.includes(getFileExt(file.name))) {
           const blob = await resizeImageBlob(file, 1920, 1920);
           const url = await readAsDataURL(blob);
           newAttachments.push({
@@ -93,7 +92,7 @@ export function ChatInput({ onSend }: ChatInputProps) {
           });
         }
 
-        if (partitionTypes.includes(file.type)) {
+        if (partitionTypes.includes(file.type) || partitionTypes.includes(getFileExt(file.name))) {
           const parts = await partition(file);
           const text = parts.map((part) => part.text).join("\n\n");
 

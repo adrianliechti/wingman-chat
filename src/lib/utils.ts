@@ -126,3 +126,8 @@ export async function captureScreenshot(): Promise<string> {
     throw err;
   }
 }
+
+export function getFileExt(filename: string): string {
+  const parts = filename.split('.');
+  return parts.length > 1 ? "." + parts.pop() || "" : "";
+}
