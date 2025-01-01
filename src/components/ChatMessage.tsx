@@ -19,16 +19,16 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
   return (
     <div
-      className={`flex ${isUser ? "justify-end" : "justify-start"} px-4 mb-4`}
+      className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4`}
     >
       {!isUser && (
-        <div className="mr-2 pt-3">
+        <div className="mr-3 pt-3">
           <Bot className="text-[#e5e5e5] w-6 h-6" />
         </div>
       )}
 
       <div
-        className={`max-w-[60%] rounded-lg p-3 ${bubbleClasses} whitespace-pre-wrap leading-normal break-words overflow-x-auto`}
+        className={`max-w-[80%] rounded-lg p-3 ${bubbleClasses} whitespace-pre-wrap leading-normal break-words overflow-x-auto`}
       >
         <ReactMarkdown
           children={message.content}
@@ -97,7 +97,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
       </div>
 
       {isUser && (
-        <div className="ml-2 pt-3">
+        <div className="ml-3 pt-3">
           <User className="text-[#e5e5e5] w-6 h-6" />
         </div>
       )}
