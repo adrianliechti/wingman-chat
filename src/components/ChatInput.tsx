@@ -1,4 +1,4 @@
-import { ChangeEvent, useState, FormEvent, useRef } from "react";
+import { ChangeEvent, useState, FormEvent, useRef, useEffect } from "react";
 import { Textarea } from '@headlessui/react'
 
 import { Send, Paperclip, ScreenShare, Image, X } from "lucide-react";
@@ -29,6 +29,15 @@ export function ChatInput({ onSend }: ChatInputProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (textInputRef.current) {
+      textInputRef.current.style.height = "auto";
+      const newHeight = Math.min(textInputRef.current.scrollHeight, window.innerHeight * 0.2);
+      textInputRef.current.style.height = newHeight + "px";
+    }
+  }, [content]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -135,7 +144,8 @@ export function ChatInput({ onSend }: ChatInputProps) {
         />
 
         <Textarea
-          className="flex-1 border border-[#3a3a3c] bg-[#2c2c2e] text-[#e5e5e5] rounded px-3 py-2 focus:outline-none h-10.5 min-h-10.5"
+          ref={textInputRef}
+          className="flex-1 border border-[#3a3a3c] bg-[#2c2c2e] text-[#e5e5e5] rounded px-3 py-2 focus:outline-none max-h-[20vh] overflow-y-auto resize-none"
           placeholder="Ask..."
           value={content}
           onChange={(e) => setContent(e.target.value)}
