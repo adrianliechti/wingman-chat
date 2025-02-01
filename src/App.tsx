@@ -92,6 +92,11 @@ function App() {
       }
 
     } catch (error) {
+      if (error?.toString().includes("missing finish_reason")) {
+        console.log(error);
+        return;
+      }
+
       var content =
         "An error occurred while processing the request.\n" + error?.toString();
 

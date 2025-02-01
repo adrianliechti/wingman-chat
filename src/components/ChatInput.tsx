@@ -34,7 +34,7 @@ export function ChatInput({ onSend }: ChatInputProps) {
   useEffect(() => {
     if (textInputRef.current) {
       textInputRef.current.style.height = "auto";
-      const newHeight = Math.min(textInputRef.current.scrollHeight, window.innerHeight * 0.2);
+      const newHeight = Math.min(textInputRef.current.scrollHeight, window.innerHeight * 0.4);
       textInputRef.current.style.height = newHeight + "px";
     }
   }, [content]);
@@ -133,7 +133,7 @@ export function ChatInput({ onSend }: ChatInputProps) {
 
   return (
     <form onSubmit={handleSubmit} className="bg-[#121212]">
-      <div className="flex py-4 px-4 items-center gap-2">
+      <div className="flex py-2 items-center gap-1">
         <input
           type="file"
           multiple
@@ -145,9 +145,10 @@ export function ChatInput({ onSend }: ChatInputProps) {
 
         <Textarea
           ref={textInputRef}
-          className="flex-1 border border-[#3a3a3c] bg-[#2c2c2e] text-[#e5e5e5] rounded px-3 py-2 focus:outline-none max-h-[20vh] overflow-y-auto resize-none"
-          placeholder="Ask..."
+          className="flex-1 border border-[#3a3a3c] bg-[#2c2c2e] text-[#e5e5e5] rounded px-3 py-2 focus:outline-none max-h-[40vh] overflow-y-auto resize-none"
+          placeholder="we need to talk..."
           value={content}
+          rows={1}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={handleKeyDown}
         />
