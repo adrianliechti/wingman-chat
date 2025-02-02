@@ -91,7 +91,7 @@ export async function resizeImageBlob(
 }
 
 export function supportsScreenshot(): boolean {
-  return "getDisplayMedia" in navigator.mediaDevices;
+  return "mediaDevices" in navigator && "getDisplayMedia" in navigator.mediaDevices;
 }
 
 export async function captureScreenshot(): Promise<string> {
