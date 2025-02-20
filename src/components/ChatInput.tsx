@@ -1,9 +1,15 @@
-import { ChangeEvent, useState, FormEvent, useRef, useEffect } from "react";
-import { Textarea } from '@headlessui/react'
+import { Textarea } from "@headlessui/react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 
-import { Send, Paperclip, ScreenShare, Image, X } from "lucide-react";
+import { Image, Paperclip, ScreenShare, Send, X } from "lucide-react";
 
-import { Attachment, AttachmentType, Message, Role } from "../models/chat";
+import {
+  imageTypes,
+  partition,
+  partitionTypes,
+  supportedTypes,
+  textTypes,
+} from "../lib/client";
 import {
   captureScreenshot,
   getFileExt,
@@ -12,13 +18,7 @@ import {
   resizeImageBlob,
   supportsScreenshot,
 } from "../lib/utils";
-import {
-  partition,
-  supportedTypes,
-  textTypes,
-  partitionTypes,
-  imageTypes,
-} from "../lib/client";
+import { Attachment, AttachmentType, Message, Role } from "../models/chat";
 
 type ChatInputProps = {
   onSend: (message: Message) => void;
@@ -34,7 +34,10 @@ export function ChatInput({ onSend }: ChatInputProps) {
   useEffect(() => {
     if (textInputRef.current) {
       textInputRef.current.style.height = "auto";
-      const newHeight = Math.min(textInputRef.current.scrollHeight, window.innerHeight * 0.4);
+      const newHeight = Math.min(
+        textInputRef.current.scrollHeight,
+        window.innerHeight * 0.4
+      );
       textInputRef.current.style.height = newHeight + "px";
     }
   }, [content]);
@@ -82,7 +85,10 @@ export function ChatInput({ onSend }: ChatInputProps) {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
 
-        if (textTypes.includes(file.type) || textTypes.includes(getFileExt(file.name))) {
+        if (
+          textTypes.includes(file.type) ||
+          textTypes.includes(getFileExt(file.name))
+        ) {
           const text = await readAsText(file);
           newAttachments.push({
             type: AttachmentType.Text,
@@ -91,7 +97,10 @@ export function ChatInput({ onSend }: ChatInputProps) {
           });
         }
 
-        if (imageTypes.includes(file.type) || imageTypes.includes(getFileExt(file.name))) {
+        if (
+          imageTypes.includes(file.type) ||
+          imageTypes.includes(getFileExt(file.name))
+        ) {
           const blob = await resizeImageBlob(file, 1920, 1920);
           const url = await readAsDataURL(blob);
           newAttachments.push({
@@ -101,9 +110,12 @@ export function ChatInput({ onSend }: ChatInputProps) {
           });
         }
 
-        if (partitionTypes.includes(file.type) || partitionTypes.includes(getFileExt(file.name))) {
+        if (
+          partitionTypes.includes(file.type) ||
+          partitionTypes.includes(getFileExt(file.name))
+        ) {
           const parts = await partition(file);
-          
+
           let text = parts.map((part) => part.text).join("\n\n");
           text = text.replace(/[\u0000-\u001F\u007F]/g, "");
 
@@ -132,7 +144,7 @@ export function ChatInput({ onSend }: ChatInputProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-[#121212]">
+    <form onSubmit={handleSubmit} className="">
       <div className="flex py-2 items-center gap-1">
         <input
           type="file"
