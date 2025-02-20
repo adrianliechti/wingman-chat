@@ -157,7 +157,7 @@ export function ChatInput({ onSend }: ChatInputProps) {
 
         <Textarea
           ref={textInputRef}
-          className="flex-1 border border-[#3a3a3c] bg-[#2c2c2e] text-[#e5e5e5] rounded px-3 py-2 focus:outline-none max-h-[40vh] overflow-y-auto resize-none"
+          className="flex-1 borderrounded px-3 py-2 focus:outline-none max-h-[40vh] overflow-y-auto resize-none"
           style={{ scrollbarWidth: "thin" }}
           placeholder="we need to talk..."
           value={content}
@@ -169,7 +169,7 @@ export function ChatInput({ onSend }: ChatInputProps) {
         {supportsScreenshot() && (
           <button
             type="button"
-            className="p-2 text-[#e5e5e5] hover:text-gray-300 bg-transparent"
+            className="p-2 hover:text-gray-300 bg-transparent"
             onClick={handleScreenshotClick}
           >
             <ScreenShare size={20} />
@@ -178,14 +178,14 @@ export function ChatInput({ onSend }: ChatInputProps) {
 
         <button
           type="button"
-          className="p-2 text-[#e5e5e5] hover:text-gray-300 bg-transparent"
+          className="p-2 hover:text-gray-300 bg-transparent"
           onClick={handleAttachmentClick}
         >
           <Paperclip size={20} />
         </button>
 
         <button
-          className="p-2 text-[#e5e5e5] hover:text-gray-300 bg-transparent"
+          className="p-2 hover:text-gray-300 bg-transparent"
           type="submit"
         >
           <Send size={20} />
@@ -195,14 +195,9 @@ export function ChatInput({ onSend }: ChatInputProps) {
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 mr-30">
           {attachments.map((val, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-1 bg-[#2c2c2e] p-2 rounded"
-            >
+            <div key={i} className="flex items-center gap-1 p-2 rounded">
               <Image className="text-[#e5e5e5]" size={16} />
-              <span className="text-[#e5e5e5] text-sm break-all">
-                {val.name}
-              </span>
+              <span className="text-[#e5e5e5] break-all">{val.name}</span>
               <button
                 type="button"
                 className="text-[#e5e5e5] hover:text-gray-300"

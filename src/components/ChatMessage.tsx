@@ -2,7 +2,7 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-import { Bot, User, File } from "lucide-react";
+import { Bot, File, User } from "lucide-react";
 
 import { AttachmentType, Message, Role } from "../models/chat";
 
@@ -14,15 +14,13 @@ export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === Role.User;
 
   const bubbleClasses = isUser
-    ? "bg-[#3a3a3c] text-[#e5e5e5]"
-    : "bg-[#2c2c2e] text-[#e5e5e5]";
+    ? "bg-primary text-white"
+    : "bg-muted text-foreground";
 
   return (
-    <div
-      className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4`}
-    >
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4`}>
       {!isUser && (
-        <div className="mr-3 pt-3">
+        <div className="pt-3 mr-3">
           <Bot className="text-[#e5e5e5] w-6 h-6" />
         </div>
       )}
@@ -87,7 +85,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
                   <img
                     key={index}
                     src={attachment.data}
-                    className="max-h-60 rounded-md"
+                    className="rounded-md max-h-60"
                     alt={attachment.name}
                   />
                 ))}
@@ -97,7 +95,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
       </div>
 
       {isUser && (
-        <div className="ml-3 pt-3">
+        <div className="pt-3 ml-3">
           <User className="text-[#e5e5e5] w-6 h-6" />
         </div>
       )}
