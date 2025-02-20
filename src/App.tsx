@@ -1,16 +1,22 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { Chat, Message, Model, Role } from "./models/chat";
 import { complete, summarize } from "./lib/client";
+import { Chat, Message, Model, Role } from "./models/chat";
 
 import { useChats } from "./hooks/useChats";
 import { useModels } from "./hooks/useModels";
 
 import { Sidebar } from "./components/Sidebar";
 
+import {
+  Button,
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuItems,
+} from "@headlessui/react";
 import { ChatInput } from "./components/ChatInput";
 import { ChatMessage } from "./components/ChatMessage";
-import { Button, Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 
 import { Menu as MenuIcon, Plus as PlusIcon } from "lucide-react";
 
@@ -90,7 +96,6 @@ function App() {
           chat!.title = title;
         });
       }
-
     } catch (error) {
       if (error?.toString().includes("missing finish_reason")) {
         console.log(error);
@@ -171,7 +176,7 @@ function App() {
         />
       </aside>
 
-      <main className="h-full flex flex-col">
+      <main className="flex flex-col h-full">
         {showSidebar && (
           <div
             className="fixed inset-0 z-20 bg-black/50 backdrop-blur-xs"
@@ -220,7 +225,7 @@ function App() {
           </div>
         </header>
 
-        <header className="fixed top-2 right-2 z-10">
+        <header className="fixed z-10 top-2 right-2">
           <Button
             className="p-2 text-[#e5e5e5] hover:text-gray-300 bg-[#1c1c1e] rounded"
             onClick={handleCreateChat}

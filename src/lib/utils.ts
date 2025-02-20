@@ -1,3 +1,10 @@
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
 export function readAsText(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -91,7 +98,9 @@ export async function resizeImageBlob(
 }
 
 export function supportsScreenshot(): boolean {
-  return "mediaDevices" in navigator && "getDisplayMedia" in navigator.mediaDevices;
+  return (
+    "mediaDevices" in navigator && "getDisplayMedia" in navigator.mediaDevices
+  );
 }
 
 export async function captureScreenshot(): Promise<string> {
@@ -128,6 +137,6 @@ export async function captureScreenshot(): Promise<string> {
 }
 
 export function getFileExt(filename: string): string {
-  const parts = filename.split('.');
+  const parts = filename.split(".");
   return parts.length > 1 ? "." + parts.pop() || "" : "";
 }
