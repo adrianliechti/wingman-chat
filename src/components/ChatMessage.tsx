@@ -2,9 +2,10 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-import { Bot, File, User } from "lucide-react";
+import { Bot, File } from "lucide-react";
 
 import { AttachmentType, Message, Role } from "../models/chat";
+import { ThinkingIndicator } from "./ThinkingIndicator";
 
 type ChatMessageProps = {
   message: Message;
@@ -16,6 +17,21 @@ export function ChatMessage({ message }: ChatMessageProps) {
   const bubbleClasses = isUser
     ? "bg-primary text-white"
     : "bg-muted text-foreground";
+
+  if (message.content === "..." && !isUser) {
+    return (
+      <div className={`flex  justify-start mb-4`}>
+        {!isUser && (
+          <>
+            <div className="pt-3 mr-3">
+              <Bot className="text-[#e5e5e5] w-6 h-6" />
+            </div>
+            <ThinkingIndicator />
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4`}>
@@ -93,12 +109,6 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </div>
         )}
       </div>
-
-      {isUser && (
-        <div className="pt-3 ml-3">
-          <User className="text-[#e5e5e5] w-6 h-6" />
-        </div>
-      )}
     </div>
   );
 }

@@ -6,37 +6,24 @@ import { Chat, Message, Model, Role } from "./models/chat";
 import { useChats } from "./hooks/useChats";
 import { useModels } from "./hooks/useModels";
 
-import { Sidebar } from "./components/Sidebar";
-
-import {
-  Button,
-  Menu,
-  MenuButton,
-  MenuItem,
-  MenuItems,
-} from "@headlessui/react";
+import { SquarePen } from "lucide-react";
 import { ChatInput } from "./components/ChatInput";
 import { ChatMessage } from "./components/ChatMessage";
-
-import { Menu as MenuIcon, Plus as PlusIcon } from "lucide-react";
-import { ThemeProvider } from "./components/ThemeProvider";
+import { ChatSidebar } from "./components/ChatSidebar";
+import { ModelSelector } from "./components/ModelSelector";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { Button } from "./components/ui/Button";
+import { SidebarInset, SidebarTrigger } from "./components/ui/Sidebar";
 
 function App() {
   const { chats, createChat, deleteChat, saveChats } = useChats();
   const { models } = useModels();
-
-  const [showSidebar, setShowSidebar] = useState(false);
 
   const [currentChat, setCurrentChat] = useState<Chat | null>(null);
   const [currentModel, setCurrentModel] = useState<Model>();
   const [currentMessages, setCurrentMessages] = useState<Message[]>([]);
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
-
-  const toggleSidebar = () => {
-    setShowSidebar(!showSidebar);
-  };
 
   const handleCreateChat = () => {
     setCurrentChat(null);
@@ -55,8 +42,8 @@ function App() {
   };
 
   const sendMessage = async (message: Message) => {
-    var chat = currentChat;
-    var model = currentModel;
+    let chat = currentChat;
+    const model = currentModel;
 
     if (!model) {
       throw new Error("no model selected");
@@ -69,7 +56,7 @@ function App() {
       setCurrentChat(chat);
     }
 
-    var messages = [...currentMessages, message];
+    let messages = [...currentMessages, message];
 
     setCurrentMessages([
       ...messages,
@@ -104,7 +91,7 @@ function App() {
         return;
       }
 
-      var content =
+      const content =
         "An error occurred while processing the request.\n" + error?.toString();
 
       setCurrentMessages([
@@ -126,12 +113,6 @@ function App() {
       setCurrentModel(models[0]);
     }
   }, [models]);
-
-  useEffect(() => {
-    if (chats.length == 0) {
-      setShowSidebar(false);
-    }
-  }, [chats]);
 
   useEffect(() => {
     if (currentChat) {
@@ -157,93 +138,54 @@ function App() {
   }, [currentChat]);
 
   useEffect(() => {
-    messageContainerRef.current?.scrollTo({
-      top: messageContainerRef.current.scrollHeight,
-      behavior: "smooth",
-    });
+    messageContainerRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentChat, currentMessages]);
 
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <div className="overflow-hidden h-dvh w-dvw bg-background text-foreground">
-        <aside
-          className={`${showSidebar ? "translate-x-0" : "-translate-x-full"}
-        transition-all duration-300 fixed top-0 bottom-0 left-0 w-64 z-30`}
-        >
-          <Sidebar
-            isVisible={showSidebar}
-            chats={chats}
-            selectedChat={currentChat}
-            onSelectChat={handleSelectChat}
-            onDeleteChat={(chat) => handleDeleteChat(chat.id)}
-          />
-        </aside>
+    <>
+      <ChatSidebar
+        chats={chats}
+        selectedChat={currentChat}
+        onSelectChat={handleSelectChat}
+        onDeleteChat={(chat) => handleDeleteChat(chat.id)}
+      />
 
-        <main className="flex flex-col h-full">
-          {showSidebar && (
-            <div
-              className="fixed inset-0 z-20 backdrop-blur-xs"
-              onClick={toggleSidebar}
-            />
-          )}
-
-          <header
-            className={`fixed top-2 left-2 flex transition-transform duration-300 ${
-              showSidebar ? "translate-x-64" : "translate-x-0"
-            }`}
-          >
-            <div className="flex gap-2">
-              <Button
-                className="p-2 rounded hover:text-gray-300"
-                onClick={toggleSidebar}
-              >
-                <MenuIcon size={20} />
-              </Button>
-
-              {/* <div className="hidden sm:block"> */}
-              <div>
-                <Menu>
-                  <MenuButton className="inline-flex items-center p-2 rounded">
-                    {currentModel?.name ?? currentModel?.id ?? "Select Model"}
-                  </MenuButton>
-
-                  <MenuItems
-                    transition
-                    anchor="bottom start"
-                    className="!max-h-[50vh] mt-2 rounded borderoverflow-y-auto shadow-lg"
-                  >
-                    {models.map((model) => (
-                      <MenuItem key={model.id}>
-                        <Button
-                          onClick={() => setCurrentModel(model)}
-                          className="flex items-center w-full px-4 py-2 cursor-pointer group"
-                        >
-                          {model.name ?? model.id}
-                        </Button>
-                      </MenuItem>
-                    ))}
-                  </MenuItems>
-                </Menu>
-              </div>
+      <SidebarInset>
+        {/* <main className="flex flex-col h-full"> */}
+        <header className="sticky top-0 flex items-center gap-2 pl-2 bg-background h-14 shrink-0">
+          <div className="flex items-center flex-1 gap-2 px-3">
+            <div>
+              <SidebarTrigger variant={"outline"} className="p-4" />
             </div>
-          </header>
 
-          <header className="fixed z-10 top-2 right-2">
-            <ThemeToggle />
-            <Button
-              className="p-2 rounded hover:text-gray-300"
-              onClick={handleCreateChat}
-            >
-              <PlusIcon size={20} />
-            </Button>
-          </header>
+            <div>
+              <ModelSelector
+                models={models}
+                onSelectModel={(model) => setCurrentModel(model)}
+                currentModel={currentModel}
+              />
+            </div>
 
+            <div className="flex gap-2 px-3 ml-auto">
+              <ThemeToggle />
+              <Button
+                className="rounded hover:text-gray-300"
+                onClick={handleCreateChat}
+                variant="outline"
+                size={"icon"}
+              >
+                <SquarePen size={20} />
+              </Button>
+            </div>
+          </div>
+        </header>
+        <main className="flex flex-col items-center justify-center w-full mx-auto">
           <div
-            className="flex-1 p-4 overflow-auto mt-14"
+            className="flex-1 w-full p-4 pb-24 overflow-auto md:max-w-4xl"
             ref={messageContainerRef}
           >
             {currentMessages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-[#e5e5e5]">
+              <div className="flex flex-col items-center justify-center h-full pt-56 text-[#e5e5e5]">
                 <img src="/logo.png" className="w-48 h-48 mb-4" />
               </div>
             ) : (
@@ -252,13 +194,14 @@ function App() {
               ))
             )}
           </div>
+          <div ref={messageContainerRef} />
 
-          <footer className="border-tp-4">
+          <footer className="fixed bottom-2 border-tp-4">
             <ChatInput onSend={sendMessage} />
           </footer>
         </main>
-      </div>
-    </ThemeProvider>
+      </SidebarInset>
+    </>
   );
 }
 

@@ -1,4 +1,3 @@
-import { Textarea } from "@headlessui/react";
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 
 import { Image, Paperclip, ScreenShare, Send, X } from "lucide-react";
@@ -144,8 +143,8 @@ export function ChatInput({ onSend }: ChatInputProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="">
-      <div className="flex py-2 items-center gap-1">
+    <form onSubmit={handleSubmit} className="p-2 w-3xl rounded-3xl bg-sidebar">
+      <div className="flex items-center gap-1 py-2">
         <input
           type="file"
           multiple
@@ -155,11 +154,11 @@ export function ChatInput({ onSend }: ChatInputProps) {
           onChange={handleFileChange}
         />
 
-        <Textarea
+        <textarea
           ref={textInputRef}
           className="flex-1 borderrounded px-3 py-2 focus:outline-none max-h-[40vh] overflow-y-auto resize-none"
           style={{ scrollbarWidth: "thin" }}
-          placeholder="we need to talk..."
+          placeholder="Ask me anything..."
           value={content}
           rows={1}
           onChange={(e) => setContent(e.target.value)}
@@ -169,7 +168,7 @@ export function ChatInput({ onSend }: ChatInputProps) {
         {supportsScreenshot() && (
           <button
             type="button"
-            className="p-2 hover:text-gray-300 bg-transparent"
+            className="p-2 bg-transparent hover:text-gray-300"
             onClick={handleScreenshotClick}
           >
             <ScreenShare size={20} />
@@ -178,14 +177,14 @@ export function ChatInput({ onSend }: ChatInputProps) {
 
         <button
           type="button"
-          className="p-2 hover:text-gray-300 bg-transparent"
+          className="p-2 bg-transparent hover:text-gray-300"
           onClick={handleAttachmentClick}
         >
           <Paperclip size={20} />
         </button>
 
         <button
-          className="p-2 hover:text-gray-300 bg-transparent"
+          className="p-2 bg-transparent hover:text-gray-300"
           type="submit"
         >
           <Send size={20} />

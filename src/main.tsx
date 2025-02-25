@@ -1,9 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import "./index.css";
 import App from "./App.tsx";
+import "./index.css";
 
+import { ThemeProvider } from "./components/ThemeProvider.tsx";
+import { SidebarProvider } from "./components/ui/Sidebar.tsx";
 import { loadConfig } from "./config.ts";
 
 const bootstrap = async () => {
@@ -16,7 +18,11 @@ const bootstrap = async () => {
 
     createRoot(document.getElementById("root")!).render(
       <StrictMode>
-        <App />
+        <ThemeProvider>
+          <SidebarProvider>
+            <App />
+          </SidebarProvider>
+        </ThemeProvider>
       </StrictMode>
     );
   } catch (error) {
