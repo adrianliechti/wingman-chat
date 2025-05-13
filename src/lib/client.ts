@@ -84,6 +84,19 @@ export async function partition(blob: Blob): Promise<Partition[]> {
   return resp.json() as Promise<Partition[]>;
 }
 
+export async function translate(lang: string, text: string): Promise<string> {
+  const data = new FormData();
+  data.append("lang", lang);
+  data.append("text", text);
+
+  const resp = await fetch("/api/v1/translate", {
+    method: "POST",
+    body: data,
+  });
+
+  return resp.text();
+}
+
 export async function complete(
   model: string,
   input: Message[],

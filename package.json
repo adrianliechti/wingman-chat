@@ -13,7 +13,7 @@
     "@headlessui/react": "^2.2.0",
     "@tailwindcss/vite": "^4.0.12",
     "@types/react-syntax-highlighter": "^15.5.13",
-    "lucide-react": "^0.503.0",
+    "lucide-react": "^0.510.0",
     "openai": "^4.85.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
