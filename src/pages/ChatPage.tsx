@@ -157,64 +157,63 @@ export function ChatPage() {
         />
       </aside>
 
+      {/* Fixed navigation sidebar */}
+      <div 
+        className="fixed top-2 left-2 flex items-center gap-2 transition-transform duration-300 z-20"
+        style={{ transform: showSidebar ? 'translateX(264px)' : 'translateX(0)' }}
+      >
+        <Button
+          className="menu-button"
+          onClick={toggleSidebar}
+        >
+          <MenuIcon size={20} />
+        </Button>
+        <div>
+          <Menu>
+            <MenuButton className="inline-flex items-center menu-button">
+              {currentModel?.name ?? currentModel?.id ?? "Select Model"}
+            </MenuButton>
+            <MenuItems
+              transition
+              anchor="bottom start"
+              className="!max-h-[50vh] mt-2 rounded border bg-neutral-200 dark:bg-neutral-900 border-neutral-700 overflow-y-auto shadow-lg"
+            >
+              {models.map((model) => (
+                <MenuItem key={model.id}>
+                  <Button
+                    onClick={() => setCurrentModel(model)}
+                    title={model.description}
+                    className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-300 dark:text-neutral-200 dark:data-[focus]:bg-[#2c2c2e] cursor-pointer"
+                  >
+                    {model.name ?? model.id}
+                  </Button>
+                </MenuItem>
+              ))}
+            </MenuItems>
+          </Menu>
+        </div>
+      </div>
+
+      {/* Fixed "New chat" button */}
+      <div className="fixed top-2 right-2 z-20">
+        <Button
+          className="menu-button"
+          onClick={handleCreateChat}
+        >
+          <PlusIcon size={20} />
+        </Button>
+      </div>
+
       <main className="h-full flex flex-col">
         {showSidebar && (
           <div
-            className="fixed inset-0 z-20 bg-black/10 dark:bg-black/50 backdrop-blur-xs"
+            className="fixed inset-0 z-10 bg-black/10 dark:bg-black/50 backdrop-blur-xs"
             onClick={toggleSidebar}
           />
         )}
 
-        <header
-          className={`fixed top-2 left-2 flex transition-transform duration-300 ${
-            showSidebar ? "translate-x-64" : "translate-x-0"
-          }`}
-        >
-          <div className="flex gap-2">
-            <Button
-              className="menu-button"
-              onClick={toggleSidebar}
-            >
-              <MenuIcon size={20} />
-            </Button>
-            <div>
-              <Menu>
-                <MenuButton className="inline-flex items-center menu-button">
-                  {currentModel?.name ?? currentModel?.id ?? "Select Model"}
-                </MenuButton>
-                <MenuItems
-                  transition
-                  anchor="bottom start"
-                  className="!max-h-[50vh] mt-2 rounded border bg-neutral-200 dark:bg-neutral-900 border-neutral-700 overflow-y-auto shadow-lg"
-                >
-                  {models.map((model) => (
-                    <MenuItem key={model.id}>
-                      <Button
-                        onClick={() => setCurrentModel(model)}
-                        title={model.description}
-                        className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-300 dark:text-neutral-200 dark:data-[focus]:bg-[#2c2c2e] cursor-pointer"
-                      >
-                        {model.name ?? model.id}
-                      </Button>
-                    </MenuItem>
-                  ))}
-                </MenuItems>
-              </Menu>
-            </div>
-          </div>
-        </header>
-
-        <header className="fixed top-2 right-2 z-10">
-          <Button
-            className="menu-button"
-            onClick={handleCreateChat}
-          >
-            <PlusIcon size={20} />
-          </Button>
-        </header>
-
         <div
-          className="flex-1 overflow-auto p-4"
+          className="flex-1 overflow-auto p-4 pt-16" /* Added padding-top to avoid content being hidden under fixed nav */
           ref={messageContainerRef}
         >
           {currentMessages.length === 0 ? (
