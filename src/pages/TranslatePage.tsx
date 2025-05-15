@@ -60,8 +60,7 @@ export function TranslatePage() {
 
   return (
     <div className="h-full w-full flex flex-col items-center bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100">
-      {/* Fixed navigation controls */}
-      <div className="fixed top-2 right-2 z-20 flex items-center gap-2">
+      <div className="fixed top-2 left-2 z-20">
         <Menu>
           <MenuButton className="inline-flex items-center menu-button">
             <GlobeIcon size={16} className="mr-1" />
@@ -69,7 +68,7 @@ export function TranslatePage() {
           </MenuButton>
           <MenuItems
             transition
-            anchor="bottom end"
+            anchor="bottom start"
             className="!max-h-[50vh] mt-2 w-48 rounded border bg-neutral-200 dark:bg-neutral-900 border-neutral-700 overflow-y-auto shadow-lg"
           >
             {languages.map((lang) => (
@@ -84,6 +83,9 @@ export function TranslatePage() {
             ))}
           </MenuItems>
         </Menu>
+      </div>
+      
+      <div className="fixed top-2 right-2 z-20">
         <Button
           className="menu-button"
           onClick={handleReset}
@@ -93,7 +95,7 @@ export function TranslatePage() {
         </Button>
       </div>
       
-      <main className="w-full flex flex-col md:flex-row items-stretch gap-4 flex-grow p-4 pt-16"> {/* Added padding-top to avoid content being hidden under fixed nav */}
+      <main className="w-full flex flex-col md:flex-row items-stretch gap-4 flex-grow p-4 pt-16">
         <div className="flex-1 flex flex-col gap-2 relative">
           <textarea
             value={sourceText}

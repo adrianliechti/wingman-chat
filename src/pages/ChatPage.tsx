@@ -157,7 +157,6 @@ export function ChatPage() {
         />
       </aside>
 
-      {/* Fixed navigation sidebar */}
       <div 
         className="fixed top-2 left-2 flex items-center gap-2 transition-transform duration-300 z-20"
         style={{ transform: showSidebar ? 'translateX(264px)' : 'translateX(0)' }}
@@ -194,7 +193,6 @@ export function ChatPage() {
         </div>
       </div>
 
-      {/* Fixed "New chat" button */}
       <div className="fixed top-2 right-2 z-20">
         <Button
           className="menu-button"
