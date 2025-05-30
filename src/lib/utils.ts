@@ -173,3 +173,80 @@ export const partitionTypes = [
 ];
 
 export const supportedTypes = [...textTypes, ...imageTypes, ...partitionTypes];
+
+export interface DetectedURL {
+  url: string;
+  text: string;
+  type: 'markdown' | 'plain';
+}
+
+export function detectURLs(text: string): DetectedURL[] {
+  const urls: DetectedURL[] = [];
+  
+  // Detect markdown links [text](url) - including footnote style
+  const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  let match;
+  
+  while ((match = markdownLinkRegex.exec(text)) !== null) {
+    const [, linkText, url] = match;
+    if (isValidURL(url)) {
+      urls.push({
+        url: normalizeURL(url),
+        text: linkText.trim(),
+        type: 'markdown'
+      });
+    }
+  }
+  
+  // Detect plain URLs (not already captured in markdown links)
+  // More comprehensive regex to capture URLs without protocols
+  const plainURLRegex = /(?<!]\()(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/[^\s)]*)?/g;
+  
+  while ((match = plainURLRegex.exec(text)) !== null) {
+    const url = match[0];
+    if (isValidURL(url) || isValidDomain(url)) {
+      const normalizedURL = normalizeURL(url);
+      // Avoid duplicates from markdown links
+      if (!urls.some(u => u.url === normalizedURL)) {
+        urls.push({
+          url: normalizedURL,
+          text: url,
+          type: 'plain'
+        });
+      }
+    }
+  }
+  
+  // Remove duplicates based on URL
+  const seen = new Set();
+  return urls.filter(url => {
+    const key = url.url;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function isValidURL(urlString: string): boolean {
+  try {
+    new URL(urlString);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isValidDomain(domain: string): boolean {
+  // Simple domain validation
+  const domainRegex = /^(?:(?:www\.)?[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/;
+  return domainRegex.test(domain);
+}
+
+function normalizeURL(url: string): string {
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return `https://${url}`;
+  }
+  return url;
+}

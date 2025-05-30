@@ -1,15 +1,19 @@
 import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
+import { URLList } from './URLList';
 import { Bot, User, File, Brain } from "lucide-react";
 
 import { AttachmentType, Message, Role } from "../models/chat";
+import { detectURLs } from "../lib/utils";
 
 type ChatMessageProps = {
   message: Message;
+  onURLClick?: (url: string) => void;
 };
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, onURLClick }: ChatMessageProps) {
   const isUser = message.role === Role.User;
+  const detectedURLs = detectURLs(message.content);
 
   if (!isUser && !message.content) {
     return (
@@ -38,6 +42,10 @@ export function ChatMessage({ message }: ChatMessageProps) {
         className={`max-w-[80%] rounded-lg p-3 ${isUser ? "chat-bubble-user" : "chat-bubble-assistant group"} break-words overflow-x-auto`}
       >
         <Markdown>{message.content}</Markdown>
+
+        {onURLClick && (
+          <URLList urls={detectedURLs} onURLClick={onURLClick} />
+        )}
 
         {message.attachments && message.attachments.length > 0 && (
           <div className="flex flex-col gap-2 pt-2">

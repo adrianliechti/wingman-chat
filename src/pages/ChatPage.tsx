@@ -7,6 +7,7 @@ import { useAutoScroll } from "../hooks/useAutoScroll";
 import { Sidebar } from "../components/Sidebar";
 import { ChatInput } from "../components/ChatInput";
 import { ChatMessage } from "../components/ChatMessage";
+import { URLPanel } from "../components/URLPanel";
 import { Button } from "@headlessui/react";
 import { Menu as MenuIcon, Plus as PlusIcon } from "lucide-react";
 import { getConfig } from "../config";
@@ -23,6 +24,7 @@ export function ChatPage() {
   const [currentChat, setCurrentChat] = useState<Chat | null>(null);
   const [currentModel, setCurrentModel] = useState<Model>();
   const [currentMessages, setCurrentMessages] = useState<Message[]>([]);
+  const [selectedURL, setSelectedURL] = useState<string | null>(null);
   
   const { containerRef: messageContainerRef, handleScroll } = useAutoScroll({
     dependencies: [currentChat, currentMessages],
@@ -34,6 +36,14 @@ export function ChatPage() {
 
   const handleCreateChat = () => {
     setCurrentChat(null);
+  };
+
+  const handleURLClick = (url: string) => {
+    setSelectedURL(url);
+  };
+
+  const handleCloseURLPanel = () => {
+    setSelectedURL(null);
   };
 
   const handleDeleteChat = (id: string) => {
@@ -187,12 +197,25 @@ export function ChatPage() {
         />
       </aside>
 
-      <main className="flex-1 flex flex-col overflow-hidden" style={{ paddingBottom: `calc(6rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))` }}>
+      <main 
+        className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${selectedURL ? 'md:mr-96' : ''}`}
+        style={{ 
+          paddingBottom: `calc(6rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))`
+        }}
+      >
         {showSidebar && (
           <div
             className="fixed inset-0 z-50 bg-black/10 dark:bg-black/50 backdrop-blur-xs cursor-pointer"
             style={{ zIndex: 55 }}
             onClick={toggleSidebar}
+          />
+        )}
+
+        {selectedURL && (
+          <div
+            className="fixed inset-0 z-40 bg-black/10 dark:bg-black/50 backdrop-blur-xs cursor-pointer md:hidden"
+            style={{ zIndex: 45 }}
+            onClick={handleCloseURLPanel}
           />
         )}
 
@@ -207,7 +230,7 @@ export function ChatPage() {
             </div>
           ) : (
             currentMessages.map((message, idx) => (
-              <ChatMessage key={idx} message={message} />
+              <ChatMessage key={idx} message={message} onURLClick={handleURLClick} />
             ))
           )}
         </div>
@@ -221,6 +244,8 @@ export function ChatPage() {
           onModelChange={setCurrentModel}
         />
       </footer>
+
+      <URLPanel url={selectedURL} onClose={handleCloseURLPanel} />
     </div>
   );
 }
