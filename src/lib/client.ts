@@ -204,6 +204,27 @@ export class Client {
     return resp.text();
   }
 
+  async extract(format: 'text' | 'image' | 'pdf', url: string): Promise<string | Blob> {
+    const data = new FormData();
+    data.append("format", format);
+    data.append("url", url);
+
+    const resp = await fetch(new URL("/api/v1/extract", window.location.origin), {
+      method: "POST",
+      body: data,
+    });
+
+    if (!resp.ok) {
+      throw new Error(`Extract request failed with status ${resp.status}`);
+    }
+
+    if (format === 'text') {
+      return resp.text();
+    }
+
+    return resp.blob(); 
+  }
+
   private toTools(tools: Tool[]): OpenAI.Chat.Completions.ChatCompletionTool[] | undefined {
     if (!tools || tools.length === 0) {
       return undefined;
