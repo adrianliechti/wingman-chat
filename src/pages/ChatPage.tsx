@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Chat, Message, Model, Role } from "../models/chat";
+import { Message, Model, Role } from "../models/chat";
 import { useChats } from "../hooks/useChats";
 import { useModels } from "../hooks/useModels";
 import { useAutoScroll } from "../hooks/useAutoScroll";
@@ -17,17 +17,19 @@ export function ChatPage() {
   const client = config.client;
   const bridge = config.bridge;
 
-  const { chats, createChat, deleteChat, saveChats } = useChats();
+  const { chats, createChat, updateChat, deleteChat } = useChats();
   const { models } = useModels();
 
   const [showSidebar, setShowSidebar] = useState(false);
-  const [currentChat, setCurrentChat] = useState<Chat | null>(null);
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [currentModel, setCurrentModel] = useState<Model>();
-  const [currentMessages, setCurrentMessages] = useState<Message[]>([]);
-  const [selectedURL, setSelectedURL] = useState<string | null>(null);
-  
+  const [selectedURL, setSelectedURL] = useState<string | null>(null);  
+
+  const currentChat = chats.find(c => c.id === currentChatId) ?? null;
+  const messages = currentChat?.messages ?? [];
+
   const { containerRef: messageContainerRef, handleScroll } = useAutoScroll({
-    dependencies: [currentChat, currentMessages],
+    dependencies: [currentChat, messages],
   });
 
   const toggleSidebar = () => {
@@ -35,7 +37,7 @@ export function ChatPage() {
   };
 
   const handleCreateChat = () => {
-    setCurrentChat(null);
+    setCurrentChatId(null);
   };
 
   const handleURLClick = (url: string) => {
@@ -53,82 +55,62 @@ export function ChatPage() {
     }
   };
 
-  const handleSelectChat = (chat: Chat) => {
-    setCurrentChat(chat);
+  const handleSelectChat = (chatId: string) => {
+    setCurrentChatId(chatId);
+    setShowSidebar(false);
   };
 
   const sendMessage = async (message: Message) => {
     let chat = currentChat;
     const model = currentModel;
 
-    if (!model) {
-      throw new Error("no model selected");
-    }
+    if (!model) throw new Error("no model selected");
 
     if (!chat) {
       chat = createChat();
       chat.model = model;
-      setCurrentChat(chat);
+      setCurrentChatId(chat.id);
     }
 
-    let messages = [...currentMessages, message];
-
-    setCurrentMessages([
-      ...messages,
-      {
-        role: Role.Assistant,
-        content: "",
-      },
-    ]);
+    const base = [...chat.messages, message];
+    const updateMessages = (msgs: typeof base) => updateChat(chat.id, { messages: msgs });
+    updateMessages([...base, { role: Role.Assistant, content: "" }]);
 
     try {
       const tools = await bridge.listTools();
 
-      const completion = await client.complete(model.id, tools, messages, (_, snapshot) => {
-        setCurrentMessages([
-          ...messages,
-          {
-            role: Role.Assistant,
-            content: snapshot,
-          },
-        ]);
-      });
+      const completion = await client.complete(
+        model.id,
+        tools,
+        base,
+        (_, snapshot) => updateMessages([...base, { role: Role.Assistant, content: snapshot }])
+      );
 
-      messages = [...messages, completion];
-      setCurrentMessages(messages);
+      updateMessages([...base, completion]);
 
-      if (!chat.title || messages.length % 3 === 0) {
-        client.summarize(model.id, messages).then((title) => {
-          chat!.title = title;
-        });
+      if (!chat.title || base.length % 3 === 0) {
+        client
+          .summarize(model.id, base)
+          .then((title) => updateChat(chat.id, { title }));
       }
     } catch (error) {
-      console.log(error);
+      console.error(error);
 
-      if (error?.toString().includes("missing finish_reason")) {
-        return;
-      }
+      if (error?.toString().includes("missing finish_reason")) return;
 
-      const content = "An error occurred while processing the request.\n" + error?.toString();
-
-      setCurrentMessages([
-        ...messages,
-        {
-          role: Role.Assistant,
-          content: content,
-        },
-      ]);
+      const errorMessage = {
+        role: Role.Assistant,
+        content: `An error occurred:\n${error}`,
+      };
+      updateMessages([...base, errorMessage]);
     }
   };
 
   useEffect(() => {
-    if (currentModel) {
-      return;
-    }
-    if (models.length > 0) {
-      setCurrentModel(models[0]);
-    }
-  }, [currentModel, models]);
+    if (models.length === 0) return;
+    const next = currentChat?.model ?? models[0];
+    setCurrentModel(next);
+  }, [currentChat, models]);
 
   useEffect(() => {
     if (chats.length == 0) {
@@ -137,25 +119,10 @@ export function ChatPage() {
   }, [chats]);
 
   useEffect(() => {
-    if (currentChat) {
-      currentChat.updated = new Date();
-      currentChat.model = currentModel ?? null;
+    if (currentChat && currentModel && currentChat.model?.id !== currentModel.id) {
+      updateChat(currentChat.id, { model: currentModel });
     }
-  }, [currentChat, currentModel]);
-
-  useEffect(() => {
-    if (!currentChat) {
-      return;
-    }
-    currentChat.updated = new Date();
-    currentChat.messages = currentMessages;
-    saveChats();
-  }, [currentChat, currentMessages, saveChats]);
-
-  useEffect(() => {
-    setCurrentModel(currentChat?.model ?? currentModel);
-    setCurrentMessages(currentChat?.messages ?? []);
-  }, [currentChat, currentModel]);
+  }, [currentChat, currentModel, updateChat]);
 
   const leftControlsContainer = document.getElementById('chat-left-controls');
   const rightControlsContainer = document.getElementById('chat-right-controls');
@@ -189,11 +156,10 @@ export function ChatPage() {
         style={{ zIndex: 60 }}
       >
         <Sidebar
-          isVisible={showSidebar}
           chats={chats}
-          selectedChat={currentChat}
+          selectedChatId={currentChatId}
           onSelectChat={handleSelectChat}
-          onDeleteChat={(chat) => handleDeleteChat(chat.id)}
+          onDeleteChat={handleDeleteChat}
         />
       </aside>
 
@@ -224,13 +190,14 @@ export function ChatPage() {
           ref={messageContainerRef}
           onScroll={handleScroll}
         >
-          {currentMessages.length === 0 ? (
+          {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center min-h-full text-center">
               <img src="/logo.svg" className="w-48 h-48 mb-4" />
             </div>
           ) : (
-            currentMessages.map((message, idx) => (
+            messages.map((message, idx) => (
               <ChatMessage key={idx} message={message} onURLClick={handleURLClick} />
+
             ))
           )}
         </div>
