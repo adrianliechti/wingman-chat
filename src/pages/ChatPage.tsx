@@ -23,7 +23,7 @@ export function ChatPage() {
   const [showSidebar, setShowSidebar] = useState(false);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [currentModel, setCurrentModel] = useState<Model>();
-  const [selectedURL, setSelectedURL] = useState<string | null>(null);  
+  const [selectedURL, setSelectedURL] = useState<string | null>(null);
 
   const currentChat = chats.find(c => c.id === currentChatId) ?? null;
   const messages = currentChat?.messages ?? [];
@@ -36,7 +36,7 @@ export function ChatPage() {
     setShowSidebar(!showSidebar);
   };
 
-  const handleCreateChat = () => {
+  const onCreateChat = () => {
     setCurrentChatId(null);
   };
 
@@ -48,16 +48,24 @@ export function ChatPage() {
     setSelectedURL(null);
   };
 
-  const handleDeleteChat = (id: string) => {
-    deleteChat(id);
-    if (currentChat?.id === id) {
-      handleCreateChat();
+  const onSelectChat = (chatId: string) => {
+    setCurrentChatId(chatId);
+    setShowSidebar(false);
+  };
+
+  const onDeleteChat = (chatId: string) => {
+    deleteChat(chatId);
+
+    if (currentChat?.id === chatId) {
+      onCreateChat();
     }
   };
 
-  const handleSelectChat = (chatId: string) => {
-    setCurrentChatId(chatId);
-    setShowSidebar(false);
+  const onSelectModel = (model: Model) => {
+    setCurrentModel(model);
+    if (currentChat) {
+      updateChat(currentChat.id, { model });
+    }
   };
 
   const sendMessage = async (message: Message) => {
@@ -117,13 +125,6 @@ export function ChatPage() {
       setShowSidebar(false);
     }
   }, [chats]);
-
-  useEffect(() => {
-    if (currentChat && currentModel && currentChat.model?.id !== currentModel.id) {
-      updateChat(currentChat.id, { model: currentModel });
-    }
-  }, [currentChat, currentModel, updateChat]);
-
   const leftControlsContainer = document.getElementById('chat-left-controls');
   const rightControlsContainer = document.getElementById('chat-right-controls');
 
@@ -144,7 +145,7 @@ export function ChatPage() {
       {rightControlsContainer && createPortal(
         <Button
           className="menu-button"
-          onClick={handleCreateChat}
+          onClick={onCreateChat}
         >
           <PlusIcon size={20} />
         </Button>,
@@ -158,8 +159,8 @@ export function ChatPage() {
         <Sidebar
           chats={chats}
           selectedChatId={currentChatId}
-          onSelectChat={handleSelectChat}
-          onDeleteChat={handleDeleteChat}
+          onSelectChat={onSelectChat}
+          onDeleteChat={onDeleteChat}
         />
       </aside>
 
@@ -197,7 +198,6 @@ export function ChatPage() {
           ) : (
             messages.map((message, idx) => (
               <ChatMessage key={idx} message={message} onURLClick={handleURLClick} />
-
             ))
           )}
         </div>
@@ -208,7 +208,7 @@ export function ChatPage() {
           onSend={sendMessage} 
           models={models}
           currentModel={currentModel}
-          onModelChange={setCurrentModel}
+          onModelChange={onSelectModel}
         />
       </footer>
 
