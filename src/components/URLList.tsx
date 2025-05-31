@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Button } from '@headlessui/react';
-import { ExternalLink, Globe } from 'lucide-react';
+import { ExternalLink, Globe, ChevronDown, ChevronRight } from 'lucide-react';
 import { DetectedURL } from '../lib/utils';
 
 interface URLListProps {
@@ -8,6 +9,8 @@ interface URLListProps {
 }
 
 export function URLList({ urls, onURLClick }: URLListProps) {
+  const [isCollapsed, setIsCollapsed] = useState(true);
+  
   if (urls.length === 0) return null;
 
   const getDomainFromURL = (url: string) => {
@@ -19,35 +22,45 @@ export function URLList({ urls, onURLClick }: URLListProps) {
   };
 
   return (
-    <div className="mt-3 pt-3 border-t border-neutral-300 dark:border-neutral-600">
-      <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-2 flex items-center gap-1">
+    <div className="mt-3 pt-3 border-t border-neutral-200/50 dark:border-neutral-700/50">
+      <Button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="w-full text-xs text-neutral-400 dark:text-neutral-500 mb-2 flex items-center gap-1 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors cursor-pointer focus:outline-none"
+      >
+        {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
         <Globe size={12} />
-        {urls.length === 1 ? 'Referenced URL:' : `${urls.length} Referenced URLs:`}
-      </div>
-      <div className="space-y-2">
-        {urls.map((urlData, index) => (
-          <div
-            key={index}
-            className="flex items-center gap-2 p-2 bg-neutral-100 dark:bg-neutral-800 rounded text-sm hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-          >
-            <div className="flex-1 min-w-0">
-              <div className="truncate font-medium" title={urlData.text}>
-                {urlData.text}
-              </div>
-              <div className="truncate text-xs text-neutral-500 dark:text-neutral-400" title={urlData.url}>
-                {getDomainFromURL(urlData.url)}
-              </div>
-            </div>
-            <Button
+        References
+      </Button>
+      {!isCollapsed && (
+        <div className="space-y-1">
+          {urls.map((urlData, index) => (
+            <div
+              key={index}
               onClick={() => onURLClick(urlData.url)}
-              className="p-1.5 text-neutral-600 hover:text-blue-600 dark:text-neutral-400 dark:hover:text-blue-400 cursor-pointer focus:outline-none transition-colors flex-shrink-0"
-              title="Preview in side panel"
+              className="flex items-center gap-2 p-2 bg-neutral-50/50 dark:bg-neutral-800/30 rounded text-sm hover:bg-neutral-100/80 dark:hover:bg-neutral-700/50 transition-colors cursor-pointer"
             >
-              <ExternalLink size={14} />
-            </Button>
-          </div>
-        ))}
-      </div>
+              <div className="flex-1 min-w-0">
+                <div className="truncate font-normal text-neutral-600 dark:text-neutral-300" title={urlData.text}>
+                  {urlData.text}
+                </div>
+                <div className="truncate text-xs text-neutral-400 dark:text-neutral-500" title={urlData.url}>
+                  {getDomainFromURL(urlData.url)}
+                </div>
+              </div>
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onURLClick(urlData.url);
+                }}
+                className="p-1.5 text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300 cursor-pointer focus:outline-none transition-colors flex-shrink-0"
+                title="Preview in side panel"
+              >
+                <ExternalLink size={14} />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

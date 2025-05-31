@@ -163,9 +163,9 @@ export function ChatPage() {
         />
       </aside>
 
-      <main 
-        className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${selectedURL ? 'md:mr-96' : ''}`}
-        style={{ 
+      <main
+        className="flex-1 flex flex-col overflow-hidden"
+        style={{
           paddingBottom: `calc(6rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))`
         }}
       >
@@ -179,7 +179,7 @@ export function ChatPage() {
 
         {selectedURL && (
           <div
-            className="fixed inset-0 z-40 bg-black/10 dark:bg-black/50 backdrop-blur-xs cursor-pointer md:hidden"
+            className="fixed inset-0 bg-black/10 dark:bg-black/50 cursor-pointer"
             style={{ zIndex: 45 }}
             onClick={handleCloseURLPanel}
           />
@@ -212,7 +212,7 @@ export function ChatPage() {
         />
       </footer>
 
-      <URLPanel url={selectedURL} onClose={handleCloseURLPanel} />
+      {selectedURL && <URLPanel url={selectedURL} onClose={handleCloseURLPanel} />}
     </div>
   );
 }
