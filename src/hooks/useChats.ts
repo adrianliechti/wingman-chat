@@ -10,54 +10,59 @@ export function useChats() {
   const saveTimeoutRef = useRef<number | null>(null);
 
   function createChat() {
-    const chat = {
+    const chat: Chat = {
       id: crypto.randomUUID(),
-
       created: new Date(),
       updated: new Date(),
-
       model: null,
       messages: [],
     };
 
     setChats((prev) => {
-      const items = [...prev, chat];
+      const items = [chat, ...prev];
       debounceSaveChats(items);
-
       return items;
     });
     
     return chat;
-  };
+  }
+
+  function updateChat(chatId: string, updates: Partial<Chat>) {
+    setChats((prev) => {
+      const items = prev.map((chat) => 
+        chat.id === chatId 
+          ? { ...chat, ...updates, updated: new Date() }
+          : chat
+      );
+      debounceSaveChats(items);
+      return items;
+    });
+  }
 
   function deleteChat(chatId: string) {
     setChats((prev) => {
       const items = prev.filter((chat) => chat.id !== chatId);
       debounceSaveChats(items);
-      
       return items;
     });
-  };
+  }
 
-  const debounceSaveChats = useCallback((chatItems = chats) => {
+  const debounceSaveChats = useCallback((chatItems?: Chat[]) => {
     if (saveTimeoutRef.current) {
       window.clearTimeout(saveTimeoutRef.current);
     }
 
     saveTimeoutRef.current = window.setTimeout(() => {
+      const itemsToSave = chatItems || chats;
       const savedChats = loadLocalChats();
 
-      if (JSON.stringify(chatItems) !== JSON.stringify(savedChats)) {
-        saveLocalChats(chatItems);
+      if (JSON.stringify(itemsToSave) !== JSON.stringify(savedChats)) {
+        saveLocalChats(itemsToSave);
       }
       
       saveTimeoutRef.current = null;
     }, SAVE_DELAY);
   }, [chats]);
-
-  function saveChats() {
-    debounceSaveChats();
-  }
 
   function saveLocalChats(chats: Chat[]) {
     try {
@@ -92,5 +97,5 @@ export function useChats() {
     }
   }
 
-  return { chats, createChat, deleteChat, saveChats };
+  return { chats, createChat, updateChat, deleteChat };
 }
