@@ -1,17 +1,20 @@
 import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
 import { URLList } from './URLList';
+import { RelatedPromptList } from './RelatedPromptList';
 import { Bot, User, File, Brain } from "lucide-react";
 
-import { AttachmentType, Message, Role } from "../models/chat";
+import { AttachmentType, Message, Role, Model } from "../models/chat";
 import { detectURLs } from "../lib/utils";
 
 type ChatMessageProps = {
   message: Message;
   onURLClick?: (url: string) => void;
+  onSendMessage?: (message: Message) => void;
+  currentModel?: Model;
 };
 
-export function ChatMessage({ message, onURLClick }: ChatMessageProps) {
+export function ChatMessage({ message, onURLClick, onSendMessage, currentModel }: ChatMessageProps) {
   const isUser = message.role === Role.User;
   const detectedURLs = detectURLs(message.content);
 
@@ -88,6 +91,14 @@ export function ChatMessage({ message, onURLClick }: ChatMessageProps) {
               <CopyButton text={message.content} subtle={true} />
             </div>
           </div>
+        )}
+
+        {!isUser && onSendMessage && currentModel && message.content && message.content.trim().length > 0 && (
+          <RelatedPromptList
+            prompt={message.content}
+            model={currentModel.id}
+            onPromptClick={onSendMessage}
+          />
         )}
       </div>
 

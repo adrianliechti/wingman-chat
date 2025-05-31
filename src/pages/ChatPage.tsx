@@ -197,7 +197,13 @@ export function ChatPage() {
             </div>
           ) : (
             messages.map((message, idx) => (
-              <ChatMessage key={idx} message={message} onURLClick={handleURLClick} />
+              <ChatMessage 
+                key={idx} 
+                message={message} 
+                onURLClick={handleURLClick}
+                onSendMessage={sendMessage}
+                currentModel={currentModel}
+              />
             ))
           )}
         </div>

@@ -1,4 +1,6 @@
 import OpenAI from "openai";
+import { z } from "zod";
+import { zodResponseFormat } from "openai/helpers/zod";
 import { Tool } from "../models/chat";
 import { Message, Model, Role, AttachmentType, Partition } from "../models/chat";
 
@@ -166,6 +168,34 @@ export class Client {
     });
 
     return completion.choices[0].message.content?.trim() ?? "Summary not available";
+  }
+
+  async relatedPrompts(model: string, prompt: string): Promise<string[]> {
+    const Prompt = z.object({
+      prompt: z.string(),
+    });
+
+    const PromptList = z.object({
+      prompts: z.array(Prompt),
+    });
+
+    const completion = await this.oai.beta.chat.completions.parse({
+      model: model,
+      messages: [
+        {
+          role: "system",
+          content: `return related prompt suggestions to deep dive into the topic.`,
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      response_format: zodResponseFormat(PromptList, "list"),
+    });
+
+    const list = completion.choices[0].message.parsed;
+    return list?.prompts.map((p) => p.prompt) ?? [];
   }
 
   async partition(blob: Blob): Promise<Partition[]> {
