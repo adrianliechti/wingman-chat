@@ -1,14 +1,17 @@
 import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
+import { RelatedPromptList } from './RelatedPromptList';
 import { Bot, User, File, Brain } from "lucide-react";
 
-import { AttachmentType, Message, Role } from "../models/chat";
+import { AttachmentType, Message, Role, Model } from "../models/chat";
 
 type ChatMessageProps = {
   message: Message;
+  onSendMessage?: (message: Message) => void;
+  currentModel?: Model;
 };
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, onSendMessage, currentModel }: ChatMessageProps) {
   const isUser = message.role === Role.User;
 
   if (!isUser && !message.content) {
@@ -80,6 +83,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
               <CopyButton text={message.content} subtle={true} />
             </div>
           </div>
+        )}
+
+        {!isUser && onSendMessage && currentModel && message.content && message.content.trim().length > 0 && (
+          <RelatedPromptList
+            prompt={message.content}
+            model={currentModel.id}
+            onPromptClick={onSendMessage}
+          />
         )}
       </div>
 
