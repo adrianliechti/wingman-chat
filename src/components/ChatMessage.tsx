@@ -46,10 +46,6 @@ export function ChatMessage({ message, onURLClick, onSendMessage, currentModel }
       >
         <Markdown>{message.content}</Markdown>
 
-        {onURLClick && (
-          <URLList urls={detectedURLs} onURLClick={onURLClick} />
-        )}
-
         {message.attachments && message.attachments.length > 0 && (
           <div className="flex flex-col gap-2 pt-2">
             <div className="grid grid-cols-2 gap-2">
@@ -91,6 +87,10 @@ export function ChatMessage({ message, onURLClick, onSendMessage, currentModel }
               <CopyButton text={message.content} subtle={true} />
             </div>
           </div>
+        )}
+
+        {onURLClick && detectedURLs.length > 0 && (
+          <URLList urls={detectedURLs} onURLClick={onURLClick} />
         )}
 
         {!isUser && onSendMessage && currentModel && message.content && message.content.trim().length > 0 && (

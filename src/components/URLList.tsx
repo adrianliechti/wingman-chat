@@ -22,42 +22,41 @@ export function URLList({ urls, onURLClick }: URLListProps) {
   };
 
   return (
-    <div className="mt-3 pt-3 border-t border-neutral-200/50 dark:border-neutral-700/50">
+    <div className="mt-3 border-t border-neutral-200 dark:border-neutral-700 pt-3">
       <Button
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className="w-full text-xs text-neutral-400 dark:text-neutral-500 mb-2 flex items-center gap-1 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors cursor-pointer focus:outline-none"
+        className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors focus:outline-none"
       >
-        {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-        <Globe size={12} />
-        References
+        {isCollapsed ? (
+          <ChevronRight className="w-4 h-4" />
+        ) : (
+          <ChevronDown className="w-4 h-4" />
+        )}
+        <Globe className="w-4 h-4" />
+        <span>
+          References
+        </span>
       </Button>
       {!isCollapsed && (
-        <div className="space-y-1">
+        <div className="mt-3 space-y-2 animate-in fade-in duration-200">
           {urls.map((urlData, index) => (
-            <div
+            <Button
               key={index}
               onClick={() => onURLClick(urlData.url)}
-              className="flex items-center gap-2 p-2 bg-neutral-50/50 dark:bg-neutral-800/30 rounded text-sm hover:bg-neutral-100/80 dark:hover:bg-neutral-700/50 transition-colors cursor-pointer"
+              className="block w-full text-left text-sm p-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
             >
-              <div className="flex-1 min-w-0">
-                <div className="truncate font-normal text-neutral-600 dark:text-neutral-300" title={urlData.text}>
-                  {urlData.text}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="truncate font-normal text-neutral-700 dark:text-neutral-300 leading-relaxed" title={urlData.text}>
+                    {urlData.text}
+                  </div>
+                  <div className="truncate text-xs text-neutral-500 dark:text-neutral-400 mt-1" title={urlData.url}>
+                    {getDomainFromURL(urlData.url)}
+                  </div>
                 </div>
-                <div className="truncate text-xs text-neutral-400 dark:text-neutral-500" title={urlData.url}>
-                  {getDomainFromURL(urlData.url)}
-                </div>
+                <ExternalLink size={14} className="text-neutral-400 dark:text-neutral-500 flex-shrink-0" />
               </div>
-              <Button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onURLClick(urlData.url);
-                }}
-                className="p-1.5 text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300 cursor-pointer focus:outline-none transition-colors flex-shrink-0"
-                title="Preview in side panel"
-              >
-                <ExternalLink size={14} />
-              </Button>
-            </div>
+            </Button>
           ))}
         </div>
       )}
