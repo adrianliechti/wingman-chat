@@ -55,8 +55,8 @@ export function ChatInput({ onSend, models, currentModel, onModelChange }: ChatI
 
     fetchTools();
     
-    // const interval = setInterval(fetchTools, 5000);    
-    // return () => clearInterval(interval);
+    const interval = setInterval(fetchTools, 5000);    
+    return () => clearInterval(interval);
   }, [bridge]);
 
   const handleSubmit = (e: FormEvent) => {
@@ -155,7 +155,7 @@ export function ChatInput({ onSend, models, currentModel, onModelChange }: ChatI
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="border border-neutral-300 dark:border-neutral-700 bg-neutral-200 dark:bg-neutral-800 rounded-lg flex flex-col min-h-[3rem] shadow-2xl shadow-black/60 dark:shadow-black/80 drop-shadow-2xl">
+      <div className="border border-neutral-300 dark:border-neutral-700 bg-neutral-200 dark:bg-neutral-800 rounded-lg md:rounded-2xl flex flex-col min-h-[3rem] shadow-2xl shadow-black/60 dark:shadow-black/80 drop-shadow-2xl">
         <input
           type="file"
           multiple
@@ -167,7 +167,7 @@ export function ChatInput({ onSend, models, currentModel, onModelChange }: ChatI
 
         <div
           ref={contentEditableRef}
-          className="p-2 pr-0 bg-transparent dark:text-neutral-200 focus:outline-none flex-1 max-h-[40vh] overflow-y-auto min-h-[2.5rem] whitespace-pre-wrap break-words empty:before:content-[attr(data-placeholder)] empty:before:text-neutral-500 empty:before:dark:text-neutral-400"
+          className="pt-2 px-2 pb-2 md:pt-4 md:px-4 md:pb-2 pr-0 bg-transparent dark:text-neutral-200 focus:outline-none flex-1 max-h-[40vh] overflow-y-auto min-h-[2.5rem] whitespace-pre-wrap break-words empty:before:content-[attr(data-placeholder)] empty:before:text-neutral-500 empty:before:dark:text-neutral-400"
           style={{ scrollbarWidth: "thin" }}
           role="textbox"
           contentEditable
@@ -180,7 +180,7 @@ export function ChatInput({ onSend, models, currentModel, onModelChange }: ChatI
           onKeyDown={handleKeyDown}
         />
 
-        <div className="flex items-center justify-between gap-1 p-2 pt-0">
+        <div className="flex items-center justify-between gap-1 px-2 pb-2 md:px-4 md:pb-2 pt-0">
           <div className="flex items-center gap-2">
             <Menu>
               <MenuButton className="inline-flex items-center gap-1 pl-0 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 cursor-pointer focus:outline-none text-sm">
