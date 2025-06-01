@@ -101,36 +101,18 @@ button:focus-visible,
   @apply bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200;
 }
 
-.chat-input {
-  @apply p-2 border border-neutral-400 dark:border-neutral-700 bg-neutral-50 dark:text-neutral-200 dark:bg-neutral-800 rounded focus:outline-none
-}
-
-.chat-input-button {
-  @apply p-2 text-neutral-900 hover:text-neutral-500 dark:text-neutral-100 cursor-pointer focus:outline-none;
-}
-
 .chat-input-attachment {
   @apply p-2 text-white dark:text-neutral-200 hover:text-gray-300 bg-neutral-800 dark:bg-neutral-700 rounded cursor-default;
-}
-
-.chat-input-container {
-  @apply border border-neutral-400 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 rounded flex flex-col min-h-[3rem];
-}
-
-.chat-input-textarea {
-  @apply p-2 pr-0 bg-transparent dark:text-neutral-200 resize-none focus:outline-none flex-1;
-}
-
-.chat-input-buttons {
-  @apply flex items-center justify-end gap-1 p-2 pt-0;
-}
-
-.chat-input-button-integrated {
-  @apply p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 cursor-pointer focus:outline-none;
 }
 
 .ios-scroll {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: none;
   overflow-anchor: none;
+}
+
+/* Content width constraints */
+.max-content-width {
+  max-width: 900px;
+  margin: 0 auto;
 }
