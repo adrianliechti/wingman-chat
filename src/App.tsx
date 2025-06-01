@@ -47,8 +47,10 @@ function App() {
         </div>
       </nav>
       <div className="flex-grow overflow-hidden" style={{ paddingTop: `calc(3rem + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)))` }}>
-        {currentPage === "chat" && <ChatPage />}
-        {currentPage === "translate" && <TranslatePage />}
+        <div className="h-full">
+          {currentPage === "chat" && <ChatPage />}
+          {currentPage === "translate" && <TranslatePage />}
+        </div>
       </div>
     </div>
   );

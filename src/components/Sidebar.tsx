@@ -22,14 +22,14 @@ export function Sidebar({ chats, selectedChatId, onSelectChat, onDeleteChat }: S
   return (
     <div className="flex flex-col h-full w-full bg-white dark:bg-neutral-900">
       <div 
-        className="flex items-center px-2 py-2 pt-safe-top"
+        className="flex items-center px-2 py-2 pt-safe-top pl-safe-left"
         style={{ height: `calc(3rem + env(safe-area-inset-top, 0px))` }}
       >
         <h2 className="text-xl font-semibold px-2">{config.title}</h2>
       </div>
       
       <div 
-        className="flex flex-col flex-1 overflow-hidden px-2"
+        className="flex flex-col flex-1 overflow-hidden px-2 pl-safe-left"
         style={{ 
           paddingTop: '0'
         }}
