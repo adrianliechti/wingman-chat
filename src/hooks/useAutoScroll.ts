@@ -1,152 +1,52 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 
 interface UseAutoScrollOptions {
   /**
    * Dependencies that trigger auto-scroll when changed (e.g., messages, chat)
    */
   dependencies: unknown[];
-  /**
-   * Threshold in pixels for determining if user is "at bottom"
-   */
-  threshold?: number;
 }
 
-export function useAutoScroll({ dependencies, threshold = 50 }: UseAutoScrollOptions) {
-  const [isAtBottom, setIsAtBottom] = useState(true);
+export function useAutoScroll({ dependencies }: UseAutoScrollOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const isAutoScrollEnabledRef = useRef(true);
   const isProgrammaticScrollRef = useRef(false);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const userScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastScrollTopRef = useRef(0);
-  const scrollVelocityRef = useRef(0);
-  const isUserScrollingRef = useRef(false);
 
-  const checkIfAtBottom = useCallback(() => {
-    const container = containerRef.current;
-    if (!container) return false;
-    
-    const { scrollTop, clientHeight, scrollHeight } = container;
-    const atBottom = scrollTop + clientHeight >= scrollHeight - threshold;
-    setIsAtBottom(atBottom);
-    return atBottom;
-  }, [threshold]);
-
-  const scrollToBottom = useCallback(() => {
-    const container = containerRef.current;
-    if (!container || isUserScrollingRef.current) return;
-    
-    // Mark that we're programmatically scrolling
-    isProgrammaticScrollRef.current = true;
-    
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior: "smooth",
-    });
-    
-    // Clear any existing timeout
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
+  const scrollToBottom = () => {
+    if (bottomRef.current) {
+      isProgrammaticScrollRef.current = true;
+      bottomRef.current.scrollIntoView({ behavior: "smooth" });
+      // Reset flag after scroll completes
+      setTimeout(() => {
+        isProgrammaticScrollRef.current = false;
+      }, 500);
     }
-    
-    // Reset the flag after a shorter delay
-    scrollTimeoutRef.current = setTimeout(() => {
-      isProgrammaticScrollRef.current = false;
-    }, 100);
-  }, []);
+  };
 
   const handleScroll = useCallback(() => {
+    if (isProgrammaticScrollRef.current) return;
+    
     const container = containerRef.current;
     if (!container) return;
 
-    const currentScrollTop = container.scrollTop;
-    const scrollDelta = currentScrollTop - lastScrollTopRef.current;
-    
-    // Calculate scroll velocity for momentum detection
-    scrollVelocityRef.current = Math.abs(scrollDelta);
-    lastScrollTopRef.current = currentScrollTop;
+    // Check if user is at bottom (with small threshold)
+    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 10;
+    isAutoScrollEnabledRef.current = isAtBottom;
+  }, []);
 
-    // If this is a programmatic scroll, ignore it
-    if (isProgrammaticScrollRef.current) {
-      return;
-    }
+  const enableAutoScroll = useCallback(() => {
+    isAutoScrollEnabledRef.current = true;
+    scrollToBottom();
+  }, []);
 
-    // This is a user-initiated scroll
-    isUserScrollingRef.current = true;
-
-    // Clear any existing user scroll timeout
-    if (userScrollTimeoutRef.current) {
-      clearTimeout(userScrollTimeoutRef.current);
-    }
-
-    // Check if user is at bottom
-    const atBottom = checkIfAtBottom();
-
-    // If user scrolled to bottom, immediately re-enable auto-scroll
-    if (atBottom) {
-      isUserScrollingRef.current = false;
-    } else {
-      // User is not at bottom, wait for scroll to stop before allowing auto-scroll again
-      userScrollTimeoutRef.current = setTimeout(() => {
-        // Only stop user scrolling if they're still not at bottom and velocity is low
-        if (scrollVelocityRef.current < 5) {
-          isUserScrollingRef.current = false;
-          checkIfAtBottom();
-        }
-      }, 150);
-    }
-  }, [checkIfAtBottom]);
-
-  // Get first dependency for reset logic
-  const firstDependency = dependencies[0];
-
-  // Auto-scroll when dependencies change and user is at bottom and not actively scrolling
+  // Auto-scroll when dependencies change if enabled
   useEffect(() => {
-    if (isAtBottom && !isUserScrollingRef.current) {
+    if (isAutoScrollEnabledRef.current) {
       scrollToBottom();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollToBottom, isAtBottom, ...dependencies]);
+  }, dependencies);
 
-  // Check initial position
-  useEffect(() => {
-    checkIfAtBottom();
-  }, [checkIfAtBottom]);
-
-  // Cleanup timeouts on unmount
-  useEffect(() => {
-    return () => {
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-      if (userScrollTimeoutRef.current) {
-        clearTimeout(userScrollTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Reset scroll state when first dependency changes (e.g., switching chats)
-  useEffect(() => {
-    setIsAtBottom(true);
-    isProgrammaticScrollRef.current = false;
-    isUserScrollingRef.current = false;
-    scrollVelocityRef.current = 0;
-    lastScrollTopRef.current = 0;
-    
-    // Clear any existing timeouts
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = null;
-    }
-    if (userScrollTimeoutRef.current) {
-      clearTimeout(userScrollTimeoutRef.current);
-      userScrollTimeoutRef.current = null;
-    }
-  }, [firstDependency]);
-
-  return {
-    containerRef,
-    handleScroll,
-    isAtBottom,
-    scrollToBottom,
-  };
+  return { containerRef, bottomRef, handleScroll, enableAutoScroll };
 }
