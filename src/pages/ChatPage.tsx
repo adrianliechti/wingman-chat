@@ -28,8 +28,8 @@ export function ChatPage() {
   const currentChat = chats.find(c => c.id === currentChatId) ?? null;
   const messages = currentChat?.messages ?? [];
 
-  const { containerRef: messageContainerRef, handleScroll } = useAutoScroll({
-    dependencies: [currentChat, messages],
+  const { containerRef, bottomRef, handleScroll, enableAutoScroll } = useAutoScroll({
+    dependencies: [messages],
   });
 
   const toggleSidebar = () => {
@@ -69,6 +69,9 @@ export function ChatPage() {
   };
 
   const sendMessage = async (message: Message) => {
+    // Re-enable auto-scroll when user sends a message
+    enableAutoScroll();
+    
     let chat = currentChat;
     const model = currentModel;
 
@@ -125,6 +128,7 @@ export function ChatPage() {
       setShowSidebar(false);
     }
   }, [chats]);
+
   const leftControlsContainer = document.getElementById('chat-left-controls');
   const rightControlsContainer = document.getElementById('chat-right-controls');
 
@@ -189,13 +193,13 @@ export function ChatPage() {
         {messages.length === 0 ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center text-center">
-              <img src="/logo.svg" className="w-32 h-32 dark:opacity-70" alt="Wingman Chat" />
+              <img src="/logo.svg" className="w-32 h-32 dark:opacity-80" alt="Wingman Chat" />
             </div>
           </div>
         ) : (
           <div
             className="flex-1 overflow-auto ios-scroll"
-            ref={messageContainerRef}
+            ref={containerRef}
             onScroll={handleScroll}
           >
             <div className="max-content-width px-2 pt-4">
@@ -208,6 +212,8 @@ export function ChatPage() {
                   currentModel={currentModel}
                 />
               ))}
+              {/* sentinel for scrollIntoView */}
+              <div ref={bottomRef} />
             </div>
           </div>
         )}
