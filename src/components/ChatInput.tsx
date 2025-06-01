@@ -1,9 +1,9 @@
-import { ChangeEvent, useState, FormEvent, useRef } from "react";
+import { ChangeEvent, useState, FormEvent, useRef, useEffect } from "react";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 
-import { Send, Paperclip, ScreenShare, Image, X, Brain } from "lucide-react";
+import { Send, Paperclip, ScreenShare, Image, X, Brain, Link } from "lucide-react";
 
-import { Attachment, AttachmentType, Message, Role, Model } from "../models/chat";
+import { Attachment, AttachmentType, Message, Role, Model, Tool } from "../models/chat";
 import {
   captureScreenshot,
   getFileExt,
@@ -28,12 +28,36 @@ type ChatInputProps = {
 export function ChatInput({ onSend, models, currentModel, onModelChange }: ChatInputProps) {
   const config = getConfig();
   const client = config.client;
+  const bridge = config.bridge;
 
   const [content, setContent] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [bridgeTools, setBridgeTools] = useState<Tool[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const contentEditableRef = useRef<HTMLDivElement>(null);
+
+  // Fetch bridge tools when bridge is connected
+  useEffect(() => {
+    const fetchTools = async () => {
+      if (bridge.isConnected()) {
+        try {
+          const tools = await bridge.listTools();
+          setBridgeTools(tools);
+        } catch (error) {
+          console.error("Failed to fetch bridge tools:", error);
+          setBridgeTools([]);
+        }
+      } else {
+        setBridgeTools([]);
+      }
+    };
+
+    fetchTools();
+    
+    // const interval = setInterval(fetchTools, 5000);    
+    // return () => clearInterval(interval);
+  }, [bridge]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -157,7 +181,7 @@ export function ChatInput({ onSend, models, currentModel, onModelChange }: ChatI
         />
 
         <div className="flex items-center justify-between gap-1 p-2 pt-0">
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
             <Menu>
               <MenuButton className="inline-flex items-center gap-1 pl-0 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 cursor-pointer focus:outline-none text-sm">
                 <Brain size={14} />
@@ -183,6 +207,33 @@ export function ChatInput({ onSend, models, currentModel, onModelChange }: ChatI
                 ))}
               </MenuItems>
             </Menu>
+            
+            {bridge.isConnected() && (
+              <div 
+                className="inline-flex items-center gap-1 pl-0 pr-1.5 py-1.5 text-neutral-600 dark:text-neutral-400 text-sm relative group"
+                title={bridgeTools.length > 0 ? `Available tools: ${bridgeTools.map(t => t.name).join(', ')}` : "Bridge connected"}
+              >
+                <Link size={14} />
+                <span>Bridge</span>
+                {bridgeTools.length > 0 && (
+                  <div className="absolute bottom-full left-0 mb-2 w-64 bg-neutral-800 dark:bg-neutral-700 text-white text-xs rounded-md p-2 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                    <div className="font-semibold mb-1">Available Tools ({bridgeTools.length}):</div>
+                    <div className="space-y-1">
+                      {bridgeTools.map((tool, index) => (
+                        <div key={index} className="flex flex-col">
+                          <span className="font-medium">{tool.name}</span>
+                          {tool.description && (
+                            <span className="text-neutral-300 dark:text-neutral-400 text-xs truncate" title={tool.description}>
+                              {tool.description}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-1">

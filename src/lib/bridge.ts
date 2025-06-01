@@ -67,6 +67,10 @@ export class Bridge {
         return bridge;
     }
 
+    public isConnected(): boolean {
+        return this.mcp !== undefined;
+    }
+
     public async listTools(): Promise<Tool[]> {
         if (!this.mcp) {
             return [];
