@@ -181,69 +181,15 @@ export interface DetectedURL {
 }
 
 export function detectURLs(text: string): DetectedURL[] {
-  const urls: DetectedURL[] = [];
-  
-  // Detect markdown links [text](url) - including footnote style
-  const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-  let match;
-  
-  while ((match = markdownLinkRegex.exec(text)) !== null) {
-    const [, linkText, url] = match;
-    if (isValidURL(url)) {
-      urls.push({
-        url: normalizeURL(url),
-        text: linkText.trim(),
-        type: 'markdown'
-      });
-    }
+  const regex = /\[([^\]]+)\]\((https?:\/\/\S+?)\)|\b(https?:\/\/\S+)\b/g;
+  const seen = new Set<string>();
+  const results: DetectedURL[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text))) {
+    const url = match[2] || match[3];
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    results.push({ url, text: match[1]?.trim() || url, type: match[2] ? 'markdown' : 'plain' });
   }
-  
-  const plainURLRegex = /(?<!]\()(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/[^\s)]*)?/g;
-  
-  while ((match = plainURLRegex.exec(text)) !== null) {
-    const url = match[0];
-    if (isValidURL(url) || isValidDomain(url)) {
-      const normalizedURL = normalizeURL(url);
-      // Avoid duplicates from markdown links
-      if (!urls.some(u => u.url === normalizedURL)) {
-        urls.push({
-          url: normalizedURL,
-          text: url,
-          type: 'plain'
-        });
-      }
-    }
-  }
-  
-  const seen = new Set();
-  return urls.filter(url => {
-    const key = url.url;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function isValidURL(urlString: string): boolean {
-  try {
-    new URL(urlString);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isValidDomain(domain: string): boolean {
-  const domainRegex = /^(?:(?:www\.)?[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/;
-  return domainRegex.test(domain);
-}
-
-function normalizeURL(url: string): string {
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    return `https://${url}`;
-  }
-
-  return url;
+  return results;
 }
