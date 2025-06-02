@@ -165,14 +165,14 @@ export const imageTypes = [
   "image/webp",
 ];
 
-export const partitionTypes = [
+export const documentTypes = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
 
-export const supportedTypes = [...textTypes, ...imageTypes, ...partitionTypes];
+export const supportedTypes = [...textTypes, ...imageTypes, ...documentTypes];
 
 export interface DetectedURL {
   url: string;
@@ -198,8 +198,6 @@ export function detectURLs(text: string): DetectedURL[] {
     }
   }
   
-  // Detect plain URLs (not already captured in markdown links)
-  // More comprehensive regex to capture URLs without protocols
   const plainURLRegex = /(?<!]\()(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/[^\s)]*)?/g;
   
   while ((match = plainURLRegex.exec(text)) !== null) {
@@ -217,7 +215,6 @@ export function detectURLs(text: string): DetectedURL[] {
     }
   }
   
-  // Remove duplicates based on URL
   const seen = new Set();
   return urls.filter(url => {
     const key = url.url;
@@ -239,7 +236,6 @@ function isValidURL(urlString: string): boolean {
 }
 
 function isValidDomain(domain: string): boolean {
-  // Simple domain validation
   const domainRegex = /^(?:(?:www\.)?[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/;
   return domainRegex.test(domain);
 }
@@ -248,5 +244,6 @@ function normalizeURL(url: string): string {
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     return `https://${url}`;
   }
+
   return url;
 }

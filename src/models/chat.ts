@@ -54,7 +54,3 @@ export type Chat = {
     model: Model | null;
     messages: Array<Message>;
 };
-
-export type Partition = {
-    text: string;
-};

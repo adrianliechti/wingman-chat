@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { Tool } from "../models/chat";
-import { Message, Model, Role, AttachmentType, Partition } from "../models/chat";
+import { Message, Model, Role, AttachmentType } from "../models/chat";
 
 export class Client {
   private oai: OpenAI;
@@ -198,23 +198,38 @@ export class Client {
     return list?.prompts.map((p) => p.prompt) ?? [];
   }
 
-  async partition(blob: Blob): Promise<Partition[]> {
+  async extractText(blob: Blob): Promise<string> {
     const data = new FormData();
-    data.append("files", blob);
+    data.append("file", blob);
+    data.append("format", "text");
 
-    const resp = await fetch(new URL("/api/v1/partition", window.location.origin), {
+    const resp = await fetch(new URL("/api/v1/extract", window.location.origin), {
       method: "POST",
-      headers: {
-        accept: "application/json",
-      },
       body: data,
     });
 
     if (!resp.ok) {
-      throw new Error(`Partition request failed with status ${resp.status}`);
+      throw new Error(`Extract request failed with status ${resp.status}`);
     }
 
-    return resp.json() as Promise<Partition[]>;
+    return resp.text();
+  }
+
+    async captureScreenshot(url: string): Promise<Blob> {
+    const data = new FormData();
+    data.append("url", url);
+    data.append("format", "image");
+
+    const resp = await fetch(new URL("/api/v1/extract", window.location.origin), {
+      method: "POST",
+      body: data,
+    });
+
+    if (!resp.ok) {
+      throw new Error(`Extract request failed with status ${resp.status}`);
+    }
+
+    return resp.blob(); 
   }
 
   async translate(lang: string, text: string): Promise<string> {
@@ -232,27 +247,6 @@ export class Client {
     }
 
     return resp.text();
-  }
-
-  async extract(format: 'text' | 'image' | 'pdf', url: string): Promise<string | Blob> {
-    const data = new FormData();
-    data.append("format", format);
-    data.append("url", url);
-
-    const resp = await fetch(new URL("/api/v1/extract", window.location.origin), {
-      method: "POST",
-      body: data,
-    });
-
-    if (!resp.ok) {
-      throw new Error(`Extract request failed with status ${resp.status}`);
-    }
-
-    if (format === 'text') {
-      return resp.text();
-    }
-
-    return resp.blob(); 
   }
 
   private toTools(tools: Tool[]): OpenAI.Chat.Completions.ChatCompletionTool[] | undefined {

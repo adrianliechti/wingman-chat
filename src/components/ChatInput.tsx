@@ -13,8 +13,8 @@ import {
   supportsScreenshot,
   supportedTypes,
   textTypes,
-  partitionTypes,
   imageTypes,
+  documentTypes,
 } from "../lib/utils";
 import { getConfig } from "../config";
 
@@ -125,9 +125,8 @@ export function ChatInput({ onSend, models, currentModel, onModelChange }: ChatI
           });
         }
 
-        if (partitionTypes.includes(file.type) || partitionTypes.includes(getFileExt(file.name))) {
-          const parts = await client.partition(file);
-          const text = parts.map((part) => part.text).join("\n\n");
+        if (documentTypes.includes(file.type) || documentTypes.includes(getFileExt(file.name))) {
+          const text = await client.extractText(file);
 
           newAttachments.push({
             type: AttachmentType.Text,

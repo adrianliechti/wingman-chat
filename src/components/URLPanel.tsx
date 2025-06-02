@@ -25,12 +25,11 @@ export function URLPanel({ url, onClose }: URLPanelProps) {
     setImageUrl(null);
 
     try {
-      const result = await config.client.extract('image', url);
+      const result = await config.client.captureScreenshot(url);
 
-      if (result instanceof Blob) {
-        const blobUrl = URL.createObjectURL(result);
-        setImageUrl(blobUrl);
-      }
+      const blobUrl = URL.createObjectURL(result);
+      setImageUrl(blobUrl);
+
     } catch (error) {
       console.error('Extract failed:', error);
       setHasError(true);
@@ -77,7 +76,7 @@ export function URLPanel({ url, onClose }: URLPanelProps) {
 
   return (
     <div className={`fixed top-0 right-0 h-full bg-neutral-50 dark:bg-neutral-950 border-l border-neutral-300 dark:border-neutral-700 z-50 flex flex-col transition-all duration-300 ease-out shadow-2xl ${url ? 'translate-x-0 opacity-100 scale-100' : 'translate-x-full opacity-0 scale-95'}`}
-         style={{ width: '61.8%' }}>
+      style={{ width: '61.8%' }}>
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-4 pr-safe-right pt-safe-top bg-neutral-100 dark:bg-neutral-900" style={{ minHeight: 'calc(3.5rem + var(--safe-area-inset-top, 0px))' }}>
         <div className="flex items-center gap-2 flex-1 min-w-0">
