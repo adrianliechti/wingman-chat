@@ -7,6 +7,7 @@ export type Model = {
 
 export type Message = {
     role: 'user' | 'assistant';
+    model: string;
 
     content: string;
     refusal?: string;

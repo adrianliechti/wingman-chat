@@ -4,17 +4,15 @@ import { URLList } from './URLList';
 import { RelatedPromptList } from './RelatedPromptList';
 import { Bot, User, File, Brain } from "lucide-react";
 
-import { AttachmentType, Message, Role, Model } from "../models/chat";
+import { AttachmentType, Message, Role } from "../models/chat";
 import { detectURLs } from "../lib/utils";
 
 type ChatMessageProps = {
   message: Message;
-  onURLClick?: (url: string) => void;
   onSendMessage?: (message: Message) => void;
-  currentModel?: Model;
 };
 
-export function ChatMessage({ message, onURLClick, onSendMessage, currentModel }: ChatMessageProps) {
+export function ChatMessage({ message, onSendMessage }: ChatMessageProps) {
   const isUser = message.role === Role.User;
   const detectedURLs = detectURLs(message.content);
 
@@ -89,16 +87,16 @@ export function ChatMessage({ message, onURLClick, onSendMessage, currentModel }
           </div>
         )}
 
-        {onURLClick && detectedURLs.length > 0 && (
-          <URLList urls={detectedURLs} onURLClick={onURLClick} />
+        {!isUser && onSendMessage && (
+            <RelatedPromptList
+            model={message.model}
+            prompt={message.content}
+            onClick={onSendMessage}
+          />
         )}
 
-        {!isUser && onSendMessage && currentModel && message.content && message.content.trim().length > 0 && (
-          <RelatedPromptList
-            prompt={message.content}
-            model={currentModel.id}
-            onPromptClick={onSendMessage}
-          />
+        {!isUser && detectedURLs.length > 0 && (
+          <URLList urls={detectedURLs} />
         )}
       </div>
 

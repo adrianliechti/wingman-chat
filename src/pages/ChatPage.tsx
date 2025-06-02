@@ -7,7 +7,6 @@ import { useAutoScroll } from "../hooks/useAutoScroll";
 import { Sidebar } from "../components/Sidebar";
 import { ChatInput } from "../components/ChatInput";
 import { ChatMessage } from "../components/ChatMessage";
-import { URLPanel } from "../components/URLPanel";
 import { Button } from "@headlessui/react";
 import { Menu as MenuIcon, Plus as PlusIcon } from "lucide-react";
 import { getConfig } from "../config";
@@ -23,7 +22,6 @@ export function ChatPage() {
   const [showSidebar, setShowSidebar] = useState(false);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [currentModel, setCurrentModel] = useState<Model>();
-  const [selectedURL, setSelectedURL] = useState<string | null>(null);
 
   const currentChat = chats.find(c => c.id === currentChatId) ?? null;
   const messages = currentChat?.messages ?? [];
@@ -38,14 +36,6 @@ export function ChatPage() {
 
   const onCreateChat = () => {
     setCurrentChatId(null);
-  };
-
-  const handleURLClick = (url: string) => {
-    setSelectedURL(url);
-  };
-
-  const handleCloseURLPanel = () => {
-    setSelectedURL(null);
   };
 
   const onSelectChat = (chatId: string) => {
@@ -85,7 +75,7 @@ export function ChatPage() {
 
     const base = [...chat.messages, message];
     const updateMessages = (msgs: typeof base) => updateChat(chat.id, { messages: msgs });
-    updateMessages([...base, { role: Role.Assistant, content: "" }]);
+    updateMessages([...base, { role: Role.Assistant, model: model.id, content: "" }]);
 
     try {
       const tools = await bridge.listTools();
@@ -94,7 +84,7 @@ export function ChatPage() {
         model.id,
         tools,
         base,
-        (_, snapshot) => updateMessages([...base, { role: Role.Assistant, content: snapshot }])
+        (_, snapshot) => updateMessages([...base, { role: Role.Assistant, model: model.id, content: snapshot }])
       );
 
       updateMessages([...base, completion]);
@@ -111,8 +101,10 @@ export function ChatPage() {
 
       const errorMessage = {
         role: Role.Assistant,
+        model: model.id, 
         content: `An error occurred:\n${error}`,
       };
+
       updateMessages([...base, errorMessage]);
     }
   };
@@ -182,14 +174,6 @@ export function ChatPage() {
           />
         )}
 
-        {selectedURL && (
-          <div
-            className="fixed inset-0 bg-black/10 dark:bg-black/50 cursor-pointer"
-            style={{ zIndex: 45 }}
-            onClick={handleCloseURLPanel}
-          />
-        )}
-
         {messages.length === 0 ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center text-center">
@@ -207,12 +191,9 @@ export function ChatPage() {
                 <ChatMessage 
                   key={idx} 
                   message={message} 
-                  onURLClick={handleURLClick}
                   onSendMessage={sendMessage}
-                  currentModel={currentModel}
                 />
               ))}
-              {/* sentinel for scrollIntoView */}
               <div ref={bottomRef} />
             </div>
           </div>
@@ -229,8 +210,6 @@ export function ChatPage() {
           />
         </div>
       </footer>
-
-      {selectedURL && <URLPanel url={selectedURL} onClose={handleCloseURLPanel} />}
     </div>
   );
 }

@@ -5,10 +5,9 @@ import { DetectedURL } from '../lib/utils';
 
 interface URLListProps {
   urls: DetectedURL[];
-  onURLClick: (url: string) => void;
 }
 
-export function URLList({ urls, onURLClick }: URLListProps) {
+export function URLList({ urls }: URLListProps) {
   const [isCollapsed, setIsCollapsed] = useState(true);
   
   if (urls.length === 0) return null;
@@ -42,7 +41,7 @@ export function URLList({ urls, onURLClick }: URLListProps) {
           {urls.map((urlData, index) => (
             <Button
               key={index}
-              onClick={() => onURLClick(urlData.url)}
+              onClick={() => window.open(urlData.url, '_blank')}
               className="block w-full text-left text-sm p-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 cursor-pointer"
             >
               <div className="flex items-center gap-2">

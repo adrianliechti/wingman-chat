@@ -177,7 +177,6 @@ export const supportedTypes = [...textTypes, ...imageTypes, ...documentTypes];
 export interface DetectedURL {
   url: string;
   text: string;
-  type: 'markdown' | 'plain';
 }
 
 export function detectURLs(text: string): DetectedURL[] {
@@ -189,7 +188,7 @@ export function detectURLs(text: string): DetectedURL[] {
     const url = match[2] || match[3];
     if (!url || seen.has(url)) continue;
     seen.add(url);
-    results.push({ url, text: match[1]?.trim() || url, type: match[2] ? 'markdown' : 'plain' });
+    results.push({ url, text: match[1]?.trim() || url });
   }
   return results;
 }

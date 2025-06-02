@@ -7,10 +7,11 @@ import { Message, Role } from '../models/chat';
 type RelatedPromptListProps = {
   prompt: string;
   model: string;
-  onPromptClick: (message: Message) => void;
+
+  onClick: (message: Message) => void;
 };
 
-export function RelatedPromptList({ prompt, model, onPromptClick }: RelatedPromptListProps) {
+export function RelatedPromptList({ prompt, model, onClick }: RelatedPromptListProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [relatedPrompts, setRelatedPrompts] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -46,9 +47,11 @@ export function RelatedPromptList({ prompt, model, onPromptClick }: RelatedPromp
   const handlePromptClick = (selectedPrompt: string) => {
     const message: Message = {
       role: Role.User,
+      model: model,
       content: selectedPrompt,
     };
-    onPromptClick(message);
+
+    onClick(message);
   };
 
   // Don't render if prompt is too short, empty, or seems incomplete

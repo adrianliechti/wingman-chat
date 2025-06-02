@@ -65,6 +65,8 @@ export function ChatInput({ onSend, models, currentModel, onModelChange }: ChatI
     if (content.trim()) {
       const message: Message = {
         role: Role.User,
+        model: currentModel?.id || "",
+        
         content: content,
         attachments: attachments,
       };

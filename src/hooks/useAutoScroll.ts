@@ -30,8 +30,7 @@ export function useAutoScroll({ dependencies }: UseAutoScrollOptions) {
     const container = containerRef.current;
     if (!container) return;
 
-    // Check if user is at bottom (with small threshold)
-    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 10;
+    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
     isAutoScrollEnabledRef.current = isAtBottom;
   }, []);
 

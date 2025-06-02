@@ -142,6 +142,7 @@ export class Client {
 
     return {
       role: Role.Assistant,
+      model: model,
 
       content: message.content ?? "",
       refusal: message.refusal ?? "",
@@ -215,7 +216,7 @@ export class Client {
     return resp.text();
   }
 
-    async captureScreenshot(url: string): Promise<Blob> {
+  async captureScreenshot(url: string): Promise<Blob> {
     const data = new FormData();
     data.append("url", url);
     data.append("format", "image");
@@ -229,7 +230,7 @@ export class Client {
       throw new Error(`Extract request failed with status ${resp.status}`);
     }
 
-    return resp.blob(); 
+    return resp.blob();
   }
 
   async translate(lang: string, text: string): Promise<string> {
