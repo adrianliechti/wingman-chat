@@ -167,36 +167,32 @@ export function ChatPage() {
     // onUser callback - create user message
     (transcript) => {
       if (transcript.trim()) {
-        let chatId = currentChatId;
+        let chatId = currentChatIdRef.current;
         if (!chatId) {
           const newChat = createChat();
           if (currentModel) newChat.model = currentModel;
           chatId = newChat.id;
           setCurrentChatId(chatId);
         }
-        
-        // Update the specific chat with the new message
-        updateChat(chatId, { 
-          messages: [...(chats.find(c => c.id === chatId)?.messages || []), { role: Role.User, content: transcript }] 
-        });
+        // Append the new user message
+        const existing = chatsRef.current.find(c => c.id === chatId)?.messages || [];
+        updateChat(chatId, { messages: [...existing, { role: Role.User, content: transcript }] });
         enableAutoScroll();
       }
     },
     // onAssistant callback - create assistant message
     (transcript) => {
       if (transcript.trim()) {
-        let chatId = currentChatId;
+        let chatId = currentChatIdRef.current;
         if (!chatId) {
           const newChat = createChat();
           if (currentModel) newChat.model = currentModel;
           chatId = newChat.id;
           setCurrentChatId(chatId);
         }
-        
-        // Update the specific chat with the new message
-        updateChat(chatId, { 
-          messages: [...(chats.find(c => c.id === chatId)?.messages || []), { role: Role.Assistant, content: transcript }] 
-        });
+        // Append the new assistant message
+        const existingA = chatsRef.current.find(c => c.id === chatId)?.messages || [];
+        updateChat(chatId, { messages: [...existingA, { role: Role.Assistant, content: transcript }] });
         enableAutoScroll();
       }
     }
