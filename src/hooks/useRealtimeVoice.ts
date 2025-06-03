@@ -200,29 +200,10 @@ export function useRealtimeVoice(
               console.log('Recording already active or recorder not ready. Status:', recorder.getStatus());
             }
             break;
-          case 'input_audio_buffer.speech_started':
-            console.log('Speech started');
-            break;
-          case 'input_audio_buffer.speech_stopped':
-            console.log('Speech stopped');
-            break;
-          case 'input_audio_buffer.committed':
-            console.log('Audio buffer committed');
-            break;
           case 'conversation.item.input_audio_transcription.completed':
             console.log('Transcription completed:', msg.transcript);
             if (msg.transcript?.trim()) {
               onUser(msg.transcript);
-            }
-            break;
-          case 'response.text.delta':
-            if (msg.delta) {
-              onAssistant(msg.delta);
-            }
-            break;
-          case 'response.audio_transcript.delta':
-            if (msg.delta) {
-              onAssistant(msg.delta);
             }
             break;
           case 'response.audio.delta':
@@ -230,9 +211,11 @@ export function useRealtimeVoice(
               playAudioChunk(msg.delta);
             }
             break;
-          case 'response.audio.done':
           case 'response.done':
-            console.log('Response complete');
+            console.log('Response complete:', msg.response);
+            if (msg.response?.output?.[0]?.content?.[0]?.transcript) {
+              onAssistant(msg.response.output[0].content[0].transcript);
+            }
             break;
           case 'error':
             console.error('OpenAI Error:', msg.error);
