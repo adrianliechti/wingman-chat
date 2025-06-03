@@ -118,26 +118,68 @@ export function useRealtimeVoice(
         const sessionUpdate = {
           type: 'session.update',
           session: {
-            modalities: ['text', 'audio'],
-            instructions: 'You are a helpful assistant. Respond naturally in conversation.',
             voice: 'alloy',
             input_audio_format: 'pcm16',
             output_audio_format: 'pcm16',
             input_audio_transcription: { 
               model: 'whisper-1' 
             },
-            turn_detection: {
-              type: 'server_vad',
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 500
-            },
-            temperature: 0.8,
-            max_response_output_tokens: 4096
           }
         };
         
         ws.send(JSON.stringify(sessionUpdate));
+        
+        // Start recording immediately after WebSocket connects
+        console.log('Starting audio recording after WebSocket connection...');
+        if (!isRecordingRef.current && recorder.getStatus() === 'paused') {
+          isRecordingRef.current = true;
+          recorder.record((data) => {
+            const { mono, raw } = data;
+            
+            // Handle ArrayBuffer data properly
+            const monoArray = mono ? new Int16Array(mono) : null;
+            const rawArray = raw ? new Int16Array(raw) : null;
+            
+            console.log('Audio data received:', {
+              monoLength: monoArray?.length,
+              rawLength: rawArray?.length,
+              wsState: ws.readyState,
+              isConnected: isConnectedRef.current
+            });
+            
+            if (ws.readyState === WebSocket.OPEN && monoArray && isConnectedRef.current) {
+              try {
+                // Convert Int16Array audio data to base64 PCM16
+                const float32Array = new Float32Array(monoArray.length);
+                for (let i = 0; i < monoArray.length; i++) {
+                  float32Array[i] = monoArray[i] / (monoArray[i] < 0 ? 0x8000 : 0x7fff);
+                }
+                const audio = base64EncodeAudio(float32Array);
+                
+                if (audio) {
+                  console.log('Sending audio chunk, length:', audio.length);
+                  ws.send(JSON.stringify({ 
+                    type: 'input_audio_buffer.append', 
+                    audio 
+                  }));
+                }
+              } catch (error) {
+                console.error('Error processing audio data:', error);
+              }
+            } else {
+              console.warn('Cannot send audio:', {
+                wsState: ws.readyState,
+                hasMono: !!monoArray,
+                isConnected: isConnectedRef.current
+              });
+            }
+          }).catch(error => {
+            console.error('Failed to start recording:', error);
+            isRecordingRef.current = false;
+          });
+        } else {
+          console.log('Recording already active or recorder not ready. Status:', recorder.getStatus());
+        }
       });
 
       ws.addEventListener('message', (e) => {
@@ -147,58 +189,7 @@ export function useRealtimeVoice(
         switch (msg.type) {
           case 'session.created':
           case 'session.updated':
-            console.log('Session ready, starting audio recording...');
-            // Start recording after session is ready, but only if not already recording
-            if (!isRecordingRef.current && recorder.getStatus() === 'paused') {
-              isRecordingRef.current = true;
-              recorder.record((data) => {
-                console.log('Audio callback triggered with data:', data);
-                const { mono, raw } = data;
-                
-                // Handle ArrayBuffer data properly
-                const monoArray = mono ? new Int16Array(mono) : null;
-                const rawArray = raw ? new Int16Array(raw) : null;
-                
-                console.log('Audio data received:', {
-                  monoLength: monoArray?.length,
-                  rawLength: rawArray?.length,
-                  wsState: ws.readyState,
-                  isConnected: isConnectedRef.current
-                });
-                
-                if (ws.readyState === WebSocket.OPEN && monoArray && isConnectedRef.current) {
-                  try {
-                    // Convert Int16Array audio data to base64 PCM16
-                    const float32Array = new Float32Array(monoArray.length);
-                    for (let i = 0; i < monoArray.length; i++) {
-                      float32Array[i] = monoArray[i] / (monoArray[i] < 0 ? 0x8000 : 0x7fff);
-                    }
-                    const audio = base64EncodeAudio(float32Array);
-                    
-                    if (audio) {
-                      console.log('Sending audio chunk, length:', audio.length);
-                      ws.send(JSON.stringify({ 
-                        type: 'input_audio_buffer.append', 
-                        audio 
-                      }));
-                    }
-                  } catch (error) {
-                    console.error('Error processing audio data:', error);
-                  }
-                } else {
-                  console.warn('Cannot send audio:', {
-                    wsState: ws.readyState,
-                    hasMono: !!monoArray,
-                    isConnected: isConnectedRef.current
-                  });
-                }
-              }).catch(error => {
-                console.error('Failed to start recording:', error);
-                isRecordingRef.current = false;
-              });
-            } else {
-              console.log('Recording already active or recorder not ready. Status:', recorder.getStatus());
-            }
+            console.log('Session ready');
             break;
           case 'conversation.item.input_audio_transcription.completed':
             console.log('Transcription completed:', msg.transcript);
@@ -309,11 +300,5 @@ export function useRealtimeVoice(
     }
   };
 
-  const getStatus = () => ({
-    isActive: isActiveRef.current,
-    isConnected: isConnectedRef.current,
-    wsReadyState: wsRef.current?.readyState
-  });
-
-  return { start, stop, setInstructions, setVoice, getStatus };
+  return { start, stop, setInstructions, setVoice };
 }
