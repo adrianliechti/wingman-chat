@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Plus as PlusIcon, Maximize2, Minimize2 } from "lucide-react";
+import { Plus as PlusIcon, Maximize2, Minimize2, Mic, X } from "lucide-react";
 import { Button } from "@headlessui/react";
 import { Message, Model, Role } from "../models/chat";
 import { useModels } from "../hooks/useModels";
@@ -12,6 +12,7 @@ import { ChatInput } from "../components/ChatInput";
 import { ChatMessage } from "../components/ChatMessage";
 import { ChatSidebar } from "../components/ChatSidebar";
 import { getConfig } from "../config";
+import { useRealtimeVoice } from '../hooks/useRealtimeVoice';
 
 export function ChatPage() {
   const config = getConfig();
@@ -21,11 +22,11 @@ export function ChatPage() {
   const { models } = useModels();
   const [currentModel, setCurrentModel] = useState<Model>();
   const { isResponsive, toggleResponsiveness } = useResponsiveness();
-  
+
   // Chat state management
   const { chats, createChat, updateChat, deleteChat } = useChats();
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
-  
+
   // Sidebar integration (now only controls visibility)
   const { setShowSidebar, setSidebarContent } = useSidebar();
   const { setRightActions } = useNavigation();
@@ -40,12 +41,12 @@ export function ChatPage() {
   // Use refs to maintain stable references for frequently changing values
   const chatsRef = useRef(chats);
   const currentChatIdRef = useRef(currentChatId);
-  
+
   // Update refs when values change
   useEffect(() => {
     chatsRef.current = chats;
   }, [chats]);
-  
+
   useEffect(() => {
     currentChatIdRef.current = currentChatId;
   }, [currentChatId]);
@@ -95,7 +96,7 @@ export function ChatPage() {
       onSelectChat={onSelectChat}
       onDeleteChat={onDeleteChat}
     />
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   ), [chats, currentChatId]); // Intentionally not including callbacks to prevent infinite loops
 
   // Set up sidebar content when it changes
@@ -114,7 +115,7 @@ export function ChatPage() {
   const sendMessage = async (message: Message) => {
     // Re-enable auto-scroll when user sends a message
     enableAutoScroll();
-    
+
     let chat = currentChat;
     const model = currentModel;
 
@@ -160,6 +161,64 @@ export function ChatPage() {
     }
   };
 
+  // Voice input functionality
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const { start: startVoice, stop: stopVoice } = useRealtimeVoice(
+    // onUser callback - create user message
+    (transcript) => {
+      if (transcript.trim()) {
+        let chatId = currentChatId;
+        if (!chatId) {
+          const newChat = createChat();
+          if (currentModel) newChat.model = currentModel;
+          chatId = newChat.id;
+          setCurrentChatId(chatId);
+        }
+        
+        // Update the specific chat with the new message
+        updateChat(chatId, { 
+          messages: [...(chats.find(c => c.id === chatId)?.messages || []), { role: Role.User, content: transcript }] 
+        });
+        enableAutoScroll();
+      }
+    },
+    // onAssistant callback - create assistant message
+    (transcript) => {
+      if (transcript.trim()) {
+        let chatId = currentChatId;
+        if (!chatId) {
+          const newChat = createChat();
+          if (currentModel) newChat.model = currentModel;
+          chatId = newChat.id;
+          setCurrentChatId(chatId);
+        }
+        
+        // Update the specific chat with the new message
+        updateChat(chatId, { 
+          messages: [...(chats.find(c => c.id === chatId)?.messages || []), { role: Role.Assistant, content: transcript }] 
+        });
+        enableAutoScroll();
+      }
+    }
+  );
+
+  const handleVoiceToggle = async () => {
+    try {
+      if (isVoiceActive) {
+        // Stop voice session
+        setIsVoiceActive(false);
+        await stopVoice();
+      } else {
+        // Start voice session
+        setIsVoiceActive(true);
+        await startVoice();
+      }
+    } catch (error) {
+      console.error('Voice toggle error:', error);
+      setIsVoiceActive(false);
+    }
+  };
+
   useEffect(() => {
     if (models.length === 0) return;
     const next = currentChat?.model ?? models[0];
@@ -168,8 +227,16 @@ export function ChatPage() {
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden relative">
-      {/* Toggle button - positioned at page level */}
-      <div className="hidden md:block absolute top-4 right-4 z-20">
+
+      {/* Action buttons - positioned at page level */}
+      <div className="hidden md:flex absolute top-4 right-4 z-20 gap-2">
+        <Button
+          onClick={handleVoiceToggle}
+          className={`menu-button !p-1.5 ${isVoiceActive ? 'bg-red-500 hover:bg-red-600 text-white' : ''}`}
+          title={isVoiceActive ? "Stop voice session" : "Start voice session"}
+        >
+          {isVoiceActive ? <X size={14} /> : <Mic size={14} />}
+        </Button>
         <Button
           onClick={toggleResponsiveness}
           className="menu-button !p-1.5"
@@ -191,11 +258,10 @@ export function ChatPage() {
             ref={containerRef}
             onScroll={handleScroll}
           >
-            <div className={`px-2 pt-4 ${
-              isResponsive 
-                ? 'max-w-[80vw] mx-auto' 
-                : 'max-content-width'
-            }`}>
+            <div className={`px-2 pt-4 ${isResponsive
+              ? 'max-w-[80vw] mx-auto'
+              : 'max-content-width'
+              }`}>
               {messages.map((message, idx) => (
                 <ChatMessage key={idx} message={message} />
               ))}
@@ -206,16 +272,19 @@ export function ChatPage() {
         )}
       </main>
 
+
       <footer className="bg-neutral-50 dark:bg-neutral-950 pb-4 px-3 pb-safe-bottom pl-safe-left pr-safe-right">
         <div className={isResponsive ? 'max-w-[80vw] mx-auto' : 'max-content-width'}>
-          <ChatInput 
-            onSend={sendMessage} 
+          {!isVoiceActive && (<ChatInput
+            onSend={sendMessage}
             models={models}
             currentModel={currentModel}
             onModelChange={onSelectModel}
           />
+          )}
         </div>
       </footer>
+
     </div>
   );
 }
