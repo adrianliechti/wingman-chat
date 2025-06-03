@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { WavStreamPlayer, WavRecorder } from 'wavtools';
 
 /**
  * Hook to manage OpenAI Realtime voice streaming via WebSockets with PCM16.
@@ -8,27 +9,38 @@ export function useRealtimeVoice(
   onAssistant: (text: string) => void
 ) {
   const wsRef = useRef<WebSocket | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const wavPlayerRef = useRef<WavStreamPlayer | null>(null);
+  const wavRecorderRef = useRef<WavRecorder | null>(null);
   const isActiveRef = useRef(false);
+  const isConnectedRef = useRef(false);
+  const isRecordingRef = useRef(false);
 
   // TODO: secure your API key via backend proxy
 
-  // Helpers for audio data conversion
-  const float32ToPCM16 = (input: Float32Array) => {
-    const pcm16 = new Int16Array(input.length);
-    for (let i = 0; i < input.length; i++) {
-      const s = Math.max(-1, Math.min(1, input[i]));
-      pcm16[i] = s * 0x7fff;
+  // Convert Float32Array of audio data to base64-encoded PCM16
+  const floatTo16BitPCM = (float32Array: Float32Array) => {
+    const buffer = new ArrayBuffer(float32Array.length * 2);
+    const view = new DataView(buffer);
+    let offset = 0;
+    for (let i = 0; i < float32Array.length; i++, offset += 2) {
+      const s = Math.max(-1, Math.min(1, float32Array[i]));
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
     }
-    return pcm16.buffer;
+    return buffer;
   };
-  const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
-    const bytes = new Uint8Array(buffer);
+
+  const base64EncodeAudio = (float32Array: Float32Array) => {
+    const arrayBuffer = floatTo16BitPCM(float32Array);
     let binary = '';
-    for (const b of bytes) binary += String.fromCharCode(b);
+    const bytes = new Uint8Array(arrayBuffer);
+    const chunkSize = 0x8000; // 32KB chunk size
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode.apply(null, Array.from(chunk));
+    }
     return btoa(binary);
   };
+
   const base64ToArrayBuffer = (base64: string) => {
     const binary = atob(base64);
     const len = binary.length;
@@ -36,115 +48,289 @@ export function useRealtimeVoice(
     for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
     return bytes.buffer;
   };
+
   const playAudioChunk = (base64: string) => {
-    const buf = base64ToArrayBuffer(base64);
-    const blob = new Blob([buf], { type: 'audio/pcm' });
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audio.play().catch(console.error);
+    const player = wavPlayerRef.current;
+    if (!player) {
+      console.warn('No audio player available');
+      return;
+    }
+    
+    if (!base64) {
+      console.warn('Empty audio data received');
+      return;
+    }
+    
+    try {
+      const buf = base64ToArrayBuffer(base64);
+      const samples = new Int16Array(buf);
+      player.add16BitPCM(samples, 'assistant');
+    } catch (err) {
+      console.error('Audio playback error:', err);
+    }
   };
 
   const start = async () => {
     if (isActiveRef.current) return;
-    const model = "gpt-4o-realtime-preview-2024-12-17";
-    const ws = new WebSocket(
-      `wss://api.openai.com/v1/realtime?model=${model}`,
-      [
-        "realtime",
-        "openai-insecure-api-key." + OPENAI_API_KEY,
-        "openai-beta.realtime-v1"
-      ]
-    );
-    wsRef.current = ws;
+    
+    try {
+      // Reset recording state
+      isRecordingRef.current = false;
+      
+      // Check microphone permissions first
+      console.log('Checking microphone permissions...');
+      try {
+        const permissions = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+        console.log('Microphone permission state:', permissions.state);
+      } catch (permError) {
+        console.log('Permission check failed (may not be supported):', permError);
+      }
+      
+      // Initialize WavStreamPlayer for audio playback
+      const player = new WavStreamPlayer({ sampleRate: 24000 });
+      await player.connect();
+      wavPlayerRef.current = player;
 
-    ws.addEventListener('open', () => {
-      // Initialize session with desired settings
-      ws.send(JSON.stringify({
-        type: 'session.update',
-        session: {
-          modalities: ['text', 'audio'],
-          instructions: '',
-          voice: 'alloy',  // default voice
-          input_audio_format: 'pcm16',
-          output_audio_format: 'pcm16',
-          input_audio_transcription: { model: 'whisper-1' }
+      // Initialize WavRecorder for audio input
+      const recorder = new WavRecorder({ sampleRate: 24000 });
+      await recorder.begin();
+      wavRecorderRef.current = recorder;
+      
+      console.log('Recorder initialized, status:', recorder.getStatus());
+      console.log('Recorder sample rate:', recorder.getSampleRate());
+
+      const model = "gpt-4o-realtime-preview-2024-12-17";
+      const ws = new WebSocket(
+        `wss://api.openai.com/v1/realtime?model=${model}`,
+        [
+          "realtime",
+          "openai-insecure-api-key." + OPENAI_API_KEY,
+          "openai-beta.realtime-v1"
+        ]
+      );
+      wsRef.current = ws;
+
+      ws.addEventListener('open', () => {
+        console.log('WebSocket connected');
+        isConnectedRef.current = true;
+        
+        // Send session configuration
+        const sessionUpdate = {
+          type: 'session.update',
+          session: {
+            modalities: ['text', 'audio'],
+            instructions: 'You are a helpful assistant. Respond naturally in conversation.',
+            voice: 'alloy',
+            input_audio_format: 'pcm16',
+            output_audio_format: 'pcm16',
+            input_audio_transcription: { 
+              model: 'whisper-1' 
+            },
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.5,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 500
+            },
+            temperature: 0.8,
+            max_response_output_tokens: 4096
+          }
+        };
+        
+        ws.send(JSON.stringify(sessionUpdate));
+      });
+
+      ws.addEventListener('message', (e) => {
+        const msg = JSON.parse(e.data);
+        console.log('Received message:', msg.type);
+        
+        switch (msg.type) {
+          case 'session.created':
+          case 'session.updated':
+            console.log('Session ready, starting audio recording...');
+            // Start recording after session is ready, but only if not already recording
+            if (!isRecordingRef.current && recorder.getStatus() === 'paused') {
+              isRecordingRef.current = true;
+              recorder.record((data) => {
+                console.log('Audio callback triggered with data:', data);
+                const { mono, raw } = data;
+                
+                // Handle ArrayBuffer data properly
+                const monoArray = mono ? new Int16Array(mono) : null;
+                const rawArray = raw ? new Int16Array(raw) : null;
+                
+                console.log('Audio data received:', {
+                  monoLength: monoArray?.length,
+                  rawLength: rawArray?.length,
+                  wsState: ws.readyState,
+                  isConnected: isConnectedRef.current
+                });
+                
+                if (ws.readyState === WebSocket.OPEN && monoArray && isConnectedRef.current) {
+                  try {
+                    // Convert Int16Array audio data to base64 PCM16
+                    const float32Array = new Float32Array(monoArray.length);
+                    for (let i = 0; i < monoArray.length; i++) {
+                      float32Array[i] = monoArray[i] / (monoArray[i] < 0 ? 0x8000 : 0x7fff);
+                    }
+                    const audio = base64EncodeAudio(float32Array);
+                    
+                    if (audio) {
+                      console.log('Sending audio chunk, length:', audio.length);
+                      ws.send(JSON.stringify({ 
+                        type: 'input_audio_buffer.append', 
+                        audio 
+                      }));
+                    }
+                  } catch (error) {
+                    console.error('Error processing audio data:', error);
+                  }
+                } else {
+                  console.warn('Cannot send audio:', {
+                    wsState: ws.readyState,
+                    hasMono: !!monoArray,
+                    isConnected: isConnectedRef.current
+                  });
+                }
+              }).catch(error => {
+                console.error('Failed to start recording:', error);
+                isRecordingRef.current = false;
+              });
+            } else {
+              console.log('Recording already active or recorder not ready. Status:', recorder.getStatus());
+            }
+            break;
+          case 'input_audio_buffer.speech_started':
+            console.log('Speech started');
+            break;
+          case 'input_audio_buffer.speech_stopped':
+            console.log('Speech stopped');
+            break;
+          case 'input_audio_buffer.committed':
+            console.log('Audio buffer committed');
+            break;
+          case 'conversation.item.input_audio_transcription.completed':
+            console.log('Transcription completed:', msg.transcript);
+            if (msg.transcript?.trim()) {
+              onUser(msg.transcript);
+            }
+            break;
+          case 'response.text.delta':
+            if (msg.delta) {
+              onAssistant(msg.delta);
+            }
+            break;
+          case 'response.audio_transcript.delta':
+            if (msg.delta) {
+              onAssistant(msg.delta);
+            }
+            break;
+          case 'response.audio.delta':
+            if (msg.delta) {
+              playAudioChunk(msg.delta);
+            }
+            break;
+          case 'response.audio.done':
+          case 'response.done':
+            console.log('Response complete');
+            break;
+          case 'error':
+            console.error('OpenAI Error:', msg.error);
+            break;
         }
-      }));
-    });
-    ws.addEventListener('message', (e) => {
-      const msg = JSON.parse(e.data);
-      switch (msg.type) {
-        case 'conversation.item.input_audio_transcription.completed':
-          onUser(msg.transcript || '');
-          break;
-        case 'response.text': // optional if text responses
-          onAssistant(msg.text || '');
-          break;
-        case 'response.audio.delta':
-          playAudioChunk(msg.delta);
-          break;
-        case 'response.audio.done':
-          break;
-      }
-    });
-    ws.addEventListener('error', console.error);
-    ws.addEventListener('close', () => console.log('WS closed'));
+      });
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { sampleRate: 24000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
-    });
-    const audioContext = new AudioContext({ sampleRate: 24000 });
-    audioContextRef.current = audioContext;
-    const source = audioContext.createMediaStreamSource(stream);
-    const processor = audioContext.createScriptProcessor(4096, 1, 1);
-    processorRef.current = processor;
-    processor.onaudioprocess = (evt) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        const pcm = float32ToPCM16(evt.inputBuffer.getChannelData(0));
-        ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: arrayBufferToBase64(pcm) }));
-      }
-    };
-    source.connect(processor);
-    processor.connect(audioContext.destination);
+      ws.addEventListener('error', (error) => {
+        console.error('WebSocket error:', error);
+        isConnectedRef.current = false;
+      });
 
-    isActiveRef.current = true;
+      ws.addEventListener('close', (event) => {
+        console.log('WebSocket closed:', event.code, event.reason);
+        isConnectedRef.current = false;
+      });
+
+      isActiveRef.current = true;
+      console.log('Voice session initialized, waiting for session ready...');
+    } catch (error) {
+      console.error('Failed to start voice session:', error);
+      throw error;
+    }
   };
 
   const stop = () => {
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
+    console.log('Stopping voice session...');
+    
+    // Stop recorder
+    if (wavRecorderRef.current) {
+      try {
+        if (isRecordingRef.current) {
+          wavRecorderRef.current.pause();
+          isRecordingRef.current = false;
+        }
+      } catch (error) {
+        console.error('Error pausing recorder:', error);
+      }
+      wavRecorderRef.current = null;
     }
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
-    }
+
+    // Close WebSocket
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-      ws.send(JSON.stringify({
-        type: 'response.create',
-        response: { modalities: ['text', 'audio'], instructions: '' }
-      }));
-      ws.close();
+      try {
+        ws.close(1000, 'User stopped session');
+      } catch (error) {
+        console.error('Error closing WebSocket:', error);
+      }
     }
     wsRef.current = null;
+    isConnectedRef.current = false;
+
+    // Stop audio player
+    if (wavPlayerRef.current) {
+      try {
+        wavPlayerRef.current.interrupt();
+      } catch (error) {
+        console.error('Error interrupting player:', error);
+      }
+      wavPlayerRef.current = null;
+    }
+
     isActiveRef.current = false;
+    console.log('Voice session stopped');
   };
 
   const setInstructions = (instructions: string) => {
     const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'session.update', session: { instructions } }));
+    if (ws && ws.readyState === WebSocket.OPEN && isConnectedRef.current) {
+      ws.send(JSON.stringify({ 
+        type: 'session.update', 
+        session: { instructions } 
+      }));
+      console.log('Instructions updated:', instructions);
+    } else {
+      console.warn('Cannot set instructions: WebSocket not connected');
     }
   };
 
   const setVoice = (voice: string) => {
     const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'session.update', session: { voice } }));
+    if (ws && ws.readyState === WebSocket.OPEN && isConnectedRef.current) {
+      ws.send(JSON.stringify({ 
+        type: 'session.update', 
+        session: { voice } 
+      }));
+      console.log('Voice updated:', voice);
+    } else {
+      console.warn('Cannot set voice: WebSocket not connected');
     }
   };
 
-  return { start, stop, setInstructions, setVoice };
+  const getStatus = () => ({
+    isActive: isActiveRef.current,
+    isConnected: isConnectedRef.current,
+    wsReadyState: wsRef.current?.readyState
+  });
+
+  return { start, stop, setInstructions, setVoice, getStatus };
 }
