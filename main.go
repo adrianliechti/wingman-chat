@@ -56,6 +56,10 @@ func main() {
 			Description string `json:"description,omitempty" yaml:"description,omitempty"`
 		}
 
+		type voiceType struct {
+			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+		}
+
 		type bridgeType struct {
 			URL string `json:"url,omitempty" yaml:"url,omitempty"`
 		}
@@ -64,6 +68,8 @@ func main() {
 			Title string `json:"title,omitempty" yaml:"title,omitempty"`
 
 			Models []modelType `json:"models,omitempty" yaml:"models,omitempty"`
+
+			Voice  *voiceType  `json:"voice,omitempty" yaml:"voice,omitempty"`
 			Bridge *bridgeType `json:"bridge,omitempty" yaml:"bridge,omitempty"`
 		}
 
@@ -73,6 +79,12 @@ func main() {
 
 		if data, err := os.ReadFile("models.yaml"); err == nil {
 			yaml.Unmarshal(data, &config.Models)
+		}
+
+		if realtime != nil {
+			config.Voice = &voiceType{
+				Enabled: true,
+			}
 		}
 
 		if bridgeURL != "" {

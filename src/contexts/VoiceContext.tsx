@@ -1,14 +1,14 @@
-import { createContext, useState, useCallback } from "react";
+import { createContext, useState, useCallback, useEffect } from "react";
 import { useVoiceWebSockets } from "../hooks/useVoiceWebSockets";
 import { useChat } from "../hooks/useChat";
+import { getConfig } from "../config";
 import { Role } from "../models/chat";
 
 export interface VoiceContextType {
-  isVoiceMode: boolean;
+  isAvailable: boolean;
   isListening: boolean;
-  isConnecting: boolean;
-  toggleVoiceMode: () => void;
-  stopVoiceMode: () => Promise<void>;
+  startVoice: () => Promise<void>;
+  stopVoice: () => Promise<void>;
 }
 
 const VoiceContext = createContext<VoiceContextType | undefined>(undefined);
@@ -20,10 +20,20 @@ interface VoiceProviderProps {
 }
 
 export function VoiceProvider({ children }: VoiceProviderProps) {
-  const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [isAvailable, setIsAvailable] = useState(false);
   const { addMessage } = useChat();
+  
+  // Check voice availability from config
+  useEffect(() => {
+    try {
+      const config = getConfig();
+      setIsAvailable(config.voice);
+    } catch (error) {
+      console.warn('Failed to get voice config:', error);
+      setIsAvailable(false);
+    }
+  }, []);
   
   const onUserTranscript = useCallback((text: string) => {
     let content = text;
@@ -89,43 +99,32 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   const { start, stop } = useVoiceWebSockets(onUserTranscript, onAssistantTranscript);
 
-  const stopVoiceMode = useCallback(async () => {
+  const stopVoice = useCallback(async () => {
     await stop();
-    setIsVoiceMode(false);
     setIsListening(false);
-    setIsConnecting(false);
   }, [stop]);
 
-  const toggleVoiceMode = useCallback(async () => {
-    if (isVoiceMode) {
-      await stopVoiceMode();
-    } else {
-      try {
-        setIsConnecting(true);
-        await start();
-        setIsVoiceMode(true);
-        setIsListening(true);
-      } catch (error) {
-        console.error('Failed to start voice mode:', error);
-        // Show user-friendly error if API key is missing
-        const errorMessage = error?.toString() || '';
-        if (errorMessage.includes('API key') || errorMessage.includes('401')) {
-          alert('Voice mode requires an OpenAI API key to be configured. Please add your API key to the configuration.');
-        } else {
-          alert('Failed to start voice mode. Please check your microphone permissions and try again.');
-        }
-      } finally {
-        setIsConnecting(false);
+  const startVoice = useCallback(async () => {
+    try {
+      await start();
+      setIsListening(true);
+    } catch (error) {
+      console.error('Failed to start voice mode:', error);
+      // Show user-friendly error if API key is missing
+      const errorMessage = error?.toString() || '';
+      if (errorMessage.includes('API key') || errorMessage.includes('401')) {
+        alert('Voice mode requires an OpenAI API key to be configured. Please add your API key to the configuration.');
+      } else {
+        alert('Failed to start voice mode. Please check your microphone permissions and try again.');
       }
     }
-  }, [isVoiceMode, start, stopVoiceMode]);
+  }, [start]);
 
   const value: VoiceContextType = {
-    isVoiceMode,
+    isAvailable,
     isListening,
-    isConnecting,
-    toggleVoiceMode,
-    stopVoiceMode,
+    startVoice,
+    stopVoice,
   };
 
   return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;

@@ -6,6 +6,8 @@ interface config {
   title: string;
 
   models: modelConfig[];
+  
+  voice?: voiceConfig;
   bridge?: bridgeConfig;
 }
 
@@ -16,6 +18,10 @@ interface modelConfig {
   description?: string;
 }
 
+interface voiceConfig {
+  enabled: boolean;
+}
+
 interface bridgeConfig {
   url: string;
 }
@@ -24,9 +30,11 @@ interface Config {
   title: string;
 
   client: Client;
-  bridge: Bridge;
 
-  models: Model[];
+  bridge: Bridge;
+  voice: boolean;
+
+  models: Model[]; 
 }
 
 let config: Config;
@@ -50,6 +58,8 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       title : cfg.title,
       
       client: client,
+
+      voice: cfg.voice?.enabled ?? false,
       bridge: bridge,
 
       models: cfg.models?.map((model) => {

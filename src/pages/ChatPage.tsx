@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Plus as PlusIcon, Mic, MicOff } from "lucide-react";
 import { Button } from "@headlessui/react";
 import { useAutoScroll } from "../hooks/useAutoScroll";
@@ -21,7 +21,21 @@ export function ChatPage() {
   } = useChat();
   
   const { layoutMode } = useLayout();
-  const { isVoiceMode, isListening, isConnecting, toggleVoiceMode } = useVoice();
+  const { isAvailable, startVoice, stopVoice } = useVoice();
+  
+  // Local state for voice mode (UI state)
+  const [isVoiceMode, setIsVoiceMode] = useState(false);
+  
+  // Toggle voice mode handler
+  const toggleVoiceMode = useCallback(async () => {
+    if (isVoiceMode) {
+      await stopVoice();
+      setIsVoiceMode(false);
+    } else {
+      await startVoice();
+      setIsVoiceMode(true);
+    }
+  }, [isVoiceMode, startVoice, stopVoice]);
   
   // Sidebar integration (now only controls visibility)
   const { setSidebarContent } = useSidebar();
@@ -39,17 +53,19 @@ export function ChatPage() {
   useEffect(() => {
     setRightActions(
       <div className="flex items-center gap-2">
-        <Button
-          className={`p-2 rounded transition-all duration-150 ease-out cursor-pointer ${
-            isVoiceMode 
-              ? 'bg-red-500 hover:bg-red-600 text-white' 
-              : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
-          }`}
-          onClick={toggleVoiceMode}
-          title={isVoiceMode ? 'Stop voice mode' : 'Start voice mode'}
-        >
-          {isVoiceMode ? <MicOff size={20} /> : <Mic size={20} />}
-        </Button>
+        {isAvailable && (
+          <Button
+            className={`p-2 rounded transition-all duration-150 ease-out cursor-pointer ${
+              isVoiceMode 
+                ? 'bg-red-500 hover:bg-red-600 text-white' 
+                : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
+            }`}
+            onClick={toggleVoiceMode}
+            title={isVoiceMode ? 'Stop voice mode' : 'Start voice mode'}
+          >
+            {isVoiceMode ? <MicOff size={20} /> : <Mic size={20} />}
+          </Button>
+        )}
         <Button
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out cursor-pointer"
           onClick={createChat}
@@ -63,7 +79,7 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, createChat, isVoiceMode, toggleVoiceMode]);
+  }, [setRightActions, createChat, isVoiceMode, toggleVoiceMode, isAvailable]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {
@@ -163,10 +179,7 @@ export function ChatPage() {
       {/* Full-width waves during voice mode */}
       {isVoiceMode && (
         <div className="fixed bottom-0 left-0 right-0 h-32 z-20 pointer-events-none bg-gradient-to-t from-white via-white/80 to-transparent dark:from-neutral-900 dark:via-neutral-900/80 dark:to-transparent">
-          <VoiceWaves 
-            isConnecting={isConnecting}
-            isListening={isListening}
-          />
+          <VoiceWaves />
         </div>
       )}
     </div>
