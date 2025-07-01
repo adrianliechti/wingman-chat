@@ -22,6 +22,15 @@ import { useRepositories } from "../hooks/useRepositories";
 import { useTextPaste } from "../hooks/useTextPaste";
 import { useTranscription } from "../hooks/useTranscription";
 import { useDropZone } from "../hooks/useDropZone";
+import { calculateTokens } from "../lib/tiktoken";
+
+const TOKEN_LIMIT = 128000;
+
+function getTokenPercentage(tokenCount: number, limit: number = TOKEN_LIMIT): number {
+  if (tokenCount <= 0) return 0;
+  if (tokenCount >= limit) return 100;
+  return Math.round((tokenCount / limit) * 100);
+}
 
 export function ChatInput() {
   const config = getConfig();
@@ -35,6 +44,9 @@ export function ChatInput() {
 
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
+  
+  // Token tracking state
+  const [currentTokens, setCurrentTokens] = useState(0);
   
   // Prompt suggestions state
   const [showPromptSuggestions, setShowPromptSuggestions] = useState(false);
@@ -50,6 +62,23 @@ export function ChatInput() {
 
   // Transcription hook
   const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription();
+
+  // Get token usage color based on percentage
+  const getTokenUsageColor = (percentage: number): string => {
+    if (percentage < 50) return '#10b981'; // green
+    if (percentage < 75) return '#f59e0b'; // yellow
+    if (percentage < 90) return '#f97316'; // orange
+    return '#ef4444'; // red
+  };
+
+  // Update current tokens whenever content or attachments change
+  useEffect(() => {
+    const attachmentTexts = attachments
+      .filter(att => att.type === AttachmentType.Text)
+      .map(att => att.data);
+    const totalTokens = calculateTokens(content, ...attachmentTexts);
+    setCurrentTokens(totalTokens);
+  }, [content, attachments]);
 
   const handleFiles = async (files: FileList | File[]) => {
     for (let i = 0; i < files.length; i++) {
@@ -297,7 +326,7 @@ export function ChatInput() {
     <form onSubmit={handleSubmit}>
       <div 
         ref={containerRef}
-        className={`chat-input-container border-2 ${
+        className={`chat-input-container border-2 relative ${
           isDragging 
             ? 'border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200' 
             : `border-solid border-neutral-200 dark:border-neutral-700 ${
@@ -307,6 +336,17 @@ export function ChatInput() {
               }`
         } backdrop-blur-2xl rounded-lg md:rounded-2xl flex flex-col min-h-[3rem] shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 transition-all duration-200`}
       >
+        {/* Token progress indicator */}
+        {currentTokens > 0 && (
+          <div 
+            className="absolute bottom-0 left-1 right-1 h-1 rounded-b-lg md:rounded-b-2xl pointer-events-none"
+            style={{
+              width: `${getTokenPercentage(currentTokens)}%`,
+              backgroundColor: getTokenUsageColor(getTokenPercentage(currentTokens))
+            }}
+            title={`${currentTokens.toLocaleString()} / ${TOKEN_LIMIT.toLocaleString()} tokens (${getTokenPercentage(currentTokens)}%)`}
+          />
+        )}
         <input
           type="file"
           multiple

@@ -153,6 +153,7 @@ export const textTypes = [
   ".java",
   ".js",
   ".kt",
+  ".md",
   ".py",
   ".rs",
   ".ts",

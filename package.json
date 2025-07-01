@@ -18,6 +18,7 @@
     "5openai": "file:.1.0",
     "adaptivecards": "^3.0.5",
     "audit": "^0.0.6",
+    "js-tiktoken": "^1.0.20",
     "lucide-react": "^0.525.0",
     "markdown-it": "^14.1.0",
     "mermaid": "^11.6.0",
