@@ -14,15 +14,27 @@ interface MermaidAPI {
   render: (id: string, definition: string) => Promise<{ svg: string }>;
 }
 
+// Utility function to extract title from Mermaid content
+const extractTitle = (chart: string): string | null => {
+  // Extract title field from Mermaid diagram
+  const titleMatch = chart.match(/title\s*[:]?\s*(.+)/i);
+  if (titleMatch && titleMatch[1].trim()) {
+    return titleMatch[1].trim().replace(/["']/g, ''); // Remove quotes if present
+  }
+  
+  return null;
+};
+
 const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) => {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [mermaidLoaded, setMermaidLoaded] = useState(false);
-  const [showPreview, setShowPreview] = useState(true);
+  const [isComplete, setIsComplete] = useState(false);
+  const [showCode, setShowCode] = useState(false);
   const elementId = useRef(`mermaid-${Math.random().toString(36).substr(2, 9)}`);
   const mermaidRef = useRef<MermaidAPI | null>(null);
   const { isDark } = useTheme();
+
+  const extractedTitle = extractTitle(chart);
 
   // Basic Mermaid validation check
   const isValidMermaid = (chartString: string): boolean => {
@@ -56,11 +68,10 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
         try {
           const mermaidModule = await import('mermaid');
           mermaidRef.current = mermaidModule.default;
-          setMermaidLoaded(true);
+          setIsComplete(true);
         } catch (error) {
           console.error('Failed to load Mermaid:', error);
           setError('Failed to load diagram renderer');
-          setIsLoading(false);
         }
       }
     };
@@ -70,7 +81,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
 
   // Configure mermaid theme when loaded or theme changes
   useEffect(() => {
-    if (!mermaidRef.current || !mermaidLoaded) return;
+    if (!mermaidRef.current || !isComplete) return;
 
     const themeConfig = {
       startOnLoad: false,
@@ -151,27 +162,24 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
     };
 
     mermaidRef.current.initialize(themeConfig);
-  }, [isDark, mermaidLoaded]);
+  }, [isDark, isComplete]);
 
   useEffect(() => {
     const renderMermaid = async () => {
-      if (!mermaidRef.current || !mermaidLoaded) return;
+      if (!mermaidRef.current || !isComplete) return;
       
       if (!chart.trim()) {
-        setIsLoading(true);
         setError('');
         setSvg('');
         return;
       }
 
       try {
-        setIsLoading(true);
         setError('');
         
         // Basic validation - check if it looks like mermaid syntax
         const trimmedChart = chart.trim();
         if (!trimmedChart || trimmedChart.length < 3) {
-          setIsLoading(false);
           return;
         }
         
@@ -181,12 +189,10 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
         // Validate and render the chart
         const { svg: renderedSvg } = await mermaidRef.current.render(elementId.current, chart);
         setSvg(renderedSvg);
-        setIsLoading(false);
       } catch {
         // Silently handle errors - just show the code block
         setError('silent');
         setSvg('');
-        setIsLoading(false);
       }
     };
 
@@ -196,14 +202,14 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [chart, isDark, mermaidLoaded]);
+  }, [chart, isDark, isComplete]);
 
   // Show loading placeholder while mermaid is loading
-  if (!mermaidLoaded) {
+  if (!isComplete) {
     return (
       <div className="relative my-4">
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-700 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{language}</span>
+          <span>{extractedTitle || language}</span>
         </div>
         <div className="bg-white dark:bg-neutral-800 p-4 rounded-b-md border border-gray-200 dark:border-neutral-700">
           <div className="flex items-center justify-center h-24 text-gray-500 dark:text-neutral-500">
@@ -215,12 +221,31 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
     );
   }
 
-  // Show loading placeholder while streaming or processing
-  if (isLoading && !chart.trim()) {
+  // Show generating content placeholder when we have chart content but no SVG yet (and not in error state)
+  if (chart.trim() && !svg && !error) {
     return (
       <div className="relative my-4">
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-700 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{language}</span>
+          <span>{extractedTitle || language}</span>
+        </div>
+        <div className="bg-white dark:bg-neutral-800 p-4 rounded-b-md border border-gray-200 dark:border-neutral-700">
+          <div className="flex items-center justify-center h-24 text-gray-500 dark:text-neutral-500">
+            <div className="flex items-center space-x-3">
+              <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-blue-500"></div>
+              <span>Generating Content...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading placeholder while streaming or processing
+  if (!chart.trim()) {
+    return (
+      <div className="relative my-4">
+        <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-700 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
+          <span>{extractedTitle || language}</span>
         </div>
         <div className="bg-white dark:bg-neutral-800 p-4 rounded-b-md border border-gray-200 dark:border-neutral-700">
           <div className="flex items-center justify-center h-24 text-gray-500 dark:text-neutral-500">
@@ -236,7 +261,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
     return (
       <div className="relative my-4">
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-700 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{language}</span>
+          <span>{extractedTitle || language}</span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-red-500 dark:text-red-400 opacity-70">render failed</span>
             <CopyButton text={chart} />
@@ -251,40 +276,23 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
     );
   }
 
-  // Show loading spinner while processing
-  if (isLoading && chart.trim()) {
-    return (
-      <div className="relative my-4">
-        <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-700 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{language}</span>
-        </div>
-        <div className="bg-white dark:bg-neutral-800 p-4 rounded-b-md border border-gray-200 dark:border-neutral-700">
-          <div className="flex items-center justify-center h-24 text-gray-500 dark:text-neutral-500">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
-            <span className="ml-2">Rendering diagram...</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // Render the mermaid diagram
   if (svg) {
     return (
       <div className="relative my-4">
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-700 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{language}</span>
+          <span>{extractedTitle || language}</span>
           <div className="flex items-center gap-2">
             {hasValidMermaid && (
               <Button
-                onClick={() => setShowPreview(!showPreview)}
+                onClick={() => setShowCode(!showCode)}
                 className="text-neutral-300 hover:text-white transition-colors"
-                title={showPreview ? 'Show code' : 'Show preview'}
+                title={showCode ? 'Show preview' : 'Show code'}
               >
-                {showPreview ? (
-                  <Code className="h-4" />
-                ) : (
+                {showCode ? (
                   <Eye className="h-4" />
+                ) : (
+                  <Code className="h-4" />
                 )}
               </Button>
             )}
@@ -292,7 +300,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
           </div>
         </div>
         <div className="bg-white dark:bg-neutral-800 rounded-b-md">
-          {hasValidMermaid && showPreview ? (
+          {hasValidMermaid && !showCode ? (
             <div className="p-4 overflow-x-auto">
               <div 
                 className="mermaid-diagram flex justify-center"

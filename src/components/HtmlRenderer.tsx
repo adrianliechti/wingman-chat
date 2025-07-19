@@ -8,12 +8,24 @@ interface HtmlRendererProps {
   language: string;
 }
 
+// Utility function to extract title from HTML content
+const extractTitle = (html: string): string | null => {
+  // Extract from <title> tag only
+  const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+  if (titleMatch && titleMatch[1].trim()) {
+    return titleMatch[1].trim();
+  }
+  
+  return null;
+};
+
 const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
-  const [showPreview, setShowPreview] = useState(true);
+  const [showCode, setShowCode] = useState(false);
   const [iframeHeight, setIframeHeight] = useState(50);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   
   const isComplete = html.trim().length > 0 && html.includes('</html>');
+  const extractedTitle = extractTitle(html);
 
   // Listen for height messages from iframe
   useEffect(() => {
@@ -28,17 +40,17 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
 
   // Reset height when HTML content changes to allow proper shrinking
   useEffect(() => {
-    if (isComplete && showPreview) {
+    if (isComplete && !showCode) {
       setIframeHeight(50); // Reset to minimum height, will grow as needed
     }
-  }, [html, isComplete, showPreview]);
+  }, [html, isComplete, showCode]);
 
   // Show loading state until HTML is complete
   if (!isComplete) {
     return (
       <div className="relative my-4">
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{language}</span>
+          <span>{extractedTitle || language}</span>
         </div>
         <div className="bg-white dark:bg-neutral-900 p-4 rounded-b-md border border-gray-200 dark:border-neutral-700">
           <div className="flex items-center justify-center h-24 text-gray-500 dark:text-neutral-500">
@@ -79,15 +91,15 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
   return (
     <div className="relative my-4">
       <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-        <span>{language}</span>
+        <span>{extractedTitle || language}</span>
         <div className="flex items-center gap-2">
           {isComplete && (
             <Button
-              onClick={() => setShowPreview(!showPreview)}
+              onClick={() => setShowCode(!showCode)}
               className="text-neutral-300 hover:text-white transition-colors"
-              title={showPreview ? 'Show code' : 'Show preview'}
+              title={showCode ? 'Show preview' : 'Show code'}
             >
-              {showPreview ? <Code className="h-4" /> : <Eye className="h-4" />}
+              {showCode ? <Eye className="h-4" /> : <Code className="h-4" />}
             </Button>
           )}
           <CopyButton text={html} />
@@ -95,7 +107,7 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
       </div>
       
       <div className="bg-white dark:bg-neutral-900 rounded-b-md">
-        {isComplete && showPreview ? (
+        {isComplete && !showCode ? (
           <iframe
             key={html.length} // Force re-render when HTML changes
             ref={iframeRef}
