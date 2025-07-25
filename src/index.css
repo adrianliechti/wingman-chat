@@ -44,6 +44,17 @@ body {
   cursor: not-allowed !important;
 }
 
+/* Headless UI Button and MenuButton components */
+button[data-headlessui-state],
+[data-headlessui-state=""] {
+  cursor: pointer;
+}
+
+button[data-headlessui-state]:disabled,
+[data-headlessui-state]:disabled {
+  cursor: not-allowed;
+}
+
 .nav-header {
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.1);
 }

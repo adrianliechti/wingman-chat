@@ -112,7 +112,7 @@ export function TranslatePage() {
   useEffect(() => {
     setRightActions(
       <Button
-        className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out cursor-pointer"
+        className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
         onClick={handleReset}
         title="Clear translation"
       >
@@ -158,7 +158,7 @@ export function TranslatePage() {
                     {!selectedFile && supportedFiles.length > 0 && (
                       <Button
                         onClick={handleFileUploadClick}
-                        className="inline-flex items-center gap-1 pl-0.5 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 cursor-pointer text-sm transition-colors"
+                        className="inline-flex items-center gap-1 pl-0.5 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors"
                         title={`Select a file to translate (${supportedFiles.map(sf => sf.ext).join(', ')})`}
                       >
                         <UploadIcon size={14} />
@@ -244,7 +244,7 @@ export function TranslatePage() {
                 <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
                   <div className="absolute top-2 left-3 z-10">
                     <Menu>
-                      <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 cursor-pointer text-sm transition-colors">
+                      <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
                         <GlobeIcon size={14} />
                         <span>
                           {selectedLanguage?.name || 'Select Language'}
@@ -259,7 +259,7 @@ export function TranslatePage() {
                           <MenuItem key={lang.code}>
                             <Button
                               onClick={() => setTargetLang(lang.code)}
-                              className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 cursor-pointer transition-colors"
+                              className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
                             >
                               {lang.name}
                             </Button>

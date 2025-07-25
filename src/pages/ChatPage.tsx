@@ -78,7 +78,7 @@ export function ChatPage() {
       <div className="flex items-center gap-2">
         {repositoryAvailable && (
           <Button
-            className="p-2 rounded transition-all duration-150 ease-out cursor-pointer text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+            className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
             onClick={toggleRepositoryDrawer}
             title={showRepositoryDrawer ? 'Close repositories' : 'Open repositories'}
           >
@@ -87,7 +87,7 @@ export function ChatPage() {
         )}
         {voiceAvailable && (
           <Button
-            className={`p-2 rounded transition-all duration-150 ease-out cursor-pointer ${
+            className={`p-2 rounded transition-all duration-150 ease-out ${
               isVoiceMode 
                 ? 'text-red-600 dark:text-red-400 hover:text-neutral-800 dark:hover:text-neutral-200' 
                 : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
@@ -99,7 +99,7 @@ export function ChatPage() {
           </Button>
         )}
         <Button
-          className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out cursor-pointer"
+          className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
           onClick={createChat}
         >
           <PlusIcon size={20} />
@@ -234,8 +234,10 @@ export function ChatPage() {
 
         {/* Chat Input - hidden during voice mode */}
         {!isVoiceMode && (
-          <footer className={`fixed bottom-0 left-0 right-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-600 ease-out ${
+          <footer className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-300 ease-out ${
             messages.length === 0 ? 'md:bottom-1/3 md:transform md:translate-y-1/2' : ''
+          } ${
+            showRepositoryDrawer ? 'right-0 md:right-80' : 'right-0'
           }`}>
             <div className="relative pointer-events-auto md:max-w-4xl mx-auto">
               <ChatInput />
@@ -245,7 +247,9 @@ export function ChatPage() {
 
         {/* Full-width waves during voice mode */}
         {isVoiceMode && (
-          <div className="fixed bottom-0 left-0 right-0 h-32 z-20 pointer-events-none bg-gradient-to-t from-white via-white/80 to-transparent dark:from-neutral-900 dark:via-neutral-900/80 dark:to-transparent">
+          <div className={`fixed bottom-0 left-0 h-32 z-20 pointer-events-none bg-gradient-to-t from-white via-white/80 to-transparent dark:from-neutral-900 dark:via-neutral-900/80 dark:to-transparent transition-all duration-300 ease-out ${
+            showRepositoryDrawer ? 'right-0 md:right-80' : 'right-0'
+          }`}>
             <VoiceWaves />
           </div>
         )}
@@ -263,13 +267,13 @@ export function ChatPage() {
 
       {/* Repository drawer - right side */}
       {shouldRenderDrawer && (
-        <div className={`w-80 bg-neutral-50/60 dark:bg-neutral-950/70 backdrop-blur-sm shadow-2xl border-l border-neutral-200 dark:border-neutral-900 fixed top-16 bottom-4 z-40 rounded-xl transition-all duration-300 ease-out transform ${
+        <div className={`w-80 bg-neutral-50/60 dark:bg-neutral-950/70 backdrop-blur-sm shadow-2xl border-l border-neutral-200 dark:border-neutral-900 top-16 bottom-4 z-40 rounded-xl transition-all duration-300 ease-out transform ${
           isRepositoryDrawerAnimating 
             ? 'translate-x-0 opacity-100 scale-100' 
             : 'translate-x-full opacity-0 scale-95'
         } ${ 
           // On mobile: full width overlay from right edge, on desktop: positioned with right-3
-          'right-0 md:right-3 md:w-80 w-full max-w-sm'
+          'fixed right-0 md:right-3 md:w-80 w-full max-w-sm'
         }`}>
           <RepositoryDrawer />
         </div>
@@ -316,13 +320,13 @@ export function ChatPage() {
             <div className="flex gap-3 justify-end">
               <Button
                 onClick={() => setShowVoicePreviewDialog(false)}
-                className="px-4 py-2 text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors cursor-pointer"
+                className="px-4 py-2 text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
               >
                 Cancel
               </Button>
               <Button
                 onClick={startVoiceMode}
-                className="px-4 py-2 text-sm font-medium bg-neutral-800 hover:bg-neutral-900 dark:bg-neutral-700 dark:hover:bg-neutral-600 text-white rounded-lg transition-colors cursor-pointer"
+                className="px-4 py-2 text-sm font-medium bg-neutral-800 hover:bg-neutral-900 dark:bg-neutral-700 dark:hover:bg-neutral-600 text-white rounded-lg transition-colors"
               >
                 Continue
               </Button>

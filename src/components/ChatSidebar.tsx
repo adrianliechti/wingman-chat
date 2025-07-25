@@ -62,7 +62,7 @@ export function ChatSidebar() {
         <h2 className="text-xl font-semibold px-2 whitespace-nowrap overflow-hidden text-ellipsis text-neutral-800 dark:text-neutral-200">{config.title}</h2>
         <Button
           onClick={() => setShowSidebar(false)}
-          className="p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/20 rounded transition-all duration-200 cursor-pointer"
+          className="p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/20 rounded transition-all duration-200 "
           aria-label="Close sidebar"
         >
           <PanelRightOpen size={20} />
@@ -95,7 +95,7 @@ export function ChatSidebar() {
             </div>
             <Menu>
               <MenuButton
-                className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 cursor-pointer shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
+                className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200  shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
                 onClick={(e) => e.stopPropagation()}
               >
                 <MoreVertical size={16} />
@@ -108,7 +108,7 @@ export function ChatSidebar() {
                 <MenuItem>
                   <Button
                     onClick={() => forkChat(chatItem)}
-                    className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-[focus]:bg-neutral-500/10 dark:data-[focus]:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer"
+                    className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-[focus]:bg-neutral-500/10 dark:data-[focus]:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
                   >
                     <GitBranch size={14} />
                     Fork
@@ -117,7 +117,7 @@ export function ChatSidebar() {
                 <MenuItem>
                   <Button
                     onClick={() => deleteChat(chatItem.id)}
-                    className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-[focus]:bg-red-500/10 dark:data-[focus]:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 cursor-pointer"
+                    className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-[focus]:bg-red-500/10 dark:data-[focus]:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 "
                   >
                     <Trash size={14} />
                     Delete

@@ -96,7 +96,7 @@ function AppContent() {
       {sidebarContent && !showSidebar && (
         <div className="fixed top-0 left-0 z-40 md:hidden p-3">
           <Button
-            className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out cursor-pointer"
+            className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
             onClick={() => {
               setShowSidebar(true);
             }}
@@ -140,7 +140,7 @@ function AppContent() {
               <div className="w-12 flex justify-start">
                 {sidebarContent && (
                   <Button
-                    className={`p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out cursor-pointer hidden md:flex ${showSidebar ? 'sidebar-open' : ''}`}
+                    className={`p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out hidden md:flex ${showSidebar ? 'sidebar-open' : ''}`}
                     onClick={toggleSidebar}
                     aria-label={showSidebar ? 'Close sidebar' : 'Open sidebar'}
                   >
@@ -160,7 +160,7 @@ function AppContent() {
                     setCurrentPage(key);
                     window.location.hash = `#${key}`;
                   }}
-                  className={`px-3 py-2 font-medium transition-colors flex items-center gap-2 cursor-pointer relative ${
+                  className={`px-3 py-2 font-medium transition-colors flex items-center gap-2 relative ${
                     currentPage === key
                       ? "text-neutral-900 dark:text-neutral-100"
                       : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"

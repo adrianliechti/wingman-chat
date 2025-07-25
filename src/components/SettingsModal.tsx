@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect } from 'react';
 import { X, Settings, MessageSquare, Trash2, ChevronsUpDown, Check, User, Package } from 'lucide-react';
-import { Dialog, Transition, Listbox } from '@headlessui/react';
+import { Dialog, Transition, Listbox, Button } from '@headlessui/react';
 import { useSettings } from '../hooks/useSettings';
 import { useChat } from '../hooks/useChat';
 import { useRepositories } from '../hooks/useRepositories';
@@ -31,7 +31,7 @@ function Select<T extends string | null>({ label, value, onChange, options, help
     <div className={containerClassName}>
       {label && <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">{label}</label>}
       <Listbox value={value} onChange={onChange}>
-        <Listbox.Button className="relative w-full cursor-pointer rounded-lg bg-white dark:bg-neutral-800/60 py-2 pl-3 pr-10 text-left border border-neutral-300 dark:border-neutral-700 focus-visible:ring-2 focus-visible:ring-blue-500 data-[headlessui-state=open]:ring-2 data-[headlessui-state=open]:ring-blue-500">
+        <Listbox.Button className="relative w-full rounded-lg bg-white dark:bg-neutral-800/60 py-2 pl-3 pr-10 text-left border border-neutral-300 dark:border-neutral-700 focus-visible:ring-2 focus-visible:ring-blue-500 data-[headlessui-state=open]:ring-2 data-[headlessui-state=open]:ring-blue-500">
           <span className="block truncate">{options.find(o => o.value === value)?.label ?? 'None'}</span>
           <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
             <ChevronsUpDown className="h-5 w-5 text-neutral-400" aria-hidden="true" />
@@ -187,7 +187,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 {availableTraits.map((trait) => {
                   const isSelected = (profile.traits || []).includes(trait);
                   return (
-                    <button
+                    <Button
                       key={trait}
                       onClick={() => toggleTrait(trait)}
                       className={`text-xs px-2 py-1 rounded-md border transition-colors ${
@@ -197,7 +197,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       }`}
                     >
                       {isSelected ? `− ${trait}` : `+ ${trait}`}
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
@@ -242,14 +242,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-1">Chat Management</h3>
                 <p className="text-xs text-neutral-500 dark:text-neutral-400">You have {chats.length} chat{chats.length === 1 ? '' : 's'} saved locally.</p>
               </div>
-              <button
+              <Button
                 onClick={deleteChats}
                 disabled={chats.length === 0}
                 className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors border bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 border-red-200 dark:border-red-800 disabled:bg-neutral-100 dark:disabled:bg-neutral-800 disabled:text-neutral-400 dark:disabled:text-neutral-600 disabled:cursor-not-allowed disabled:border-transparent"
               >
                 <Trash2 size={16} />
                 Delete All Chats
-              </button>
+              </Button>
             </div>
           </div>
         );
@@ -278,14 +278,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-1">Repository Management</h3>
                 <p className="text-xs text-neutral-500 dark:text-neutral-400">You have {repositories.length} repositor{repositories.length === 1 ? 'y' : 'ies'} saved locally.</p>
               </div>
-              <button
+              <Button
                 onClick={deleteRepositories}
                 disabled={repositories.length === 0}
                 className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors border bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 border-red-200 dark:border-red-800 disabled:bg-neutral-100 dark:disabled:bg-neutral-800 disabled:text-neutral-400 dark:disabled:text-neutral-600 disabled:cursor-not-allowed disabled:border-transparent"
               >
                 <Trash2 size={16} />
                 Delete All Repositories
-              </button>
+              </Button>
             </div>
           </div>
         );
@@ -313,24 +313,24 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       options={sectionOptions} 
                     />
                   </div>
-                  <button onClick={onClose} className="p-1 rounded-full text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+                  <Button onClick={onClose} className="p-1 rounded-full text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
                     <X size={20} />
-                  </button>
+                  </Button>
                 </div>
 
                 <div className="flex flex-1 min-h-0">
                   <nav className="hidden sm:block w-48 border-r border-neutral-200 dark:border-neutral-800 p-1 flex-shrink-0">
                     <div className="space-y-1">
                       {sections.map((section) => (
-                        <button
+                        <Button
                           key={section.id}
                           onClick={() => setActiveSection(section.id)}
-                          className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors rounded-md text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80 data-[active=true]:text-neutral-900 dark:data-[active=true]:text-neutral-100 data-[active=true]:bg-neutral-200 dark:data-[active=true]:bg-neutral-700/80 cursor-pointer"
+                          className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors rounded-md text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80 data-[active=true]:text-neutral-900 dark:data-[active=true]:text-neutral-100 data-[active=true]:bg-neutral-200 dark:data-[active=true]:bg-neutral-700/80"
                           data-active={activeSection === section.id}
                         >
                           <section.icon size={16} />
                           {section.label}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   </nav>
