@@ -9,237 +9,139 @@ interface CardRendererProps {
     cardJson: string;
 }
 
-interface CardsModule {
-    AdaptiveCard: any;
-    onProcessMarkdown?: (text: string, result: any) => void;
-}
-
-interface MarkdownItModule {
-    default: any;
-}
-
 const NonMemoizedCardRenderer = ({ cardJson }: CardRendererProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [renderedCard, setRenderedCard] = useState<HTMLElement | null>(null);
     const [error, setError] = useState<string>('');
-    const [isLoading, setIsLoading] = useState(true);
-    const [librariesLoaded, setLibrariesLoaded] = useState(false);
-    const [showPreview, setShowPreview] = useState(true);
-    const cardsRef = useRef<CardsModule | null>(null);
-    
-    // Get ChatContext for sending messages
+    const [isComplete, setIsComplete] = useState(false);
+    const [showCode, setShowCode] = useState(false);
+    const cardsRef = useRef<any>(null);
+
     const chatContext = useContext(ChatContext);
 
-    // Dynamic import of adaptive cards and markdown-it
+    // Load libraries once
     useEffect(() => {
         const loadLibraries = async () => {
             try {
-                const [cardsModule, markdownItModule] = await Promise.all([
-                    import('adaptivecards') as Promise<CardsModule>,
-                    import('markdown-it') as Promise<MarkdownItModule>
+                const [cardsModule, remarkModule, remarkHtmlModule, remarkGfmModule, remarkBreaksModule] = await Promise.all([
+                    import('adaptivecards'),
+                    import('remark'),
+                    import('remark-html'),
+                    import('remark-gfm'),
+                    import('remark-breaks')
                 ]);
 
                 cardsRef.current = cardsModule;
-                
-                // Setup markdown processing
+
                 if (cardsModule.AdaptiveCard) {
                     cardsModule.AdaptiveCard.onProcessMarkdown = function (text: string, result: any) {
-                        result.outputHtml = markdownItModule.default().render(text);
+                        const processor = remarkModule.remark()
+                            .use(remarkGfmModule.default)
+                            .use(remarkBreaksModule.default)
+                            .use(remarkHtmlModule.default);
+                        result.outputHtml = processor.processSync(text).toString();
                         result.didProcess = true;
                     };
                 }
-
-                setLibrariesLoaded(true);
-            } catch (error) {
-                console.error('Failed to load Adaptive Cards libraries:', error);
+                setIsComplete(true);
+            } catch {
                 setError('Failed to load card renderer');
-                setIsLoading(false);
+                setIsComplete(false);
             }
         };
 
         loadLibraries();
     }, []);
 
-    // Helper function to validate if JSON is complete and valid
-    const isValidCompleteJson = (jsonString: string): boolean => {
-        if (!jsonString.trim()) return false;
-        
+    // Simple JSON validation
+    const isValidJson = (json: string): boolean => {
         try {
-            const parsed = JSON.parse(jsonString);
-            // Basic check for adaptive card structure
-            return parsed && typeof parsed === 'object' && (parsed.type || parsed.$schema);
+            const parsed = JSON.parse(json);
+            return parsed && typeof parsed === 'object';
         } catch {
             return false;
         }
     };
 
-    const hasValidJson = isValidCompleteJson(cardJson);
-
-    // Helper function to check if JSON appears to be streaming (incomplete)
-    const isStreamingJson = (jsonString: string): boolean => {
-        const trimmed = jsonString.trim();
-        if (!trimmed) return true;
-        
-        // Check for obvious incomplete JSON patterns
-        if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return true;
-        if (!trimmed.endsWith('}') && !trimmed.endsWith(']')) return true;
-        
-        // Count braces to detect incomplete nesting
-        let braceCount = 0;
-        let bracketCount = 0;
-        let inString = false;
-        let escape = false;
-        
-        for (let i = 0; i < trimmed.length; i++) {
-            const char = trimmed[i];
-            
-            if (escape) {
-                escape = false;
-                continue;
-            }
-            
-            if (char === '\\') {
-                escape = true;
-                continue;
-            }
-            
-            if (char === '"') {
-                inString = !inString;
-                continue;
-            }
-            
-            if (!inString) {
-                if (char === '{') braceCount++;
-                else if (char === '}') braceCount--;
-                else if (char === '[') bracketCount++;
-                else if (char === ']') bracketCount--;
-            }
-        }
-        
-        return braceCount !== 0 || bracketCount !== 0;
-    };
-
+    // Render card when JSON changes
     useEffect(() => {
         const renderCard = async () => {
-            if (!cardsRef.current || !librariesLoaded) return;
-            
+            if (!cardsRef.current || !isComplete) return;
+
             if (!cardJson.trim()) {
-                setIsLoading(true);
                 setError('');
-                setRenderedCard(null);
-                return;
-            }
-
-            // Check if JSON is still streaming
-            if (isStreamingJson(cardJson)) {
-                setIsLoading(true);
-                setError('');
-                setRenderedCard(null);
-                return;
-            }
-
-            // Validate JSON
-            if (!isValidCompleteJson(cardJson)) {
-                setError('Invalid JSON format');
-                setIsLoading(false);
                 setRenderedCard(null);
                 return;
             }
 
             try {
-                setIsLoading(true);
                 setError('');
 
-                const card = new cardsRef.current.AdaptiveCard();
-                const cardPayload = JSON.parse(cardJson);
-                card.parse(cardPayload);
+                // Basic validation - check if it looks like valid JSON
+                if (!isValidJson(cardJson)) {
+                    return;
+                }
 
-                // Handle Action.OpenUrl, Action.Execute, and Action.Submit events
+                const card = new cardsRef.current.AdaptiveCard();
+                card.parse(JSON.parse(cardJson));
+
+                // Handle actions
                 card.onExecuteAction = (action: any) => {
                     const actionType = action.getJsonTypeName();
-                    
+
                     if (actionType === 'Action.OpenUrl') {
-                        const url = action.url;
-                        if (url) {
-                            // Open URL in a new tab/window
-                            window.open(url, '_blank', 'noopener,noreferrer');
-                        }
+                        window.open(action.url, '_blank', 'noopener,noreferrer');
                     } else if (actionType === 'Action.Execute' || actionType === 'Action.Submit') {
-                        // Handle Execute and Submit actions by sending message via ChatContext
-                        if (chatContext?.sendMessage) {
-                            let messageContent = '';
-                            
-                            if (actionType === 'Action.Execute') {
-                                // For Execute actions, use the verb as the message
-                                const verb = action.verb || 'execute';
-                                const data = action.data || {};
-                                messageContent = `Execute action: ${verb}`;
-                                if (Object.keys(data).length > 0) {
-                                    messageContent += `\nData: ${JSON.stringify(data, null, 2)}`;
-                                }
-                            } else if (actionType === 'Action.Submit') {
-                                // For Submit actions, format the submitted data
-                                const data = action.data || {};
-                                messageContent = 'Form submitted';
-                                if (Object.keys(data).length > 0) {
-                                    messageContent += `:\n${JSON.stringify(data, null, 2)}`;
-                                }
-                            }
-                            
-                            // Send the message
-                            chatContext.sendMessage({
-                                role: Role.User,
-                                content: messageContent
-                            }).catch(error => {
-                                console.error('Failed to send action message:', error);
-                            });
-                        }
+                        const data = action.data || {};
+                        const message = actionType === 'Action.Execute'
+                            ? `Execute: ${action.verb || 'action'}`
+                            : 'Form submitted';
+
+                        chatContext?.sendMessage({
+                            role: Role.User,
+                            content: Object.keys(data).length > 0
+                                ? `${message}\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``
+                                : message
+                        });
                     }
                 };
 
-                const renderedElement = card.render();
-                
-                if (renderedElement) {
-                    // Apply custom styling to match the theme
-                    renderedElement.style.backgroundColor = 'transparent';
-                    renderedElement.style.border = 'none';
-                    renderedElement.style.fontFamily = 'inherit';
-                    
-                    setRenderedCard(renderedElement);
-                    setIsLoading(false);
+                const element = card.render();
+                if (element) {
+                    element.style.backgroundColor = 'transparent';
+                    element.style.border = 'none';
+                    element.style.fontFamily = 'inherit';
+                    setRenderedCard(element);
                 } else {
-                    setError('Failed to render card');
-                    setIsLoading(false);
+                    setError('silent');
+                    setRenderedCard(null);
                 }
-            } catch (err) {
-                const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-                setError(`Card rendering error: ${errorMessage}`);
-                setIsLoading(false);
+            } catch {
+                // Silently handle errors - just show the code block
+                setError('silent');
                 setRenderedCard(null);
             }
         };
 
         // Debounce rendering to avoid excessive re-renders during streaming
         const timeoutId = setTimeout(renderCard, 300);
-        
+
         return () => {
             clearTimeout(timeoutId);
         };
-    }, [cardJson, librariesLoaded, chatContext]);
+    }, [cardJson, isComplete, chatContext]);
 
-    // Mount the rendered card when it changes or when toggling views
+    // Mount rendered card
     useEffect(() => {
-        if (containerRef.current && renderedCard) {
-            // Clear previous content
+        if (containerRef.current && renderedCard && !showCode) {
             containerRef.current.innerHTML = '';
-            if (showPreview) {
-                containerRef.current.appendChild(renderedCard);
-            }
+            containerRef.current.appendChild(renderedCard);
         }
-    }, [renderedCard, showPreview]);
+    }, [renderedCard, showCode]);
 
-    // Show loading state while libraries are loading
-    if (!librariesLoaded) {
+    const hasValidCard = renderedCard && !error;
+
+    if (!isComplete) {
         return (
             <div className="relative my-4">
                 <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-700 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
@@ -247,22 +149,69 @@ const NonMemoizedCardRenderer = ({ cardJson }: CardRendererProps) => {
                 </div>
                 <div className="bg-white dark:bg-neutral-800 p-4 rounded-b-md border border-gray-200 dark:border-neutral-700">
                     <div className="flex items-center justify-center h-24 text-gray-500 dark:text-neutral-500">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
-                        <span className="ml-2">Loading card renderer...</span>
+                        <div className="flex items-center space-x-3">
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-gray-600 dark:border-neutral-600 dark:border-t-neutral-400"></div>
+                            <span>Generating Content...</span>
+                        </div>
                     </div>
                 </div>
             </div>
         );
     }
 
-    // Show loading placeholder while streaming or processing
-    if (isLoading && !cardJson.trim()) {
+    // Show generating content placeholder when we have content but no valid card yet (and not in error state)
+    if (cardJson.trim() && !renderedCard && !error) {
         return (
             <div className="relative my-4">
                 <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-700 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
                     <span>adaptivecard</span>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            onClick={() => setShowCode(!showCode)}
+                            className="text-neutral-300 hover:text-white transition-colors"
+                            title={showCode ? 'Show preview' : 'Show code'}
+                        >
+                            {showCode ? <Eye className="h-4" /> : <Code className="h-4" />}
+                        </Button>
+                        <CopyButton text={cardJson} />
+                    </div>
                 </div>
-                <div className="bg-white dark:bg-neutral-800 p-4 rounded-b-md border border-gray-200 dark:border-neutral-700">
+                <div className="bg-white dark:bg-neutral-800 rounded-b-md p-4">
+                    {showCode ? (
+                        <pre className="text-gray-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto">
+                            <code>{cardJson}</code>
+                        </pre>
+                    ) : (
+                        <div className="flex items-center justify-center h-24 text-gray-500 dark:text-neutral-500">
+                            <div className="flex items-center space-x-3">
+                                <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-gray-600 dark:border-neutral-600 dark:border-t-neutral-400"></div>
+                                <span>Generating Content...</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // Show waiting placeholder when no content
+    if (!cardJson.trim()) {
+        return (
+            <div className="relative my-4">
+                <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-700 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
+                    <span>adaptivecard</span>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            onClick={() => setShowCode(!showCode)}
+                            className="text-neutral-300 hover:text-white transition-colors"
+                            title={showCode ? 'Show preview' : 'Show code'}
+                        >
+                            {showCode ? <Eye className="h-4" /> : <Code className="h-4" />}
+                        </Button>
+                        <CopyButton text={cardJson} />
+                    </div>
+                </div>
+                <div className="bg-white dark:bg-neutral-800 rounded-b-md p-4">
                     <div className="flex items-center justify-center h-24 text-gray-500 dark:text-neutral-500">
                         <div className="animate-pulse">Waiting for card data...</div>
                     </div>
@@ -278,7 +227,7 @@ const NonMemoizedCardRenderer = ({ cardJson }: CardRendererProps) => {
                 <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-700 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
                     <span>adaptivecard</span>
                     <div className="flex items-center gap-2">
-                        <span className="text-xs text-red-500 dark:text-red-400 opacity-70">{error}</span>
+                        <span className="text-xs text-red-500 dark:text-red-400 opacity-70">render failed</span>
                         <CopyButton text={cardJson} />
                     </div>
                 </div>
@@ -291,55 +240,32 @@ const NonMemoizedCardRenderer = ({ cardJson }: CardRendererProps) => {
         );
     }
 
-    // Show loading spinner while processing
-    if (isLoading && cardJson.trim()) {
-        return (
-            <div className="relative my-4">
-                <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-700 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-                    <span>adaptivecard</span>
-                </div>
-                <div className="bg-white dark:bg-neutral-800 p-4 rounded-b-md border border-gray-200 dark:border-neutral-700">
-                    <div className="flex items-center justify-center h-24 text-gray-500 dark:text-neutral-500">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
-                        <span className="ml-2">Rendering card...</span>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    // Main render - always check if we have content to show
     return (
         <div className="relative my-4">
             <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-700 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
                 <span>adaptivecard</span>
                 <div className="flex items-center gap-2">
-                    {hasValidJson && (
+                    {error && <span className="text-xs text-red-500 opacity-70">{error}</span>}
+                    {hasValidCard && (
                         <Button
-                            onClick={() => setShowPreview(!showPreview)}
+                            onClick={() => setShowCode(!showCode)}
                             className="text-neutral-300 hover:text-white transition-colors"
-                            title={showPreview ? 'Show code' : 'Show preview'}
+                            title={showCode ? 'Show preview' : 'Show code'}
                         >
-                            {showPreview ? (
-                                <Code className="h-4" />
-                            ) : (
-                                <Eye className="h-4" />
-                            )}
+                            {showCode ? <Eye className="h-4" /> : <Code className="h-4" />}
                         </Button>
                     )}
                     <CopyButton text={cardJson} />
                 </div>
             </div>
             <div className="bg-white dark:bg-neutral-800 rounded-b-md p-4">
-                <div 
+                <div
                     ref={containerRef}
-                    className={`adaptive-card-container [&_.ac-container]:!bg-transparent [&_.ac-container]:!border-none [&_*]:text-gray-900 [&_*]:dark:text-neutral-100 ${
-                        hasValidJson && showPreview && renderedCard ? 'block' : 'hidden'
-                    }`}
+                    className={`adaptive-card-container [&_.ac-container]:!bg-transparent [&_.ac-container]:!border-none [&_*]:text-gray-900 [&_*]:dark:text-neutral-100 ${hasValidCard && !showCode ? 'block' : 'hidden'
+                        }`}
                 />
-                <pre className={`text-gray-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto ${
-                    hasValidJson && showPreview && renderedCard ? 'hidden' : 'block'
-                }`}>
+                <pre className={`text-gray-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto ${hasValidCard && !showCode ? 'hidden' : 'block'
+                    }`}>
                     <code>{cardJson}</code>
                 </pre>
             </div>

@@ -198,15 +198,12 @@ const components: Partial<Components> = {
             return <CardRenderer cardJson={text} />;
         }
 
-        // Auto-detect Adaptive Cards in JSON blocks
+        // Auto-detect Adaptive Cards in JSON blocks using regex for faster detection
         if (language === "json") {
-            try {
-                const parsed = JSON.parse(text);
-                if (parsed.type === "AdaptiveCard" && parsed.version) {
-                    return <CardRenderer cardJson={text} />;
-                }
-            } catch {
-                // If parsing fails, fall through to regular JSON syntax highlighting
+            // Fast regex check for Adaptive Card schema without full JSON parsing
+            const adaptiveCardRegex = /['"]\$schema['"]\s*:\s*['"].*adaptivecards\.io.*['"]|['"]type['"]\s*:\s*['"]AdaptiveCard['"]/;
+            if (adaptiveCardRegex.test(text)) {
+                return <CardRenderer cardJson={text} />;
             }
         }
 

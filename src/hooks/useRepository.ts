@@ -13,7 +13,7 @@ export interface FileChunk {
   similarity?: number;
 }
 
-export interface RepositoryDocumentHookReturn {
+export interface RepositoryHook {
   files: RepositoryFile[];
   addFile: (file: File) => Promise<void>;
   removeFile: (fileId: string) => void;
@@ -24,7 +24,7 @@ export interface RepositoryDocumentHookReturn {
 // Shared client instance for all repositories
 const client = new Client();
 
-export function useRepository(repositoryId: string): RepositoryDocumentHookReturn {
+export function useRepository(repositoryId: string): RepositoryHook {
   const { repositories, upsertFile, removeFile: removeFileFromRepo } = useRepositories();
   const [vectorDB, setVectorDB] = useState(() => new VectorDB());
   const currentRepositoryIdRef = useRef(repositoryId);

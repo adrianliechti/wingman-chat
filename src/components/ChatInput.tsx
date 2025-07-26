@@ -414,13 +414,13 @@ export function ChatInput() {
                     {getAttachmentIcon(attachment)}
                   </div>
                 )}
-                <button
+                <Button
                   type="button"
                   className="absolute top-0.5 right-0.5 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm shadow-sm"
                   onClick={() => handleRemoveAttachment(index)}
                 >
                   <X size={10} />
-                </button>
+                </Button>
               </div>
             ))}
           </div>
@@ -439,14 +439,14 @@ export function ChatInput() {
             ) : promptSuggestions.length > 0 ? (
               <div className="space-y-2">
                 {promptSuggestions.map((suggestion, index) => (
-                  <button
+                  <Button
                     key={index}
                     type="button"
                     onClick={() => handlePromptSelect(suggestion)}
-                    className="w-full text-left p-3 text-sm bg-white/25 dark:bg-black/15 backdrop-blur-lg hover:bg-white/40 dark:hover:bg-black/25 rounded-lg border border-white/30 dark:border-white/20 transition-colors focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 cursor-pointer"
+                    className="w-full text-left p-3 text-sm bg-white/25 dark:bg-black/15 backdrop-blur-lg hover:bg-white/40 dark:hover:bg-black/25 rounded-lg border border-white/30 dark:border-white/20 transition-colors focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                   >
                     {suggestion}
-                  </button>
+                  </Button>
                 ))}
               </div>
             ) : (
@@ -509,7 +509,7 @@ export function ChatInput() {
           <div className="flex items-center gap-2">
             <Button
               type="button"
-              className="text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 cursor-pointer"
+              className="text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
               onClick={handlePromptSuggestionsClick}
               title="Show prompt suggestions"
             >
@@ -518,7 +518,7 @@ export function ChatInput() {
             
             {models.length > 0 && (
               <Menu>
-                <MenuButton className="flex items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm cursor-pointer">
+                <MenuButton className="flex items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm">
                   <Brain size={14} />
                   <span>
                     {model?.name ?? model?.id ?? "Select Model"}
@@ -534,7 +534,7 @@ export function ChatInput() {
                       <Button
                         onClick={() => onModelChange(modelItem)}
                         title={modelItem.description}
-                        className="group flex w-full flex-col items-start px-3 py-2 data-[focus]:bg-white/30 dark:data-[focus]:bg-white/8 hover:bg-white/25 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 cursor-pointer transition-all duration-200 border-b border-white/20 dark:border-white/10 last:border-b-0"
+                        className="group flex w-full flex-col items-start px-3 py-2 data-[focus]:bg-white/30 dark:data-[focus]:bg-white/8 hover:bg-white/25 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all duration-200 border-b border-white/20 dark:border-white/10 last:border-b-0"
                       >
                         <div className="flex items-center gap-2.5 w-full">
                           <div className="flex-shrink-0 w-3.5 flex justify-center">
@@ -566,13 +566,13 @@ export function ChatInput() {
                 <span className="max-w-20 truncate" title={currentRepository.name}>
                   {currentRepository.name}
                 </span>
-                <button
+                <Button
                   onClick={() => setCurrentRepository(null)}
                   className="opacity-0 group-hover:opacity-100 hover:text-red-500 dark:hover:text-red-400 transition-all ml-1"
                   title="Clear repository"
                 >
                   <X size={10} />
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -581,7 +581,7 @@ export function ChatInput() {
             {config.vision && supportsScreenshot() && (
               <Button
                 type="button"
-                className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 cursor-pointer"
+                className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                 onClick={handleScreenshotClick}
               >
                 <ScreenShare size={16} />
@@ -590,7 +590,7 @@ export function ChatInput() {
 
             <Button
               type="button"
-              className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 cursor-pointer"
+              className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
               onClick={handleAttachmentClick}
             >
               <Paperclip size={16} />
@@ -599,7 +599,7 @@ export function ChatInput() {
             {/* Dynamic Send/Mic Button */}
             {content.trim() ? (
               <Button
-                className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 cursor-pointer"
+                className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                 type="submit"
               >
                 <Send size={16} />
@@ -617,7 +617,7 @@ export function ChatInput() {
               ) : (
                 <Button
                   type="button"
-                  className={`p-1.5 cursor-pointer transition-colors ${
+                  className={`p-1.5 transition-colors ${
                     isTranscribing 
                       ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200' 
                       : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
@@ -630,7 +630,7 @@ export function ChatInput() {
               )
             ) : (
               <Button
-                className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 cursor-pointer"
+                className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                 type="submit"
               >
                 <Send size={16} />

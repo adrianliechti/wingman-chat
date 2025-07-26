@@ -33,7 +33,7 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
       if (e.data?.type === 'html-renderer-resize' && iframeRef.current && e.source === iframeRef.current.contentWindow) {
         // Calculate max height based on aspect ratio (4:3) and actual iframe width
         const iframeWidth = iframeRef.current.offsetWidth;
-        const maxHeightFromAspectRatio = iframeWidth * (3/4); // 4:3 aspect ratio means height = width * 3/4
+        const maxHeightFromAspectRatio = iframeWidth * (3 / 4); // 4:3 aspect ratio means height = width * 3/4
         const constrainedHeight = Math.min(e.data.height, maxHeightFromAspectRatio);
         setIframeHeight(Math.max(constrainedHeight, 50)); // Minimum height of 50px
       }
@@ -217,7 +217,7 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
     if (isCompleteDocument) {
       // Insert styles and script into existing document
       let modifiedHtml = html;
-      
+
       // Try to insert styles in head, fallback to before closing head or html
       if (html.includes('</head>')) {
         modifiedHtml = modifiedHtml.replace('</head>', `${defaultStyles}</head>`);
@@ -226,14 +226,14 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
       } else {
         modifiedHtml = modifiedHtml.replace('<html>', `<html><head>${defaultStyles}</head>`);
       }
-      
+
       // Insert script before closing body or html
       if (html.includes('</body>')) {
         modifiedHtml = modifiedHtml.replace('</body>', `${script}</body>`);
       } else {
         modifiedHtml = modifiedHtml.replace('</html>', `${script}</html>`);
       }
-      
+
       return modifiedHtml;
     } else {
       // Wrap fragment in minimal HTML structure
