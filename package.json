@@ -12,6 +12,7 @@
   "dependencies": {
     "@headlessui/react": "^2.2.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "@monaco-editor/react": "^4.7.0",
     "@tailwindcss/vite": "^4.1.8",
     "adaptivecards": "^3.0.5",
     "audit": "^0.0.6",
@@ -30,7 +31,6 @@
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "remark-html": "^16.0.1",
-    "shiki": "^3.8.1",
     "wavtools": "^0.1.5",
     "zod": "^3.25.76"
   },
