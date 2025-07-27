@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useShiki } from '../hooks/useShiki';
+import { Editor } from './Editor';
 
 interface CodeEditorProps {
   blob: Blob;
@@ -8,53 +8,40 @@ interface CodeEditorProps {
 
 export function CodeEditor({ blob, language = '' }: CodeEditorProps) {
   const [content, setContent] = useState<string>('');
-  const [html, setHtml] = useState<string>('');
-  const { codeToHtml } = useShiki();
+  const [isLoading, setIsLoading] = useState(true);
   
   // Read blob content
   useEffect(() => {
     const readBlob = async () => {
+      setIsLoading(true);
       try {
         const text = await blob.text();
         setContent(text);
       } catch {
         setContent('Error reading file content');
+      } finally {
+        setIsLoading(false);
       }
     };
     
     readBlob();
   }, [blob]);
-  
-  // Highlight code when content changes
-  useEffect(() => {
-    if (!content) return;
-    
-    const highlight = async () => {
-      try {
-        const highlighted = await codeToHtml(content, language);
-        setHtml(highlighted);
-      } catch (error) {
-        console.error('Highlighting failed:', error);
-        // Fallback to plain text
-        setHtml(`<pre><code>${content}</code></pre>`);
-      }
-    };
-    
-    highlight();
-  }, [content, language, codeToHtml]);
+
+  if (isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-neutral-500 dark:text-neutral-400">Loading...</div>
+      </div>
+    );
+  }
   
   return (
     <div className="h-full relative">
-      {html && html.trim() ? (
-        <div 
-          className="h-full overflow-auto p-4"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      ) : (
-        <pre className="text-sm text-neutral-700 dark:text-neutral-300 whitespace-pre font-mono h-full overflow-auto p-4">
-          {content}
-        </pre>
-      )}
+      <Editor
+        language={language}
+        value={content}
+        readOnly={true}
+      />
     </div>
   );
 }

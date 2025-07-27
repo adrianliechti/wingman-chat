@@ -38,13 +38,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           // Vendor chunks
-          'vendor-react': [
-            'react',
-            'react-dom'
-          ],
-          'vendor-openai': [
-            'openai'
-          ],
           'vendor-markdown': [
             'react-markdown', 
             'remark-breaks', 
@@ -54,32 +47,11 @@ export default defineConfig({
             'remark',
             'remark-html'
           ],
-          'vendor-ui': [
-            '@headlessui/react',
-            '@floating-ui/react',
-            '@floating-ui/react-dom'
-          ],
-          'vendor-utils': [
-            'zod',
-            'p-limit',
-            'mime'
-          ],
           'vendor-icons': ['lucide-react'],
-        },
-        chunkFileNames: (chunkInfo) => {
-          // Move shiki language bundles to shiki subfolder
-          if (chunkInfo.name?.includes('shiki') || 
-              chunkInfo.facadeModuleId?.includes('shiki') ||
-              (chunkInfo.moduleIds && chunkInfo.moduleIds.some(id => id.includes('shiki')))) {
-            return 'assets/shiki/[name]-[hash].js';
-          }
-          // Move mermaid bundles to mermaid subfolder
-          if (chunkInfo.name?.includes('mermaid') || 
-              chunkInfo.facadeModuleId?.includes('mermaid') ||
-              (chunkInfo.moduleIds && chunkInfo.moduleIds.some(id => id.includes('mermaid')))) {
-            return 'assets/mermaid/[name]-[hash].js';
-          }
-          return 'assets/[name]-[hash].js';
+          'vendor-monaco': [
+            '@monaco-editor/react',
+            '@monaco-editor/loader'
+          ],
         }
       }
     },
