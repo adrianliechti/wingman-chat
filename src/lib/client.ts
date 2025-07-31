@@ -5,6 +5,12 @@ import { zodResponseFormat } from "openai/helpers/zod";
 import { Tool } from "../types/chat";
 import { Message, Model, Role, AttachmentType } from "../types/chat";
 
+interface Resource {
+  uri: string;
+  mimeType: string;
+  content: string;
+}
+
 export class Client {
   private oai: OpenAI;
 
@@ -24,7 +30,7 @@ export class Client {
     }));
   }
 
-  async complete(model: string, instructions: string, input: Message[], tools: Tool[], handler?: (delta: string, snapshot: string) => void): Promise<Message> {
+  async complete(model: string, instructions: string, input: Message[], tools: Tool[], handler?: (delta: string, snapshot: string, resource?: Resource) => void): Promise<Message> {
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
 
     if (instructions) {
@@ -117,6 +123,11 @@ export class Client {
           const args = JSON.parse(toolCall.function.arguments || "{}");
           const result = await tool.function(args);
 
+          console.log("Tool call result:", result);
+
+          // Check if result contains resource objects
+          this.handleResourceResult(result, handler);
+
           messages.push({
             role: "tool",
             content: result,
@@ -133,8 +144,7 @@ export class Client {
 
             tool_call_id: toolCall.id,
           });
-        }
-      }
+        }      }
 
       completion = await this.oai.chat.completions.create({
         model: model,
@@ -375,5 +385,51 @@ Return only the prompts themselves, without numbering or bullet points.`,
         parameters: tool.parameters,
       },
     }));
+  }
+
+  private handleResourceResult(result: string, handler?: (delta: string, snapshot: string, resource?: Resource) => void): void {
+    if (!handler) return;
+
+    try {
+      const parsed = JSON.parse(result);
+      
+      // Handle single resource object
+      if (parsed?.type === 'resource' && parsed?.resource?.uri && parsed?.resource?.mimeType) {
+        const resourceData: Resource = {
+          uri: parsed.resource.uri,
+          mimeType: parsed.resource.mimeType,
+          content: parsed.resource.text || this.decodeBase64(parsed.resource.blob) || ''
+        };
+        handler('', '', resourceData);
+        return;
+      }
+      
+      // Handle array of resource objects
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (item?.type === 'resource' && item?.resource?.uri && item?.resource?.mimeType) {
+            const resourceData: Resource = {
+              uri: item.resource.uri,
+              mimeType: item.resource.mimeType,
+              content: item.resource.text || this.decodeBase64(item.resource.blob) || ''
+            };
+            handler('', '', resourceData);
+          }
+        }
+      }
+    } catch {
+      // If JSON parsing fails, silently continue
+    }
+  }
+
+  private decodeBase64(base64String?: string): string {
+    if (!base64String) return '';
+    
+    try {
+      return atob(base64String);
+    } catch {
+      // If base64 decoding fails, return the original string
+      return base64String;
+    }
   }
 }

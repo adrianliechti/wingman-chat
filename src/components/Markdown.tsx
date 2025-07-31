@@ -11,6 +11,7 @@ import { HtmlRenderer } from './HtmlRenderer';
 import { CsvRenderer } from './CsvRenderer';
 import { SvgRenderer } from './SvgRenderer';
 import { MediaPlayer } from './MediaPlayer';
+import { UIResourceRenderer } from './UIResourceRenderer';
 import { isAudioUrl, isVideoUrl } from '../lib/utils';
 
 const components: Partial<Components> = {
@@ -202,6 +203,10 @@ const components: Partial<Components> = {
 
         if (language === "csv" || language === "tsv") {
             return <CsvRenderer csv={text} language={language} />;
+        }
+
+        if (language === "resource") {
+            return <UIResourceRenderer resourceJson={text} />;
         }
 
         if (language === "adaptivecard" || language === "adaptive-card") {

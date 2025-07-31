@@ -149,7 +149,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
           instructions.join('\n\n'),
           conversation,
           completionTools,
-          (_, snapshot) => updateChat(id, { messages: [...conversation, { role: Role.Assistant, content: snapshot }] })
+          (_, snapshot, resource) => {
+            if (resource) {
+              // Add resource as a markdown code block message
+              const resourceMessage = {
+                role: Role.Assistant,
+                content: `\`\`\`resource\n${JSON.stringify(resource, null, 2)}\n\`\`\``
+              };
+              const updatedMessages = [...conversation, resourceMessage];
+              updateChat(id, { messages: updatedMessages });
+            } else {
+              // Regular content update
+              updateChat(id, { messages: [...conversation, { role: Role.Assistant, content: snapshot }] });
+            }
+          }
         );
 
         updateChat(id, { messages: [...conversation, completion] });

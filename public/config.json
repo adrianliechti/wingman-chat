@@ -1,2 +1,5 @@
 {
+    "bridge": {
+        "url": "http://localhost:4200"
+    }
 }
