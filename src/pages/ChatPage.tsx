@@ -16,6 +16,8 @@ import { VoiceWaves } from "../components/VoiceWaves";
 import { BackgroundImage } from "../components/BackgroundImage";
 import { useRepositories } from "../hooks/useRepositories";
 import { RepositoryDrawer } from "../components/RepositoryDrawer";
+import { useRemoteUIContext } from "../hooks/useRemoteUIContext";
+import { RemoteUIDrawer } from "../components/RemoteUIDrawer";
 
 export function ChatPage() {
   const {
@@ -28,6 +30,7 @@ export function ChatPage() {
   const { layoutMode } = useLayout();
   const { isAvailable: voiceAvailable, startVoice, stopVoice } = useVoice();
   const { isAvailable: repositoryAvailable, toggleRepositoryDrawer, showRepositoryDrawer, setShowRepositoryDrawer, setCurrentRepository } = useRepositories();
+  const { showRemoteUIDrawer, toggleRemoteUIDrawer } = useRemoteUIContext();
   
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
@@ -41,6 +44,10 @@ export function ChatPage() {
   // Repository drawer state
   const [isRepositoryDrawerAnimating, setIsRepositoryDrawerAnimating] = useState(false);
   const [shouldRenderDrawer, setShouldRenderDrawer] = useState(false);
+  
+  // RemoteUI drawer state
+  const [isRemoteUIDrawerAnimating, setIsRemoteUIDrawerAnimating] = useState(false);
+  const [shouldRenderRemoteUIDrawer, setShouldRenderRemoteUIDrawer] = useState(false);
   
   // Toggle voice mode handler
   const toggleVoiceMode = useCallback(async () => {
@@ -131,6 +138,24 @@ export function ChatPage() {
     }
   }, [showRepositoryDrawer]);
 
+  // Handle RemoteUI drawer animation
+  useEffect(() => {
+    if (showRemoteUIDrawer) {
+      setShouldRenderRemoteUIDrawer(true);
+      // Small delay to ensure the element is in the DOM before animating
+      setTimeout(() => {
+        setIsRemoteUIDrawerAnimating(true);
+      }, 10);
+    } else {
+      setIsRemoteUIDrawerAnimating(false);
+      // Remove from DOM after animation completes
+      const timer = setTimeout(() => {
+        setShouldRenderRemoteUIDrawer(false);
+      }, 300); // Match the transition duration
+      return () => clearTimeout(timer);
+    }
+  }, [showRemoteUIDrawer]);
+
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {
     // Only show sidebar if there are chats
@@ -163,7 +188,9 @@ export function ChatPage() {
       
       {/* Main content area */}
       <div className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-300 ${
-        showRepositoryDrawer ? 'md:mr-83 md:pr-3' : ''
+        showRepositoryDrawer && showRemoteUIDrawer ? 'md:mr-[32rem] md:pr-6' : 
+        showRepositoryDrawer ? 'md:mr-80 md:pr-3' : 
+        showRemoteUIDrawer ? 'md:mr-96 md:pr-3' : ''
       }`}>
         <main className="flex-1 flex flex-col overflow-hidden relative">
           {messages.length === 0 ? (
@@ -237,7 +264,9 @@ export function ChatPage() {
           <footer className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-300 ease-out ${
             messages.length === 0 ? 'md:bottom-1/3 md:transform md:translate-y-1/2' : ''
           } ${
-            showRepositoryDrawer ? 'right-0 md:right-83' : 'right-0'
+            showRepositoryDrawer && showRemoteUIDrawer ? 'right-0 md:right-[32rem]' :
+            showRepositoryDrawer ? 'right-0 md:right-80' : 
+            showRemoteUIDrawer ? 'right-0 md:right-96' : 'right-0'
           }`}>
             <div className="relative pointer-events-auto md:max-w-4xl mx-auto">
               <ChatInput />
@@ -248,7 +277,9 @@ export function ChatPage() {
         {/* Full-width waves during voice mode */}
         {isVoiceMode && (
           <div className={`fixed bottom-0 left-0 h-32 z-20 pointer-events-none bg-gradient-to-t from-white via-white/80 to-transparent dark:from-neutral-900 dark:via-neutral-900/80 dark:to-transparent transition-all duration-300 ease-out ${
-            showRepositoryDrawer ? 'right-0 md:right-83' : 'right-0'
+            showRepositoryDrawer && showRemoteUIDrawer ? 'right-0 md:right-[32rem]' :
+            showRepositoryDrawer ? 'right-0 md:right-80' : 
+            showRemoteUIDrawer ? 'right-0 md:right-96' : 'right-0'
           }`}>
             <VoiceWaves />
           </div>
@@ -271,11 +302,34 @@ export function ChatPage() {
           isRepositoryDrawerAnimating 
             ? 'translate-x-0 opacity-100 scale-100' 
             : 'translate-x-full opacity-0 scale-95'
-        } ${ 
-          // On mobile: full width overlay from right edge, on desktop: positioned with right-3
-          'fixed right-0 md:right-3 md:w-80 w-full max-w-sm'
-        }`}>
+        } fixed right-0 md:right-3 md:w-80 w-full max-w-sm`}>
           <RepositoryDrawer />
+        </div>
+      )}
+
+      {/* Backdrop overlay for RemoteUI drawer on mobile */}
+      {shouldRenderRemoteUIDrawer && (
+        <div
+          className={`fixed inset-0 bg-black/20 z-30 transition-opacity duration-300 md:hidden ${
+            isRemoteUIDrawerAnimating ? 'opacity-100' : 'opacity-0'
+          }`}
+          onClick={() => toggleRemoteUIDrawer()}
+        />
+      )}
+
+      {/* RemoteUI drawer - right side */}
+      {shouldRenderRemoteUIDrawer && (
+        <div className={`w-96 bg-neutral-50/60 dark:bg-neutral-950/70 backdrop-blur-sm shadow-2xl border-l border-neutral-200 dark:border-neutral-900 top-16 bottom-4 z-40 rounded-xl transition-all duration-300 ease-out transform ${
+          isRemoteUIDrawerAnimating 
+            ? 'translate-x-0 opacity-100 scale-100' 
+            : 'translate-x-full opacity-0 scale-95'
+        } ${ 
+          // Position next to repository drawer if it's open, otherwise on the right edge
+          showRepositoryDrawer 
+            ? 'fixed right-0 md:right-[21rem] md:w-96 w-full max-w-sm'
+            : 'fixed right-0 md:right-3 md:w-96 w-full max-w-sm'
+        }`}>
+          <RemoteUIDrawer />
         </div>
       )}
 

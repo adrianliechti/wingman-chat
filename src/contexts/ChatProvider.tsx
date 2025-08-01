@@ -6,6 +6,7 @@ import { useRepositories } from "../hooks/useRepositories";
 import { useRepository } from "../hooks/useRepository";
 import { useBridge } from "../hooks/useBridge";
 import { useProfile } from "../hooks/useProfile";
+import { useRemoteUI } from "../hooks/useRemoteUI";
 import { getConfig } from "../config";
 import { ChatContext, ChatContextType } from './ChatContext';
 
@@ -23,6 +24,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { queryTools } = useRepository(currentRepository?.id || '');
   const { bridgeTools, bridgeInstructions } = useBridge();
   const { generateInstructions } = useProfile();
+  const { tools: remoteUITools } = useRemoteUI();
   const [chatId, setChatId] = useState<string | null>(null);
   const messagesRef = useRef<Message[]>([]);
 
@@ -115,7 +117,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const repositoryTools = currentRepository ? queryTools() : [];
         const repositoryInstructions = currentRepository?.instructions || '';
         
-        const completionTools = [...bridgeTools, ...repositoryTools, ...(tools || [])];
+        const completionTools = [...bridgeTools, ...repositoryTools, ...remoteUITools, ...(tools || [])];
 
         const instructions: string[] = [];
 
@@ -149,19 +151,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
           instructions.join('\n\n'),
           conversation,
           completionTools,
-          (_, snapshot, resource) => {
-            if (resource) {
-              // Add resource as a markdown code block message
-              const resourceMessage = {
-                role: Role.Assistant,
-                content: `\`\`\`resource\n${JSON.stringify(resource, null, 2)}\n\`\`\``
-              };
-              const updatedMessages = [...conversation, resourceMessage];
-              updateChat(id, { messages: updatedMessages });
-            } else {
-              // Regular content update
-              updateChat(id, { messages: [...conversation, { role: Role.Assistant, content: snapshot }] });
-            }
+          (_, snapshot) => {
+            // Regular content update
+            updateChat(id, { messages: [...conversation, { role: Role.Assistant, content: snapshot }] });
           }
         );
 
@@ -180,7 +172,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const errorMessage = { role: Role.Assistant, content: `An error occurred:\n${error}` };
         updateChat(id, { messages: [...conversation, errorMessage] });
       }
-    }, [getOrCreateChat, chats, updateChat, currentRepository, queryTools, bridgeTools, generateInstructions, client, model, bridgeInstructions]);
+    }, [getOrCreateChat, chats, updateChat, currentRepository, queryTools, bridgeTools, remoteUITools, generateInstructions, client, model, bridgeInstructions]);
 
   const value: ChatContextType = {
     // Models
