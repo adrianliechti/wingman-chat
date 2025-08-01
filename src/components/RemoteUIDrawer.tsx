@@ -30,7 +30,7 @@ export function RemoteUIDrawer() {
         uri: resource.uri,
         mimeType: resource.mimeType,
         name: resource.uri,
-        text: resource.blob
+        text: resource.text
       };
 
   return (

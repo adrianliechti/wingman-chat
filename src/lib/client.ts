@@ -135,7 +135,8 @@ export class Client {
 
             tool_call_id: toolCall.id,
           });
-        }      }
+        }
+      }
 
       completion = await this.oai.chat.completions.create({
         model: model,
@@ -251,15 +252,15 @@ Return only the prompts themselves, without numbering or bullet points.`,
     }
 
     const result = await resp.json();
-    
+
     if (!Array.isArray(result)) {
-       return [];
+      return [];
     }
-      
+
     return result.map((item: { text?: string } | string) => {
-        if (typeof item === 'string') return item;
-        return item.text || '';
-      });
+      if (typeof item === 'string') return item;
+      return item.text || '';
+    });
   }
 
   async embedText(model: string, text: string): Promise<number[]> {
@@ -275,9 +276,9 @@ Return only the prompts themselves, without numbering or bullet points.`,
   async translate(lang: string, input: string | Blob): Promise<string | Blob> {
     const data = new FormData();
     data.append("lang", lang);
-    
+
     const headers: HeadersInit = {};
-    
+
     if (input instanceof Blob) {
       data.append("file", input);
       headers["Accept"] = input.type || "application/octet-stream";
@@ -296,11 +297,11 @@ Return only the prompts themselves, without numbering or bullet points.`,
     }
 
     const contentType = resp.headers.get("content-type")?.toLowerCase() || "";
-    
+
     if (contentType.includes("text/plain") || contentType.includes("text/markdown")) {
       return resp.text();
     }
-    
+
     return resp.blob();
   }
 
@@ -319,23 +320,23 @@ Return only the prompts themselves, without numbering or bullet points.`,
       response_format: "wav",
     });
 
-    const audioBuffer = await response.arrayBuffer();      
+    const audioBuffer = await response.arrayBuffer();
     const audioBlob = new Blob([audioBuffer], { type: 'audio/wav' });
     const audioUrl = URL.createObjectURL(audioBlob);
-    
+
     const audio = new Audio(audioUrl);
-    
+
     return new Promise((resolve, reject) => {
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
         resolve();
       };
-      
+
       audio.onerror = (error) => {
         URL.revokeObjectURL(audioUrl);
         reject(new Error(`Audio playback failed: ${error}`));
       };
-      
+
       audio.play().catch(reject);
     });
   }
@@ -344,7 +345,7 @@ Return only the prompts themselves, without numbering or bullet points.`,
     const data = new FormData();
     data.append('file', blob);
 
-    if(model) {
+    if (model) {
       data.append('model', model);
     }
 
