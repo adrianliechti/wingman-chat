@@ -19,14 +19,36 @@ export function RemoteUIDrawer() {
     return null;
   }
 
+  const data = resource.blob 
+    ? {
+        uri: resource.uri,
+        mimeType: resource.mimeType,
+        name: resource.uri,
+        blob: resource.blob
+      }
+    : {
+        uri: resource.uri,
+        mimeType: resource.mimeType,
+        name: resource.uri,
+        text: resource.blob
+      };
+
   return (
-    <UIResourceRenderer
-      resource={resource as any}
-      onUIAction={handleGenericMcpAction}
-      remoteDomProps={{
-        library: basicComponentLibrary,
-        remoteElements: [remoteButtonDefinition, remoteTextDefinition],
-      }}
-    />
+    <div className="w-full h-full">
+      <UIResourceRenderer
+        resource={data}
+        onUIAction={handleGenericMcpAction}
+        htmlProps={{
+          style: { width: '100%', height: '100%' },
+          iframeProps: {
+            className: 'w-full h-full border-none'
+          }
+        }}
+        remoteDomProps={{
+          library: basicComponentLibrary,
+          remoteElements: [remoteButtonDefinition, remoteTextDefinition],
+        }}
+      />
+    </div>
   );
 }

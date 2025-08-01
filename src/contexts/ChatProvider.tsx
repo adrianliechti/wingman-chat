@@ -7,6 +7,7 @@ import { useRepository } from "../hooks/useRepository";
 import { useArtifacts } from "../hooks/useArtifacts";
 import { useBridge } from "../hooks/useBridge";
 import { useProfile } from "../hooks/useProfile";
+import { useRemoteUI } from "../hooks/useRemoteUI";
 import { getConfig } from "../config";
 import { ChatContext, ChatContextType } from './ChatContext';
 
@@ -25,6 +26,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { artifactsTools } = useArtifacts();
   const { bridgeTools, bridgeInstructions } = useBridge();
   const { generateInstructions } = useProfile();
+  const { tools: remoteUITools } = useRemoteUI();
   const [chatId, setChatId] = useState<string | null>(null);
   const messagesRef = useRef<Message[]>([]);
 
@@ -117,7 +119,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const repositoryTools = currentRepository ? queryTools() : [];
         const repositoryInstructions = currentRepository?.instructions || '';
         
-        const completionTools = [...bridgeTools, ...repositoryTools, ...artifactsTools(), ...(tools || [])];
+        const completionTools = [...bridgeTools, ...repositoryTools, ...artifactsTools(), ...remoteUITools, ...(tools || [])];
 
         const instructions: string[] = [];
 
@@ -169,7 +171,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const errorMessage = { role: Role.Assistant, content: `An error occurred:\n${error}` };
         updateChat(id, { messages: [...conversation, errorMessage] });
       }
-    }, [getOrCreateChat, chats, updateChat, currentRepository, queryTools, bridgeTools, artifactsTools, generateInstructions, client, model, bridgeInstructions]);
+    }, [getOrCreateChat, chats, updateChat, currentRepository, queryTools, bridgeTools, artifactsTools, remoteUITools, generateInstructions, client, model, bridgeInstructions]);
 
   const value: ChatContextType = {
     // Models

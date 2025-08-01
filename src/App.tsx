@@ -18,6 +18,7 @@ import { RepositoryProvider } from "./contexts/RepositoryProvider";
 import { ArtifactsProvider } from "./contexts/ArtifactsProvider";
 import { BridgeProvider } from "./contexts/BridgeProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
+import { RemoteUIProvider } from "./contexts/RemoteUIProvider";
 import { BridgeIndicator } from "./components/BridgeIndicator";
 
 type Page = "chat" | "translate";
@@ -354,17 +355,19 @@ function App() {
             <SidebarProvider>
               <NavigationProvider>
                 <BridgeProvider>
-                  <RepositoryProvider>
-                    <ArtifactsProvider>
-                      <ChatProvider>
-                        <VoiceProvider>
-                          <TranslateProvider>
-                            <AppContent />
-                          </TranslateProvider>
-                        </VoiceProvider>
-                      </ChatProvider>
-                    </ArtifactsProvider>
-                  </RepositoryProvider>
+                  <RemoteUIProvider>
+                    <RepositoryProvider>
+                      <ArtifactsProvider>
+                        <ChatProvider>
+                          <VoiceProvider>
+                            <TranslateProvider>
+                              <AppContent />
+                            </TranslateProvider>
+                          </VoiceProvider>
+                        </ChatProvider>
+                      </ArtifactsProvider>
+                    </RepositoryProvider>
+                  </RemoteUIProvider>
                 </BridgeProvider>
               </NavigationProvider>
             </SidebarProvider>
