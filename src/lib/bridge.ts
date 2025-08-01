@@ -2,16 +2,12 @@ import { Tool } from "../types/chat";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 interface BridgeConfig {
-  name: string;
+    name: string;
 
-  instructions?: string; 
-}
-
-interface ToolTextResult {
-    type: string;
-    text?: string;
+    instructions?: string;
 }
 
 export class Bridge {
@@ -38,9 +34,9 @@ export class Bridge {
                     return;
                 }
 
-                const config : BridgeConfig = await response.json();
+                const config: BridgeConfig = await response.json();
                 console.log("Bridge config", config);
-                
+
                 bridge.instructions = config.instructions || null;
             } catch {
                 return;
@@ -98,23 +94,18 @@ export class Bridge {
                     try {
                         console.log("call local tool", tool.name, args);
 
-                        const callResult = await this.mcp.callTool({
+                        const result = await this.mcp.callTool({
                             name: tool.name,
                             arguments: args,
-                        });
+                        }) as CallToolResult;
 
-                        const results = callResult?.content as ToolTextResult[] | undefined;
-                        const texts: string[] = [];
+                        console.log("call result", result);
 
-                        if (results) {
-                            for (const res of results) {
-                                if (res.type === "text" && res.text) {
-                                    texts.push(res.text);
-                                }
-                            }
+                        if (result.content.length === 1 && result.content[0].type === "text") {
+                            return result.content[0].text;
                         }
 
-                        return texts.join("\n\n");
+                        return JSON.stringify(result.content);
                     }
                     catch (error) {
                         console.error(`Error calling tool ${tool.name}:`, error);

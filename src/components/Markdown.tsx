@@ -9,6 +9,7 @@ import { CardRenderer } from './CardRenderer';
 import { CodeRenderer } from './CodeRenderer';
 import { HtmlRenderer } from './HtmlRenderer';
 import { CsvRenderer } from './CsvRenderer';
+import { SvgRenderer } from './SvgRenderer';
 import { MediaPlayer } from './MediaPlayer';
 import { isAudioUrl, isVideoUrl } from '../lib/utils';
 
@@ -189,6 +190,10 @@ const components: Partial<Components> = {
 
         if (language === "mermaid" || language === "mmd") {
             return <MermaidRenderer chart={text} language={language} />;
+        }
+
+        if (language === "svg") {
+            return <SvgRenderer svg={text} language={language} />;
         }
 
         if (language === "html" || language === "htm") {

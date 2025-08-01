@@ -61,7 +61,7 @@ const CodeRenderer = memo(({ code, language }: CodeRendererProps) => {
 
   if (!html) {
     return renderCodeBlock(
-      <pre className="p-4 text-gray-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto">
+      <pre className="p-4 text-gray-800 dark:text-neutral-300 text-sm whitespace-pre overflow-x-auto">
         <code>{code}</code>
       </pre>
     );
@@ -69,6 +69,7 @@ const CodeRenderer = memo(({ code, language }: CodeRendererProps) => {
 
   return renderCodeBlock(
     <div 
+      className="overflow-x-auto"
       dangerouslySetInnerHTML={{ __html: html }}
       style={{
         margin: 0,

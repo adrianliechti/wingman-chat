@@ -117,6 +117,8 @@ export class Client {
           const args = JSON.parse(toolCall.function.arguments || "{}");
           const result = await tool.function(args);
 
+          console.log("Tool call result:", result);
+
           messages.push({
             role: "tool",
             content: result,
@@ -133,8 +135,7 @@ export class Client {
 
             tool_call_id: toolCall.id,
           });
-        }
-      }
+        }      }
 
       completion = await this.oai.chat.completions.create({
         model: model,
