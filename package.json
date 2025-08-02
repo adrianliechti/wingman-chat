@@ -12,6 +12,10 @@
   "dependencies": {
     "@headlessui/react": "^2.2.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "@opentelemetry/context-zone": "^2.0.1",
+    "@opentelemetry/instrumentation": "^0.203.0",
+    "@opentelemetry/instrumentation-fetch": "^0.203.0",
+    "@opentelemetry/sdk-trace-web": "^2.0.1",
     "@tailwindcss/vite": "^4.1.8",
     "adaptivecards": "^3.0.5",
     "audit": "^0.0.6",
