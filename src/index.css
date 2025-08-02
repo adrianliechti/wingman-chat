@@ -119,6 +119,16 @@ button[data-headlessui-state]:disabled,
   background-color: rgba(255, 255, 255, 0.3);
 }
 
+/* Hide scrollbars completely */
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;  /* Safari and Chrome */
+}
+
 .sidebar-item-base {
   @apply p-1.5 sm:p-2 hover:text-neutral-600 dark:hover:text-neutral-300 rounded cursor-pointer transition-all duration-200;
 }

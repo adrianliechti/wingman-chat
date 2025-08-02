@@ -1,4 +1,10 @@
 {
+    "artifacts": {
+        "enabled": true
+    },
+    "repository": {
+        "enabled": true
+    },
     "vision": {
         "enabled": true
     }

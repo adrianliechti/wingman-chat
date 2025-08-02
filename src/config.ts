@@ -23,6 +23,7 @@ interface config {
   vision?: visionConfig;
   
   bridge?: bridgeConfig;
+  artifacts?: artifactsConfig;
   repository?: repositoryConfig;
   translator?: translatorConfig;
 }
@@ -60,6 +61,10 @@ interface repositoryConfig {
   extractor?: string;
 }
 
+interface artifactsConfig {
+  enabled: boolean;
+}
+
 interface translatorConfig {
   enabled: boolean;
   files: string[];
@@ -80,6 +85,8 @@ interface Config {
   vision: boolean;
   
   bridge: Bridge;
+
+  artifacts: artifactsConfig;
   repository: repositoryConfig;
   translator: translatorConfig; 
 
@@ -125,6 +132,10 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       vision: cfg.vision?.enabled ?? false,
       
       bridge: bridge,
+
+      artifacts: cfg.artifacts ?? {
+        enabled: false
+      },
 
       repository: cfg.repository ?? {
         enabled: false

@@ -4,6 +4,7 @@ import { useModels } from "../hooks/useModels";
 import { useChats } from "../hooks/useChats";
 import { useRepositories } from "../hooks/useRepositories";
 import { useRepository } from "../hooks/useRepository";
+import { useArtifacts } from "../hooks/useArtifacts";
 import { useBridge } from "../hooks/useBridge";
 import { useProfile } from "../hooks/useProfile";
 import { getConfig } from "../config";
@@ -21,6 +22,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { currentRepository } = useRepositories();
   const { queryTools } = useRepository(currentRepository?.id || '');
+  const { artifactsTools } = useArtifacts();
   const { bridgeTools, bridgeInstructions } = useBridge();
   const { generateInstructions } = useProfile();
   const [chatId, setChatId] = useState<string | null>(null);
@@ -115,7 +117,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const repositoryTools = currentRepository ? queryTools() : [];
         const repositoryInstructions = currentRepository?.instructions || '';
         
-        const completionTools = [...bridgeTools, ...repositoryTools, ...(tools || [])];
+        const completionTools = [...bridgeTools, ...repositoryTools, ...artifactsTools(), ...(tools || [])];
 
         const instructions: string[] = [];
 
@@ -167,7 +169,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const errorMessage = { role: Role.Assistant, content: `An error occurred:\n${error}` };
         updateChat(id, { messages: [...conversation, errorMessage] });
       }
-    }, [getOrCreateChat, chats, updateChat, currentRepository, queryTools, bridgeTools, generateInstructions, client, model, bridgeInstructions]);
+    }, [getOrCreateChat, chats, updateChat, currentRepository, queryTools, bridgeTools, artifactsTools, generateInstructions, client, model, bridgeInstructions]);
 
   const value: ChatContextType = {
     // Models

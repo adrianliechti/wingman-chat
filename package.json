@@ -15,6 +15,7 @@
     "@tailwindcss/vite": "^4.1.11",
     "adaptivecards": "^3.0.5",
     "audit": "^0.0.6",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.536.0",
     "mermaid": "^11.9.0",
     "mime": "^4.0.7",

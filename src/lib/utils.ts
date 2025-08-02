@@ -97,7 +97,12 @@ export async function resizeImageBlob(
   });
 }
 
-export function getFileExt(filename: string): string {
+export function getFileName(path: string): string {
+  return path.split('/').pop() || path;
+}
+
+export function getFileExt(path: string): string {
+  const filename = getFileName(path);
   const parts = filename.split('.');
   return parts.length > 1 ? "." + parts.pop() || "" : "";
 }
