@@ -5,12 +5,10 @@ import { Send, Paperclip, ScreenShare, Image, X, Brain, File, Loader2, FileText,
 
 import { Attachment, AttachmentType, Message, Role } from "../types/chat";
 import {
-  captureScreenshot,
   getFileExt,
   readAsDataURL,
   readAsText,
   resizeImageBlob,
-  supportsScreenshot,
   supportedTypes,
   textTypes,
   imageTypes,
@@ -22,6 +20,7 @@ import { useRepositories } from "../hooks/useRepositories";
 import { useTranscription } from "../hooks/useTranscription";
 import { useDropZone } from "../hooks/useDropZone";
 import { useSettings } from "../hooks/useSettings";
+import { useScreenCapture } from "../hooks/useScreenCapture";
 
 export function ChatInput() {
   const config = getConfig();
@@ -30,6 +29,7 @@ export function ChatInput() {
   const { sendMessage, models, model, setModel: onModelChange, messages } = useChat();
   const { currentRepository, setCurrentRepository } = useRepositories();
   const { profile } = useSettings();
+  const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
 
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
@@ -80,6 +80,8 @@ export function ChatInput() {
 
   // Transcription hook
   const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription();
+
+
 
   const handleFiles = async (files: File[]) => {
     // Process all files in parallel for better performance
@@ -248,14 +250,35 @@ export function ChatInput() {
     }
   }, [messages.length]);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
 
     if (content.trim()) {
+      let finalAttachments = [...attachments];
+
+      // If continuous capture is active, automatically capture current screen
+      if (isContinuousCaptureActive) {
+        try {
+          const blob = await captureFrame();
+          if (blob) {
+            const data = await readAsDataURL(blob);
+            const screenAttachment = {
+              type: AttachmentType.Image,
+              name: `screen-capture-${Date.now()}.png`,
+              data: data,
+            };
+            // Add screen capture as the first attachment
+            finalAttachments = [screenAttachment, ...finalAttachments];
+          }
+        } catch (error) {
+          console.error("Error capturing screen during message send:", error);
+        }
+      }
+
       const message: Message = {
         role: Role.User,
         content: content,
-        attachments: attachments,
+        attachments: finalAttachments,
       };
 
       sendMessage(message);
@@ -274,28 +297,15 @@ export function ChatInput() {
     }
   };
 
-  const handleScreenshotClick = async () => {
-    const screenshotId = `screenshot-${Date.now()}`;
-    setExtractingAttachments(prev => new Set([...prev, screenshotId]));
-    
+  const handleContinuousCaptureToggle = async () => {
     try {
-      const data = await captureScreenshot();
-
-      const attachment = {
-        type: AttachmentType.Image,
-        name: "screenshot.png",
-        data: data,
-      };
-
-      setAttachments((prev) => [...prev, attachment]);
+      if (isContinuousCaptureActive) {
+        stopCapture();
+      } else {
+        await startCapture();
+      }
     } catch (error) {
-      console.error("Error capturing screenshot:", error);
-    } finally {
-      setExtractingAttachments(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(screenshotId);
-        return newSet;
-      });
+      console.error("Error toggling continuous capture:", error);
     }
   };
 
@@ -582,13 +592,23 @@ export function ChatInput() {
           </div>
 
           <div className="flex items-center gap-1">
-            {config.vision && supportsScreenshot() && (
+            {isScreenCaptureAvailable && (
               <Button
                 type="button"
-                className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                onClick={handleScreenshotClick}
+                className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
+                  isContinuousCaptureActive 
+                    ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg' 
+                    : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                }`}
+                onClick={handleContinuousCaptureToggle}
+                title={isContinuousCaptureActive ? 'Stop continuous screen capture' : 'Start continuous screen capture'}
               >
-                <ScreenShare size={16} />
+                <ScreenShare size={14} />
+                {isContinuousCaptureActive && (
+                  <span className="hidden sm:inline">
+                    Recording
+                  </span>
+                )}
               </Button>
             )}
 

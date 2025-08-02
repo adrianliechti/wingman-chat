@@ -19,6 +19,7 @@ import { ArtifactsProvider } from "./contexts/ArtifactsProvider";
 import { BridgeProvider } from "./contexts/BridgeProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
 import { RemoteUIProvider } from "./contexts/RemoteUIProvider";
+import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
 import { BridgeIndicator } from "./components/BridgeIndicator";
 
 type Page = "chat" | "translate";
@@ -346,35 +347,28 @@ function AppContent() {
   );
 }
 
+// Compose providers to avoid deep nesting
+const providers = [
+  ThemeProvider,
+  LayoutProvider,
+  BackgroundProvider,
+  ProfileProvider,
+  SidebarProvider,
+  NavigationProvider,
+  BridgeProvider,
+  RemoteUIProvider,
+  RepositoryProvider,
+  ScreenCaptureProvider,
+  ArtifactsProvider,
+  ChatProvider,
+  VoiceProvider,
+  TranslateProvider,
+];
+
 function App() {
-  return (
-    <ThemeProvider>
-      <LayoutProvider>
-        <BackgroundProvider>
-          <ProfileProvider>
-            <SidebarProvider>
-              <NavigationProvider>
-                <BridgeProvider>
-                  <RemoteUIProvider>
-                    <RepositoryProvider>
-                      <ArtifactsProvider>
-                        <ChatProvider>
-                          <VoiceProvider>
-                            <TranslateProvider>
-                              <AppContent />
-                            </TranslateProvider>
-                          </VoiceProvider>
-                        </ChatProvider>
-                      </ArtifactsProvider>
-                    </RepositoryProvider>
-                  </RemoteUIProvider>
-                </BridgeProvider>
-              </NavigationProvider>
-            </SidebarProvider>
-          </ProfileProvider>
-        </BackgroundProvider>
-      </LayoutProvider>
-    </ThemeProvider>
+  return providers.reduceRight(
+    (acc, Provider) => <Provider>{acc}</Provider>,
+    <AppContent />
   );
 }
 
