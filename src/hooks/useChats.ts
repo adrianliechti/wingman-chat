@@ -86,6 +86,7 @@ export function useChats() {
       updated: new Date(),
       model: null,
       messages: [],
+      files: {},
     };
 
     setChats((prev) => [chat, ...prev]);
@@ -93,11 +94,15 @@ export function useChats() {
     return chat;
   }
 
-  function updateChat(chatId: string, updates: Partial<Chat>) {
+  function updateChat(chatId: string, updater: (chat: Chat) => Partial<Chat>): void {
     setChats((prev) =>
-      prev.map((chat) =>
-        chat.id === chatId ? { ...chat, ...updates, updated: new Date() } : chat
-      )
+      prev.map((chat) => {
+        if (chat.id === chatId) {
+          const updates = updater(chat);
+          return { ...chat, ...updates, updated: new Date() };
+        }
+        return chat;
+      })
     );
   }
 

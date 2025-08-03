@@ -20,19 +20,23 @@ import { useRemoteUIContext } from "../hooks/useRemoteUIContext";
 import { RepositoryDrawer } from "../components/RepositoryDrawer";
 import { ArtifactsDrawer } from "../components/ArtifactsDrawer";
 import { RemoteUIDrawer } from "../components/RemoteUIDrawer";
+import { FileSystemManager } from "../lib/fs";
+import { FileSystem } from "../types/file";
+import { Chat } from "../types/chat";
 
 export function ChatPage() {
   const {
     chat,
     messages,
     createChat,
-    chats
+    chats,
+    updateChat
   } = useChat();
   
   const { layoutMode } = useLayout();
   const { isAvailable: voiceAvailable, startVoice, stopVoice } = useVoice();
   const { showRemoteUIDrawer, setShowRemoteUIDrawer } = useRemoteUIContext();
-  const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
+  const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, setFileSystemManager } = useArtifacts();
   const { isAvailable: repositoryAvailable, toggleRepositoryDrawer, showRepositoryDrawer } = useRepositories();
   
   // Only need backgroundImage to check if background should be shown
@@ -78,6 +82,47 @@ export function ChatPage() {
   const { containerRef, bottomRef, handleScroll, enableAutoScroll } = useAutoScroll({
     dependencies: [chat, messages],
   });
+
+  // Set up artifacts filesystem integration with chat.files
+  useEffect(() => {
+    if (!chat || !artifactsAvailable) {
+      setFileSystemManager(null);
+      return;
+    }
+
+    // Create FileSystemManager that uses chat.files as persistence
+    const manager = new FileSystemManager(
+      // getFilesystem: returns current filesystem state from chat.files
+      () => {
+        const currentChat = chats.find(c => c.id === chat.id);
+        return currentChat?.files || {};
+      },
+      
+      // setFilesystem: updates chat.files through functional updateChat
+      (updater: (current: FileSystem) => FileSystem) => {
+        updateChat(chat.id, (currentChat: Chat) => ({
+          files: updater(currentChat.files || {})
+        }));
+      },
+      
+      // onFileCreated callback
+      (path: string) => {
+        console.log(`📄 Artifacts: File created: ${path}`);
+      },
+      
+      // onFileDeleted callback
+      (path: string) => {
+        console.log(`🗑️ Artifacts: File deleted: ${path}`);
+      },
+      
+      // onFileRenamed callback
+      (oldPath: string, newPath: string) => {
+        console.log(`📁 Artifacts: File renamed: ${oldPath} → ${newPath}`);
+      }
+    );
+
+    setFileSystemManager(manager);
+  }, [chat, chats, artifactsAvailable, setFileSystemManager, updateChat]);
 
   // Set up navigation actions (only once on mount)
   useEffect(() => {

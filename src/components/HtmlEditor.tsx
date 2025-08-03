@@ -1,40 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Code, Eye } from 'lucide-react';
 import { Button } from '@headlessui/react';
 import { CodeEditor } from './CodeEditor';
 
 // Component to display HTML content in iframe
-function HtmlPreview({ blob }: { blob: Blob }) {
-  const [htmlContent, setHtmlContent] = useState<string>('');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const loadHtml = async () => {
-      try {
-        const text = await blob.text();
-        setHtmlContent(text);
-      } catch {
-        setHtmlContent('<p>Error loading HTML content</p>');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadHtml();
-  }, [blob]);
-
-  if (loading) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-neutral-500">Loading preview...</div>
-      </div>
-    );
-  }
-
+function HtmlPreview({ content }: { content: string }) {
   return (
     <div className="h-full overflow-hidden">
       <iframe
-        srcDoc={htmlContent}
+        srcDoc={content}
         className="w-full h-full"
         sandbox="allow-scripts allow-same-origin"
       />
@@ -43,10 +17,10 @@ function HtmlPreview({ blob }: { blob: Blob }) {
 }
 
 interface HtmlEditorProps {
-  blob: Blob;
+  content: string;
 }
 
-export function HtmlEditor({ blob }: HtmlEditorProps) {
+export function HtmlEditor({ content }: HtmlEditorProps) {
   const [viewMode, setViewMode] = useState<'code' | 'preview'>('code');
 
   return (
@@ -64,9 +38,9 @@ export function HtmlEditor({ blob }: HtmlEditorProps) {
       
       <div className="flex-1 overflow-auto">
         {viewMode === 'preview' ? (
-          <HtmlPreview blob={blob} />
+          <HtmlPreview content={content} />
         ) : (
-          <CodeEditor blob={blob} language="html" />
+          <CodeEditor content={content} language="html" />
         )}
       </div>
     </div>

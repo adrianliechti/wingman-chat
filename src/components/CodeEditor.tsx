@@ -3,28 +3,13 @@ import { codeToHtml } from 'shiki';
 import { useTheme } from '../hooks/useTheme';
 
 interface CodeEditorProps {
-  blob: Blob;
+  content: string;
   language?: string;
 }
 
-export function CodeEditor({ blob, language = '' }: CodeEditorProps) {
-  const [content, setContent] = useState<string>('');
+export function CodeEditor({ content, language = '' }: CodeEditorProps) {
   const [html, setHtml] = useState<string>('');
   const { isDark } = useTheme();
-  
-  // Read blob content
-  useEffect(() => {
-    const readBlob = async () => {
-      try {
-        const text = await blob.text();
-        setContent(text);
-      } catch {
-        setContent('Error reading file content');
-      }
-    };
-    
-    readBlob();
-  }, [blob]);
   
   // Highlight code when content changes
   useEffect(() => {

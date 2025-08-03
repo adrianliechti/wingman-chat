@@ -1,47 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Code, Eye } from 'lucide-react';
 import { Button } from '@headlessui/react';
 import { CodeEditor } from './CodeEditor';
 
 // Component to display SVG content
-function SvgPreview({ blob }: { blob: Blob }) {
-  const [svgContent, setSvgContent] = useState<string>('');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const loadSvg = async () => {
-      try {
-        let text = await blob.text();
-        
-        // Make SVG responsive by removing fixed dimensions and adding responsive styles
-        text = text.replace(/<svg([^>]*)>/i, (_, attributes) => {
-          // Remove width and height attributes but keep viewBox
-          const newAttributes = attributes
-            .replace(/\s*width\s*=\s*"[^"]*"/gi, '')
-            .replace(/\s*height\s*=\s*"[^"]*"/gi, '');
-          
-          // Add responsive styling
-          return `<svg${newAttributes} style="width: 100%; height: 100%; max-width: 100%; max-height: 100%;">`;
-        });
-        
-        setSvgContent(text);
-      } catch {
-        setSvgContent('<svg style="width: 100%; height: 100%;"><text x="10" y="20" fill="red">Error loading SVG content</text></svg>');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadSvg();
-  }, [blob]);
-
-  if (loading) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-neutral-500">Loading preview...</div>
-      </div>
-    );
-  }
+function SvgPreview({ content }: { content: string }) {
+  // Make SVG responsive by removing fixed dimensions and adding responsive styles
+  const svgContent = content.replace(/<svg([^>]*)>/i, (_, attributes) => {
+    // Remove width and height attributes but keep viewBox
+    const newAttributes = attributes
+      .replace(/\s*width\s*=\s*"[^"]*"/gi, '')
+      .replace(/\s*height\s*=\s*"[^"]*"/gi, '');
+    
+    // Add responsive styling
+    return `<svg${newAttributes} style="width: 100%; height: 100%; max-width: 100%; max-height: 100%;">`;
+  });
 
   return (
     <div className="h-full p-4">
@@ -54,10 +27,10 @@ function SvgPreview({ blob }: { blob: Blob }) {
 }
 
 interface SvgEditorProps {
-  blob: Blob;
+  content: string;
 }
 
-export function SvgEditor({ blob }: SvgEditorProps) {
+export function SvgEditor({ content }: SvgEditorProps) {
   const [viewMode, setViewMode] = useState<'code' | 'preview'>('preview');
 
   return (
@@ -75,9 +48,9 @@ export function SvgEditor({ blob }: SvgEditorProps) {
       
       <div className="flex-1 overflow-auto p-4">
         {viewMode === 'preview' ? (
-          <SvgPreview blob={blob} />
+          <SvgPreview content={content} />
         ) : (
-          <CodeEditor blob={blob} language="svg" />
+          <CodeEditor content={content} language="svg" />
         )}
       </div>
     </div>

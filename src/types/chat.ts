@@ -1,3 +1,5 @@
+import { File } from "./file";
+
 export type Model = {
     id: string;
     name: string;
@@ -50,4 +52,5 @@ export type Chat = {
 
     model: Model | null;
     messages: Array<Message>;
+    files?: { [path: string]: File };
 };

@@ -35,11 +35,11 @@ export function ChatSidebar() {
     const newChat = createChat();
     
     // Copy all the properties from the original chat
-    updateChat(newChat.id, {
+    updateChat(newChat.id, () => ({
       title: chatToFork.title ? `${chatToFork.title} (Fork)` : "Forked Chat",
       model: chatToFork.model,
       messages: [...chatToFork.messages], // Create a copy of the messages array
-    });
+    }));
     
     // The chat is already selected by createChat, but we need to ensure it's visible
     // Use a small delay to ensure state updates have propagated

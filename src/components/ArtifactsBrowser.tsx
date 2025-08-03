@@ -3,6 +3,7 @@ import { Edit3, Trash2, File, Folder, FolderOpen, ChevronRight, ChevronDown, Che
 import { Button } from '@headlessui/react';
 import { FileIcon } from './FileIcon';
 import { getFileName } from '../lib/utils';
+import { FileSystemManager } from '../lib/fs';
 
 // Helper function to build folder tree structure
 interface FileNode {
@@ -10,10 +11,10 @@ interface FileNode {
   path: string;
   type: 'file' | 'folder';
   children?: FileNode[];
-  file?: { path: string; content: Blob }; // Reference to the actual file object
+  file?: { path: string; content: string }; // Reference to the actual file object
 }
 
-function buildFileTree(files: { path: string; content: Blob }[]): FileNode[] {
+function buildFileTree(files: { path: string; content: string }[]): FileNode[] {
   const tree: FileNode[] = [];
   const folderMap = new Map<string, FileNode>();
 
@@ -349,26 +350,37 @@ function FileTreeNode({
 }
 
 interface ArtifactsBrowserProps {
-  files: { path: string; content: Blob }[];
+  fs: FileSystemManager;
   openTabs: string[];
   onFileClick: (path: string) => void;
-  onDeleteFile: (path: string, event: React.MouseEvent) => void;
-  onBulkDeleteFiles: (paths: string[]) => void;
-  onRenameFile: (oldPath: string, newPath: string) => void;
-  onDownloadAsZip: () => Promise<void>;
+  onDeleteFile?: (path: string, event: React.MouseEvent) => void;
+  onRenameFile?: (oldPath: string, newPath: string) => void;
+  onDownloadAsZip?: () => Promise<void>;
 }
 
 export function ArtifactsBrowser({
-  files,
+  fs,
   openTabs,
   onFileClick,
   onDeleteFile,
-  onBulkDeleteFiles,
   onRenameFile,
   onDownloadAsZip
 }: ArtifactsBrowserProps) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
+
+  // Default handlers that use fs directly
+  const handleDeleteFile = onDeleteFile || ((path: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (window.confirm(`Are you sure you want to delete "${getFileName(path)}"?`)) {
+      fs.deleteFile(path);
+    }
+  });
+
+  const handleDownloadAsZip = onDownloadAsZip || (() => fs.downloadAsZip());
+
+  // Get all files from the file system
+  const files = fs.listFiles().map(file => ({ path: file.path, content: file.content }));
 
   // Build the file tree
   const fileTree = buildFileTree(files);
@@ -391,23 +403,24 @@ export function ArtifactsBrowser({
       const fileCount = affectedFiles.length;
       const fileText = fileCount === 1 ? 'file' : 'files';
       if (window.confirm(`Are you sure you want to delete the folder "${folderName}" and all ${fileCount} ${fileText} inside it?`)) {
-        // Delete all files within the folder at once using bulk delete
-        const filePaths = affectedFiles.map(file => file.path);
-        onBulkDeleteFiles(filePaths);
+        // Use the file system's deleteFile method which now handles folders
+        const success = fs.deleteFile(path);
         
-        // Remove from expanded folders
-        const newExpanded = new Set(expandedFolders);
-        newExpanded.delete(path);
-        
-        // Also remove any nested expanded folders
-        const expandedArray = Array.from(newExpanded);
-        for (const expandedPath of expandedArray) {
-          if (expandedPath.startsWith(path + '/')) {
-            newExpanded.delete(expandedPath);
+        if (success) {
+          // Remove from expanded folders
+          const newExpanded = new Set(expandedFolders);
+          newExpanded.delete(path);
+          
+          // Also remove any nested expanded folders
+          const expandedArray = Array.from(newExpanded);
+          for (const expandedPath of expandedArray) {
+            if (expandedPath.startsWith(path + '/')) {
+              newExpanded.delete(expandedPath);
+            }
           }
+          
+          setExpandedFolders(newExpanded);
         }
-        
-        setExpandedFolders(newExpanded);
       }
     }
   };
@@ -423,7 +436,19 @@ export function ArtifactsBrowser({
   };
 
   const handleRenameFile = (oldPath: string, newPath: string) => {
-    // Check if this is a folder rename by looking at the file tree structure
+    if (onRenameFile) {
+      // Use the provided callback
+      onRenameFile(oldPath, newPath);
+    } else {
+      // Use the file system's built-in rename method which handles both files and folders
+      const success = fs.renameFile(oldPath, newPath);
+      if (!success) {
+        console.error(`Failed to rename ${oldPath} to ${newPath}`);
+        return;
+      }
+    }
+
+    // Update expanded folders if this was a folder rename
     const isFolder = fileTree.some(node => {
       const findNode = (n: FileNode): boolean => {
         if (n.path === oldPath && n.type === 'folder') return true;
@@ -434,12 +459,8 @@ export function ArtifactsBrowser({
       };
       return findNode(node);
     });
-    
+
     if (isFolder) {
-      // This is a folder - rename all files within this folder
-      const affectedFiles = files.filter(file => file.path.startsWith(oldPath + '/'));
-      
-      // Update expanded folders
       const newExpanded = new Set(expandedFolders);
       if (newExpanded.has(oldPath)) {
         newExpanded.delete(oldPath);
@@ -457,16 +478,6 @@ export function ArtifactsBrowser({
         }
       }
       setExpandedFolders(newExpanded);
-      
-      // Rename all affected files
-      for (const file of affectedFiles) {
-        const relativePath = file.path.substring(oldPath.length);
-        const newFilePath = newPath + relativePath;
-        onRenameFile(file.path, newFilePath);
-      }
-    } else {
-      // This is a file rename
-      onRenameFile(oldPath, newPath);
     }
   };
 
@@ -501,7 +512,7 @@ export function ArtifactsBrowser({
                 level={0}
                 openTabs={openTabs}
                 onFileClick={onFileClick}
-                onDeleteFile={onDeleteFile}
+                onDeleteFile={handleDeleteFile}
                 onDeleteFolder={handleDeleteFolder}
                 onRenameFile={handleRenameFile}
                 expandedFolders={expandedFolders}
@@ -521,7 +532,7 @@ export function ArtifactsBrowser({
           <Button
             onClick={async () => {
               try {
-                await onDownloadAsZip();
+                await handleDownloadAsZip();
               } catch (error) {
                 console.error('Failed to download files:', error);
                 alert('Failed to download files. Please try again.');

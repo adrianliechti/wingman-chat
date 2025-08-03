@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Code, Eye } from 'lucide-react';
 import { Button } from '@headlessui/react';
 
 interface CsvEditorProps {
-  blob: Blob;
+  content: string;
 }
 
 // Utility function to detect separator (comma, semicolon, or tab)
@@ -82,35 +82,10 @@ const parseCSV = (csv: string): string[][] => {
   return result;
 };
 
-export function CsvEditor({ blob }: CsvEditorProps) {
-  const [content, setContent] = useState<string>('');
-  const [loading, setLoading] = useState(true);
+export function CsvEditor({ content }: CsvEditorProps) {
   const [viewMode, setViewMode] = useState<'table' | 'code'>('table');
 
   const parsedData = useMemo(() => parseCSV(content), [content]);
-
-  useEffect(() => {
-    const readBlob = async () => {
-      try {
-        const text = await blob.text();
-        setContent(text);
-      } catch {
-        setContent('');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    readBlob();
-  }, [blob]);
-
-  if (loading) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-neutral-500">Loading CSV...</div>
-      </div>
-    );
-  }
 
   const headers = parsedData.length > 0 ? parsedData[0] : [];
   const rows = parsedData.slice(1);

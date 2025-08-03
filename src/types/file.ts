@@ -1,6 +1,7 @@
 export interface File {
   path: string;
-  content: Blob;
+  content: string;
+  contentType?: string;
   createdAt: Date;
   updatedAt: Date;
 }

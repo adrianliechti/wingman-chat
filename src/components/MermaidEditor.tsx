@@ -5,7 +5,7 @@ import { useTheme } from '../hooks/useTheme';
 import { CodeEditor } from './CodeEditor';
 
 interface MermaidEditorProps {
-  blob: Blob;
+  content: string;
 }
 
 interface MermaidAPI {
@@ -14,31 +14,12 @@ interface MermaidAPI {
 }
 
 // Component to display Mermaid diagram
-function MermaidPreview({ blob }: { blob: Blob }) {
-  const [chart, setChart] = useState<string>('');
+function MermaidPreview({ content }: { content: string }) {
   const [svg, setSvg] = useState<string>('');
-  const [loading, setLoading] = useState(true);
   const [isLoaded, setIsLoaded] = useState(false);
   const elementId = useRef(`mermaid-${Math.random().toString(36).substr(2, 9)}`);
   const mermaidRef = useRef<MermaidAPI | null>(null);
   const { isDark } = useTheme();
-
-  // Load chart content from blob
-  useEffect(() => {
-    const loadChart = async () => {
-      try {
-        const text = await blob.text();
-        setChart(text);
-      } catch (error) {
-        console.error('Error reading blob:', error);
-        setChart('Error loading chart content');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadChart();
-  }, [blob]);
 
   // Dynamically import and configure mermaid
   useEffect(() => {
@@ -103,13 +84,13 @@ function MermaidPreview({ blob }: { blob: Blob }) {
   // Render mermaid chart
   useEffect(() => {
     const renderMermaid = async () => {
-      if (!mermaidRef.current || !isLoaded || !chart.trim()) return;
+      if (!mermaidRef.current || !isLoaded || !content.trim()) return;
       
       try {
         // Generate a new element ID to force re-render when theme changes
         elementId.current = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
         
-        const { svg: renderedSvg } = await mermaidRef.current.render(elementId.current, chart);
+        const { svg: renderedSvg } = await mermaidRef.current.render(elementId.current, content);
         setSvg(renderedSvg);
       } catch (error) {
         console.error('Mermaid rendering error:', error);
@@ -123,9 +104,9 @@ function MermaidPreview({ blob }: { blob: Blob }) {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [chart, isDark, isLoaded]);
+  }, [content, isDark, isLoaded]);
 
-  if (loading || !isLoaded) {
+  if (!isLoaded) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="flex items-center space-x-3 text-neutral-500">
@@ -154,7 +135,7 @@ function MermaidPreview({ blob }: { blob: Blob }) {
   );
 }
 
-const NonMemoizedMermaidEditor = ({ blob }: MermaidEditorProps) => {
+const NonMemoizedMermaidEditor = ({ content }: MermaidEditorProps) => {
   const [viewMode, setViewMode] = useState<'code' | 'preview'>('code');
 
   return (
@@ -172,9 +153,9 @@ const NonMemoizedMermaidEditor = ({ blob }: MermaidEditorProps) => {
       
       <div className="flex-1 overflow-auto">
         {viewMode === 'preview' ? (
-          <MermaidPreview blob={blob} />
+          <MermaidPreview content={content} />
         ) : (
-          <CodeEditor blob={blob} language="mermaid" />
+          <CodeEditor content={content} language="mermaid" />
         )}
       </div>
     </div>
@@ -184,5 +165,5 @@ const NonMemoizedMermaidEditor = ({ blob }: MermaidEditorProps) => {
 export const MermaidEditor = memo(
   NonMemoizedMermaidEditor,
   (prevProps, nextProps) =>
-    prevProps.blob === nextProps.blob
+    prevProps.content === nextProps.content
 );

@@ -1,7 +1,6 @@
 import { useState, useCallback, ReactNode, useEffect } from 'react';
 import { ArtifactsContext } from './ArtifactsContext';
-import { File, FileSystem } from '../types/file';
-import { downloadFilesystemAsZip } from '../lib/fs';
+import { FileSystemManager } from '../lib/fs';
 import { getConfig } from '../config';
 
 interface ArtifactsProviderProps {
@@ -9,9 +8,9 @@ interface ArtifactsProviderProps {
 }
 
 export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
-  const [filesystem, setFilesystem] = useState<FileSystem>({});
-  const [openTabs, setOpenTabs] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<string | null>(null);
+  const [fs, setFs] = useState<FileSystemManager | null>(null);
+  const [openFiles, setOpenFiles] = useState<string[]>([]);
+  const [activeFile, setActiveFile] = useState<string | null>(null);
   const [showArtifactsDrawer, setShowArtifactsDrawer] = useState(false);
   const [isAvailable, setIsAvailable] = useState(false);
 
@@ -26,109 +25,54 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     }
   }, []);
 
-  const openTab = useCallback((path: string) => {
-    setOpenTabs(prev => {
+  // Method to set the FileSystemManager from ChatPage
+  const setFileSystemManager = useCallback((manager: FileSystemManager | null) => {
+    setFs(manager);
+    // Reset files when filesystem manager changes
+    setOpenFiles([]);
+    setActiveFile(null);
+  }, []);
+
+  const openFile = useCallback((path: string) => {
+    setOpenFiles(prev => {
       if (prev.includes(path)) return prev;
       return [...prev, path];
     });
-    setActiveTab(path);
+    setActiveFile(path);
   }, []);
 
-  const closeTab = useCallback((path: string) => {
-    setOpenTabs(prev => {
-      const newTabs = prev.filter(tab => tab !== path);
+  const closeFile = useCallback((path: string) => {
+    setOpenFiles(prev => {
+      const newFiles = prev.filter(file => file !== path);
       
-      // If closing the active tab, set a new active tab
-      if (path === activeTab) {
+      // If closing the active file, set a new active file
+      if (path === activeFile) {
         const index = prev.indexOf(path);
-        const newActiveTab = newTabs.length > 0 
-          ? newTabs[Math.min(index, newTabs.length - 1)]
+        const newActiveFile = newFiles.length > 0 
+          ? newFiles[Math.min(index, newFiles.length - 1)]
           : null;
-        setActiveTab(newActiveTab);
+        setActiveFile(newActiveFile);
       }
       
-      return newTabs;
+      return newFiles;
     });
-  }, [activeTab]);
-
-  const createFile = useCallback((path: string, content: Blob) => {
-    const now = new Date();
-    const file: File = {
-      path,
-      content,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    setFilesystem(prev => ({
-      ...prev,
-      [path]: file
-    }));
-
-    // Auto-open the newly created file
-    openTab(path);
-  }, [openTab]);
-
-  const updateFile = useCallback((path: string, content: Blob) => {
-    setFilesystem(prev => {
-      const existingFile = prev[path];
-      if (!existingFile) return prev;
-
-      return {
-        ...prev,
-        [path]: {
-          ...existingFile,
-          content,
-          updatedAt: new Date(),
-        }
-      };
-    });
-  }, []);
-
-  const deleteFile = useCallback((path: string) => {
-    setFilesystem(prev => {
-      const newFs = { ...prev };
-      delete newFs[path];
-      return newFs;
-    });
-
-    // Close tab if it's open
-    closeTab(path);
-  }, [closeTab]);
-
-  const getFile = useCallback((path: string): File | undefined => {
-    return filesystem[path];
-  }, [filesystem]);
+  }, [activeFile]);
 
   const toggleArtifactsDrawer = useCallback(() => {
     setShowArtifactsDrawer(prev => !prev);
   }, []);
 
-  const downloadAsZip = useCallback(async (filename?: string) => {
-    try {
-      await downloadFilesystemAsZip(filesystem, filename);
-    } catch (error) {
-      console.error('Failed to download filesystem as zip:', error);
-      throw error;
-    }
-  }, [filesystem]);
-
   const value = {
     isAvailable,
-    filesystem,
-    openTabs,
-    activeTab,
+    fs,
+    openFiles,
+    activeFile,
     showArtifactsDrawer,
-    createFile,
-    updateFile,
-    deleteFile,
-    openTab,
-    closeTab,
-    setActiveTab,
-    getFile,
+    openFile,
+    closeFile,
     setShowArtifactsDrawer,
     toggleArtifactsDrawer,
-    downloadAsZip,
+    setFileSystemManager,
   };
 
   return (
