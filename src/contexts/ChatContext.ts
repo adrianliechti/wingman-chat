@@ -16,7 +16,7 @@ export interface ChatContextType {
   createChat: () => Chat;
   selectChat: (chatId: string) => void;
   deleteChat: (chatId: string) => void;
-  updateChat: (chatId: string, updates: Partial<Chat>) => void;
+  updateChat: (chatId: string, updater: (chat: Chat) => Partial<Chat>) => void;
 
   addMessage: (message: Message) => void;
   sendMessage: (message: Message, tools?: Tool[]) => Promise<void>;

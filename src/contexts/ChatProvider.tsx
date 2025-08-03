@@ -62,7 +62,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const setModel = useCallback((model: Model | null) => {
     if (chat) {
-      updateChat(chat.id, { model });
+      updateChat(chat.id, () => ({ model }));
     } else {
       setSelectedModel(model);
     }
@@ -81,7 +81,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       chatItem.model = model;
 
       setChatId(chatItem.id);
-      updateChat(chatItem.id, { model });
+      updateChat(chatItem.id, () => ({ model }));
 
       id = chatItem.id;
     }
@@ -97,7 +97,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const updatedMessages = [...currentMessages, message];
       
       messagesRef.current = updatedMessages;
-      updateChat(id, { messages: updatedMessages });
+      updateChat(id, () => ({ messages: updatedMessages }));
     },
     [getOrCreateChat, updateChat]
   );
@@ -109,7 +109,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const existingMessages = chats.find(c => c.id === id)?.messages || [];
       const conversation = [...existingMessages, message];
 
-      updateChat(id, { messages: [...conversation, { role: Role.Assistant, content: '' }] });
+      updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: '' }] }));
 
       try {
         const profileInstructions = generateInstructions();
@@ -138,15 +138,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
           instructions.join('\n\n'),
           conversation,
           completionTools,
-          (_, snapshot) => updateChat(id, { messages: [...conversation, { role: Role.Assistant, content: snapshot }] })
+          (_, snapshot) => updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: snapshot }] }))
         );
 
-        updateChat(id, { messages: [...conversation, completion] });
+        updateChat(id, () => ({ messages: [...conversation, completion] }));
 
         if (!chatObj.title || conversation.length % 3 === 0) {
           client
             .summarize(model!.id, conversation)
-            .then(title => updateChat(id, { title }));
+            .then(title => updateChat(id, () => ({ title })));
         }
       } catch (error) {
         console.error(error);
@@ -154,7 +154,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         if (error?.toString().includes('missing finish_reason')) return;
 
         const errorMessage = { role: Role.Assistant, content: `An error occurred:\n${error}` };
-        updateChat(id, { messages: [...conversation, errorMessage] });
+        updateChat(id, () => ({ messages: [...conversation, errorMessage] }));
       }
     }, [getOrCreateChat, chats, updateChat, generateInstructions, currentRepository, queryTools, queryInstructions, bridgeTools, artifactsTools, bridgeInstructions, client, model]);
 

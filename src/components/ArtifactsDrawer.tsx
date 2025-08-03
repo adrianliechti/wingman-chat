@@ -27,7 +27,14 @@ export function ArtifactsDrawer() {
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Get all files sorted by path
-  const files = fs.listFiles().sort((a, b) => a.path.localeCompare(b.path));
+  const files = fs ? fs.listFiles().sort((a, b) => a.path.localeCompare(b.path)) : [];
+
+  // Auto-open file browser if no active file but files are available
+  useEffect(() => {
+    if (!activeFile && files.length > 0 && !showFileBrowser) {
+      setShowFileBrowser(true);
+    }
+  }, [activeFile, files.length, showFileBrowser]);
 
   const selectFile = (path: string) => {
     if (activeFile === path) {
@@ -61,10 +68,12 @@ export function ArtifactsDrawer() {
         const content = await file.text();
         
         // Create the file with string content
-        fs.createFile(path, content, file.type);
-        
-        // Open the file in a tab
-        openFile(path);
+        if (fs) {
+          fs.createFile(path, content, file.type);
+          
+          // Open the file in a tab
+          openFile(path);
+        }
       } catch (error) {
         console.error(`Error processing file ${file.name}:`, error);
       }
@@ -125,7 +134,7 @@ export function ArtifactsDrawer() {
       );
     }
 
-    const file = fs.getFile(activeFile);
+    const file = fs?.getFile(activeFile);
     if (!file) return null;
 
     switch (artifactKind(activeFile)) {
@@ -196,7 +205,7 @@ export function ArtifactsDrawer() {
           {/* Open File Tabs */}
           <div className="flex overflow-x-auto h-full hide-scrollbar" style={{ minWidth: '100%' }}>
             {openFiles.map((path) => {
-              const file = fs.getFile(path);
+              const file = fs?.getFile(path);
               if (!file) return null;
               
               const filename = getFileName(path);
@@ -239,7 +248,7 @@ export function ArtifactsDrawer() {
         <div className={`transition-all duration-300 ease-out ${
           showFileBrowser ? 'w-64' : 'w-0'
         } flex-shrink-0 overflow-hidden ${showFileBrowser ? 'border-r border-neutral-200 dark:border-neutral-600' : ''}`}>
-          {showFileBrowser && (
+          {showFileBrowser && fs && (
             <ArtifactsBrowser
               fs={fs}
               openTabs={openFiles}

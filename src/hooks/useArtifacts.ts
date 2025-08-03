@@ -53,6 +53,9 @@ export function useArtifacts(): ArtifactsHook {
           }
 
           try {
+            if (!fs) {
+              return JSON.stringify({ error: 'File system not available' });
+            }
             fs.createFile(path, content);
             console.log(`✅ File created successfully: ${path}`);
             return JSON.stringify({ 
@@ -85,6 +88,9 @@ export function useArtifacts(): ArtifactsHook {
           console.log(`📋 Listing files${directory ? ` in directory: ${directory}` : ''}`);
 
           try {
+            if (!fs) {
+              return JSON.stringify({ error: 'File system not available' });
+            }
             const allFiles = fs.listFiles();
             const filteredFiles = directory 
               ? allFiles.filter(file => file.path.startsWith(directory))
@@ -133,6 +139,9 @@ export function useArtifacts(): ArtifactsHook {
           }
 
           // Check if it's a file or folder
+          if (!fs) {
+            return JSON.stringify({ error: 'File system not available' });
+          }
           const file = fs.getFile(path);
           const isFolder = fs.listFiles().some(f => f.path.startsWith(path + '/'));
           
@@ -184,6 +193,10 @@ export function useArtifacts(): ArtifactsHook {
 
           if (!fromPath || !toPath) {
             return JSON.stringify({ error: 'Both fromPath and toPath are required' });
+          }
+
+          if (!fs) {
+            return JSON.stringify({ error: 'File system not available' });
           }
 
           const sourceFile = fs.getFile(fromPath);
@@ -244,6 +257,10 @@ export function useArtifacts(): ArtifactsHook {
 
           if (!path) {
             return JSON.stringify({ error: 'Path is required' });
+          }
+
+          if (!fs) {
+            return JSON.stringify({ error: 'File system not available' });
           }
 
           const file = fs.getFile(path);
@@ -321,6 +338,10 @@ export function useArtifacts(): ArtifactsHook {
                 message: 'No file is currently active',
                 currentFile: null
               });
+            }
+
+            if (!fs) {
+              return JSON.stringify({ error: 'File system not available' });
             }
 
             const file = fs.getFile(activeFile);

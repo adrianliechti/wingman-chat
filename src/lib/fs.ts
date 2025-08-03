@@ -4,7 +4,7 @@ import { FileSystem, File } from '../types/file';
 // FileSystem extension methods
 export class FileSystemManager {
   constructor(
-    private filesystem: FileSystem,
+    private getFilesystem: () => FileSystem,
     private setFilesystem: (fs: (current: FileSystem) => FileSystem) => void,
     private onFileCreated?: (path: string) => void,
     private onFileDeleted?: (path: string) => void,
@@ -30,7 +30,8 @@ export class FileSystemManager {
   }
 
   updateFile(path: string, content: string, contentType?: string): boolean {
-    const existingFile = this.filesystem[path];
+    const filesystem = this.getFilesystem();
+    const existingFile = filesystem[path];
     if (!existingFile) return false;
 
     this.setFilesystem((fs: FileSystem) => ({
@@ -46,14 +47,16 @@ export class FileSystemManager {
   }
 
   deleteFile(path: string): boolean {
+    const filesystem = this.getFilesystem();
     // Check if this is a direct file
-    const isFile = this.filesystem[path];
+    const isFile = filesystem[path];
     
     if (isFile) {
       // Handle single file deletion
       this.setFilesystem((fs: FileSystem) => {
-        delete fs[path];
-        return fs;
+        const newFs = { ...fs };
+        delete newFs[path];
+        return newFs;
       });
       this.onFileDeleted?.(path);
       return true;
@@ -67,10 +70,11 @@ export class FileSystemManager {
     if (affectedFiles.length > 0) {
       // Handle folder deletion - delete all files within the folder
       this.setFilesystem((fs: FileSystem) => {
+        const newFs = { ...fs };
         for (const file of affectedFiles) {
-          delete fs[file.path];
+          delete newFs[file.path];
         }
-        return fs;
+        return newFs;
       });
       
       // Call the callback for each deleted file
@@ -86,29 +90,31 @@ export class FileSystemManager {
   }
 
   renameFile(oldPath: string, newPath: string): boolean {
+    const filesystem = this.getFilesystem();
     // Check if the old path exists (either as a file or folder)
-    const isFile = this.filesystem[oldPath];
+    const isFile = filesystem[oldPath];
     const isFolder = this.listFiles().some(file => file.path.startsWith(oldPath + '/'));
     
     if (!isFile && !isFolder) {
       return false; // Path doesn't exist
     }
 
-    if (this.filesystem[newPath]) {
+    if (filesystem[newPath]) {
       return false; // New path already exists
     }
 
     if (isFile) {
       // Handle file rename
-      const file = this.filesystem[oldPath];
+      const file = filesystem[oldPath];
       this.setFilesystem((fs: FileSystem) => {
-        fs[newPath] = {
+        const newFs = { ...fs };
+        newFs[newPath] = {
           ...file,
           path: newPath,
           updatedAt: new Date(),
         };
-        delete fs[oldPath];
-        return fs;
+        delete newFs[oldPath];
+        return newFs;
       });
       
       this.onFileRenamed?.(oldPath, newPath);
@@ -120,18 +126,19 @@ export class FileSystemManager {
       );
 
       this.setFilesystem((fs: FileSystem) => {
+        const newFs = { ...fs };
         for (const file of affectedFiles) {
           const relativePath = file.path.substring(oldPath.length);
           const newFilePath = newPath + relativePath;
           
-          fs[newFilePath] = {
+          newFs[newFilePath] = {
             ...file,
             path: newFilePath,
             updatedAt: new Date(),
           };
-          delete fs[file.path];
+          delete newFs[file.path];
         }
-        return fs;
+        return newFs;
       });
       
       // Call the callback for each renamed file
@@ -148,23 +155,23 @@ export class FileSystemManager {
   }
 
   getFile(path: string): File | undefined {
-    return this.filesystem[path];
+    return this.getFilesystem()[path];
   }
 
   listFiles(): File[] {
-    return Object.values(this.filesystem);
+    return Object.values(this.getFilesystem());
   }
 
   fileExists(path: string): boolean {
-    return path in this.filesystem;
+    return path in this.getFilesystem();
   }
 
   getFileCount(): number {
-    return Object.keys(this.filesystem).length;
+    return Object.keys(this.getFilesystem()).length;
   }
 
   async downloadAsZip(filename?: string): Promise<void> {
-    return downloadFilesystemAsZip(this.filesystem, filename);
+    return downloadFilesystemAsZip(this.getFilesystem(), filename);
   }
 }
 
