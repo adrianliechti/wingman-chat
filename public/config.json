@@ -2,6 +2,9 @@
     "artifacts": {
         "enabled": true
     },
+    "voice": {
+        "enabled": true
+    },
     "repository": {
         "enabled": true
     },

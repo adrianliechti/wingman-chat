@@ -1,6 +1,7 @@
 import { memo, useState, useEffect } from 'react';
-import { useShiki } from '../hooks/useShiki';
+import { codeToHtml } from 'shiki';
 import { CopyButton } from './CopyButton';
+import { useTheme } from '../hooks/useTheme';
 
 interface CodeRendererProps {
   code: string;
@@ -8,7 +9,7 @@ interface CodeRendererProps {
 }
 
 const CodeRenderer = memo(({ code, language }: CodeRendererProps) => {
-  const { codeToHtml } = useShiki();
+  const { isDark } = useTheme();
   const [html, setHtml] = useState<string>('');
 
   useEffect(() => {
@@ -25,7 +26,14 @@ const CodeRenderer = memo(({ code, language }: CodeRendererProps) => {
         
         if (isCancelled) return;
 
-        const html = await codeToHtml(code, langId);
+        const html = await codeToHtml(code, {
+          lang: langId,
+          theme: isDark ? 'one-dark-pro' : 'one-light',
+          colorReplacements: {
+            '#fafafa': 'transparent', // one-light background
+            '#282c34': 'transparent', // one-dark-pro background
+          }
+        });
         
         if (!isCancelled) {
           setHtml(html);
@@ -43,7 +51,7 @@ const CodeRenderer = memo(({ code, language }: CodeRendererProps) => {
     return () => {
       isCancelled = true;
     };
-  }, [code, language, codeToHtml]);
+  }, [code, language, isDark]);
 
   const renderCodeBlock = (content: React.ReactNode) => (
     <div className="relative my-4">

@@ -2,7 +2,8 @@ import { useRef } from 'react';
 
 /**
  * Hook to manage OpenAI Realtime voice streaming via WebRTC.
- * @param onTranscript called with interim transcript of user speech
+ * @param onUser called with user speech transcript
+ * @param onAssistant called with assistant response transcript
  */
 export function useVoiceWebRTC(
   onUser: (text: string) => void,
@@ -15,10 +16,11 @@ export function useVoiceWebRTC(
 
   const isActiveRef = useRef(false);
 
-  const start = async () => {
-    const realtimeModel = "gpt-4o-realtime-preview";
-    const transcribeModel = "gpt-4o-transcribe";
-
+  const start = async (
+    realtimeModel: string = "gpt-4o-realtime-preview",
+    transcribeModel: string = "gpt-4o-transcribe", 
+    instructions?: string
+  ) => {
     if (isActiveRef.current) return;
     isActiveRef.current = true;
 
@@ -56,6 +58,13 @@ export function useVoiceWebRTC(
         setTranscriptionModel(transcribeModel)
           .then(() => console.log('Default transcription model set'))
           .catch(error => console.warn('Failed to set default transcription model:', error));
+        
+        // Set initial instructions if provided
+        if (instructions) {
+          setInstructions(instructions)
+            .then(() => console.log('Initial instructions set'))
+            .catch(error => console.warn('Failed to set initial instructions:', error));
+        }
       });
 
       dc.addEventListener("message", (e) => {

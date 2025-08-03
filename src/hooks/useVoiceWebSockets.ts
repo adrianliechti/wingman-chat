@@ -1,14 +1,13 @@
 import { useRef } from 'react';
 import { WavStreamPlayer, WavRecorder } from 'wavtools';
-import { Message } from '../types/chat';
+import { Message, Tool } from '../types/chat';
 
 /**
  * Hook to manage OpenAI Realtime voice streaming via WebSockets with PCM16.
  */
 export function useVoiceWebSockets(
   onUser: (text: string) => void,
-  onAssistant: (text: string) => void,
-  messages?: Message[]
+  onAssistant: (text: string) => void
 ) {
   const wsRef = useRef<WebSocket | null>(null);
   const wavPlayerRef = useRef<WavStreamPlayer | null>(null);
@@ -18,10 +17,13 @@ export function useVoiceWebSockets(
 
   const isActiveRef = useRef(false);
 
-  const start = async () => {
-    const realtimeModel = "gpt-4o-realtime-preview";
-    const transcribeModel = "gpt-4o-transcribe";
-
+  const start = async (
+    realtimeModel: string = "gpt-4o-realtime-preview",
+    transcribeModel: string = "gpt-4o-transcribe",
+    instructions?: string,
+    messages?: Message[],
+    tools?: Tool[]
+  ) => {
     if (isActiveRef.current) return;
     isActiveRef.current = true;
 
@@ -64,7 +66,17 @@ export function useVoiceWebSockets(
               type: 'semantic_vad',
               create_response: true,
               interrupt_response: true,
-            }
+            },
+
+            ...(instructions && { instructions: instructions }),
+            ...(tools && tools.length > 0 && { 
+              tools: tools.map(tool => ({
+                type: 'function',
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters
+              }))
+            })
           }
         };
 
@@ -107,9 +119,7 @@ export function useVoiceWebSockets(
           // Handle ArrayBuffer data properly
           const monoArray = mono ? new Int16Array(mono) : null;
 
-          // Use wsRef.current to get the current WebSocket state
-          const currentWs = wsRef.current;
-          if (currentWs && currentWs.readyState === WebSocket.OPEN && monoArray && isActiveRef.current) {
+          if (monoArray && isActiveRef.current) {
             try {
               // Convert Int16Array audio data to base64 PCM16
               const float32Array = new Float32Array(monoArray.length);
@@ -120,7 +130,7 @@ export function useVoiceWebSockets(
               const audio = base64EncodeAudio(float32Array);
 
               if (audio && isActiveRef.current) {
-                currentWs.send(JSON.stringify({
+                ws.send(JSON.stringify({
                   type: 'input_audio_buffer.append',
                   audio: audio
                 }));
@@ -135,9 +145,10 @@ export function useVoiceWebSockets(
         });
       });
 
-      ws.addEventListener('message', (e) => {
+      ws.addEventListener('message', async (e) => {
         const msg = JSON.parse(e.data);
         console.log('Received message:', msg.type);
+        const eventWs = e.target as WebSocket;
 
         switch (msg.type) {
           case 'input_audio_buffer.speech_started':
@@ -167,6 +178,56 @@ export function useVoiceWebSockets(
               playAudioChunk(msg.delta);
             }
 
+            break;
+
+          case 'response.output_item.done':
+            console.log('Response output item done:', msg.item);
+            
+            // Handle function calls
+            if (msg.item?.type === 'function_call' && tools) {
+              const tool = tools.find(t => t.name === msg.item.name);
+              if (tool && msg.item.arguments) {
+                console.log(`Executing tool: ${tool.name} with arguments:`, msg.item.arguments);
+                
+                let output: string;
+                
+                try {
+                  const args = JSON.parse(msg.item.arguments);
+                  const result = await tool.function(args);
+                  output = result;
+                  console.log('Function result:', result);
+                } catch (error) {
+                  console.error('Error executing tool:', error);
+                  const errorMessage = error instanceof Error ? error.message : 'Tool execution failed';
+                  output = JSON.stringify({ error: errorMessage });
+                }
+                
+                // Send the function result back to the conversation
+                const functionOutput = {
+                  type: 'conversation.item.create',
+                  item: {
+                    type: 'function_call_output',
+                    call_id: msg.item.call_id,
+                    output: output
+                  }
+                };
+                
+                // Best effort - try to send without checking state
+                try {
+                  eventWs.send(JSON.stringify(functionOutput));
+                  console.log('Function output sent:', output);
+                  
+                  // Trigger response generation after sending function result
+                  eventWs.send(JSON.stringify({
+                    type: 'response.create'
+                  }));
+                } catch (error) {
+                  console.error('Failed to send function output:', error);
+                }
+              } else if (!tool) {
+                console.error(`Tool not found: ${msg.item.name}`);
+              }
+            }
             break;
 
           case 'response.done':
@@ -256,31 +317,7 @@ export function useVoiceWebSockets(
     console.log('Voice session stopped');
   };
 
-  const setInstructions = (instructions: string) => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'session.update',
-        session: { instructions }
-      }));
-      console.log('Instructions updated:', instructions);
-    } else {
-      console.warn('Cannot set instructions: WebSocket not connected');
-    }
-  };
 
-  const setVoice = (voice: string) => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'session.update',
-        session: { voice }
-      }));
-      console.log('Voice updated:', voice);
-    } else {
-      console.warn('Cannot set voice: WebSocket not connected');
-    }
-  };
 
   // Convert Float32Array of audio data to base64-encoded PCM16
   const floatTo16BitPCM = (float32Array: Float32Array) => {
@@ -336,5 +373,5 @@ export function useVoiceWebSockets(
     }
   };
 
-  return { start, stop, setInstructions, setVoice };
+  return { start, stop };
 }

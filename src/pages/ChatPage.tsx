@@ -31,9 +31,9 @@ export function ChatPage() {
   
   const { layoutMode } = useLayout();
   const { isAvailable: voiceAvailable, startVoice, stopVoice } = useVoice();
-  const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, setShowArtifactsDrawer } = useArtifacts();
-  const { isAvailable: repositoryAvailable, toggleRepositoryDrawer, showRepositoryDrawer, setShowRepositoryDrawer, setCurrentRepository } = useRepositories();
   const { showRemoteUIDrawer, setShowRemoteUIDrawer } = useRemoteUIContext();
+  const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
+  const { isAvailable: repositoryAvailable, toggleRepositoryDrawer, showRepositoryDrawer } = useRepositories();
   
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
@@ -67,14 +67,9 @@ export function ChatPage() {
   const startVoiceMode = useCallback(async () => {
     setShowVoicePreviewDialog(false);
     
-    setShowRepositoryDrawer(false);
-    setShowArtifactsDrawer(false);
-    setShowRemoteUIDrawer(false);
-    setCurrentRepository(null);
-    
     await startVoice();
     setIsVoiceMode(true);
-  }, [startVoice, setShowRepositoryDrawer, setShowArtifactsDrawer, setShowRemoteUIDrawer, setCurrentRepository]);
+  }, [startVoice]);
   
   // Sidebar integration (now only controls visibility)
   const { setSidebarContent } = useSidebar();
@@ -406,24 +401,16 @@ export function ChatPage() {
             
             <div className="mb-6">
               <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
-                The following features are currently not supported:
+                Current limitations:
               </p>
               <ul className="text-sm text-neutral-700 dark:text-neutral-300 space-y-2">
                 <li className="flex items-start gap-2">
                   <span className="text-neutral-400 dark:text-neutral-500 mt-1">•</span>
-                  <span>Prompt personalization</span>
+                  <span>Limited to GPT-4o (Oct 01, 2023)</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-neutral-400 dark:text-neutral-500 mt-1">•</span>
-                  <span>Document repositories</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-neutral-400 dark:text-neutral-500 mt-1">•</span>
-                  <span>Specialized models & tools</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-neutral-400 dark:text-neutral-500 mt-1">•</span>
-                  <span>Bridge (Local Connector)</span>
+                  <span>No custom model support</span>
                 </li>
               </ul>
             </div>
