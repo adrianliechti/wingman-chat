@@ -21,8 +21,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { currentRepository } = useRepositories();
-  const { queryTools } = useRepository(currentRepository?.id || '');
   const { artifactsTools } = useArtifacts();
+  const { queryTools, queryInstructions } = useRepository(currentRepository?.id || '');
   const { bridgeTools, bridgeInstructions } = useBridge();
   const { generateInstructions } = useProfile();
   const [chatId, setChatId] = useState<string | null>(null);
@@ -113,9 +113,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
       try {
         const profileInstructions = generateInstructions();
-
+        
         const repositoryTools = currentRepository ? queryTools() : [];
-        const repositoryInstructions = currentRepository?.instructions || '';
+        const repositoryInstructions = queryInstructions();
         
         const completionTools = [...bridgeTools, ...repositoryTools, ...artifactsTools(), ...(tools || [])];
 
@@ -125,27 +125,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
           instructions.push(profileInstructions);
         }
 
-        if (bridgeInstructions?.trim()) {
-          instructions.push(bridgeInstructions);
-        }
-        
         if (repositoryInstructions.trim()) {
           instructions.push(repositoryInstructions);
         }
 
-        if (repositoryTools.length > 0) {
-          instructions.push(`Your mission:
-          1. For *every* user query, you MUST first invoke the \`query_knowledge_database\` tool with a concise, natural-language query.
-          2. Examine the tool's results.
-             - If you get ≥1 relevant documents or facts, answer the user *solely* using those results.
-             - Include source citations (e.g. doc IDs, relevance scores, or text snippets).
-          3. Only if the tool returns no relevant information, you may answer from general knowledge—but still note "no document match; using fallback knowledge".
-          4. If the tool call fails, report the failure and either retry or ask the user to clarify.
-          5. Be concise, accurate, and transparent about sources.
-
-          Use GitHub Flavored Markdown to format your responses including tables, code blocks, links, and lists.`);
+        if (bridgeInstructions?.trim()) {
+          instructions.push(bridgeInstructions);
         }
-
+        
         const completion = await client.complete(
           model!.id,
           instructions.join('\n\n'),
@@ -169,7 +156,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const errorMessage = { role: Role.Assistant, content: `An error occurred:\n${error}` };
         updateChat(id, { messages: [...conversation, errorMessage] });
       }
-    }, [getOrCreateChat, chats, updateChat, currentRepository, queryTools, bridgeTools, artifactsTools, generateInstructions, client, model, bridgeInstructions]);
+    }, [getOrCreateChat, chats, updateChat, generateInstructions, currentRepository, queryTools, queryInstructions, bridgeTools, artifactsTools, bridgeInstructions, client, model]);
 
   const value: ChatContextType = {
     // Models

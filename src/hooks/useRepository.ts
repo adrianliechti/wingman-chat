@@ -19,6 +19,7 @@ export interface RepositoryHook {
   removeFile: (fileId: string) => void;
   queryChunks: (query: string, topK?: number) => Promise<FileChunk[]>;
   queryTools: () => Tool[];
+  queryInstructions: () => string;
 }
 
 // Shared client instance for all repositories
@@ -337,11 +338,35 @@ export function useRepository(repositoryId: string): RepositoryHook {
     ];
   }, [queryChunks, files.length]);
 
+  const queryInstructions = useCallback((): string => {
+    const instructions: string[] = [];
+
+    if (repository?.instructions?.trim()) {
+      instructions.push(repository.instructions);
+    }
+
+    if (files.length > 0) {
+      instructions.push(`Your mission:
+          1. For *every* user query, you MUST first invoke the \`query_knowledge_database\` tool with a concise, natural-language query.
+          2. Examine the tool's results.
+             - If you get ≥1 relevant documents or facts, answer the user *solely* using those results.
+             - Include source citations (e.g. doc IDs, relevance scores, or text snippets).
+          3. Only if the tool returns no relevant information, you may answer from general knowledge—but still note "no document match; using fallback knowledge".
+          4. If the tool call fails, report the failure and either retry or ask the user to clarify.
+          5. Be concise, accurate, and transparent about sources.
+
+          Use GitHub Flavored Markdown to format your responses including tables, code blocks, links, and lists.`);
+    }
+
+    return instructions.join('\n\n');
+  }, [repository?.instructions, files.length]);
+
   return {
     files,
     removeFile,
     addFile,
     queryChunks,
     queryTools,
+    queryInstructions,
   };
 }
