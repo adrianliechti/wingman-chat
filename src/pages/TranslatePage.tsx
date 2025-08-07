@@ -7,6 +7,7 @@ import { useLayout } from "../hooks/useLayout";
 import { useTranslate } from "../hooks/useTranslate";
 import { CopyButton } from "../components/CopyButton";
 import { PlayButton } from "../components/PlayButton";
+import { Markdown } from "../components/Markdown";
 import { getConfig } from "../config";
 
 export function TranslatePage() {
@@ -22,7 +23,9 @@ export function TranslatePage() {
   const {
     sourceText,
     translatedText,
+    teachingContent,
     isLoading,
+    isLoadingTeaching,
     supportedLanguages,
     selectedLanguage,
     selectedFile,
@@ -135,19 +138,19 @@ export function TranslatePage() {
       <main className="flex-1 flex flex-col overflow-hidden relative">
         
         {/* Text Translation Section */}
-        <div className="w-full flex-grow overflow-hidden flex p-4 pt-20">
+        <div className="w-full flex-grow overflow-auto flex p-4 pt-20">
           <div className={`w-full h-full ${
             layoutMode === 'wide' 
               ? 'max-w-full mx-auto' 
               : 'max-w-[1200px] mx-auto'
           }`}>
-            <div className="relative h-full w-full overflow-hidden">
+            <div className="relative w-full">
               {/* Responsive layout: vertical stack on mobile/narrow screens, horizontal on wide screens */}
-              <div className={`h-full flex flex-col md:flex-row min-h-0 ${isDragging ? 'p-2' : ''} transition-all duration-200`}>
+              <div className={`min-h-[500px] flex flex-col md:flex-row ${isDragging ? 'p-2' : ''} transition-all duration-200`}>
                 {/* Source section */}
                 <div
                   ref={containerRef}
-                  className={`flex-1 flex flex-col relative min-w-0 min-h-0 ${
+                  className={`flex-1 flex flex-col relative min-w-0 h-[500px] ${
                     isDragging 
                       ? 'border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.01] rounded-lg' 
                       : 'overflow-hidden'
@@ -241,7 +244,7 @@ export function TranslatePage() {
                 </div>
 
                 {/* Target section */}
-                <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
+                <div className="flex-1 flex flex-col relative min-w-0 h-[500px] overflow-hidden">
                   <div className="absolute top-2 left-3 z-10">
                     <Menu>
                       <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
@@ -340,6 +343,54 @@ export function TranslatePage() {
                   )}
                 </div>
               </div>
+
+              {/* Language Teaching Section */}
+              {(teachingContent || isLoadingTeaching) && (
+                <div className="mt-6 p-6 bg-gradient-to-br from-neutral-50/80 via-neutral-50/60 to-neutral-100/80 dark:from-neutral-900/60 dark:via-neutral-900/40 dark:to-neutral-800/60 backdrop-blur-lg border border-neutral-200/60 dark:border-neutral-700/50 rounded-xl shadow-lg">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shadow-sm">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-neutral-800 dark:text-neutral-200">
+                        Language Learning Guide
+                      </h3>
+                      <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                        Interactive vocabulary analysis for {selectedLanguage?.name || 'your target language'}
+                      </p>
+                    </div>
+                    {isLoadingTeaching && (
+                      <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
+                        <Loader2 size={16} className="animate-spin" />
+                        <span className="text-sm">Analyzing...</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {teachingContent ? (
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      <div className="bg-white/60 dark:bg-neutral-800/40 rounded-lg p-4 border border-neutral-200/40 dark:border-neutral-700/40">
+                        <Markdown>{teachingContent}</Markdown>
+                      </div>
+                    </div>
+                  ) : isLoadingTeaching ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="text-center">
+                        <div className="inline-flex items-center gap-3 px-4 py-3 bg-white/60 dark:bg-neutral-800/40 rounded-lg border border-neutral-200/40 dark:border-neutral-700/40">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                          <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse delay-75"></div>
+                          <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse delay-150"></div>
+                          <span className="text-sm text-neutral-600 dark:text-neutral-400 ml-2">
+                            Generating personalized learning content...
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </div>
           </div>
         </div>

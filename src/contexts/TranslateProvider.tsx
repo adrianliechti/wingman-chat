@@ -13,8 +13,10 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
   // State
   const [sourceText, setSourceText] = useState("");
   const [translatedText, setTranslatedText] = useState("");
+  const [teachingContent, setTeachingContent] = useState("");
   const [targetLang, setTargetLang] = useState("en");
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingTeaching, setIsLoadingTeaching] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [translatedFileUrl, setTranslatedFileUrl] = useState<string | null>(null);
   const [translatedFileName, setTranslatedFileName] = useState<string | null>(null);
@@ -102,9 +104,34 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
       const result = await client.translate(langToUse, textToUse);
       if (typeof result === 'string') {
         setTranslatedText(result);
+        
+        // Generate teaching content if we have both source and translation
+        if (textToUse.trim() && result.trim()) {
+          setIsLoadingTeaching(true);
+          setTeachingContent("");
+          
+          try {
+            const messages = [
+              { role: 'user' as const, content: textToUse },
+              { role: 'assistant' as const, content: result }
+            ];
+            
+            const selectedLang = supportedLanguages().find(l => l.code === langToUse);
+            const languageName = selectedLang?.name || langToUse;
+            
+            const teachingResult = await client.translateAndTeach('gpt-4o', messages, languageName);
+            setTeachingContent(teachingResult);
+          } catch (teachingErr) {
+            console.error('Teaching content generation failed:', teachingErr);
+            setTeachingContent("");
+          } finally {
+            setIsLoadingTeaching(false);
+          }
+        }
       }
     } catch (err) {
       setTranslatedText(err instanceof Error ? err.message : "An unknown error occurred during translation.");
+      setTeachingContent("");
     } finally {
       setIsLoading(false);
     }
@@ -113,6 +140,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
   const handleReset = useCallback(() => {
     setSourceText("");
     setTranslatedText("");
+    setTeachingContent("");
     setSelectedFile(null);
     setTranslatedFileUrl(null);
     setTranslatedFileName(null);
@@ -126,6 +154,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
       setTranslatedFileUrl(null);
       setTranslatedFileName(null);
       setTranslatedText("");  // Also clear text translation for files
+      setTeachingContent("");
     }
     
     // Automatically translate with new language if there's source text (but not if file is selected)
@@ -152,6 +181,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     setTranslatedFileName(null);
     // Clear text translation output
     setTranslatedText("");
+    setTeachingContent("");
   }, []);
 
   const clearFile = useCallback(() => {
@@ -159,14 +189,17 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     setTranslatedFileUrl(null);
     setTranslatedFileName(null);
     setTranslatedText("");  // Clear translated text when clearing file
+    setTeachingContent("");
   }, []);
 
   const contextValue: TranslateContextType = {
     // State
     sourceText,
     translatedText,
+    teachingContent,
     targetLang,
     isLoading,
+    isLoadingTeaching,
     selectedFile,
     translatedFileUrl,
     translatedFileName,

@@ -17,8 +17,10 @@ export interface TranslateContextType {
   // State
   sourceText: string;
   translatedText: string;
+  teachingContent: string;
   targetLang: string;
   isLoading: boolean;
+  isLoadingTeaching: boolean;
   selectedFile: File | null;
   translatedFileUrl: string | null;
   translatedFileName: string | null;

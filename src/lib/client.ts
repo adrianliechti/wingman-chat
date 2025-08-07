@@ -175,6 +175,48 @@ export class Client {
     return completion.choices[0].message.content?.trim() ?? "Summary not available";
   }
 
+  async translateAndTeach(model: string, input: Message[], language: string): Promise<string> {
+    const lastMessage = input[input.length - 1];
+    const textToAnalyze = lastMessage?.content || "";
+
+    if (!textToAnalyze.trim()) {
+      return "";
+    }
+
+    const completion = await this.oai.chat.completions.create({
+      model: model,
+      messages: [
+        {
+          role: "system",
+          content: `
+You are a professional language teacher specializing in ${language}. Analyze the provided text and create a comprehensive language learning table.
+
+For each significant word or phrase in the text, provide:
+- The ${language} translation with 3 alternative translations in parentheses
+- The original word/phrase from the source text
+- Clear meaning/definition in the source language
+- Usage frequency percentage (0-100) with appropriate indicator:
+  • 🟢 for 70-100% (very common)
+  • 🟡 for 40-69% (moderately common) 
+  • 🔴 for below 40% (less common)
+- At least 3 practical example sentences in ${language} with translations
+
+Present everything as a well-formatted markdown table with these columns:
+| ${language} Word (Alternatives) | Source Word | Meaning | Frequency | Examples |
+
+Focus on the most useful and educational words from the text. Prioritize nouns, verbs, adjectives, and important phrases over articles and prepositions.
+`.trim(),
+        },
+        {
+          role: "user",
+          content: `Please analyze this text for ${language} language learning:\n\n${textToAnalyze}`,
+        },
+      ]
+    });
+
+    return completion.choices[0].message.content?.trim() ?? "";
+  }
+
   async relatedPrompts(model: string, prompt: string): Promise<string[]> {
     const Schema = z.object({
       prompts: z.array(z.object({
