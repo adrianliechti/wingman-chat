@@ -47,21 +47,21 @@ export function useRepository(repositoryId: string): RepositoryHook {
   const repository = repositories.find(r => r.id === repositoryId);
   const files = useMemo(() => repository?.files || [], [repository?.files]);
 
-  // Calculate total text length for mode selection (approximately 2000 characters per page)
+  // Calculate total text length for mode selection
   const totalCharacters = useMemo(() => {
     return files.reduce((total, file) => {
       return total + (file.text?.length || 0);
     }, 0);
   }, [files]);
 
-  // Calculate total pages (approximately 2000 characters per page)
+  // Calculate total pages (approximately 1800 characters per page)
   const totalPages = useMemo(() => {
-    return totalCharacters / 2000;
+    return totalCharacters / 1800;
   }, [totalCharacters]);
 
   // Determine if we should use RAG mode (true) or full content mode (false)
   const useRAG = useMemo(() => {
-    return totalPages > 50;
+    return totalPages > 150;
   }, [totalPages]);
 
   // Handle repository changes and rebuild vector database
@@ -361,36 +361,8 @@ export function useRepository(repositoryId: string): RepositoryHook {
         }
       ];
     } else {
-      // Small repository: return full content
-      return [
-        {
-          name: 'get_full_knowledge_base',
-          description: 'Retrieve the complete content of all files in the knowledge base. Use this when you need to see the full content of all documents.',
-          parameters: {
-            type: 'object',
-            properties: {},
-            required: []
-          },
-          function: async (): Promise<string> => {
-            console.log(`📚 get_full_knowledge_base tool invoked`);
-
-            try {
-              const fullContent = files
-                .filter(file => file.text && file.text.trim())
-                .map(file => {
-                  return `\`\`\`text ${file.name}\n${file.text}\n\`\`\``;
-                })
-                .join('\n\n');
-
-              console.log(`📄 Returning full content of ${files.length} files`);
-              return fullContent || 'No content available in the knowledge base.';
-            } catch (error) {
-              console.error('❌ Failed to retrieve full knowledge base:', error);
-              return 'Failed to retrieve full knowledge base content.';
-            }
-          }
-        }
-      ];
+  // Small repository: no retrieval tool; content injected directly into system prompt
+  return [];
     }
   }, [queryChunks, files, useRAG, totalCharacters, totalPages]);
 
@@ -429,27 +401,28 @@ Use GitHub Flavored Markdown to format your responses including tables, code blo
         instructions.push(`
 ## Personal Knowledge Base
 
-You have access to a complete knowledge base containing the user's uploaded documents. The knowledge base is small enough to be retrieved in full.
+You have full access to the user's uploaded documents. Because the total size is below the RAG threshold, ALL file contents have been embedded directly below in this system prompt. No retrieval tool call is required.
 
 ### Best Practices:
-1. For *every* user query, you MUST first invoke the \`get_full_knowledge_base\` tool to retrieve all document content.
-2. Examine the complete content and answer the user's question based on the available information.
-3. Always cite the specific files you're referencing in your response.
-4. If the information needed isn't in the knowledge base, clearly state this and provide general knowledge if appropriate.
-5. Be comprehensive since you have access to all the content.
+1. Answer using ONLY the provided file contents below when possible; cite file names and (if helpful) short indicative snippets.
+2. If the answer cannot be found in these files, explicitly state that the repository lacks the required information before using general knowledge.
+3. Keep answers concise but complete. Prefer citing fewer, most relevant passages over many loosely related ones.
+4. When referencing code, quote only the necessary lines; avoid large irrelevant blocks.
 
-The tool returns content in the following format for each file:
-\`\`\`text filename.ext
-[file content]
-\`\`\`
-
-Use GitHub Flavored Markdown to format your responses including tables, code blocks, links, and lists.
+### Provided Files
+The following section lists each file wrapped in a fenced block. Treat this as authoritative context.
 `.trim());
+
+        // Include full content of every file (no truncation)
+        for (const file of files) {
+          if (!file.text || !file.text.trim()) continue;
+          instructions.push(`\n\n\`\`\`text ${file.name}\n${file.text}\n\`\`\``);
+        }
       }
     }
 
     return instructions.join('\n\n');
-  }, [repository?.instructions, files.length, useRAG]);
+  }, [repository?.instructions, useRAG, files]);
 
   return {
     files,
