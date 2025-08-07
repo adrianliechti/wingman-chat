@@ -610,7 +610,7 @@ export function ChatInput() {
                 <ScreenShare size={14} />
                 {isContinuousCaptureActive && (
                   <span className="hidden sm:inline">
-                    Recording
+                    Capturing
                   </span>
                 )}
               </Button>
