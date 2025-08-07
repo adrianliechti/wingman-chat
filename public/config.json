@@ -10,8 +10,5 @@
     },
     "vision": {
         "enabled": true
-    }, 
-    "models":[
-        {"id":"poppy","name":"Poppy","description":"Anthropic Claude Sonnet", "prompts": ["What is the weather like today?", "Tell me a joke", "What is the capital of France?"]}
-    ]
+    }
 }
