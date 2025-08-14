@@ -11,6 +11,7 @@ export interface ChatContextType {
   chats: Chat[];
   chat: Chat | null;
   messages: Message[];
+  isResponding: boolean;
 
   // Chat actions
   createChat: () => Chat;

@@ -23,8 +23,9 @@ interface config {
   vision?: visionConfig;
   
   bridge?: bridgeConfig;
+  internet?: internetConfig;
   artifacts?: artifactsConfig;
-  repository?: repositoryConfig;
+  repository?: repositoryConfig;  
   translator?: translatorConfig;
 }
 
@@ -55,6 +56,10 @@ interface visionConfig {
 
 interface bridgeConfig {
   url: string;
+}
+
+interface internetConfig {
+  enabled: boolean;
 }
 
 interface repositoryConfig {
@@ -88,8 +93,9 @@ interface Config {
   
   bridge: Bridge;
 
+  internet: internetConfig;
   artifacts: artifactsConfig;
-  repository: repositoryConfig;
+  repository: repositoryConfig;  
   translator: translatorConfig; 
 
   backgrounds: backgroundPackConfig;
@@ -137,14 +143,18 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       
       bridge: bridge,
 
-      artifacts: cfg.artifacts ?? {
-        enabled: false
+      internet: cfg.internet ?? {
+        enabled: false,
       },
 
       repository: cfg.repository ?? {
         enabled: false
       },
 
+      artifacts: cfg.artifacts ?? {
+        enabled: false
+      },
+      
       translator: cfg.translator ?? {
         enabled: true,
 

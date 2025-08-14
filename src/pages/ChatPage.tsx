@@ -28,7 +28,8 @@ export function ChatPage() {
     messages,
     createChat,
     chats,
-    updateChat
+    updateChat,
+    isResponding
   } = useChat();
   
   const { layoutMode } = useLayout();
@@ -327,7 +328,7 @@ export function ChatPage() {
                 {!backgroundImage && (
                   <div className="mb-8">
                     <img 
-                      src="/logo.svg" 
+                      src="/logo_light.svg" 
                       alt="Wingman Chat" 
                       className="h-24 w-24 opacity-70 dark:hidden"
                     />
@@ -376,7 +377,7 @@ export function ChatPage() {
                 })()}
                 
                 {messages.map((message, idx) => (
-                  <ChatMessage key={idx} message={message} isLast={idx === messages.length - 1} />
+                  <ChatMessage key={idx} message={message} isLast={idx === messages.length - 1} isResponding={isResponding} />
                 ))}
                 
                 {/* sentinel for scrollIntoView */}

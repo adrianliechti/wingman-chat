@@ -4,6 +4,7 @@ import { zodResponseFormat } from "openai/helpers/zod";
 
 import { Tool } from "../types/chat";
 import { Message, Model, Role, AttachmentType } from "../types/chat";
+import { SearchResult } from "../types/search";
 
 export class Client {
   private oai: OpenAI;
@@ -100,6 +101,11 @@ export class Client {
 
     while (completion.choices[0].message?.tool_calls?.length ?? 0 > 0) {
       for (const toolCall of completion.choices[0].message.tool_calls ?? []) {
+        // Type guard to ensure we're working with a function tool call
+        if (toolCall.type !== 'function') {
+          continue;
+        }
+
         const tool = tools.find((t) => t.name === toolCall.function.name);
 
         if (!tool) {
@@ -236,6 +242,23 @@ Return only the prompts themselves, without numbering or bullet points.`,
     return resp.text();
   }
 
+  async fetchText(url: string): Promise<string> {
+    const data = new FormData();
+    data.append("url", url);
+    data.append("format", "text");
+
+    const resp = await fetch(new URL("/api/v1/extract", window.location.origin), {
+      method: "POST",
+      body: data,
+    });
+
+    if (!resp.ok) {
+      throw new Error(`Fetch request failed with status ${resp.status}`);
+    }
+
+    return resp.text();
+  }
+
   async segmentText(blob: Blob): Promise<string[]> {
     const data = new FormData();
     data.append("file", blob);
@@ -358,6 +381,32 @@ Return only the prompts themselves, without numbering or bullet points.`,
 
     const result = await response.json();
     return result.text || '';
+  }
+
+  async search(query: string): Promise<SearchResult[]> {
+    const data = new FormData();
+    data.append('query', query);
+
+    const response = await fetch(new URL(`/api/v1/retrieve`, window.location.origin), {
+      method: "POST",
+      body: data,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Search request failed with status ${response.status}`);
+    }
+
+    const results = await response.json();
+    
+    if (!Array.isArray(results)) {
+      return [];
+    }
+
+    return results.map((result: { title?: string; source?: string; content: string }) => ({
+      title: result.title || undefined,
+      source: result.source || undefined,
+      content: result.content || '',
+    }));
   }
 
   private toTools(tools: Tool[]): OpenAI.Chat.Completions.ChatCompletionTool[] | undefined {

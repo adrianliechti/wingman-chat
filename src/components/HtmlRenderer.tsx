@@ -22,6 +22,28 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
   const [showCode, setShowCode] = useState(false);
   const [iframeHeight, setIframeHeight] = useState(50);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [maxAspectHeight, setMaxAspectHeight] = useState<number | null>(null);
+
+  // 4:3 width:height ratio cap -> height cannot exceed width * 3/4
+  const ASPECT_RATIO_WIDTH = 4;
+  const ASPECT_RATIO_HEIGHT = 3;
+  const computeMaxHeight = (w: number) => (w * ASPECT_RATIO_HEIGHT) / ASPECT_RATIO_WIDTH;
+
+  // Observe container width to derive max allowed height
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const w = entry.contentRect.width;
+        if (w > 0) {
+          setMaxAspectHeight(computeMaxHeight(w));
+        }
+      }
+    });
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   const isComplete = html.trim().length > 0 && html.includes('</html>');
   const extractedTitle = extractTitle(html);
@@ -30,60 +52,31 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
       if (e.data?.type === 'html-renderer-resize' && iframeRef.current && e.source === iframeRef.current.contentWindow) {
-        // Calculate max height based on aspect ratio (4:3) and actual iframe width
-        const iframeWidth = iframeRef.current.offsetWidth;
-        const maxHeightFromAspectRatio = iframeWidth * (3 / 4); // 4:3 aspect ratio means height = width * 3/4
-        const constrainedHeight = Math.min(e.data.height, maxHeightFromAspectRatio);
-        setIframeHeight(Math.max(constrainedHeight, 50)); // Minimum height of 50px
+        const rawHeight = Math.max(Number(e.data.height) || 0, 30);
+        const capped = maxAspectHeight ? Math.min(rawHeight, maxAspectHeight) : rawHeight;
+        setIframeHeight(capped);
       }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, []);
+  }, [maxAspectHeight]);
 
-  // Reset height when HTML content changes to allow proper shrinking
+  // Clamp current height if container shrinks
+  useEffect(() => {
+    if (maxAspectHeight && iframeHeight > maxAspectHeight) {
+      setIframeHeight(maxAspectHeight);
+    }
+  }, [maxAspectHeight, iframeHeight]);
+
+  // Reset + request re-measure when HTML content changes or when switching back from code view
   useEffect(() => {
     if (isComplete && !showCode) {
-      setIframeHeight(50); // Reset to minimum height, will grow as needed
+      setIframeHeight(50);
+      setTimeout(() => {
+        try { iframeRef.current?.contentWindow?.postMessage('measure', '*'); } catch { /* ignore */ }
+      }, 40);
     }
   }, [html, isComplete, showCode]);
-
-  // Listen for theme changes and notify iframe
-  useEffect(() => {
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-          const isDark = document.documentElement.classList.contains('dark');
-          if (iframeRef.current?.contentWindow) {
-            iframeRef.current.contentWindow.postMessage({ type: 'theme-change', isDark }, '*');
-          }
-        }
-      });
-    });
-
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class']
-    });
-
-    return () => observer.disconnect();
-  }, []);
-
-  // Notify iframe of initial theme state when it loads
-  useEffect(() => {
-    const handleIframeLoad = () => {
-      const isDark = document.documentElement.classList.contains('dark');
-      if (iframeRef.current?.contentWindow) {
-        iframeRef.current.contentWindow.postMessage({ type: 'theme-change', isDark }, '*');
-      }
-    };
-
-    const iframe = iframeRef.current;
-    if (iframe) {
-      iframe.addEventListener('load', handleIframeLoad);
-      return () => iframe.removeEventListener('load', handleIframeLoad);
-    }
-  }, [html]); // Re-run when HTML changes to handle new iframe instances
 
   // Show loading state until HTML is complete
   if (!isComplete) {
@@ -122,90 +115,35 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
 
   const wrappedSrcDoc = (() => {
     const script = `<script>
-      function sendHeight() {
-        const height = document.documentElement.scrollHeight;
-        parent.postMessage({type:'html-renderer-resize', height}, '*');
-      }
-      
-      function applyDarkMode() {
-        // Check if parent window has dark mode
-        const isDark = parent.document.documentElement.classList.contains('dark');
-        document.documentElement.classList.toggle('dark', isDark);
-      }
-      
-      window.addEventListener('load', () => {
-        sendHeight();
-        applyDarkMode();
-      });
-      
-      new ResizeObserver(sendHeight).observe(document.documentElement);
-      
-      // Listen for theme changes from parent
-      window.addEventListener('message', (e) => {
-        if (e.data?.type === 'theme-change') {
-          applyDarkMode();
+      (function() {
+        let last = 0;
+        function measure() {
+          const h = Math.max(
+            document.documentElement.scrollHeight,
+            document.body.scrollHeight,
+            document.documentElement.offsetHeight,
+            document.body.offsetHeight
+          );
+          if (Math.abs(h - last) > 2) {
+            last = h;
+            parent.postMessage({ type: 'html-renderer-resize', height: h }, '*');
+          }
         }
-      });
+        window.addEventListener('load', () => {
+          measure();
+          setTimeout(measure, 60);
+          setTimeout(measure, 200);
+          setTimeout(measure, 600);
+        });
+        window.addEventListener('message', e => { if (e.data === 'measure') measure(); });
+        new ResizeObserver(measure).observe(document.documentElement);
+        new MutationObserver(measure).observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true });
+      })();
     </script>`;
 
     const defaultStyles = `<style>
-      html, body {
-        margin: 0;
-        padding: 0;
-        font-family: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
-        line-height: 1.6;
-      }
-      
-      body {
-        padding: 1rem;
-      }
-      
-      /* Default light mode styles */
-      body {
-        color: #374151;
-        background-color: #ffffff;
-      }
-      
-      /* Dark mode styles */
-      .dark body {
-        color: #d1d5db;
-        background-color: #171717;
-      }
-      
-      /* Only apply defaults if no explicit colors are set */
-      body:not([style*="color"]):not([class*="text-"]) {
-        color: #374151;
-      }
-      
-      .dark body:not([style*="color"]):not([class*="text-"]) {
-        color: #d1d5db;
-      }
-      
-      body:not([style*="background"]):not([class*="bg-"]) {
-        background-color: #ffffff;
-      }
-      
-      .dark body:not([style*="background"]):not([class*="bg-"]) {
-        background-color: #171717;
-      }
-      
-      /* Default styling for common elements */
-      h1, h2, h3, h4, h5, h6 {
-        color: inherit;
-      }
-      
-      p, div, span {
-        color: inherit;
-      }
-      
-      /* Links */
-      a {
-        color: #3b82f6;
-      }
-      
-      .dark a {
-        color: #60a5fa;
-      }
+      html, body { margin:0; padding:0; }
+      body { box-sizing:border-box; overflow:auto; }
     </style>`;
 
     // Check if it's already a complete HTML document
@@ -239,7 +177,7 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
   })();
 
   return (
-    <div className="relative my-4">
+  <div ref={containerRef} className="relative my-4">
       <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
         <span>{extractedTitle || language}</span>
         <div className="flex items-center gap-2">
@@ -265,8 +203,13 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
             ref={iframeRef}
             srcDoc={wrappedSrcDoc}
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-            className="w-full rounded-b-md max-h-[75vw] aspect-[4/3]"
-            style={{ height: `${iframeHeight}px` }}
+            className="w-full rounded-b-md"
+            style={{
+              height: `${iframeHeight}px`,
+              maxHeight: maxAspectHeight ? `${maxAspectHeight}px` : undefined,
+              minHeight: '50px',
+              overflow: 'hidden'
+            }}
           />
         ) : (
           <div className="flex items-center justify-center h-24 text-gray-500 dark:text-neutral-500">

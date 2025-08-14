@@ -35,31 +35,6 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
 
   const extractedTitle = extractTitle(chart);
 
-  // Basic Mermaid validation check
-  const isValidMermaid = (chartString: string): boolean => {
-    const trimmed = chartString.trim();
-    return trimmed.length > 0 && (
-      trimmed.includes('graph') || 
-      trimmed.includes('flowchart') || 
-      trimmed.includes('sequenceDiagram') ||
-      trimmed.includes('classDiagram') ||
-      trimmed.includes('stateDiagram') ||
-      trimmed.includes('erDiagram') ||
-      trimmed.includes('journey') ||
-      trimmed.includes('gantt') ||
-      trimmed.includes('pie') ||
-      trimmed.includes('gitGraph') ||
-      trimmed.includes('mindmap') ||
-      trimmed.includes('timeline') ||
-      trimmed.includes('sankey') ||
-      trimmed.includes('requirement') ||
-      trimmed.includes('C4') ||
-      trimmed.includes('quadrant')
-    );
-  };
-
-  const hasValidMermaid = isValidMermaid(chart);
-
   // Dynamically import and configure mermaid
   useEffect(() => {
     const loadMermaid = async () => {
@@ -337,18 +312,12 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
                 <code>{chart}</code>
               </pre>
             </div>
-          ) : hasValidMermaid ? (
+          ) : (
             <div className="p-4 overflow-x-auto">
               <div 
                 className="mermaid-diagram flex justify-center"
                 dangerouslySetInnerHTML={{ __html: svg }}
               />
-            </div>
-          ) : (
-            <div className="p-4">
-              <pre className="text-gray-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto">
-                <code>{chart}</code>
-              </pre>
             </div>
           )}
         </div>
