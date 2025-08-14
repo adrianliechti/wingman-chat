@@ -9,6 +9,16 @@ export type Model = {
     prompts?: string[];
 }
 
+export type ChatActivity = {
+    id: string;
+    type: 'tool_call' | 'thinking' | 'processing' | 'uploading' | 'downloading';
+    title: string;
+    description?: string;
+    status: 'active' | 'completed' | 'failed';
+    timestamp: number;
+    metadata?: Record<string, unknown>;
+};
+
 export type Message = {
     role: 'user' | 'assistant';
 

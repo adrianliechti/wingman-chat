@@ -25,7 +25,14 @@ export class Client {
     }));
   }
 
-  async complete(model: string, instructions: string, input: Message[], tools: Tool[], handler?: (delta: string, snapshot: string) => void): Promise<Message> {
+  async complete(
+    model: string, 
+    instructions: string, 
+    input: Message[], 
+    tools: Tool[], 
+    handler?: (delta: string, snapshot: string) => void,
+    toolCallHandler?: (toolCall: { name: string; args: Record<string, unknown>; status: 'calling' | 'completed' | 'failed' }) => void
+  ): Promise<Message> {
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
 
     if (instructions) {
@@ -116,12 +123,40 @@ export class Client {
             content: `Error: Tool "${toolCall.function.name}" not found or not executable.`,
           });
 
+          // Notify tool call failed
+          if (toolCallHandler) {
+            toolCallHandler({
+              name: toolCall.function.name,
+              args: {},
+              status: 'failed'
+            });
+          }
+
           continue;
         }
 
         try {
           const args = JSON.parse(toolCall.function.arguments || "{}");
+          
+          // Notify tool call started
+          if (toolCallHandler) {
+            toolCallHandler({
+              name: tool.name,
+              args,
+              status: 'calling'
+            });
+          }
+          
           const result = await tool.function(args);
+
+          // Notify tool call completed
+          if (toolCallHandler) {
+            toolCallHandler({
+              name: tool.name,
+              args,
+              status: 'completed'
+            });
+          }
 
           messages.push({
             role: "tool",
@@ -132,6 +167,15 @@ export class Client {
         }
         catch (error) {
           console.error("Tool failed", error);
+
+          // Notify tool call failed
+          if (toolCallHandler) {
+            toolCallHandler({
+              name: tool.name,
+              args: JSON.parse(toolCall.function.arguments || "{}"),
+              status: 'failed'
+            });
+          }
 
           messages.push({
             role: "tool",

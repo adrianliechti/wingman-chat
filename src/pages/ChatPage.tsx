@@ -14,6 +14,7 @@ import { ChatMessage } from "../components/ChatMessage";
 import { ChatSidebar } from "../components/ChatSidebar";
 import { VoiceWaves } from "../components/VoiceWaves";
 import { BackgroundImage } from "../components/BackgroundImage";
+import { ChatActivityComponent } from "../components/ChatActivity";
 import { useRepositories } from "../hooks/useRepositories";
 import { useArtifacts } from "../hooks/useArtifacts";
 import { RepositoryDrawer } from "../components/RepositoryDrawer";
@@ -29,7 +30,8 @@ export function ChatPage() {
     createChat,
     chats,
     updateChat,
-    isResponding
+    isResponding,
+    currentActivity
   } = useChat();
   
   const { layoutMode } = useLayout();
@@ -379,6 +381,11 @@ export function ChatPage() {
                 {messages.map((message, idx) => (
                   <ChatMessage key={idx} message={message} isLast={idx === messages.length - 1} isResponding={isResponding} />
                 ))}
+                
+                {/* Show current activity inline with messages */}
+                {currentActivity && (
+                  <ChatActivityComponent activity={currentActivity} />
+                )}
                 
                 {/* sentinel for scrollIntoView */}
                 <div ref={bottomRef} />
