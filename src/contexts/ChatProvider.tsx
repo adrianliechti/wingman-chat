@@ -17,7 +17,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
-  const { tools: chatTools, instructions: chatInstructions } = useChatContext();
+  const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat');
   const { setEnabled: setSearchEnabled } = useSearch();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);

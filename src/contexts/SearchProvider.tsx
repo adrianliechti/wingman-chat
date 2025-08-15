@@ -109,7 +109,7 @@ export function SearchProvider({ children }: SearchProviderProps) {
     return `
       You have access to web search and web scraping functionality.
       
-      - Use the web_search tool when you need current information, recent events, or specific facts that may not be in your training data.      
+      - Use the web_search tool when you need current information, recent events, or specific facts that may not be in your training data.
       - Use the web_scraper tool when you need to extract the full text content from a specific webpage URL.
       
       Always search when the user asks for recent information, current events, or specific factual data.

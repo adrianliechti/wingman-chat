@@ -28,7 +28,7 @@ export interface RepositoryHook {
 // Shared client instance for all repositories
 const client = new Client();
 
-export function useRepository(repositoryId: string): RepositoryHook {
+export function useRepository(repositoryId: string, mode: 'auto' | 'rag' | 'context' = 'auto'): RepositoryHook {
   const { repositories, upsertFile, removeFile: removeFileFromRepo } = useRepositories();
   const [vectorDB, setVectorDB] = useState(() => new VectorDB());
   const currentRepositoryIdRef = useRef(repositoryId);
@@ -61,8 +61,11 @@ export function useRepository(repositoryId: string): RepositoryHook {
 
   // Determine if we should use RAG mode (true) or full content mode (false)
   const useRAG = useMemo(() => {
+    if (mode === 'rag') return true;
+    if (mode === 'context') return false;
+    // auto mode: determine based on repository size
     return totalPages > 150;
-  }, [totalPages]);
+  }, [mode, totalPages]);
 
   // Handle repository changes and rebuild vector database
   useEffect(() => {

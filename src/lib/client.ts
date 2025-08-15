@@ -402,10 +402,10 @@ Return only the prompts themselves, without numbering or bullet points.`,
       return [];
     }
 
-    return results.map((result: { title?: string; source?: string; content: string }) => ({
+    return results.map((result: SearchResult) => ({
       title: result.title || undefined,
       source: result.source || undefined,
-      content: result.content || '',
+      content: result.content,
     }));
   }
 
