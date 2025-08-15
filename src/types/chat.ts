@@ -1,4 +1,4 @@
-import { File } from "./file";
+import type { File } from "./file";
 
 export type Model = {
     id: string;

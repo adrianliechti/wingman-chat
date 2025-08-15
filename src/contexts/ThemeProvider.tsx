@@ -1,5 +1,7 @@
-import { useState, useEffect, useLayoutEffect, ReactNode } from 'react';
-import { ThemeContext, Theme, ThemeContextType } from './ThemeContext';
+import { useState, useEffect, useLayoutEffect } from 'react';
+import type { ReactNode } from 'react';
+import { ThemeContext } from './ThemeContext';
+import type { Theme, ThemeContextType } from './ThemeContext';
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   // Initialize theme from localStorage or system preference

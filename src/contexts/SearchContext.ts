@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import { Tool } from "../types/chat";
+import type { Tool } from "../types/chat";
 
 export interface SearchContextType {
   isEnabled: boolean;

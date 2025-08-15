@@ -2,9 +2,10 @@ import { z } from "zod";
 import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 
-import { Tool } from "../types/chat";
-import { Message, Model, Role, AttachmentType } from "../types/chat";
-import { SearchResult } from "../types/search";
+import { Role, AttachmentType } from "../types/chat";
+import type { Tool } from "../types/chat";
+import type { Message, Model } from "../types/chat";
+import type { SearchResult } from "../types/search";
 
 export class Client {
   private oai: OpenAI;
@@ -446,10 +447,10 @@ Return only the prompts themselves, without numbering or bullet points.`,
       return [];
     }
 
-    return results.map((result: { title?: string; source?: string; content: string }) => ({
+    return results.map((result: SearchResult) => ({
       title: result.title || undefined,
       source: result.source || undefined,
-      content: result.content || '',
+      content: result.content,
     }));
   }
 

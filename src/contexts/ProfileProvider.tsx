@@ -1,5 +1,7 @@
-import { useState, useEffect, ReactNode } from 'react';
-import { ProfileContext, ProfileSettings } from './ProfileContext';
+import { useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
+import { ProfileContext } from './ProfileContext';
+import type { ProfileSettings } from './ProfileContext';
 import { setValue, getValue, deleteValue } from '../lib/db';
 
 interface ProfileProviderProps {

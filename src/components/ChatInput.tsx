@@ -1,9 +1,11 @@
-import { ChangeEvent, useState, FormEvent, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
 import { Send, Paperclip, ScreenShare, Image, X, Brain, File, Loader2, FileText, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle } from "lucide-react";
 
-import { Attachment, AttachmentType, Message, Role } from "../types/chat";
+import { AttachmentType, Role } from "../types/chat";
+import type { Attachment, Message } from "../types/chat";
 import {
   getFileExt,
   readAsDataURL,

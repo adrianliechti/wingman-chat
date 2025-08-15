@@ -1,6 +1,8 @@
-import { useState, useCallback, useRef, useEffect, ReactNode } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import type { ReactNode } from "react";
 import { getConfig } from "../config";
-import { TranslateContext, TranslateContextType, supportedLanguages, supportedFiles } from './TranslateContext';
+import { TranslateContext, supportedLanguages, supportedFiles } from './TranslateContext';
+import type { TranslateContextType } from './TranslateContext';
 
 interface TranslateProviderProps {
   children: ReactNode;

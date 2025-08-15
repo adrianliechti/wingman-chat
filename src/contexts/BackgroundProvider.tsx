@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { getConfig } from '../config';
-import { BackgroundContext, BackgroundPack, BackgroundSetting, BackgroundContextValue } from './BackgroundContext';
+import { BackgroundContext } from './BackgroundContext';
+import type { BackgroundPack, BackgroundSetting, BackgroundContextValue } from './BackgroundContext';
 
 const STORAGE_KEY = 'app_background';
 

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Tool } from "../types/chat";
+import type { Tool } from "../types/chat";
 import { useProfile } from "./useProfile";
 import { useArtifacts } from "./useArtifacts";
 import { useRepository } from "./useRepository";
@@ -16,11 +16,15 @@ export interface ChatContext {
  * Shared hook for gathering completion tools and instructions
  * Used by both ChatProvider and VoiceProvider
  */
-export function useChatContext(): ChatContext {
+export function useChatContext(mode: 'voice' | 'chat' = 'chat'): ChatContext {
   const { generateInstructions } = useProfile();
   const { artifactsTools, artifactsInstructions, isEnabled: isArtifactsEnabled } = useArtifacts();
   const { currentRepository } = useRepositories();
-  const { queryTools, queryInstructions } = useRepository(currentRepository?.id || '');
+  
+  // Override query mode based on context mode
+  const queryMode = mode === 'voice' ? 'rag' : 'auto';
+  const { queryTools, queryInstructions } = useRepository(currentRepository?.id || '', queryMode);
+  
   const { bridgeTools, bridgeInstructions } = useBridge();
   const { searchTools, searchInstructions } = useSearch();
 
@@ -60,11 +64,17 @@ export function useChatContext(): ChatContext {
       instructionsList.push(webSearchInstructions);
     }
 
+    // Add mode-specific instructions
+    if (mode === 'voice') {
+      instructionsList.push('Respond concisely and naturally for voice interaction.');
+    }
+
     return {
       tools: completionTools,
       instructions: instructionsList.join('\n\n')
     };
   }, [
+    mode,
     generateInstructions,
     isArtifactsEnabled,
     artifactsTools,

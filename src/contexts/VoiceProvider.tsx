@@ -4,7 +4,8 @@ import { useChat } from "../hooks/useChat";
 import { useChatContext } from "../hooks/useChatContext";
 import { getConfig } from "../config";
 import { Role } from "../types/chat";
-import { VoiceContext, VoiceContextType } from './VoiceContext';
+import { VoiceContext } from './VoiceContext';
+import type { VoiceContextType } from './VoiceContext';
 
 interface VoiceProviderProps {
   children: React.ReactNode;
@@ -14,7 +15,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const [isListening, setIsListening] = useState(false);
   const [isAvailable, setIsAvailable] = useState(false);
   const { addMessage, messages } = useChat();
-  const { tools: chatTools, instructions: chatInstructions } = useChatContext();
+  const { tools: chatTools, instructions: chatInstructions } = useChatContext('voice');
 
   // Check voice availability from config
   useEffect(() => {

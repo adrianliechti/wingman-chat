@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { WavStreamPlayer, WavRecorder } from 'wavtools';
-import { Message, Tool, AttachmentType } from '../types/chat';
+import { AttachmentType } from '../types/chat';
+import type { Message, Tool } from '../types/chat';
 
 /**
  * Hook to manage OpenAI Realtime voice streaming via WebSockets with PCM16.

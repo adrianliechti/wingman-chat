@@ -1,4 +1,5 @@
-import { useState, useCallback, ReactNode, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { ArtifactsContext } from './ArtifactsContext';
 import { FileSystemManager } from '../lib/fs';
 import { getConfig } from '../config';

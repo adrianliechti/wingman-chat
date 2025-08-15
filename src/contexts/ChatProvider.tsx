@@ -1,11 +1,13 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { Message, Model, Role, ChatActivity } from "../types/chat";
+import { Role } from "../types/chat";
+import type { Message, Model, ChatActivity } from "../types/chat";
 import { useModels } from "../hooks/useModels";
 import { useChats } from "../hooks/useChats";
 import { useChatContext } from "../hooks/useChatContext";
 import { useSearch } from "../hooks/useSearch";
 import { getConfig } from "../config";
-import { ChatContext, ChatContextType } from './ChatContext';
+import { ChatContext } from './ChatContext';
+import type { ChatContextType } from './ChatContext';
 
 interface ChatProviderProps {
   children: React.ReactNode;
@@ -17,7 +19,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
-  const { tools: chatTools, instructions: chatInstructions } = useChatContext();
+  const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat');
   const { setEnabled: setSearchEnabled } = useSearch();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);

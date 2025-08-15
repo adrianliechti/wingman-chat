@@ -1,4 +1,5 @@
-import { CSSProperties, useMemo } from 'react';
+import { useMemo } from 'react';
+import type { CSSProperties } from 'react';
 import { useBackground } from "../hooks/useBackground";
 
 export function BackgroundImage({ opacity = 80 }: { opacity?: number }) {

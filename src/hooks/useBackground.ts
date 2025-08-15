@@ -1,5 +1,6 @@
 import { useContext } from 'react';
-import { BackgroundContext, BackgroundContextValue } from '../contexts/BackgroundContext';
+import { BackgroundContext } from '../contexts/BackgroundContext';
+import type { BackgroundContextValue } from '../contexts/BackgroundContext';
 
 /**
  * Hook to access background settings and current wallpaper.

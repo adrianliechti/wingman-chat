@@ -1,6 +1,8 @@
-import { useState, ReactNode, useCallback, useEffect } from "react";
-import { SearchContext, SearchContextType } from "./SearchContext";
-import { Tool } from "../types/chat";
+import { useState, useCallback, useEffect } from "react";
+import type { ReactNode } from "react";
+import { SearchContext } from "./SearchContext";
+import type { SearchContextType } from "./SearchContext";
+import type { Tool } from "../types/chat";
 import { getConfig } from "../config";
 
 interface SearchProviderProps {
@@ -109,7 +111,7 @@ export function SearchProvider({ children }: SearchProviderProps) {
     return `
       You have access to web search and web scraping functionality.
       
-      - Use the web_search tool when you need current information, recent events, or specific facts that may not be in your training data.      
+      - Use the web_search tool when you need current information, recent events, or specific facts that may not be in your training data.
       - Use the web_scraper tool when you need to extract the full text content from a specific webpage URL.
       
       Always search when the user asks for recent information, current events, or specific factual data.

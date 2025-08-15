@@ -1,5 +1,7 @@
-import { ReactNode, useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { ScreenCaptureContext, ScreenCaptureContextType } from './ScreenCaptureContext';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import type { ReactNode } from 'react';
+import { ScreenCaptureContext } from './ScreenCaptureContext';
+import type { ScreenCaptureContextType } from './ScreenCaptureContext';
 import { getConfig } from '../config';
 
 interface ScreenCaptureProviderProps {

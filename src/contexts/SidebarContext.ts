@@ -1,4 +1,5 @@
-import { createContext, ReactNode } from 'react';
+import { createContext } from 'react';
+import type { ReactNode } from 'react';
 
 export type SidebarContextType = {
   showSidebar: boolean;

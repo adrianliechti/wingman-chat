@@ -1,5 +1,5 @@
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
-import { ChatActivity } from "../types/chat";
+import type { ChatActivity } from "../types/chat";
 
 interface ChatActivityProps {
   activity: ChatActivity;

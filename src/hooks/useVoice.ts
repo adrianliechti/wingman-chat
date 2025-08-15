@@ -1,5 +1,6 @@
 import { useContext } from "react";
-import { VoiceContext, VoiceContextType } from "../contexts/VoiceContext";
+import { VoiceContext } from "../contexts/VoiceContext";
+import type { VoiceContextType } from "../contexts/VoiceContext";
 
 export function useVoice(): VoiceContextType {
   const context = useContext(VoiceContext);

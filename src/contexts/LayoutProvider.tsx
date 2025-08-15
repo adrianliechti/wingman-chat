@@ -1,5 +1,7 @@
-import { useState, useLayoutEffect, ReactNode } from 'react';
-import { LayoutContext, LayoutMode, LayoutContextType } from './LayoutContext';
+import { useState, useLayoutEffect } from 'react';
+import type { ReactNode } from 'react';
+import { LayoutContext } from './LayoutContext';
+import type { LayoutMode, LayoutContextType } from './LayoutContext';
 
 export function LayoutProvider({ children }: { children: ReactNode }) {
   // Initialize layout mode from localStorage

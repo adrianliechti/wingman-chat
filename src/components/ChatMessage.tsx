@@ -4,7 +4,8 @@ import { ShareButton } from './ShareButton';
 import { PlayButton } from './PlayButton';
 import { File } from "lucide-react";
 
-import { AttachmentType, Message, Role } from "../types/chat";
+import { AttachmentType, Role } from "../types/chat";
+import type { Message } from "../types/chat";
 import { getConfig } from "../config";
 import { canShare } from "../lib/share";
 

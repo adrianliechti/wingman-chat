@@ -1,5 +1,5 @@
 import { createContext } from 'react';
-import { Repository, RepositoryFile } from '../types/repository';
+import type { Repository, RepositoryFile } from '../types/repository';
 
 export type RepositoryContextType = {
   isAvailable: boolean;

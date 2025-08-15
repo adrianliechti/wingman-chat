@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Model } from "../types/chat";
+import { useState, useEffect } from "react";
+import type { Model } from "../types/chat";
 import { getConfig } from "../config";
 
 const STORAGE_KEY = "app_model";

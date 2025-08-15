@@ -1,7 +1,9 @@
-import { useState, useEffect, ReactNode } from 'react';
-import { Tool } from '../types/chat';
+import { useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
+import type { Tool } from '../types/chat';
 import { getConfig } from '../config';
-import { BridgeContext, BridgeContextType } from './BridgeContext';
+import { BridgeContext } from './BridgeContext';
+import type { BridgeContextType } from './BridgeContext';
 
 interface BridgeProviderProps {
   children: ReactNode;

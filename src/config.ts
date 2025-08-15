@@ -1,6 +1,6 @@
 import { Bridge } from "./lib/bridge";
 import { Client } from "./lib/client";
-import { Model } from "./types/chat";
+import type { Model } from "./types/chat";
 
 interface backgroundConfig {
   url: string;

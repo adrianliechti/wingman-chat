@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-import { Chat } from '../types/chat';
+import type { Chat } from '../types/chat';
 import { setValue, getValue } from '../lib/db';
 
 const SAVE_DELAY = 2000;

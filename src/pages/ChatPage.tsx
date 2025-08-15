@@ -20,8 +20,8 @@ import { useArtifacts } from "../hooks/useArtifacts";
 import { RepositoryDrawer } from "../components/RepositoryDrawer";
 import { ArtifactsDrawer } from "../components/ArtifactsDrawer";
 import { FileSystemManager } from "../lib/fs";
-import { FileSystem } from "../types/file";
-import { Chat } from "../types/chat";
+import type { FileSystem } from "../types/file";
+import type { Chat } from "../types/chat";
 
 export function ChatPage() {
   const {
@@ -492,7 +492,11 @@ export function ChatPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-neutral-400 dark:text-neutral-500 mt-1">•</span>
-                  <span>No custom model support</span>
+                  <span>Knowledge Bases uses RAG mode only</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-neutral-400 dark:text-neutral-500 mt-1">•</span>
+                  <span>Context Window limited to ~30 pages</span>
                 </li>
               </ul>
             </div>

@@ -1,6 +1,7 @@
 import { useContext, useCallback } from 'react';
-import { ArtifactsContext, ArtifactsContextType } from '../contexts/ArtifactsContext';
-import { Tool } from '../types/chat';
+import { ArtifactsContext } from '../contexts/ArtifactsContext';
+import type { ArtifactsContextType } from '../contexts/ArtifactsContext';
+import type { Tool } from '../types/chat';
 
 export interface ArtifactsHook extends ArtifactsContextType {
   artifactsTools: () => Tool[];

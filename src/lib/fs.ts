@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { FileSystem, File } from '../types/file';
+import type { FileSystem, File } from '../types/file';
 
 type FileEventType = 'fileCreated' | 'fileDeleted' | 'fileRenamed' | 'fileUpdated';
 

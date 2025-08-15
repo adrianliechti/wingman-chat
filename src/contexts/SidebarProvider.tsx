@@ -1,5 +1,7 @@
-import { useState, useCallback, ReactNode } from 'react';
-import { SidebarContext, SidebarContextType } from './SidebarContext';
+import { useState, useCallback } from 'react';
+import type { ReactNode } from 'react';
+import { SidebarContext } from './SidebarContext';
+import type { SidebarContextType } from './SidebarContext';
 
 export function SidebarProvider({ children }: { children: ReactNode }) {
   const [showSidebar, setShowSidebar] = useState(false);
