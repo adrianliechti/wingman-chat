@@ -9,28 +9,38 @@ export type Model = {
     prompts?: string[];
 }
 
-export type ChatActivity = {
+export type ToolCall = {
     id: string;
-    type: 'tool_call' | 'thinking' | 'processing' | 'uploading' | 'downloading';
-    title: string;
-    description?: string;
-    status: 'active' | 'completed' | 'failed';
-    timestamp: number;
-    metadata?: Record<string, unknown>;
+    
+    name: string;
+    arguments: string;
+};
+
+export type ToolResult = {
+    id: string;
+
+    name: string; // from tool call
+    arguments: string; // from tool call
+    
+    data: string;
 };
 
 export type Message = {
-    role: 'user' | 'assistant';
+    role: 'user' | 'assistant' | 'tool';
 
     content: string;
     refusal?: string;
 
     attachments?: Attachment[];
+    
+    toolCalls?: ToolCall[];
+    toolResult?: ToolResult;
 };
 
 export enum Role {
     User = "user",
     Assistant = "assistant",
+    Tool = "tool",
 }
 
 export type Tool = {

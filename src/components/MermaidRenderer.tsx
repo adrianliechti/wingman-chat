@@ -6,6 +6,7 @@ import { PreviewButton } from './PreviewButton';
 interface MermaidRendererProps {
   chart: string;
   language: string;
+  name?: string;
 }
 
 interface MermaidAPI {
@@ -24,7 +25,7 @@ const extractTitle = (chart: string): string | null => {
   return null;
 };
 
-const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) => {
+const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererProps) => {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [isComplete, setIsComplete] = useState(false);
@@ -183,7 +184,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
     return (
       <div className="relative my-4">
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{extractedTitle || language}</span>
+          <span>{extractedTitle || name || language}</span>
           <div className="flex items-center gap-2">
             <PreviewButton 
               showCode={showCode} 
@@ -216,7 +217,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
     return (
       <div className="relative my-4">
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{extractedTitle || language}</span>
+          <span>{extractedTitle || name || language}</span>
           <div className="flex items-center gap-2">
             <PreviewButton 
               showCode={showCode} 
@@ -251,7 +252,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
     return (
       <div className="relative my-4">
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{extractedTitle || language}</span>
+          <span>{extractedTitle || name || language}</span>
           <div className="flex items-center gap-2">
             <PreviewButton 
               showCode={showCode} 
@@ -275,7 +276,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
     return (
       <div className="relative my-4">
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{extractedTitle || language}</span>
+          <span>{extractedTitle || name || language}</span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-red-500 dark:text-red-400 opacity-70">render failed</span>
             <CopyButton text={chart} className="h-4 w-4" />
@@ -295,7 +296,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
     return (
       <div className="relative my-4">
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{extractedTitle || language}</span>
+          <span>{extractedTitle || name || language}</span>
           <div className="flex items-center gap-2">
             <PreviewButton 
               showCode={showCode} 
@@ -331,5 +332,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language }: MermaidRendererProps) =
 export const MermaidRenderer = memo(
   NonMemoizedMermaidRenderer,
   (prevProps, nextProps) => 
-    prevProps.chart === nextProps.chart && prevProps.language === nextProps.language
+    prevProps.chart === nextProps.chart && 
+    prevProps.language === nextProps.language &&
+    prevProps.name === nextProps.name
 );

@@ -31,8 +31,7 @@ export class Client {
     instructions: string, 
     input: Message[], 
     tools: Tool[], 
-    handler?: (delta: string, snapshot: string) => void,
-    toolCallHandler?: (toolCall: { name: string; args: Record<string, unknown>; status: 'calling' | 'completed' | 'failed' }) => void
+    handler?: (delta: string, snapshot: string) => void
   ): Promise<Message> {
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
 
@@ -74,28 +73,54 @@ export class Client {
       }
 
       switch (m.role) {
-        case Role.User:
+        case Role.User: {
           messages.push({
             role: Role.User,
             content: content,
           });
           break;
+        }
 
-        case Role.Assistant:
-          messages.push({
+        case Role.Assistant: {
+          const assistantMessage: OpenAI.Chat.ChatCompletionMessageParam = {
             role: Role.Assistant,
             content: content.filter((c) => c.type === "text"),
-          });
+          };
+          
+          // Add tool calls if they exist
+          if (m.toolCalls && m.toolCalls.length > 0) {
+            assistantMessage.tool_calls = m.toolCalls.map(tc => ({
+              id: tc.id,
+              type: 'function' as const,
+              function: {
+                name: tc.name,
+                arguments: tc.arguments,
+              },
+            }));
+          }
+          
+          messages.push(assistantMessage);
           break;
+        }
+
+        case Role.Tool: {
+          // Handle tool messages if they exist in input
+          if (m.toolResult) {
+            messages.push({
+              role: "tool",
+              content: m.content,
+              tool_call_id: m.toolResult.id,
+            });
+          }
+          break;
+        }
       }
     }
 
     const stream = this.oai.chat.completions.stream({
       model: model,
-
       tools: this.toTools(tools),
       messages: messages,
-
       stream: true,
       stream_options: { include_usage: true },
     });
@@ -104,106 +129,19 @@ export class Client {
       stream.on("content", handler);
     }
 
-    let completion = await stream.finalChatCompletion() as OpenAI.ChatCompletion;
-    messages.push(completion.choices[0].message);
-
-    while (completion.choices[0].message?.tool_calls?.length ?? 0 > 0) {
-      for (const toolCall of completion.choices[0].message.tool_calls ?? []) {
-        // Type guard to ensure we're working with a function tool call
-        if (toolCall.type !== 'function') {
-          continue;
-        }
-
-        const tool = tools.find((t) => t.name === toolCall.function.name);
-
-        if (!tool) {
-          messages.push({
-            tool_call_id: toolCall.id,
-
-            role: "tool",
-            content: `Error: Tool "${toolCall.function.name}" not found or not executable.`,
-          });
-
-          // Notify tool call failed
-          if (toolCallHandler) {
-            toolCallHandler({
-              name: toolCall.function.name,
-              args: {},
-              status: 'failed'
-            });
-          }
-
-          continue;
-        }
-
-        try {
-          const args = JSON.parse(toolCall.function.arguments || "{}");
-          
-          // Notify tool call started
-          if (toolCallHandler) {
-            toolCallHandler({
-              name: tool.name,
-              args,
-              status: 'calling'
-            });
-          }
-          
-          const result = await tool.function(args);
-
-          // Notify tool call completed
-          if (toolCallHandler) {
-            toolCallHandler({
-              name: tool.name,
-              args,
-              status: 'completed'
-            });
-          }
-
-          messages.push({
-            role: "tool",
-            content: result,
-
-            tool_call_id: toolCall.id,
-          });
-        }
-        catch (error) {
-          console.error("Tool failed", error);
-
-          // Notify tool call failed
-          if (toolCallHandler) {
-            toolCallHandler({
-              name: tool.name,
-              args: JSON.parse(toolCall.function.arguments || "{}"),
-              status: 'failed'
-            });
-          }
-
-          messages.push({
-            role: "tool",
-            content: "error: tool execution failed.",
-
-            tool_call_id: toolCall.id,
-          });
-        }
-      }
-
-      completion = await this.oai.chat.completions.create({
-        model: model,
-
-        tools: this.toTools(tools),
-        messages: messages,
-      });
-
-      messages.push(completion.choices[0].message);
-    }
-
+    const completion = await stream.finalChatCompletion() as OpenAI.ChatCompletion;
+    
     const message = completion.choices[0].message;
 
     return {
       role: Role.Assistant,
-
       content: message.content ?? "",
       refusal: message.refusal ?? "",
+      toolCalls: message.tool_calls?.filter(tc => tc.type === 'function').map(tc => ({
+        id: tc.id,
+        name: tc.function.name,
+        arguments: tc.function.arguments,
+      })),
     };
   }
 

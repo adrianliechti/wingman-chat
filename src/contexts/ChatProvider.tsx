@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { Role } from "../types/chat";
-import type { Message, Model, ChatActivity } from "../types/chat";
+import type { Message, Model } from "../types/chat";
 import { useModels } from "../hooks/useModels";
 import { useChats } from "../hooks/useChats";
 import { useChatContext } from "../hooks/useChatContext";
@@ -23,45 +23,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { setEnabled: setSearchEnabled } = useSearch();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
-  const [currentActivity, setCurrentActivity] = useState<ChatActivity | null>(null);
   const messagesRef = useRef<Message[]>([]);
-
-  // Helper function to create activities
-  const createActivity = useCallback((
-    type: ChatActivity['type'], 
-    title: string, 
-    description?: string, 
-    metadata?: Record<string, unknown>
-  ): ChatActivity => ({
-    id: Date.now().toString(),
-    type,
-    title,
-    description,
-    status: 'active',
-    timestamp: Date.now(),
-    metadata
-  }), []);
-
-  // Helper function to update activity status
-  const updateActivityStatus = useCallback((status: ChatActivity['status'], autoHide = true) => {
-    setCurrentActivity(current => {
-      if (!current) return null;
-      
-      const updated = { ...current, status };
-      
-      // Auto-hide completed/failed activities after delay
-      if (autoHide && (status === 'completed' || status === 'failed')) {
-        setTimeout(() => setCurrentActivity(null), 1000);
-      }
-      
-      return updated;
-    });
-  }, []);
-
-  // Helper function to clear activity
-  const clearActivity = useCallback(() => {
-    setCurrentActivity(null);
-  }, []);
 
   const chat = chats.find(c => c.id === chatId) ?? null;
   const model = chat?.model ?? selectedModel ?? models[0];
@@ -146,67 +108,104 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const { id, chat: chatObj } = getOrCreateChat();
 
       const existingMessages = chats.find(c => c.id === id)?.messages || [];
-      const conversation = [...existingMessages, message];
+      let conversation = [...existingMessages, message];
 
-      updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: '' }] }));
+      updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
 
       try {
-        const completion = await client.complete(
-          model!.id,
-          chatInstructions,
-          conversation,
-          chatTools,
-          (_, snapshot) => updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: snapshot }] })),
-          (toolCall) => {
-            const getToolDisplayName = (toolName: string) => {
-              switch (toolName) {
-                case 'web_search':
-                  return 'Searching the web';
-                case 'query_knowledge_database':
-                  return 'Searching knowledge base';
-                case 'send_email':
-                  return 'Opening email composer';
-                default:
-                  return `Using ${toolName.replace(/_/g, ' ')}`;
-              }
-            };
+        // Main completion loop to handle tool calls
+        while (true) {
+          // Create empty assistant message for this completion iteration
+          updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: '' }] }));
+          
+          const assistantMessage = await client.complete(
+            model!.id,
+            chatInstructions,
+            conversation,
+            chatTools,
+            (_, snapshot) => {
+              // Use the conversation state instead of fetching from chats to avoid stale closure
+              updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: snapshot }] }))
+            }
+          );
+          
+          // Add the assistant message to conversation
+          conversation = [...conversation, {
+            role: Role.Assistant,
+            content: assistantMessage.content ?? "",
+            refusal: assistantMessage.refusal ?? "",
+            toolCalls: assistantMessage.toolCalls,
+          }];
 
-            const getToolQuery = (args: Record<string, unknown>): string => {
-              if (args.query) return String(args.query);
-              if (args.search) return String(args.search);
-              if (args.text) return String(args.text);
-              if (args.message) return String(args.message);
-              if (args.content) return String(args.content);
-              if (args.subject) return `"${args.subject}"`;
-              
-              const firstStringValue = Object.values(args).find(v => typeof v === 'string');
-              return firstStringValue as string || '';
-            };
+          // Update UI with the assistant message
+          updateChat(id, () => ({ messages: conversation }));
 
-            if (toolCall.status === 'calling') {
-              const query = getToolQuery(toolCall.args);
-              const activity = createActivity(
-                'tool_call',
-                getToolDisplayName(toolCall.name),
-                query && query.length < 80 ? query : undefined,
-                {
-                  toolName: toolCall.name,
-                  args: toolCall.args
-                }
-              );
-              setCurrentActivity(activity);
-            } else {
-              updateActivityStatus(
-                toolCall.status === 'completed' ? 'completed' : 'failed'
-              );
+          // Check if there are tool calls to handle
+          const toolCalls = assistantMessage.toolCalls;
+          if (!toolCalls || toolCalls.length === 0) {
+            // No tool calls, we're done
+            break;
+          }
+
+          // Handle each tool call
+          for (const toolCall of toolCalls) {
+            const tool = chatTools.find((t) => t.name === toolCall.name);
+
+            if (!tool) {
+              // Tool not found - add error message
+              conversation = [...conversation, {
+                role: Role.Tool,
+                content: `Error: Tool "${toolCall.name}" not found or not executable.`,
+                toolResult: {
+                  id: toolCall.id,
+                  name: toolCall.name,
+                  arguments: toolCall.arguments,
+                  data: `Error: Tool "${toolCall.name}" not found or not executable.`
+                },
+              }];
+
+              continue;
+            }
+
+            try {
+              const args = JSON.parse(toolCall.arguments || "{}");
+              const result = await tool.function(args);
+
+              // Add tool result to conversation
+              conversation = [...conversation, {
+                role: Role.Tool,
+                content: result ?? "No result returned",
+                toolResult: {
+                  id: toolCall.id,
+                  name: toolCall.name,
+                  arguments: toolCall.arguments,
+                  data: result ?? "No result returned"
+                },
+              }];
+            }
+            catch (error) {
+              console.error("Tool failed", error);
+
+              // Add tool error to conversation
+              conversation = [...conversation, {
+                role: Role.Tool,
+                content: "error: tool execution failed.",
+                toolResult: {
+                  id: toolCall.id,
+                  name: toolCall.name,
+                  arguments: toolCall.arguments,
+                  data: "error: tool execution failed."
+                },
+              }];
             }
           }
-        );
 
-        updateChat(id, () => ({ messages: [...conversation, completion] }));
+          // Update conversation with tool results before next iteration
+          updateChat(id, () => ({ messages: conversation }));
+        }
+
         setIsResponding(false);
-        clearActivity();
 
         if (!chatObj.title || conversation.length % 3 === 0) {
           client
@@ -216,14 +215,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
       } catch (error) {
         console.error(error);
         setIsResponding(false);
-        clearActivity();
 
         if (error?.toString().includes('missing finish_reason')) return;
 
         const errorMessage = { role: Role.Assistant, content: `An error occurred:\n${error}` };
         updateChat(id, () => ({ messages: [...conversation, errorMessage] }));
       }
-    }, [getOrCreateChat, chats, updateChat, chatTools, chatInstructions, client, model, setIsResponding, createActivity, updateActivityStatus, clearActivity]);
+    }, [getOrCreateChat, chats, updateChat, chatTools, chatInstructions, client, model, setIsResponding]);
 
   const value: ChatContextType = {
     // Models
@@ -236,12 +234,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     chat,
     messages,
     isResponding,
-    currentActivity,
-
-    // Activity helpers
-    createActivity,
-    updateActivityStatus,
-    clearActivity,
 
     // Chat actions
     createChat,

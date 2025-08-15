@@ -40,7 +40,7 @@ export function SearchProvider({ children }: SearchProviderProps) {
           properties: {
             query: {
               type: "string",
-              description: "The search query to find relevant information on the web"
+              description: "The optimized search query to find relevant information on the web. Use specific keywords, remove unnecessary words, and structure the query for best search results."
             }
           },
           required: ["query"]
@@ -112,6 +112,7 @@ export function SearchProvider({ children }: SearchProviderProps) {
       You have access to web search and web scraping functionality.
       
       - Use the web_search tool when you need current information, recent events, or specific facts that may not be in your training data.
+      - Optimize your search queries by using specific keywords, removing unnecessary words, and structuring them for best results.
       - Use the web_scraper tool when you need to extract the full text content from a specific webpage URL.
       
       Always search when the user asks for recent information, current events, or specific factual data.

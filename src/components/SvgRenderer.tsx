@@ -5,6 +5,7 @@ import { PreviewButton } from './PreviewButton';
 interface SvgRendererProps {
   svg: string;
   language: string;
+  name?: string;
 }
 
 const extractTitle = (svg: string): string | null => {
@@ -12,7 +13,7 @@ const extractTitle = (svg: string): string | null => {
   return match && match[1].trim() ? match[1].trim() : null;
 };
 
-const NonMemoizedSvgRenderer = ({ svg, language }: SvgRendererProps) => {
+const NonMemoizedSvgRenderer = ({ svg, language, name }: SvgRendererProps) => {
   const [showCode, setShowCode] = useState(false);
   const isComplete = svg.trim().length > 0 && /<\/svg>/i.test(svg);
   const extractedTitle = extractTitle(svg);
@@ -21,7 +22,7 @@ const NonMemoizedSvgRenderer = ({ svg, language }: SvgRendererProps) => {
     return (
       <div className="relative my-4">
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{extractedTitle || language}</span>
+          <span>{extractedTitle || name || language}</span>
           <div className="flex items-center gap-2">
             <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
             <CopyButton text={svg} className="h-4 w-4" />
@@ -50,7 +51,7 @@ const NonMemoizedSvgRenderer = ({ svg, language }: SvgRendererProps) => {
   return (
     <div className="relative my-4">
       <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-        <span>{extractedTitle || language}</span>
+        <span>{extractedTitle || name || language}</span>
         <div className="flex items-center gap-2">
           <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
           <CopyButton text={svg} className="h-4 w-4" />
@@ -74,5 +75,5 @@ const NonMemoizedSvgRenderer = ({ svg, language }: SvgRendererProps) => {
 
 export const SvgRenderer = memo(
   NonMemoizedSvgRenderer,
-  (prevProps, nextProps) => prevProps.svg === nextProps.svg && prevProps.language === nextProps.language,
+  (prevProps, nextProps) => prevProps.svg === nextProps.svg && prevProps.language === nextProps.language && prevProps.name === nextProps.name,
 );

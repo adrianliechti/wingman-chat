@@ -5,6 +5,7 @@ import { PreviewButton } from './PreviewButton';
 interface CsvRendererProps {
   csv: string;
   language: string;
+  name?: string;
 }
 
 // Utility function to detect separator (comma, semicolon, or tab)
@@ -83,7 +84,7 @@ const parseCSV = (csv: string): string[][] => {
   return result;
 };
 
-const NonMemoizedCsvRenderer = ({ csv, language }: CsvRendererProps) => {
+const NonMemoizedCsvRenderer = ({ csv, language, name }: CsvRendererProps) => {
   const [showCode, setShowCode] = useState(false);
 
   const parsedData = useMemo(() => parseCSV(csv), [csv]);
@@ -97,7 +98,7 @@ const NonMemoizedCsvRenderer = ({ csv, language }: CsvRendererProps) => {
     return (
       <div className="relative my-4">
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{language}</span>
+          <span>{name || language}</span>
           <div className="flex items-center gap-2">
             <PreviewButton 
               showCode={showCode} 
@@ -131,7 +132,7 @@ const NonMemoizedCsvRenderer = ({ csv, language }: CsvRendererProps) => {
     <div className="relative my-4">
       <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
         <span>
-          {language}
+          {name || language}
         </span>
         <div className="flex items-center gap-2">
           <PreviewButton 
@@ -196,5 +197,5 @@ const NonMemoizedCsvRenderer = ({ csv, language }: CsvRendererProps) => {
 export const CsvRenderer = memo(
   NonMemoizedCsvRenderer,
   (prevProps, nextProps) =>
-    prevProps.csv === nextProps.csv && prevProps.language === nextProps.language
+    prevProps.csv === nextProps.csv && prevProps.language === nextProps.language && prevProps.name === nextProps.name
 );

@@ -5,6 +5,7 @@ import { PreviewButton } from './PreviewButton';
 interface HtmlRendererProps {
   html: string;
   language: string;
+  name?: string;
 }
 
 // Utility function to extract title from HTML content
@@ -18,7 +19,7 @@ const extractTitle = (html: string): string | null => {
   return null;
 };
 
-const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
+const NonMemoizedHtmlRenderer = ({ html, language, name }: HtmlRendererProps) => {
   const [showCode, setShowCode] = useState(false);
   const [iframeHeight, setIframeHeight] = useState(50);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -83,7 +84,7 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
     return (
       <div className="relative my-4">
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-          <span>{extractedTitle || language}</span>
+          <span>{extractedTitle || name || language}</span>
           <div className="flex items-center gap-2">
             <PreviewButton 
               showCode={showCode} 
@@ -179,7 +180,7 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
   return (
   <div ref={containerRef} className="relative my-4">
       <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
-        <span>{extractedTitle || language}</span>
+        <span>{extractedTitle || name || language}</span>
         <div className="flex items-center gap-2">
           <PreviewButton 
             showCode={showCode} 
@@ -227,5 +228,5 @@ const NonMemoizedHtmlRenderer = ({ html, language }: HtmlRendererProps) => {
 export const HtmlRenderer = memo(
   NonMemoizedHtmlRenderer,
   (prevProps, nextProps) =>
-    prevProps.html === nextProps.html && prevProps.language === nextProps.language
+    prevProps.html === nextProps.html && prevProps.language === nextProps.language && prevProps.name === nextProps.name
 );

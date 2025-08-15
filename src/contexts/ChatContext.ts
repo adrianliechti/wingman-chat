@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { Chat, Message, Model, Tool, ChatActivity } from "../types/chat";
+import type { Chat, Message, Model, Tool } from "../types/chat";
 
 export interface ChatContextType {
   // Models
@@ -12,12 +12,6 @@ export interface ChatContextType {
   chat: Chat | null;
   messages: Message[];
   isResponding: boolean;
-  currentActivity: ChatActivity | null;
-
-  // Activity helpers
-  createActivity: (type: ChatActivity['type'], title: string, description?: string, metadata?: Record<string, unknown>) => ChatActivity;
-  updateActivityStatus: (status: ChatActivity['status'], autoHide?: boolean) => void;
-  clearActivity: () => void;
 
   // Chat actions
   createChat: () => Chat;
