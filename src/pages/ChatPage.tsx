@@ -16,10 +16,8 @@ import { VoiceWaves } from "../components/VoiceWaves";
 import { BackgroundImage } from "../components/BackgroundImage";
 import { useRepositories } from "../hooks/useRepositories";
 import { useArtifacts } from "../hooks/useArtifacts";
-import { useFileSystem } from "../hooks/useFileSystem";
 import { RepositoryDrawer } from "../components/RepositoryDrawer";
 import { ArtifactsDrawer } from "../components/ArtifactsDrawer";
-import type { FileSystem } from "../types/file";
 
 export function ChatPage() {
   const {
@@ -27,15 +25,13 @@ export function ChatPage() {
     messages,
     createChat,
     chats,
-    updateChat,
-    isResponding
+    isResponding,
   } = useChat();
   
   const { layoutMode } = useLayout();
   const { isAvailable: voiceAvailable, startVoice, stopVoice } = useVoice();
   const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
   const { isAvailable: repositoryAvailable, toggleRepositoryDrawer, showRepositoryDrawer } = useRepositories();
-  const { setFileSystemForChat, setCurrentFileSystem } = useFileSystem();
   
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
@@ -81,29 +77,6 @@ export function ChatPage() {
 
   // Ref to track chat input height for dynamic padding
   const [chatInputHeight, setChatInputHeight] = useState(112); // Default to pb-28 (7rem = 112px)
-
-  // Ensure we have a chat when artifacts are enabled
-  useEffect(() => {
-    if (artifactsAvailable && !chat?.id) {
-      createChat();
-    }
-  }, [artifactsAvailable, chat?.id, createChat]);
-
-  // Set up the filesystem for the current chat
-  useEffect(() => {
-    if (!chat?.id || !artifactsAvailable) {
-      setCurrentFileSystem(null);
-      return;
-    }
-
-    // Create focused methods for filesystem access
-    const getFileSystem = () => chat.artifacts || {};
-    const setFileSystem = (artifacts: FileSystem) => {
-      updateChat(chat.id, () => ({ artifacts }));
-    };
-
-    setFileSystemForChat(getFileSystem, setFileSystem);
-  }, [chat?.id, chat?.artifacts, artifactsAvailable, setFileSystemForChat, setCurrentFileSystem, updateChat]);
 
   // Set up navigation actions (only once on mount)
   useEffect(() => {

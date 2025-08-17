@@ -370,7 +370,7 @@ The user can view and interact with these files through the artifacts drawer int
 `.trim();
   }, []);
 
-  const isEnabled = context.isAvailable && (context.showArtifactsDrawer || (fs !== null && fs.listFiles().length > 0));
+  const isEnabled = context.isAvailable && (context.showArtifactsDrawer || fs.listFiles().length > 0);
   
   return {
     ...context,

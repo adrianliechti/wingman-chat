@@ -1,10 +1,12 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { Role } from "../types/chat";
 import type { Message, Model } from "../types/chat";
+import type { FileSystem } from "../types/file";
 import { useModels } from "../hooks/useModels";
 import { useChats } from "../hooks/useChats";
 import { useChatContext } from "../hooks/useChatContext";
 import { useSearch } from "../hooks/useSearch";
+import { useArtifacts } from "../hooks/useArtifacts";
 import { getConfig } from "../config";
 import { ChatContext } from './ChatContext';
 import type { ChatContextType } from './ChatContext';
@@ -21,6 +23,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat');
   const { setEnabled: setSearchEnabled } = useSearch();
+  const { isAvailable: artifactsEnabled, setFileSystemForChat } = useArtifacts();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const messagesRef = useRef<Message[]>([]);
@@ -36,6 +39,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  // Set up the filesystem for the current chat
+  useEffect(() => {
+    if (!chat?.id || !artifactsEnabled) {
+      setFileSystemForChat(null, null);
+      return;
+    }
+
+    // Create focused methods for filesystem access
+    const getFileSystem = () => chat.artifacts || {};
+    const setFileSystem = (artifacts: FileSystem) => {
+      updateChat(chat.id, () => ({ artifacts }));
+    };
+
+    setFileSystemForChat(getFileSystem, setFileSystem);
+  }, [chat?.id, chat?.artifacts, artifactsEnabled, setFileSystemForChat, updateChat]);
 
   const createChat = useCallback(() => {
     const newChat = createChatHook();

@@ -136,7 +136,9 @@ export function ArtifactsDrawer() {
     }
 
     const file = fs?.getFile(activeFile);
-    if (!file) return null;
+    if (!file) {
+      return null;
+    }
 
     switch (artifactKind(activeFile)) {
       case 'html':
