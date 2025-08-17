@@ -247,21 +247,23 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
     if (hasToolCalls) {
       return (
         <div className="flex justify-start mb-2">
-          <div className="flex-1 py-2">
+          <div className="flex-1 py-1 max-w-full">
             <div className="space-y-1">
               {message.toolCalls?.map((toolCall, index) => {
                 const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
                 return (
-                  <div key={toolCall.id || index} className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
-                    <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
-                    <span className="font-medium">
-                      Calling {getToolDisplayName(toolCall.name)} Tool
-                    </span>
-                    {preview && (
-                      <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono">
-                        {preview}
+                  <div key={toolCall.id || index} className="border border-neutral-200 dark:border-neutral-700 rounded-md overflow-hidden max-w-full">
+                    <div className="px-3 py-2 flex items-center gap-2 min-w-0">
+                      <Loader2 className="w-3 h-3 animate-spin text-blue-500 flex-shrink-0" />
+                      <span className="text-xs font-medium whitespace-nowrap text-neutral-600 dark:text-neutral-400">
+                        Calling {getToolDisplayName(toolCall.name)} Tool
                       </span>
-                    )}
+                      {preview && (
+                        <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono truncate">
+                          {preview}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -313,20 +315,22 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
 
           {/* Show tool call indicators for assistant messages with tool calls */}
           {!isUser && hasToolCalls && props.isLast && (
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-1">
               {message.toolCalls?.map((toolCall, index) => {
                 const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
                 return (
-                  <div key={toolCall.id || index} className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 bg-neutral-50 dark:bg-neutral-900/50 rounded-md px-3 py-2">
-                    <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
-                    <span className="font-medium">
-                      Calling {getToolDisplayName(toolCall.name)} Tool
-                    </span>
-                    {preview && (
-                      <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono">
-                        {preview}
+                  <div key={toolCall.id || index} className="border border-neutral-200 dark:border-neutral-700 rounded-md overflow-hidden max-w-full">
+                    <div className="px-3 py-2 flex items-center gap-2 min-w-0">
+                      <Loader2 className="w-3 h-3 animate-spin text-blue-500 flex-shrink-0" />
+                      <span className="text-xs font-medium whitespace-nowrap text-neutral-600 dark:text-neutral-400">
+                        Calling {getToolDisplayName(toolCall.name)} Tool
                       </span>
-                    )}
+                      {preview && (
+                        <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono truncate">
+                          {preview}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })}
