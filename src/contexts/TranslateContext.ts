@@ -13,11 +13,23 @@ export interface Language {
   name: string;
 }
 
+export interface ToneOption {
+  value: string;
+  label: string;
+}
+
+export interface StyleOption {
+  value: string;
+  label: string;
+}
+
 export interface TranslateContextType {
   // State
   sourceText: string;
   translatedText: string;
   targetLang: string;
+  tone: string;
+  style: string;
   isLoading: boolean;
   selectedFile: File | null;
   translatedFileUrl: string | null;
@@ -27,11 +39,16 @@ export interface TranslateContextType {
   selectedLanguage: Language | undefined;
   supportedFiles: SupportedFile[];
   supportedLanguages: Language[];
+  toneOptions: ToneOption[];
+  styleOptions: StyleOption[];
   
   // Actions
   setSourceText: (text: string) => void;
   setTargetLang: (langCode: string) => void;
+  setTone: (tone: string) => void;
+  setStyle: (style: string) => void;
   performTranslate: (langCode?: string, textToTranslate?: string) => Promise<void>;
+  performRewrite: (langCode?: string, tone?: string, style?: string, textToRewrite?: string) => Promise<void>;
   handleReset: () => void;
   selectFile: (file: File) => void;
   clearFile: () => void;
@@ -67,3 +84,19 @@ export const supportedFiles = (): SupportedFile[] => {
     return [];
   }
 };
+
+export const toneOptions = (): ToneOption[] => [
+  { value: 'default', label: 'Default' },
+  { value: 'enthusiastic', label: 'Enthusiastic' },
+  { value: 'friendly', label: 'Friendly' },
+  { value: 'confident', label: 'Confident' },
+  { value: 'diplomatic', label: 'Diplomatic' },
+];
+
+export const styleOptions = (): StyleOption[] => [
+  { value: 'default', label: 'Default' },
+  { value: 'simple', label: 'Simple' },
+  { value: 'business', label: 'Business' },
+  { value: 'academic', label: 'Academic' },
+  { value: 'casual', label: 'Casual' },
+];

@@ -430,10 +430,77 @@ Please provide alternative ways to rewrite this text. For each alternative, incl
     const contentType = resp.headers.get("content-type")?.toLowerCase() || "";
     
     if (contentType.includes("text/plain") || contentType.includes("text/markdown")) {
-      return resp.text();
+      const translatedText = await resp.text();
+      // Replace German ß with ss automatically
+      return translatedText.replace(/ß/g, 'ss');
     }
     
     return resp.blob();
+  }
+
+  async rewriteText(model: string, text: string, lang: string, tone: string = 'default', style: string = 'default'): Promise<string> {
+    const Schema = z.object({
+      rewrittenText: z.string(),
+    }).strict();
+
+    if (!text.trim()) {
+      return text;
+    }
+
+    // Build tone instruction
+    const toneInstruction = tone === 'default' ? '' : 
+      tone === 'enthusiastic' ? 'Use an enthusiastic and energetic tone.' :
+      tone === 'friendly' ? 'Use a warm and friendly tone.' :
+      tone === 'confident' ? 'Use a confident and assertive tone.' :
+      tone === 'diplomatic' ? 'Use a diplomatic and tactful tone.' :
+      '';
+
+    // Build style instruction
+    const styleInstruction = style === 'default' ? '' :
+      style === 'simple' ? 'Use simple and clear language.' :
+      style === 'business' ? 'Use professional business language.' :
+      style === 'academic' ? 'Use formal academic language.' :
+      style === 'casual' ? 'Use casual and informal language.' :
+      '';
+
+    // Combine instructions
+    const additionalInstructions = [toneInstruction, styleInstruction].filter(Boolean).join(' ');
+
+    try {
+      const completion = await this.oai.chat.completions.parse({
+        model: model,
+        messages: [
+          {
+            role: "system",
+            content: `You are a text rewriting assistant. Your task is to rewrite the given text while maintaining its core meaning and translating it to the target language if needed.
+
+Guidelines:
+- Translate the text to ${lang} if it's not already in that language
+- Maintain the core meaning and information
+- ${additionalInstructions || 'Keep the original tone and style'}
+- Ensure the output is natural and fluent
+- For German text: Use "ss" instead of "ß" (eszett) for better compatibility
+- Return only the rewritten text without any explanations`,
+          },
+          {
+            role: "user",
+            content: `Please rewrite this text: "${text}"`,
+          },
+        ],
+        response_format: zodResponseFormat(Schema, "rewrite_text"),
+      });
+
+      const result = completion.choices[0].message.parsed;
+      let rewrittenText = result?.rewrittenText ?? text;
+      
+      // Replace German ß with ss automatically
+      rewrittenText = rewrittenText.replace(/ß/g, 'ss');
+      
+      return rewrittenText;
+    } catch (error) {
+      console.error("Error rewriting text:", error);
+      return text;
+    }
   }
 
   async speakText(model: string, input: string, voice?: string): Promise<void> {

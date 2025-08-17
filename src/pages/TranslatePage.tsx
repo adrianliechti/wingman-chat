@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useDropZone } from "../hooks/useDropZone";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { PilcrowRightIcon, Loader2, PlusIcon, GlobeIcon, FileIcon, UploadIcon, XIcon, DownloadIcon } from "lucide-react";
+import { PilcrowRightIcon, Loader2, PlusIcon, GlobeIcon, FileIcon, UploadIcon, XIcon, DownloadIcon, Volume2Icon, TypeIcon } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import { useLayout } from "../hooks/useLayout";
 import { useTranslate } from "../hooks/useTranslate";
@@ -32,6 +32,8 @@ export function TranslatePage() {
   const {
     sourceText,
     translatedText,
+    tone,
+    style,
     isLoading,
     supportedLanguages,
     selectedLanguage,
@@ -39,9 +41,14 @@ export function TranslatePage() {
     translatedFileUrl,
     translatedFileName,
     supportedFiles,
+    toneOptions,
+    styleOptions,
     setSourceText,
     setTargetLang,
+    setTone,
+    setStyle,
     performTranslate,
+    performRewrite,
     handleReset,
     selectFile,
     clearFile
@@ -58,7 +65,12 @@ export function TranslatePage() {
   }, [translatedText]);
 
   const handleTranslateButtonClick = () => {
-    performTranslate();
+    // Use performRewrite if tone or style are not default, otherwise use performTranslate
+    if (tone !== 'default' || style !== 'default') {
+      performRewrite();
+    } else {
+      performTranslate();
+    }
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -303,7 +315,8 @@ export function TranslatePage() {
 
                 {/* Target section */}
                 <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
-                  <div className="absolute top-2 left-3 z-10">
+                  <div className="absolute top-2 left-3 z-10 flex items-center gap-2">
+                    {/* Language selector */}
                     <Menu>
                       <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
                         <GlobeIcon size={14} />
@@ -328,11 +341,63 @@ export function TranslatePage() {
                         ))}
                       </MenuItems>
                     </Menu>
+
+                    {/* Tone selector */}
+                    <Menu>
+                      <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
+                        <Volume2Icon size={14} />
+                        <span>
+                          {toneOptions.find(t => t.value === tone)?.label || 'Default'}
+                        </span>
+                      </MenuButton>
+                      <MenuItems
+                        transition
+                        anchor="bottom start"
+                        className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
+                      >
+                        {toneOptions.map((toneOption) => (
+                          <MenuItem key={toneOption.value}>
+                            <Button
+                              onClick={() => setTone(toneOption.value)}
+                              className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
+                            >
+                              {toneOption.label}
+                            </Button>
+                          </MenuItem>
+                        ))}
+                      </MenuItems>
+                    </Menu>
+
+                    {/* Style selector */}
+                    <Menu>
+                      <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
+                        <TypeIcon size={14} />
+                        <span>
+                          {styleOptions.find(s => s.value === style)?.label || 'Default'}
+                        </span>
+                      </MenuButton>
+                      <MenuItems
+                        transition
+                        anchor="bottom start"
+                        className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
+                      >
+                        {styleOptions.map((styleOption) => (
+                          <MenuItem key={styleOption.value}>
+                            <Button
+                              onClick={() => setStyle(styleOption.value)}
+                              className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
+                            >
+                              {styleOption.label}
+                            </Button>
+                          </MenuItem>
+                        ))}
+                      </MenuItems>
+                    </Menu>
                   </div>
                   <InteractiveText
                     text={editableTranslatedText}
                     placeholder={selectedFile ? "" : "Translation will appear here..."}
-                    className="absolute inset-0 w-full h-full pl-4 pr-2 pt-12 pb-2 bg-transparent overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
+                    className="absolute inset-0 w-full h-full pl-4 pr-2 pt-16 pb-2 bg-transparent overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
                     onTextSelect={handleTextSelect}
                     previewText={previewText}
                   />

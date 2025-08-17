@@ -152,7 +152,7 @@ export function InteractiveText({
     // Find the actual position of the clean word within the text
     // word is the clean word (no punctuation), wordPosition is the start of the original segment
     const segment = text.substring(wordPosition, wordPosition + event.currentTarget.textContent!.length);
-    const wordStartInSegment = segment.search(/\w/); // Find first word character
+    const wordStartInSegment = segment.search(/[\p{L}\p{N}]/u); // Find first word character (Unicode-compatible)
     const actualWordStart = wordPosition + Math.max(0, wordStartInSegment);
     const actualWordEnd = actualWordStart + word.length;
     
@@ -197,10 +197,10 @@ export function InteractiveText({
             
             // If it's a word (non-whitespace), make it interactive
             if (segment.trim()) {
-              const cleanWord = segment.replace(/[^\w\s]/g, ''); // Remove punctuation for synonym lookup
+              const cleanWord = segment.replace(/[^\p{L}\p{N}\s]/gu, ''); // Remove punctuation for synonym lookup, preserve Unicode letters
               
               // Find the actual word position within this segment
-              const wordStartInSegment = segment.search(/\w/); // Find first word character
+              const wordStartInSegment = segment.search(/[\p{L}\p{N}]/u); // Find first word character (Unicode-compatible)
               const actualWordStart = segmentStart + Math.max(0, wordStartInSegment);
               
               // Check if this word is clicked (highlighted) - compare actual word positions
