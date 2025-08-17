@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useDropZone } from "../hooks/useDropZone";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { PilcrowRightIcon, Loader2, PlusIcon, GlobeIcon, FileIcon, UploadIcon, XIcon, DownloadIcon, Volume2Icon, TypeIcon } from "lucide-react";
+import { PilcrowRightIcon, Loader2, PlusIcon, GlobeIcon, FileIcon, UploadIcon, XIcon, DownloadIcon, ThermometerIcon, SwatchBookIcon } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import { useLayout } from "../hooks/useLayout";
 import { useTranslate } from "../hooks/useTranslate";
@@ -48,30 +48,20 @@ export function TranslatePage() {
     setTone,
     setStyle,
     performTranslate,
-    performRewrite,
     handleReset,
     selectFile,
     clearFile
   } = useTranslate();
 
   // Local state for editable translated text (to allow rewriting)
-  const [editableTranslatedText, setEditableTranslatedText] = useState(translatedText);
+  const [currentText, setCurrentText] = useState(translatedText);
   const [previewText, setPreviewText] = useState<string | null>(null);
   const lastSelectionRef = useRef<string>('');
 
   // Update editable text when translated text changes
   useEffect(() => {
-    setEditableTranslatedText(translatedText);
+    setCurrentText(translatedText);
   }, [translatedText]);
-
-  const handleTranslateButtonClick = () => {
-    // Use performRewrite if tone or style are not default, otherwise use performTranslate
-    if (tone !== 'default' || style !== 'default') {
-      performRewrite();
-    } else {
-      performTranslate();
-    }
-  };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -158,10 +148,10 @@ export function TranslatePage() {
   }, []);
 
   const handleAlternativeSelect = (alternative: string, contextToReplace: string) => {
-    if (rewriteMenu && editableTranslatedText) {
+    if (rewriteMenu && currentText) {
       // Replace the entire context with the alternative instead of just the selected text
-      const newText = editableTranslatedText.replace(contextToReplace, alternative);
-      setEditableTranslatedText(newText);
+      const newText = currentText.replace(contextToReplace, alternative);
+      setCurrentText(newText);
     }
     setRewriteMenu(null);
   };
@@ -297,7 +287,7 @@ export function TranslatePage() {
                   <div className="absolute md:inset-y-0 md:w-px md:left-1/2 md:-translate-x-px inset-x-0 h-px md:h-auto bg-black/20 dark:bg-white/20"></div>
                   
                   <Button
-                    onClick={handleTranslateButtonClick}
+                    onClick={() => performTranslate()}
                     className="!bg-neutral-50/60 dark:!bg-neutral-900/50 backdrop-blur-lg border border-neutral-200/60 dark:border-neutral-700/50 hover:!bg-neutral-50/70 dark:hover:!bg-neutral-900/60 !text-neutral-700 dark:!text-neutral-300 hover:!text-neutral-900 dark:hover:!text-neutral-100 z-10 relative px-2 py-2 rounded-lg shadow-lg transition-all"
                     title={selectedFile ? `Translate file to ${selectedLanguage?.name || 'Selected Language'}` : `Translate to ${selectedLanguage?.name || 'Selected Language'}`}
                     disabled={
@@ -342,60 +332,64 @@ export function TranslatePage() {
                       </MenuItems>
                     </Menu>
 
-                    {/* Tone selector */}
-                    <Menu>
-                      <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
-                        <Volume2Icon size={14} />
-                        <span>
-                          {toneOptions.find(t => t.value === tone)?.label || 'Default'}
-                        </span>
-                      </MenuButton>
-                      <MenuItems
-                        transition
-                        anchor="bottom start"
-                        className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
-                      >
-                        {toneOptions.map((toneOption) => (
-                          <MenuItem key={toneOption.value}>
-                            <Button
-                              onClick={() => setTone(toneOption.value)}
-                              className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
-                            >
-                              {toneOption.label}
-                            </Button>
-                          </MenuItem>
-                        ))}
-                      </MenuItems>
-                    </Menu>
+                    {/* Tone selector - only show for text translations, not file translations */}
+                    {!selectedFile && (
+                      <Menu>
+                        <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
+                          <ThermometerIcon size={14} />
+                          <span>
+                            {toneOptions.find(t => t.value === tone)?.label || 'Default'}
+                          </span>
+                        </MenuButton>
+                        <MenuItems
+                          transition
+                          anchor="bottom start"
+                          className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
+                        >
+                          {toneOptions.map((toneOption) => (
+                            <MenuItem key={toneOption.value}>
+                              <Button
+                                onClick={() => setTone(toneOption.value)}
+                                className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
+                              >
+                                {toneOption.label}
+                              </Button>
+                            </MenuItem>
+                          ))}
+                        </MenuItems>
+                      </Menu>
+                    )}
 
-                    {/* Style selector */}
-                    <Menu>
-                      <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
-                        <TypeIcon size={14} />
-                        <span>
-                          {styleOptions.find(s => s.value === style)?.label || 'Default'}
-                        </span>
-                      </MenuButton>
-                      <MenuItems
-                        transition
-                        anchor="bottom start"
-                        className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
-                      >
-                        {styleOptions.map((styleOption) => (
-                          <MenuItem key={styleOption.value}>
-                            <Button
-                              onClick={() => setStyle(styleOption.value)}
-                              className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
-                            >
-                              {styleOption.label}
-                            </Button>
-                          </MenuItem>
-                        ))}
-                      </MenuItems>
-                    </Menu>
+                    {/* Style selector - only show for text translations, not file translations */}
+                    {!selectedFile && (
+                      <Menu>
+                        <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
+                          <SwatchBookIcon size={14} />
+                          <span>
+                            {styleOptions.find(s => s.value === style)?.label || 'Default'}
+                          </span>
+                        </MenuButton>
+                        <MenuItems
+                          transition
+                          anchor="bottom start"
+                          className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
+                        >
+                          {styleOptions.map((styleOption) => (
+                            <MenuItem key={styleOption.value}>
+                              <Button
+                                onClick={() => setStyle(styleOption.value)}
+                                className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
+                              >
+                                {styleOption.label}
+                              </Button>
+                            </MenuItem>
+                          ))}
+                        </MenuItems>
+                      </Menu>
+                    )}
                   </div>
                   <InteractiveText
-                    text={editableTranslatedText}
+                    text={currentText}
                     placeholder={selectedFile ? "" : "Translation will appear here..."}
                     className="absolute inset-0 w-full h-full pl-4 pr-2 pt-16 pb-2 bg-transparent overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
                     onTextSelect={handleTextSelect}
@@ -441,7 +435,7 @@ export function TranslatePage() {
                     <div className="absolute inset-2 flex items-center justify-center">
                       <div 
                         className="bg-neutral-50/40 dark:bg-neutral-900/30 backdrop-blur-lg border-2 border-dashed border-neutral-200/70 dark:border-neutral-700/60 p-6 rounded-xl flex flex-col items-center gap-4 cursor-pointer hover:bg-neutral-50/50 dark:hover:bg-neutral-900/40 transition-all"
-                        onClick={handleTranslateButtonClick} 
+                        onClick={() => performTranslate()} 
                         title="Click to translate file"
                       >
                         <div className="relative">
@@ -461,8 +455,8 @@ export function TranslatePage() {
                   {/* Show copy button for text translations and file translations that return text */}
                   {translatedText && (
                     <div className="absolute top-2 right-2 flex gap-1">
-                      {enableTTS && <PlayButton text={translatedText} className="h-4 w-4" />}
-                      <CopyButton text={translatedText} className="h-4 w-4" />
+                      {enableTTS && <PlayButton text={currentText} className="h-4 w-4" />}
+                      <CopyButton text={currentText} className="h-4 w-4" />
                     </div>
                   )}
                 </div>
@@ -473,11 +467,11 @@ export function TranslatePage() {
       </main>
 
       {/* Rewrite Menu */}
-      {rewriteMenu && editableTranslatedText && (
+      {rewriteMenu && currentText && (
         <RewritePopover
           key={`${rewriteMenu.selectedText}-${rewriteMenu.selectionStart}-${rewriteMenu.selectionEnd}`}
           selectedText={rewriteMenu.selectedText}
-          fullText={editableTranslatedText}
+          fullText={currentText}
           selectionStart={rewriteMenu.selectionStart}
           selectionEnd={rewriteMenu.selectionEnd}
           position={rewriteMenu.position}

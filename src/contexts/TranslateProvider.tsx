@@ -41,8 +41,10 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
   const selectedLanguage = supportedLanguages().find(l => l.code === targetLang);
 
   // Actions with stable references
-  const performTranslate = useCallback(async (langCode?: string, textToTranslate?: string) => {
+  const performTranslate = useCallback(async (langCode?: string, textToTranslate?: string, toneToUse?: string, styleToUse?: string) => {
     const langToUse = langCode ?? targetLangRef.current;
+    const toneValue = toneToUse ?? tone;
+    const styleValue = styleToUse ?? style;
     
     // Handle file translation if a file is selected
     if (selectedFile) {
@@ -106,7 +108,13 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     try {
       const result = await client.translate(langToUse, textToUse);
       if (typeof result === 'string') {
-        setTranslatedText(result);
+        // Apply tone/style rewriting if either is not default
+        if (toneValue !== 'default' || styleValue !== 'default') {
+          const rewrittenResult = await client.rewriteText("", result, langToUse, toneValue, styleValue);
+          setTranslatedText(rewrittenResult);
+        } else {
+          setTranslatedText(result);
+        }
         setLastTranslatedText(textToUse); // Track what text was translated
       }
     } catch (err) {
@@ -114,39 +122,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [client, selectedFile]);
-
-  // New performRewrite function that uses the new rewriteText method
-  const performRewrite = useCallback(async (langCode?: string, toneToUse?: string, styleToUse?: string, textToRewrite?: string) => {
-    const langToUse = langCode ?? targetLangRef.current;
-    const textToUse = textToRewrite ?? sourceTextRef.current;
-    const toneValue = toneToUse ?? tone;
-    const styleValue = styleToUse ?? style;
-
-    if (!textToUse.trim()) {
-      setTranslatedText("");
-      return;
-    }
-
-    // Skip rewrite for files - files use the translate API
-    if (selectedFile) {
-      return performTranslate(langCode, textToUse);
-    }
-
-    setIsLoading(true);
-    setTranslatedText("");
-
-    try {
-      const model = config.models?.[0]?.name ?? "gpt-4o-mini";
-      const result = await client.rewriteText(model, textToUse, langToUse, toneValue, styleValue);
-      setTranslatedText(result);
-      setLastTranslatedText(textToUse); // Track what text was rewritten
-    } catch (err) {
-      setTranslatedText(err instanceof Error ? err.message : "An unknown error occurred during rewriting.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [client, selectedFile, tone, style, targetLangRef, sourceTextRef, performTranslate, config.models]);
+  }, [client, selectedFile, tone, style]);
 
   const handleReset = useCallback(() => {
     setSourceText("");
@@ -172,42 +148,27 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     
     // Automatically translate with new language if there's source text (but not if file is selected)
     if (sourceTextRef.current.trim() && !selectedFile) {
-      // Use performRewrite if tone or style are not default, otherwise use performTranslate
-      if (tone !== 'default' || style !== 'default') {
-        await performRewrite(newLangCode, tone, style, sourceTextRef.current);
-      } else {
-        await performTranslate(newLangCode, sourceTextRef.current);
-      }
+      await performTranslate(newLangCode, sourceTextRef.current, tone, style);
     }
-  }, [performTranslate, performRewrite, selectedFile, tone, style]);
+  }, [performTranslate, selectedFile, tone, style]);
 
-  // Auto-translate effect (3 second delay) - only if text hasn't been translated yet
+  // Auto-translate effect (1 second delay) - only if text hasn't been translated yet
   useEffect(() => {
     const timer = setTimeout(() => {
       if (sourceText.trim() && !selectedFile && sourceText !== lastTranslatedText) {
-        // Use performRewrite if tone or style are not default, otherwise use performTranslate
-        if (tone !== 'default' || style !== 'default') {
-          performRewrite(targetLang, tone, style, sourceText);
-        } else {
-          performTranslate(targetLang, sourceText);
-        }
+        performTranslate(targetLang, sourceText, tone, style);
       }
-    }, 3000);
+    }, 1000);
 
     return () => clearTimeout(timer);
-  }, [sourceText, targetLang, tone, style, performTranslate, performRewrite, selectedFile, lastTranslatedText]);
+  }, [sourceText, targetLang, tone, style, performTranslate, selectedFile, lastTranslatedText]);
 
   // Auto-rewrite when tone or style changes (if there's already translated text)
   useEffect(() => {
     if (sourceText.trim() && !selectedFile && lastTranslatedText) {
-      // Use performRewrite if tone or style are not default, otherwise use performTranslate
-      if (tone !== 'default' || style !== 'default') {
-        performRewrite(targetLang, tone, style, sourceText);
-      } else {
-        performTranslate(targetLang, sourceText);
-      }
+      performTranslate(targetLang, sourceText, tone, style);
     }
-  }, [tone, style, targetLang, sourceText, selectedFile, lastTranslatedText, performRewrite, performTranslate]);
+  }, [tone, style, targetLang, sourceText, selectedFile, lastTranslatedText, performTranslate]);
 
   const selectFile = useCallback((file: File) => {
     setSelectedFile(file);
@@ -259,7 +220,6 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     setTone,
     setStyle,
     performTranslate,
-    performRewrite,
     handleReset,
     selectFile,
     clearFile,
