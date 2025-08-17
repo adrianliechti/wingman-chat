@@ -1,20 +1,22 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { ArtifactsContext } from './ArtifactsContext';
-import { FileSystemManager } from '../lib/fs';
 import { getConfig } from '../config';
+import { useFileSystem } from '../hooks/useFileSystem';
 
 interface ArtifactsProviderProps {
   children: ReactNode;
 }
 
 export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
-  const [fs, setFs] = useState<FileSystemManager | null>(null);
   const [openFiles, setOpenFiles] = useState<string[]>([]);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [showArtifactsDrawer, setShowArtifactsDrawer] = useState(false);
   const [isAvailable, setIsAvailable] = useState(false);
   const [filesystemVersion, setFilesystemVersion] = useState(0); // Track filesystem version for reactive updates
+
+  // Get the current filesystem from the FileSystemProvider
+  const { currentFileSystem: fs } = useFileSystem();
 
   // Check artifacts availability from config
   useEffect(() => {
@@ -27,17 +29,11 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     }
   }, []);
 
-  // Method to set the FileSystemManager from ChatPage
-  const setFileSystemManager = useCallback((manager: FileSystemManager | null) => {
-    setFs(manager);
-    // Reset files when filesystem manager changes
-    setOpenFiles([]);
-    setActiveFile(null);
-  }, []);
-
   // Subscribe to filesystem events for reactive updates
   useEffect(() => {
     if (!fs) return;
+
+    console.log('🔧 FileSystemManager set in context for chat:', fs ? 'available' : 'null');
 
     // Sync initial filesystem version
     setFilesystemVersion(fs.filesystemVersion);
@@ -132,7 +128,6 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     closeFile,
     setShowArtifactsDrawer,
     toggleArtifactsDrawer,
-    setFileSystemManager,
   };
 
   return (

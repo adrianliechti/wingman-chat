@@ -25,6 +25,8 @@
         "url": "http://localhost:4200"
     },
     "translator": {
+        "model": "gpt-4.1",
+
         "files": [
             ".txt",
             ".pdf"

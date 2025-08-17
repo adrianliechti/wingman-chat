@@ -16,6 +16,7 @@ import { VoiceProvider } from "./contexts/VoiceProvider";
 import { SettingsButton } from "./components/SettingsButton";
 import { RepositoryProvider } from "./contexts/RepositoryProvider";
 import { ArtifactsProvider } from "./contexts/ArtifactsProvider";
+import { FileSystemProvider } from "./contexts/FileSystemProvider";
 import { BridgeProvider } from "./contexts/BridgeProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
@@ -356,8 +357,9 @@ const providers = [
   SidebarProvider,
   NavigationProvider,
   BridgeProvider,
-  RepositoryProvider,
+  FileSystemProvider,
   ArtifactsProvider,
+  RepositoryProvider,
   ScreenCaptureProvider,
   SearchProvider,
   ChatProvider,

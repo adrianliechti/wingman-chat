@@ -12,8 +12,6 @@ export interface ArtifactsContextType {
   closeFile: (path: string) => void;
   setShowArtifactsDrawer: (show: boolean) => void;
   toggleArtifactsDrawer: () => void;
-  // Method to set the FileSystemManager from ChatPage
-  setFileSystemManager: (manager: FileSystemManager | null) => void;
 }
 
 export const ArtifactsContext = createContext<ArtifactsContextType | null>(null);
