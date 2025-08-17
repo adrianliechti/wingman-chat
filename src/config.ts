@@ -74,6 +74,7 @@ interface artifactsConfig {
 
 interface translatorConfig {
   enabled: boolean;
+  model?: string
   files: string[];
   languages: string[];
 }

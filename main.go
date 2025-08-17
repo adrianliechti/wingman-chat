@@ -92,6 +92,7 @@ func main() {
 
 		type translatorType struct {
 			Enabled   bool     `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+			Model     string   `json:"model,omitempty" yaml:"model,omitempty"`
 			Files     []string `json:"files,omitempty" yaml:"files,omitempty"`
 			Languages []string `json:"languages,omitempty" yaml:"languages,omitempty"`
 		}

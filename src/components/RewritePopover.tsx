@@ -59,7 +59,7 @@ export function RewritePopover({
 
       try {
         const result = await config.client.rewriteSelection(
-          '', // Empty model parameter
+          config.translator.model || '',
           fullText,
           selectionStart,
           selectionEnd
@@ -81,7 +81,7 @@ export function RewritePopover({
     };
 
     loadAlternatives();
-  }, [selectionKey, fullText, selectionStart, selectionEnd, config.client, selectedText]);
+  }, [selectionKey, fullText, selectionStart, selectionEnd, config.client, config.translator.model, selectedText]);
 
   // Handle escape key and click outside
   const popoverRef = useRef<HTMLDivElement>(null);
