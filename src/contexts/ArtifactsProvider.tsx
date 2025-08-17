@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { ArtifactsContext } from './ArtifactsContext';
 import { getConfig } from '../config';
@@ -29,6 +29,9 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     if (!getFileSystem || !setFileSystem) {
       // Reset to empty filesystem when no chat or artifacts disabled
       fs.updateHandlers(null, null);
+      // Reset UI state
+      setOpenFiles([]);
+      setActiveFile(null);
       return;
     }
 
@@ -40,6 +43,18 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     };
     
     fs.updateHandlers(getFileSystem, wrappedSetter);
+    
+    // Reset UI state when switching to a new chat
+    const currentFileSystem = getFileSystem();
+    const currentFilePaths = Object.keys(currentFileSystem);
+    
+    // Only keep open files that exist in the new filesystem
+    setOpenFiles(prev => prev.filter(path => currentFilePaths.includes(path)));
+    
+    // Clear active file if it doesn't exist in the new filesystem
+    setActiveFile(currentActive => 
+      currentActive && currentFilePaths.includes(currentActive) ? currentActive : null
+    );
   }, [fs]);
 
   // Check artifacts availability from config
@@ -126,7 +141,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     setShowArtifactsDrawer(prev => !prev);
   }, []);
 
-  const value = useMemo(() => ({
+  const value = {
     isAvailable,
     fs,
     openFiles,
@@ -137,18 +152,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     setShowArtifactsDrawer,
     toggleArtifactsDrawer,
     setFileSystemForChat,
-  }), [
-    isAvailable,
-    fs,
-    openFiles,
-    activeFile,
-    showArtifactsDrawer,
-    openFile,
-    closeFile,
-    setShowArtifactsDrawer,
-    toggleArtifactsDrawer,
-    setFileSystemForChat,
-  ]);
+  };
 
   return (
     <ArtifactsContext.Provider value={value}>

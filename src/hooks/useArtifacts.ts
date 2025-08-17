@@ -25,7 +25,7 @@ export function useArtifacts(): ArtifactsHook {
     return [
       {
         name: 'create_file',
-        description: 'Create a new file in the virtual filesystem with the specified path and content.',
+        description: 'Create a new file or update an existing file in the virtual filesystem with the specified path and content.',
         parameters: {
           type: 'object',
           properties: {

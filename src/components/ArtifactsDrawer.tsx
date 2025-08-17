@@ -27,6 +27,26 @@ export function ArtifactsDrawer() {
   const [isDragOver, setIsDragOver] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Listen for file updates to refresh the editor content
+  useEffect(() => {
+    if (!fs) return;
+
+    const unsubscribeUpdated = fs.subscribe('fileUpdated', (updatedPath: string) => {
+      // If the updated file is currently open, close and reopen it to refresh content
+      if (activeFile === updatedPath) {
+        closeFile(updatedPath);
+        // Reopen after a brief delay to ensure clean state
+        setTimeout(() => {
+          openFile(updatedPath);
+        }, 10);
+      }
+    });
+
+    return () => {
+      unsubscribeUpdated();
+    };
+  }, [fs, activeFile, closeFile, openFile]);
+
   // Get all files sorted by path
   const files = fs ? fs.listFiles().sort((a, b) => a.path.localeCompare(b.path)) : [];
 

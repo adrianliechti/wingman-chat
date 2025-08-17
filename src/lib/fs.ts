@@ -17,7 +17,6 @@ type FileEventHandler<T extends FileEventType> = T extends 'fileCreated'
 // FileSystem extension methods
 export class FileSystemManager {
   private eventHandlers = new Map<FileEventType, Set<(...args: unknown[]) => void>>();
-  private version: number = 0; // Track filesystem version for React state management
   private cachedFileSystem: FileSystem = {}; // Local cache to avoid React state delays
 
   constructor(
@@ -47,11 +46,6 @@ export class FileSystemManager {
       this.setFilesystem = () => {}; // No-op when disabled
       this.cachedFileSystem = {};
     }
-  }
-
-  // Get current filesystem version for React state tracking
-  get filesystemVersion(): number {
-    return this.version;
   }
 
   // Event subscription methods
@@ -86,6 +80,9 @@ export class FileSystemManager {
   }
 
   createFile(path: string, content: string, contentType?: string): void {
+    // Check if file already exists to determine the correct event type
+    const fileExists = path in this.cachedFileSystem;
+    
     const file: File = {
       path,
       content,
@@ -98,15 +95,18 @@ export class FileSystemManager {
       [path]: file
     };
 
-    // Use functional update to persist to React state
+    // Persist to React state
     this.setFilesystem((fs: FileSystem) => ({
       ...fs,
       [path]: file
     }));
-    this.version++; // Increment version after filesystem change
     
-    // Emit the event immediately since we have the file in cache
-    this.emit('fileCreated', path);
+    // Emit the appropriate event based on whether the file existed
+    if (fileExists) {
+      this.emit('fileUpdated', path);
+    } else {
+      this.emit('fileCreated', path);
+    }
   }
 
   updateFile(path: string, content: string, contentType?: string): boolean {
@@ -130,7 +130,6 @@ export class FileSystemManager {
       ...fs,
       [path]: updatedFile
     }));
-    this.version++; // Increment version after filesystem change
     
     // Emit the event immediately since we have the updated file in cache
     queueMicrotask(() => {
@@ -155,7 +154,6 @@ export class FileSystemManager {
         delete newFs[path];
         return newFs;
       });
-      this.version++; // Increment version after filesystem change
       
       // Emit the event immediately since we updated the cache
       queueMicrotask(() => {
@@ -185,8 +183,6 @@ export class FileSystemManager {
         }
         return newFs;
       });
-      
-      this.version++; // Increment version after filesystem change
       
       // Emit the events immediately since we updated the cache
       queueMicrotask(() => {
@@ -230,7 +226,6 @@ export class FileSystemManager {
         return newFs;
       });
       
-      this.version++; // Increment version after filesystem change
       this.emit('fileRenamed', oldPath, newPath);
       return true;
     } else if (isFolder) {
@@ -254,7 +249,6 @@ export class FileSystemManager {
         return newFs;
       });
       
-      this.version++; // Increment version after filesystem change
       // Call the emit for each renamed file
       for (const file of affectedFiles) {
         const relativePath = file.path.substring(oldPath.length);
