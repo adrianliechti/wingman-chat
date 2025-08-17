@@ -20,6 +20,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [translatedFileUrl, setTranslatedFileUrl] = useState<string | null>(null);
   const [translatedFileName, setTranslatedFileName] = useState<string | null>(null);
+  const [lastTranslatedText, setLastTranslatedText] = useState(""); // Track what was last translated
 
   // Refs for stable references
   const sourceTextRef = useRef(sourceText);
@@ -104,6 +105,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
       const result = await client.translate(langToUse, textToUse);
       if (typeof result === 'string') {
         setTranslatedText(result);
+        setLastTranslatedText(textToUse); // Track what text was translated
       }
     } catch (err) {
       setTranslatedText(err instanceof Error ? err.message : "An unknown error occurred during translation.");
@@ -118,6 +120,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     setSelectedFile(null);
     setTranslatedFileUrl(null);
     setTranslatedFileName(null);
+    setLastTranslatedText(""); // Reset tracking when clearing everything
   }, []);
 
   const handleSetTargetLang = useCallback(async (newLangCode: string) => {
@@ -130,22 +133,25 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
       setTranslatedText("");  // Also clear text translation for files
     }
     
+    // Clear the tracking when language changes to allow re-translation
+    setLastTranslatedText("");
+    
     // Automatically translate with new language if there's source text (but not if file is selected)
     if (sourceTextRef.current.trim() && !selectedFile) {
       await performTranslate(newLangCode, sourceTextRef.current);
     }
   }, [performTranslate, selectedFile]);
 
-  // Auto-translate effect (3 second delay)
+  // Auto-translate effect (3 second delay) - only if text hasn't been translated yet
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (sourceText.trim() && !selectedFile) {
+      if (sourceText.trim() && !selectedFile && sourceText !== lastTranslatedText) {
         performTranslate(targetLang, sourceText);
       }
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [sourceText, targetLang, performTranslate, selectedFile]);
+  }, [sourceText, targetLang, performTranslate, selectedFile, lastTranslatedText]);
 
   const selectFile = useCallback((file: File) => {
     setSelectedFile(file);
@@ -163,6 +169,15 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     setTranslatedText("");  // Clear translated text when clearing file
   }, []);
 
+  // Custom setSourceText that clears the translation tracking
+  const handleSetSourceText = useCallback((text: string) => {
+    setSourceText(text);
+    // If user is changing the source text, clear the tracking so auto-translate can work
+    if (text !== lastTranslatedText) {
+      setLastTranslatedText("");
+    }
+  }, [lastTranslatedText]);
+
   const contextValue: TranslateContextType = {
     // State
     sourceText,
@@ -179,7 +194,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     supportedFiles: supportedFiles(),
     
     // Actions
-    setSourceText,
+    setSourceText: handleSetSourceText,
     setTargetLang: handleSetTargetLang,
     performTranslate,
     handleReset,

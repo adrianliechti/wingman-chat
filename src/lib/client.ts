@@ -219,6 +219,122 @@ Return only the prompts themselves, without numbering or bullet points.`,
     }
   }
 
+  async rewriteSelection(model: string, text: string, selectionStart: number, selectionEnd: number): Promise<{ alternatives: string[], contextToReplace: string, keyChanges: string[] }> {
+    const Schema = z.object({
+      alternatives: z.array(z.object({
+        text: z.string(),
+        keyChange: z.string(),
+      }).strict()).min(3).max(6),
+    }).strict();
+
+    if (!text.trim() || selectionStart < 0 || selectionEnd <= selectionStart || selectionStart >= text.length) {
+      return { alternatives: [], contextToReplace: text.substring(selectionStart, selectionEnd), keyChanges: [] };
+    }
+
+    // Helper function to split text into sentences
+    const splitSentences = (text: string): { text: string, start: number, end: number }[] => {
+      const sentences: { text: string, start: number, end: number }[] = [];
+      const sentencePattern = /[.!?]+\s*|\n+/g;
+      let lastIndex = 0;
+      let match;
+
+      while ((match = sentencePattern.exec(text)) !== null) {
+        const sentenceText = text.substring(lastIndex, match.index + match[0].length).trim();
+        if (sentenceText) {
+          sentences.push({
+            text: sentenceText,
+            start: lastIndex,
+            end: match.index + match[0].length
+          });
+        }
+        lastIndex = match.index + match[0].length;
+      }
+
+      // Add remaining text as final sentence if any
+      if (lastIndex < text.length) {
+        const sentenceText = text.substring(lastIndex).trim();
+        if (sentenceText) {
+          sentences.push({
+            text: sentenceText,
+            start: lastIndex,
+            end: text.length
+          });
+        }
+      }
+
+      return sentences;
+    };
+
+    // Helper function to find sentences that overlap with the selection
+    const findSentencesInSelection = (sentences: { text: string, start: number, end: number }[], selectionStart: number, selectionEnd: number): string => {
+      const overlappingSentences = sentences.filter(sentence => 
+        // Sentence overlaps if it starts before selection ends and ends after selection starts
+        sentence.start < selectionEnd && sentence.end > selectionStart
+      );
+
+      if (overlappingSentences.length === 0) {
+        // Fallback to the selection itself
+        return text.substring(selectionStart, selectionEnd).trim();
+      }
+
+      // Combine all overlapping sentences
+      const firstSentence = overlappingSentences[0];
+      const lastSentence = overlappingSentences[overlappingSentences.length - 1];
+      
+      return text.substring(firstSentence.start, lastSentence.end).trim();
+    };
+
+    const sentences = splitSentences(text);
+    const contextToRewrite = findSentencesInSelection(sentences, selectionStart, selectionEnd);
+    const selectedText = text.substring(selectionStart, selectionEnd);
+
+    try {
+      const completion = await this.oai.chat.completions.parse({
+        model: model,
+        messages: [
+          {
+            role: "system",
+            content: `You will be given text that contains a user's selection. Your task is to rewrite the complete sentence(s) containing that selection while maintaining the same meaning.
+
+Guidelines:
+- Rewrite the complete sentence(s) that contain the selected text
+- Keep the core meaning intact but offer stylistic variations
+- Ensure the rewritten sentences are natural and grammatically correct
+- Maintain the same language, tone, and formality level
+- Focus on varying the expression while preserving the intent
+- Each alternative should be complete, standalone sentence(s)
+
+For each alternative, also provide a "keyChange" that shows only the significant difference compared to the original selected text. This should be:
+- Just the key word(s) or phrase that changes the meaning/style
+- Not the complete sentence, just the replacement part
+- What the user would see as the main change
+
+Return 3-6 alternative rewritten versions with their key changes.`,
+          },
+          {
+            role: "user",
+            content: `Text to rewrite: "${contextToRewrite}"
+
+Selected text within: "${selectedText}"
+
+Please provide alternative ways to rewrite this text. For each alternative, include both the complete rewritten text and the key change that represents the main difference from the original selected text.`,
+          },
+        ],
+        response_format: zodResponseFormat(Schema, "rewrite_selection"),
+      });
+
+      const result = completion.choices[0].message.parsed;
+      return {
+        alternatives: result?.alternatives.map((a) => a.text) ?? [],
+        contextToReplace: contextToRewrite,
+        keyChanges: result?.alternatives.map((a) => a.keyChange) ?? []
+      };
+    } catch (error) {
+      console.error("Error generating text alternatives:", error);
+      return { alternatives: [], contextToReplace: contextToRewrite, keyChanges: [] };
+    }
+  }
+
   async extractText(blob: Blob): Promise<string> {
     const data = new FormData();
     data.append("file", blob);

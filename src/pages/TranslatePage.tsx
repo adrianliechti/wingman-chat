@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useDropZone } from "../hooks/useDropZone";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { PilcrowRightIcon, Loader2, PlusIcon, GlobeIcon, FileIcon, UploadIcon, XIcon, DownloadIcon } from "lucide-react";
@@ -7,6 +7,8 @@ import { useLayout } from "../hooks/useLayout";
 import { useTranslate } from "../hooks/useTranslate";
 import { CopyButton } from "../components/CopyButton";
 import { PlayButton } from "../components/PlayButton";
+import { RewritePopover } from "../components/RewritePopover";
+import { InteractiveText } from "../components/InteractiveText";
 import { getConfig } from "../config";
 
 export function TranslatePage() {
@@ -14,6 +16,14 @@ export function TranslatePage() {
   const { layoutMode } = useLayout();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Rewrite menu state
+  const [rewriteMenu, setRewriteMenu] = useState<{
+    selectedText: string;
+    selectionStart: number;
+    selectionEnd: number;
+    position: { x: number; y: number };
+  } | null>(null);
   
   const config = getConfig();
   const enableTTS = config.tts;
@@ -36,6 +46,16 @@ export function TranslatePage() {
     selectFile,
     clearFile
   } = useTranslate();
+
+  // Local state for editable translated text (to allow rewriting)
+  const [editableTranslatedText, setEditableTranslatedText] = useState(translatedText);
+  const [previewText, setPreviewText] = useState<string | null>(null);
+  const lastSelectionRef = useRef<string>('');
+
+  // Update editable text when translated text changes
+  useEffect(() => {
+    setEditableTranslatedText(translatedText);
+  }, [translatedText]);
 
   const handleTranslateButtonClick = () => {
     performTranslate();
@@ -100,6 +120,47 @@ export function TranslatePage() {
       link.click();
       document.body.removeChild(link);
     }
+  };
+
+  // Handle text selection for rewriting
+  const handleTextSelect = useCallback((selectedText: string, position: { x: number; y: number }, positionStart: number, positionEnd: number) => {
+    if (!selectedText.trim() || selectedText.length < 1) return;
+    
+    // Prevent duplicate selections
+    const selectionKey = `${selectedText}-${positionStart}-${positionEnd}`;
+    if (lastSelectionRef.current === selectionKey) return;
+    lastSelectionRef.current = selectionKey;
+    
+    // Close existing menu first
+    setRewriteMenu(null);
+    
+    // Short delay to prevent visual glitches
+    setTimeout(() => {
+      setRewriteMenu({
+        selectedText: selectedText.trim(),
+        selectionStart: positionStart,
+        selectionEnd: positionEnd,
+        position: position
+      });
+    }, 50);
+  }, []);
+
+  const handleAlternativeSelect = (alternative: string, contextToReplace: string) => {
+    if (rewriteMenu && editableTranslatedText) {
+      // Replace the entire context with the alternative instead of just the selected text
+      const newText = editableTranslatedText.replace(contextToReplace, alternative);
+      setEditableTranslatedText(newText);
+    }
+    setRewriteMenu(null);
+  };
+
+  const closeRewriteMenu = () => {
+    setRewriteMenu(null);
+    setPreviewText(null); // Clear preview when closing menu
+  };
+
+  const handlePreview = (previewText: string | null) => {
+    setPreviewText(previewText);
   };
 
   // Generate candidate filename for display
@@ -268,11 +329,12 @@ export function TranslatePage() {
                       </MenuItems>
                     </Menu>
                   </div>
-                  <textarea
-                    value={translatedText}
-                    readOnly
+                  <InteractiveText
+                    text={editableTranslatedText}
                     placeholder={selectedFile ? "" : "Translation will appear here..."}
-                    className="absolute inset-0 w-full h-full pl-4 pr-2 pt-12 pb-2 bg-transparent border-none resize-none overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
+                    className="absolute inset-0 w-full h-full pl-4 pr-2 pt-12 pb-2 bg-transparent overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
+                    onTextSelect={handleTextSelect}
+                    previewText={previewText}
                   />
                   
                   {/* Show download link for translated files */}
@@ -344,6 +406,21 @@ export function TranslatePage() {
           </div>
         </div>
       </main>
+
+      {/* Rewrite Menu */}
+      {rewriteMenu && editableTranslatedText && (
+        <RewritePopover
+          key={`${rewriteMenu.selectedText}-${rewriteMenu.selectionStart}-${rewriteMenu.selectionEnd}`}
+          selectedText={rewriteMenu.selectedText}
+          fullText={editableTranslatedText}
+          selectionStart={rewriteMenu.selectionStart}
+          selectionEnd={rewriteMenu.selectionEnd}
+          position={rewriteMenu.position}
+          onClose={closeRewriteMenu}
+          onAlternativeSelect={handleAlternativeSelect}
+          onPreview={handlePreview}
+        />
+      )}
     </div>
   );
 }
