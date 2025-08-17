@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, Code, File, FolderTree } from 'lucide-react';
 import { Button } from '@headlessui/react';
 import { useArtifacts } from '../hooks/useArtifacts';
@@ -21,25 +21,21 @@ export function ArtifactsDrawer() {
     activeFile, 
     openFile, 
     closeFile,
-    filesystemVersion // React to filesystem changes
   } = useArtifacts();
 
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Get all files sorted by path - memoized to trigger re-render when filesystemVersion changes
-  const files = useMemo(() => {
-    return fs ? fs.listFiles().sort((a, b) => a.path.localeCompare(b.path)) : [];
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fs, filesystemVersion]); // filesystemVersion intentionally included to force re-evaluation
+  // Get all files sorted by path
+  const files = fs ? fs.listFiles().sort((a, b) => a.path.localeCompare(b.path)) : [];
 
   // Auto-open file browser if no active file but files are available
   useEffect(() => {
     if (!activeFile && files.length > 0 && !showFileBrowser) {
       setShowFileBrowser(true);
     }
-  }, [activeFile, files.length, showFileBrowser]); // files.length will change when filesystemVersion changes
+  }, [activeFile, files.length, showFileBrowser]);
 
   const selectFile = (path: string) => {
     if (activeFile === path) {
@@ -260,7 +256,6 @@ export function ArtifactsDrawer() {
               fs={fs}
               openTabs={openFiles}
               onFileClick={handleOpenFileFromBrowser}
-              key={filesystemVersion} // Force re-render when filesystem changes
             />
           )}
         </div>

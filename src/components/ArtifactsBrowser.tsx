@@ -369,8 +369,9 @@ export function ArtifactsBrowser({
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
 
-  // Subscribe to filesystem events to handle state updates
+  // Subscribe to filesystem events to handle UI state updates (but no force updates)
   useEffect(() => {
+
     const unsubscribeCreated = fs.subscribe('fileCreated', (path: string) => {
       // Auto-expand parent folders when new files are created
       const pathParts = path.split('/').filter(part => part.length > 0);
@@ -453,13 +454,11 @@ export function ArtifactsBrowser({
 
   const handleDownloadAsZip = onDownloadAsZip || (() => fs.downloadAsZip());
 
-  // Get all files from the file system
+  // Get all files from the filesystem
   const files = fs.listFiles().map(file => ({ path: file.path, content: file.content }));
 
   // Build the file tree
-  const fileTree = buildFileTree(files);
-
-  const handleDeleteFolder = (path: string) => {
+  const fileTree = buildFileTree(files);  const handleDeleteFolder = (path: string) => {
     // Get all files within this folder
     const affectedFiles = files.filter(file => file.path.startsWith(path + '/'));
     const folderName = getFileName(path);

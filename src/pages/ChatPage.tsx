@@ -19,6 +19,7 @@ import { useArtifacts } from "../hooks/useArtifacts";
 import { useFileSystem } from "../hooks/useFileSystem";
 import { RepositoryDrawer } from "../components/RepositoryDrawer";
 import { ArtifactsDrawer } from "../components/ArtifactsDrawer";
+import type { FileSystem } from "../types/file";
 
 export function ChatPage() {
   const {
@@ -84,7 +85,6 @@ export function ChatPage() {
   // Ensure we have a chat when artifacts are enabled
   useEffect(() => {
     if (artifactsAvailable && !chat?.id) {
-      console.log('🔧 Creating chat for artifacts support');
       createChat();
     }
   }, [artifactsAvailable, chat?.id, createChat]);
@@ -96,8 +96,14 @@ export function ChatPage() {
       return;
     }
 
-    setFileSystemForChat(chat.id, chats, updateChat);
-  }, [chat?.id, chats, updateChat, artifactsAvailable, setFileSystemForChat, setCurrentFileSystem]);
+    // Create focused methods for filesystem access
+    const getFileSystem = () => chat.artifacts || {};
+    const setFileSystem = (artifacts: FileSystem) => {
+      updateChat(chat.id, () => ({ artifacts }));
+    };
+
+    setFileSystemForChat(getFileSystem, setFileSystem);
+  }, [chat?.id, chat?.artifacts, artifactsAvailable, setFileSystemForChat, setCurrentFileSystem, updateChat]);
 
   // Set up navigation actions (only once on mount)
   useEffect(() => {

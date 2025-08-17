@@ -1,14 +1,13 @@
 import { createContext } from 'react';
 import { FileSystemManager } from '../lib/fs';
-import type { Chat } from '../types/chat';
+import type { FileSystem } from '../types/file';
 
 export interface FileSystemContextType {
   currentFileSystem: FileSystemManager | null;
   setCurrentFileSystem: (fs: FileSystemManager | null) => void;
   setFileSystemForChat: (
-    chatId: string, 
-    chats: Chat[], 
-    updateChat: (chatId: string, updater: (chat: Chat) => Partial<Chat>) => void
+    getFileSystem: () => FileSystem, 
+    setFileSystem: (artifacts: FileSystem) => void
   ) => void;
 }
 

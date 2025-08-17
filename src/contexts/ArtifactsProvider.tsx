@@ -13,7 +13,6 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [showArtifactsDrawer, setShowArtifactsDrawer] = useState(false);
   const [isAvailable, setIsAvailable] = useState(false);
-  const [filesystemVersion, setFilesystemVersion] = useState(0); // Track filesystem version for reactive updates
 
   // Get the current filesystem from the FileSystemProvider
   const { currentFileSystem: fs } = useFileSystem();
@@ -31,21 +30,20 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
 
   // Subscribe to filesystem events for reactive updates
   useEffect(() => {
-    if (!fs) return;
-
-    console.log('🔧 FileSystemManager set in context for chat:', fs ? 'available' : 'null');
-
-    // Sync initial filesystem version
-    setFilesystemVersion(fs.filesystemVersion);
+    if (!fs) {
+      return;
+    }
 
     const unsubscribeCreated = fs.subscribe('fileCreated', (path: string) => {
       // Auto-open newly created files
       setOpenFiles(prev => {
-        if (prev.includes(path)) return prev;
-        return [...prev, path];
+        if (prev.includes(path)) {
+          return prev;
+        }
+        const newOpenFiles = [...prev, path];
+        return newOpenFiles;
       });
       setActiveFile(path);
-      setFilesystemVersion(fs.filesystemVersion); // Sync version for reactive updates
     });
 
     const unsubscribeDeleted = fs.subscribe('fileDeleted', (path: string) => {
@@ -54,17 +52,18 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
         const newFiles = prev.filter(file => file !== path);
         
         // If the deleted file was active, set a new active file
-        if (path === activeFile) {
-          const index = prev.indexOf(path);
-          const newActiveFile = newFiles.length > 0 
-            ? newFiles[Math.min(index, newFiles.length - 1)]
-            : null;
-          setActiveFile(newActiveFile);
-        }
+        setActiveFile(currentActiveFile => {
+          if (path === currentActiveFile) {
+            const index = prev.indexOf(path);
+            return newFiles.length > 0 
+              ? newFiles[Math.min(index, newFiles.length - 1)]
+              : null;
+          }
+          return currentActiveFile;
+        });
         
         return newFiles;
       });
-      setFilesystemVersion(fs.filesystemVersion); // Sync version for reactive updates
     });
 
     const unsubscribeRenamed = fs.subscribe('fileRenamed', (oldPath: string, newPath: string) => {
@@ -72,12 +71,10 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
       setOpenFiles(prev => prev.map(file => file === oldPath ? newPath : file));
       // Update active file if it was renamed
       setActiveFile(prev => prev === oldPath ? newPath : prev);
-      setFilesystemVersion(fs.filesystemVersion); // Sync version for reactive updates
     });
 
     const unsubscribeUpdated = fs.subscribe('fileUpdated', () => {
-      // File content updated - no need to change tabs, just sync version for reactive updates
-      setFilesystemVersion(fs.filesystemVersion);
+      // File content updated - no need to change tabs
     });
 
     return () => {
@@ -86,7 +83,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
       unsubscribeRenamed();
       unsubscribeUpdated();
     };
-  }, [fs, activeFile]);
+  }, [fs]);
 
   const openFile = useCallback((path: string) => {
     setOpenFiles(prev => {
@@ -123,7 +120,6 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     openFiles,
     activeFile,
     showArtifactsDrawer,
-    filesystemVersion, // Include version to force re-renders
     openFile,
     closeFile,
     setShowArtifactsDrawer,
