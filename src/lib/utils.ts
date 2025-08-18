@@ -234,10 +234,10 @@ export function stripMarkdown(text: string): string {
     .trim();
 }
 
-export function downloadFromUrl(url: string, filename: string): void {
+export function downloadFromUrl(url: string, filename: string = ''): void {
   const link = document.createElement('a');
   link.href = url;
-  link.download = filename;
+  link.download = filename || filenameFromUrl(url);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -245,4 +245,24 @@ export function downloadFromUrl(url: string, filename: string): void {
 
 export function downloadBlob(blob: Blob, filename: string): void {
   return downloadFromUrl(URL.createObjectURL(blob), filename);
+}
+
+export function filenameFromUrl(src: string): string {
+  // If it's a data URL, extract the MIME type and derive a simple filename
+  if (src.startsWith('data:')) {
+    const mimeMatch = src.match(/^data:([^;]+)[;,]/);
+    if (mimeMatch) {
+      const mimeType = mimeMatch[1];
+      const ext = mime.getExtension(mimeType);
+      if (ext) {
+        const base = mimeType.startsWith('image/') ? 'image' : 'file';
+        const cleanExt = ext.startsWith('.') ? ext.slice(1) : ext;
+        return `${base}.${cleanExt}`;
+      }
+    }
+    // No recognized extension
+    return '';
+  }
+  // For non-data URLs, don't attempt to infer; let the browser decide
+  return '';
 }

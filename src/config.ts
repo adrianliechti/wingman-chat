@@ -19,11 +19,15 @@ interface config {
   
   tts?: ttsConfig;
   stt?: sttConfig;
+
   voice?: voiceConfig;
   vision?: visionConfig;
   
+  image?: imageConfig;
+  
   bridge?: bridgeConfig;
   internet?: internetConfig;
+  
   artifacts?: artifactsConfig;
   repository?: repositoryConfig;  
   translator?: translatorConfig;
@@ -51,6 +55,10 @@ interface voiceConfig {
 }
 
 interface visionConfig {
+  enabled: boolean;
+}
+
+interface imageConfig {
   enabled: boolean;
 }
 
@@ -89,8 +97,11 @@ interface Config {
 
   tts: boolean;
   stt: boolean;
+  
   voice: boolean;
   vision: boolean;
+
+  image: imageConfig;
   
   bridge: Bridge;
 
@@ -141,6 +152,10 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       
       voice: cfg.voice?.enabled ?? false,
       vision: cfg.vision?.enabled ?? false,
+      
+      image: cfg.image ?? {
+        enabled: false,
+      },
       
       bridge: bridge,
 

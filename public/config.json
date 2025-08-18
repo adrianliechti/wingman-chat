@@ -21,6 +21,9 @@
     "vision": {
         "enabled": true
     },
+    "image": {
+        "enabled": true
+    },
     "bridge": {
         "url": "http://localhost:4200"
     },

@@ -6,6 +6,7 @@ import { useRepository } from "./useRepository";
 import { useRepositories } from "./useRepositories";
 import { useBridge } from "./useBridge";
 import { useSearch } from "./useSearch";
+import { useImageGeneration } from "./useImageGeneration";
 
 export interface ChatContext {
   tools: Tool[];
@@ -27,6 +28,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat'): ChatContext {
   
   const { bridgeTools, bridgeInstructions } = useBridge();
   const { searchTools, searchInstructions } = useSearch();
+  const { imageGenerationTools, imageGenerationInstructions } = useImageGeneration();
 
   return useMemo(() => {
     const profileInstructions = generateInstructions();
@@ -40,7 +42,10 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat'): ChatContext {
     const webSearchTools = searchTools();
     const webSearchInstructions = searchInstructions();
 
-    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools];
+    const imageGenTools = imageGenerationTools();
+    const imageGenInstructions = imageGenerationInstructions();
+
+    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools];
 
     const instructionsList: string[] = [];
 
@@ -64,6 +69,10 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat'): ChatContext {
       instructionsList.push(webSearchInstructions);
     }
 
+    if (imageGenTools.length > 0 && imageGenInstructions?.trim()) {
+      instructionsList.push(imageGenInstructions);
+    }
+
     // Add mode-specific instructions
     if (mode === 'voice') {
       instructionsList.push('Respond concisely and naturally for voice interaction.');
@@ -85,6 +94,8 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat'): ChatContext {
     bridgeTools,
     bridgeInstructions,
     searchTools,
-    searchInstructions
+    searchInstructions,
+    imageGenerationTools,
+    imageGenerationInstructions
   ]);
 }

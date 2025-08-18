@@ -20,6 +20,7 @@ import { BridgeProvider } from "./contexts/BridgeProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
 import { SearchProvider } from "./contexts/SearchProvider";
+import { ImageGenerationProvider } from "./contexts/ImageGenerationProvider";
 import { BridgeIndicator } from "./components/BridgeIndicator";
 
 type Page = "chat" | "translate";
@@ -360,6 +361,7 @@ const providers = [
   RepositoryProvider,
   ScreenCaptureProvider,
   SearchProvider,
+  ImageGenerationProvider,
   ChatProvider,
   VoiceProvider,
   TranslateProvider,

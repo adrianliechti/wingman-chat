@@ -33,6 +33,7 @@ func main() {
 	voice := os.Getenv("VOICE_ENABLED") == "true"
 	vision := os.Getenv("VISION_ENABLED") == "true"
 
+	image := os.Getenv("IMAGE_ENABLED") == "true"
 	internet := os.Getenv("INTERNET_ENABLED") == "true"
 
 	artifacts := os.Getenv("ARTIFACTS_ENABLED") == "true"
@@ -72,15 +73,19 @@ func main() {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 		}
 
+		type imageType struct {
+			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+		}
+
+		type internetType struct {
+			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+		}
+
 		type bridgeType struct {
 			URL string `json:"url,omitempty" yaml:"url,omitempty"`
 		}
 
 		type artifactsType struct {
-			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-		}
-
-		type internetType struct {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 		}
 
@@ -107,13 +112,17 @@ func main() {
 
 			Models []modelType `json:"models,omitempty" yaml:"models,omitempty"`
 
-			TTS    *ttsType    `json:"tts,omitempty" yaml:"tts,omitempty"`
-			STT    *sttType    `json:"stt,omitempty" yaml:"stt,omitempty"`
+			TTS *ttsType `json:"tts,omitempty" yaml:"tts,omitempty"`
+			STT *sttType `json:"stt,omitempty" yaml:"stt,omitempty"`
+
 			Voice  *voiceType  `json:"voice,omitempty" yaml:"voice,omitempty"`
 			Vision *visionType `json:"vision,omitempty" yaml:"vision,omitempty"`
 
-			Bridge     *bridgeType     `json:"bridge,omitempty" yaml:"bridge,omitempty"`
-			Internet   *internetType   `json:"internet,omitempty" yaml:"internet,omitempty"`
+			Image    *imageType    `json:"image,omitempty" yaml:"image,omitempty"`
+			Internet *internetType `json:"internet,omitempty" yaml:"internet,omitempty"`
+
+			Bridge *bridgeType `json:"bridge,omitempty" yaml:"bridge,omitempty"`
+
 			Artifacts  *artifactsType  `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 			Repository *repositoryType `json:"repository,omitempty" yaml:"repository,omitempty"`
 			Translator *translatorType `json:"translator,omitempty" yaml:"translator,omitempty"`
@@ -163,6 +172,18 @@ func main() {
 			}
 		}
 
+		if image {
+			config.Image = &imageType{
+				Enabled: true,
+			}
+		}
+
+		if internet {
+			config.Internet = &internetType{
+				Enabled: true,
+			}
+		}
+
 		if bridgeURL != "" {
 			config.Bridge = &bridgeType{
 				URL: bridgeURL,
@@ -171,12 +192,6 @@ func main() {
 
 		if artifacts {
 			config.Artifacts = &artifactsType{
-				Enabled: true,
-			}
-		}
-
-		if internet {
-			config.Internet = &internetType{
 				Enabled: true,
 			}
 		}

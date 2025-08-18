@@ -24,6 +24,7 @@ import { useDropZone } from "../hooks/useDropZone";
 import { useSettings } from "../hooks/useSettings";
 import { useScreenCapture } from "../hooks/useScreenCapture";
 import { useSearch } from "../hooks/useSearch";
+import { useImageGeneration } from "../hooks/useImageGeneration";
 
 export function ChatInput() {
   const config = getConfig();
@@ -34,6 +35,7 @@ export function ChatInput() {
   const { profile } = useSettings();
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
   const { isAvailable: isSearchAvailable, isEnabled: isSearchEnabled, setEnabled: setSearchEnabled } = useSearch();
+  const { isAvailable: isImageGenerationAvailable, isEnabled: isImageGenerationEnabled, setEnabled: setImageGenerationEnabled } = useImageGeneration();
 
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
@@ -621,6 +623,26 @@ export function ChatInput() {
                 {isSearchEnabled && (
                   <span className="hidden sm:inline">
                     Internet
+                  </span>
+                )}
+              </Button>
+            )}
+
+            {isImageGenerationAvailable && (
+              <Button
+                type="button"
+                className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
+                  isImageGenerationEnabled 
+                    ? 'text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-200 bg-purple-100/80 dark:bg-purple-900/40 border border-purple-200 dark:border-purple-800 rounded-lg' 
+                    : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                }`}
+                onClick={() => setImageGenerationEnabled(!isImageGenerationEnabled)}
+                title={isImageGenerationEnabled ? 'Disable image generation' : 'Enable image generation'}
+              >
+                <Image size={14} />
+                {isImageGenerationEnabled && (
+                  <span className="hidden sm:inline">
+                    Images
                   </span>
                 )}
               </Button>

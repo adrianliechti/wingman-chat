@@ -601,6 +601,43 @@ Guidelines:
     }));
   }
 
+  async generateImage(
+    model: string,
+    prompt: string
+  ): Promise<Blob> {
+    try {
+      const response = await this.oai.images.generate({
+        model: model,
+        prompt: prompt,
+        n: 1,
+        response_format: "b64_json",
+        output_format: "png",
+      });
+
+      if (!response.data || response.data.length === 0) {
+        throw new Error("No image data returned from OpenAI");
+      }
+
+      const imageData = response.data[0];
+      if (!imageData?.b64_json) {
+        throw new Error("No base64 image data returned from OpenAI");
+      }
+
+      // Convert base64 to blob
+      const binaryString = atob(imageData.b64_json);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      const blob = new Blob([bytes], { type: 'image/png' });
+      return blob;
+    } catch (error) {
+      console.error("Image generation failed:", error);
+      throw error;
+    }
+  }
+
   private toTools(tools: Tool[]): OpenAI.Chat.Completions.ChatCompletionTool[] | undefined {
     if (!tools || tools.length === 0) {
       return undefined;
