@@ -1,6 +1,7 @@
 import { z } from "zod";
 import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
+import mime from "mime";
 
 import { Role, AttachmentType } from "../types/chat";
 import type { Tool } from "../types/chat";
@@ -557,18 +558,9 @@ Guidelines:
   async transcribe(model: string, blob: Blob): Promise<string> {
     const data = new FormData();
     
-    // Determine file extension based on blob type
-    const getFileExtension = (mimeType: string): string => {
-      if (mimeType.includes('wav')) return '.wav';
-      if (mimeType.includes('mp3') || mimeType.includes('mpeg')) return '.mp3';
-      if (mimeType.includes('mp4')) return '.mp4';
-      if (mimeType.includes('webm')) return '.webm';
-      if (mimeType.includes('ogg')) return '.ogg';
-      return '.audio'; // fallback
-    };
-    
-    const extension = getFileExtension(blob.type);
-    const filename = `audio_recording${extension}`;
+    // Get file extension using mime package
+    const extension = mime.getExtension(blob.type) || 'audio';
+    const filename = `audio_recording.${extension}`;
     
     data.append('file', blob, filename);
 
@@ -617,35 +609,37 @@ Guidelines:
 
   async generateImage(
     model: string,
-    prompt: string
+    prompt: string,
+    images?: Blob[]
   ): Promise<Blob> {
     try {
-      const response = await this.oai.images.generate({
-        model: model,
-        prompt: prompt,
-        n: 1,
-        response_format: "b64_json",
-        output_format: "png",
+      const data = new FormData();
+      data.append('input', prompt);
+
+      if (model) {
+        data.append('model', model);
+      }
+
+      // Add optional image blobs as files
+      if (images && images.length > 0) {
+        images.forEach((blob, index) => {
+          const extension = mime.getExtension(blob.type) || 'image';
+          const filename = `image_${index}.${extension}`;
+
+          data.append('file', blob, filename);
+        });
+      }
+
+      const response = await fetch(new URL(`/api/v1/render`, window.location.origin), {
+        method: "POST",
+        body: data,
       });
 
-      if (!response.data || response.data.length === 0) {
-        throw new Error("No image data returned from OpenAI");
+      if (!response.ok) {
+        throw new Error(`Image generation request failed with status ${response.status}`);
       }
 
-      const imageData = response.data[0];
-      if (!imageData?.b64_json) {
-        throw new Error("No base64 image data returned from OpenAI");
-      }
-
-      // Convert base64 to blob
-      const binaryString = atob(imageData.b64_json);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      
-      const blob = new Blob([bytes], { type: 'image/png' });
-      return blob;
+      return response.blob();
     } catch (error) {
       console.error("Image generation failed:", error);
       throw error;

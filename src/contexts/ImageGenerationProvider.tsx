@@ -97,8 +97,6 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
       - Use the generate_image tool when the user asks you to create, generate, or make an image.
       - Create detailed and specific prompts for better image quality.
       - Consider the user's preferences for style, composition, colors, and other visual elements.
-      - You can specify different sizes: 1024x1024 (square), 1792x1024 (landscape), or 1024x1792 (portrait).
-      - Use "hd" quality for images that need finer details and greater consistency.
       
       Always use this tool when the user requests image creation or visual content generation.
     `.trim();

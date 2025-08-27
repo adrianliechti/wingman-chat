@@ -5,6 +5,8 @@ import { detectMimeType } from "../lib/attachmentUtils";
 import { HtmlRenderer } from "./HtmlRenderer";
 import { PdfRenderer } from "./PdfRenderer";
 import { Markdown } from "./Markdown";
+import { MermaidRenderer } from "./MermaidRenderer";
+import { CsvRenderer } from "./CsvRenderer";
 
 // Helper function to check if content is a URL
 function isUrl(content: string): boolean {
@@ -158,6 +160,26 @@ function MarkdownAttachment({ attachment }: { attachment: Attachment }) {
   );
 }
 
+function CsvAttachment({ attachment }: { attachment: Attachment }) {
+  return (
+    <CsvRenderer 
+      csv={attachment.data}
+      language="html"
+      name={attachment.name}
+    />
+  );
+}
+
+function MermaidAttachment({ attachment }: { attachment: Attachment }) {
+  return (
+    <MermaidRenderer 
+      chart={attachment.data}
+      language="html"
+      name={attachment.name}
+    />
+  );
+}
+
 // Main attachment renderer with simple design
 export function AttachmentRenderer({ attachment, className }: {
   attachment: Attachment;
@@ -168,19 +190,27 @@ export function AttachmentRenderer({ attachment, className }: {
   if (mimeType.startsWith('image/')) {
     return <ImageAttachment attachment={attachment} className={className} />;
   }
+  
+  if (mimeType === 'text/csv') {
+    return <CsvAttachment attachment={attachment} />;
+  }
+
+  if (mimeType === 'text/html') {
+    return <HtmlAttachment attachment={attachment} />;
+  }
+
+  if (mimeType === 'text/markdown') {
+    return <MarkdownAttachment attachment={attachment} />;
+  }
+
+  if (mimeType === 'text/vnd.mermaid') {
+    return <MermaidAttachment attachment={attachment} />;
+  }
 
   if (mimeType === 'application/pdf') {
     return <PdfAttachment attachment={attachment} />;
   }
-
-  if (mimeType === 'text/html' || attachment.name.toLowerCase().endsWith('.html') || attachment.name.toLowerCase().endsWith('.htm')) {
-    return <HtmlAttachment attachment={attachment} />;
-  }
-
-  if (mimeType === 'text/markdown' || mimeType === 'text/x-markdown' || attachment.name.toLowerCase().endsWith('.md') || attachment.name.toLowerCase().endsWith('.markdown')) {
-    return <MarkdownAttachment attachment={attachment} />;
-  }
-
+  
   return <FileAttachment attachment={attachment} />;
 }
 
