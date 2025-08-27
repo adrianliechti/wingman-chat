@@ -8,11 +8,14 @@ import { detectMimeType } from "../lib/attachmentUtils";
 function categorizeAttachments(attachments: Attachment[]) {
   const media: Attachment[] = [];
   const files: Attachment[] = [];
+  const pdfs: Attachment[] = [];
   
   attachments.forEach(attachment => {
     const mimeType = detectMimeType(attachment.data, attachment.name);
     
-    if (attachment.type === AttachmentType.Image || 
+    if (mimeType === 'application/pdf') {
+      pdfs.push(attachment);
+    } else if (attachment.type === AttachmentType.Image || 
         mimeType.startsWith('image/') || 
         mimeType.startsWith('video/') || 
         mimeType.startsWith('audio/')) {
@@ -22,7 +25,7 @@ function categorizeAttachments(attachments: Attachment[]) {
     }
   });
   
-  return { media, files };
+  return { media, files, pdfs };
 }
 
 // Component for image attachments with download functionality
@@ -104,9 +107,59 @@ function FileAttachment({ attachment }: { attachment: Attachment }) {
   );
 }
 
+// Component for PDF attachments with preview
+function PdfAttachment({ attachment }: { attachment: Attachment }) {
+  const handleDownload = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    downloadFromUrl(attachment.data, attachment.name);
+  };
+
+  // Convert base64 to data URL for iframe
+  const pdfDataUrl = attachment.data.startsWith('data:') 
+    ? attachment.data 
+    : `data:application/pdf;base64,${attachment.data}`;
+
+  return (
+    <div className="w-full border border-neutral-200 dark:border-neutral-700 rounded-md overflow-hidden">
+      {/* PDF Header with download button */}
+      <div className="flex items-center justify-between p-3 bg-neutral-50 dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700">
+        <div className="flex items-center gap-2">
+          <File className="w-5 h-5 text-red-500" />
+          <span className="font-medium text-sm truncate">{attachment.name}</span>
+        </div>
+        <button
+          onClick={handleDownload}
+          className="flex items-center gap-1 px-3 py-1 text-xs bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 rounded transition-colors"
+          title="Download PDF"
+        >
+          <Download className="w-3 h-3" />
+          Download
+        </button>
+      </div>
+      
+      {/* PDF Preview */}
+      <div className="w-full h-96">
+        <iframe
+          src={pdfDataUrl}
+          className="w-full h-full"
+          title={`Preview of ${attachment.name}`}
+          style={{ border: 'none' }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // Main attachment renderer that decides which component to use
 export function AttachmentRenderer({ attachment, className }: { attachment: Attachment; className?: string }) {
   const mimeType = detectMimeType(attachment.data, attachment.name);
+  
+  // Check for PDF first
+  if (mimeType === 'application/pdf') {
+    return <PdfAttachment attachment={attachment} />;
+  }
   
   // Use attachment type first, then fall back to MIME type detection
   if (attachment.type === AttachmentType.Image || mimeType.startsWith('image/')) {
@@ -134,15 +187,24 @@ export function AttachmentList({ attachments, mediaClassName }: {
     return null;
   }
 
-  const { media, files } = categorizeAttachments(attachments);
+  const { media, files, pdfs } = categorizeAttachments(attachments);
   
   return (
     <div className="flex flex-col gap-2">
+      {/* PDF attachments - full width */}
+      {pdfs.length > 0 && (
+        <div className="space-y-3">
+          {pdfs.map((attachment, index) => (
+            <AttachmentRenderer key={`pdf-${index}`} attachment={attachment} />
+          ))}
+        </div>
+      )}
+
       {/* File attachments in grid layout */}
       {files.length > 0 && (
         <div className="grid grid-cols-2 gap-2">
           {files.map((attachment, index) => (
-            <AttachmentRenderer key={index} attachment={attachment} />
+            <AttachmentRenderer key={`file-${index}`} attachment={attachment} />
           ))}
         </div>
       )}
@@ -152,7 +214,7 @@ export function AttachmentList({ attachments, mediaClassName }: {
         <div className="flex flex-wrap gap-4">
           {media.map((attachment, index) => (
             <AttachmentRenderer 
-              key={index} 
+              key={`media-${index}`} 
               attachment={attachment} 
               className={mediaClassName || "max-h-40 rounded-md"}
             />
