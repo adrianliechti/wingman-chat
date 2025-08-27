@@ -45,15 +45,27 @@ export function parseResource(result: string): ParsedToolResult {
       const fileName = extractFileNameFromUri(resource.uri, resource.mimeType);
 
       // Use blob (base64) or text content, preferring blob if both are present
-      const contentData = resource.blob || resource.text || '';
+      // Decode base64 blob content if present
+      let data = '';
+
+      if (resource.blob) {
+        try {
+          data = atob(resource.blob);
+        } catch (error) {
+          console.warn('Failed to decode base64 blob:', error);
+          data = resource.blob;
+        }
+      } else {
+        data = resource.text || '';
+      }
 
       attachments = [{
         type: attachmentType,
         name: fileName,
-        data: contentData
+        data: data
       }];
 
-      processedContent = `Resource ${fileName} (${resource.mimeType}) received and displayed above.`;
+      processedContent = `Resource ${fileName} (${resource.mimeType}) received and displayed above. DO NOT RENDER IT AGAIN IN THE CHAT.`;
     }
   } catch {
     // If parsing fails, use the result as-is

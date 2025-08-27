@@ -275,7 +275,7 @@ export function ChatPage() {
             </div>
           ) : (
             <div
-              className={`flex-1 overflow-auto ios-scroll sidebar-scroll transition-opacity duration-300 ${
+              className={`flex-1 overflow-auto sidebar-scroll transition-opacity duration-300 ${
                 isVoiceMode ? 'opacity-90' : 'opacity-100'
               }`}
               ref={containerRef}

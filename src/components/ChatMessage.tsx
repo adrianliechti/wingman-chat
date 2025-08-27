@@ -2,10 +2,11 @@ import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
 import { ShareButton } from './ShareButton';
 import { PlayButton } from './PlayButton';
-import { CodeRenderer } from './CodeRenderer';
-import { AttachmentList } from './AttachmentRenderer';
+import { SingleAttachmentDisplay, MultipleAttachmentsDisplay } from './AttachmentRenderer';
 import { Wrench, Loader2, ChevronDown, ChevronRight, AlertCircle } from "lucide-react";
-import { useState } from 'react';
+import { useState, useContext, useEffect } from 'react';
+import { codeToHtml } from 'shiki';
+import { ThemeContext } from '../contexts/ThemeContext';
 
 import { Role } from "../types/chat";
 import type { Message } from "../types/chat";
@@ -74,6 +75,62 @@ type ChatMessageProps = {
   isResponding?: boolean;
 };
 
+// Component to render code with Shiki
+function ShikiCodeRenderer({ content, name }: { content: string; name?: string }) {
+  const [html, setHtml] = useState<string>('');
+  const { isDark } = useContext(ThemeContext) || { isDark: false };
+
+  useEffect(() => {
+    const renderCode = async () => {
+      let isJson = false;
+      let parsedContent = null;
+      let langId = 'text';
+      
+      // Try to parse as JSON
+      try {
+        parsedContent = JSON.parse(content);
+        isJson = true;
+        langId = 'json';
+      } catch {
+        // Not JSON, treat as text
+        langId = 'text';
+      }
+
+      const displayContent = isJson ? JSON.stringify(parsedContent, null, 2) : content;
+
+      try {
+        const renderedHtml = await codeToHtml(displayContent, {
+          lang: langId,
+          theme: isDark ? 'one-dark-pro' : 'one-light',
+          colorReplacements: {
+            '#fafafa': 'transparent', // one-light background
+            '#282c34': 'transparent', // one-dark-pro background
+          }
+        });
+        setHtml(renderedHtml);
+      } catch {
+        // Fallback to plain text if Shiki fails
+        setHtml(`<pre><code>${displayContent}</code></pre>`);
+      }
+    };
+
+    renderCode();
+  }, [content, isDark]);
+
+  return (
+    <div className="mt-3">
+      {name && (
+        <div className="text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">
+          {name}
+        </div>
+      )}
+      <div className="max-h-96 overflow-y-auto overflow-x-hidden">
+        <div dangerouslySetInnerHTML={{ __html: html }} />
+      </div>
+    </div>
+  );
+}
+
 // Error message component
 function ErrorMessage({ title, message }: { title: string; message: string }) {
   const displayTitle = title
@@ -131,33 +188,9 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
     const borderColor = isToolError ? "border-red-200 dark:border-red-800" : "border-neutral-200 dark:border-neutral-700";
     const bgColor = isToolError ? "bg-red-50/50 dark:bg-red-950/10" : "";
 
-    // Helper to render JSON or text content
+    // Helper to render JSON or text content using Shiki
     const renderContent = (content: string, name?: string) => {
-      let isJson = false;
-      let parsedContent = null;
-      let detectedLanguage = 'text';
-      
-      // Try to parse as JSON
-      try {
-        parsedContent = JSON.parse(content);
-        isJson = true;
-        detectedLanguage = 'json';
-      } catch {
-        // Not JSON, treat as text
-        detectedLanguage = 'text';
-      }
-
-      return (
-        <div className="mt-3 max-w-full">
-          <div className="max-w-full overflow-auto" style={{ maxHeight: '400px' }}>
-            <CodeRenderer 
-              code={isJson ? JSON.stringify(parsedContent, null, 2) : content}
-              language={detectedLanguage}
-              name={name}
-            />
-          </div>
-        </div>
-      );
+      return <ShikiCodeRenderer content={content} name={name} />;
     };
 
     return (
@@ -198,38 +231,33 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
 
             {/* Expanded Content */}
             {toolResultExpanded && (
-              <div className={`px-2 border-t max-w-full overflow-hidden ${
-                isToolError ? "border-red-200 dark:border-red-800" : "border-neutral-200 dark:border-neutral-700"
-              }`}>
+              <div className="px-3 pb-3">
                 {toolResult?.arguments && renderContent(toolResult.arguments, 'Arguments')}
                 {(message.error || message.content || toolResult?.data) && (
                   message.error ? (
-                    // Show error messages in a more readable format
-                    <div className="mt-3 p-3 bg-red-50 dark:bg-red-950/20 rounded border border-red-200 dark:border-red-800">
-                      <div className="flex items-start gap-2">
-                        <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                        <div className="text-sm text-red-700 dark:text-red-300">
-                          {message.error.message}
-                        </div>
-                      </div>
-                    </div>
+                    <ShikiCodeRenderer 
+                      content={message.error.message}
+                      name="Error"
+                    />
                   ) : (
                     renderContent(message.content || toolResult?.data || '', 'Result')
                   )
                 )}
               </div>
             )}
-            
-            {/* Always show attachments */}
-            {message.attachments && message.attachments.length > 0 && (
-              <div className="px-3 pb-3">
-                <AttachmentList 
-                  attachments={message.attachments} 
-                  mediaClassName="max-h-40 rounded-md"
-                />
-              </div>
-            )}
           </div>
+          
+          {/* Tool Attachments rendered after the Tool Result container */}
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="mt-2">
+              {/* For tool messages: single if one, otherwise multiple */}
+              {message.attachments.length === 1 ? (
+                <SingleAttachmentDisplay attachment={message.attachments[0]} />
+              ) : (
+                <MultipleAttachmentsDisplay attachments={message.attachments} />
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -343,10 +371,14 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
 
           {message.attachments && message.attachments.length > 0 && (
             <div className="pt-2">
-              <AttachmentList 
-                attachments={message.attachments} 
-                mediaClassName="max-h-60 rounded-md"
-              />
+              {/* For user messages: always use multiple display; assistant follows single vs multiple */}
+              {isUser ? (
+                <MultipleAttachmentsDisplay attachments={message.attachments} />
+              ) : message.attachments.length === 1 ? (
+                <SingleAttachmentDisplay attachment={message.attachments[0]} />
+              ) : (
+                <MultipleAttachmentsDisplay attachments={message.attachments} />
+              )}
             </div>
           )}
           
