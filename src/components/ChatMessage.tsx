@@ -3,14 +3,15 @@ import { CopyButton } from './CopyButton';
 import { ShareButton } from './ShareButton';
 import { PlayButton } from './PlayButton';
 import { CodeRenderer } from './CodeRenderer';
-import { File, Wrench, Loader2, ChevronDown, ChevronRight, AlertCircle, Download } from "lucide-react";
+import { AttachmentList } from './AttachmentRenderer';
+import { Wrench, Loader2, ChevronDown, ChevronRight, AlertCircle } from "lucide-react";
 import { useState } from 'react';
 
-import { AttachmentType, Role } from "../types/chat";
-import type { Message, Attachment } from "../types/chat";
+import { Role } from "../types/chat";
+import type { Message } from "../types/chat";
 import { getConfig } from "../config";
 import { canShare } from "../lib/share";
-import { stripMarkdown, downloadFromUrl } from "../lib/utils";
+import { stripMarkdown } from "../lib/utils";
 
 // Helper function to convert tool names to user-friendly display names
 function getToolDisplayName(toolName: string): string {
@@ -18,35 +19,6 @@ function getToolDisplayName(toolName: string): string {
     .split('_')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
-}
-
-// Component for image attachments with download functionality
-function ImageAttachment({ attachment, className }: { attachment: Attachment; className?: string }) {
-  const handleDownload = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    downloadFromUrl(attachment.data, attachment.name);
-  };
-
-  return (
-    <div className="relative group inline-block">
-      <img
-        src={attachment.data}
-        alt={attachment.name}
-        className={className}
-      />
-      <div className="absolute inset-0 flex items-center justify-center">
-        <button
-          onClick={handleDownload}
-          className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 p-2 rounded-full shadow-lg cursor-pointer"
-          title="Download image"
-        >
-          <Download className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
-  );
 }
 
 // Helper function to extract and format common parameters for tool calls
@@ -245,57 +217,16 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
                     renderContent(message.content || toolResult?.data || '', 'Result')
                   )
                 )}
-                
-                {/* Render attachments for tool results */}
-                {message.attachments && message.attachments.length > 0 && (
-                  <div className="flex flex-col gap-2 pt-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      {message.attachments
-                        .filter(
-                          (attachment) => attachment.type !== AttachmentType.Image
-                        )
-                        .map((attachment, index) => (
-                          <div key={index} className="flex items-center gap-2 text-sm">
-                            <File className="w-4 h-4 shrink-0" />
-                            <span className="truncate">{attachment.name}</span>
-                          </div>
-                        ))}
-                    </div>
-
-                    <div className="flex flex-wrap gap-4">
-                      {message.attachments
-                        .filter(
-                          (attachment) => attachment.type === AttachmentType.Image
-                        )
-                        .map((attachment, index) => (
-                          <ImageAttachment
-                            key={index}
-                            attachment={attachment}
-                            className="max-h-60 rounded-md"
-                          />
-                        ))}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
             
-            {/* Show attachments even when collapsed */}
-            {!toolResultExpanded && message.attachments && message.attachments.length > 0 && (
+            {/* Always show attachments */}
+            {message.attachments && message.attachments.length > 0 && (
               <div className="px-3 pb-3">
-                <div className="flex flex-wrap gap-4">
-                  {message.attachments
-                    .filter(
-                      (attachment) => attachment.type === AttachmentType.Image
-                    )
-                    .map((attachment, index) => (
-                      <ImageAttachment
-                        key={index}
-                        attachment={attachment}
-                        className="max-h-40 rounded-md"
-                      />
-                    ))}
-                </div>
+                <AttachmentList 
+                  attachments={message.attachments} 
+                  mediaClassName="max-h-40 rounded-md"
+                />
               </div>
             )}
           </div>
@@ -411,33 +342,11 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
           )}
 
           {message.attachments && message.attachments.length > 0 && (
-            <div className="flex flex-col gap-2 pt-2">
-              <div className="grid grid-cols-2 gap-2">
-                {message.attachments
-                  .filter(
-                    (attachment) => attachment.type !== AttachmentType.Image
-                  )
-                  .map((attachment, index) => (
-                    <div key={index} className="flex items-center gap-2 text-sm">
-                      <File className="w-4 h-4 shrink-0" />
-                      <span className="truncate">{attachment.name}</span>
-                    </div>
-                  ))}
-              </div>
-
-              <div className="flex flex-wrap gap-4">
-                {message.attachments
-                  .filter(
-                    (attachment) => attachment.type === AttachmentType.Image
-                  )
-                  .map((attachment, index) => (
-                    <ImageAttachment
-                      key={index}
-                      attachment={attachment}
-                      className="max-h-60 rounded-md"
-                    />
-                  ))}
-              </div>
+            <div className="pt-2">
+              <AttachmentList 
+                attachments={message.attachments} 
+                mediaClassName="max-h-60 rounded-md"
+              />
             </div>
           )}
           
