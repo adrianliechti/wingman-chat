@@ -62,6 +62,7 @@ export enum AttachmentType {
     Text = "text",
     File = "file_data",
     Image = "image_data",
+    UI = "ui"
   }
 
 export type Attachment = {
