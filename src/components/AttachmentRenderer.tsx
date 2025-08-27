@@ -4,6 +4,7 @@ import { downloadBlob, downloadFromUrl } from "../lib/utils";
 import { detectMimeType } from "../lib/attachmentUtils";
 import { HtmlRenderer } from "./HtmlRenderer";
 import { PdfRenderer } from "./PdfRenderer";
+import { Markdown } from "./Markdown";
 
 // Helper function to check if content is a URL
 function isUrl(content: string): boolean {
@@ -138,25 +139,22 @@ function PdfAttachment({ attachment }: { attachment: Attachment }) {
 }
 
 function HtmlAttachment({ attachment }: { attachment: Attachment }) {
-  // Extract HTML content from attachment data
-  let htmlContent = attachment.data;
-  
-  // If the data is a data URL, extract the content
-  if (htmlContent.startsWith('data:text/html')) {
-    try {
-      const base64Content = htmlContent.split(',')[1];
-      htmlContent = atob(base64Content);
-    } catch {
-      // If decoding fails, use as-is
-    }
-  }
-
   return (
     <HtmlRenderer 
-      html={htmlContent}
+      html={attachment.data}
       language="html"
       name={attachment.name}
     />
+  );
+}
+
+function MarkdownAttachment({ attachment }: { attachment: Attachment }) {
+  return (
+    <div className="markdown-attachment">
+      <div className="prose dark:prose-invert max-w-none">
+        <Markdown>{attachment.data}</Markdown>
+      </div>
+    </div>
   );
 }
 
@@ -177,6 +175,10 @@ export function AttachmentRenderer({ attachment, className }: {
 
   if (mimeType === 'text/html' || attachment.name.toLowerCase().endsWith('.html') || attachment.name.toLowerCase().endsWith('.htm')) {
     return <HtmlAttachment attachment={attachment} />;
+  }
+
+  if (mimeType === 'text/markdown' || mimeType === 'text/x-markdown' || attachment.name.toLowerCase().endsWith('.md') || attachment.name.toLowerCase().endsWith('.markdown')) {
+    return <MarkdownAttachment attachment={attachment} />;
   }
 
   return <FileAttachment attachment={attachment} />;
