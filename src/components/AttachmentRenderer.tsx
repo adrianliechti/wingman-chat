@@ -1,12 +1,14 @@
 import { File, Download } from "lucide-react";
 import type { Attachment } from "../types/chat";
+import { AttachmentType } from "../types/chat";
 import { downloadBlob, downloadFromUrl } from "../lib/utils";
 import { detectMimeType } from "../lib/attachmentUtils";
-import { HtmlRenderer } from "./HtmlRenderer";
 import { PdfRenderer } from "./PdfRenderer";
 import { Markdown } from "./Markdown";
 import { MermaidRenderer } from "./MermaidRenderer";
 import { CsvRenderer } from "./CsvRenderer";
+import { UIResourceRenderer } from '@mcp-ui/client';
+import { HtmlRenderer } from "./HtmlRenderer";
 
 // Helper function to check if content is a URL
 function isUrl(content: string): boolean {
@@ -94,7 +96,7 @@ function FileAttachment({ attachment, className }: { attachment: Attachment; cla
   const fileExtension = getFileExtension(attachment.name);
 
   return (
-    <div 
+    <div
       className={`relative inline-block cursor-pointer ${className || 'w-48 h-48'}`}
       onClick={handleDownload}
       title={`Download ${attachment.name}`}
@@ -110,7 +112,7 @@ function FileAttachment({ attachment, className }: { attachment: Attachment; cla
             </div>
           )}
         </div>
-        
+
         {/* Filename */}
         <div className="text-sm text-neutral-700 dark:text-neutral-300 text-center font-medium w-full px-2">
           <div className="truncate">
@@ -127,24 +129,58 @@ function FileAttachment({ attachment, className }: { attachment: Attachment; cla
   )
 }
 
-// Component for PDF attachments using PdfRenderer
-function PdfAttachment({ attachment }: { attachment: Attachment }) {
-  const mimeType = detectMimeType(attachment.data, attachment.name);
-  const pdfDataUrl = createDataUrl(attachment.data, mimeType);
+function UIAttachment({ attachment }: { attachment: Attachment }) {
+  let mimeType: string;
+
+  let text: string | undefined;
+  let blob: string | undefined;
+
+  if (attachment.type === AttachmentType.File) {
+    const match = attachment.data.match(/^data:([^;]+)/);
+    mimeType = match ? match[1] : detectMimeType(attachment.data, attachment.name);
+    blob = attachment.data.split(',')[1];
+  } else {
+    mimeType = 'text/html';
+    text = attachment.data;
+  }
+
+  const resource = {
+    uri: attachment.name,
+    mimeType: mimeType,
+    ...(text && { text }),
+    ...(blob && { blob })
+  };
 
   return (
-    <PdfRenderer 
-      src={pdfDataUrl}
-      name={attachment.name}
+    <UIResourceRenderer
+      resource={resource}
+      htmlProps={{
+        style: {
+          height: '600px'
+        },
+        autoResizeIframe: true
+      }}
     />
   );
 }
 
 function HtmlAttachment({ attachment }: { attachment: Attachment }) {
   return (
-    <HtmlRenderer 
+    <HtmlRenderer
       html={attachment.data}
       language="html"
+      name={attachment.name}
+    />
+  );
+}
+
+function PdfAttachment({ attachment }: { attachment: Attachment }) {
+  const mimeType = detectMimeType(attachment.data, attachment.name);
+  const pdfDataUrl = createDataUrl(attachment.data, mimeType);
+
+  return (
+    <PdfRenderer
+      src={pdfDataUrl}
       name={attachment.name}
     />
   );
@@ -162,7 +198,7 @@ function MarkdownAttachment({ attachment }: { attachment: Attachment }) {
 
 function CsvAttachment({ attachment }: { attachment: Attachment }) {
   return (
-    <CsvRenderer 
+    <CsvRenderer
       csv={attachment.data}
       language="html"
       name={attachment.name}
@@ -172,7 +208,7 @@ function CsvAttachment({ attachment }: { attachment: Attachment }) {
 
 function MermaidAttachment({ attachment }: { attachment: Attachment }) {
   return (
-    <MermaidRenderer 
+    <MermaidRenderer
       chart={attachment.data}
       language="html"
       name={attachment.name}
@@ -187,10 +223,14 @@ export function AttachmentRenderer({ attachment, className }: {
 }) {
   const mimeType = detectMimeType(attachment.data, attachment.name);
 
+  if (attachment.name.startsWith('ui://')) {
+    return <UIAttachment attachment={attachment} />;
+  }
+
   if (mimeType.startsWith('image/')) {
     return <ImageAttachment attachment={attachment} className={className} />;
   }
-  
+
   if (mimeType === 'text/csv') {
     return <CsvAttachment attachment={attachment} />;
   }
@@ -210,7 +250,7 @@ export function AttachmentRenderer({ attachment, className }: {
   if (mimeType === 'application/pdf') {
     return <PdfAttachment attachment={attachment} />;
   }
-  
+
   return <FileAttachment attachment={attachment} />;
 }
 
@@ -233,7 +273,7 @@ export function MultipleAttachmentsDisplay({ attachments }: { attachments: Attac
     <div className="flex flex-wrap gap-3">
       {attachments.map((attachment, index) => {
         const mimeType = detectMimeType(attachment.data, attachment.name);
-        
+
         // Only show images as visual previews, everything else as file tiles
         if (mimeType.startsWith('image/')) {
           return (

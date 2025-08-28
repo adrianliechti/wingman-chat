@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@headlessui/react": "^2.2.7",
+    "@mcp-ui/client": "^5.9.0",
+    "@mcp-ui/server": "^5.10.0",
     "@modelcontextprotocol/sdk": "^1.17.1",
     "@tailwindcss/vite": "^4.1.11",
     "audit": "^0.0.6",

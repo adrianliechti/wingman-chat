@@ -27,45 +27,35 @@ export function parseResource(result: string): ParsedToolResult {
     if (isResourceResult(parsedResult)) {
       const resource = parsedResult.resource;
       
-      let attachmentType = AttachmentType.File;
-
-      if (resource.uri.startsWith('ui://')) {
-        attachmentType = AttachmentType.UI;
-      }
+      let attachmentType: AttachmentType;
+      let data: string;
       
-      if (resource.mimeType.startsWith('image/')) {
-        attachmentType = AttachmentType.Image;
-      }
-      
-      if (resource.mimeType.startsWith('text/')) {
-        attachmentType = AttachmentType.Text;
-      }
-
       // Extract filename from URI or use a default name
-      const fileName = extractFileNameFromUri(resource.uri, resource.mimeType);
+      const name = extractFileNameFromUri(resource.uri, resource.mimeType);
 
-      // Use blob (base64) or text content, preferring blob if both are present
-      // Decode base64 blob content if present
-      let data = '';
-
-      if (resource.blob) {
-        try {
-          data = atob(resource.blob);
-        } catch (error) {
-          console.warn('Failed to decode base64 blob:', error);
-          data = resource.blob;
+      if (resource.text) {
+        attachmentType = AttachmentType.Text;
+        data = resource.text;
+      } else if (resource.blob) {
+        attachmentType = AttachmentType.File;
+        
+        if (resource.mimeType.startsWith('image/')) {
+          attachmentType = AttachmentType.Image;
         }
+        
+        data = `data:${resource.mimeType};base64,${resource.blob}`;
       } else {
-        data = resource.text || '';
+        attachmentType = AttachmentType.File;
+        data = '';
       }
 
       attachments = [{
         type: attachmentType,
-        name: fileName,
+        name: name,
         data: data
       }];
 
-      processedContent = `Resource ${fileName} (${resource.mimeType}) received and displayed above. DO NOT RENDER IT AGAIN IN THE CHAT.`;
+      processedContent = `Resource ${name} (${resource.mimeType}) received and displayed above. DO NOT RENDER IT AGAIN IN THE CHAT.`;
     }
   } catch {
     // If parsing fails, use the result as-is
@@ -104,13 +94,22 @@ function isResourceResult(obj: unknown): obj is Resource {
  * Extracts a filename from a URI or creates a default one based on MIME type
  */
 function extractFileNameFromUri(uri: string, mimeType: string): string {
+  // MCP UI Resource
+  if (uri.startsWith('ui://')) {
+    return uri;
+  }
+  
   const uriParts = uri.split('/');
   const lastPart = uriParts[uriParts.length - 1];
   
   if (lastPart && lastPart.includes('.')) {
     return lastPart;
   }
-  
-  const extension = mime.getExtension(mimeType);
-  return `resource.${extension}`;
+
+  if (mimeType) {
+    const extension = mime.getExtension(mimeType);
+    return `resource.${extension}`;
+  }
+
+  return ''
 }
