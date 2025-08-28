@@ -148,16 +148,16 @@ function UIAttachment({ attachment }: { attachment: Attachment }) {
     uri: attachment.name,
     mimeType: mimeType,
     ...(text && { text }),
-    ...(blob && { blob })
+    ...(blob && { blob }),
+    _meta: attachment.meta
   };
+
+  console.log(resource);
 
   return (
     <UIResourceRenderer
       resource={resource}
       htmlProps={{
-        style: {
-          height: '600px'
-        },
         autoResizeIframe: true
       }}
     />

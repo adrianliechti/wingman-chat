@@ -8,6 +8,7 @@ export interface Resource {
     mimeType: string;
     blob?: string;  // base64 encoded content
     text?: string;  // plain text content
+    _meta?: Record<string, unknown>;
   };
 }
 
@@ -52,7 +53,8 @@ export function parseResource(result: string): ParsedToolResult {
       attachments = [{
         type: attachmentType,
         name: name,
-        data: data
+        data: data,
+        meta: resource._meta
       }];
 
       processedContent = `Resource ${name} (${resource.mimeType}) received and displayed above. DO NOT RENDER IT AGAIN IN THE CHAT.`;
