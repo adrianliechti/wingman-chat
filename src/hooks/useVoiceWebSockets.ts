@@ -19,7 +19,7 @@ export function useVoiceWebSockets(
   const isActiveRef = useRef(false);
 
   const start = async (
-    realtimeModel: string = "gpt-4o-realtime-preview",
+    realtimeModel: string = "gpt-realtime",
     transcribeModel: string = "gpt-4o-transcribe",
     instructions?: string,
     messages?: Message[],
@@ -54,26 +54,40 @@ export function useVoiceWebSockets(
         const sessionUpdate = {
           type: 'session.update',
           session: {
-            voice: 'alloy',
+            type: 'realtime',
+            model: realtimeModel,
 
-            input_audio_format: 'pcm16',
-            output_audio_format: 'pcm16',
+            audio: {
+              input: {
+                format: {
+                  type: 'audio/pcm',
+                  rate: 24000,
+                },
 
-            input_audio_transcription: {
-              model: transcribeModel,
-            },
+                noise_reduction: {
+                  type: 'near_field'
+                },
 
-            turn_detection: {
-              type: 'server_vad',
-              threshold: 0.7,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 700,
-              create_response: true,
-              interrupt_response: true,
-            },
+                transcription: {
+                  "model": transcribeModel
+                },
 
-            input_audio_noise_reduction: {
-              type: "near_field"
+                turn_detection: {
+                  type: 'server_vad',
+                  create_response: true,
+                  prefix_padding_ms: 300,
+                  silence_duration_ms: 700,
+                  threshold: 0.7,
+                }
+              },
+
+              output: {
+                format: {
+                  type: 'audio/pcm',
+                  rate: 24000,
+                },
+                voice: 'alloy',
+              }
             },
 
             ...(instructions && { instructions: instructions }),
@@ -201,7 +215,7 @@ export function useVoiceWebSockets(
             }
             break;
 
-          case 'response.audio.delta':
+          case 'response.output_audio.delta':
             if (msg.delta) {
               playAudioChunk(msg.delta);
             }
