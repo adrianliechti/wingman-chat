@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
-import { Plus, Folder, FileText, X, ChevronDown, Check, Edit, Trash2, Loader2 } from 'lucide-react';
-import { Dialog, Transition, Button } from '@headlessui/react';
+import { Plus, Folder, FileText, X, ChevronDown, Check, Edit, Trash2, Loader2, Cloud, HardDrive, Github } from 'lucide-react';
+import { Dialog, Transition, Button, Menu } from '@headlessui/react';
 import { Fragment } from 'react';
 import { useRepositories } from '../hooks/useRepositories';
 import { useRepository } from '../hooks/useRepository';
-import type { Repository, RepositoryFile } from '../types/repository';
+import { RemoteFilePickerModal } from './RemoteFilePickerModal';
+import { RemoteFileSystemAPI } from '../lib/remoteFileSystem';
+import type { Repository, RepositoryFile, RemoteFileSource } from '../types/repository';
 
 interface RepositoryDetailsProps {
   repository: Repository;
@@ -16,7 +18,17 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isEditingInstructions, setIsEditingInstructions] = useState(false);
   const [instructionsValue, setInstructionsValue] = useState('');
+  const [isRemotePickerOpen, setIsRemotePickerOpen] = useState(false);
+  const [remoteSources, setRemoteSources] = useState<RemoteFileSource[]>([]);
+  const [selectedRemoteSource, setSelectedRemoteSource] = useState<RemoteFileSource | null>(null);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Handler for multiple file selection from remote sources
+  const handleRemoteFilesSelect = async (files: File[]) => {
+    for (const file of files) {
+      await addFile(file);
+    }
+  };
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
@@ -62,6 +74,20 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
     };
   }, []);
 
+  // Load remote sources on mount
+  useEffect(() => {
+    const loadRemoteSources = async () => {
+      try {
+        const sources = await RemoteFileSystemAPI.getSources();
+        setRemoteSources(sources);
+      } catch (error) {
+        console.error('Failed to load remote sources:', error);
+      }
+    };
+
+    loadRemoteSources();
+  }, []);
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
     for (const file of selectedFiles) {
@@ -95,6 +121,23 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
     } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       saveInstructions();
+    }
+  };
+
+  const getSourceIcon = (sourceType: string) => {
+    switch (sourceType) {
+      case 'onedrive':
+        return Cloud;
+      case 'googledrive':
+        return Cloud;
+      case 'dropbox':
+        return Cloud;
+      case 'sharepoint':
+        return Cloud;
+      case 'github':
+        return Github;
+      default:
+        return HardDrive;
     }
   };
 
@@ -206,22 +249,81 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
             </div>
           </div>
 
-          {/* File Upload Container */}
+          {/* File Picker Menu Container */}
           <div className="flex-1">
-            <div
-              className={`border-2 border-dashed rounded-lg p-3 text-center transition-colors cursor-pointer bg-white/30 dark:bg-neutral-800/30 backdrop-blur-lg
-                ${isDragOver 
-                  ? 'border-slate-400 bg-slate-50/50 dark:bg-neutral-700/70' 
-                  : 'border-neutral-300 dark:border-neutral-600 hover:border-slate-400 dark:hover:border-slate-500 hover:bg-white/40 dark:hover:bg-neutral-800/50'
-                }`}
-              onClick={() => document.getElementById('file-upload')?.click()}
-            >
-              <div className="flex items-center justify-center">
-                <div className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
-                  <Plus size={12} />
-                  Knowledge
+            <Menu as="div" className="relative">
+              <Menu.Button
+                className={`w-full border-2 border-dashed rounded-lg p-3 text-center transition-colors cursor-pointer bg-white/30 dark:bg-neutral-800/30 backdrop-blur-lg
+                  ${isDragOver 
+                    ? 'border-slate-400 bg-slate-50/50 dark:bg-neutral-700/70' 
+                    : 'border-neutral-300 dark:border-neutral-600 hover:border-slate-400 dark:hover:border-slate-500 hover:bg-white/40 dark:hover:bg-neutral-800/50'
+                  }`}
+              >
+                <div className="flex items-center justify-center">
+                  <div className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
+                    <Plus size={12} />
+                    Knowledge
+                  </div>
                 </div>
-              </div>
+              </Menu.Button>
+
+              <Transition
+                as={Fragment}
+                enter="transition ease-out duration-100"
+                enterFrom="transform opacity-0 scale-95"
+                enterTo="transform opacity-100 scale-100"
+                leave="transition ease-in duration-75"
+                leaveFrom="transform opacity-100 scale-100"
+                leaveTo="transform opacity-0 scale-95"
+              >
+                <Menu.Items className="absolute z-20 mt-1 w-full max-h-60 overflow-auto rounded-md bg-white dark:bg-neutral-800/95 py-1 shadow-lg ring-1 ring-black ring-opacity-5 dark:ring-neutral-600/50 dark:ring-opacity-75 backdrop-blur-lg dark:border dark:border-neutral-600/50 focus:outline-none">
+                  {/* Local File Upload Option */}
+                  <Menu.Item>
+                    {({ active }) => (
+                      <button
+                        className={`${
+                          active ? 'bg-slate-50 dark:bg-slate-700/30' : ''
+                        } group relative flex items-center gap-3 px-3 py-2 w-full text-left`}
+                        onClick={() => {
+                          document.getElementById('file-upload')?.click();
+                        }}
+                      >
+                        <HardDrive size={16} className="text-slate-600 dark:text-slate-400 flex-shrink-0" />
+                        <span className="block truncate text-sm text-neutral-700 dark:text-neutral-200">
+                          Device
+                        </span>
+                      </button>
+                    )}
+                  </Menu.Item>
+
+                  {/* Remote Sources */}
+                  {remoteSources.map((source) => {
+                    const IconComponent = getSourceIcon(source.type);
+                    return (
+                      <Menu.Item key={source.id}>
+                        {({ active }) => (
+                          <button
+                            className={`${
+                              active ? 'bg-slate-50 dark:bg-slate-700/30' : ''
+                            } group relative flex items-center gap-3 px-3 py-2 w-full text-left`}
+                            onClick={() => {
+                              setSelectedRemoteSource(source);
+                              setIsRemotePickerOpen(true);
+                            }}
+                          >
+                            <IconComponent size={16} className="text-slate-600 dark:text-slate-400 flex-shrink-0" />
+                            <span className="block truncate text-sm text-neutral-700 dark:text-neutral-200">
+                              {source.name}
+                            </span>
+                          </button>
+                        )}
+                      </Menu.Item>
+                    );
+                  })}
+                </Menu.Items>
+              </Transition>
+
+              {/* Hidden file input */}
               <input
                 type="file"
                 multiple
@@ -229,7 +331,7 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
                 className="hidden"
                 id="file-upload"
               />
-            </div>
+            </Menu>
           </div>
         </div>
       </div>
@@ -333,6 +435,17 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
           </div>
         </div>
       )}
+
+      {/* Remote File Picker Modal */}
+      <RemoteFilePickerModal
+        isOpen={isRemotePickerOpen}
+        onClose={() => {
+          setIsRemotePickerOpen(false);
+          setSelectedRemoteSource(null);
+        }}
+        onFileSelect={handleRemoteFilesSelect}
+        selectedSource={selectedRemoteSource}
+      />
     </div>
   );
 }
