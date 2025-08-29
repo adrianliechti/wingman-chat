@@ -223,7 +223,10 @@ export function AttachmentRenderer({ attachment, className }: {
 }) {
   const mimeType = detectMimeType(attachment.data, attachment.name);
 
-  if (attachment.name.startsWith('ui://')) {
+  if (attachment.name.startsWith('ui://') && 
+      (mimeType === 'text/html' || 
+       mimeType === 'text/uri-list' || 
+       mimeType === 'application/vnd.mcp-ui.remote-dom')) {
     return <UIAttachment attachment={attachment} />;
   }
 

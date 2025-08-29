@@ -57,7 +57,7 @@ export function parseResource(result: string): ParsedToolResult {
         meta: resource._meta
       }];
 
-      processedContent = `Resource ${name} (${resource.mimeType}) received and displayed above. DO NOT RENDER IT AGAIN IN THE CHAT.`;
+      processedContent = JSON.stringify({ successful: true });
     }
   } catch {
     // If parsing fails, use the result as-is

@@ -3,7 +3,7 @@ import { CopyButton } from './CopyButton';
 import { ShareButton } from './ShareButton';
 import { PlayButton } from './PlayButton';
 import { SingleAttachmentDisplay, MultipleAttachmentsDisplay } from './AttachmentRenderer';
-import { Wrench, Loader2, ChevronDown, ChevronRight, AlertCircle } from "lucide-react";
+import { Wrench, Loader2, AlertCircle } from "lucide-react";
 import { useState, useContext, useEffect } from 'react';
 import { codeToHtml } from 'shiki';
 import { ThemeContext } from '../contexts/ThemeContext';
@@ -120,7 +120,7 @@ function ShikiCodeRenderer({ content, name }: { content: string; name?: string }
   return (
     <div className="mt-3">
       {name && (
-        <div className="text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">
+        <div className="text-xs text-neutral-500 dark:text-neutral-500 mb-1 opacity-60">
           {name}
         </div>
       )}
@@ -185,8 +185,6 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
 
     // Check if this is a tool error (using error field)
     const isToolError = !!message.error;
-    const borderColor = isToolError ? "border-red-200 dark:border-red-800" : "border-neutral-200 dark:border-neutral-700";
-    const bgColor = isToolError ? "bg-red-50/50 dark:bg-red-950/10" : "";
 
     // Helper to render JSON or text content using Shiki
     const renderContent = (content: string, name?: string) => {
@@ -196,42 +194,36 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
     return (
       <div className="flex justify-start mb-2">
         <div className="flex-1 py-1 max-w-full">
-          <div className={`border ${borderColor} ${bgColor} rounded-md overflow-hidden max-w-full`}>
+          <div className={`${isToolError ? 'bg-red-50/30 dark:bg-red-950/5' : ''} rounded-lg overflow-hidden max-w-full`}>
             {/* Header - clickable to expand/collapse */}
             <button 
               onClick={toggleExpansion}
-              className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+              className="w-full flex items-center text-left transition-colors cursor-pointer"
             >
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 {isToolError ? (
-                  <AlertCircle className="w-3 h-3 text-red-500 flex-shrink-0" />
+                  <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 flex-shrink-0" />
                 ) : (
-                  <Wrench className="w-3 h-3 text-neutral-500 flex-shrink-0" />
+                  <Wrench className="w-3 h-3 text-neutral-400 dark:text-neutral-500 flex-shrink-0" />
                 )}
                 <span className={`text-xs font-medium whitespace-nowrap ${
                   isToolError 
-                    ? "text-red-600 dark:text-red-400" 
-                    : "text-neutral-600 dark:text-neutral-400"
+                    ? "text-red-500 dark:text-red-400" 
+                    : "text-neutral-500 dark:text-neutral-400"
                 }`}>
-                  {isToolError ? 'Tool Error' : `Called ${toolResult?.name ? getToolDisplayName(toolResult.name) : 'Tool'} Tool`}
+                  {isToolError ? 'Tool Error' : `${toolResult?.name ? getToolDisplayName(toolResult.name) : 'Tool'}`}
                 </span>
                 {queryPreview && !toolResultExpanded && (
-                  <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono truncate">
+                  <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
                     {queryPreview}
                   </span>
                 )}
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {toolResultExpanded ? 
-                  <ChevronDown className="w-3 h-3 text-neutral-500" /> : 
-                  <ChevronRight className="w-3 h-3 text-neutral-500" />
-                }
               </div>
             </button>
 
             {/* Expanded Content */}
             {toolResultExpanded && (
-              <div className="px-3 pb-3">
+              <div className="ml-5">
                 {toolResult?.arguments && renderContent(toolResult.arguments, 'Arguments')}
                 {(message.error || message.content || toolResult?.data) && (
                   message.error ? (
@@ -284,14 +276,14 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
               {message.toolCalls?.map((toolCall, index) => {
                 const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
                 return (
-                  <div key={toolCall.id || index} className="border border-neutral-200 dark:border-neutral-700 rounded-md overflow-hidden max-w-full">
-                    <div className="px-3 py-2 flex items-center gap-2 min-w-0">
-                      <Loader2 className="w-3 h-3 animate-spin text-blue-500 flex-shrink-0" />
-                      <span className="text-xs font-medium whitespace-nowrap text-neutral-600 dark:text-neutral-400">
-                        Calling {getToolDisplayName(toolCall.name)} Tool
+                  <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 flex-shrink-0" />
+                      <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
+                        {getToolDisplayName(toolCall.name)}
                       </span>
                       {preview && (
-                        <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono truncate">
+                        <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
                           {preview}
                         </span>
                       )}
@@ -351,14 +343,14 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
               {message.toolCalls?.map((toolCall, index) => {
                 const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
                 return (
-                  <div key={toolCall.id || index} className="border border-neutral-200 dark:border-neutral-700 rounded-md overflow-hidden max-w-full">
-                    <div className="px-3 py-2 flex items-center gap-2 min-w-0">
-                      <Loader2 className="w-3 h-3 animate-spin text-blue-500 flex-shrink-0" />
-                      <span className="text-xs font-medium whitespace-nowrap text-neutral-600 dark:text-neutral-400">
-                        Calling {getToolDisplayName(toolCall.name)} Tool
+                  <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 flex-shrink-0" />
+                      <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
+                        {getToolDisplayName(toolCall.name)}
                       </span>
                       {preview && (
-                        <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono truncate">
+                        <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
                           {preview}
                         </span>
                       )}

@@ -17,7 +17,7 @@
     "@tailwindcss/vite": "^4.1.11",
     "audit": "^0.0.6",
     "jszip": "^3.10.1",
-    "lucide-react": "^0.541.0",
+    "lucide-react": "^0.542.0",
     "mermaid": "^11.9.0",
     "mime": "^4.0.7",
     "openai": "^5.11.0",
