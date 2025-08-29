@@ -74,6 +74,14 @@ interface repositoryConfig {
   enabled: boolean;
   embedder?: string;
   extractor?: string;
+  remoteSources?: remoteSourceConfig[];
+}
+
+interface remoteSourceConfig {
+  id: string;
+  name: string;
+  type: 'onedrive' | 'googledrive' | 'dropbox' | 'sharepoint' | 'github';
+  enabled: boolean;
 }
 
 interface artifactsConfig {
@@ -164,7 +172,8 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       },
 
       repository: cfg.repository ?? {
-        enabled: false
+        enabled: false,
+        remoteSources: []
       },
 
       artifacts: cfg.artifacts ?? {

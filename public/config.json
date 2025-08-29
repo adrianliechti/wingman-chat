@@ -12,7 +12,27 @@
         "enabled": true
     },
     "repository": {
-        "enabled": true
+        "enabled": true,
+        "remoteSources": [
+            {
+                "id": "onedrive",
+                "name": "OneDrive",
+                "type": "onedrive",
+                "enabled": true
+            },
+            {
+                "id": "googledrive",
+                "name": "Google Drive",
+                "type": "googledrive",
+                "enabled": true
+            },
+            {
+                "id": "github",
+                "name": "GitHub",
+                "type": "github",
+                "enabled": true
+            }
+        ]
     },
     "internet": {
         "enabled": true,

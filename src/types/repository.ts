@@ -23,3 +23,26 @@ export interface RepositoryFile {
   error?: string;
   uploadedAt: Date;
 }
+
+export interface RemoteFileSource {
+  id: string;
+  name: string;
+  type: 'onedrive' | 'googledrive' | 'dropbox' | 'sharepoint' | 'github';
+  enabled: boolean;
+}
+
+export interface RemoteFileItem {
+  id: string;
+  name: string;
+  type: 'file' | 'folder';
+  path: string;
+  size?: number;
+  modifiedAt?: Date;
+  mimeType?: string;
+}
+
+export interface RemoteFileSystemResponse {
+  items: RemoteFileItem[];
+  hasMore: boolean;
+  nextToken?: string;
+}
