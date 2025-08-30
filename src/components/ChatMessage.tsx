@@ -2,15 +2,17 @@ import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
 import { ShareButton } from './ShareButton';
 import { PlayButton } from './PlayButton';
-import { CodeRenderer } from './CodeRenderer';
-import { File, Wrench, Loader2, ChevronDown, ChevronRight, AlertCircle, Download } from "lucide-react";
-import { useState } from 'react';
+import { SingleAttachmentDisplay, MultipleAttachmentsDisplay } from './AttachmentRenderer';
+import { Wrench, Loader2, AlertCircle } from "lucide-react";
+import { useState, useContext, useEffect } from 'react';
+import { codeToHtml } from 'shiki';
+import { ThemeContext } from '../contexts/ThemeContext';
 
-import { AttachmentType, Role } from "../types/chat";
-import type { Message, Attachment } from "../types/chat";
+import { Role } from "../types/chat";
+import type { Message } from "../types/chat";
 import { getConfig } from "../config";
 import { canShare } from "../lib/share";
-import { stripMarkdown, downloadFromUrl } from "../lib/utils";
+import { stripMarkdown } from "../lib/utils";
 
 // Helper function to convert tool names to user-friendly display names
 function getToolDisplayName(toolName: string): string {
@@ -18,35 +20,6 @@ function getToolDisplayName(toolName: string): string {
     .split('_')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
-}
-
-// Component for image attachments with download functionality
-function ImageAttachment({ attachment, className }: { attachment: Attachment; className?: string }) {
-  const handleDownload = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    downloadFromUrl(attachment.data, attachment.name);
-  };
-
-  return (
-    <div className="relative group inline-block">
-      <img
-        src={attachment.data}
-        alt={attachment.name}
-        className={className}
-      />
-      <div className="absolute inset-0 flex items-center justify-center">
-        <button
-          onClick={handleDownload}
-          className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 p-2 rounded-full shadow-lg cursor-pointer"
-          title="Download image"
-        >
-          <Download className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
-  );
 }
 
 // Helper function to extract and format common parameters for tool calls
@@ -102,6 +75,62 @@ type ChatMessageProps = {
   isResponding?: boolean;
 };
 
+// Component to render code with Shiki
+function ShikiCodeRenderer({ content, name }: { content: string; name?: string }) {
+  const [html, setHtml] = useState<string>('');
+  const { isDark } = useContext(ThemeContext) || { isDark: false };
+
+  useEffect(() => {
+    const renderCode = async () => {
+      let isJson = false;
+      let parsedContent = null;
+      let langId = 'text';
+      
+      // Try to parse as JSON
+      try {
+        parsedContent = JSON.parse(content);
+        isJson = true;
+        langId = 'json';
+      } catch {
+        // Not JSON, treat as text
+        langId = 'text';
+      }
+
+      const displayContent = isJson ? JSON.stringify(parsedContent, null, 2) : content;
+
+      try {
+        const renderedHtml = await codeToHtml(displayContent, {
+          lang: langId,
+          theme: isDark ? 'one-dark-pro' : 'one-light',
+          colorReplacements: {
+            '#fafafa': 'transparent', // one-light background
+            '#282c34': 'transparent', // one-dark-pro background
+          }
+        });
+        setHtml(renderedHtml);
+      } catch {
+        // Fallback to plain text if Shiki fails
+        setHtml(`<pre><code>${displayContent}</code></pre>`);
+      }
+    };
+
+    renderCode();
+  }, [content, isDark]);
+
+  return (
+    <div className="mt-3">
+      {name && (
+        <div className="text-xs text-neutral-500 dark:text-neutral-500 mb-1 opacity-60">
+          {name}
+        </div>
+      )}
+      <div className="max-h-96 overflow-y-auto overflow-x-hidden">
+        <div dangerouslySetInnerHTML={{ __html: html }} />
+      </div>
+    </div>
+  );
+}
+
 // Error message component
 function ErrorMessage({ title, message }: { title: string; message: string }) {
   const displayTitle = title
@@ -156,149 +185,71 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
 
     // Check if this is a tool error (using error field)
     const isToolError = !!message.error;
-    const borderColor = isToolError ? "border-red-200 dark:border-red-800" : "border-neutral-200 dark:border-neutral-700";
-    const bgColor = isToolError ? "bg-red-50/50 dark:bg-red-950/10" : "";
 
-    // Helper to render JSON or text content
+    // Helper to render JSON or text content using Shiki
     const renderContent = (content: string, name?: string) => {
-      let isJson = false;
-      let parsedContent = null;
-      let detectedLanguage = 'text';
-      
-      // Try to parse as JSON
-      try {
-        parsedContent = JSON.parse(content);
-        isJson = true;
-        detectedLanguage = 'json';
-      } catch {
-        // Not JSON, treat as text
-        detectedLanguage = 'text';
-      }
-
-      return (
-        <div className="mt-3 max-w-full">
-          <div className="max-w-full overflow-auto" style={{ maxHeight: '400px' }}>
-            <CodeRenderer 
-              code={isJson ? JSON.stringify(parsedContent, null, 2) : content}
-              language={detectedLanguage}
-              name={name}
-            />
-          </div>
-        </div>
-      );
+      return <ShikiCodeRenderer content={content} name={name} />;
     };
 
     return (
       <div className="flex justify-start mb-2">
         <div className="flex-1 py-1 max-w-full">
-          <div className={`border ${borderColor} ${bgColor} rounded-md overflow-hidden max-w-full`}>
+          <div className={`${isToolError ? 'bg-red-50/30 dark:bg-red-950/5' : ''} rounded-lg overflow-hidden max-w-full`}>
             {/* Header - clickable to expand/collapse */}
             <button 
               onClick={toggleExpansion}
-              className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+              className="w-full flex items-center text-left transition-colors cursor-pointer"
             >
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 {isToolError ? (
-                  <AlertCircle className="w-3 h-3 text-red-500 flex-shrink-0" />
+                  <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 flex-shrink-0" />
                 ) : (
-                  <Wrench className="w-3 h-3 text-neutral-500 flex-shrink-0" />
+                  <Wrench className="w-3 h-3 text-neutral-400 dark:text-neutral-500 flex-shrink-0" />
                 )}
                 <span className={`text-xs font-medium whitespace-nowrap ${
                   isToolError 
-                    ? "text-red-600 dark:text-red-400" 
-                    : "text-neutral-600 dark:text-neutral-400"
+                    ? "text-red-500 dark:text-red-400" 
+                    : "text-neutral-500 dark:text-neutral-400"
                 }`}>
-                  {isToolError ? 'Tool Error' : `Called ${toolResult?.name ? getToolDisplayName(toolResult.name) : 'Tool'} Tool`}
+                  {isToolError ? 'Tool Error' : `${toolResult?.name ? getToolDisplayName(toolResult.name) : 'Tool'}`}
                 </span>
                 {queryPreview && !toolResultExpanded && (
-                  <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono truncate">
+                  <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
                     {queryPreview}
                   </span>
                 )}
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {toolResultExpanded ? 
-                  <ChevronDown className="w-3 h-3 text-neutral-500" /> : 
-                  <ChevronRight className="w-3 h-3 text-neutral-500" />
-                }
               </div>
             </button>
 
             {/* Expanded Content */}
             {toolResultExpanded && (
-              <div className={`px-2 border-t max-w-full overflow-hidden ${
-                isToolError ? "border-red-200 dark:border-red-800" : "border-neutral-200 dark:border-neutral-700"
-              }`}>
+              <div className="ml-5">
                 {toolResult?.arguments && renderContent(toolResult.arguments, 'Arguments')}
                 {(message.error || message.content || toolResult?.data) && (
                   message.error ? (
-                    // Show error messages in a more readable format
-                    <div className="mt-3 p-3 bg-red-50 dark:bg-red-950/20 rounded border border-red-200 dark:border-red-800">
-                      <div className="flex items-start gap-2">
-                        <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                        <div className="text-sm text-red-700 dark:text-red-300">
-                          {message.error.message}
-                        </div>
-                      </div>
-                    </div>
+                    <ShikiCodeRenderer 
+                      content={message.error.message}
+                      name="Error"
+                    />
                   ) : (
                     renderContent(message.content || toolResult?.data || '', 'Result')
                   )
                 )}
-                
-                {/* Render attachments for tool results */}
-                {message.attachments && message.attachments.length > 0 && (
-                  <div className="flex flex-col gap-2 pt-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      {message.attachments
-                        .filter(
-                          (attachment) => attachment.type !== AttachmentType.Image
-                        )
-                        .map((attachment, index) => (
-                          <div key={index} className="flex items-center gap-2 text-sm">
-                            <File className="w-4 h-4 shrink-0" />
-                            <span className="truncate">{attachment.name}</span>
-                          </div>
-                        ))}
-                    </div>
-
-                    <div className="flex flex-wrap gap-4">
-                      {message.attachments
-                        .filter(
-                          (attachment) => attachment.type === AttachmentType.Image
-                        )
-                        .map((attachment, index) => (
-                          <ImageAttachment
-                            key={index}
-                            attachment={attachment}
-                            className="max-h-60 rounded-md"
-                          />
-                        ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* Show attachments even when collapsed */}
-            {!toolResultExpanded && message.attachments && message.attachments.length > 0 && (
-              <div className="px-3 pb-3">
-                <div className="flex flex-wrap gap-4">
-                  {message.attachments
-                    .filter(
-                      (attachment) => attachment.type === AttachmentType.Image
-                    )
-                    .map((attachment, index) => (
-                      <ImageAttachment
-                        key={index}
-                        attachment={attachment}
-                        className="max-h-40 rounded-md"
-                      />
-                    ))}
-                </div>
               </div>
             )}
           </div>
+          
+          {/* Tool Attachments rendered after the Tool Result container */}
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="mt-2">
+              {/* For tool messages: single if one, otherwise multiple */}
+              {message.attachments.length === 1 ? (
+                <SingleAttachmentDisplay attachment={message.attachments[0]} />
+              ) : (
+                <MultipleAttachmentsDisplay attachments={message.attachments} />
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -325,14 +276,14 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
               {message.toolCalls?.map((toolCall, index) => {
                 const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
                 return (
-                  <div key={toolCall.id || index} className="border border-neutral-200 dark:border-neutral-700 rounded-md overflow-hidden max-w-full">
-                    <div className="px-3 py-2 flex items-center gap-2 min-w-0">
-                      <Loader2 className="w-3 h-3 animate-spin text-blue-500 flex-shrink-0" />
-                      <span className="text-xs font-medium whitespace-nowrap text-neutral-600 dark:text-neutral-400">
-                        Calling {getToolDisplayName(toolCall.name)} Tool
+                  <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 flex-shrink-0" />
+                      <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
+                        {getToolDisplayName(toolCall.name)}
                       </span>
                       {preview && (
-                        <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono truncate">
+                        <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
                           {preview}
                         </span>
                       )}
@@ -392,14 +343,14 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
               {message.toolCalls?.map((toolCall, index) => {
                 const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
                 return (
-                  <div key={toolCall.id || index} className="border border-neutral-200 dark:border-neutral-700 rounded-md overflow-hidden max-w-full">
-                    <div className="px-3 py-2 flex items-center gap-2 min-w-0">
-                      <Loader2 className="w-3 h-3 animate-spin text-blue-500 flex-shrink-0" />
-                      <span className="text-xs font-medium whitespace-nowrap text-neutral-600 dark:text-neutral-400">
-                        Calling {getToolDisplayName(toolCall.name)} Tool
+                  <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 flex-shrink-0" />
+                      <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
+                        {getToolDisplayName(toolCall.name)}
                       </span>
                       {preview && (
-                        <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono truncate">
+                        <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
                           {preview}
                         </span>
                       )}
@@ -411,33 +362,15 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
           )}
 
           {message.attachments && message.attachments.length > 0 && (
-            <div className="flex flex-col gap-2 pt-2">
-              <div className="grid grid-cols-2 gap-2">
-                {message.attachments
-                  .filter(
-                    (attachment) => attachment.type !== AttachmentType.Image
-                  )
-                  .map((attachment, index) => (
-                    <div key={index} className="flex items-center gap-2 text-sm">
-                      <File className="w-4 h-4 shrink-0" />
-                      <span className="truncate">{attachment.name}</span>
-                    </div>
-                  ))}
-              </div>
-
-              <div className="flex flex-wrap gap-4">
-                {message.attachments
-                  .filter(
-                    (attachment) => attachment.type === AttachmentType.Image
-                  )
-                  .map((attachment, index) => (
-                    <ImageAttachment
-                      key={index}
-                      attachment={attachment}
-                      className="max-h-60 rounded-md"
-                    />
-                  ))}
-              </div>
+            <div className="pt-2">
+              {/* For user messages: always use multiple display; assistant follows single vs multiple */}
+              {isUser ? (
+                <MultipleAttachmentsDisplay attachments={message.attachments} />
+              ) : message.attachments.length === 1 ? (
+                <SingleAttachmentDisplay attachment={message.attachments[0]} />
+              ) : (
+                <MultipleAttachmentsDisplay attachments={message.attachments} />
+              )}
             </div>
           )}
           

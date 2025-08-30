@@ -30,7 +30,7 @@
     },
     "internet": {
         "enabled": true,
-        "index": "exa"
+        "index": "web"
     },
     "vision": {
         "enabled": true

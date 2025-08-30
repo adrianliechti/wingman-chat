@@ -69,6 +69,7 @@ export type Attachment = {
     name: string;
 
     data: string;
+    meta?: Record<string, unknown>;
 };
 
 export type Chat = {

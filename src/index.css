@@ -68,12 +68,6 @@ button[data-headlessui-state]:disabled,
   margin: 0 auto;
 }
 
-.ios-scroll {
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: none;
-  overflow-anchor: none;
-}
-
 .sidebar {
   @apply bg-neutral-100 dark:bg-neutral-900 dark:text-neutral-200;
 }
@@ -82,7 +76,6 @@ button[data-headlessui-state]:disabled,
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: none;
   overflow-anchor: none;
-  overflow-x: hidden;
   
   /* Firefox - hidden by default, visible on hover */
   scrollbar-width: thin;
