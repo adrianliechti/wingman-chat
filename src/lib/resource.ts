@@ -113,5 +113,5 @@ function extractFileNameFromUri(uri: string, mimeType: string): string {
     return `resource.${extension}`;
   }
 
-  return ''
+  return '';
 }
