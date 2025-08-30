@@ -152,7 +152,6 @@ function UIAttachment({ attachment }: { attachment: Attachment }) {
     _meta: attachment.meta
   };
 
-  console.log(resource);
 
   return (
     <UIResourceRenderer
