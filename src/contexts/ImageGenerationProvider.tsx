@@ -5,6 +5,7 @@ import type { ImageGenerationContextType } from "./ImageGenerationContext";
 import type { Tool } from "../types/chat";
 import { getConfig } from "../config";
 import { readAsDataURL } from "../lib/utils";
+import type { Resource } from "../lib/resource";
 
 interface ImageGenerationProviderProps {
   children: ReactNode;
@@ -48,34 +49,31 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
         },
         function: async (args: Record<string, unknown>) => {
           const { prompt } = args;
-          
+
           console.log("[generate_image] Starting image generation", { prompt });
-          
+
           try {
             const imageBlob = await client.generateImage(
               "", // model parameter (empty for now)
               prompt as string
             );
-            
+
             // Convert the image to a data URL for storage in attachments
             const imageDataUrl = await readAsDataURL(imageBlob);
-            
-            console.log("[generate_image] Image generation completed successfully", { 
-              prompt, 
-              blobSize: imageBlob.size, 
-              blobType: imageBlob.type,
-              imageDataUrl: imageDataUrl.substring(0, 50) + "..." // Log truncated data URL
-            });
-            
-            // Return the tool result with image attachment info
-            // The attachment will be created by the chat system
-            return JSON.stringify({
-              success: true,
-              message: `Image generated successfully for prompt: "${prompt}"`,
-              imageUrl: imageDataUrl,
-              imageType: imageBlob.type,
-              imageSize: imageBlob.size
-            });
+
+            console.log("[generate_image] Image generation completed successfully")
+
+            // Return ResourceResult format
+            const resourceResult: Resource = {
+              type: "resource",
+              resource: {
+                uri: `ui://image/${Date.now()}.png`,
+                mimeType: imageBlob.type,
+                text: imageDataUrl
+              }
+            };
+
+            return JSON.stringify(resourceResult);
           } catch (error) {
             console.error("[generate_image] Image generation failed", { prompt, error: error instanceof Error ? error.message : error });
             return JSON.stringify({
@@ -99,8 +97,6 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
       - Use the generate_image tool when the user asks you to create, generate, or make an image.
       - Create detailed and specific prompts for better image quality.
       - Consider the user's preferences for style, composition, colors, and other visual elements.
-      - You can specify different sizes: 1024x1024 (square), 1792x1024 (landscape), or 1024x1792 (portrait).
-      - Use "hd" quality for images that need finer details and greater consistency.
       
       Always use this tool when the user requests image creation or visual content generation.
     `.trim();
