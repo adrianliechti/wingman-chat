@@ -278,6 +278,14 @@ export class FileSystemManager {
     return Object.keys(this.cachedFileSystem).length;
   }
 
+  getCurrentFileSystem(): FileSystem {
+    return this.cachedFileSystem;
+  }
+
+  updateCache(newFs: FileSystem): void {
+    this.cachedFileSystem = newFs;
+  }
+
   async downloadAsZip(filename?: string): Promise<void> {
     return downloadFilesystemAsZip(this.cachedFileSystem, filename);
   }
