@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, HardDrive, Cloud, Github } from 'lucide-react';
+import { Plus, HardDrive, Cloud, FolderGit2 } from 'lucide-react';
 import { Menu, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { RemoteFileSystemAPI } from '../lib/remoteFileSystem';
@@ -42,93 +42,111 @@ export function RemoteFileSources({
   };
 
   const getSourceIcon = (sourceType: string) => {
-    switch (sourceType) {
-      case 'onedrive':
-        return Cloud;
-      case 'googledrive':
-        return Cloud;
-      case 'dropbox':
-        return Cloud;
-      case 'sharepoint':
-        return Cloud;
-      case 'github':
-        return Github;
-      default:
-        return HardDrive;
+    if (sourceType.toLowerCase().startsWith('git') || sourceType.toLowerCase().endsWith('git')) {
+      return FolderGit2;
     }
+
+    return Cloud;
   };
 
   return (
-    <Menu as="div" className={`relative ${className}`}>
-      {triggerElement ? (
-        <Menu.Button as="div" className="cursor-pointer">
-          {triggerElement}
-        </Menu.Button>
-      ) : (
-        <Menu.Button
-          className="w-full border-2 border-dashed rounded-lg p-3 text-center transition-colors cursor-pointer bg-white/30 dark:bg-neutral-800/30 backdrop-blur-lg border-neutral-300 dark:border-neutral-600 hover:border-slate-400 dark:hover:border-slate-500 hover:bg-white/40 dark:hover:bg-neutral-800/50"
-        >
-          <div className="flex items-center justify-center">
-            <div className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
-              <Plus size={12} />
-              Knowledge
-            </div>
+    <>
+      {remoteSources.length === 0 ? (
+        // If no remote sources, directly trigger local file picker
+        triggerElement ? (
+          <div
+            className="cursor-pointer"
+            onClick={() => document.getElementById('file-upload-remote')?.click()}
+          >
+            {triggerElement}
           </div>
-        </Menu.Button>
-      )}
+        ) : (
+          <button
+            className="w-full border-2 border-dashed rounded-lg p-3 text-center transition-colors cursor-pointer bg-white/30 dark:bg-neutral-800/30 backdrop-blur-lg border-neutral-300 dark:border-neutral-600 hover:border-slate-400 dark:hover:border-slate-500 hover:bg-white/40 dark:hover:bg-neutral-800/50"
+            onClick={() => document.getElementById('file-upload-remote')?.click()}
+          >
+            <div className="flex items-center justify-center">
+              <div className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
+                <Plus size={12} />
+                Knowledge
+              </div>
+            </div>
+          </button>
+        )
+      ) : (
+        // If remote sources exist, show the menu
+        <Menu as="div" className={`relative ${className}`}>
+          {triggerElement ? (
+            <Menu.Button as="div" className="cursor-pointer">
+              {triggerElement}
+            </Menu.Button>
+          ) : (
+            <Menu.Button
+              className="w-full border-2 border-dashed rounded-lg p-3 text-center transition-colors cursor-pointer bg-white/30 dark:bg-neutral-800/30 backdrop-blur-lg border-neutral-300 dark:border-neutral-600 hover:border-slate-400 dark:hover:border-slate-500 hover:bg-white/40 dark:hover:bg-neutral-800/50"
+            >
+              <div className="flex items-center justify-center">
+                <div className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
+                  <Plus size={12} />
+                  Knowledge
+                </div>
+              </div>
+            </Menu.Button>
+          )}
 
-      <Transition
-        as={Fragment}
-        enter="transition ease-out duration-100"
-        enterFrom="transform opacity-0 scale-95"
-        enterTo="transform opacity-100 scale-100"
-        leave="transition ease-in duration-75"
-        leaveFrom="transform opacity-100 scale-100"
-        leaveTo="transform opacity-0 scale-95"
-      >
-        <Menu.Items className="absolute z-20 mt-1 overflow-auto rounded-md bg-white dark:bg-neutral-800/95 py-1 shadow-lg ring-1 ring-black ring-opacity-5 dark:ring-neutral-600/50 dark:ring-opacity-75 backdrop-blur-lg dark:border dark:border-neutral-600/50 focus:outline-none" anchor="bottom">
-          {/* Local File Upload Option */}
-          <Menu.Item>
-            {({ active }) => (
-              <button
-                className={`${
-                  active ? 'bg-slate-50 dark:bg-slate-700/30' : ''
-                } group relative flex items-center gap-3 px-3 py-2 w-full text-left`}
-                onClick={() => {
-                  document.getElementById('file-upload-remote')?.click();
-                }}
-              >
-                <HardDrive size={16} className="text-slate-600 dark:text-slate-400 flex-shrink-0" />
-                <span className="block truncate text-sm text-neutral-700 dark:text-neutral-200">
-                  Device
-                </span>
-              </button>
-            )}
-          </Menu.Item>
-
-          {/* Remote Sources */}
-          {remoteSources.map((source) => {
-            const IconComponent = getSourceIcon(source.type);
-            return (
-              <Menu.Item key={source.id}>
+          <Transition
+            as={Fragment}
+            enter="transition ease-out duration-100"
+            enterFrom="transform opacity-0 scale-95"
+            enterTo="transform opacity-100 scale-100"
+            leave="transition ease-in duration-75"
+            leaveFrom="transform opacity-100 scale-100"
+            leaveTo="transform opacity-0 scale-95"
+          >
+            <Menu.Items className="absolute z-20 mt-1 overflow-auto rounded-md bg-white dark:bg-neutral-800/95 py-1 shadow-lg ring-1 ring-black ring-opacity-5 dark:ring-neutral-600/50 dark:ring-opacity-75 backdrop-blur-lg dark:border dark:border-neutral-600/50 focus:outline-none" anchor="bottom">
+              {/* Local File Upload Option */}
+              <Menu.Item>
                 {({ active }) => (
                   <button
                     className={`${
                       active ? 'bg-slate-50 dark:bg-slate-700/30' : ''
                     } group relative flex items-center gap-3 px-3 py-2 w-full text-left`}
-                    onClick={() => onRemoteSourceSelect(source)}
+                    onClick={() => {
+                      document.getElementById('file-upload-remote')?.click();
+                    }}
                   >
-                    <IconComponent size={16} className="text-slate-600 dark:text-slate-400 flex-shrink-0" />
+                    <HardDrive size={16} className="text-slate-600 dark:text-slate-400 flex-shrink-0" />
                     <span className="block truncate text-sm text-neutral-700 dark:text-neutral-200">
-                      {source.name}
+                      Select File
                     </span>
                   </button>
                 )}
               </Menu.Item>
-            );
-          })}
-        </Menu.Items>
-      </Transition>
+
+              {/* Remote Sources */}
+              {remoteSources.map((source) => {
+                const IconComponent = getSourceIcon(source.id);
+                return (
+                  <Menu.Item key={source.id}>
+                    {({ active }) => (
+                      <button
+                        className={`${
+                          active ? 'bg-slate-50 dark:bg-slate-700/30' : ''
+                        } group relative flex items-center gap-3 px-3 py-2 w-full text-left`}
+                        onClick={() => onRemoteSourceSelect(source)}
+                      >
+                        <IconComponent size={16} className="text-slate-600 dark:text-slate-400 flex-shrink-0" />
+                        <span className="block truncate text-sm text-neutral-700 dark:text-neutral-200">
+                          {source.name}
+                        </span>
+                      </button>
+                    )}
+                  </Menu.Item>
+                );
+              })}
+            </Menu.Items>
+          </Transition>
+        </Menu>
+      )}
 
       {/* Hidden file input */}
       <input
@@ -138,6 +156,6 @@ export function RemoteFileSources({
         className="hidden"
         id="file-upload-remote"
       />
-    </Menu>
+    </>
   );
 }

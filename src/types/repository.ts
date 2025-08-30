@@ -27,8 +27,6 @@ export interface RepositoryFile {
 export interface RemoteFileSource {
   id: string;
   name: string;
-  type: 'onedrive' | 'googledrive' | 'dropbox' | 'sharepoint' | 'github';
-  enabled: boolean;
 }
 
 export interface RemoteFileItem {

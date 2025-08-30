@@ -28,7 +28,7 @@ interface config {
   bridge?: bridgeConfig;
   internet?: internetConfig;
 
-  sources?: remoteSourceConfig[];
+  sources?: sourceConfig[];
   
   artifacts?: artifactsConfig;
   repository?: repositoryConfig;  
@@ -72,11 +72,9 @@ interface internetConfig {
   enabled: boolean;
 }
 
-interface remoteSourceConfig {
+interface sourceConfig {
   id: string;
   name: string;
-  type: 'onedrive' | 'googledrive' | 'dropbox' | 'sharepoint' | 'github';
-  enabled: boolean;
 }
 
 interface repositoryConfig {
@@ -113,7 +111,7 @@ interface Config {
   image: imageConfig;
   bridge: Bridge;
 
-  sources: remoteSourceConfig[];
+  sources: sourceConfig[];
 
   internet: internetConfig;
   artifacts: artifactsConfig;

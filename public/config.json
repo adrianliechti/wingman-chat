@@ -14,21 +14,15 @@
     "sources": [
         {
             "id": "onedrive",
-            "name": "OneDrive",
-            "type": "onedrive",
-            "enabled": true
+            "name": "OneDrive"
         },
         {
             "id": "googledrive",
-            "name": "Google Drive",
-            "type": "googledrive",
-            "enabled": true
+            "name": "Google Drive"
         },
         {
             "id": "github",
-            "name": "GitHub",
-            "type": "github",
-            "enabled": true
+            "name": "GitHub"
         }
     ],
     "repository": {

@@ -54,44 +54,13 @@ const mockFileStructure: Record<string, Record<string, RemoteFileItem[]>> = {
   },
 };
 
-// Mock sources configuration
-export const mockRemoteSources: RemoteFileSource[] = [
-  {
-    id: 'onedrive',
-    name: 'OneDrive',
-    type: 'onedrive',
-    enabled: true
-  },
-  {
-    id: 'googledrive',
-    name: 'Google Drive',
-    type: 'googledrive',
-    enabled: true
-  },
-  {
-    id: 'github',
-    name: 'GitHub',
-    type: 'github',
-    enabled: true
-  }
-];
-
 export class RemoteFileSystemAPI {
   /**
    * Get available remote file sources
    */
   static async getSources(): Promise<RemoteFileSource[]> {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    try {
-      const config = getConfig();
-      const configuredSources = config.sources || [];
-      return configuredSources.filter(source => source.enabled);
-    } catch {
-      console.warn('Unable to load config, falling back to mock sources');
-      return mockRemoteSources.filter(source => source.enabled);
-    }
+    const config = getConfig();
+    return config.sources;
   }
 
   /**
