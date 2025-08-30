@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { Role, AttachmentType } from "../types/chat";
-import type { Message, Model, Attachment } from "../types/chat";
+import { Role } from "../types/chat";
+import type { Message, Model } from "../types/chat";
 import type { FileSystem } from "../types/file";
 import { useModels } from "../hooks/useModels";
 import { useChats } from "../hooks/useChats";
@@ -8,6 +8,7 @@ import { useChatContext } from "../hooks/useChatContext";
 import { useSearch } from "../hooks/useSearch";
 import { useArtifacts } from "../hooks/useArtifacts";
 import { getConfig } from "../config";
+import { parseResource } from "../lib/resource";
 import { ChatContext } from './ChatContext';
 import type { ChatContextType } from './ChatContext';
 
@@ -194,35 +195,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
               const args = JSON.parse(toolCall.arguments || "{}");
               const result = await tool.function(args);
 
-              // Check if this is an image generation result
-              let attachments: Attachment[] | undefined = undefined;
-              let processedResult = result;
-
-              if (toolCall.name === "generate_image") {
-                try {
-                  const imageResult = JSON.parse(result || "{}");
-                  if (imageResult.success && imageResult.imageUrl) {
-                    // Create an attachment for the generated image
-                    // The imageUrl is now a data URL (base64)
-                    if (imageResult.imageUrl.startsWith('data:image/')) {
-                      attachments = [{
-                        type: AttachmentType.Image,
-                        name: `Generated Image: ${args.prompt}`,
-                        data: imageResult.imageUrl // Store the data URL directly
-                      }];
-                      processedResult = imageResult.message || "Image generated successfully";
-                    }
-                  }
-                } catch (parseError) {
-                  // If parsing fails, use the result as-is
-                  console.warn("Failed to parse image generation result:", parseError);
-                }
-              }
+              // Parse the tool result to detect special formats and create attachments
+              const { attachments, processedContent } = parseResource(result);
 
               // Add tool result to conversation
               conversation = [...conversation, {
                 role: Role.Tool,
-                content: processedResult ?? "No result returned",
+                content: processedContent,
                 attachments,
                 toolResult: {
                   id: toolCall.id,
