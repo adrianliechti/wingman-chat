@@ -37,9 +37,11 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
 
     // Wrap the setFileSystem to match the expected signature
     const wrappedSetter = (updateFn: (current: FileSystem) => FileSystem) => {
-      const currentFs = getFileSystem();
-      const newFs = updateFn(currentFs);
+      const cache = fs.getCurrentFileSystem();
+      const newFs = updateFn(cache);
       setFileSystem(newFs);
+      // Update cache to ensure consistency
+      fs.updateCache(newFs);
     };
     
     fs.updateHandlers(getFileSystem, wrappedSetter);
