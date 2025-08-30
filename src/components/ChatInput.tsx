@@ -25,6 +25,9 @@ import { useSettings } from "../hooks/useSettings";
 import { useScreenCapture } from "../hooks/useScreenCapture";
 import { useSearch } from "../hooks/useSearch";
 import { useImageGeneration } from "../hooks/useImageGeneration";
+import { RemoteFileSources } from "./RemoteFileSources";
+import { RemoteFilePickerModal } from "./RemoteFilePickerModal";
+import type { RemoteFileSource } from "../types/repository";
 
 export function ChatInput() {
   const config = getConfig();
@@ -42,6 +45,10 @@ export function ChatInput() {
 
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
+  
+  // Remote file picker state
+  const [isRemotePickerOpen, setIsRemotePickerOpen] = useState(false);
+  const [selectedRemoteSource, setSelectedRemoteSource] = useState<RemoteFileSource | null>(null);
   
   // Prompt suggestions state
   const [showPromptSuggestions, setShowPromptSuggestions] = useState(false);
@@ -195,6 +202,11 @@ export function ChatInput() {
     setShowPromptSuggestions(false);
   };
 
+  // Handler for multiple file selection from remote sources
+  const handleRemoteFilesSelect = async (files: File[]) => {
+    await handleFiles(files);
+  };
+
   // Helper function to get the appropriate icon for each attachment type
   const getAttachmentIcon = (attachment: Attachment) => {
     switch (attachment.type) {
@@ -303,12 +315,6 @@ export function ChatInput() {
       if (contentEditableRef.current) {
         contentEditableRef.current.innerHTML = "";
       }
-    }
-  };
-
-  const handleAttachmentClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
     }
   };
 
@@ -668,13 +674,21 @@ export function ChatInput() {
               </Button>
             )}
 
-            <Button
-              type="button"
-              className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-              onClick={handleAttachmentClick}
-            >
-              <Paperclip size={16} />
-            </Button>
+            <RemoteFileSources
+              onFileSelect={handleFiles}
+              onRemoteSourceSelect={(source) => {
+                setSelectedRemoteSource(source);
+                setIsRemotePickerOpen(true);
+              }}
+              triggerElement={
+                <Button
+                  type="button"
+                  className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                >
+                  <Paperclip size={16} />
+                </Button>
+              }
+            />
 
             {/* Dynamic Send/Mic/Loading Button */}
             {isResponding ? (
@@ -729,6 +743,17 @@ export function ChatInput() {
             )}
           </div>
         </div>
+
+        {/* Remote file picker modal */}
+        <RemoteFilePickerModal
+          isOpen={isRemotePickerOpen}
+          onClose={() => {
+            setIsRemotePickerOpen(false);
+            setSelectedRemoteSource(null);
+          }}
+          onFileSelect={handleRemoteFilesSelect}
+          selectedSource={selectedRemoteSource}
+        />
       </div>
     </form>
   );

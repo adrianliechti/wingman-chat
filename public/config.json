@@ -11,28 +11,28 @@
     "tts": {
         "enabled": true
     },
+    "sources": [
+        {
+            "id": "onedrive",
+            "name": "OneDrive",
+            "type": "onedrive",
+            "enabled": true
+        },
+        {
+            "id": "googledrive",
+            "name": "Google Drive",
+            "type": "googledrive",
+            "enabled": true
+        },
+        {
+            "id": "github",
+            "name": "GitHub",
+            "type": "github",
+            "enabled": true
+        }
+    ],
     "repository": {
-        "enabled": true,
-        "remoteSources": [
-            {
-                "id": "onedrive",
-                "name": "OneDrive",
-                "type": "onedrive",
-                "enabled": true
-            },
-            {
-                "id": "googledrive",
-                "name": "Google Drive",
-                "type": "googledrive",
-                "enabled": true
-            },
-            {
-                "id": "github",
-                "name": "GitHub",
-                "type": "github",
-                "enabled": true
-            }
-        ]
+        "enabled": true
     },
     "internet": {
         "enabled": true,

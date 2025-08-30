@@ -27,6 +27,8 @@ interface config {
   
   bridge?: bridgeConfig;
   internet?: internetConfig;
+
+  sources?: remoteSourceConfig[];
   
   artifacts?: artifactsConfig;
   repository?: repositoryConfig;  
@@ -70,18 +72,17 @@ interface internetConfig {
   enabled: boolean;
 }
 
-interface repositoryConfig {
-  enabled: boolean;
-  embedder?: string;
-  extractor?: string;
-  remoteSources?: remoteSourceConfig[];
-}
-
 interface remoteSourceConfig {
   id: string;
   name: string;
   type: 'onedrive' | 'googledrive' | 'dropbox' | 'sharepoint' | 'github';
   enabled: boolean;
+}
+
+interface repositoryConfig {
+  enabled: boolean;
+  embedder?: string;
+  extractor?: string;
 }
 
 interface artifactsConfig {
@@ -110,8 +111,9 @@ interface Config {
   vision: boolean;
 
   image: imageConfig;
-  
   bridge: Bridge;
+
+  sources: remoteSourceConfig[];
 
   internet: internetConfig;
   artifacts: artifactsConfig;
@@ -173,8 +175,9 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       repository: cfg.repository ?? {
         enabled: false,
-        remoteSources: []
       },
+
+      sources: cfg.sources ?? [],
 
       artifacts: cfg.artifacts ?? {
         enabled: false

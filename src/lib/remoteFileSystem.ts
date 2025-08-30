@@ -86,7 +86,7 @@ export class RemoteFileSystemAPI {
     
     try {
       const config = getConfig();
-      const configuredSources = config.repository.remoteSources || [];
+      const configuredSources = config.sources || [];
       return configuredSources.filter(source => source.enabled);
     } catch {
       console.warn('Unable to load config, falling back to mock sources');
