@@ -34,6 +34,8 @@ func main() {
 	vision := os.Getenv("VISION_ENABLED") == "true"
 
 	image := os.Getenv("IMAGE_ENABLED") == "true"
+	imageModel := os.Getenv("IMAGE_MODEL")
+
 	internet := os.Getenv("INTERNET_ENABLED") == "true"
 
 	artifacts := os.Getenv("ARTIFACTS_ENABLED") == "true"
@@ -74,7 +76,8 @@ func main() {
 		}
 
 		type imageType struct {
-			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+			Enabled bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+			Model   string `json:"model,omitempty" yaml:"model,omitempty"`
 		}
 
 		type internetType struct {
@@ -175,6 +178,7 @@ func main() {
 		if image {
 			config.Image = &imageType{
 				Enabled: true,
+				Model:   imageModel,
 			}
 		}
 
