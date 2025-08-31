@@ -54,7 +54,7 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
 
           try {
             const imageBlob = await client.generateImage(
-              "", // model parameter (empty for now)
+              config.image?.model || "",
               prompt as string
             );
 
@@ -84,7 +84,7 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
         }
       }
     ];
-  }, [isEnabled, client]);
+  }, [isEnabled, client, config]);
 
   const imageGenerationInstructions = useCallback((): string => {
     if (!isEnabled) {
