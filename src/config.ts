@@ -60,6 +60,7 @@ interface visionConfig {
 
 interface imageConfig {
   enabled: boolean;
+  model?: string
 }
 
 interface bridgeConfig {
