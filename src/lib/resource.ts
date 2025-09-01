@@ -35,8 +35,8 @@ export function parseResource(result: string): ParsedToolResult {
       const name = extractFileNameFromUri(resource.uri, resource.mimeType);
 
       if (resource.text) {
-        attachmentType = AttachmentType.Text;
-        data = resource.text;
+        attachmentType = AttachmentType.File;
+        data = `data:${resource.mimeType};base64,${btoa(resource.text)}`;
       } else if (resource.blob) {
         attachmentType = AttachmentType.File;
         
