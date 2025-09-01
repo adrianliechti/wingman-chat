@@ -5,6 +5,7 @@ export interface Resource {
   type: "resource";
   resource: {
     uri: string;
+    name?: string;
     mimeType: string;
     blob?: string;  // base64 encoded content
     text?: string;  // plain text content
@@ -12,67 +13,60 @@ export interface Resource {
   };
 }
 
-export interface ParsedToolResult {
-  attachments?: Attachment[];
-  processedContent: string;
-}
-
-export function parseResource(result: string): ParsedToolResult {
-  let attachments: Attachment[] | undefined = undefined;
-  let processedContent = result;
+export function parseResource(text: string): Attachment[] | undefined {
+  let result: Attachment[] | undefined = undefined;
 
   try {
-    const parsedResult = JSON.parse(result || "{}");
+    const content = JSON.parse(text || "{}");
     
-    // Check for special resource results
-    if (isResourceResult(parsedResult)) {
-      const resource = parsedResult.resource;
+    if (isResource(content)) {
+      const resource = content.resource;
       
-      let attachmentType: AttachmentType;
-      let data: string;
-      
-      // Extract filename from URI or use a default name
-      const name = extractFileNameFromUri(resource.uri, resource.mimeType);
+      let type = AttachmentType.File;
 
-      if (resource.text) {
-        attachmentType = AttachmentType.File;
-        data = `data:${resource.mimeType};base64,${btoa(resource.text)}`;
-      } else if (resource.blob) {
-        attachmentType = AttachmentType.File;
-        
-        if (resource.mimeType.startsWith('image/')) {
-          attachmentType = AttachmentType.Image;
-        }
-        
-        data = `data:${resource.mimeType};base64,${resource.blob}`;
+      let name = '';
+      let data = '';
+      
+      if (resource.name) {
+        name = resource.name;
       } else {
-        attachmentType = AttachmentType.File;
-        data = '';
+        // Extract filename from URI or use a default name
+        name = nameFromUri(resource.uri, resource.mimeType);
       }
 
-      attachments = [{
-        type: attachmentType,
+      if (resource.uri?.startsWith('ui://')) {
+        name = resource.uri;
+      }
+
+      if (resource.text) {
+        type = AttachmentType.File;
+        data = `data:${resource.mimeType};base64,${btoa(resource.text)}`;
+      }
+      
+      if (resource.blob) {
+        type = AttachmentType.File;
+        data = `data:${resource.mimeType};base64,${resource.blob}`;
+        
+        if (resource.mimeType.startsWith('image/')) {
+          type = AttachmentType.Image;
+        }
+      }
+
+      result = [{
+        type: type,
         name: name,
         data: data,
         meta: resource._meta
       }];
-
-      processedContent = JSON.stringify({ successful: true });
     }
   } catch {
     // If parsing fails, use the result as-is
   }
 
-  return {
-    attachments,
-    processedContent: processedContent ?? "No result returned"
-  };
+  return result;
 }
 
-/**
- * Type guard to check if a parsed result is a ResourceResult
- */
-function isResourceResult(obj: unknown): obj is Resource {
+function isResource(obj: unknown): obj is Resource {
   if (!obj || typeof obj !== 'object') {
     return false;
   }
@@ -92,26 +86,13 @@ function isResourceResult(obj: unknown): obj is Resource {
   );
 }
 
-/**
- * Extracts a filename from a URI or creates a default one based on MIME type
- */
-function extractFileNameFromUri(uri: string, mimeType: string): string {
-  // MCP UI Resource
-  if (uri.startsWith('ui://')) {
-    return uri;
-  }
+function nameFromUri(uri: string, mimeType: string): string {
+  const lastPart = uri.split('/').pop();
   
-  const uriParts = uri.split('/');
-  const lastPart = uriParts[uriParts.length - 1];
-  
-  if (lastPart && lastPart.includes('.')) {
+  if (lastPart?.includes('.')) {
     return lastPart;
   }
 
-  if (mimeType) {
-    const extension = mime.getExtension(mimeType);
-    return `resource.${extension}`;
-  }
-
-  return '';
+  const extension = mimeType ? mime.getExtension(mimeType) : null;
+  return extension ? `resource.${extension}` : '';
 }

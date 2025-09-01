@@ -127,8 +127,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     async (message: Message) => {
       const { id, chat: chatObj } = getOrCreateChat();
 
-      const existingMessages = chats.find(c => c.id === id)?.messages || [];
-      let conversation = [...existingMessages, message];
+      const history = chats.find(c => c.id === id)?.messages || [];
+      let conversation = [...history, message];
 
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
@@ -162,6 +162,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
           // Check if there are tool calls to handle
           const toolCalls = assistantMessage.toolCalls;
+          
           if (!toolCalls || toolCalls.length === 0) {
             // No tool calls, we're done
             break;
@@ -193,21 +194,30 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
             try {
               const args = JSON.parse(toolCall.arguments || "{}");
-              const result = await tool.function(args);
+              let result = await tool.function(args);
 
-              // Parse the tool result to detect special formats and create attachments
-              const { attachments, processedContent } = parseResource(result);
+              const attachments = parseResource(result);
 
+              if (attachments) {
+                result = JSON.stringify({
+                  successful: true
+                });
+              }
+
+              if (!result) {
+                result = 'No result returned';
+              }
+              
               // Add tool result to conversation
               conversation = [...conversation, {
                 role: Role.Tool,
-                content: processedContent,
+                content: '',
                 attachments,
                 toolResult: {
                   id: toolCall.id,
                   name: toolCall.name,
                   arguments: toolCall.arguments,
-                  data: result ?? "No result returned"
+                  data: result,
                 },
               }];
             }
@@ -275,16 +285,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
           errorMessage = 'Network connection failed. Please check your internet connection and try again.';
         }
 
-        // Create error message with proper error field
-        const errorMessage_obj = { 
+        conversation = [...conversation, { 
           role: Role.Assistant, 
           content: '',
           error: {
             code: errorCode,
             message: errorMessage
           }
-        };
-        updateChat(id, () => ({ messages: [...conversation, errorMessage_obj] }));
+        }];
+
+        updateChat(id, () => ({ messages: conversation }));
       }
     }, [getOrCreateChat, chats, updateChat, chatTools, chatInstructions, client, model, setIsResponding]);
 
