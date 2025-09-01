@@ -246,8 +246,6 @@ export function AttachmentRenderer({ attachment, className }: {
 }) {
   const mimeType = detectMimeType(attachment.data, attachment.name);
 
-  console.log('Rendering attachment:', attachment.name, 'with MIME type:', mimeType);
-
   if (attachment.name.startsWith('ui://') && 
       (mimeType === 'text/html' || 
        mimeType === 'text/uri-list' || 
