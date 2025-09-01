@@ -14,6 +14,7 @@ import { ChatProvider } from "./contexts/ChatProvider";
 import { TranslateProvider } from "./contexts/TranslateProvider";
 import { VoiceProvider } from "./contexts/VoiceProvider";
 import { SettingsButton } from "./components/SettingsButton";
+import { AuthButton } from "./components/AuthButton";
 import { RepositoryProvider } from "./contexts/RepositoryProvider";
 import { ArtifactsProvider } from "./contexts/ArtifactsProvider";
 import { BridgeProvider } from "./contexts/BridgeProvider";
@@ -328,6 +329,7 @@ function AppContent() {
             
             {/* Right section */}
             <div className="flex items-center gap-2 justify-end flex-1">
+              <AuthButton />
               <SettingsButton />
               <BridgeIndicator />
               {rightActions}

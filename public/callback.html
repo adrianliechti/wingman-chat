@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OIDC Callback</title>
+</head>
+<body>
+    <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+        <h2>Processing authentication...</h2>
+        <p>Please wait while we complete the authentication process.</p>
+    </div>
+
+    <script src="https://unpkg.com/oidc-client-ts@3.0.1/dist/browser/oidc-client-ts.min.js"></script>
+    <script>
+        // This script handles the OIDC callback
+        
+        // Check if this is a popup callback
+        if (window.location.pathname.includes('/popup-callback')) {
+            console.log('Handling popup callback...');
+            new oidc.UserManager({}).signinPopupCallback()
+                .then(() => {
+                    console.log('Popup callback successful');
+                    window.close();
+                })
+                .catch((error) => {
+                    console.error('Popup callback error:', error);
+                    window.close();
+                });
+        }
+        // Check if this is a silent callback
+        else if (window.location.pathname.includes('/silent-callback')) {
+            console.log('Handling silent callback...');
+            new oidc.UserManager({}).signinSilentCallback()
+                .then(() => {
+                    console.log('Silent callback successful');
+                })
+                .catch((error) => {
+                    console.error('Silent callback error:', error);
+                });
+        }
+        // Default redirect callback
+        else {
+            console.log('Handling redirect callback...');
+            // For redirect callbacks, you would typically handle this in your main app
+            // This is just a fallback
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 2000);
+        }
+    </script>
+</body>
+</html>
