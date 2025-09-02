@@ -156,6 +156,15 @@ function UIAttachment({ attachment }: { attachment: Attachment }) {
   return (
     <UIResourceRenderer
       resource={resource}
+      onUIAction={async (result) => {
+        switch (result.type) {
+          case 'link':
+            window.open(result.payload.url, '_blank');
+            break;
+        }
+
+        return { status: 'handled' };
+      }}
       htmlProps={{
         autoResizeIframe: true
       }}
