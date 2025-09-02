@@ -194,30 +194,31 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
             try {
               const args = JSON.parse(toolCall.arguments || "{}");
-              let result = await tool.function(args);
+              let content = await tool.function(args);
 
-              const attachments = parseResource(result);
+              const data = content;
+              const attachments = parseResource(data);
 
               if (attachments) {
-                result = JSON.stringify({
+                content = JSON.stringify({
                   successful: true
                 });
               }
 
-              if (!result) {
-                result = 'No result returned';
+              if (!content) {
+                content = 'No result returned';
               }
               
               // Add tool result to conversation
               conversation = [...conversation, {
                 role: Role.Tool,
-                content: '',
+                content: content,
                 attachments,
                 toolResult: {
                   id: toolCall.id,
                   name: toolCall.name,
                   arguments: toolCall.arguments,
-                  data: result,
+                  data: data,
                 },
               }];
             }
