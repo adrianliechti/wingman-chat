@@ -93,12 +93,6 @@ export function ChatInput() {
   const getMCPIndicator = () => {
     const hasMCPTools = model?.mcpServer;
     
-    console.log('getMCPIndicator debug:', {
-      hasMCPTools,
-      mcpServer: model?.mcpServer,
-      connectionStatus,
-    });
-    
     if (!hasMCPTools) {
       // No MCP tools on selected model - show brain
       return <Brain size={14} />;
@@ -107,16 +101,12 @@ export function ChatInput() {
     // Use the simplified connection status directly
     switch (connectionStatus) {
       case 'connected':
-        // MCP tools and connected - show rocket
         return <Rocket size={14} />;
       case 'connecting':
-        // MCP tools and loading - show loading icon
         return <LoaderCircle size={14} className="animate-spin" />;
       case 'error':
-        // MCP tools and error - show error icon
         return <AlertTriangle size={14} />;
       default:
-        // MCP tools but not connected - show brain as fallback
         return <Brain size={14} />;
     }
   };

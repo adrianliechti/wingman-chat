@@ -15,11 +15,10 @@ export function useMCP(model?: Model | null): MCPHook {
   
   // Get the MCP server URL from the provided model
   const mcpServerUrl = model?.mcpServer || null;
-  const shouldConnect = !!mcpServerUrl;
   
   // Create MCP client configuration based on model
   const mcpConfig = useMemo(() => {
-    if (!shouldConnect || !mcpServerUrl) {
+    if (!mcpServerUrl) {
       // Return a minimal config that shouldn't cause connection attempts
       return {
         url: '', // Empty string should be safe
@@ -35,30 +34,26 @@ export function useMCP(model?: Model | null): MCPHook {
       autoReconnect: true,
       autoRetry: 3000,
     };
-  }, [shouldConnect, mcpServerUrl]);
+  }, [mcpServerUrl]);
 
   // Always call the hook to satisfy React's rules
   const mcpResult = useMcp(mcpConfig);
 
   // Extract values, but only use them when we should be connected
-  const state = shouldConnect ? mcpResult.state : 'disconnected';
-  const tools = shouldConnect ? mcpResult.tools : null;
-  const callTool = shouldConnect ? mcpResult.callTool : null;
+  const state = mcpServerUrl ? mcpResult.state : 'disconnected';
+  const tools = mcpServerUrl ? mcpResult.tools : null;
+  const callTool = mcpServerUrl ? mcpResult.callTool : null;
   
   // Memoize disconnect to avoid dependency issues
   const disconnect = useMemo(() => {
     return mcpResult.disconnect || (() => {});
   }, [mcpResult.disconnect]);
 
-  console.log('useMCP state:', state, 'server:', mcpServerUrl, 'shouldConnect:', shouldConnect);
-
   // Handle model changes - disconnect and reconnect when model changes
   useEffect(() => {
     const hasModelChanged = previousModelRef.current !== model;
     
-    if (hasModelChanged) {
-      console.log('Model changed from', previousModelRef.current?.id, 'to', model?.id);
-      
+    if (hasModelChanged) {      
       // If previous model had MCP server, disconnect first
       if (previousModelRef.current?.mcpServer) {
         console.log('Disconnecting from previous MCP server:', previousModelRef.current.mcpServer);
@@ -70,24 +65,24 @@ export function useMCP(model?: Model | null): MCPHook {
       
       // New connection will be handled automatically by the useMcp hook
       // due to the mcpConfig change
-      if (shouldConnect) {
+      if (mcpServerUrl) {
         console.log('Will connect to new MCP server:', mcpServerUrl);
       }
     }
-  }, [model, shouldConnect, mcpServerUrl, disconnect]);
+  }, [model, mcpServerUrl, disconnect]);
 
   // Clean up on unmount
   useEffect(() => {
     return () => {
-      if (shouldConnect) {
+      if (mcpServerUrl) {
         disconnect();
       }
     };
-  }, [shouldConnect, disconnect]);
+  }, [mcpServerUrl, disconnect]);
 
   // Convert use-mcp tools to our Tool format
   const mcpTools = useMemo((): Tool[] => {
-    if (!shouldConnect || !tools || state !== 'ready' || !callTool) {
+    if (!mcpServerUrl || !tools || state !== 'ready' || !callTool) {
       return [];
     }
 
@@ -135,18 +130,18 @@ export function useMCP(model?: Model | null): MCPHook {
         }
       },
     }));
-  }, [tools, state, callTool, shouldConnect]);
+  }, [tools, state, callTool, mcpServerUrl]);
 
   const mcpInstructions = useMemo((): string => {
     return '';
   }, []);
 
   // Implementation of the interface methods - removed since we simplified
-  const isConnected = shouldConnect && state === 'ready';
+  const isConnected = mcpServerUrl && state === 'ready';
   
   // Simple connection status based on use-mcp state
   let connectionStatus: 'connected' | 'connecting' | 'disconnected' | 'error' = 'disconnected';
-  if (shouldConnect && mcpServerUrl) {
+  if (mcpServerUrl) {
     switch (state) {
       case 'ready':
         connectionStatus = 'connected';
@@ -165,8 +160,6 @@ export function useMCP(model?: Model | null): MCPHook {
         connectionStatus = 'disconnected';
     }
   }
-
-  console.log('useMCP connectionStatus:', connectionStatus, 'for server:', mcpServerUrl, 'state:', state);
 
   return {
     isConnected: Boolean(isConnected),
