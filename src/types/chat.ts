@@ -7,6 +7,7 @@ export type Model = {
     description?: string;
     
     prompts?: string[];
+    mcpServer?: string;
 }
 
 export type ToolCall = {

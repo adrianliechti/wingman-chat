@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { Tool } from "../types/chat";
+import type { Tool, Model } from "../types/chat";
 import { useProfile } from "./useProfile";
 import { useArtifacts } from "./useArtifacts";
 import { useRepository } from "./useRepository";
@@ -7,6 +7,7 @@ import { useRepositories } from "./useRepositories";
 import { useBridge } from "./useBridge";
 import { useSearch } from "./useSearch";
 import { useImageGeneration } from "./useImageGeneration";
+import { useMCP } from "./useMCP";
 
 export interface ChatContext {
   tools: Tool[];
@@ -17,7 +18,7 @@ export interface ChatContext {
  * Shared hook for gathering completion tools and instructions
  * Used by both ChatProvider and VoiceProvider
  */
-export function useChatContext(mode: 'voice' | 'chat' = 'chat'): ChatContext {
+export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | null): ChatContext {
   const { generateInstructions } = useProfile();
   const { artifactsTools, artifactsInstructions, isEnabled: isArtifactsEnabled } = useArtifacts();
   const { currentRepository } = useRepositories();
@@ -29,6 +30,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat'): ChatContext {
   const { bridgeTools, bridgeInstructions } = useBridge();
   const { searchTools, searchInstructions } = useSearch();
   const { imageGenerationTools, imageGenerationInstructions } = useImageGeneration();
+  const { mcpTools, mcpInstructions, isEnabled: isMCPEnabled } = useMCP(model);
 
   return useMemo(() => {
     const profileInstructions = generateInstructions();
@@ -45,7 +47,10 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat'): ChatContext {
     const imageGenTools = imageGenerationTools();
     const imageGenInstructions = imageGenerationInstructions();
 
-    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools];
+    const mcpToolsList = isMCPEnabled ? mcpTools() : [];
+    const mcpInstructionsList = isMCPEnabled ? mcpInstructions() : '';
+
+    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools, ...mcpToolsList];
 
     const instructionsList: string[] = [];
 
@@ -73,6 +78,10 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat'): ChatContext {
       instructionsList.push(imageGenInstructions);
     }
 
+    if (mcpToolsList.length > 0 && mcpInstructionsList?.trim()) {
+      instructionsList.push(mcpInstructionsList);
+    }
+
     // Add mode-specific instructions
     if (mode === 'voice') {
       instructionsList.push('Respond concisely and naturally for voice interaction.');
@@ -96,6 +105,9 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat'): ChatContext {
     searchTools,
     searchInstructions,
     imageGenerationTools,
-    imageGenerationInstructions
+    imageGenerationInstructions,
+    isMCPEnabled,
+    mcpTools,
+    mcpInstructions
   ]);
 }

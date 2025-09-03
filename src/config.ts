@@ -37,8 +37,10 @@ interface modelConfig {
   id: string;
   name: string;
 
+  model?: string;
   description?: string;
 
+  mcp: string[];
   prompts?: string[];
 }
 
@@ -145,6 +147,8 @@ export const loadConfig = async (): Promise<Config | undefined> => {
           description: model.description,
 
           prompts: model.prompts,
+
+          mcpServer: model.mcp && model.mcp.length > 0 ? new URL(`/api/v1/mcp/${model.mcp[0]}`, window.location.origin).toString() : undefined,
         };
       }) ?? [],
 
