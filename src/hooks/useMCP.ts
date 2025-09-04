@@ -12,6 +12,8 @@ export interface MCPHook {
 
 export function useMCP(model?: Model | null): MCPHook {
   const previousModelRef = useRef<Model | null | undefined>(undefined);
+  const wasEverConnectedRef = useRef<boolean>(false);
+  const reconnectIntervalRef = useRef<number | null>(null);
   
   // Get the MCP server URL from the provided model
   const mcpServerUrl = model?.mcpServer || null;
@@ -32,7 +34,7 @@ export function useMCP(model?: Model | null): MCPHook {
       url: mcpServerUrl,
       clientName: 'Wingman Chat',
       autoReconnect: true,
-      autoRetry: 3000,
+      autoRetry: 3000, // Retry every 3 seconds
     };
   }, [mcpServerUrl]);
 
@@ -43,19 +45,76 @@ export function useMCP(model?: Model | null): MCPHook {
   const state = mcpServerUrl ? mcpResult.state : 'disconnected';
   const tools = mcpServerUrl ? mcpResult.tools : null;
   const callTool = mcpServerUrl ? mcpResult.callTool : null;
+  const retry = mcpResult.retry;
   
   // Memoize disconnect to avoid dependency issues
   const disconnect = useMemo(() => {
     return mcpResult.disconnect || (() => {});
   }, [mcpResult.disconnect]);
 
+  // Track if we were ever connected
+  useEffect(() => {
+    if (state === 'ready' && mcpServerUrl) {
+      wasEverConnectedRef.current = true;
+      // Clear any existing reconnect interval since we're connected
+      if (reconnectIntervalRef.current) {
+        clearInterval(reconnectIntervalRef.current);
+        reconnectIntervalRef.current = null;
+      }
+    }
+  }, [state, mcpServerUrl]);
+
+  // Handle endless reconnection for failed states
+  useEffect(() => {
+    // Clear any existing interval first
+    if (reconnectIntervalRef.current) {
+      clearInterval(reconnectIntervalRef.current);
+      reconnectIntervalRef.current = null;
+    }
+
+    // If we were connected before and now in failed/disconnected state, keep trying to reconnect
+    if (wasEverConnectedRef.current && 
+        (state === 'failed' || state === 'disconnected') && 
+        retry && 
+        mcpServerUrl) {
+      
+      console.log('MCP connection lost, setting up endless reconnection attempts...');
+      
+      // Set up interval to keep trying reconnection
+      reconnectIntervalRef.current = setInterval(() => {
+        console.log('Attempting to reconnect to MCP server...');
+        retry();
+      }, 5000); // Try every 5 seconds
+    }
+
+    // Cleanup function
+    return () => {
+      if (reconnectIntervalRef.current) {
+        clearInterval(reconnectIntervalRef.current);
+        reconnectIntervalRef.current = null;
+      }
+    };
+  }, [state, retry, mcpServerUrl]);
+
   // Handle model changes - disconnect and reconnect when model changes
   useEffect(() => {
     const hasModelChanged = previousModelRef.current !== model;
     
     if (hasModelChanged) {      
-      // If previous model had MCP server, disconnect first
-      if (previousModelRef.current?.mcpServer) {
+      // Reset the "was ever connected" flag when switching models
+      if (previousModelRef.current?.mcpServer !== model?.mcpServer) {
+        wasEverConnectedRef.current = false;
+        
+        // Clear any reconnect interval
+        if (reconnectIntervalRef.current) {
+          clearInterval(reconnectIntervalRef.current);
+          reconnectIntervalRef.current = null;
+        }
+      }
+      
+      // If previous model had MCP server and it's different from current, disconnect first
+      if (previousModelRef.current?.mcpServer && 
+          previousModelRef.current.mcpServer !== model?.mcpServer) {
         console.log('Disconnecting from previous MCP server:', previousModelRef.current.mcpServer);
         disconnect();
       }
@@ -76,6 +135,13 @@ export function useMCP(model?: Model | null): MCPHook {
     return () => {
       if (mcpServerUrl) {
         disconnect();
+        wasEverConnectedRef.current = false;
+        
+        // Clear any reconnect interval
+        if (reconnectIntervalRef.current) {
+          clearInterval(reconnectIntervalRef.current);
+          reconnectIntervalRef.current = null;
+        }
       }
     };
   }, [mcpServerUrl, disconnect]);
@@ -154,7 +220,18 @@ export function useMCP(model?: Model | null): MCPHook {
         connectionStatus = 'connecting';
         break;
       case 'failed':
-        connectionStatus = 'error';
+        // Show as 'connecting' if we're actively trying to reconnect
+        connectionStatus = wasEverConnectedRef.current ? 'connecting' : 'error';
+        if (!wasEverConnectedRef.current) {
+          console.log('MCP initial connection failed');
+        }
+        break;
+      case 'disconnected':
+        // Show as 'connecting' if we were connected before and will try to reconnect
+        connectionStatus = wasEverConnectedRef.current ? 'connecting' : 'disconnected';
+        if (wasEverConnectedRef.current) {
+          console.log('MCP disconnected, will attempt reconnection');
+        }
         break;
       default:
         connectionStatus = 'disconnected';
