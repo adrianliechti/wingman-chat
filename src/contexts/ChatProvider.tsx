@@ -22,7 +22,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
-  const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat');
   const { setEnabled: setSearchEnabled } = useSearch();
   const { isAvailable: artifactsEnabled, setFileSystemForChat } = useArtifacts();
   const [chatId, setChatId] = useState<string | null>(null);
@@ -31,6 +30,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const chat = chats.find(c => c.id === chatId) ?? null;
   const model = chat?.model ?? selectedModel ?? models[0];
+  const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat', model);
   const messages = useMemo(() => {
     const msgs = chat?.messages ?? [];
     messagesRef.current = msgs;

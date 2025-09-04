@@ -56,6 +56,8 @@ func main() {
 			Name        string `json:"name,omitempty" yaml:"name,omitempty"`
 			Description string `json:"description,omitempty" yaml:"description,omitempty"`
 
+			MCP []string `json:"mcp,omitempty" yaml:"mcp,omitempty"`
+
 			Prompts []string `json:"prompts,omitempty" yaml:"prompts,omitempty"`
 		}
 

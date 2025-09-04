@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
-import { Send, Paperclip, ScreenShare, Image, X, Brain, File, Loader2, FileText, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle } from "lucide-react";
+import { Send, Paperclip, ScreenShare, Image, X, Brain, File, Loader2, FileText, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle, Rocket, AlertTriangle } from "lucide-react";
 
 import { AttachmentType, Role } from "../types/chat";
 import type { Attachment, Message } from "../types/chat";
@@ -25,6 +25,7 @@ import { useSettings } from "../hooks/useSettings";
 import { useScreenCapture } from "../hooks/useScreenCapture";
 import { useSearch } from "../hooks/useSearch";
 import { useImageGeneration } from "../hooks/useImageGeneration";
+import { useMCP } from "../hooks/useMCP";
 
 export function ChatInput() {
   const config = getConfig();
@@ -36,6 +37,7 @@ export function ChatInput() {
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
   const { isAvailable: isSearchAvailable, isEnabled: isSearchEnabled, setEnabled: setSearchEnabled } = useSearch();
   const { isAvailable: isImageGenerationAvailable, isEnabled: isImageGenerationEnabled, setEnabled: setImageGenerationEnabled } = useImageGeneration();
+  const { connectionStatus } = useMCP(model);
 
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
@@ -86,6 +88,28 @@ export function ChatInput() {
 
   // Transcription hook
   const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription();
+
+  // MCP indicator logic
+  const getMCPIndicator = () => {
+    const hasMCPTools = model?.mcpServer;
+    
+    if (!hasMCPTools) {
+      // No MCP tools on selected model - show brain
+      return <Brain size={14} />;
+    }
+    
+    // Use the simplified connection status directly
+    switch (connectionStatus) {
+      case 'connected':
+        return <Rocket size={14} />;
+      case 'connecting':
+        return <LoaderCircle size={14} className="animate-spin" />;
+      case 'error':
+        return <AlertTriangle size={14} />;
+      default:
+        return <Brain size={14} />;
+    }
+  };
 
 
 
@@ -548,7 +572,7 @@ export function ChatInput() {
             {models.length > 0 && (
               <Menu>
                 <MenuButton className="flex items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm">
-                  <Brain size={14} />
+                  {getMCPIndicator()}
                   <span>
                     {model?.name ?? model?.id ?? "Select Model"}
                   </span>

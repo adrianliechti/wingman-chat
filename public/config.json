@@ -41,5 +41,27 @@
             "fr",
             "it"
         ]
-    }
+    },
+
+    "models": [
+        {
+            
+            "id": "gpt-5",
+            "name": "Wingman"
+        },
+        {
+            
+            "id": "o4-mini",
+            "name": "Wingman Thinking"
+        },
+        {
+            
+            "id": "gpt-4.1",
+            "name": "Hawk",
+
+            "mcp": [
+                "examples"
+            ]
+        }
+    ]
 }
