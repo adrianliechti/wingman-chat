@@ -2,8 +2,10 @@ import { memo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
+import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
+import rehypeMathjax from 'rehype-mathjax';
 import { MermaidRenderer } from './MermaidRenderer';
 import { CodeRenderer } from './CodeRenderer';
 import { HtmlRenderer } from './HtmlRenderer';
@@ -208,8 +210,8 @@ const components: Partial<Components> = {
     },
 };
 
-const remarkPlugins = [remarkGfm, remarkBreaks];
-const rehypePlugins = [rehypeRaw, rehypeSanitize];
+const remarkPlugins = [remarkGfm, remarkBreaks, remarkMath];
+const rehypePlugins = [rehypeRaw, rehypeSanitize, rehypeMathjax];
 
 const NonMemoizedMarkdown = ({ children }: { children: string }) => {
     if (!children) return null;

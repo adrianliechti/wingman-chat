@@ -52,7 +52,9 @@ export default defineConfig({
             'rehype-raw', 
             'rehype-sanitize',
             'remark',
-            'remark-html'
+            'remark-html',
+            'remark-math',
+            'rehype-mathjax'
           ],
           'vendor-ui': [
             '@headlessui/react',
