@@ -14,8 +14,9 @@ interface VoiceProviderProps {
 export function VoiceProvider({ children }: VoiceProviderProps) {
   const [isListening, setIsListening] = useState(false);
   const [isAvailable, setIsAvailable] = useState(false);
-  const { addMessage, messages } = useChat();
-  const { tools: chatTools, instructions: chatInstructions } = useChatContext('voice');
+  const { addMessage, messages, chat, models, model: selectedModel } = useChat();
+  const model = chat?.model ?? selectedModel ?? models[0];
+  const { tools: chatTools, instructions: chatInstructions } = useChatContext('voice', model);
 
   // Check voice availability from config
   useEffect(() => {

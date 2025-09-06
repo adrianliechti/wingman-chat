@@ -57,6 +57,8 @@ export function useVoiceWebSockets(
             type: 'realtime',
             model: realtimeModel,
 
+            ...(instructions && { instructions: instructions }),
+
             audio: {
               input: {
                 format: {
@@ -68,16 +70,16 @@ export function useVoiceWebSockets(
                   type: 'near_field'
                 },
 
-                transcription: {
-                  "model": transcribeModel
-                },
-
                 turn_detection: {
                   type: 'server_vad',
                   create_response: true,
                   prefix_padding_ms: 300,
                   silence_duration_ms: 700,
                   threshold: 0.7,
+                },
+
+                transcription: {
+                  model: transcribeModel,
                 }
               },
 
@@ -86,11 +88,11 @@ export function useVoiceWebSockets(
                   type: 'audio/pcm',
                   rate: 24000,
                 },
+
                 voice: 'alloy',
               }
             },
 
-            ...(instructions && { instructions: instructions }),
             ...(tools && tools.length > 0 && {
               tools: tools.map(tool => ({
                 type: 'function',
@@ -213,6 +215,11 @@ export function useVoiceWebSockets(
             if (msg.transcript?.trim()) {
               onUser(msg.transcript);
             }
+            break;
+
+          case 'conversation.item.input_audio_transcription.failed':
+            console.error('Transcription failed:', msg.error);
+            onUser('Input Transcription failed');
             break;
 
           case 'response.output_audio.delta':

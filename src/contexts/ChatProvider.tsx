@@ -22,7 +22,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
-  const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat');
   const { setEnabled: setSearchEnabled } = useSearch();
   const { isAvailable: artifactsEnabled, setFileSystemForChat } = useArtifacts();
   const [chatId, setChatId] = useState<string | null>(null);
@@ -31,6 +30,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const chat = chats.find(c => c.id === chatId) ?? null;
   const model = chat?.model ?? selectedModel ?? models[0];
+  const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat', model);
   const messages = useMemo(() => {
     const msgs = chat?.messages ?? [];
     messagesRef.current = msgs;
@@ -127,8 +127,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     async (message: Message) => {
       const { id, chat: chatObj } = getOrCreateChat();
 
-      const existingMessages = chats.find(c => c.id === id)?.messages || [];
-      let conversation = [...existingMessages, message];
+      const history = chats.find(c => c.id === id)?.messages || [];
+      let conversation = [...history, message];
 
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
@@ -162,6 +162,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
           // Check if there are tool calls to handle
           const toolCalls = assistantMessage.toolCalls;
+          
           if (!toolCalls || toolCalls.length === 0) {
             // No tool calls, we're done
             break;
@@ -193,21 +194,31 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
             try {
               const args = JSON.parse(toolCall.arguments || "{}");
-              const result = await tool.function(args);
+              let content = await tool.function(args);
 
-              // Parse the tool result to detect special formats and create attachments
-              const { attachments, processedContent } = parseResource(result);
+              const data = content;
+              const attachments = parseResource(data);
 
+              if (attachments) {
+                content = JSON.stringify({
+                  successful: true
+                });
+              }
+
+              if (!content) {
+                content = 'No result returned';
+              }
+              
               // Add tool result to conversation
               conversation = [...conversation, {
                 role: Role.Tool,
-                content: processedContent,
+                content: content,
                 attachments,
                 toolResult: {
                   id: toolCall.id,
                   name: toolCall.name,
                   arguments: toolCall.arguments,
-                  data: result ?? "No result returned"
+                  data: data,
                 },
               }];
             }
@@ -275,16 +286,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
           errorMessage = 'Network connection failed. Please check your internet connection and try again.';
         }
 
-        // Create error message with proper error field
-        const errorMessage_obj = { 
+        conversation = [...conversation, { 
           role: Role.Assistant, 
           content: '',
           error: {
             code: errorCode,
             message: errorMessage
           }
-        };
-        updateChat(id, () => ({ messages: [...conversation, errorMessage_obj] }));
+        }];
+
+        updateChat(id, () => ({ messages: conversation }));
       }
     }, [getOrCreateChat, chats, updateChat, chatTools, chatInstructions, client, model, setIsResponding]);
 

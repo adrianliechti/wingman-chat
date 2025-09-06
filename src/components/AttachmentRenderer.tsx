@@ -156,6 +156,15 @@ function UIAttachment({ attachment }: { attachment: Attachment }) {
   return (
     <UIResourceRenderer
       resource={resource}
+      onUIAction={async (result) => {
+        switch (result.type) {
+          case 'link':
+            window.open(result.payload.url, '_blank');
+            break;
+        }
+
+        return { status: 'handled' };
+      }}
       htmlProps={{
         autoResizeIframe: true
       }}
@@ -164,9 +173,15 @@ function UIAttachment({ attachment }: { attachment: Attachment }) {
 }
 
 function HtmlAttachment({ attachment }: { attachment: Attachment }) {
+  let html = attachment.data;
+
+  if (attachment.type === AttachmentType.File) {
+    html = atob(attachment.data.split(',')[1]);
+  }
+
   return (
     <HtmlRenderer
-      html={attachment.data}
+      html={html}
       language="html"
       name={attachment.name}
     />
@@ -175,30 +190,42 @@ function HtmlAttachment({ attachment }: { attachment: Attachment }) {
 
 function PdfAttachment({ attachment }: { attachment: Attachment }) {
   const mimeType = detectMimeType(attachment.data, attachment.name);
-  const pdfDataUrl = createDataUrl(attachment.data, mimeType);
+  const dataUrl = createDataUrl(attachment.data, mimeType);
 
   return (
     <PdfRenderer
-      src={pdfDataUrl}
+      src={dataUrl}
       name={attachment.name}
     />
   );
 }
 
 function MarkdownAttachment({ attachment }: { attachment: Attachment }) {
+  let md = attachment.data;
+
+  if (attachment.type === AttachmentType.File) {
+    md = atob(attachment.data.split(',')[1]);
+  }
+
   return (
     <div className="markdown-attachment">
       <div className="prose dark:prose-invert max-w-none">
-        <Markdown>{attachment.data}</Markdown>
+        <Markdown>{md}</Markdown>
       </div>
     </div>
   );
 }
 
 function CsvAttachment({ attachment }: { attachment: Attachment }) {
+  let csv = attachment.data;
+
+  if (attachment.type === AttachmentType.File) {
+    csv = atob(attachment.data.split(',')[1]);
+  }
+
   return (
     <CsvRenderer
-      csv={attachment.data}
+      csv={csv}
       language="html"
       name={attachment.name}
     />
@@ -206,9 +233,15 @@ function CsvAttachment({ attachment }: { attachment: Attachment }) {
 }
 
 function MermaidAttachment({ attachment }: { attachment: Attachment }) {
+  let chart = attachment.data;
+
+  if (attachment.type === AttachmentType.File) {
+    chart = atob(attachment.data.split(',')[1]);
+  }
+
   return (
     <MermaidRenderer
-      chart={attachment.data}
+      chart={chart}
       language="html"
       name={attachment.name}
     />

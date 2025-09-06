@@ -413,10 +413,6 @@ export function ChatPage() {
               <ul className="text-sm text-neutral-700 dark:text-neutral-300 space-y-2">
                 <li className="flex items-start gap-2">
                   <span className="text-neutral-400 dark:text-neutral-500 mt-1">•</span>
-                  <span>Limited to GPT-Realtime (Oct 01, 2023)</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-neutral-400 dark:text-neutral-500 mt-1">•</span>
                   <span>Knowledge Bases uses RAG mode only</span>
                 </li>
                 <li className="flex items-start gap-2">

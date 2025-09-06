@@ -59,7 +59,10 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
             );
 
             // Convert the image to a data URL for storage in attachments
-            const imageDataUrl = await readAsDataURL(imageBlob);
+            const fullDataUrl = await readAsDataURL(imageBlob);
+            const imageDataUrl = fullDataUrl.split(',')[1];
+
+            const imageName = `${Date.now()}.png`;
 
             console.log("[generate_image] Image generation completed successfully")
 
@@ -67,9 +70,10 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
             const resourceResult: Resource = {
               type: "resource",
               resource: {
-                uri: `ui://image/${Date.now()}.png`,
+                uri: `file:///image/` + imageName,
+                name: imageName,
                 mimeType: imageBlob.type,
-                text: imageDataUrl
+                blob: imageDataUrl
               }
             };
 
