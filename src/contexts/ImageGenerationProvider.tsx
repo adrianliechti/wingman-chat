@@ -2,7 +2,8 @@ import { useState, useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
 import { ImageGenerationContext } from "./ImageGenerationContext";
 import type { ImageGenerationContextType } from "./ImageGenerationContext";
-import type { Tool } from "../types/chat";
+import type { Tool, ToolContext } from "../types/chat";
+import { AttachmentType } from "../types/chat";
 import { getConfig } from "../config";
 import { readAsDataURL } from "../lib/utils";
 import type { Resource } from "../lib/resource";
@@ -36,26 +37,45 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
     return [
       {
         name: "generate_image",
-        description: "Generate an image based on a text description",
+        description: "Generate or edit an image based on a text description. Can create new images from text prompts or edit existing images attached to the chat.",
         parameters: {
           type: "object",
           properties: {
             prompt: {
               type: "string",
-              description: "A detailed description of the image to generate. Be specific about style, composition, colors, and other visual elements."
+              description: "A detailed description of the image to generate or edit. For new images, describe the desired content, style, composition, and colors. For editing existing images, describe the changes or modifications you want to make."
             }
           },
           required: ["prompt"]
         },
-        function: async (args: Record<string, unknown>) => {
+        function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const { prompt } = args;
 
           console.log("[generate_image] Starting image generation", { prompt });
 
+          const images: Blob[] = [];
+
+          // Extract image attachments from context
+          if (context?.attachments) {
+            const attachments = context.attachments();
+            const imageAttachments = attachments.filter(att => att.type === AttachmentType.Image);
+            
+            for (const imageAttachment of imageAttachments) {
+              try {
+                const response = await fetch(imageAttachment.data);
+                const blob = await response.blob();
+                images.push(blob);
+              } catch (error) {
+                console.warn("[generate_image] Failed to convert attachment to blob:", error);
+              }
+            }
+          }
+
           try {
             const imageBlob = await client.generateImage(
               config.image?.model || "",
-              prompt as string
+              prompt as string,
+              images
             );
 
             // Convert the image to a data URL for storage in attachments
@@ -96,13 +116,15 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
     }
 
     return `
-      You have access to image generation functionality using DALL-E.
+      You have access to image generation and editing functionality.
       
-      - Use the generate_image tool when the user asks you to create, generate, or make an image.
-      - Create detailed and specific prompts for better image quality.
+      - Use the generate_image tool when the user asks you to create, generate, make, edit, or modify an image.
+      - For new images: Create detailed and specific prompts describing the desired content, style, composition, colors, and other visual elements.
+      - For editing images: If the user has attached images to the chat, you can edit them by describing the modifications or changes you want to make.
+      - The tool automatically detects and uses any image attachments in the chat for editing purposes.
       - Consider the user's preferences for style, composition, colors, and other visual elements.
       
-      Always use this tool when the user requests image creation or visual content generation.
+      Always use this tool when the user requests image creation, generation, editing, or modification of visual content.
     `.trim();
   }, [isEnabled]);
 

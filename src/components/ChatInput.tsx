@@ -44,7 +44,7 @@ export function ChatInput() {
 
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
-  
+
   // Prompt suggestions state
   const [showPromptSuggestions, setShowPromptSuggestions] = useState(false);
   const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
@@ -63,7 +63,7 @@ export function ChatInput() {
       "Hi [Name], what can I do for you?",
       "[Name], how can I support you?"
     ];
-    
+
     const genericVariations = [
       "Ready to get started?",
       "What's on your mind?",
@@ -71,7 +71,7 @@ export function ChatInput() {
       "What can I do for you?",
       "How can I support you?"
     ];
-    
+
     if (profile?.name) {
       const randomIndex = Math.floor(Math.random() * personalizedVariations.length);
       return personalizedVariations[randomIndex].replace('[Name]', profile.name);
@@ -82,7 +82,7 @@ export function ChatInput() {
   }, [profile?.name]);
 
   const placeholderText = messages.length === 0 ? randomPlaceholder : "Ask anything";
-  
+
   // Show placeholder when input is empty (regardless of focus state)
   const shouldShowPlaceholder = !content.trim();
 
@@ -92,12 +92,12 @@ export function ChatInput() {
   // MCP indicator logic
   const getMCPIndicator = () => {
     const hasMCPTools = model?.mcpServer;
-    
+
     if (!hasMCPTools) {
       // No MCP tools on selected model - show brain
       return <Brain size={14} />;
     }
-    
+
     // Use the simplified connection status directly
     switch (connectionStatus) {
       case 'connected':
@@ -119,7 +119,7 @@ export function ChatInput() {
       const fileId = `${file.name}-${index}`;
 
       setExtractingAttachments(prev => new Set([...prev, fileId]));
-      
+
       try {
         let attachment: Attachment | null = null;
 
@@ -138,7 +138,7 @@ export function ChatInput() {
         if (attachment) {
           setAttachments(prev => [...prev, attachment]);
         }
-        
+
         return attachment;
       } catch (error) {
         console.error(`Error processing file ${file.name}:`, error);
@@ -171,10 +171,10 @@ export function ChatInput() {
 
     setLoadingPrompts(true);
     setShowPromptSuggestions(true);
-    
+
     try {
       let suggestions: string[];
-      
+
       if (messages.length === 0) {
         // For new chats, use model prompts if available, otherwise get related prompts
         if (model.prompts && model.prompts.length > 0) {
@@ -188,10 +188,10 @@ export function ChatInput() {
         const contextText = contextMessages
           .map(msg => `${msg.role}: ${msg.content}`)
           .join('\n');
-        
+
         suggestions = await client.relatedPrompts(model.id, contextText);
       }
-      
+
       setPromptSuggestions(suggestions);
     } catch (error) {
       console.error("Error fetching prompt suggestions:", error);
@@ -211,10 +211,10 @@ export function ChatInput() {
     };
 
     sendMessage(message);
-    
+
     // Clear attachments after sending
     setAttachments([]);
-    
+
     // Hide prompt suggestions
     setShowPromptSuggestions(false);
   };
@@ -249,17 +249,17 @@ export function ChatInput() {
     // Run immediately and on next tick to ensure DOM is ready
     forceLayout();
     const timer = setTimeout(forceLayout, 0);
-    
+
     // Also force layout on window load to handle CSS custom properties
     const handleLoad = () => forceLayout();
     window.addEventListener('load', handleLoad);
-    
+
     // Handle resize events to maintain proper sizing
     const handleResize = () => {
       requestAnimationFrame(forceLayout);
     };
     window.addEventListener('resize', handleResize);
-    
+
     return () => {
       clearTimeout(timer);
       window.removeEventListener('load', handleLoad);
@@ -272,13 +272,13 @@ export function ChatInput() {
     if (messages.length === 0) {
       // Check if this is a touch device
       const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-      
+
       if (!isTouchDevice && contentEditableRef.current) {
         // Small delay to ensure DOM is ready
         const timer = setTimeout(() => {
           contentEditableRef.current?.focus();
         }, 100);
-        
+
         return () => clearTimeout(timer);
       }
     }
@@ -323,7 +323,7 @@ export function ChatInput() {
       sendMessage(message);
       setContent("");
       setAttachments([]);
-      
+
       if (contentEditableRef.current) {
         contentEditableRef.current.innerHTML = "";
       }
@@ -375,7 +375,7 @@ export function ChatInput() {
         const text = await stopTranscription();
         if (text.trim()) {
           setContent(text);
-          
+
           if (contentEditableRef.current) {
             // Convert newlines to <br> tags for proper display in contentEditable
             const htmlText = text.replace(/\n/g, '<br>');
@@ -398,21 +398,18 @@ export function ChatInput() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <div 
+      <div
         ref={containerRef}
-        className={`chat-input-container ${
-          isDragging 
-            ? 'border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl' 
-            : `border-0 md:border-2 border-t-2 border-solid ${
-                messages.length === 0 
-                  ? 'border-neutral-200/50' 
-                  : 'border-neutral-200'
-              } dark:border-neutral-900 ${
-                messages.length === 0 
-                  ? 'bg-white/60 dark:bg-neutral-950/70' 
-                  : 'bg-white/30 dark:bg-neutral-950/50'
-              } rounded-t-2xl md:rounded-2xl`
-        } backdrop-blur-2xl flex flex-col min-h-[4rem] md:min-h-[3rem] shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 transition-all duration-200`}
+        className={`chat-input-container ${isDragging
+          ? 'border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl'
+          : `border-0 md:border-2 border-t-2 border-solid ${messages.length === 0
+            ? 'border-neutral-200/50'
+            : 'border-neutral-200'
+          } dark:border-neutral-900 ${messages.length === 0
+            ? 'bg-white/60 dark:bg-neutral-950/70'
+            : 'bg-white/30 dark:bg-neutral-950/50'
+          } rounded-t-2xl md:rounded-2xl`
+          } backdrop-blur-2xl flex flex-col min-h-[4rem] md:min-h-[3rem] shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 transition-all duration-200`}
       >
         <input
           type="file"
@@ -448,7 +445,7 @@ export function ChatInput() {
                 <Loader2 size={18} className="animate-spin text-neutral-500 dark:text-neutral-400" />
               </div>
             ))}
-            
+
             {/* Processed attachments */}
             {attachments.map((attachment, index) => (
               <div
@@ -457,8 +454,8 @@ export function ChatInput() {
                 title={attachment.name}
               >
                 {attachment.type === AttachmentType.Image ? (
-                  <img 
-                    src={attachment.data} 
+                  <img
+                    src={attachment.data}
                     alt={attachment.name}
                     className="size-full object-cover rounded-xl"
                   />
@@ -515,7 +512,7 @@ export function ChatInput() {
           <div
             ref={contentEditableRef}
             className="p-3 md:p-4 flex-1 max-h-[40vh] overflow-y-auto min-h-[2.5rem] whitespace-pre-wrap break-words text-neutral-800 dark:text-neutral-200"
-            style={{ 
+            style={{
               scrollbarWidth: "thin",
               minHeight: "2.5rem",
               height: "auto"
@@ -528,25 +525,37 @@ export function ChatInput() {
 
               const input = target.innerText || target.textContent || '';
               setContent(input);
-              
+
               if (input.trim() && showPromptSuggestions) {
                 setShowPromptSuggestions(false);
               }
             }}
             onKeyDown={handleKeyDown}
-            onPaste={(e) => {
+            onPaste={async (e) => {
               e.preventDefault();
+
               const text = e.clipboardData.getData('text/plain');
-              document.execCommand('insertText', false, text);
+
+              const imageItems = Array.from(e.clipboardData.items)
+                .filter(item => item.type.startsWith('image/'))
+                .map(item => item.getAsFile())
+                .filter(Boolean) as File[];
+
+              if (text.trim()) {
+                document.execCommand('insertText', false, text);
+              }
+
+              if (imageItems.length > 0) {
+                await handleFiles(imageItems);
+              }
             }}
           />
-          
+
           {/* CSS-animated placeholder */}
           {shouldShowPlaceholder && (
-            <div 
-              className={`absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200 ${
-                messages.length === 0 ? 'typewriter-text' : ''
-              }`}
+            <div
+              className={`absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200 ${messages.length === 0 ? 'typewriter-text' : ''
+                }`}
               style={messages.length === 0 ? {
                 '--text-length': placeholderText.length,
                 '--animation-duration': `${Math.max(1.5, placeholderText.length * 0.1)}s`
@@ -568,7 +577,7 @@ export function ChatInput() {
             >
               <Lightbulb size={16} />
             </Button>
-            
+
             {models.length > 0 && (
               <Menu>
                 <MenuButton className="flex items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm">
@@ -635,11 +644,10 @@ export function ChatInput() {
             {isSearchAvailable && (
               <Button
                 type="button"
-                className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
-                  isSearchEnabled 
-                    ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg' 
-                    : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-                }`}
+                className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isSearchEnabled
+                  ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg'
+                  : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                  }`}
                 onClick={() => setSearchEnabled(!isSearchEnabled)}
                 title={isSearchEnabled ? 'Disable internet access' : 'Enable internet access'}
               >
@@ -655,11 +663,10 @@ export function ChatInput() {
             {isImageGenerationAvailable && (
               <Button
                 type="button"
-                className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
-                  isImageGenerationEnabled 
-                    ? 'text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-200 bg-purple-100/80 dark:bg-purple-900/40 border border-purple-200 dark:border-purple-800 rounded-lg' 
-                    : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-                }`}
+                className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isImageGenerationEnabled
+                  ? 'text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-200 bg-purple-100/80 dark:bg-purple-900/40 border border-purple-200 dark:border-purple-800 rounded-lg'
+                  : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                  }`}
                 onClick={() => setImageGenerationEnabled(!isImageGenerationEnabled)}
                 title={isImageGenerationEnabled ? 'Disable image generation' : 'Enable image generation'}
               >
@@ -675,11 +682,10 @@ export function ChatInput() {
             {isScreenCaptureAvailable && (
               <Button
                 type="button"
-                className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
-                  isContinuousCaptureActive 
-                    ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg' 
-                    : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-                }`}
+                className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isContinuousCaptureActive
+                  ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg'
+                  : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                  }`}
                 onClick={handleContinuousCaptureToggle}
                 title={isContinuousCaptureActive ? 'Stop continuous screen capture' : 'Start continuous screen capture'}
               >
@@ -730,11 +736,10 @@ export function ChatInput() {
               ) : (
                 <Button
                   type="button"
-                  className={`p-1.5 transition-colors ${
-                    isTranscribing 
-                      ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200' 
-                      : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-                  }`}
+                  className={`p-1.5 transition-colors ${isTranscribing
+                    ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200'
+                    : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                    }`}
                   onClick={handleTranscriptionClick}
                   title={isTranscribing ? 'Stop recording' : 'Start recording'}
                   disabled={isResponding}

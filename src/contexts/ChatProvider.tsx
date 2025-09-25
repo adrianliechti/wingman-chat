@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { Role } from "../types/chat";
-import type { Message, Model } from "../types/chat";
+import type { Message, Model, ToolContext } from "../types/chat";
 import type { FileSystem } from "../types/file";
 import { useModels } from "../hooks/useModels";
 import { useChats } from "../hooks/useChats";
@@ -133,6 +133,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
 
+      // Create tool context with current message attachments
+      const toolContext: ToolContext = {
+        attachments: () => message.attachments || []
+      };
+
       try {
         // Main completion loop to handle tool calls
         while (true) {
@@ -194,7 +199,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
             try {
               const args = JSON.parse(toolCall.arguments || "{}");
-              let content = await tool.function(args);
+              let content = await tool.function(args, toolContext);
 
               const data = content;
               const attachments = parseResource(data);

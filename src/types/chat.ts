@@ -50,13 +50,17 @@ export enum Role {
     Tool = "tool",
 }
 
+export interface ToolContext {
+    attachments?(): Attachment[];
+}
+
 export type Tool = {
     name: string;
     description: string;
 
     parameters: Record<string, unknown>;
 
-    function: (args: Record<string, unknown>) => Promise<string>;
+    function: (args: Record<string, unknown>, context?: ToolContext) => Promise<string>;
 }
 
 export enum AttachmentType {
