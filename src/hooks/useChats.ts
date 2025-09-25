@@ -6,7 +6,6 @@ import { setValue, getValue } from '../lib/db';
 const SAVE_DELAY = 2000;
 
 const CHATS_KEY = 'chats';
-const STORAGE_KEY = 'app_chats';
 
 // Chat-specific database operations
 async function storeChats(chats: Chat[]): Promise<void> {
@@ -34,45 +33,13 @@ async function loadChats(): Promise<Chat[]> {
   }
 }
 
-// Migration function
-async function migrateChats(): Promise<Chat[]> {
-  try {
-    // Check for legacy data in localStorage
-    const data = localStorage.getItem(STORAGE_KEY);
-
-    if (data) {
-      const legacyChats = JSON.parse(data);
-
-      if (Array.isArray(legacyChats) && legacyChats.length > 0) {
-        console.log(`Migrating ${legacyChats.length} chats from localStorage to IndexedDB`);
-        
-        // Save legacy chats to IndexedDB (overwrite any existing data)
-        await storeChats(legacyChats);
-        
-        // Clear legacy data from localStorage after successful migration
-        localStorage.removeItem(STORAGE_KEY);
-        
-        console.log('Migration completed successfully');
-        return legacyChats;
-      }
-    }
-
-    // No legacy data, load from IndexedDB
-    return await loadChats();
-  } catch (error) {
-    console.error('error during migration', error);
-    // If migration fails, try to load from IndexedDB anyway
-    return await loadChats();
-  }
-}
-
 export function useChats() {
   const [chats, setChats] = useState<Chat[]>([]);
 
   // Load chats on mount
   useEffect(() => {
     async function load() {
-      const items = await migrateChats();
+      const items = await loadChats();
       setChats(items);
     }
 
