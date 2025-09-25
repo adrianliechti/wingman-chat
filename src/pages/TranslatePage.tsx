@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useDropZone } from "../hooks/useDropZone";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { PilcrowRightIcon, Loader2, PlusIcon, GlobeIcon, FileIcon, UploadIcon, XIcon, DownloadIcon, ThermometerIcon, SwatchBookIcon, AlertCircle, ChevronDown, ChevronRight, SendIcon } from "lucide-react";
+import { PilcrowRightIcon, Loader2, PlusIcon, GlobeIcon, FileIcon, UploadIcon, XIcon, DownloadIcon, ThermometerIcon, SwatchBookIcon, AlertCircle, ChevronDown, ChevronRight, SparklesIcon } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import { useLayout } from "../hooks/useLayout";
 import { useTranslate } from "../hooks/useTranslate";
@@ -441,7 +441,7 @@ export function TranslatePage() {
                             type="text"
                             value={promptText}
                             onChange={(e) => setPromptText(e.target.value)}
-                            placeholder="Refine translation... (e.g., make it shorter)"
+                            placeholder="Refine translation..."
                             disabled={isPromptLoading}
                             className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-none disabled:text-neutral-400"
                           />
@@ -454,7 +454,7 @@ export function TranslatePage() {
                             {isPromptLoading ? (
                               <Loader2 size={16} className="animate-spin" />
                             ) : (
-                              <SendIcon size={16} />
+                              <SparklesIcon size={16} />
                             )}
                           </button>
                         </div>
