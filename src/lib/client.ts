@@ -454,7 +454,14 @@ Please provide alternative ways to rewrite this text. For each alternative, incl
     return resp.blob();
   }
 
-  async rewriteText(model: string, text: string, lang: string, tone: string = '', style: string = ''): Promise<string> {
+  async rewriteText(
+    model: string, 
+    text: string, 
+    lang?: string, 
+    tone?: string, 
+    style?: string, 
+    userPrompt?: string
+  ): Promise<string> {
     const Schema = z.object({
       rewrittenText: z.string(),
     }).strict();
@@ -479,8 +486,26 @@ Please provide alternative ways to rewrite this text. For each alternative, incl
       style === 'casual' ? 'Use casual and informal language.' :
       '';
 
-    // Combine instructions
-    const additionalInstructions = [toneInstruction, styleInstruction].filter(Boolean).join(' ');
+    // Combine predefined instructions
+    const predefinedInstructions = [toneInstruction, styleInstruction].filter(Boolean);
+
+    // Build the complete instruction set
+    const instructions = [];
+    if (predefinedInstructions.length > 0) {
+      instructions.push(predefinedInstructions.join(' '));
+    }
+    if (userPrompt?.trim()) {
+      instructions.push(`Custom instruction: ${userPrompt.trim()}`);
+    }
+
+    const finalInstructions = instructions.length > 0 
+      ? instructions.join(' ') 
+      : 'Maintain the original tone and style';
+
+    // Language handling
+    const languageInstruction = lang 
+      ? `Ensure the text is in ${lang} language${lang !== 'en' ? ', translating if necessary' : ''}.`
+      : 'Maintain the original language of the text.';
 
     try {
       const completion = await this.oai.chat.completions.parse({
@@ -488,19 +513,27 @@ Please provide alternative ways to rewrite this text. For each alternative, incl
         messages: [
           {
             role: "system",
-            content: `You are a text rewriting assistant. Your task is to rewrite the given text while maintaining its core meaning and translating it to the target language if needed.
+            content: `You are an expert text rewriting assistant. Your task is to rewrite the given text while preserving its core meaning and essential information.
 
-Guidelines:
-- Translate the text to ${lang} if it's not already in that language
-- Maintain the core meaning and information
-- ${additionalInstructions || 'Keep the original tone and style'}
-- Ensure the output is natural and fluent
+Core Guidelines:
+- ${languageInstruction}
+- Maintain factual accuracy and important details
+- Ensure natural, fluent, and grammatically correct output
 - For German text: Use "ss" instead of "ß" (eszett) for better compatibility
-- Return only the rewritten text without any explanations`,
+- Return only the rewritten text without explanations or formatting
+
+Rewriting Instructions:
+${finalInstructions}
+
+Quality Standards:
+- The rewritten text should sound natural and engaging
+- Preserve the original intent and message
+- Adapt the complexity level as needed while maintaining clarity
+- If conflicting instructions are given, prioritize user-specific prompts over predefined styles`
           },
           {
             role: "user",
-            content: `Please rewrite this text: "${text}"`,
+            content: `Please rewrite this text: "${text}"`
           },
         ],
         response_format: zodResponseFormat(Schema, "rewrite_text"),

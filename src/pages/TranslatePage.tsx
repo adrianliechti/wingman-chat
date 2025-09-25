@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useDropZone } from "../hooks/useDropZone";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { PilcrowRightIcon, Loader2, PlusIcon, GlobeIcon, FileIcon, UploadIcon, XIcon, DownloadIcon, ThermometerIcon, SwatchBookIcon, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { PilcrowRightIcon, Loader2, PlusIcon, GlobeIcon, FileIcon, UploadIcon, XIcon, DownloadIcon, ThermometerIcon, SwatchBookIcon, AlertCircle, ChevronDown, ChevronRight, SendIcon } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import { useLayout } from "../hooks/useLayout";
 import { useTranslate } from "../hooks/useTranslate";
@@ -25,6 +25,11 @@ export function TranslatePage() {
     selectionEnd: number;
     position: { x: number; y: number };
   } | null>(null);
+
+  // Prompt overlay state
+  const [promptText, setPromptText] = useState("");
+  const [isPromptLoading, setIsPromptLoading] = useState(false);
+  const [promptError, setPromptError] = useState<string | null>(null);
   
   const config = getConfig();
   const enableTTS = config.tts;
@@ -162,6 +167,36 @@ export function TranslatePage() {
 
   const handlePreview = (previewText: string | null) => {
     setPreviewText(previewText);
+  };
+
+  const handlePromptSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    
+    if (!promptText.trim() || !currentText.trim() || isPromptLoading || !selectedLanguage) return;
+
+    setIsPromptLoading(true);
+    setPromptError(null);
+
+    try {
+      const result = await config.client.rewriteText(
+        config.translator.model || '',
+        currentText,
+        selectedLanguage.code,
+        undefined, // tone
+        undefined, // style
+        promptText.trim() // userPrompt
+      );
+      
+      if (result) {
+        setCurrentText(result);
+        setPromptText(""); // Clear the prompt input after successful rewrite
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to rewrite text";
+      setPromptError(errorMessage);
+    } finally {
+      setIsPromptLoading(false);
+    }
   };
 
   // Generate candidate filename for display
@@ -387,6 +422,8 @@ export function TranslatePage() {
                       </Menu>
                     )}
                   </div>
+                  
+                  {/* Interactive text area - back to original structure */}
                   <InteractiveText
                     text={currentText}
                     placeholder={selectedFile ? "" : "Translation will appear here..."}
@@ -394,6 +431,43 @@ export function TranslatePage() {
                     onTextSelect={handleTextSelect}
                     previewText={previewText}
                   />
+                  
+                  {/* Floating prompt input - positioned above the text with subtle design */}
+                  {!selectedFile && translatedText && (
+                    <div className="absolute bottom-4 left-4 right-4 z-20">
+                      <form onSubmit={handlePromptSubmit}>
+                        <div className="flex items-center gap-2 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-neutral-700/40 shadow-lg shadow-black/5 dark:shadow-black/20 p-3">
+                          <input
+                            type="text"
+                            value={promptText}
+                            onChange={(e) => setPromptText(e.target.value)}
+                            placeholder="Refine translation... (e.g., make it shorter)"
+                            disabled={isPromptLoading}
+                            className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-none disabled:text-neutral-400"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!promptText.trim() || isPromptLoading}
+                            className="p-2 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 disabled:text-neutral-300 dark:disabled:text-neutral-600 rounded-xl hover:bg-white/40 dark:hover:bg-neutral-800/40 transition-all disabled:cursor-not-allowed"
+                            title="Apply refinement"
+                          >
+                            {isPromptLoading ? (
+                              <Loader2 size={16} className="animate-spin" />
+                            ) : (
+                              <SendIcon size={16} />
+                            )}
+                          </button>
+                        </div>
+                        
+                        {/* Error message - floating above input */}
+                        {promptError && (
+                          <div className="mt-2 text-xs text-red-600 dark:text-red-400 bg-red-50/90 dark:bg-red-950/40 backdrop-blur-xl px-3 py-2 rounded-xl border border-red-200/40 dark:border-red-800/40">
+                            {promptError}
+                          </div>
+                        )}
+                      </form>
+                    </div>
+                  )}
 
                   {/* Subtle error notification for both text and file translations */}
                   {error && (
