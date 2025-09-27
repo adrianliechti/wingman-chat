@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
-import { Send, Paperclip, ScreenShare, Image, X, Brain, File, Loader2, FileText, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle, Rocket, AlertTriangle } from "lucide-react";
+import { Send, Paperclip, ScreenShare, Image, X, Brain, File, Loader2, FileText, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle, Rocket } from "lucide-react";
 
 import { AttachmentType, Role } from "../types/chat";
 import type { Attachment, Message } from "../types/chat";
@@ -25,20 +25,18 @@ import { useSettings } from "../hooks/useSettings";
 import { useScreenCapture } from "../hooks/useScreenCapture";
 import { useSearch } from "../hooks/useSearch";
 import { useImageGeneration } from "../hooks/useImageGeneration";
-import { useMCP } from "../hooks/useMCP";
 
 export function ChatInput() {
   const config = getConfig();
   const client = config.client;
 
-  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding } = useChat();
+  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding, mcpConnected } = useChat();
   const { currentRepository, setCurrentRepository } = useRepositories();
   const { profile } = useSettings();
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
   const { isAvailable: isSearchAvailable, isEnabled: isSearchEnabled, setEnabled: setSearchEnabled } = useSearch();
   const { isAvailable: isImageGenerationAvailable, isEnabled: isImageGenerationEnabled, setEnabled: setImageGenerationEnabled } = useImageGeneration();
-  const { connectionStatus } = useMCP(model);
-
+  
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
 
@@ -91,23 +89,16 @@ export function ChatInput() {
 
   // MCP indicator logic
   const getMCPIndicator = () => {
-    const hasMCPTools = model?.mcpServer;
-
-    if (!hasMCPTools) {
-      // No MCP tools on selected model - show brain
+    // null = no MCP server, false = connecting, true = connected
+    if (mcpConnected === null) {
+      // No MCP server configured - show brain
       return <Brain size={14} />;
-    }
-
-    // Use the simplified connection status directly
-    switch (connectionStatus) {
-      case 'connected':
-        return <Rocket size={14} />;
-      case 'connecting':
-        return <LoaderCircle size={14} className="animate-spin" />;
-      case 'error':
-        return <AlertTriangle size={14} />;
-      default:
-        return <Brain size={14} />;
+    } else if (mcpConnected === true) {
+      // Connected - show rocket
+      return <Rocket size={14} />;
+    } else {
+      // Connecting or error - show loading spinner
+      return <LoaderCircle size={14} className="animate-spin" />;
     }
   };
 

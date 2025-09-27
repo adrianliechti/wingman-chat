@@ -30,7 +30,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const chat = chats.find(c => c.id === chatId) ?? null;
   const model = chat?.model ?? selectedModel ?? models[0];
-  const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat', model);
+  const { tools: chatTools, instructions: chatInstructions, mcpConnected, mcpTools } = useChatContext('chat', model);
   const messages = useMemo(() => {
     const msgs = chat?.messages ?? [];
     messagesRef.current = msgs;
@@ -325,6 +325,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Message actions
     addMessage,
     sendMessage,
+
+    // MCP state
+    mcpConnected,
+    mcpTools,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

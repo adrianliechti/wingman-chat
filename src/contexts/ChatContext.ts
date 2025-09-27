@@ -21,6 +21,10 @@ export interface ChatContextType {
 
   addMessage: (message: Message) => void;
   sendMessage: (message: Message, tools?: Tool[]) => Promise<void>;
+
+  // MCP state
+  mcpConnected: boolean | null; // null = no MCP server, false = connecting, true = connected
+  mcpTools: Tool[]; // Available MCP tools
 }
 
 export const ChatContext = createContext<ChatContextType | undefined>(undefined);

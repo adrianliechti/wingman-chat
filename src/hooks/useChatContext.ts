@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
 import type { Tool, Model } from "../types/chat";
 import { useProfile } from "./useProfile";
 import { useArtifacts } from "./useArtifacts";
@@ -7,11 +7,13 @@ import { useRepositories } from "./useRepositories";
 import { useBridge } from "./useBridge";
 import { useSearch } from "./useSearch";
 import { useImageGeneration } from "./useImageGeneration";
-import { useMCP } from "./useMCP";
+import { mcpClientManager, type MCPConnection } from "../lib/mcpClient";
 
 export interface ChatContext {
   tools: Tool[];
   instructions: string;
+  mcpConnected: boolean | null; // null = no MCP server, false = connecting, true = connected
+  mcpTools: Tool[];
 }
 
 /**
@@ -30,7 +32,67 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
   const { bridgeTools, bridgeInstructions } = useBridge();
   const { searchTools, searchInstructions } = useSearch();
   const { imageGenerationTools, imageGenerationInstructions } = useImageGeneration();
-  const { mcpTools, mcpInstructions, isEnabled: isMCPEnabled } = useMCP(model);
+  
+  // MCP Integration - track connection state
+  const [mcpConnected, setMcpConnected] = useState<boolean | null>(null);
+  const mcpServerUrl = model?.mcpServer || null;
+
+  // Handle MCP connection lifecycle
+  useEffect(() => {
+    if (!mcpServerUrl) {
+      setMcpConnected(null); // null = no MCP server
+      return;
+    }
+
+    let isCancelled = false;
+    setMcpConnected(false); // false = connecting
+
+    const connectToMCP = async () => {
+      try {
+        await mcpClientManager.connect(mcpServerUrl);
+        if (!isCancelled) {
+          setMcpConnected(true); // true = connected
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setMcpConnected(false); // false = connection failed, still connecting
+          console.error('Failed to connect to MCP server:', error);
+        }
+      }
+    };
+
+    // Listen for connection changes
+    const handleConnectionChange = (serverUrl: string, connection: MCPConnection | null) => {
+      if (serverUrl === mcpServerUrl && !isCancelled) {
+        if (connection) {
+          setMcpConnected(connection.status.connected ? true : false);
+        } else {
+          setMcpConnected(false);
+        }
+      }
+    };
+
+    mcpClientManager.addListener(handleConnectionChange);
+    connectToMCP();
+
+    return () => {
+      isCancelled = true;
+      mcpClientManager.removeListener(handleConnectionChange);
+      
+      // Disconnect when component unmounts or URL changes
+      if (mcpServerUrl) {
+        mcpClientManager.disconnect(mcpServerUrl);
+      }
+    };
+  }, [mcpServerUrl]);
+
+  // Get MCP tools
+  const mcpTools = useMemo((): Tool[] => {
+    if (!mcpServerUrl || mcpConnected !== true) {
+      return [];
+    }
+    return mcpClientManager.getMCPTools(mcpServerUrl);
+  }, [mcpServerUrl, mcpConnected]);
 
   return useMemo(() => {
     const profileInstructions = generateInstructions();
@@ -47,8 +109,9 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     const imageGenTools = imageGenerationTools();
     const imageGenInstructions = imageGenerationInstructions();
 
-    const mcpToolsList = isMCPEnabled ? mcpTools() : [];
-    const mcpInstructionsList = isMCPEnabled ? mcpInstructions() : '';
+    // MCP tools are already an array from useMemo above
+    const mcpToolsList = mcpConnected === true ? mcpTools : [];
+    const mcpInstructionsList = ''; // MCP instructions are empty for now
 
     const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools, ...mcpToolsList];
 
@@ -89,7 +152,9 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
 
     return {
       tools: completionTools,
-      instructions: instructionsList.join('\n\n')
+      instructions: instructionsList.join('\n\n'),
+      mcpConnected,
+      mcpTools
     };
   }, [
     mode,
@@ -106,8 +171,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     searchInstructions,
     imageGenerationTools,
     imageGenerationInstructions,
-    isMCPEnabled,
-    mcpTools,
-    mcpInstructions
+    mcpConnected,
+    mcpTools
   ]);
 }
