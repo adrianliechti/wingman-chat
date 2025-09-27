@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
-import { Send, Paperclip, ScreenShare, Image, X, Brain, File, Loader2, FileText, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle, Rocket } from "lucide-react";
+import { Send, Paperclip, ScreenShare, Image, X, Sparkles, File, Loader2, FileText, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle, Rocket } from "lucide-react";
 
 import { AttachmentType, Role } from "../types/chat";
 import type { Attachment, Message } from "../types/chat";
@@ -92,7 +92,7 @@ export function ChatInput() {
     // null = no MCP server, false = connecting, true = connected
     if (mcpConnected === null) {
       // No MCP server configured - show brain
-      return <Brain size={14} />;
+      return <Sparkles size={14} />;
     } else if (mcpConnected === true) {
       // Connected - show rocket
       return <Rocket size={14} />;

@@ -50,9 +50,7 @@ export default defineConfig({
             'remark-breaks', 
             'remark-gfm', 
             'rehype-raw', 
-            'rehype-sanitize',
-            'remark',
-            'remark-html'
+            'rehype-sanitize'
           ],
           'vendor-ui': [
             '@headlessui/react',

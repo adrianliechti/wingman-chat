@@ -74,7 +74,6 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
         if (!isCancelled) {
           setMcpConnected(true); // true = connected
           setMcpTools(client.getChatTools());
-          console.log(`Connected to MCP server ${mcpServerUrl}, loaded ${client.getTools().length} tools`);
         }
       } catch (error) {
         if (!isCancelled) {

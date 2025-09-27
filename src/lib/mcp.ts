@@ -46,12 +46,6 @@ export class MCPClient {
       await this.disconnect();
     }
 
-    // Only support HTTP/HTTPS URLs for browser compatibility
-    if (!this.serverUrl.startsWith('http://') && !this.serverUrl.startsWith('https://')) {
-      throw new Error(`Unsupported MCP server URL: ${this.serverUrl}. Only HTTP/HTTPS URLs are supported in browser environment (e.g., http://localhost:1234/mcp).`);
-    }
-
-    // Use StreamableHTTPClientTransport for HTTP/HTTPS
     const transport = new StreamableHTTPClientTransport(new URL(this.serverUrl));
 
     // Create and connect client

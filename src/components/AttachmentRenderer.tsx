@@ -2,13 +2,13 @@ import { File, Download } from "lucide-react";
 import type { Attachment } from "../types/chat";
 import { AttachmentType } from "../types/chat";
 import { downloadBlob, downloadFromUrl } from "../lib/utils";
-import { detectMimeType } from "../lib/attachmentUtils";
 import { PdfRenderer } from "./PdfRenderer";
 import { Markdown } from "./Markdown";
 import { MermaidRenderer } from "./MermaidRenderer";
 import { CsvRenderer } from "./CsvRenderer";
 import { UIResourceRenderer } from '@mcp-ui/client';
 import { HtmlRenderer } from "./HtmlRenderer";
+import mime from 'mime';
 
 // Helper function to check if content is a URL
 function isUrl(content: string): boolean {
@@ -16,6 +16,17 @@ function isUrl(content: string): boolean {
     content.startsWith('https://') ||
     content.startsWith('data:') ||
     content.startsWith('blob:');
+}
+
+function detectMimeType(data: string, filename: string): string {
+  if (data.startsWith('data:')) {
+    const mimeMatch = data.match(/^data:([^;]+)/);
+    if (mimeMatch) return mimeMatch[1];
+  }
+  
+  // Use mime library to get MIME type from file extension
+  const mimeType = mime.getType(filename);
+  return mimeType || 'application/octet-stream';
 }
 
 // Helper function to download attachment data
