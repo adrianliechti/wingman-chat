@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState } from "react";
+import { useMemo, useEffect, useState, useRef } from "react";
 import type { Tool, Model } from "../types/chat";
 import { useProfile } from "./useProfile";
 import { useArtifacts } from "./useArtifacts";
@@ -7,7 +7,7 @@ import { useRepositories } from "./useRepositories";
 import { useBridge } from "./useBridge";
 import { useSearch } from "./useSearch";
 import { useImageGeneration } from "./useImageGeneration";
-import { mcpClientManager, type MCPConnection } from "../lib/mcpClient";
+import { MCPClient } from "../lib/mcp";
 
 export interface ChatContext {
   tools: Tool[];
@@ -33,66 +33,68 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
   const { searchTools, searchInstructions } = useSearch();
   const { imageGenerationTools, imageGenerationInstructions } = useImageGeneration();
   
-  // MCP Integration - track connection state
+  // MCP Integration - simplified client management
   const [mcpConnected, setMcpConnected] = useState<boolean | null>(null);
+  const [mcpTools, setMcpTools] = useState<Tool[]>([]);
+  const mcpClientRef = useRef<MCPClient | null>(null);
   const mcpServerUrl = model?.mcpServer || null;
 
-  // Handle MCP connection lifecycle
+  // Handle MCP connection lifecycle - reconnect when model changes
   useEffect(() => {
-    if (!mcpServerUrl) {
-      setMcpConnected(null); // null = no MCP server
-      return;
-    }
-
     let isCancelled = false;
-    setMcpConnected(false); // false = connecting
+
+    // Cleanup previous client
+    const cleanupPreviousClient = async () => {
+      if (mcpClientRef.current) {
+        await mcpClientRef.current.disconnect();
+        mcpClientRef.current = null;
+      }
+    };
 
     const connectToMCP = async () => {
+      if (!mcpServerUrl) {
+        setMcpConnected(null); // null = no MCP server
+        setMcpTools([]);
+        return;
+      }
+
       try {
-        await mcpClientManager.connect(mcpServerUrl);
+        await cleanupPreviousClient();
+        
+        if (isCancelled) return;
+        
+        setMcpConnected(false); // false = connecting
+        setMcpTools([]);
+
+        const client = new MCPClient(mcpServerUrl);
+        mcpClientRef.current = client;
+        
+        await client.connect();
+        
         if (!isCancelled) {
           setMcpConnected(true); // true = connected
+          setMcpTools(client.getChatTools());
+          console.log(`Connected to MCP server ${mcpServerUrl}, loaded ${client.getTools().length} tools`);
         }
       } catch (error) {
         if (!isCancelled) {
-          setMcpConnected(false); // false = connection failed, still connecting
+          setMcpConnected(false); // false = connection failed
+          setMcpTools([]);
           console.error('Failed to connect to MCP server:', error);
         }
       }
     };
 
-    // Listen for connection changes
-    const handleConnectionChange = (serverUrl: string, connection: MCPConnection | null) => {
-      if (serverUrl === mcpServerUrl && !isCancelled) {
-        if (connection) {
-          setMcpConnected(connection.status.connected ? true : false);
-        } else {
-          setMcpConnected(false);
-        }
-      }
-    };
-
-    mcpClientManager.addListener(handleConnectionChange);
     connectToMCP();
 
     return () => {
       isCancelled = true;
-      mcpClientManager.removeListener(handleConnectionChange);
-      
-      // Disconnect when component unmounts or URL changes
-      if (mcpServerUrl) {
-        mcpClientManager.disconnect(mcpServerUrl);
+      if (mcpClientRef.current) {
+        mcpClientRef.current.disconnect();
+        mcpClientRef.current = null;
       }
     };
-  }, [mcpServerUrl]);
-
-  // Get MCP tools
-  const mcpTools = useMemo((): Tool[] => {
-    if (!mcpServerUrl || mcpConnected !== true) {
-      return [];
-    }
-    return mcpClientManager.getMCPTools(mcpServerUrl);
-  }, [mcpServerUrl, mcpConnected]);
+  }, [mcpServerUrl]); // Reconnect when mcpServerUrl changes
 
   return useMemo(() => {
     const profileInstructions = generateInstructions();
@@ -109,11 +111,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     const imageGenTools = imageGenerationTools();
     const imageGenInstructions = imageGenerationInstructions();
 
-    // MCP tools are already an array from useMemo above
-    const mcpToolsList = mcpConnected === true ? mcpTools : [];
-    const mcpInstructionsList = ''; // MCP instructions are empty for now
-
-    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools, ...mcpToolsList];
+    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools, ...mcpTools];
 
     const instructionsList: string[] = [];
 
@@ -139,10 +137,6 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
 
     if (imageGenTools.length > 0 && imageGenInstructions?.trim()) {
       instructionsList.push(imageGenInstructions);
-    }
-
-    if (mcpToolsList.length > 0 && mcpInstructionsList?.trim()) {
-      instructionsList.push(mcpInstructionsList);
     }
 
     // Add mode-specific instructions
