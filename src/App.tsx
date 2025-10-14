@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Languages, PanelLeftOpen, PanelRightOpen } from "lucide-react";
+import { MessageCircle, Languages, PanelLeftOpen, PanelRightOpen, Workflow } from "lucide-react";
 import { Button } from "@headlessui/react";
 import { ChatPage } from "./pages/ChatPage";
 import { TranslatePage } from "./pages/TranslatePage";
+import { WorkflowPage } from "./pages/WorkflowPage";
 import { SidebarProvider } from "./contexts/SidebarProvider";
 import { useSidebar } from "./hooks/useSidebar";
 import { NavigationProvider } from "./contexts/NavigationProvider";
@@ -23,7 +24,7 @@ import { SearchProvider } from "./contexts/SearchProvider";
 import { ImageGenerationProvider } from "./contexts/ImageGenerationProvider";
 import { BridgeIndicator } from "./components/BridgeIndicator";
 
-type Page = "chat" | "translate";
+type Page = "chat" | "translate" | "workflow";
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>("chat");
@@ -77,6 +78,8 @@ function AppContent() {
           return 'chat';
         case '#translate':
           return 'translate';
+        case '#workflow':
+          return 'workflow';
         default:
           return 'chat';
       }
@@ -139,6 +142,7 @@ function AppContent() {
   const pages: { key: Page; label: string; icon: React.ReactNode }[] = [
     { key: "chat", label: "Chat", icon: <MessageCircle size={20} /> },
     { key: "translate", label: "Translate", icon: <Languages size={20} /> },
+    { key: "workflow", label: "Workflow", icon: <Workflow size={20} /> },
   ];
 
   return (
@@ -341,6 +345,7 @@ function AppContent() {
           <div className="flex-1 overflow-hidden">
             {currentPage === "chat" && <ChatPage />}
             {currentPage === "translate" && <TranslatePage />}
+            {currentPage === "workflow" && <WorkflowPage />}
           </div>
         </div>
       </div>

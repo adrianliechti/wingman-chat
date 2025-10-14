@@ -1,2 +1,33 @@
 {
+    "artifacts": {
+        "enabled": true
+    },
+
+    "stt": {
+        "enabled": true
+    },
+
+    "tts": {
+        "enabled": true
+    },
+
+    "bridge": {
+        "enabled": true,
+        "url": "http://localhost:4200"
+    },
+
+    "internet": {
+        "enabled": true
+    },
+
+    "translator": {
+        "enabled": true,
+        "model": "gpt-4.1-mini",
+        "languages": [
+            "en",
+            "de",
+            "fr",
+            "it"
+        ]
+    }
 }
