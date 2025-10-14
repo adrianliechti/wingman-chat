@@ -552,9 +552,9 @@ Quality Standards:
     }
   }
 
-  async speakText(model: string, input: string, voice?: string): Promise<void> {
+  async generateAudio(model: string, input: string, voice?: string): Promise<Blob> {
     if (!input.trim()) {
-      return;
+      throw new Error("Input text cannot be empty");
     }
 
     const response = await this.oai.audio.speech.create({
@@ -568,7 +568,11 @@ Quality Standards:
     });
 
     const audioBuffer = await response.arrayBuffer();      
-    const audioBlob = new Blob([audioBuffer], { type: 'audio/wav' });
+    return new Blob([audioBuffer], { type: 'audio/wav' });
+  }
+
+  async speakText(model: string, input: string, voice?: string): Promise<void> {
+    const audioBlob = await this.generateAudio(model, input, voice);
     const audioUrl = URL.createObjectURL(audioBlob);
     
     const audio = new Audio(audioUrl);
