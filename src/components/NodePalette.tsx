@@ -14,7 +14,7 @@ function NodePaletteItem({ type, label, icon, onClick }: NodePaletteItemProps) {
     <button
       onClick={() => onClick(type)}
       title={label}
-      className="size-10 bg-white/60 dark:bg-white/10 rounded-lg flex items-center justify-center hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer"
+      className="size-10 bg-transparent dark:bg-transparent rounded-lg flex items-center justify-center hover:bg-neutral-200 dark:hover:bg-white/10 transition-all text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 cursor-pointer"
     >
       {icon}
     </button>

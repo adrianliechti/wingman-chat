@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
-import { Languages, Check, ChevronDown } from 'lucide-react';
-import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react';
+import { Languages, GlobeIcon, ThermometerIcon, SwatchBookIcon } from 'lucide-react';
+import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import type { NodeProps } from '@xyflow/react';
 import type { TranslateNode as TranslateNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
@@ -89,135 +89,84 @@ export const TranslateNode = memo(({ id, data, selected }: NodeProps<TranslateNo
     >
       <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
         {/* Settings Row */}
-        <div className="flex-shrink-0 grid grid-cols-3 gap-2">
-          {/* Language Dropdown */}
-          <div>
-            <Listbox
-              value={data.language || 'en'}
-              onChange={(value) => updateNode(id, { 
-                data: { ...data, language: value } 
-              })}
+        <div className="flex-shrink-0 flex items-center gap-2 flex-wrap">
+          {/* Language selector */}
+          <Menu>
+            <MenuButton className="nodrag inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-xs transition-colors rounded-lg">
+              <GlobeIcon size={14} />
+              <span>
+                {languages.find(l => l.code === (data.language || 'en'))?.name || 'English'}
+              </span>
+            </MenuButton>
+            <MenuItems
+              transition
+              anchor="bottom start"
+              className="!max-h-[50vh] mt-1 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
             >
-              <div className="relative">
-                <ListboxButton className="nodrag relative w-full px-2.5 py-1.5 text-xs text-left bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm hover:bg-white dark:hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 transition-all cursor-pointer">
-                  <span className="block truncate text-slate-700 dark:text-slate-200">
-                    {languages.find(l => l.code === (data.language || 'en'))?.name || 'English'}
-                  </span>
-                  <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-                    <ChevronDown className="h-3 w-3 text-slate-400" aria-hidden="true" />
-                  </span>
-                </ListboxButton>
-                <ListboxOptions className="nodrag absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg bg-white dark:bg-slate-800 py-1 text-xs shadow-lg ring-1 ring-slate-900/5 dark:ring-slate-700 focus:outline-none">
-                  {languages.map((lang) => (
-                    <ListboxOption
-                      key={lang.code}
-                      value={lang.code}
-                      className="relative cursor-pointer select-none py-2 pl-8 pr-4 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50 data-[selected]:bg-orange-50 dark:data-[selected]:bg-orange-900/20 data-[selected]:text-orange-600 dark:data-[selected]:text-orange-400"
-                    >
-                      {({ selected }) => (
-                        <>
-                          <span className={`block truncate ${selected ? 'font-medium' : 'font-normal'}`}>
-                            {lang.name}
-                          </span>
-                          {selected ? (
-                            <span className="absolute inset-y-0 left-0 flex items-center pl-2 text-orange-600 dark:text-orange-400">
-                              <Check className="h-3 w-3" aria-hidden="true" />
-                            </span>
-                          ) : null}
-                        </>
-                      )}
-                    </ListboxOption>
-                  ))}
-                </ListboxOptions>
-              </div>
-            </Listbox>
-          </div>
+              {languages.map((lang) => (
+                <MenuItem key={lang.code}>
+                  <Button
+                    onClick={() => updateNode(id, { data: { ...data, language: lang.code } })}
+                    className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
+                  >
+                    {lang.name}
+                  </Button>
+                </MenuItem>
+              ))}
+            </MenuItems>
+          </Menu>
 
-          {/* Tone Dropdown */}
-          <div>
-            <Listbox
-              value={data.tone || ''}
-              onChange={(value) => updateNode(id, { 
-                data: { ...data, tone: value } 
-              })}
+          {/* Tone selector */}
+          <Menu>
+            <MenuButton className="nodrag inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-xs transition-colors rounded-lg">
+              <ThermometerIcon size={14} />
+              <span>
+                {data.tone ? tones.find(t => t.value === data.tone)?.label : 'Tone'}
+              </span>
+            </MenuButton>
+            <MenuItems
+              transition
+              anchor="bottom start"
+              className="mt-1 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
             >
-              <div className="relative">
-                <ListboxButton className="nodrag relative w-full px-2.5 py-1.5 text-xs text-left bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm hover:bg-white dark:hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 transition-all cursor-pointer">
-                  <span className="block truncate text-slate-700 dark:text-slate-200">
-                    {tones.find(t => t.value === (data.tone || ''))?.label || 'Default'}
-                  </span>
-                  <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-                    <ChevronDown className="h-3 w-3 text-slate-400" aria-hidden="true" />
-                  </span>
-                </ListboxButton>
-                <ListboxOptions className="nodrag absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg bg-white dark:bg-slate-800 py-1 text-xs shadow-lg ring-1 ring-slate-900/5 dark:ring-slate-700 focus:outline-none">
-                  {tones.map((tone) => (
-                    <ListboxOption
-                      key={tone.value}
-                      value={tone.value}
-                      className="relative cursor-pointer select-none py-2 pl-8 pr-4 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50 data-[selected]:bg-orange-50 dark:data-[selected]:bg-orange-900/20 data-[selected]:text-orange-600 dark:data-[selected]:text-orange-400"
-                    >
-                      {({ selected }) => (
-                        <>
-                          <span className={`block truncate ${selected ? 'font-medium' : 'font-normal'}`}>
-                            {tone.label}
-                          </span>
-                          {selected ? (
-                            <span className="absolute inset-y-0 left-0 flex items-center pl-2 text-orange-600 dark:text-orange-400">
-                              <Check className="h-3 w-3" aria-hidden="true" />
-                            </span>
-                          ) : null}
-                        </>
-                      )}
-                    </ListboxOption>
-                  ))}
-                </ListboxOptions>
-              </div>
-            </Listbox>
-          </div>
+              {tones.map((toneOption) => (
+                <MenuItem key={toneOption.value}>
+                  <Button
+                    onClick={() => updateNode(id, { data: { ...data, tone: toneOption.value } })}
+                    className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
+                  >
+                    {toneOption.label}
+                  </Button>
+                </MenuItem>
+              ))}
+            </MenuItems>
+          </Menu>
 
-          {/* Style Dropdown */}
-          <div>
-            <Listbox
-              value={data.style || ''}
-              onChange={(value) => updateNode(id, { 
-                data: { ...data, style: value } 
-              })}
+          {/* Style selector */}
+          <Menu>
+            <MenuButton className="nodrag inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-xs transition-colors rounded-lg">
+              <SwatchBookIcon size={14} />
+              <span>
+                {data.style ? styles.find(s => s.value === data.style)?.label : 'Style'}
+              </span>
+            </MenuButton>
+            <MenuItems
+              transition
+              anchor="bottom start"
+              className="mt-1 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
             >
-              <div className="relative">
-                <ListboxButton className="nodrag relative w-full px-2.5 py-1.5 text-xs text-left bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm hover:bg-white dark:hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 transition-all cursor-pointer">
-                  <span className="block truncate text-slate-700 dark:text-slate-200">
-                    {styles.find(s => s.value === (data.style || ''))?.label || 'Default'}
-                  </span>
-                  <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-                    <ChevronDown className="h-3 w-3 text-slate-400" aria-hidden="true" />
-                  </span>
-                </ListboxButton>
-                <ListboxOptions className="nodrag absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg bg-white dark:bg-slate-800 py-1 text-xs shadow-lg ring-1 ring-slate-900/5 dark:ring-slate-700 focus:outline-none">
-                  {styles.map((style) => (
-                    <ListboxOption
-                      key={style.value}
-                      value={style.value}
-                      className="relative cursor-pointer select-none py-2 pl-8 pr-4 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50 data-[selected]:bg-orange-50 dark:data-[selected]:bg-orange-900/20 data-[selected]:text-orange-600 dark:data-[selected]:text-orange-400"
-                    >
-                      {({ selected }) => (
-                        <>
-                          <span className={`block truncate ${selected ? 'font-medium' : 'font-normal'}`}>
-                            {style.label}
-                          </span>
-                          {selected ? (
-                            <span className="absolute inset-y-0 left-0 flex items-center pl-2 text-orange-600 dark:text-orange-400">
-                              <Check className="h-3 w-3" aria-hidden="true" />
-                            </span>
-                          ) : null}
-                        </>
-                      )}
-                    </ListboxOption>
-                  ))}
-                </ListboxOptions>
-              </div>
-            </Listbox>
-          </div>
+              {styles.map((styleOption) => (
+                <MenuItem key={styleOption.value}>
+                  <Button
+                    onClick={() => updateNode(id, { data: { ...data, style: styleOption.value } })}
+                    className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
+                  >
+                    {styleOption.label}
+                  </Button>
+                </MenuItem>
+              ))}
+            </MenuItems>
+          </Menu>
         </div>
 
         {/* Output */}
