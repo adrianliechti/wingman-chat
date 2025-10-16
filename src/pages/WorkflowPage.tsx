@@ -1,5 +1,5 @@
 import { WorkflowProvider } from '../contexts/WorkflowProvider';
-import { NodePalette } from '../components/NodePalette';
+import { WorkflowPalette } from '../components/WorkflowPalette';
 import { WorkflowCanvas } from '../components/WorkflowCanvas';
 
 export function WorkflowPage() {
@@ -7,7 +7,7 @@ export function WorkflowPage() {
     <WorkflowProvider>
       <div className="h-full w-full flex overflow-hidden relative">
         <WorkflowCanvas />
-        <NodePalette />
+        <WorkflowPalette />
       </div>
     </WorkflowProvider>
   );
