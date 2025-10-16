@@ -1,4 +1,4 @@
-import { Globe, Sparkles, FileText, FileType, Volume2, Image, StickyNote, Languages, Table, Link } from 'lucide-react';
+import { Globe, Sparkles, FileText, FileType, Volume2, Image, StickyNote, Languages, Table, Link, Database } from 'lucide-react';
 import { useWorkflow } from '../hooks/useWorkflow';
 import type { NodeType, WorkflowNode } from '../types/workflow';
 
@@ -54,6 +54,8 @@ export function NodePalette() {
         ? { url: '', outputText: '', useInput: false }
         : type === 'textInput'
         ? { content: '', useInput: false }
+        : type === 'repositoryInput'
+        ? { repositoryId: '', query: '', outputText: '', useInput: false }
         : type === 'markdownOutput'
         ? { inputText: '', outputText: '', error: undefined, useInput: false }
         : type === 'audioOutput'
@@ -69,7 +71,7 @@ export function NodePalette() {
   };
 
   return (
-    <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-lg p-2 flex flex-col gap-2">
+    <div className="absolute left-4 top-20 z-10 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-lg p-2 flex flex-col gap-2 max-h-[calc(100vh-6rem)] overflow-y-auto">
       <NodePaletteItem
         type="textInput"
         label="Text Input"
@@ -92,6 +94,12 @@ export function NodePalette() {
         type="searchInput"
         label="Search Input"
         icon={<Globe size={20} />}
+        onClick={handleNodeClick}
+      />
+      <NodePaletteItem
+        type="repositoryInput"
+        label="Repository Search"
+        icon={<Database size={20} />}
         onClick={handleNodeClick}
       />
       <div className="w-full h-px bg-gray-300/50 dark:bg-gray-600/50 my-1" />

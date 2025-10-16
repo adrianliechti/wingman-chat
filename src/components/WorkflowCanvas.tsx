@@ -14,6 +14,7 @@ import { TranslateNode } from './TranslateNode';
 import { FileInputNode } from './FileInputNode';
 import { WebInputNode } from './WebInputNode';
 import { TextInputNode } from './TextInputNode';
+import { RepositoryInputNode } from './RepositoryInputNode';
 import { MarkdownOutputNode } from './MarkdownOutputNode';
 import { AudioOutputNode } from './AudioOutputNode';
 import { ImageOutputNode } from './ImageOutputNode';
@@ -26,6 +27,7 @@ const nodeTypes: NodeTypes = {
   fileInput: FileInputNode,
   webInput: WebInputNode,
   textInput: TextInputNode,
+  repositoryInput: RepositoryInputNode,
   markdownOutput: MarkdownOutputNode,
   audioOutput: AudioOutputNode,
   imageOutput: ImageOutputNode,

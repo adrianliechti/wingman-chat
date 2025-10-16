@@ -1,6 +1,6 @@
 import type { Node, Edge } from '@xyflow/react';
 
-export type NodeType = 'searchInput' | 'llm' | 'translate' | 'fileInput' | 'webInput' | 'textInput' | 'markdownOutput' | 'audioOutput' | 'imageOutput' | 'csvOutput';
+export type NodeType = 'searchInput' | 'llm' | 'translate' | 'fileInput' | 'webInput' | 'textInput' | 'repositoryInput' | 'markdownOutput' | 'audioOutput' | 'imageOutput' | 'csvOutput';
 
 // Custom data for each node type
 export interface SearchInputNodeData extends Record<string, unknown> {
@@ -42,6 +42,13 @@ export interface TextInputNodeData extends Record<string, unknown> {
   useInput: boolean;
 }
 
+export interface RepositoryInputNodeData extends Record<string, unknown> {
+  repositoryId?: string;
+  query?: string;
+  outputText?: string;
+  useInput: boolean;
+}
+
 export interface MarkdownOutputNodeData extends Record<string, unknown> {
   inputText?: string;
   outputText?: string;
@@ -74,12 +81,13 @@ export type TranslateNode = Node<TranslateNodeData, 'translate'>;
 export type FileInputNode = Node<FileInputNodeData, 'fileInput'>;
 export type WebInputNode = Node<WebInputNodeData, 'webInput'>;
 export type TextInputNode = Node<TextInputNodeData, 'textInput'>;
+export type RepositoryInputNode = Node<RepositoryInputNodeData, 'repositoryInput'>;
 export type MarkdownOutputNode = Node<MarkdownOutputNodeData, 'markdownOutput'>;
 export type AudioOutputNode = Node<AudioOutputNodeData, 'audioOutput'>;
 export type ImageOutputNode = Node<ImageOutputNodeData, 'imageOutput'>;
 export type CsvOutputNode = Node<CsvOutputNodeData, 'csvOutput'>;
 
-export type WorkflowNode = SearchInputNode | LLMNode | TranslateNode | FileInputNode | WebInputNode | TextInputNode | MarkdownOutputNode | AudioOutputNode | ImageOutputNode | CsvOutputNode;
+export type WorkflowNode = SearchInputNode | LLMNode | TranslateNode | FileInputNode | WebInputNode | TextInputNode | RepositoryInputNode | MarkdownOutputNode | AudioOutputNode | ImageOutputNode | CsvOutputNode;
 
 // Use ReactFlow's Edge type for connections
 export type WorkflowEdge = Edge;
