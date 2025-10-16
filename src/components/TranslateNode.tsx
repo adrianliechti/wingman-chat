@@ -6,7 +6,7 @@ import type { TranslateNode as TranslateNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
-import { getConnectedNodeData } from '../lib/workflowUtils';
+import { getConnectedNodeData } from '../lib/workflow';
 import { Markdown } from './Markdown';
 import { supportedLanguages, toneOptions, styleOptions } from '../contexts/TranslateContext';
 

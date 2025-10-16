@@ -5,19 +5,18 @@ import type { NodeProps } from '@xyflow/react';
 import type { FileInputNode as FileInputNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { getConfig } from '../config';
+import { supportedTypes } from '../lib/utils';
 import { WorkflowNode } from './WorkflowNode';
 
 export const FileInputNode = memo(({ id, data, selected }: NodeProps<FileInputNodeType>) => {
   const { updateNode } = useWorkflow();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const config = getConfig();
   const client = config.client;
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processFile = async (file: File) => {
     setIsLoading(true);
     try {
       const content = await client.extractText(file);
@@ -44,6 +43,34 @@ export const FileInputNode = memo(({ id, data, selected }: NodeProps<FileInputNo
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    await processFile(file);
+  };
+
   return (
     <WorkflowNode
       id={id}
@@ -57,6 +84,7 @@ export const FileInputNode = memo(({ id, data, selected }: NodeProps<FileInputNo
       <input
         ref={fileInputRef}
         type="file"
+        accept={supportedTypes.join(",")}
         onChange={handleFileUpload}
         className="hidden"
         disabled={isLoading}
@@ -70,17 +98,31 @@ export const FileInputNode = memo(({ id, data, selected }: NodeProps<FileInputNo
           </div>
         </div>
       ) : !data.fileContent ? (
-        <div className="flex-1 flex items-center justify-center">
+        <div 
+          className="flex-1 flex items-center justify-center"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex flex-col items-center gap-3 p-8 text-gray-400 dark:text-gray-600 hover:text-orange-500 dark:hover:text-orange-400 transition-colors nodrag group"
+            className={`flex flex-col items-center gap-3 p-8 text-gray-400 dark:text-gray-600 hover:text-orange-500 dark:hover:text-orange-400 transition-colors nodrag group ${
+              isDragging ? 'text-orange-500 dark:text-orange-400 scale-105' : ''
+            }`}
           >
             <Upload size={56} strokeWidth={1.5} className="group-hover:scale-110 transition-transform" />
-            <span className="text-sm font-medium">Click to upload file</span>
+            <span className="text-sm font-medium">
+              {isDragging ? 'Drop file here' : 'Click to upload file'}
+            </span>
           </button>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col min-h-0 gap-2">
+        <div 
+          className="flex-1 flex flex-col min-h-0 gap-2"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           <div className="flex-shrink-0 px-2">
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -90,7 +132,9 @@ export const FileInputNode = memo(({ id, data, selected }: NodeProps<FileInputNo
               Replace file
             </button>
           </div>
-          <div className="flex-1 flex flex-col min-h-0 px-2 pb-2">
+          <div className={`flex-1 flex flex-col min-h-0 px-2 pb-2 transition-all ${
+            isDragging ? 'opacity-50' : ''
+          }`}>
             <Textarea
               value={data.fileContent || ''}
               readOnly

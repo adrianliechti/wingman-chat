@@ -1,6 +1,6 @@
 import type { Node, Edge } from '@xyflow/react';
 
-export type NodeType = 'searchInput' | 'llm' | 'translate' | 'fileInput' | 'textInput' | 'markdownOutput' | 'audioOutput' | 'imageOutput' | 'csvOutput';
+export type NodeType = 'searchInput' | 'llm' | 'translate' | 'fileInput' | 'webInput' | 'textInput' | 'markdownOutput' | 'audioOutput' | 'imageOutput' | 'csvOutput';
 
 // Custom data for each node type
 export interface SearchInputNodeData extends Record<string, unknown> {
@@ -27,6 +27,12 @@ export interface TranslateNodeData extends Record<string, unknown> {
 export interface FileInputNodeData extends Record<string, unknown> {
   fileName?: string;
   fileContent?: string;
+  outputText?: string;
+  useInput: boolean;
+}
+
+export interface WebInputNodeData extends Record<string, unknown> {
+  url?: string;
   outputText?: string;
   useInput: boolean;
 }
@@ -66,13 +72,14 @@ export type SearchInputNode = Node<SearchInputNodeData, 'searchInput'>;
 export type LLMNode = Node<LLMNodeData, 'llm'>;
 export type TranslateNode = Node<TranslateNodeData, 'translate'>;
 export type FileInputNode = Node<FileInputNodeData, 'fileInput'>;
+export type WebInputNode = Node<WebInputNodeData, 'webInput'>;
 export type TextInputNode = Node<TextInputNodeData, 'textInput'>;
 export type MarkdownOutputNode = Node<MarkdownOutputNodeData, 'markdownOutput'>;
 export type AudioOutputNode = Node<AudioOutputNodeData, 'audioOutput'>;
 export type ImageOutputNode = Node<ImageOutputNodeData, 'imageOutput'>;
 export type CsvOutputNode = Node<CsvOutputNodeData, 'csvOutput'>;
 
-export type WorkflowNode = SearchInputNode | LLMNode | TranslateNode | FileInputNode | TextInputNode | MarkdownOutputNode | AudioOutputNode | ImageOutputNode | CsvOutputNode;
+export type WorkflowNode = SearchInputNode | LLMNode | TranslateNode | FileInputNode | WebInputNode | TextInputNode | MarkdownOutputNode | AudioOutputNode | ImageOutputNode | CsvOutputNode;
 
 // Use ReactFlow's Edge type for connections
 export type WorkflowEdge = Edge;

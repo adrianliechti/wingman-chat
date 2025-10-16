@@ -7,7 +7,7 @@ import type { SearchResult } from '../types/search';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
-import { getConnectedNodeData } from '../lib/workflowUtils';
+import { getConnectedNodeData } from '../lib/workflow';
 
 export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInputNodeType>) => {
   const { updateNode, nodes, edges } = useWorkflow();
@@ -72,15 +72,29 @@ export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInp
     >
       <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
         <div className="flex-shrink-0">
-          <Input
-            type="text"
-            value={data.inputText || ''}
-            onChange={(e) => updateNode(id, { 
-              data: { ...data, inputText: e.target.value } 
-            })}
-            placeholder="Enter search query..."
-            className="w-full px-3 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 focus:outline-none transition-all nodrag"
-          />
+          <div className="flex gap-2">
+            <Input
+              type="text"
+              value={data.inputText || ''}
+              onChange={(e) => updateNode(id, { 
+                data: { ...data, inputText: e.target.value } 
+              })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && data.inputText?.trim()) {
+                  handleExecute();
+                }
+              }}
+              placeholder="Enter search query..."
+              className="flex-1 px-3 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 focus:outline-none transition-all nodrag"
+            />
+            <button
+              onClick={handleExecute}
+              disabled={!data.inputText?.trim()}
+              className="px-4 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 dark:hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 nodrag"
+            >
+              Search
+            </button>
+          </div>
         </div>
 
         {searchResults.length > 0 && (

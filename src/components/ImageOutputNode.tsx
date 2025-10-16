@@ -5,7 +5,7 @@ import type { ImageOutputNode as ImageOutputNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
-import { getConnectedNodeData } from '../lib/workflowUtils';
+import { getConnectedNodeData } from '../lib/workflow';
 
 export const ImageOutputNode = memo(({ id, data, selected }: NodeProps<ImageOutputNodeType>) => {
   const { updateNode, nodes, edges } = useWorkflow();

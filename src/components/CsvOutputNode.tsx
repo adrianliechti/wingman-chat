@@ -4,11 +4,9 @@ import type { NodeProps } from '@xyflow/react';
 import type { CsvOutputNode as CsvOutputNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { getConfig } from '../config';
-import { Role } from '../types/chat';
-import type { Message } from '../types/chat';
 import { CsvRenderer } from './CsvRenderer';
 import { WorkflowNode } from './WorkflowNode';
-import { getConnectedNodeData } from '../lib/workflowUtils';
+import { getConnectedNodeData } from '../lib/workflow';
 
 export const CsvOutputNode = memo(({ id, data, selected }: NodeProps<CsvOutputNodeType>) => {
   const { updateNode, nodes, edges } = useWorkflow();
@@ -30,34 +28,12 @@ export const CsvOutputNode = memo(({ id, data, selected }: NodeProps<CsvOutputNo
     });
     
     try {
-      // System message with instructions to extract table data and format as CSV
-      const instructions = `Extract all tabular data from the following content and convert it into a valid CSV format. 
-- Identify any tables, lists, or structured data that can be represented in tabular form
-- Use appropriate column headers
-- Ensure all rows have the same number of columns
-- Use proper CSV formatting with commas as delimiters
-- Quote fields that contain commas, newlines, or special characters
-- If multiple tables are present, combine them logically or focus on the most significant one
-- If no tabular data is found, create a simple CSV with relevant structured information
-- Return ONLY the CSV data, no additional text or explanation`;
-
-      // User message with the actual content
-      const message: Message = {
-        role: Role.User,
-        content: inputContent
-      };
-
-      // Call the complete method to extract and format the CSV
-      const response = await client.complete(
-        '', // use default model
-        instructions,
-        [message],
-        [] // no tools
-      );
+      // Use the convertCSV method from the client
+      const csvData = await client.convertCSV('', inputContent);
 
       // Set final output
       updateNode(id, {
-        data: { ...data, csvData: response.content, error: undefined }
+        data: { ...data, csvData, error: undefined }
       });
     } catch (error) {
       console.error('Error extracting CSV:', error);

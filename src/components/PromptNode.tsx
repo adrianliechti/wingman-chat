@@ -8,7 +8,7 @@ import { getConfig } from '../config';
 import { Role, AttachmentType } from '../types/chat';
 import type { Message } from '../types/chat';
 import { WorkflowNode } from './WorkflowNode';
-import { getConnectedNodeData } from '../lib/workflowUtils';
+import { getConnectedNodeData } from '../lib/workflow';
 import { Markdown } from './Markdown';
 
 export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType>) => {
@@ -99,7 +99,7 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
 
         {data.outputText && (
           <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex-1 min-h-0 px-3 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-gray-100/50 dark:bg-black/10 overflow-auto scrollbar-hide">
+            <div className="flex-1 overflow-y-auto px-3 py-2 text-sm rounded-lg bg-gray-100/50 dark:bg-black/10 scrollbar-hide nowheel">
               <div className="prose prose-sm dark:prose-invert max-w-none">
                 <Markdown>
                   {data.outputText}
