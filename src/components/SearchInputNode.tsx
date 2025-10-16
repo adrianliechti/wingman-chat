@@ -19,12 +19,10 @@ export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInp
   const handleExecute = async () => {
     let query = data.inputText?.trim() || '';
     
-    // If no input text, check for connected nodes
-    if (!query) {
-      const connectedData = getConnectedNodeData(id, nodes, edges);
-      if (connectedData.length > 0) {
-        query = connectedData[0]; // Use first connected node's output
-      }
+    // If connected nodes exist, use their data
+    const connectedData = getConnectedNodeData(id, nodes, edges);
+    if (connectedData.length > 0) {
+      query = connectedData.join('\n\n'); // Use connected node outputs
     }
 
     if (!query) return;
@@ -57,6 +55,11 @@ export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInp
     }
   };
 
+  const hasConnectedNodes = edges.filter(e => e.target === id).length > 0;
+  const connectedData = hasConnectedNodes ? getConnectedNodeData(id, nodes, edges) : [];
+  const displayValue = hasConnectedNodes ? connectedData.join('\n\n') : (data.inputText || '');
+  const canExecute = hasConnectedNodes || !!data.inputText?.trim();
+
   return (
     <WorkflowNode
       id={id}
@@ -66,7 +69,7 @@ export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInp
       color="blue"
       onExecute={handleExecute}
       isProcessing={isSearching}
-      canExecute={true}
+      canExecute={canExecute}
       showInputHandle={true}
       showOutputHandle={true}
     >
@@ -75,21 +78,22 @@ export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInp
           <div className="flex gap-2">
             <Input
               type="text"
-              value={data.inputText || ''}
+              value={displayValue}
               onChange={(e) => updateNode(id, { 
                 data: { ...data, inputText: e.target.value } 
               })}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && data.inputText?.trim()) {
+                if (e.key === 'Enter' && data.inputText?.trim() && !hasConnectedNodes) {
                   handleExecute();
                 }
               }}
+              disabled={hasConnectedNodes}
               placeholder="Enter search query..."
-              className="flex-1 px-3 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 focus:outline-none transition-all nodrag"
+              className="flex-1 px-3 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 focus:outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed nodrag"
             />
             <button
               onClick={handleExecute}
-              disabled={!data.inputText?.trim()}
+              disabled={!canExecute}
               className="px-4 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 dark:hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 nodrag"
             >
               Search

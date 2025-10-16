@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
 import { Database, ChevronDown } from 'lucide-react';
-import { Button, Menu, MenuButton, MenuItem, MenuItems, Textarea } from '@headlessui/react';
+import { Button, Input, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import type { NodeProps } from '@xyflow/react';
 import type { RepositoryInputNode as RepositoryInputNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
@@ -21,10 +21,15 @@ export const RepositoryInputNode = memo(({ id, data, selected }: NodeProps<Repos
 
   const handleExecute = async () => {
     // Get the query from connected nodes or use the node's query field
+    let query = data.query?.trim() || '';
+    
+    // If connected nodes exist, use their data
     const connectedData = getConnectedNodeData(id, nodes, edges);
-    const query = connectedData.length > 0 ? connectedData.join('\n\n') : (data.query || '');
+    if (connectedData.length > 0) {
+      query = connectedData.join('\n\n');
+    }
 
-    if (!query.trim()) {
+    if (!query) {
       updateNode(id, {
         data: { ...data, outputText: 'Error: No query provided' }
       });
@@ -70,6 +75,11 @@ export const RepositoryInputNode = memo(({ id, data, selected }: NodeProps<Repos
     }
   };
 
+  const hasConnectedNodes = edges.filter(e => e.target === id).length > 0;
+  const connectedData = hasConnectedNodes ? getConnectedNodeData(id, nodes, edges) : [];
+  const displayValue = hasConnectedNodes ? connectedData.join('\n\n') : (data.query || '');
+  const canExecute = !!data.repositoryId && (hasConnectedNodes || !!data.query?.trim());
+
   return (
     <WorkflowNode
       id={id}
@@ -79,7 +89,7 @@ export const RepositoryInputNode = memo(({ id, data, selected }: NodeProps<Repos
       color="purple"
       onExecute={handleExecute}
       isProcessing={isProcessing}
-      canExecute={!!data.repositoryId && (!!data.query || getConnectedNodeData(id, nodes, edges).length > 0)}
+      canExecute={canExecute}
       showInputHandle={true}
       showOutputHandle={true}
     >
@@ -122,15 +132,30 @@ export const RepositoryInputNode = memo(({ id, data, selected }: NodeProps<Repos
 
         {/* Query Input */}
         <div className="flex-shrink-0">
-          <Textarea
-            value={data.query || ''}
-            onChange={(e) => updateNode(id, { 
-              data: { ...data, query: e.target.value } 
-            })}
-            placeholder="Enter search query..."
-            className="w-full px-2 py-1.5 text-sm border border-neutral-200 dark:border-neutral-700 rounded-md bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-purple-500 transition-all resize-none min-h-[60px] scrollbar-hide nodrag"
-            rows={2}
-          />
+          <div className="flex gap-2">
+            <Input
+              type="text"
+              value={displayValue}
+              onChange={(e) => updateNode(id, { 
+                data: { ...data, query: e.target.value } 
+              })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && data.query?.trim() && !hasConnectedNodes) {
+                  handleExecute();
+                }
+              }}
+              disabled={hasConnectedNodes}
+              placeholder="Enter search query..."
+              className="flex-1 px-3 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/30 focus:outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed nodrag"
+            />
+            <button
+              onClick={handleExecute}
+              disabled={!canExecute}
+              className="px-4 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 dark:hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 nodrag"
+            >
+              Search
+            </button>
+          </div>
         </div>
 
         {/* Output Display */}

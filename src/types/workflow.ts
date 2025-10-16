@@ -14,6 +14,7 @@ export interface LLMNodeData extends Record<string, unknown> {
   outputText?: string;
   useInput: boolean; // true if connected to another node, false if using fixed text
   prompt?: string;
+  model?: string;
 }
 
 export interface TranslateNodeData extends Record<string, unknown> {

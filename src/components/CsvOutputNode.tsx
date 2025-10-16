@@ -31,9 +31,9 @@ export const CsvOutputNode = memo(({ id, data, selected }: NodeProps<CsvOutputNo
       // Use the convertCSV method from the client
       const csvData = await client.convertCSV('', inputContent);
 
-      // Set final output
+      // Set final output (both csvData for rendering and outputText for node connections)
       updateNode(id, {
-        data: { ...data, csvData, error: undefined }
+        data: { ...data, csvData, outputText: csvData, error: undefined }
       });
     } catch (error) {
       console.error('Error extracting CSV:', error);
