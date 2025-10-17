@@ -1,51 +1,47 @@
-import { memo, useState } from 'react';
+import { memo } from 'react';
 import { Table } from 'lucide-react';
 import type { NodeProps } from '@xyflow/react';
 import type { CsvOutputNode as CsvOutputNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
+import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { CsvRenderer } from './CsvRenderer';
 import { WorkflowNode } from './WorkflowNode';
-import { getConnectedNodeData } from '../lib/workflow';
 
 export const CsvOutputNode = memo(({ id, data, selected }: NodeProps<CsvOutputNodeType>) => {
-  const { updateNode, nodes, edges } = useWorkflow();
-  const [isProcessing, setIsProcessing] = useState(false);
+  const { updateNode } = useWorkflow();
+  const { getLabeledText, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const config = getConfig();
   const client = config.client;
 
   const handleExecute = async () => {
     // Get input from connected nodes only
-    const connectedData = getConnectedNodeData(id, nodes, edges);
-    const inputContent = connectedData.join('\n\n---\n\n');
+    const inputContent = getLabeledText();
     
     if (!inputContent) return;
     
-    setIsProcessing(true);
-    // Clear any previous error when starting a new execution
-    updateNode(id, {
-      data: { ...data, error: undefined }
+    await executeAsync(async () => {
+      // Clear any previous error when starting a new execution
+      updateNode(id, {
+        data: { ...data, error: undefined }
+      });
+      
+      try {
+        // Use the convertCSV method from the client
+        const csvData = await client.convertCSV('', inputContent);
+
+        // Set final output (both csvData for rendering and outputText for node connections)
+        updateNode(id, {
+          data: { ...data, csvData, outputText: csvData, error: undefined }
+        });
+      } catch (error) {
+        console.error('Error extracting CSV:', error);
+        updateNode(id, {
+          data: { ...data, error: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
+        });
+      }
     });
-    
-    try {
-      // Use the convertCSV method from the client
-      const csvData = await client.convertCSV('', inputContent);
-
-      // Set final output (both csvData for rendering and outputText for node connections)
-      updateNode(id, {
-        data: { ...data, csvData, outputText: csvData, error: undefined }
-      });
-    } catch (error) {
-      console.error('Error extracting CSV:', error);
-      updateNode(id, {
-        data: { ...data, error: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
-      });
-    } finally {
-      setIsProcessing(false);
-    }
   };
-
-  const hasConnectedNodes = edges.filter(e => e.target === id).length > 0;
 
   return (
     <WorkflowNode
@@ -53,10 +49,10 @@ export const CsvOutputNode = memo(({ id, data, selected }: NodeProps<CsvOutputNo
       selected={selected}
       icon={Table}
       title="CSV Output"
-      color="purple"
+      color="green"
       onExecute={handleExecute}
       isProcessing={isProcessing}
-      canExecute={hasConnectedNodes}
+      canExecute={hasConnections}
       showInputHandle={true}
       showOutputHandle={true}
       minWidth={500}

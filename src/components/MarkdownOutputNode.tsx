@@ -1,62 +1,58 @@
-import { memo, useState } from 'react';
-import { FileType } from 'lucide-react';
+import { memo } from 'react';
+import { FileText } from 'lucide-react';
 import type { NodeProps } from '@xyflow/react';
 import type { MarkdownOutputNode as MarkdownOutputNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
+import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
-import { Markdown } from './Markdown';
 import { WorkflowNode } from './WorkflowNode';
-import { getConnectedNodeData } from '../lib/workflow';
+import { Markdown } from './Markdown';
 
 export const MarkdownOutputNode = memo(({ id, data, selected }: NodeProps<MarkdownOutputNodeType>) => {
-  const { updateNode, nodes, edges } = useWorkflow();
-  const [isProcessing, setIsProcessing] = useState(false);
+  const { updateNode } = useWorkflow();
+  const { getLabeledText, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const config = getConfig();
   const client = config.client;
 
   const handleExecute = async () => {
     // Get input from connected nodes only
-    const connectedData = getConnectedNodeData(id, nodes, edges);
-    const inputContent = connectedData.join('\n\n---\n\n');
+    const inputContent = getLabeledText();
     
     if (!inputContent) return;
     
-    setIsProcessing(true);
-    // Clear any previous error when starting a new execution
-    updateNode(id, {
-      data: { ...data, error: undefined }
+    await executeAsync(async () => {
+      // Clear any previous error when starting a new execution
+      updateNode(id, {
+        data: { ...data, error: undefined }
+      });
+      
+      try {
+        // Call the convertMD method to format as markdown
+        const markdownOutput = await client.convertMD('', inputContent);
+
+        // Set final output
+        updateNode(id, {
+          data: { ...data, outputText: markdownOutput, error: undefined }
+        });
+      } catch (error) {
+        console.error('Error formatting markdown:', error);
+        updateNode(id, {
+          data: { ...data, error: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
+        });
+      }
     });
-    
-    try {
-      // Call the convertMD method to format as markdown
-      const markdownOutput = await client.convertMD('', inputContent);
-
-      // Set final output
-      updateNode(id, {
-        data: { ...data, outputText: markdownOutput, error: undefined }
-      });
-    } catch (error) {
-      console.error('Error formatting markdown:', error);
-      updateNode(id, {
-        data: { ...data, error: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
-      });
-    } finally {
-      setIsProcessing(false);
-    }
   };
-
-  const hasConnectedNodes = edges.filter(e => e.target === id).length > 0;
 
   return (
     <WorkflowNode
       id={id}
       selected={selected}
-      icon={FileType}
+      icon={FileText}
       title="Markdown Output"
       color="green"
       onExecute={handleExecute}
       isProcessing={isProcessing}
-      canExecute={hasConnectedNodes}
+      canExecute={hasConnections}
       showInputHandle={true}
       showOutputHandle={true}
       minWidth={400}
@@ -74,7 +70,7 @@ export const MarkdownOutputNode = memo(({ id, data, selected }: NodeProps<Markdo
       ) : (
         <div className="flex-1 flex items-center justify-center min-h-0 p-4">
           <div className="flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-600">
-            <FileType size={48} strokeWidth={1} />
+            <FileText size={48} strokeWidth={1} />
             <div className="flex flex-col gap-1 w-24">
               <div className="h-2 bg-gray-300/30 dark:bg-gray-700/30 rounded" />
               <div className="h-2 bg-gray-300/30 dark:bg-gray-700/30 rounded w-3/4" />

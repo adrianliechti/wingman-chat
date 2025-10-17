@@ -1,19 +1,19 @@
-import { memo, useState } from 'react';
+import { memo } from 'react';
 import { Database, ChevronDown } from 'lucide-react';
 import { Button, Input, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import type { NodeProps } from '@xyflow/react';
 import type { RepositoryInputNode as RepositoryInputNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
+import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { useRepositories } from '../hooks/useRepositories';
 import { useRepository } from '../hooks/useRepository';
 import { WorkflowNode } from './WorkflowNode';
-import { getConnectedNodeData } from '../lib/workflow';
 import { Markdown } from './Markdown';
 
 export const RepositoryInputNode = memo(({ id, data, selected }: NodeProps<RepositoryInputNodeType>) => {
-  const { updateNode, nodes, edges } = useWorkflow();
+  const { updateNode } = useWorkflow();
+  const { getText, connectedData, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const { repositories } = useRepositories();
-  const [isProcessing, setIsProcessing] = useState(false);
 
   // Get the current repository
   const currentRepository = repositories.find(r => r.id === data.repositoryId);
@@ -24,9 +24,8 @@ export const RepositoryInputNode = memo(({ id, data, selected }: NodeProps<Repos
     let query = data.query?.trim() || '';
     
     // If connected nodes exist, use their data
-    const connectedData = getConnectedNodeData(id, nodes, edges);
     if (connectedData.length > 0) {
-      query = connectedData.join('\n\n');
+      query = getText();
     }
 
     if (!query) {
@@ -43,42 +42,39 @@ export const RepositoryInputNode = memo(({ id, data, selected }: NodeProps<Repos
       return;
     }
 
-    setIsProcessing(true);
-    try {
-      // Query the repository
-      const chunks = await queryChunks(query, 10);
+    await executeAsync(async () => {
+      try {
+        // Query the repository
+        const chunks = await queryChunks(query, 10);
 
-      if (chunks.length === 0) {
-        updateNode(id, {
-          data: { ...data, outputText: 'No results found for the query' }
-        });
-      } else {
-        // Format the results
-        const outputText = chunks
-          .map((chunk, index) => {
-            const similarity = chunk.similarity ? ` (${(chunk.similarity * 100).toFixed(1)}% match)` : '';
-            return `### Result ${index + 1} - ${chunk.file.name}${similarity}\n\n${chunk.text}`;
-          })
-          .join('\n\n---\n\n');
+        if (chunks.length === 0) {
+          updateNode(id, {
+            data: { ...data, outputText: 'No results found for the query' }
+          });
+        } else {
+          // Format the results
+          const outputText = chunks
+            .map((chunk, index) => {
+              const similarity = chunk.similarity ? ` (${(chunk.similarity * 100).toFixed(1)}% match)` : '';
+              return `### Result ${index + 1} - ${chunk.file.name}${similarity}\n\n${chunk.text}`;
+            })
+            .join('\n\n---\n\n');
 
+          updateNode(id, {
+            data: { ...data, outputText }
+          });
+        }
+      } catch (error) {
+        console.error('Error executing repository query:', error);
         updateNode(id, {
-          data: { ...data, outputText }
+          data: { ...data, outputText: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
         });
       }
-    } catch (error) {
-      console.error('Error executing repository query:', error);
-      updateNode(id, {
-        data: { ...data, outputText: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
-      });
-    } finally {
-      setIsProcessing(false);
-    }
+    });
   };
 
-  const hasConnectedNodes = edges.filter(e => e.target === id).length > 0;
-  const connectedData = hasConnectedNodes ? getConnectedNodeData(id, nodes, edges) : [];
-  const displayValue = hasConnectedNodes ? connectedData.join('\n\n') : (data.query || '');
-  const canExecute = !!data.repositoryId && (hasConnectedNodes || !!data.query?.trim());
+  const displayValue = hasConnections ? getText() : (data.query || '');
+  const canExecute = !!data.repositoryId && (hasConnections || !!data.query?.trim());
 
   return (
     <WorkflowNode
@@ -140,11 +136,11 @@ export const RepositoryInputNode = memo(({ id, data, selected }: NodeProps<Repos
                 data: { ...data, query: e.target.value } 
               })}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && data.query?.trim() && !hasConnectedNodes) {
+                if (e.key === 'Enter' && data.query?.trim() && !hasConnections) {
                   handleExecute();
                 }
               }}
-              disabled={hasConnectedNodes}
+              disabled={hasConnections}
               placeholder="Enter search query..."
               className="flex-1 px-3 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/30 focus:outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed nodrag"
             />

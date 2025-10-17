@@ -5,16 +5,16 @@ import type { NodeProps } from '@xyflow/react';
 import type { LLMNode as PromptNodeType } from '../types/workflow';
 import type { Model } from '../types/chat';
 import { useWorkflow } from '../hooks/useWorkflow';
+import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
-import { Role, AttachmentType } from '../types/chat';
+import { Role } from '../types/chat';
 import type { Message } from '../types/chat';
 import { WorkflowNode } from './WorkflowNode';
-import { getConnectedNodeData } from '../lib/workflow';
 import { Markdown } from './Markdown';
 
 export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType>) => {
-  const { updateNode, nodes, edges } = useWorkflow();
-  const [isProcessing, setIsProcessing] = useState(false);
+  const { updateNode } = useWorkflow();
+  const { getLabeledText, isProcessing, executeAsync } = useWorkflowNode(id);
   const [models, setModels] = useState<Model[]>([]);
   const config = getConfig();
   const client = config.client;
@@ -34,55 +34,50 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
   const handleExecute = async () => {
     if (!data.inputText?.trim()) return;
     
-    setIsProcessing(true);
-    try {
-      // Find all connected input nodes
-      const connectedData = getConnectedNodeData(id, nodes, edges);
-      const attachments: Array<{ type: AttachmentType; name: string; data: string }> = [];
+    await executeAsync(async () => {
+      // Get labeled text from connected nodes
+      const contextText = getLabeledText();
       
-      for (const content of connectedData) {
-        // Generate random filename
-        const randomId = Math.random().toString(36).substring(2, 8);
-        attachments.push({
-          type: AttachmentType.Text,
-          name: `${randomId}.txt`,
-          data: content
-        });
+      // Build the user message content
+      let messageContent = data.inputText || '';
+      
+      // If there's connected data, append it as context
+      if (contextText) {
+        messageContent = `${messageContent}\n\n---\n\n${contextText}`;
       }
 
       // Build the message with the prompt as user content
       const userMessage: Message = {
         role: Role.User,
-        content: data.inputText,
-        attachments
+        content: messageContent,
       };
 
-      // Call the complete method
-      const response = await client.complete(
-        data.model || '', // use selected model or default
-        '', // no system instructions for now
-        [userMessage],
-        [], // no tools
-        (_delta, snapshot) => {
-          // Update output in real-time as text streams in
-          updateNode(id, {
-            data: { ...data, outputText: snapshot }
-          });
-        }
-      );
+      try {
+        // Call the complete method
+        const response = await client.complete(
+          data.model || '', // use selected model or default
+          '', // no system instructions for now
+          [userMessage],
+          [], // no tools
+          (_delta, snapshot) => {
+            // Update output in real-time as text streams in
+            updateNode(id, {
+              data: { ...data, outputText: snapshot }
+            });
+          }
+        );
 
-      // Set final output
-      updateNode(id, {
-        data: { ...data, outputText: response.content }
-      });
-    } catch (error) {
-      console.error('Error executing LLM:', error);
-      updateNode(id, {
-        data: { ...data, outputText: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
-      });
-    } finally {
-      setIsProcessing(false);
-    }
+        // Set final output
+        updateNode(id, {
+          data: { ...data, outputText: response.content }
+        });
+      } catch (error) {
+        console.error('Error executing LLM:', error);
+        updateNode(id, {
+          data: { ...data, outputText: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
+        });
+      }
+    });
   };
 
   const currentModel = models.find(m => m.id === data.model);

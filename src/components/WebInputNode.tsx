@@ -1,42 +1,42 @@
-import { memo, useState } from 'react';
+import { memo } from 'react';
 import { Globe, Loader2 } from 'lucide-react';
 import { Input } from '@headlessui/react';
 import type { NodeProps } from '@xyflow/react';
 import type { WebInputNode as WebInputNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
+import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
 
 export const WebInputNode = memo(({ id, data, selected }: NodeProps<WebInputNodeType>) => {
   const { updateNode } = useWorkflow();
-  const [isLoading, setIsLoading] = useState(false);
+  const { isProcessing, executeAsync } = useWorkflowNode(id);
   const config = getConfig();
   const client = config.client;
 
   const handleFetchUrl = async () => {
     if (!data.url?.trim()) return;
 
-    setIsLoading(true);
-    try {
-      const content = await client.fetchText(data.url);
-      updateNode(id, {
-        data: {
-          ...data,
-          outputText: content
-        }
-      });
-    } catch (error) {
-      console.error('Error fetching URL:', error);
-      updateNode(id, {
-        data: {
-          ...data,
-          outputText: `Error fetching URL: ${error instanceof Error ? error.message : 'Unknown error'}`
-        }
-      });
-    } finally {
-      setIsLoading(false);
-    }
+    await executeAsync(async () => {
+      try {
+        const content = await client.fetchText(data.url!);
+        updateNode(id, {
+          data: {
+            ...data,
+            outputText: content
+          }
+        });
+      } catch (error) {
+        console.error('Error fetching URL:', error);
+        updateNode(id, {
+          data: {
+            ...data,
+            outputText: `Error fetching URL: ${error instanceof Error ? error.message : 'Unknown error'}`
+          }
+        });
+      }
+    });
   };
 
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -61,7 +61,7 @@ export const WebInputNode = memo(({ id, data, selected }: NodeProps<WebInputNode
       showInputHandle={false}
       showOutputHandle={true}
     >
-      {isLoading ? (
+      {isProcessing ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3 text-gray-500 dark:text-gray-400">
             <Loader2 size={40} className="animate-spin" strokeWidth={1.5} />

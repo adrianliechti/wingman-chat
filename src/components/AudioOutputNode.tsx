@@ -1,57 +1,53 @@
-import { memo, useState } from 'react';
+import { memo } from 'react';
 import { Volume2 } from 'lucide-react';
 import type { NodeProps } from '@xyflow/react';
 import type { AudioOutputNode as AudioOutputNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
+import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
-import { getConnectedNodeData } from '../lib/workflow';
 
 export const AudioOutputNode = memo(({ id, data, selected }: NodeProps<AudioOutputNodeType>) => {
-  const { updateNode, nodes, edges } = useWorkflow();
-  const [isProcessing, setIsProcessing] = useState(false);
+  const { updateNode } = useWorkflow();
+  const { getText, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const config = getConfig();
   const client = config.client;
 
   const handleExecute = async () => {
     // Get input from connected nodes
-    const connectedData = getConnectedNodeData(id, nodes, edges);
-    const inputContent = connectedData.join('\n\n');
+    const inputContent = getText();
     
     if (!inputContent) return;
     
-    setIsProcessing(true);
-    // Clear any previous error when starting a new execution
-    updateNode(id, {
-      data: { ...data, error: undefined }
+    await executeAsync(async () => {
+      // Clear any previous error when starting a new execution
+      updateNode(id, {
+        data: { ...data, error: undefined }
+      });
+      
+      try {
+        // Generate audio from the input text
+        const audioBlob = await client.generateAudio('', inputContent);
+        
+        // Create a URL for the audio blob
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        // Update node with the audio URL (and clear error)
+        updateNode(id, {
+          data: { ...data, audioUrl, error: undefined }
+        });
+      } catch (error) {
+        console.error('Error generating audio:', error);
+        updateNode(id, {
+          data: { 
+            ...data, 
+            audioUrl: undefined,
+            error: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` 
+          }
+        });
+      }
     });
-    
-    try {
-      // Generate audio from the input text
-      const audioBlob = await client.generateAudio('', inputContent);
-      
-      // Create a URL for the audio blob
-      const audioUrl = URL.createObjectURL(audioBlob);
-      
-      // Update node with the audio URL (and clear error)
-      updateNode(id, {
-        data: { ...data, audioUrl, error: undefined }
-      });
-    } catch (error) {
-      console.error('Error generating audio:', error);
-      updateNode(id, {
-        data: { 
-          ...data, 
-          audioUrl: undefined,
-          error: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` 
-        }
-      });
-    } finally {
-      setIsProcessing(false);
-    }
   };
-
-  const hasConnectedNodes = edges.filter(e => e.target === id).length > 0;
 
   return (
     <WorkflowNode
@@ -62,7 +58,7 @@ export const AudioOutputNode = memo(({ id, data, selected }: NodeProps<AudioOutp
       color="blue"
       onExecute={handleExecute}
       isProcessing={isProcessing}
-      canExecute={hasConnectedNodes}
+      canExecute={hasConnections}
       showInputHandle={true}
       showOutputHandle={false}
       minWidth={350}

@@ -1,18 +1,18 @@
-import { memo, useState } from 'react';
+import { memo } from 'react';
 import { Languages, GlobeIcon, ThermometerIcon, SwatchBookIcon } from 'lucide-react';
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import type { NodeProps } from '@xyflow/react';
 import type { TranslateNode as TranslateNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
+import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
-import { getConnectedNodeData } from '../lib/workflow';
 import { Markdown } from './Markdown';
 import { supportedLanguages, toneOptions, styleOptions } from '../contexts/TranslateContext';
 
 export const TranslateNode = memo(({ id, data, selected }: NodeProps<TranslateNodeType>) => {
-  const { updateNode, nodes, edges } = useWorkflow();
-  const [isProcessing, setIsProcessing] = useState(false);
+  const { updateNode } = useWorkflow();
+  const { getText, connectedData, isProcessing, executeAsync } = useWorkflowNode(id);
   const config = getConfig();
   const client = config.client;
 
@@ -22,8 +22,6 @@ export const TranslateNode = memo(({ id, data, selected }: NodeProps<TranslateNo
 
   const handleExecute = async () => {
     // Get the input text from connected nodes only
-    const connectedData = getConnectedNodeData(id, nodes, edges);
-    
     if (connectedData.length === 0) {
       updateNode(id, {
         data: { ...data, outputText: 'Error: No input connected' }
@@ -31,47 +29,46 @@ export const TranslateNode = memo(({ id, data, selected }: NodeProps<TranslateNo
       return;
     }
     
-    const inputText = connectedData.join('\n\n');
+    const inputText = getText();
     
-    setIsProcessing(true);
-    try {
-      // Translate the text
-      const translatedResult = await client.translate(
-        data.language || 'en',
-        inputText
-      );
+    await executeAsync(async () => {
+      try {
+        // Translate the text
+        const translatedResult = await client.translate(
+          data.language || 'en',
+          inputText
+        );
 
-      let finalOutput = '';
-      if (typeof translatedResult === 'string') {
-        // If tone or style is set, apply rewriting
-        if (data.tone || data.style) {
-          finalOutput = await client.rewriteText(
-            config.translator.model || '',
-            translatedResult,
-            data.language,
-            data.tone,
-            data.style
-          );
+        let finalOutput = '';
+        if (typeof translatedResult === 'string') {
+          // If tone or style is set, apply rewriting
+          if (data.tone || data.style) {
+            finalOutput = await client.rewriteText(
+              config.translator.model || '',
+              translatedResult,
+              data.language,
+              data.tone,
+              data.style
+            );
+          } else {
+            finalOutput = translatedResult;
+          }
         } else {
-          finalOutput = translatedResult;
+          // If it's a Blob, we can't handle it in this node
+          finalOutput = 'Error: File translation not supported in this node';
         }
-      } else {
-        // If it's a Blob, we can't handle it in this node
-        finalOutput = 'Error: File translation not supported in this node';
-      }
 
-      // Update output
-      updateNode(id, {
-        data: { ...data, outputText: finalOutput }
-      });
-    } catch (error) {
-      console.error('Error executing translation:', error);
-      updateNode(id, {
-        data: { ...data, outputText: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
-      });
-    } finally {
-      setIsProcessing(false);
-    }
+        // Update output
+        updateNode(id, {
+          data: { ...data, outputText: finalOutput }
+        });
+      } catch (error) {
+        console.error('Error executing translation:', error);
+        updateNode(id, {
+          data: { ...data, outputText: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
+        });
+      }
+    });
   };
 
   return (

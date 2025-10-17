@@ -5,13 +5,13 @@ import type { NodeProps } from '@xyflow/react';
 import type { SearchInputNode as SearchInputNodeType } from '../types/workflow';
 import type { SearchResult } from '../types/search';
 import { useWorkflow } from '../hooks/useWorkflow';
+import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
-import { getConnectedNodeData } from '../lib/workflow';
 
 export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInputNodeType>) => {
-  const { updateNode, nodes, edges } = useWorkflow();
-  const [isSearching, setIsSearching] = useState(false);
+  const { updateNode } = useWorkflow();
+  const { getText, connectedData, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const config = getConfig();
   const client = config.client;
@@ -20,45 +20,41 @@ export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInp
     let query = data.inputText?.trim() || '';
     
     // If connected nodes exist, use their data
-    const connectedData = getConnectedNodeData(id, nodes, edges);
     if (connectedData.length > 0) {
-      query = connectedData.join('\n\n'); // Use connected node outputs
+      query = getText(); // Use connected node outputs
     }
 
     if (!query) return;
     
-    setIsSearching(true);
-    try {
-      const results = await client.search(query);
-      setSearchResults(results);
-      
-      // Concatenate all results into text format for output
-      const resultText = results.map((result, index) => {
-        let text = `Result ${index + 1}:\n`;
-        if (result.title) text += `Title: ${result.title}\n`;
-        if (result.source) text += `Source: ${result.source}\n`;
-        text += `Content: ${result.content}\n`;
-        return text;
-      }).join('\n---\n\n');
+    await executeAsync(async () => {
+      try {
+        const results = await client.search(query);
+        setSearchResults(results);
+        
+        // Concatenate all results into text format for output
+        const resultText = results.map((result, index) => {
+          let text = `Result ${index + 1}:\n`;
+          if (result.title) text += `Title: ${result.title}\n`;
+          if (result.source) text += `Source: ${result.source}\n`;
+          text += `Content: ${result.content}\n`;
+          return text;
+        }).join('\n---\n\n');
 
-      updateNode(id, {
-        data: { ...data, outputText: resultText || 'No results found' }
-      });
-    } catch (error) {
-      console.error('Error searching:', error);
-      setSearchResults([]);
-      updateNode(id, {
-        data: { ...data, outputText: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
-      });
-    } finally {
-      setIsSearching(false);
-    }
+        updateNode(id, {
+          data: { ...data, outputText: resultText || 'No results found' }
+        });
+      } catch (error) {
+        console.error('Error searching:', error);
+        setSearchResults([]);
+        updateNode(id, {
+          data: { ...data, outputText: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
+        });
+      }
+    });
   };
 
-  const hasConnectedNodes = edges.filter(e => e.target === id).length > 0;
-  const connectedData = hasConnectedNodes ? getConnectedNodeData(id, nodes, edges) : [];
-  const displayValue = hasConnectedNodes ? connectedData.join('\n\n') : (data.inputText || '');
-  const canExecute = hasConnectedNodes || !!data.inputText?.trim();
+  const displayValue = hasConnections ? getText() : (data.inputText || '');
+  const canExecute = hasConnections || !!data.inputText?.trim();
 
   return (
     <WorkflowNode
@@ -68,7 +64,7 @@ export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInp
       title="Search Input"
       color="blue"
       onExecute={handleExecute}
-      isProcessing={isSearching}
+      isProcessing={isProcessing}
       canExecute={canExecute}
       showInputHandle={true}
       showOutputHandle={true}
@@ -83,11 +79,11 @@ export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInp
                 data: { ...data, inputText: e.target.value } 
               })}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && data.inputText?.trim() && !hasConnectedNodes) {
+                if (e.key === 'Enter' && data.inputText?.trim() && !hasConnections) {
                   handleExecute();
                 }
               }}
-              disabled={hasConnectedNodes}
+              disabled={hasConnections}
               placeholder="Enter search query..."
               className="flex-1 px-3 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 focus:outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed nodrag"
             />

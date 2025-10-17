@@ -4,43 +4,43 @@ import { Textarea } from '@headlessui/react';
 import type { NodeProps } from '@xyflow/react';
 import type { FileInputNode as FileInputNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
+import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { supportedTypes } from '../lib/utils';
 import { WorkflowNode } from './WorkflowNode';
 
 export const FileInputNode = memo(({ id, data, selected }: NodeProps<FileInputNodeType>) => {
   const { updateNode } = useWorkflow();
+  const { isProcessing, executeAsync } = useWorkflowNode(id);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const config = getConfig();
   const client = config.client;
 
   const processFile = async (file: File) => {
-    setIsLoading(true);
-    try {
-      const content = await client.extractText(file);
-      updateNode(id, {
-        data: {
-          ...data,
-          fileName: file.name,
-          fileContent: content,
-          outputText: content
-        }
-      });
-    } catch (error) {
-      console.error('Error extracting text from file:', error);
-      updateNode(id, {
-        data: {
-          ...data,
-          fileName: file.name,
-          fileContent: 'Error extracting text from file',
-          outputText: ''
-        }
-      });
-    } finally {
-      setIsLoading(false);
-    }
+    await executeAsync(async () => {
+      try {
+        const content = await client.extractText(file);
+        updateNode(id, {
+          data: {
+            ...data,
+            fileName: file.name,
+            fileContent: content,
+            outputText: content
+          }
+        });
+      } catch (error) {
+        console.error('Error extracting text from file:', error);
+        updateNode(id, {
+          data: {
+            ...data,
+            fileName: file.name,
+            fileContent: 'Error extracting text from file',
+            outputText: ''
+          }
+        });
+      }
+    });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -87,10 +87,10 @@ export const FileInputNode = memo(({ id, data, selected }: NodeProps<FileInputNo
         accept={supportedTypes.join(",")}
         onChange={handleFileUpload}
         className="hidden"
-        disabled={isLoading}
+        disabled={isProcessing}
       />
       
-      {isLoading ? (
+      {isProcessing ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3 text-gray-500 dark:text-gray-400">
             <Loader2 size={40} className="animate-spin" strokeWidth={1.5} />

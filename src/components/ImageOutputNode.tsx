@@ -1,68 +1,64 @@
-import { memo, useState } from 'react';
-import { Image } from 'lucide-react';
+import { memo } from 'react';
+import { ImageIcon } from 'lucide-react';
 import type { NodeProps } from '@xyflow/react';
 import type { ImageOutputNode as ImageOutputNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
+import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
-import { getConnectedNodeData } from '../lib/workflow';
 
 export const ImageOutputNode = memo(({ id, data, selected }: NodeProps<ImageOutputNodeType>) => {
-  const { updateNode, nodes, edges } = useWorkflow();
-  const [isProcessing, setIsProcessing] = useState(false);
+  const { updateNode } = useWorkflow();
+  const { getText, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const config = getConfig();
   const client = config.client;
 
   const handleExecute = async () => {
     // Get input from connected nodes
-    const connectedData = getConnectedNodeData(id, nodes, edges);
-    const inputContent = connectedData.join('\n\n');
+    const inputContent = getText();
     
     if (!inputContent) return;
     
-    setIsProcessing(true);
-    // Clear any previous error when starting a new execution
-    updateNode(id, {
-      data: { ...data, error: undefined }
+    await executeAsync(async () => {
+      // Clear any previous error when starting a new execution
+      updateNode(id, {
+        data: { ...data, error: undefined }
+      });
+      
+      try {
+        // Generate image from the input text (prompt)
+        const imageBlob = await client.generateImage('', inputContent);
+        
+        // Create a URL for the image blob
+        const imageUrl = URL.createObjectURL(imageBlob);
+        
+        // Update node with the image URL (and clear error)
+        updateNode(id, {
+          data: { ...data, imageUrl, error: undefined }
+        });
+      } catch (error) {
+        console.error('Error generating image:', error);
+        updateNode(id, {
+          data: { 
+            ...data, 
+            imageUrl: undefined,
+            error: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` 
+          }
+        });
+      }
     });
-    
-    try {
-      // Generate image from the input text (prompt)
-      const imageBlob = await client.generateImage('', inputContent);
-      
-      // Create a URL for the image blob
-      const imageUrl = URL.createObjectURL(imageBlob);
-      
-      // Update node with the image URL (and clear error)
-      updateNode(id, {
-        data: { ...data, imageUrl, error: undefined }
-      });
-    } catch (error) {
-      console.error('Error generating image:', error);
-      updateNode(id, {
-        data: { 
-          ...data, 
-          imageUrl: undefined,
-          error: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` 
-        }
-      });
-    } finally {
-      setIsProcessing(false);
-    }
   };
-
-  const hasConnectedNodes = edges.filter(e => e.target === id).length > 0;
 
   return (
     <WorkflowNode
       id={id}
       selected={selected}
-      icon={Image}
+      icon={ImageIcon}
       title="Image Output"
       color="red"
       onExecute={handleExecute}
       isProcessing={isProcessing}
-      canExecute={hasConnectedNodes}
+      canExecute={hasConnections}
       showInputHandle={true}
       showOutputHandle={false}
       minWidth={400}
@@ -87,7 +83,7 @@ export const ImageOutputNode = memo(({ id, data, selected }: NodeProps<ImageOutp
           </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-600">
-            <Image size={48} strokeWidth={1} />
+            <ImageIcon size={48} strokeWidth={1} />
             <div className="grid grid-cols-3 gap-1">
               <div className="w-8 h-8 bg-gray-300/30 dark:bg-gray-700/30 rounded" />
               <div className="w-8 h-8 bg-gray-300/30 dark:bg-gray-700/30 rounded" />
