@@ -3,9 +3,11 @@ import {
   Background, 
   Controls, 
   BackgroundVariant,
-  type NodeTypes
+  type NodeTypes,
+  type Edge
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { useState } from 'react';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useTheme } from '../hooks/useTheme';
 import { SearchInputNode } from './SearchInputNode';
@@ -19,6 +21,8 @@ import { MarkdownOutputNode } from './MarkdownOutputNode';
 import { AudioOutputNode } from './AudioOutputNode';
 import { ImageOutputNode } from './ImageOutputNode';
 import { CsvOutputNode } from './CsvOutputNode';
+import { WorkflowLabelDialog } from './WorkflowLabelDialog';
+import type { WorkflowEdge } from '../types/workflow';
 
 const nodeTypes: NodeTypes = {
   searchInput: SearchInputNode,
@@ -35,8 +39,27 @@ const nodeTypes: NodeTypes = {
 };
 
 export function WorkflowCanvas() {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect } = useWorkflow();
+  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, updateEdgeLabel, deleteConnection } = useWorkflow();
   const { isDark } = useTheme();
+  const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const handleEdgeClick = (_event: React.MouseEvent, edge: Edge) => {
+    setSelectedEdge(edge);
+    setIsDialogOpen(true);
+  };
+
+  const handleSaveLabel = (label: string) => {
+    if (selectedEdge) {
+      updateEdgeLabel(selectedEdge.id, label);
+    }
+  };
+
+  const handleDeleteEdge = () => {
+    if (selectedEdge) {
+      deleteConnection(selectedEdge.id);
+    }
+  };
 
   return (
     <div className="w-full h-full">
@@ -46,6 +69,7 @@ export function WorkflowCanvas() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onEdgeClick={handleEdgeClick}
         nodeTypes={nodeTypes}
         colorMode={isDark ? 'dark' : 'light'}
         proOptions={{ hideAttribution: true }}
@@ -55,9 +79,9 @@ export function WorkflowCanvas() {
         className="bg-gray-50 dark:bg-gray-900"
         edgesReconnectable={true}
         edgesFocusable={true}
+        elevateNodesOnSelect={true}
         defaultEdgeOptions={{
-          animated: true,
-          style: { stroke: '#3b82f6', strokeWidth: 2 },
+          style: { strokeWidth: 2 },
         }}
       >
         <Background 
@@ -73,6 +97,14 @@ export function WorkflowCanvas() {
           className="bg-white/90 dark:bg-black/40 backdrop-blur-lg border border-white/40 dark:border-white/20 rounded-lg"
         />
       </ReactFlow>
+
+      <WorkflowLabelDialog
+        isOpen={isDialogOpen}
+        onClose={() => setIsDialogOpen(false)}
+        currentLabel={(selectedEdge as WorkflowEdge)?.data?.label || ''}
+        onSave={handleSaveLabel}
+        onDelete={handleDeleteEdge}
+      />
     </div>
   );
 }

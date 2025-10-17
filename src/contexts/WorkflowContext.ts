@@ -12,6 +12,7 @@ export interface WorkflowContextType {
   updateNode: (id: string, updates: Partial<WorkflowNode>) => void;
   deleteNode: (id: string) => void;
   deleteConnection: (id: string) => void;
+  updateEdgeLabel: (edgeId: string, label: string) => void;
   executeWorkflow: () => Promise<void>;
   clearWorkflow: () => void;
 }

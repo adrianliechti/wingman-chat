@@ -24,7 +24,7 @@ import { SearchProvider } from "./contexts/SearchProvider";
 import { ImageGenerationProvider } from "./contexts/ImageGenerationProvider";
 import { BridgeIndicator } from "./components/BridgeIndicator";
 
-type Page = "chat" | "workflow" | "translate";
+type Page = "chat" | "flow" | "translate";
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>("chat");
@@ -78,8 +78,8 @@ function AppContent() {
           return 'chat';
         case '#translate':
           return 'translate';
-        case '#workflow':
-          return 'workflow';
+        case '#flow':
+          return 'flow';
         default:
           return 'chat';
       }
@@ -141,7 +141,7 @@ function AppContent() {
 
   const pages: { key: Page; label: string; icon: React.ReactNode }[] = [
     { key: "chat", label: "Chat", icon: <MessageCircle size={20} /> },
-    { key: "workflow", label: "Workflow", icon: <Workflow size={20} /> },
+    { key: "flow", label: "Flow", icon: <Workflow size={20} /> },
     { key: "translate", label: "Translate", icon: <Languages size={20} /> },
   ];
 
@@ -344,7 +344,7 @@ function AppContent() {
           {/* Main content */}
           <div className="flex-1 overflow-hidden">
             {currentPage === "chat" && <ChatPage />}
-            {currentPage === "workflow" && <WorkflowPage />}
+            {currentPage === "flow" && <WorkflowPage />}
             {currentPage === "translate" && <TranslatePage />}
           </div>
         </div>

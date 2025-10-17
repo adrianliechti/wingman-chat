@@ -13,7 +13,11 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
   const [edges, setEdges, onEdgesChange] = useEdgesState<WorkflowEdge>([]);
 
   const addNode = useCallback((node: WorkflowNode) => {
-    setNodes((nds) => [...nds, node]);
+    setNodes((nds) => {
+      // Deselect all existing nodes and select the new one
+      const updatedNodes = nds.map((n) => ({ ...n, selected: false }));
+      return [...updatedNodes, { ...node, selected: true }];
+    });
   }, [setNodes]);
 
   const updateNode = useCallback((id: string, updates: Partial<WorkflowNode>) => {
@@ -35,6 +39,24 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
 
   const deleteConnection = useCallback((id: string) => {
     setEdges((eds) => eds.filter((edge) => edge.id !== id));
+  }, [setEdges]);
+
+  const updateEdgeLabel = useCallback((edgeId: string, label: string) => {
+    setEdges((eds) => 
+      eds.map((edge) => 
+        edge.id === edgeId 
+          ? { 
+              ...edge, 
+              data: { ...edge.data, label },
+              label: label || undefined,
+              labelStyle: label ? { fill: '#3b82f6', fontWeight: 500 } : undefined,
+              labelBgStyle: label ? { fill: '#ffffff', fillOpacity: 0.9 } : undefined,
+              labelBgPadding: label ? [8, 4] as [number, number] : undefined,
+              labelBgBorderRadius: label ? 4 : undefined,
+            } 
+          : edge
+      )
+    );
   }, [setEdges]);
 
   const executeWorkflow = useCallback(async () => {
@@ -60,6 +82,7 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
         updateNode,
         deleteNode,
         deleteConnection,
+        updateEdgeLabel,
         executeWorkflow,
         clearWorkflow,
       }}

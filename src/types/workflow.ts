@@ -90,8 +90,13 @@ export type CsvOutputNode = Node<CsvOutputNodeData, 'csvOutput'>;
 
 export type WorkflowNode = SearchInputNode | LLMNode | TranslateNode | FileInputNode | WebInputNode | TextInputNode | RepositoryInputNode | MarkdownOutputNode | AudioOutputNode | ImageOutputNode | CsvOutputNode;
 
-// Use ReactFlow's Edge type for connections
-export type WorkflowEdge = Edge;
+// Custom edge data for labeled connections
+export interface WorkflowEdgeData extends Record<string, unknown> {
+  label?: string;
+}
+
+// Use ReactFlow's Edge type with custom data for connections
+export type WorkflowEdge = Edge<WorkflowEdgeData>;
 
 export interface Workflow {
   id: string;
