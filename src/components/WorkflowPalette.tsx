@@ -2,6 +2,7 @@ import { Globe, Sparkles, FileText, FileType, Volume2, Image, StickyNote, Langua
 import { useWorkflow } from '../hooks/useWorkflow';
 import type { NodeType, WorkflowNode } from '../types/workflow';
 import { useState, useEffect, useRef } from 'react';
+import { getConfig } from '../config';
 
 interface WorkflowPaletteItemProps {
   type: NodeType;
@@ -26,6 +27,7 @@ export function WorkflowPalette() {
   const { addNode, nodes } = useWorkflow();
   const [useDoubleColumn, setUseDoubleColumn] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const config = getConfig();
 
   useEffect(() => {
     const checkHeight = () => {
@@ -101,18 +103,22 @@ export function WorkflowPalette() {
           icon={<FileText size={20} />}
           onClick={handleNodeClick}
         />
-        <WorkflowPaletteItem
-          type="search"
-          label="Search"
-          icon={<Globe size={20} />}
-          onClick={handleNodeClick}
-        />
-        <WorkflowPaletteItem
-          type="repository"
-          label="Repository"
-          icon={<Database size={20} />}
-          onClick={handleNodeClick}
-        />
+        {config.internet?.enabled && (
+          <WorkflowPaletteItem
+            type="search"
+            label="Search"
+            icon={<Globe size={20} />}
+            onClick={handleNodeClick}
+          />
+        )}
+        {config.repository?.enabled && (
+          <WorkflowPaletteItem
+            type="repository"
+            label="Repository"
+            icon={<Database size={20} />}
+            onClick={handleNodeClick}
+          />
+        )}
       </div>
       <div className="w-full h-px bg-gray-300/50 dark:bg-gray-600/50 my-1" />
       <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
@@ -122,12 +128,14 @@ export function WorkflowPalette() {
           icon={<Sparkles size={20} />}
           onClick={handleNodeClick}
         />
-        <WorkflowPaletteItem
-          type="translate"
-          label="Translate"
-          icon={<Languages size={20} />}
-          onClick={handleNodeClick}
-        />
+        {config.translator?.enabled && (
+          <WorkflowPaletteItem
+            type="translate"
+            label="Translate"
+            icon={<Languages size={20} />}
+            onClick={handleNodeClick}
+          />
+        )}
       </div>
       <div className="w-full h-px bg-gray-300/50 dark:bg-gray-600/50 my-1" />
       <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
@@ -137,18 +145,22 @@ export function WorkflowPalette() {
           icon={<FileType size={20} />}
           onClick={handleNodeClick}
         />
-        <WorkflowPaletteItem
-          type="audio"
-          label="Audio"
-          icon={<Volume2 size={20} />}
-          onClick={handleNodeClick}
-        />
-        <WorkflowPaletteItem
-          type="image"
-          label="Image"
-          icon={<Image size={20} />}
-          onClick={handleNodeClick}
-        />
+        {config.tts && (
+          <WorkflowPaletteItem
+            type="audio"
+            label="Audio"
+            icon={<Volume2 size={20} />}
+            onClick={handleNodeClick}
+          />
+        )}
+        {config.image?.enabled && (
+          <WorkflowPaletteItem
+            type="image"
+            label="Image"
+            icon={<Image size={20} />}
+            onClick={handleNodeClick}
+          />
+        )}
         <WorkflowPaletteItem
           type="csv"
           label="CSV"

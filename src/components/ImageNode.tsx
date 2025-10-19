@@ -27,7 +27,8 @@ export const ImageNode = memo(({ id, data, selected }: NodeProps<ImageNodeType>)
       
       try {
         // Generate image from the input text (prompt)
-        const imageBlob = await client.generateImage('', inputContent);
+        const model = config.image?.model || '';
+        const imageBlob = await client.generateImage(model, inputContent);
         
         // Create a URL for the image blob
         const imageUrl = URL.createObjectURL(imageBlob);
