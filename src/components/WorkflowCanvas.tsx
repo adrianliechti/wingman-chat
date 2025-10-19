@@ -14,7 +14,6 @@ import { SearchInputNode } from './SearchInputNode';
 import { PromptNode } from './PromptNode';
 import { TranslateNode } from './TranslateNode';
 import { FileInputNode } from './FileInputNode';
-import { WebInputNode } from './WebInputNode';
 import { TextInputNode } from './TextInputNode';
 import { RepositoryInputNode } from './RepositoryInputNode';
 import { MarkdownOutputNode } from './MarkdownOutputNode';
@@ -29,7 +28,6 @@ const nodeTypes: NodeTypes = {
   llm: PromptNode,
   translate: TranslateNode,
   fileInput: FileInputNode,
-  webInput: WebInputNode,
   textInput: TextInputNode,
   repositoryInput: RepositoryInputNode,
   markdownOutput: MarkdownOutputNode,

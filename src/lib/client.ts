@@ -713,7 +713,7 @@ Quality Standards:
     const data = new FormData();
     data.append('query', query);
 
-    const response = await fetch(new URL(`/api/v1/retrieve`, window.location.origin), {
+    const response = await fetch(new URL(`/api/v1/search`, window.location.origin), {
       method: "POST",
       body: data,
     });
@@ -733,6 +733,23 @@ Quality Standards:
       source: result.source || undefined,
       content: result.content,
     }));
+  }
+
+  async research(instructions: string): Promise<string> {
+    const data = new FormData();
+    data.append('instructions', instructions);
+
+    const response = await fetch(new URL(`/api/v1/research`, window.location.origin), {
+      method: "POST",
+      body: data,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Research request failed with status ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result.content || '';
   }
 
   async generateImage(

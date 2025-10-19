@@ -1,18 +1,20 @@
 import { memo, useState } from 'react';
-import { Globe, ExternalLink } from 'lucide-react';
-import { Input } from '@headlessui/react';
+import { Globe, ChevronDown } from 'lucide-react';
+import { Input, Menu, MenuButton, MenuItem, MenuItems, Button } from '@headlessui/react';
 import type { NodeProps } from '@xyflow/react';
 import type { SearchInputNode as SearchInputNodeType } from '../types/workflow';
-import type { SearchResult } from '../types/search';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
+import { Markdown } from './Markdown';
+
+type SearchMode = 'search' | 'research' | 'fetch';
 
 export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInputNodeType>) => {
   const { updateNode } = useWorkflow();
   const { getText, connectedData, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [mode, setMode] = useState<SearchMode>('search');
   const config = getConfig();
   const client = config.client;
 
@@ -28,24 +30,37 @@ export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInp
     
     await executeAsync(async () => {
       try {
-        const results = await client.search(query);
-        setSearchResults(results);
-        
-        // Concatenate all results into text format for output
-        const resultText = results.map((result, index) => {
-          let text = `Result ${index + 1}:\n`;
-          if (result.title) text += `Title: ${result.title}\n`;
-          if (result.source) text += `Source: ${result.source}\n`;
-          text += `Content: ${result.content}\n`;
-          return text;
-        }).join('\n---\n\n');
+        if (mode === 'fetch') {
+          // Call fetchText method
+          const content = await client.fetchText(query);
+          updateNode(id, {
+            data: { ...data, outputText: content || 'No content fetched' }
+          });
+        } else if (mode === 'research') {
+          // Call research method
+          const result = await client.research(query);
+          updateNode(id, {
+            data: { ...data, outputText: result || 'No research results found' }
+          });
+        } else {
+          // Call search method
+          const results = await client.search(query);
+          
+          // Convert all results into markdown format for output
+          const resultText = results.map((result, index) => {
+            let text = `### Result ${index + 1}\n\n`;
+            if (result.title) text += `**${result.title}**\n\n`;
+            if (result.source) text += `[${result.source}](${result.source})\n\n`;
+            text += `\`\`\`markdown\n${result.content}\n\`\`\`\n`;
+            return text;
+          }).join('\n---\n\n');
 
-        updateNode(id, {
-          data: { ...data, outputText: resultText || 'No results found' }
-        });
+          updateNode(id, {
+            data: { ...data, outputText: resultText || 'No results found' }
+          });
+        }
       } catch (error) {
-        console.error('Error searching:', error);
-        setSearchResults([]);
+        console.error(`Error ${mode === 'fetch' ? 'fetching' : mode === 'research' ? 'researching' : 'searching'}:`, error);
         updateNode(id, {
           data: { ...data, outputText: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
         });
@@ -70,6 +85,49 @@ export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInp
       showOutputHandle={true}
     >
       <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
+        {/* Mode Selector */}
+        <div className="flex-shrink-0 flex items-center gap-2">
+          <Menu>
+            <MenuButton className="nodrag inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-xs transition-colors rounded-lg">
+              <Globe size={14} />
+              <span>
+                {mode === 'search' ? 'Search' : mode === 'research' ? 'Research' : 'Website'}
+              </span>
+              <ChevronDown size={12} className="opacity-50" />
+            </MenuButton>
+            <MenuItems
+              transition
+              anchor="bottom start"
+              className="mt-1 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50 min-w-[150px]"
+            >
+              <MenuItem>
+                <Button
+                  onClick={() => setMode('search')}
+                  className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
+                >
+                  Search
+                </Button>
+              </MenuItem>
+              <MenuItem>
+                <Button
+                  onClick={() => setMode('fetch')}
+                  className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
+                >
+                  Website
+                </Button>
+              </MenuItem>
+              <MenuItem>
+                <Button
+                  onClick={() => setMode('research')}
+                  className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
+                >
+                  Research
+                </Button>
+              </MenuItem>
+            </MenuItems>
+          </Menu>
+        </div>
+
         <div className="flex-shrink-0">
           <div className="flex gap-2">
             <Input
@@ -84,7 +142,7 @@ export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInp
                 }
               }}
               disabled={hasConnections}
-              placeholder="Enter search query..."
+              placeholder={mode === 'fetch' ? 'Enter URL...' : mode === 'research' ? 'Enter instructions...' : 'Enter search query...'}
               className="flex-1 px-3 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 focus:outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed nodrag"
             />
             <button
@@ -92,41 +150,15 @@ export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInp
               disabled={!canExecute}
               className="px-4 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 dark:hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 nodrag"
             >
-              Search
+              {mode === 'search' ? 'Search' : mode === 'research' ? 'Research' : 'Fetch'}
             </button>
           </div>
         </div>
 
-        {searchResults.length > 0 && (
+        {data.outputText && (
           <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-hide nowheel">
-              {searchResults.map((result, index) => (
-                <div
-                  key={index}
-                  className="p-2.5 rounded-lg border border-gray-200/50 dark:border-gray-700/50 bg-white/50 dark:bg-black/20 hover:bg-white/70 dark:hover:bg-black/30 transition-colors nodrag"
-                >
-                  {result.title && (
-                    <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1 truncate">
-                      {result.title}
-                    </h4>
-                  )}
-                  {result.source && (
-                    <a
-                      href={result.source}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline mb-1.5 max-w-full"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                      <span className="truncate">{result.source}</span>
-                    </a>
-                  )}
-                  <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">
-                    {result.content}
-                  </p>
-                </div>
-              ))}
+            <div className="flex-1 overflow-y-auto px-3 py-2 text-sm rounded-lg bg-gray-100/50 dark:bg-black/10 scrollbar-hide nowheel">
+              <Markdown>{data.outputText}</Markdown>
             </div>
           </div>
         )}

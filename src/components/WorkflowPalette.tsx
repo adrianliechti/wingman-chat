@@ -1,4 +1,4 @@
-import { Globe, Sparkles, FileText, FileType, Volume2, Image, StickyNote, Languages, Table, Link, Database } from 'lucide-react';
+import { Globe, Sparkles, FileText, FileType, Volume2, Image, StickyNote, Languages, Table, Database } from 'lucide-react';
 import { useWorkflow } from '../hooks/useWorkflow';
 import type { NodeType, WorkflowNode } from '../types/workflow';
 import { useState, useEffect, useRef } from 'react';
@@ -65,8 +65,6 @@ export function WorkflowPalette() {
         ? { outputText: '', useInput: false, language: 'en', tone: '', style: '' }
         : type === 'fileInput'
         ? { fileName: '', fileContent: '', outputText: '', useInput: false }
-        : type === 'webInput'
-        ? { url: '', outputText: '', useInput: false }
         : type === 'textInput'
         ? { content: '', useInput: false }
         : type === 'repositoryInput'
@@ -101,12 +99,6 @@ export function WorkflowPalette() {
           type="fileInput"
           label="File Input"
           icon={<FileText size={20} />}
-          onClick={handleNodeClick}
-        />
-        <WorkflowPaletteItem
-          type="webInput"
-          label="Web Input"
-          icon={<Link size={20} />}
           onClick={handleNodeClick}
         />
         <WorkflowPaletteItem
