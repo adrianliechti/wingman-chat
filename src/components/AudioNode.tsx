@@ -1,13 +1,13 @@
 import { memo } from 'react';
 import { Volume2 } from 'lucide-react';
 import type { NodeProps } from '@xyflow/react';
-import type { AudioOutputNode as AudioOutputNodeType } from '../types/workflow';
+import type { AudioNode as AudioNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
 
-export const AudioOutputNode = memo(({ id, data, selected }: NodeProps<AudioOutputNodeType>) => {
+export const AudioNode = memo(({ id, data, selected }: NodeProps<AudioNodeType>) => {
   const { updateNode } = useWorkflow();
   const { getText, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const config = getConfig();

@@ -2,7 +2,7 @@ import { memo, useState } from 'react';
 import { Globe, ChevronDown } from 'lucide-react';
 import { Input, Menu, MenuButton, MenuItem, MenuItems, Button } from '@headlessui/react';
 import type { NodeProps } from '@xyflow/react';
-import type { SearchInputNode as SearchInputNodeType } from '../types/workflow';
+import type { SearchNode as SearchNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
@@ -11,7 +11,7 @@ import { Markdown } from './Markdown';
 
 type SearchMode = 'search' | 'research' | 'fetch';
 
-export const SearchInputNode = memo(({ id, data, selected }: NodeProps<SearchInputNodeType>) => {
+export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType>) => {
   const { updateNode } = useWorkflow();
   const { getText, connectedData, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const [mode, setMode] = useState<SearchMode>('search');

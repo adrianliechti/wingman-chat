@@ -2,14 +2,14 @@ import { memo, useState, useRef } from 'react';
 import { FileText, Upload, Loader2 } from 'lucide-react';
 import { Textarea } from '@headlessui/react';
 import type { NodeProps } from '@xyflow/react';
-import type { FileInputNode as FileInputNodeType } from '../types/workflow';
+import type { FileNode as FileNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { supportedTypes } from '../lib/utils';
 import { WorkflowNode } from './WorkflowNode';
 
-export const FileInputNode = memo(({ id, data, selected }: NodeProps<FileInputNodeType>) => {
+export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) => {
   const { updateNode } = useWorkflow();
   const { isProcessing, executeAsync } = useWorkflowNode(id);
   const fileInputRef = useRef<HTMLInputElement>(null);

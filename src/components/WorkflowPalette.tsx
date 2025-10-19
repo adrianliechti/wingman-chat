@@ -57,25 +57,25 @@ export function WorkflowPalette() {
         width: 400,
         height: 300
       },
-      data: type === 'searchInput' 
+      data: type === 'search' 
         ? { inputText: '', outputText: '', useInput: false }
-        : type === 'llm'
+        : type === 'prompt'
         ? { inputText: '', outputText: '', useInput: false, prompt: '' }
         : type === 'translate'
         ? { outputText: '', useInput: false, language: 'en', tone: '', style: '' }
-        : type === 'fileInput'
+        : type === 'file'
         ? { fileName: '', fileContent: '', outputText: '', useInput: false }
-        : type === 'textInput'
+        : type === 'text'
         ? { content: '', useInput: false }
-        : type === 'repositoryInput'
+        : type === 'repository'
         ? { repositoryId: '', query: '', outputText: '', useInput: false }
-        : type === 'markdownOutput'
+        : type === 'markdown'
         ? { inputText: '', outputText: '', error: undefined, useInput: false }
-        : type === 'audioOutput'
+        : type === 'audio'
         ? { audioUrl: undefined, error: undefined, useInput: false }
-        : type === 'imageOutput'
+        : type === 'image'
         ? { imageUrl: undefined, error: undefined, useInput: false }
-        : type === 'csvOutput'
+        : type === 'csv'
         ? { csvData: undefined, error: undefined, useInput: false }
         : { inputText: '', outputText: '', useInput: false }
     } as WorkflowNode;
@@ -90,25 +90,25 @@ export function WorkflowPalette() {
     >
       <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
         <WorkflowPaletteItem
-          type="textInput"
+          type="text"
           label="Text"
           icon={<StickyNote size={20} />}
           onClick={handleNodeClick}
         />
         <WorkflowPaletteItem
-          type="fileInput"
+          type="file"
           label="File"
           icon={<FileText size={20} />}
           onClick={handleNodeClick}
         />
         <WorkflowPaletteItem
-          type="searchInput"
+          type="search"
           label="Search"
           icon={<Globe size={20} />}
           onClick={handleNodeClick}
         />
         <WorkflowPaletteItem
-          type="repositoryInput"
+          type="repository"
           label="Repository"
           icon={<Database size={20} />}
           onClick={handleNodeClick}
@@ -117,7 +117,7 @@ export function WorkflowPalette() {
       <div className="w-full h-px bg-gray-300/50 dark:bg-gray-600/50 my-1" />
       <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
         <WorkflowPaletteItem
-          type="llm"
+          type="prompt"
           label="Prompt"
           icon={<Sparkles size={20} />}
           onClick={handleNodeClick}
@@ -132,25 +132,25 @@ export function WorkflowPalette() {
       <div className="w-full h-px bg-gray-300/50 dark:bg-gray-600/50 my-1" />
       <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
         <WorkflowPaletteItem
-          type="markdownOutput"
+          type="markdown"
           label="Markdown"
           icon={<FileType size={20} />}
           onClick={handleNodeClick}
         />
         <WorkflowPaletteItem
-          type="audioOutput"
+          type="audio"
           label="Audio"
           icon={<Volume2 size={20} />}
           onClick={handleNodeClick}
         />
         <WorkflowPaletteItem
-          type="imageOutput"
+          type="image"
           label="Image"
           icon={<Image size={20} />}
           onClick={handleNodeClick}
         />
         <WorkflowPaletteItem
-          type="csvOutput"
+          type="csv"
           label="CSV"
           icon={<Table size={20} />}
           onClick={handleNodeClick}

@@ -1,13 +1,13 @@
 import { memo } from 'react';
 import { ImageIcon } from 'lucide-react';
 import type { NodeProps } from '@xyflow/react';
-import type { ImageOutputNode as ImageOutputNodeType } from '../types/workflow';
+import type { ImageNode as ImageNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
 
-export const ImageOutputNode = memo(({ id, data, selected }: NodeProps<ImageOutputNodeType>) => {
+export const ImageNode = memo(({ id, data, selected }: NodeProps<ImageNodeType>) => {
   const { updateNode } = useWorkflow();
   const { getText, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const config = getConfig();

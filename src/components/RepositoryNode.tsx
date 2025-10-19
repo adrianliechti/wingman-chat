@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { Database, ChevronDown } from 'lucide-react';
 import { Button, Input, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import type { NodeProps } from '@xyflow/react';
-import type { RepositoryInputNode as RepositoryInputNodeType } from '../types/workflow';
+import type { RepositoryNode as RepositoryNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { useRepositories } from '../hooks/useRepositories';
@@ -10,7 +10,7 @@ import { useRepository } from '../hooks/useRepository';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
 
-export const RepositoryInputNode = memo(({ id, data, selected }: NodeProps<RepositoryInputNodeType>) => {
+export const RepositoryNode = memo(({ id, data, selected }: NodeProps<RepositoryNodeType>) => {
   const { updateNode } = useWorkflow();
   const { getText, connectedData, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const { repositories } = useRepositories();

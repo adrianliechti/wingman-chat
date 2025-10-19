@@ -1,14 +1,14 @@
 import { memo } from 'react';
 import { FileText } from 'lucide-react';
 import type { NodeProps } from '@xyflow/react';
-import type { MarkdownOutputNode as MarkdownOutputNodeType } from '../types/workflow';
+import type { MarkdownNode as MarkdownNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
 
-export const MarkdownOutputNode = memo(({ id, data, selected }: NodeProps<MarkdownOutputNodeType>) => {
+export const MarkdownNode = memo(({ id, data, selected }: NodeProps<MarkdownNodeType>) => {
   const { updateNode } = useWorkflow();
   const { getLabeledText, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const config = getConfig();

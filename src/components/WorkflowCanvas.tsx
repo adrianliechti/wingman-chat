@@ -10,30 +10,30 @@ import '@xyflow/react/dist/style.css';
 import { useState } from 'react';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useTheme } from '../hooks/useTheme';
-import { SearchInputNode } from './SearchInputNode';
+import { SearchNode } from './SearchNode';
 import { PromptNode } from './PromptNode';
 import { TranslateNode } from './TranslateNode';
-import { FileInputNode } from './FileInputNode';
-import { TextInputNode } from './TextInputNode';
-import { RepositoryInputNode } from './RepositoryInputNode';
-import { MarkdownOutputNode } from './MarkdownOutputNode';
-import { AudioOutputNode } from './AudioOutputNode';
-import { ImageOutputNode } from './ImageOutputNode';
-import { CsvOutputNode } from './CsvOutputNode';
+import { FileNode } from './FileNode';
+import { TextNode } from './TextNode';
+import { RepositoryNode } from './RepositoryNode';
+import { MarkdownNode } from './MarkdownNode';
+import { AudioNode } from './AudioNode';
+import { ImageNode } from './ImageNode';
+import { CsvNode } from './CsvNode';
 import { WorkflowLabelDialog } from './WorkflowLabelDialog';
 import type { WorkflowEdge } from '../types/workflow';
 
 const nodeTypes: NodeTypes = {
-  searchInput: SearchInputNode,
-  llm: PromptNode,
+  search: SearchNode,
+  prompt: PromptNode,
   translate: TranslateNode,
-  fileInput: FileInputNode,
-  textInput: TextInputNode,
-  repositoryInput: RepositoryInputNode,
-  markdownOutput: MarkdownOutputNode,
-  audioOutput: AudioOutputNode,
-  imageOutput: ImageOutputNode,
-  csvOutput: CsvOutputNode,
+  file: FileNode,
+  text: TextNode,
+  repository: RepositoryNode,
+  markdown: MarkdownNode,
+  audio: AudioNode,
+  image: ImageNode,
+  csv: CsvNode,
 };
 
 export function WorkflowCanvas() {

@@ -1,14 +1,14 @@
 import { memo } from 'react';
 import { Table } from 'lucide-react';
 import type { NodeProps } from '@xyflow/react';
-import type { CsvOutputNode as CsvOutputNodeType } from '../types/workflow';
+import type { CsvNode as CsvNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { CsvRenderer } from './CsvRenderer';
 import { WorkflowNode } from './WorkflowNode';
 
-export const CsvOutputNode = memo(({ id, data, selected }: NodeProps<CsvOutputNodeType>) => {
+export const CsvNode = memo(({ id, data, selected }: NodeProps<CsvNodeType>) => {
   const { updateNode } = useWorkflow();
   const { getLabeledText, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const config = getConfig();

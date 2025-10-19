@@ -1,9 +1,9 @@
 import type { Node, Edge } from '@xyflow/react';
 
-export type NodeType = 'searchInput' | 'llm' | 'translate' | 'fileInput' | 'textInput' | 'repositoryInput' | 'markdownOutput' | 'audioOutput' | 'imageOutput' | 'csvOutput';
+export type NodeType = 'search' | 'prompt' | 'translate' | 'file' | 'text' | 'repository' | 'markdown' | 'audio' | 'image' | 'csv';
 
 // Custom data for each node type
-export interface SearchInputNodeData extends Record<string, unknown> {
+export interface SearchNodeData extends Record<string, unknown> {
   inputText?: string;
   outputText?: string;
   useInput: boolean; // true if connected to another node, false if using fixed text
@@ -25,63 +25,63 @@ export interface TranslateNodeData extends Record<string, unknown> {
   style?: string;
 }
 
-export interface FileInputNodeData extends Record<string, unknown> {
+export interface FileNodeData extends Record<string, unknown> {
   fileName?: string;
   fileContent?: string;
   outputText?: string;
   useInput: boolean;
 }
 
-export interface TextInputNodeData extends Record<string, unknown> {
+export interface TextNodeData extends Record<string, unknown> {
   content?: string;
   useInput: boolean;
 }
 
-export interface RepositoryInputNodeData extends Record<string, unknown> {
+export interface RepositoryNodeData extends Record<string, unknown> {
   repositoryId?: string;
   query?: string;
   outputText?: string;
   useInput: boolean;
 }
 
-export interface MarkdownOutputNodeData extends Record<string, unknown> {
+export interface MarkdownNodeData extends Record<string, unknown> {
   inputText?: string;
   outputText?: string;
   error?: string;
   useInput: boolean;
 }
 
-export interface AudioOutputNodeData extends Record<string, unknown> {
+export interface AudioNodeData extends Record<string, unknown> {
   audioUrl?: string;
   error?: string;
   useInput: boolean;
 }
 
-export interface ImageOutputNodeData extends Record<string, unknown> {
+export interface ImageNodeData extends Record<string, unknown> {
   imageUrl?: string;
   error?: string;
   useInput: boolean;
 }
 
-export interface CsvOutputNodeData extends Record<string, unknown> {
+export interface CsvNodeData extends Record<string, unknown> {
   csvData?: string;
   error?: string;
   useInput: boolean;
 }
 
 // ReactFlow node types with custom data
-export type SearchInputNode = Node<SearchInputNodeData, 'searchInput'>;
-export type LLMNode = Node<LLMNodeData, 'llm'>;
+export type SearchNode = Node<SearchNodeData, 'search'>;
+export type LLMNode = Node<LLMNodeData, 'prompt'>;
 export type TranslateNode = Node<TranslateNodeData, 'translate'>;
-export type FileInputNode = Node<FileInputNodeData, 'fileInput'>;
-export type TextInputNode = Node<TextInputNodeData, 'textInput'>;
-export type RepositoryInputNode = Node<RepositoryInputNodeData, 'repositoryInput'>;
-export type MarkdownOutputNode = Node<MarkdownOutputNodeData, 'markdownOutput'>;
-export type AudioOutputNode = Node<AudioOutputNodeData, 'audioOutput'>;
-export type ImageOutputNode = Node<ImageOutputNodeData, 'imageOutput'>;
-export type CsvOutputNode = Node<CsvOutputNodeData, 'csvOutput'>;
+export type FileNode = Node<FileNodeData, 'file'>;
+export type TextNode = Node<TextNodeData, 'text'>;
+export type RepositoryNode = Node<RepositoryNodeData, 'repository'>;
+export type MarkdownNode = Node<MarkdownNodeData, 'markdown'>;
+export type AudioNode = Node<AudioNodeData, 'audio'>;
+export type ImageNode = Node<ImageNodeData, 'image'>;
+export type CsvNode = Node<CsvNodeData, 'csv'>;
 
-export type WorkflowNode = SearchInputNode | LLMNode | TranslateNode | FileInputNode | TextInputNode | RepositoryInputNode | MarkdownOutputNode | AudioOutputNode | ImageOutputNode | CsvOutputNode;
+export type WorkflowNode = SearchNode | LLMNode | TranslateNode | FileNode | TextNode | RepositoryNode | MarkdownNode | AudioNode | ImageNode | CsvNode;
 
 // Custom edge data for labeled connections
 export interface WorkflowEdgeData extends Record<string, unknown> {

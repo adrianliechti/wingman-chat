@@ -2,11 +2,11 @@ import { memo } from 'react';
 import { StickyNote } from 'lucide-react';
 import { Textarea } from '@headlessui/react';
 import type { NodeProps } from '@xyflow/react';
-import type { TextInputNode as TextInputNodeType } from '../types/workflow';
+import type { TextNode as TextNodeType } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { WorkflowNode } from './WorkflowNode';
 
-export const TextInputNode = memo(({ id, data, selected }: NodeProps<TextInputNodeType>) => {
+export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) => {
   const { updateNode } = useWorkflow();
 
   return (
