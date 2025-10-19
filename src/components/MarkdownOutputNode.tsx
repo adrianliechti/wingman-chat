@@ -48,7 +48,7 @@ export const MarkdownOutputNode = memo(({ id, data, selected }: NodeProps<Markdo
       id={id}
       selected={selected}
       icon={FileText}
-      title="Markdown Output"
+      title="Markdown"
       color="green"
       onExecute={handleExecute}
       isProcessing={isProcessing}
@@ -64,7 +64,7 @@ export const MarkdownOutputNode = memo(({ id, data, selected }: NodeProps<Markdo
           </div>
         </div>
       ) : data.outputText ? (
-        <div className="flex-1 overflow-y-auto px-3 py-2 text-sm rounded-lg bg-white dark:bg-black/20 text-gray-700 dark:text-gray-300 scrollbar-hide nowheel">
+        <div className="flex-1 overflow-y-auto px-1 py-2 text-sm rounded-lg bg-white dark:bg-black/20 text-gray-700 dark:text-gray-300 scrollbar-hide nowheel">
           <Markdown>{data.outputText}</Markdown>
         </div>
       ) : (

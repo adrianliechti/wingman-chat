@@ -18,6 +18,7 @@ export interface WorkflowNodeProps {
   showOutputHandle?: boolean;
   minWidth?: number;
   minHeight?: number;
+  headerActions?: ReactNode;
 }
 
 const colorStyles = {
@@ -61,7 +62,8 @@ export function WorkflowNode({
   showInputHandle = true,
   showOutputHandle = true,
   minWidth = 280,
-  minHeight = 200
+  minHeight = 200,
+  headerActions
 }: WorkflowNodeProps) {
   const { deleteNode } = useWorkflow();
   const styles = colorStyles[color];
@@ -105,6 +107,7 @@ export function WorkflowNode({
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{title}</span>
         </div>
         <div className="flex items-center gap-2">
+          {headerActions}
           {onExecute && (
             <button
               onClick={onExecute}

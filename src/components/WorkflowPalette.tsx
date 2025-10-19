@@ -91,25 +91,25 @@ export function WorkflowPalette() {
       <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
         <WorkflowPaletteItem
           type="textInput"
-          label="Text Input"
+          label="Text"
           icon={<StickyNote size={20} />}
           onClick={handleNodeClick}
         />
         <WorkflowPaletteItem
           type="fileInput"
-          label="File Input"
+          label="File"
           icon={<FileText size={20} />}
           onClick={handleNodeClick}
         />
         <WorkflowPaletteItem
           type="searchInput"
-          label="Search Input"
+          label="Search"
           icon={<Globe size={20} />}
           onClick={handleNodeClick}
         />
         <WorkflowPaletteItem
           type="repositoryInput"
-          label="Repository Search"
+          label="Repository"
           icon={<Database size={20} />}
           onClick={handleNodeClick}
         />
@@ -118,7 +118,7 @@ export function WorkflowPalette() {
       <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
         <WorkflowPaletteItem
           type="llm"
-          label="Prompt Node"
+          label="Prompt"
           icon={<Sparkles size={20} />}
           onClick={handleNodeClick}
         />
@@ -133,25 +133,25 @@ export function WorkflowPalette() {
       <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
         <WorkflowPaletteItem
           type="markdownOutput"
-          label="Markdown Output"
+          label="Markdown"
           icon={<FileType size={20} />}
           onClick={handleNodeClick}
         />
         <WorkflowPaletteItem
           type="audioOutput"
-          label="Audio Output"
+          label="Audio"
           icon={<Volume2 size={20} />}
           onClick={handleNodeClick}
         />
         <WorkflowPaletteItem
           type="imageOutput"
-          label="Image Output"
+          label="Image"
           icon={<Image size={20} />}
           onClick={handleNodeClick}
         />
         <WorkflowPaletteItem
           type="csvOutput"
-          label="CSV Output"
+          label="CSV"
           icon={<Table size={20} />}
           onClick={handleNodeClick}
         />
