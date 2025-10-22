@@ -24,7 +24,7 @@ function WorkflowPaletteItem({ type, label, icon, onClick }: WorkflowPaletteItem
 }
 
 export function WorkflowPalette() {
-  const { addNode, nodes } = useWorkflow();
+  const { addNode } = useWorkflow();
   const [useDoubleColumn, setUseDoubleColumn] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const config = getConfig();
@@ -42,19 +42,20 @@ export function WorkflowPalette() {
   }, []);
 
   const handleNodeClick = (type: NodeType) => {
-    // Calculate position: start from center-right, offset based on existing node count
-    // This ensures new nodes appear in a visible area, not under the toolbar
-    const baseX = 200; // Start well right of the toolbar
-    const baseY = 100;  // Start from top with some padding
-    const offset = nodes.length * 40; // Stagger each new node
+    // Calculate position: center of the screen
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const nodeWidth = 400;
+    const nodeHeight = 300;
+    
+    // Center position minus half the node size to center the node itself
+    const x = (viewportWidth - nodeWidth) / 2;
+    const y = (viewportHeight - nodeHeight) / 2;
     
     const newNode: WorkflowNode = {
       id: `node-${Date.now()}`,
       type,
-      position: { 
-        x: baseX + (offset % 400), // Wrap horizontally after 10 nodes
-        y: baseY + Math.floor(offset / 400) * 50 // Stack vertically when wrapping
-      },
+      position: { x, y },
       style: {
         width: 400,
         height: 300

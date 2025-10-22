@@ -16,6 +16,7 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
   const { updateNode } = useWorkflow();
   const { getLabeledText, isProcessing, executeAsync } = useWorkflowNode(id);
   const [models, setModels] = useState<Model[]>([]);
+  const [inputText, setInputText] = useState(data.inputText || '');
   const config = getConfig();
   const client = config.client;
 
@@ -31,15 +32,22 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
     loadModels();
   }, [client]);
 
+  useEffect(() => {
+    setInputText(data.inputText || '');
+  }, [data.inputText]);
+
   const handleExecute = async () => {
-    if (!data.inputText?.trim()) return;
+    if (!inputText?.trim()) return;
+    
+    // Save the input text to workflow state
+    updateNode(id, { data: { ...data, inputText } });
     
     await executeAsync(async () => {
       // Get labeled text from connected nodes
       const contextText = getLabeledText();
       
       // Build the user message content
-      let messageContent = data.inputText || '';
+      let messageContent = inputText || '';
       
       // If there's connected data, append it as context
       if (contextText) {
@@ -124,7 +132,7 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
       color="purple"
       onExecute={handleExecute}
       isProcessing={isProcessing}
-      canExecute={!!data.inputText?.trim()}
+      canExecute={!!inputText?.trim()}
       showInputHandle={true}
       showOutputHandle={true}
       headerActions={modelSelector}
@@ -133,10 +141,11 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
         {/* Prompt Input */}
         <div className="flex-shrink-0">
           <Textarea
-            value={data.inputText || ''}
-            onChange={(e) => updateNode(id, { 
-              data: { ...data, inputText: e.target.value } 
-            })}
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onBlur={() => updateNode(id, { data: { ...data, inputText } })}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             placeholder="Instructions"
             rows={3}
             className="w-full px-3 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/30 focus:outline-none transition-all resize-none nodrag"
