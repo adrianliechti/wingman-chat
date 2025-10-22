@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useEffect } from 'react';
 import { Volume2 } from 'lucide-react';
 import type { NodeProps } from '@xyflow/react';
 import type { AudioNode as AudioNodeType } from '../types/workflow';
@@ -6,6 +6,7 @@ import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
+import { DownloadButton } from './DownloadButton';
 
 export const AudioNode = memo(({ id, data, selected }: NodeProps<AudioNodeType>) => {
   const { updateNode } = useWorkflow();
@@ -26,6 +27,11 @@ export const AudioNode = memo(({ id, data, selected }: NodeProps<AudioNodeType>)
       });
       
       try {
+        // Revoke the previous audio URL to prevent memory leaks
+        if (data.audioUrl) {
+          URL.revokeObjectURL(data.audioUrl);
+        }
+        
         // Generate audio from the input text
         const audioBlob = await client.generateAudio('', inputContent);
         
@@ -49,6 +55,15 @@ export const AudioNode = memo(({ id, data, selected }: NodeProps<AudioNodeType>)
     });
   };
 
+  // Clean up the blob URL when the component unmounts or audioUrl changes
+  useEffect(() => {
+    return () => {
+      if (data.audioUrl) {
+        URL.revokeObjectURL(data.audioUrl);
+      }
+    };
+  }, [data.audioUrl]);
+
   return (
     <WorkflowNode
       id={id}
@@ -62,6 +77,9 @@ export const AudioNode = memo(({ id, data, selected }: NodeProps<AudioNodeType>)
       showInputHandle={true}
       showOutputHandle={false}
       minWidth={350}
+      headerActions={
+        data.audioUrl && <DownloadButton url={data.audioUrl} filename="generated-audio.mp3" />
+      }
     >
       <div className="flex-1 flex items-center justify-center min-h-0 p-4">
         {data.error ? (
@@ -73,7 +91,7 @@ export const AudioNode = memo(({ id, data, selected }: NodeProps<AudioNodeType>)
             <audio 
               controls 
               src={data.audioUrl}
-              className="w-full"
+              className="w-full nodrag"
               onError={() => {
                 updateNode(id, {
                   data: { ...data, error: 'Failed to load audio' }

@@ -108,6 +108,12 @@ export function WorkflowNode({
         </div>
         <div className="flex items-center gap-2">
           {headerActions}
+          <button
+            onClick={() => deleteNode(id)}
+            className="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 transition-colors"
+          >
+            <Trash2 size={14} />
+          </button>
           {onExecute && (
             <button
               onClick={onExecute}
@@ -118,12 +124,6 @@ export function WorkflowNode({
               {isProcessing ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
             </button>
           )}
-          <button
-            onClick={() => deleteNode(id)}
-            className="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 transition-colors"
-          >
-            <Trash2 size={14} />
-          </button>
         </div>
       </div>
 

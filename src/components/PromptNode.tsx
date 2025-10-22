@@ -11,6 +11,7 @@ import { Role } from '../types/chat';
 import type { Message } from '../types/chat';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
+import { CopyButton } from './CopyButton';
 
 export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType>) => {
   const { updateNode } = useWorkflow();
@@ -135,7 +136,12 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
       canExecute={!!inputText?.trim()}
       showInputHandle={true}
       showOutputHandle={true}
-      headerActions={modelSelector}
+      headerActions={
+        <>
+          {modelSelector}
+          {data.outputText && <CopyButton text={data.outputText} />}
+        </>
+      }
     >
       <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
         {/* Prompt Input */}

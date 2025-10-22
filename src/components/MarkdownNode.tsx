@@ -7,6 +7,7 @@ import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
+import { CopyButton } from './CopyButton';
 
 export const MarkdownNode = memo(({ id, data, selected }: NodeProps<MarkdownNodeType>) => {
   const { updateNode } = useWorkflow();
@@ -56,6 +57,9 @@ export const MarkdownNode = memo(({ id, data, selected }: NodeProps<MarkdownNode
       showInputHandle={true}
       showOutputHandle={true}
       minWidth={400}
+      headerActions={
+        data.outputText && <CopyButton text={data.outputText} />
+      }
     >
       {data.error ? (
         <div className="flex-1 flex items-center justify-center min-h-0 p-4">

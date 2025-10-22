@@ -8,6 +8,7 @@ import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
+import { CopyButton } from './CopyButton';
 
 type SearchMode = 'search' | 'research' | 'fetch';
 
@@ -124,7 +125,12 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
       canExecute={canExecute}
       showInputHandle={true}
       showOutputHandle={true}
-      headerActions={modeSelector}
+      headerActions={
+        <>
+          {modeSelector}
+          {data.outputText && <CopyButton text={data.outputText} />}
+        </>
+      }
     >
       <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
         <div className="flex-shrink-0">

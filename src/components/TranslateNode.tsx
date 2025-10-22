@@ -9,6 +9,7 @@ import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
 import { supportedLanguages } from '../contexts/TranslateContext';
+import { CopyButton } from './CopyButton';
 
 export const TranslateNode = memo(({ id, data, selected }: NodeProps<TranslateNodeType>) => {
   const { updateNode } = useWorkflow();
@@ -97,7 +98,12 @@ export const TranslateNode = memo(({ id, data, selected }: NodeProps<TranslateNo
       canExecute={true}
       showInputHandle={true}
       showOutputHandle={true}
-      headerActions={languageSelector}
+      headerActions={
+        <>
+          {languageSelector}
+          {data.outputText && <CopyButton text={data.outputText} />}
+        </>
+      }
     >
       <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
         {data.outputText && (

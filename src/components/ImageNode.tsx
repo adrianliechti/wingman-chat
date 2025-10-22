@@ -6,6 +6,7 @@ import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
+import { DownloadButton } from './DownloadButton';
 
 export const ImageNode = memo(({ id, data, selected }: NodeProps<ImageNodeType>) => {
   const { updateNode } = useWorkflow();
@@ -63,6 +64,9 @@ export const ImageNode = memo(({ id, data, selected }: NodeProps<ImageNodeType>)
       showInputHandle={true}
       showOutputHandle={false}
       minWidth={400}
+      headerActions={
+        data.imageUrl && <DownloadButton url={data.imageUrl} filename="generated-image.png" />
+      }
     >
       <div className="flex-1 flex flex-col min-h-0">
         {data.error ? (
@@ -70,11 +74,11 @@ export const ImageNode = memo(({ id, data, selected }: NodeProps<ImageNodeType>)
             <p className="text-red-600 dark:text-red-400 text-sm">{data.error}</p>
           </div>
         ) : data.imageUrl ? (
-          <div className="flex-1 border border-gray-200/50 dark:border-gray-700/50 rounded-lg overflow-hidden bg-white dark:bg-black/20">
+          <div className="flex-1 rounded-lg overflow-hidden bg-white dark:bg-black/20">
             <img 
               src={data.imageUrl} 
               alt="Generated output"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               onError={() => {
                 updateNode(id, {
                   data: { ...data, error: 'Failed to load image' }

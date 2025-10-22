@@ -7,6 +7,7 @@ import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { CsvRenderer } from './CsvRenderer';
 import { WorkflowNode } from './WorkflowNode';
+import { CopyButton } from './CopyButton';
 
 export const CsvNode = memo(({ id, data, selected }: NodeProps<CsvNodeType>) => {
   const { updateNode } = useWorkflow();
@@ -56,6 +57,9 @@ export const CsvNode = memo(({ id, data, selected }: NodeProps<CsvNodeType>) => 
       showInputHandle={true}
       showOutputHandle={true}
       minWidth={500}
+      headerActions={
+        data.csvData && <CopyButton text={data.csvData} />
+      }
     >
       <div className="flex-1 flex items-center justify-center min-h-0 p-4">
         {data.error ? (
