@@ -1,20 +1,49 @@
 import { Globe, Sparkles, FileText, FileType, Volume2, Image, StickyNote, Languages, Table, Database } from 'lucide-react';
 import { useWorkflow } from '../hooks/useWorkflow';
-import type { NodeType, WorkflowNode } from '../types/workflow';
+import type { Node } from '@xyflow/react';
 import { useState, useEffect, useRef } from 'react';
 import { getConfig } from '../config';
+import { createSearchNode } from './SearchNode';
+import { createPromptNode } from './PromptNode';
+import { createTextNode } from './TextNode';
+import { createFileNode } from './FileNode';
+
+type NodeFactory = (position: { x: number; y: number }) => Node;
 
 interface WorkflowPaletteItemProps {
-  type: NodeType;
   label: string;
   icon: React.ReactNode;
-  onClick: (type: NodeType) => void;
+  createNode: NodeFactory;
 }
 
-function WorkflowPaletteItem({ type, label, icon, onClick }: WorkflowPaletteItemProps) {
+function WorkflowPaletteItem({ label, icon, createNode }: WorkflowPaletteItemProps) {
+  const { addNode } = useWorkflow();
+
+  const handleClick = () => {
+    // Calculate position: center of the screen
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const nodeWidth = 400;
+    const nodeHeight = 300;
+    
+    // Center position minus half the node size to center the node itself
+    const x = (viewportWidth - nodeWidth) / 2;
+    const y = (viewportHeight - nodeHeight) / 2;
+    
+    const newNode = createNode({ x, y });
+    
+    // Apply standard dimensions
+    newNode.style = {
+      width: nodeWidth,
+      height: nodeHeight
+    };
+
+    addNode(newNode);
+  };
+
   return (
     <button
-      onClick={() => onClick(type)}
+      onClick={handleClick}
       title={label}
       className="size-10 bg-transparent dark:bg-transparent rounded-lg flex items-center justify-center hover:bg-neutral-200 dark:hover:bg-white/10 transition-all text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 cursor-pointer"
     >
@@ -24,7 +53,6 @@ function WorkflowPaletteItem({ type, label, icon, onClick }: WorkflowPaletteItem
 }
 
 export function WorkflowPalette() {
-  const { addNode } = useWorkflow();
   const [useDoubleColumn, setUseDoubleColumn] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const config = getConfig();
@@ -41,50 +69,48 @@ export function WorkflowPalette() {
     return () => window.removeEventListener('resize', checkHeight);
   }, []);
 
-  const handleNodeClick = (type: NodeType) => {
-    // Calculate position: center of the screen
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const nodeWidth = 400;
-    const nodeHeight = 300;
-    
-    // Center position minus half the node size to center the node itself
-    const x = (viewportWidth - nodeWidth) / 2;
-    const y = (viewportHeight - nodeHeight) / 2;
-    
-    const newNode: WorkflowNode = {
-      id: `node-${Date.now()}`,
-      type,
-      position: { x, y },
-      style: {
-        width: 400,
-        height: 300
-      },
-      data: type === 'search' 
-        ? { inputText: '', outputText: '', useInput: false }
-        : type === 'prompt'
-        ? { inputText: '', outputText: '', useInput: false, prompt: '' }
-        : type === 'translate'
-        ? { outputText: '', useInput: false, language: 'en', tone: '', style: '' }
-        : type === 'file'
-        ? { fileName: '', fileContent: '', outputText: '', useInput: false }
-        : type === 'text'
-        ? { content: '', useInput: false }
-        : type === 'repository'
-        ? { repositoryId: '', query: '', outputText: '', useInput: false }
-        : type === 'markdown'
-        ? { inputText: '', outputText: '', error: undefined, useInput: false }
-        : type === 'audio'
-        ? { audioUrl: undefined, error: undefined, useInput: false }
-        : type === 'image'
-        ? { imageUrl: undefined, error: undefined, useInput: false }
-        : type === 'csv'
-        ? { csvData: undefined, error: undefined, useInput: false }
-        : { inputText: '', outputText: '', useInput: false }
-    } as WorkflowNode;
+  // Temporary factories for nodes not yet refactored
+  const createTranslateNode = (pos: { x: number; y: number }) => ({
+    id: crypto.randomUUID(),
+    type: 'translate' as const,
+    position: pos,
+    data: { outputText: '', useInput: false, language: 'en', tone: '', style: '' }
+  });
 
-    addNode(newNode);
-  };
+  const createRepositoryNode = (pos: { x: number; y: number }) => ({
+    id: crypto.randomUUID(),
+    type: 'repository' as const,
+    position: pos,
+    data: { repositoryId: '', query: '', outputText: '', useInput: false }
+  });
+
+  const createMarkdownNode = (pos: { x: number; y: number }) => ({
+    id: crypto.randomUUID(),
+    type: 'markdown' as const,
+    position: pos,
+    data: { inputText: '', outputText: '', error: undefined, useInput: false }
+  });
+
+  const createAudioNode = (pos: { x: number; y: number }) => ({
+    id: crypto.randomUUID(),
+    type: 'audio' as const,
+    position: pos,
+    data: { audioUrl: undefined, error: undefined, useInput: false }
+  });
+
+  const createImageNode = (pos: { x: number; y: number }) => ({
+    id: crypto.randomUUID(),
+    type: 'image' as const,
+    position: pos,
+    data: { imageUrl: undefined, error: undefined, useInput: false }
+  });
+
+  const createCsvNode = (pos: { x: number; y: number }) => ({
+    id: crypto.randomUUID(),
+    type: 'csv' as const,
+    position: pos,
+    data: { csvData: undefined, error: undefined, useInput: false }
+  });
 
   return (
     <div 
@@ -93,80 +119,70 @@ export function WorkflowPalette() {
     >
       <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
         <WorkflowPaletteItem
-          type="text"
           label="Text"
           icon={<StickyNote size={20} />}
-          onClick={handleNodeClick}
+          createNode={createTextNode}
         />
         <WorkflowPaletteItem
-          type="file"
           label="File"
           icon={<FileText size={20} />}
-          onClick={handleNodeClick}
+          createNode={createFileNode}
         />
         {config.internet?.enabled && (
           <WorkflowPaletteItem
-            type="search"
             label="Search"
             icon={<Globe size={20} />}
-            onClick={handleNodeClick}
+            createNode={createSearchNode}
           />
         )}
         {config.repository?.enabled && (
           <WorkflowPaletteItem
-            type="repository"
             label="Repository"
             icon={<Database size={20} />}
-            onClick={handleNodeClick}
+            createNode={createRepositoryNode}
           />
         )}
       </div>
       <div className="w-full h-px bg-gray-300/50 dark:bg-gray-600/50 my-1" />
       <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
         <WorkflowPaletteItem
-          type="prompt"
           label="Prompt"
           icon={<Sparkles size={20} />}
-          onClick={handleNodeClick}
+          createNode={createPromptNode}
         />
         {config.translator?.enabled && (
           <WorkflowPaletteItem
-            type="translate"
             label="Translate"
             icon={<Languages size={20} />}
-            onClick={handleNodeClick}
+            createNode={createTranslateNode}
           />
         )}
       </div>
       <div className="w-full h-px bg-gray-300/50 dark:bg-gray-600/50 my-1" />
       <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
         <WorkflowPaletteItem
-          type="markdown"
           label="Markdown"
           icon={<FileType size={20} />}
-          onClick={handleNodeClick}
+          createNode={createMarkdownNode}
         />
         {config.tts && (
           <WorkflowPaletteItem
-            type="audio"
             label="Audio"
             icon={<Volume2 size={20} />}
-            onClick={handleNodeClick}
+            createNode={createAudioNode}
           />
         )}
         {config.image?.enabled && (
           <WorkflowPaletteItem
-            type="image"
             label="Image"
             icon={<Image size={20} />}
-            onClick={handleNodeClick}
+            createNode={createImageNode}
           />
         )}
         <WorkflowPaletteItem
-          type="csv"
           label="CSV"
           icon={<Table size={20} />}
-          onClick={handleNodeClick}
+          createNode={createCsvNode}
         />
       </div>
     </div>

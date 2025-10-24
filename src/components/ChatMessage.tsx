@@ -144,7 +144,7 @@ function ErrorMessage({ title, message }: { title: string; message: string }) {
       <div className="flex-1 py-3">
         <div className="border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20 rounded-lg p-4 max-w-none">
           <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 dark:text-red-400 flex-shrink-0 mt-0.5" />
+            <AlertCircle className="w-5 h-5 text-red-500 dark:text-red-400 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <h4 className="font-medium text-red-800 dark:text-red-200 mb-1">
                 {displayTitle}
@@ -202,9 +202,9 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
             >
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 {isToolError ? (
-                  <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 flex-shrink-0" />
+                  <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 shrink-0" />
                 ) : (
-                  <Wrench className="w-3 h-3 text-neutral-400 dark:text-neutral-500 flex-shrink-0" />
+                  <Wrench className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
                 )}
                 <span className={`text-xs font-medium whitespace-nowrap ${
                   isToolError 
@@ -278,7 +278,7 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
                 return (
                   <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
                     <div className="flex items-center gap-2 min-w-0">
-                      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 flex-shrink-0" />
+                      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
                       <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
                         {getToolDisplayName(toolCall.name)}
                       </span>
@@ -329,7 +329,7 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
             isUser 
               ? "rounded-lg py-3 px-3 chat-bubble-user" 
               : "flex-1 py-3"
-          } break-words overflow-x-auto`}
+          } wrap-break-words overflow-x-auto`}
         >
           {isUser ? (
             <pre className="whitespace-pre-wrap font-sans">{message.content}</pre>
@@ -345,7 +345,7 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
                 return (
                   <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
                     <div className="flex items-center gap-2 min-w-0">
-                      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 flex-shrink-0" />
+                      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
                       <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
                         {getToolDisplayName(toolCall.name)}
                       </span>
@@ -376,7 +376,7 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
           
           {!isUser && (
             <div className={`flex justify-between items-center mt-2 ${
-              props.isLast && !isResponding ? 'chat-message-actions !opacity-100' : 'chat-message-actions opacity-0'
+              props.isLast && !isResponding ? 'chat-message-actions opacity-100!' : 'chat-message-actions opacity-0'
             }`}>
               <div className="flex items-center gap-2">
                 {canShareMessage && <ShareButton text={stripMarkdown(message.content || '')} className="h-4 w-4" />}

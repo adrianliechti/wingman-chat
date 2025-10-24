@@ -1,15 +1,15 @@
 import { createContext } from 'react';
-import type { NodeChange, EdgeChange, Connection } from '@xyflow/react';
-import type { WorkflowNode, WorkflowEdge } from '../types/workflow';
+import type { Node, NodeChange, EdgeChange, Connection } from '@xyflow/react';
+import type { WorkflowEdge } from '../types/workflow';
 
 export interface WorkflowContextType {
-  nodes: WorkflowNode[];
+  nodes: Node[];
   edges: WorkflowEdge[];
-  onNodesChange: (changes: NodeChange<WorkflowNode>[]) => void;
+  onNodesChange: (changes: NodeChange<Node>[]) => void;
   onEdgesChange: (changes: EdgeChange<WorkflowEdge>[]) => void;
   onConnect: (connection: Connection) => void;
-  addNode: (node: WorkflowNode) => void;
-  updateNode: (id: string, updates: Partial<WorkflowNode>) => void;
+  addNode: (node: Node) => void;
+  updateNode: (id: string, updates: Partial<Node>) => void;
   deleteNode: (id: string) => void;
   deleteConnection: (id: string) => void;
   updateEdgeLabel: (edgeId: string, label: string) => void;

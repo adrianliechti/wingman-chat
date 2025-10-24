@@ -1,18 +1,18 @@
 import { useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { useNodesState, useEdgesState, addEdge, type Connection, type OnConnect } from '@xyflow/react';
+import { useNodesState, useEdgesState, addEdge, type Node, type Connection, type OnConnect } from '@xyflow/react';
 import { WorkflowContext } from './WorkflowContext';
-import type { WorkflowNode, WorkflowEdge } from '../types/workflow';
+import type { WorkflowEdge } from '../types/workflow';
 
 interface WorkflowProviderProps {
   children: ReactNode;
 }
 
 export function WorkflowProvider({ children }: WorkflowProviderProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowNode>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<WorkflowEdge>([]);
 
-  const addNode = useCallback((node: WorkflowNode) => {
+  const addNode = useCallback((node: Node) => {
     setNodes((nds) => {
       // Deselect all existing nodes and select the new one
       const updatedNodes = nds.map((n) => ({ ...n, selected: false }));
@@ -20,10 +20,10 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
     });
   }, [setNodes]);
 
-  const updateNode = useCallback((id: string, updates: Partial<WorkflowNode>) => {
+  const updateNode = useCallback((id: string, updates: Partial<Node>) => {
     setNodes((nds) => 
       nds.map((node) => 
-        node.id === id ? { ...node, ...updates } as WorkflowNode : node
+        node.id === id ? { ...node, ...updates } as Node : node
       )
     );
   }, [setNodes]);

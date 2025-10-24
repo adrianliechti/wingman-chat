@@ -1,8 +1,8 @@
 import { memo, useState, useEffect } from 'react';
 import { Sparkles, ChevronDown } from 'lucide-react';
 import { Button, Menu, MenuButton, MenuItem, MenuItems, Textarea } from '@headlessui/react';
-import type { NodeProps } from '@xyflow/react';
-import type { LLMNode as PromptNodeType } from '../types/workflow';
+import type { Node, NodeProps } from '@xyflow/react';
+import type { BaseNodeData } from '../types/workflow';
 import type { Model } from '../types/chat';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
@@ -12,6 +12,31 @@ import type { Message } from '../types/chat';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
+
+// PromptNode data interface
+export interface PromptNodeData extends BaseNodeData {
+  inputText?: string;
+  prompt?: string;
+  model?: string;
+}
+
+// PromptNode type
+export type PromptNodeType = Node<PromptNodeData, 'prompt'>;
+
+// Factory function to create a new PromptNode
+export function createPromptNode(position: { x: number; y: number }): PromptNodeType {
+  return {
+    id: crypto.randomUUID(),
+    type: 'prompt',
+    position,
+    data: {
+      inputText: '',
+      outputText: '',
+      useInput: false,
+      prompt: ''
+    }
+  };
+}
 
 export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType>) => {
   const { updateNode } = useWorkflow();

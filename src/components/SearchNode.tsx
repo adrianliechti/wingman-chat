@@ -1,14 +1,36 @@
 import { memo, useState } from 'react';
 import { Globe, ChevronDown } from 'lucide-react';
 import { Input, Menu, MenuButton, MenuItem, MenuItems, Button } from '@headlessui/react';
-import type { NodeProps } from '@xyflow/react';
-import type { SearchNode as SearchNodeType } from '../types/workflow';
+import type { Node, NodeProps } from '@xyflow/react';
+import type { BaseNodeData } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
+
+// SearchNode data interface
+export interface SearchNodeData extends BaseNodeData {
+  inputText?: string;
+}
+
+// SearchNode type
+export type SearchNodeType = Node<SearchNodeData, 'search'>;
+
+// Factory function to create a new SearchNode
+export function createSearchNode(position: { x: number; y: number }): SearchNodeType {
+  return {
+    id: crypto.randomUUID(),
+    type: 'search',
+    position,
+    data: {
+      inputText: '',
+      outputText: '',
+      useInput: false
+    }
+  };
+}
 
 type SearchMode = 'search' | 'research' | 'fetch';
 

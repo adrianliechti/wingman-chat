@@ -1,13 +1,35 @@
 import { memo, useState, useRef } from 'react';
 import { FileText, Upload, Loader2 } from 'lucide-react';
 import { Textarea } from '@headlessui/react';
-import type { NodeProps } from '@xyflow/react';
-import type { FileNode as FileNodeType } from '../types/workflow';
+import type { Node, NodeProps } from '@xyflow/react';
+import type { BaseNodeData } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { supportedTypes } from '../lib/utils';
 import { WorkflowNode } from './WorkflowNode';
+
+// FileNode data interface
+export interface FileNodeData extends BaseNodeData {
+  fileName?: string;
+}
+
+// FileNode type
+export type FileNodeType = Node<FileNodeData, 'file'>;
+
+// Factory function to create a new FileNode
+export function createFileNode(position: { x: number; y: number }): FileNodeType {
+  return {
+    id: crypto.randomUUID(),
+    type: 'file',
+    position,
+    data: {
+      fileName: '',
+      outputText: '',
+      useInput: false
+    }
+  };
+}
 
 export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) => {
   const { updateNode } = useWorkflow();
@@ -25,7 +47,6 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
           data: {
             ...data,
             fileName: file.name,
-            fileContent: content,
             outputText: content
           }
         });
@@ -35,8 +56,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
           data: {
             ...data,
             fileName: file.name,
-            fileContent: 'Error extracting text from file',
-            outputText: ''
+            outputText: 'Error extracting text from file'
           }
         });
       }
@@ -97,7 +117,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
             <span className="text-sm">Extracting text...</span>
           </div>
         </div>
-      ) : !data.fileContent ? (
+      ) : !data.outputText ? (
         <div 
           className="flex-1 flex items-center justify-center"
           onDragOver={handleDragOver}
@@ -136,7 +156,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
             isDragging ? 'opacity-50' : ''
           }`}>
             <Textarea
-              value={data.fileContent || ''}
+              value={data.outputText || ''}
               readOnly
               className="w-full h-full px-3 py-2 text-xs border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-gray-100/50 dark:bg-black/10 text-gray-700 dark:text-gray-300 resize-none min-h-[80px] scrollbar-hide nowheel"
             />

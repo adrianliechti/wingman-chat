@@ -1,18 +1,38 @@
 import { memo, useState, useEffect } from 'react';
 import { StickyNote } from 'lucide-react';
 import { Textarea } from '@headlessui/react';
-import type { NodeProps } from '@xyflow/react';
-import type { TextNode as TextNodeType } from '../types/workflow';
+import type { Node, NodeProps } from '@xyflow/react';
+import type { BaseNodeData } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { WorkflowNode } from './WorkflowNode';
 
+// TextNode data interface
+export interface TextNodeData extends BaseNodeData {
+}
+
+// TextNode type
+export type TextNodeType = Node<TextNodeData, 'text'>;
+
+// Factory function to create a new TextNode
+export function createTextNode(position: { x: number; y: number }): TextNodeType {
+  return {
+    id: crypto.randomUUID(),
+    type: 'text',
+    position,
+    data: {
+      outputText: '',
+      useInput: false
+    }
+  };
+}
+
 export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) => {
   const { updateNode } = useWorkflow();
-  const [content, setContent] = useState(data.content || '');
+  const [content, setContent] = useState(data.outputText || '');
 
   useEffect(() => {
-    setContent(data.content || '');
-  }, [data.content]);
+    setContent(data.outputText || '');
+  }, [data.outputText]);
 
   return (
     <WorkflowNode
@@ -28,7 +48,7 @@ export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) =
         <Textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          onBlur={() => updateNode(id, { data: { ...data, content } })}
+          onBlur={() => updateNode(id, { data: { ...data, outputText: content } })}
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
           placeholder="Enter your text here..."

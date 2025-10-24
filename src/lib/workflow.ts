@@ -16,10 +16,6 @@ export function getConnectedNodeData(
       
       if (nodeData.outputText && typeof nodeData.outputText === 'string') {
         connectedData.push({ text: nodeData.outputText, label });
-      } else if (nodeData.fileContent && typeof nodeData.fileContent === 'string') {
-        connectedData.push({ text: nodeData.fileContent, label });
-      } else if (nodeData.content && typeof nodeData.content === 'string') {
-        connectedData.push({ text: nodeData.content, label });
       }
     }
   }
