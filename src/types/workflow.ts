@@ -6,7 +6,7 @@ export type NodeType = 'search' | 'prompt' | 'translate' | 'file' | 'text' | 're
 // This ensures all nodes have a consistent outputText field for connections
 export interface BaseNodeData extends Record<string, unknown> {
   outputText?: string;
-  useInput: boolean;
+  error?: string;
 }
 
 // Custom edge data for labeled connections

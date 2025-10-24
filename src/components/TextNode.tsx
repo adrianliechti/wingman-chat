@@ -20,8 +20,7 @@ export function createTextNode(position: { x: number; y: number }): TextNodeType
     type: 'text',
     position,
     data: {
-      outputText: '',
-      useInput: false
+      outputText: ''
     }
   };
 }
@@ -43,6 +42,7 @@ export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) =
       color="orange"
       showInputHandle={false}
       showOutputHandle={true}
+      error={data.error}
     >
       <div className="flex-1 flex flex-col min-h-0">
         <Textarea

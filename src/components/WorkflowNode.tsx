@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Trash2, Play, Loader2 } from 'lucide-react';
+import { Trash2, Play, Loader2, AlertCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Handle, Position, NodeResizer } from '@xyflow/react';
 import { useWorkflow } from '../hooks/useWorkflow';
@@ -19,6 +19,7 @@ export interface WorkflowNodeProps {
   minWidth?: number;
   minHeight?: number;
   headerActions?: ReactNode;
+  error?: string;
 }
 
 const colorStyles = {
@@ -63,7 +64,8 @@ export function WorkflowNode({
   showOutputHandle = true,
   minWidth = 280,
   minHeight = 200,
-  headerActions
+  headerActions,
+  error
 }: WorkflowNodeProps) {
   const { deleteNode } = useWorkflow();
   const styles = colorStyles[color];
@@ -71,7 +73,7 @@ export function WorkflowNode({
   return (
     <div
       className={`bg-white/90 dark:bg-black/40 backdrop-blur-lg rounded-2xl shadow-lg border ${
-        selected ? styles.border : 'border-white/40 dark:border-white/20'
+        error ? 'border-red-500/70' : selected ? styles.border : 'border-white/40 dark:border-white/20'
       } p-4 flex flex-col w-full h-full overflow-hidden`}
     >
       <NodeResizer 
@@ -87,7 +89,7 @@ export function WorkflowNode({
         <Handle
           type="target"
           position={Position.Left}
-          className="!w-3 !h-3 !bg-green-500 !border-2 !border-white dark:!border-gray-800"
+          className="w-3! h-3! bg-green-500! border-2! border-white! dark:border-gray-800!"
         />
       )}
       
@@ -96,12 +98,12 @@ export function WorkflowNode({
         <Handle
           type="source"
           position={Position.Right}
-          className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white dark:!border-gray-800"
+          className="w-3! h-3! bg-blue-500! border-2! border-white! dark:border-gray-800!"
         />
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-3 flex-shrink-0">
+      <div className="flex items-center justify-between mb-3 shrink-0">
         <div className="flex items-center gap-2">
           <Icon size={16} className={styles.icon} />
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{title}</span>
@@ -126,6 +128,14 @@ export function WorkflowNode({
           )}
         </div>
       </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="mb-3 px-3 py-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2 shrink-0">
+          <AlertCircle size={16} className="text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+          <span className="text-xs text-red-700 dark:text-red-300 wrap-break-word">{error}</span>
+        </div>
+      )}
 
       {/* Node-specific content */}
       {children}

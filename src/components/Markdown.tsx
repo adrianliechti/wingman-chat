@@ -2,6 +2,7 @@ import { memo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
+import remarkGemoji from 'remark-gemoji';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import { MermaidRenderer } from './MermaidRenderer';
@@ -208,7 +209,7 @@ const components: Partial<Components> = {
     },
 };
 
-const remarkPlugins = [remarkGfm, remarkBreaks];
+const remarkPlugins = [remarkGfm, remarkBreaks, remarkGemoji];
 const rehypePlugins = [rehypeRaw, rehypeSanitize];
 
 const NonMemoizedMarkdown = ({ children }: { children: string }) => {

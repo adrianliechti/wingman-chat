@@ -206,18 +206,18 @@ export function ArtifactsDrawer() {
       )}
       
       {/* Tab Bar with File Browser Button - Fixed at top */}
-      <div className="flex-shrink-0 border-b border-neutral-200 dark:border-neutral-600 relative h-9 flex">
+      <div className="shrink-0 border-b border-neutral-200 dark:border-neutral-600 relative h-9 flex">
         {/* File Browser Button - Expands to match browser width */}
         <Button
           onClick={() => setShowFileBrowser(!showFileBrowser)}
-          className={`flex items-center px-2.5 h-full text-xs flex-shrink-0 border-r border-neutral-200 dark:border-neutral-600 transition-all duration-300 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/30 ${
+          className={`flex items-center px-2.5 h-full text-xs shrink-0 border-r border-neutral-200 dark:border-neutral-600 transition-all duration-300 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/30 ${
             showFileBrowser
               ? 'w-64 justify-start gap-1.5'
               : 'w-auto justify-center'
           }`}
           title="Browse files"
         >
-          <FolderTree size={14} className="flex-shrink-0" />
+          <FolderTree size={14} className="shrink-0" />
           {showFileBrowser && (
             <span className="whitespace-nowrap">
               Files
@@ -240,7 +240,7 @@ export function ArtifactsDrawer() {
                 <Button
                   key={path}
                   onClick={() => selectFile(path)}
-                  className={`flex items-center gap-1.5 px-3 h-full text-xs border-r border-neutral-200 dark:border-neutral-600 min-w-0 flex-shrink-0 whitespace-nowrap ${
+                  className={`flex items-center gap-1.5 px-3 h-full text-xs border-r border-neutral-200 dark:border-neutral-600 min-w-0 shrink-0 whitespace-nowrap ${
                     isActive
                       ? 'text-neutral-900 dark:text-neutral-100 border-t-2 border-t-blue-500'
                       : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/30'
@@ -272,7 +272,7 @@ export function ArtifactsDrawer() {
         {/* Left Side Panel - File Browser */}
         <div className={`transition-all duration-300 ease-out ${
           showFileBrowser ? 'w-64' : 'w-0'
-        } flex-shrink-0 overflow-hidden ${showFileBrowser ? 'border-r border-neutral-200 dark:border-neutral-600' : ''}`}>
+        } shrink-0 overflow-hidden ${showFileBrowser ? 'border-r border-neutral-200 dark:border-neutral-600' : ''}`}>
           {showFileBrowser && fs && (
             <ArtifactsBrowser
               fs={fs}

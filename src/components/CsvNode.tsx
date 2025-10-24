@@ -1,13 +1,20 @@
 import { memo } from 'react';
 import { Table } from 'lucide-react';
-import type { NodeProps } from '@xyflow/react';
-import type { CsvNode as CsvNodeType } from '../types/workflow';
+import type { Node, NodeProps } from '@xyflow/react';
+import type { BaseNodeData } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { CsvRenderer } from './CsvRenderer';
 import { WorkflowNode } from './WorkflowNode';
 import { CopyButton } from './CopyButton';
+
+// CsvNode data interface
+export interface CsvNodeData extends BaseNodeData {
+}
+
+// CsvNode type
+export type CsvNodeType = Node<CsvNodeData, 'csv'>;
 
 export const CsvNode = memo(({ id, data, selected }: NodeProps<CsvNodeType>) => {
   const { updateNode } = useWorkflow();
@@ -31,9 +38,9 @@ export const CsvNode = memo(({ id, data, selected }: NodeProps<CsvNodeType>) => 
         // Use the convertCSV method from the client
         const csvData = await client.convertCSV('', inputContent);
 
-        // Set final output (both csvData for rendering and outputText for node connections)
+        // Set final output
         updateNode(id, {
-          data: { ...data, csvData, outputText: csvData, error: undefined }
+          data: { ...data, outputText: csvData, error: undefined }
         });
       } catch (error) {
         console.error('Error extracting CSV:', error);
@@ -57,18 +64,15 @@ export const CsvNode = memo(({ id, data, selected }: NodeProps<CsvNodeType>) => 
       showInputHandle={true}
       showOutputHandle={true}
       minWidth={500}
+      error={data.error}
       headerActions={
-        data.csvData && <CopyButton text={data.csvData} />
+        data.outputText && <CopyButton text={data.outputText} />
       }
     >
       <div className="flex-1 flex items-center justify-center min-h-0 p-4">
-        {data.error ? (
-          <div className="w-full px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-            <p className="text-red-600 dark:text-red-400 text-sm">{data.error}</p>
-          </div>
-        ) : data.csvData ? (
+        {data.outputText ? (
           <div className="w-full h-full overflow-auto scrollbar-hide">
-            <CsvRenderer csv={data.csvData} language="csv" />
+            <CsvRenderer csv={data.outputText} language="csv" />
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-600">

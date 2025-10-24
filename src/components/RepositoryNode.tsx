@@ -1,8 +1,8 @@
 import { memo } from 'react';
 import { Database, ChevronDown } from 'lucide-react';
 import { Button, Input, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
-import type { NodeProps } from '@xyflow/react';
-import type { RepositoryNode as RepositoryNodeType } from '../types/workflow';
+import type { Node, NodeProps } from '@xyflow/react';
+import type { BaseNodeData } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { useRepositories } from '../hooks/useRepositories';
@@ -10,14 +10,23 @@ import { useRepository } from '../hooks/useRepository';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
 
+// RepositoryNode data interface
+export interface RepositoryNodeData extends BaseNodeData {
+  repository?: string;
+  query?: string;
+}
+
+// RepositoryNode type
+export type RepositoryNodeType = Node<RepositoryNodeData, 'repository'>;
+
 export const RepositoryNode = memo(({ id, data, selected }: NodeProps<RepositoryNodeType>) => {
   const { updateNode } = useWorkflow();
   const { getText, connectedData, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const { repositories } = useRepositories();
 
   // Get the current repository
-  const currentRepository = repositories.find(r => r.id === data.repositoryId);
-  const { queryChunks } = useRepository(data.repositoryId || '', 'rag');
+  const currentRepository = repositories.find(r => r.id === data.repository);
+  const { queryChunks } = useRepository(data.repository || '', 'auto');
 
   const handleExecute = async () => {
     // Get the query from connected nodes or use the node's query field
@@ -30,14 +39,14 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
 
     if (!query) {
       updateNode(id, {
-        data: { ...data, outputText: 'Error: No query provided' }
+        data: { ...data, error: 'No query provided' }
       });
       return;
     }
 
-    if (!data.repositoryId) {
+    if (!data.repository) {
       updateNode(id, {
-        data: { ...data, outputText: 'Error: No repository selected' }
+        data: { ...data, error: 'No repository selected' }
       });
       return;
     }
@@ -49,7 +58,7 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
 
         if (chunks.length === 0) {
           updateNode(id, {
-            data: { ...data, outputText: 'No results found for the query' }
+            data: { ...data, outputText: 'No results found for the query', error: undefined }
           });
         } else {
           // Format the results
@@ -61,20 +70,20 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
             .join('\n\n---\n\n');
 
           updateNode(id, {
-            data: { ...data, outputText }
+            data: { ...data, outputText, error: undefined }
           });
         }
       } catch (error) {
         console.error('Error executing repository query:', error);
         updateNode(id, {
-          data: { ...data, outputText: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
+          data: { ...data, error: error instanceof Error ? error.message : 'Unknown error' }
         });
       }
     });
   };
 
   const displayValue = hasConnections ? getText() : (data.query || '');
-  const canExecute = !!data.repositoryId && (hasConnections || !!data.query?.trim());
+  const canExecute = !!data.repository && (hasConnections || !!data.query?.trim());
 
   const repositorySelector = (
     <Menu>
@@ -87,7 +96,7 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
       <MenuItems
         transition
         anchor="bottom end"
-        className="!max-h-[50vh] mt-1 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50 min-w-[200px]"
+        className="max-h-[50vh]! mt-1 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50 min-w-[200px]"
       >
         {repositories.length === 0 ? (
           <div className="px-4 py-3 text-xs text-neutral-500 dark:text-neutral-400">
@@ -97,8 +106,8 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
           repositories.map((repo) => (
             <MenuItem key={repo.id}>
               <Button
-                onClick={() => updateNode(id, { data: { ...data, repositoryId: repo.id } })}
-                className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
+                onClick={() => updateNode(id, { data: { ...data, repository: repo.id } })}
+                className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
               >
                 {repo.name}
               </Button>
@@ -121,11 +130,12 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
       canExecute={canExecute}
       showInputHandle={true}
       showOutputHandle={true}
+      error={data.error}
       headerActions={repositorySelector}
     >
       <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
         {/* Query Input */}
-        <div className="flex-shrink-0">
+        <div className="shrink-0">
           <div className="flex gap-2">
             <Input
               type="text"

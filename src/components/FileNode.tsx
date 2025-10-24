@@ -100,6 +100,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
       color="orange"
       showInputHandle={false}
       showOutputHandle={true}
+      error={data.error}
     >
       <input
         ref={fileInputRef}
@@ -143,7 +144,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          <div className="flex-shrink-0 px-2">
+          <div className="shrink-0 px-2">
             <button
               onClick={() => fileInputRef.current?.click()}
               className="w-full px-3 py-1.5 text-xs border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-white/50 dark:bg-black/20 text-gray-600 dark:text-gray-400 hover:bg-gray-100/50 dark:hover:bg-black/30 hover:text-orange-600 dark:hover:text-orange-400 transition-all flex items-center justify-center gap-1.5 nodrag"
@@ -158,7 +159,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
             <Textarea
               value={data.outputText || ''}
               readOnly
-              className="w-full h-full px-3 py-2 text-xs border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-gray-100/50 dark:bg-black/10 text-gray-700 dark:text-gray-300 resize-none min-h-[80px] scrollbar-hide nowheel"
+              className="w-full h-full px-3 py-2 text-xs border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-gray-100/50 dark:bg-black/10 text-gray-700 dark:text-gray-300 resize-none min-h-20 scrollbar-hide nowheel"
             />
           </div>
         </div>

@@ -12,7 +12,7 @@ import { CopyButton } from './CopyButton';
 
 // SearchNode data interface
 export interface SearchNodeData extends BaseNodeData {
-  inputText?: string;
+  query?: string;
 }
 
 // SearchNode type
@@ -25,9 +25,8 @@ export function createSearchNode(position: { x: number; y: number }): SearchNode
     type: 'search',
     position,
     data: {
-      inputText: '',
-      outputText: '',
-      useInput: false
+      query: '',
+      outputText: ''
     }
   };
 }
@@ -42,7 +41,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
   const client = config.client;
 
   const handleExecute = async () => {
-    let query = data.inputText?.trim() || '';
+    let query = data.query?.trim() || '';
     
     // If connected nodes exist, use their data
     if (connectedData.length > 0) {
@@ -79,20 +78,20 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
           }).join('\n---\n\n');
 
           updateNode(id, {
-            data: { ...data, outputText: resultText || 'No results found' }
+            data: { ...data, outputText: resultText || 'No results found', error: undefined }
           });
         }
       } catch (error) {
         console.error(`Error ${mode === 'fetch' ? 'fetching' : mode === 'research' ? 'researching' : 'searching'}:`, error);
         updateNode(id, {
-          data: { ...data, outputText: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
+          data: { ...data, error: error instanceof Error ? error.message : 'Unknown error' }
         });
       }
     });
   };
 
-  const displayValue = hasConnections ? getText() : (data.inputText || '');
-  const canExecute = hasConnections || !!data.inputText?.trim();
+  const displayValue = hasConnections ? getText() : (data.query || '');
+  const canExecute = hasConnections || !!data.query?.trim();
 
   const modeSelector = (
     <Menu>
@@ -110,7 +109,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
         <MenuItem>
           <Button
             onClick={() => setMode('search')}
-            className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
+            className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
           >
             Search
           </Button>
@@ -118,7 +117,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
         <MenuItem>
           <Button
             onClick={() => setMode('fetch')}
-            className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
+            className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
           >
             Website
           </Button>
@@ -126,7 +125,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
         <MenuItem>
           <Button
             onClick={() => setMode('research')}
-            className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
+            className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
           >
             Research
           </Button>
@@ -147,6 +146,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
       canExecute={canExecute}
       showInputHandle={true}
       showOutputHandle={true}
+      error={data.error}
       headerActions={
         <>
           {modeSelector}
@@ -155,16 +155,16 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
       }
     >
       <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
-        <div className="flex-shrink-0">
+        <div className="shrink-0">
           <div className="flex gap-2">
             <Input
               type="text"
               value={displayValue}
               onChange={(e) => updateNode(id, { 
-                data: { ...data, inputText: e.target.value } 
+                data: { ...data, query: e.target.value } 
               })}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && data.inputText?.trim() && !hasConnections) {
+                if (e.key === 'Enter' && data.query?.trim() && !hasConnections) {
                   handleExecute();
                 }
               }}

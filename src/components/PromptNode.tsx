@@ -15,7 +15,6 @@ import { CopyButton } from './CopyButton';
 
 // PromptNode data interface
 export interface PromptNodeData extends BaseNodeData {
-  inputText?: string;
   prompt?: string;
   model?: string;
 }
@@ -30,9 +29,7 @@ export function createPromptNode(position: { x: number; y: number }): PromptNode
     type: 'prompt',
     position,
     data: {
-      inputText: '',
       outputText: '',
-      useInput: false,
       prompt: ''
     }
   };
@@ -42,7 +39,7 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
   const { updateNode } = useWorkflow();
   const { getLabeledText, isProcessing, executeAsync } = useWorkflowNode(id);
   const [models, setModels] = useState<Model[]>([]);
-  const [inputText, setInputText] = useState(data.inputText || '');
+  const [prompt, setPrompt] = useState(data.prompt || '');
   const config = getConfig();
   const client = config.client;
 
@@ -59,21 +56,21 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
   }, [client]);
 
   useEffect(() => {
-    setInputText(data.inputText || '');
-  }, [data.inputText]);
+    setPrompt(data.prompt || '');
+  }, [data.prompt]);
 
   const handleExecute = async () => {
-    if (!inputText?.trim()) return;
+    if (!prompt?.trim()) return;
     
-    // Save the input text to workflow state
-    updateNode(id, { data: { ...data, inputText } });
+    // Save the prompt to workflow state
+    updateNode(id, { data: { ...data, prompt } });
     
     await executeAsync(async () => {
       // Get labeled text from connected nodes
       const contextText = getLabeledText();
       
       // Build the user message content
-      let messageContent = inputText || '';
+      let messageContent = prompt || '';
       
       // If there's connected data, append it as context
       if (contextText) {
@@ -96,19 +93,19 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
           (_delta, snapshot) => {
             // Update output in real-time as text streams in
             updateNode(id, {
-              data: { ...data, outputText: snapshot }
+              data: { ...data, outputText: snapshot, error: undefined }
             });
           }
         );
 
         // Set final output
         updateNode(id, {
-          data: { ...data, outputText: response.content }
+          data: { ...data, outputText: response.content, error: undefined }
         });
       } catch (error) {
         console.error('Error executing LLM:', error);
         updateNode(id, {
-          data: { ...data, outputText: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
+          data: { ...data, error: error instanceof Error ? error.message : 'Unknown error' }
         });
       }
     });
@@ -127,7 +124,7 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
       <MenuItems
         transition
         anchor="bottom end"
-        className="!max-h-[50vh] mt-1 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50 min-w-[200px]"
+        className="max-h-[50vh]! mt-1 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50 min-w-[200px]"
       >
         {models.length === 0 ? (
           <div className="px-4 py-3 text-xs text-neutral-500 dark:text-neutral-400">
@@ -138,7 +135,7 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
             <MenuItem key={model.id}>
               <Button
                 onClick={() => updateNode(id, { data: { ...data, model: model.id } })}
-                className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
+                className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
               >
                 {model.name}
               </Button>
@@ -158,9 +155,10 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
       color="purple"
       onExecute={handleExecute}
       isProcessing={isProcessing}
-      canExecute={!!inputText?.trim()}
+      canExecute={!!prompt?.trim()}
       showInputHandle={true}
       showOutputHandle={true}
+      error={data.error}
       headerActions={
         <>
           {modelSelector}
@@ -170,11 +168,11 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
     >
       <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
         {/* Prompt Input */}
-        <div className="flex-shrink-0">
+        <div className="shrink-0">
           <Textarea
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onBlur={() => updateNode(id, { data: { ...data, inputText } })}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onBlur={() => updateNode(id, { data: { ...data, prompt } })}
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             placeholder="Instructions"

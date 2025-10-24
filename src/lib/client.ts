@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v3";
 import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 import mime from "mime";

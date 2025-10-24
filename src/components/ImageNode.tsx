@@ -1,12 +1,20 @@
 import { memo } from 'react';
 import { ImageIcon } from 'lucide-react';
-import type { NodeProps } from '@xyflow/react';
-import type { ImageNode as ImageNodeType } from '../types/workflow';
+import type { Node, NodeProps } from '@xyflow/react';
+import type { BaseNodeData } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { WorkflowNode } from './WorkflowNode';
 import { DownloadButton } from './DownloadButton';
+
+// ImageNode data interface
+export interface ImageNodeData extends BaseNodeData {
+  imageUrl?: string;
+}
+
+// ImageNode type
+export type ImageNodeType = Node<ImageNodeData, 'image'>;
 
 export const ImageNode = memo(({ id, data, selected }: NodeProps<ImageNodeType>) => {
   const { updateNode } = useWorkflow();
@@ -64,6 +72,7 @@ export const ImageNode = memo(({ id, data, selected }: NodeProps<ImageNodeType>)
       showInputHandle={true}
       showOutputHandle={false}
       minWidth={400}
+      error={data.error}
       headerActions={
         data.imageUrl && <DownloadButton url={data.imageUrl} filename="generated-image.png" />
       }

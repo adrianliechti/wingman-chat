@@ -37,34 +37,49 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          // Vendor chunks
+          // Core React
           'vendor-react': [
             'react',
             'react-dom'
           ],
+          // Heavy libraries split out
+          'vendor-reactflow': [
+            '@xyflow/react'
+          ],
+          'vendor-shiki': [
+            'shiki'
+          ],
+          'vendor-mermaid': [
+            'mermaid'
+          ],
+          // OpenAI SDK
           'vendor-openai': [
             'openai'
           ],
+          // Markdown rendering
           'vendor-markdown': [
             'react-markdown', 
             'remark-breaks', 
-            'remark-gfm', 
+            'remark-gfm',
+            'remark-gemoji',
             'rehype-raw', 
             'rehype-sanitize'
           ],
+          // UI libraries
           'vendor-ui': [
             '@headlessui/react',
             '@floating-ui/react',
             '@floating-ui/react-dom',
             'lucide-react'
           ],
+          // Utilities
           'vendor-utils': [
             'zod',
             'p-limit',
-            'mime'
-          ],
-          'vendor-shiki': ['shiki'],
-          'vendor-mermaid': ['mermaid']
+            'mime',
+            'jszip',
+            'wavtools'
+          ]
         }
       }
     },
