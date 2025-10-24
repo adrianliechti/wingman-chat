@@ -8,7 +8,6 @@ import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
 import { Role } from '../types/chat';
-import type { Message } from '../types/chat';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
@@ -77,18 +76,15 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
         messageContent = `${messageContent}\n\n---\n\n${contextText}`;
       }
 
-      // Build the message with the prompt as user content
-      const userMessage: Message = {
-        role: Role.User,
-        content: messageContent,
-      };
-
       try {
         // Call the complete method
         const response = await client.complete(
           data.model || '', // use selected model or default
-          '', // no system instructions for now
-          [userMessage],
+          'Provide only the final answer. Do not include any preamble, explanation, or chain of thinking.',
+          [{
+            role: Role.User,
+            content: messageContent,
+          }],
           [], // no tools
           (_delta, snapshot) => {
             // Update output in real-time as text streams in
