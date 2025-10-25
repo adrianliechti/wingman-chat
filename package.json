@@ -16,7 +16,7 @@
     "@tailwindcss/vite": "^4.1.11",
     "@xyflow/react": "^12.8.6",
     "jszip": "^3.10.1",
-    "lucide-react": "^0.547.0",
+    "lucide-react": "^0.548.0",
     "mermaid": "^11.9.0",
     "mime": "^4.0.7",
     "openai": "^6.0.0",
