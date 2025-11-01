@@ -7,6 +7,7 @@ import { useRepositories } from "./useRepositories";
 import { useBridge } from "./useBridge";
 import { useSearch } from "./useSearch";
 import { useImageGeneration } from "./useImageGeneration";
+import { useRepl } from "./useRepl";
 import { MCPClient } from "../lib/mcp";
 
 export interface ChatContext {
@@ -32,6 +33,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
   const { bridgeTools, bridgeInstructions } = useBridge();
   const { searchTools, searchInstructions } = useSearch();
   const { imageGenerationTools, imageGenerationInstructions } = useImageGeneration();
+  const { replTools, replInstructions } = useRepl();
   
   // MCP Integration - simplified client management
   const [mcpConnected, setMcpConnected] = useState<boolean | null>(null);
@@ -110,7 +112,10 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     const imageGenTools = imageGenerationTools();
     const imageGenInstructions = imageGenerationInstructions();
 
-    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools, ...mcpTools];
+    const replTools_ = replTools();
+    const replInstructions_ = replInstructions();
+
+    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools, ...replTools_, ...mcpTools];
 
     const instructionsList: string[] = [];
 
@@ -136,6 +141,10 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
 
     if (imageGenTools.length > 0 && imageGenInstructions?.trim()) {
       instructionsList.push(imageGenInstructions);
+    }
+
+    if (replTools_.length > 0 && replInstructions_?.trim()) {
+      instructionsList.push(replInstructions_);
     }
 
     // Add mode-specific instructions
@@ -164,6 +173,8 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     searchInstructions,
     imageGenerationTools,
     imageGenerationInstructions,
+    replTools,
+    replInstructions,
     mcpConnected,
     mcpTools
   ]);

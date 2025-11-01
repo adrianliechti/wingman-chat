@@ -39,6 +39,8 @@ func main() {
 
 	internet := os.Getenv("INTERNET_ENABLED") == "true"
 
+	repl := os.Getenv("REPL_ENABLED") == "true"
+
 	artifacts := os.Getenv("ARTIFACTS_ENABLED") == "true"
 
 	repository := os.Getenv("REPOSITORY_ENABLED") == "true"
@@ -90,6 +92,10 @@ func main() {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 		}
 
+		type replType struct {
+			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+		}
+
 		type bridgeType struct {
 			URL string `json:"url,omitempty" yaml:"url,omitempty"`
 		}
@@ -135,6 +141,7 @@ func main() {
 
 			Image    *imageType    `json:"image,omitempty" yaml:"image,omitempty"`
 			Internet *internetType `json:"internet,omitempty" yaml:"internet,omitempty"`
+			REPL     *replType     `json:"repl,omitempty" yaml:"repl,omitempty"`
 
 			Bridge *bridgeType `json:"bridge,omitempty" yaml:"bridge,omitempty"`
 
@@ -198,6 +205,12 @@ func main() {
 
 		if internet {
 			config.Internet = &internetType{
+				Enabled: true,
+			}
+		}
+
+		if repl {
+			config.REPL = &replType{
 				Enabled: true,
 			}
 		}

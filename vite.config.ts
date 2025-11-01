@@ -7,6 +7,9 @@ const ReactCompilerConfig = {
 };
 // https://vite.dev/config/
 export default defineConfig({
+  optimizeDeps: {
+    exclude: ['pyodide']
+  },
   server: {
     proxy: {
       '/api/v1/realtime': {
