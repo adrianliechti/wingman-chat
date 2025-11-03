@@ -7,6 +7,7 @@ import { Role, AttachmentType } from "../types/chat";
 import type { Tool } from "../types/chat";
 import type { Message, Model } from "../types/chat";
 import type { SearchResult } from "../types/search";
+import { completionModels, type ModelType } from "./models";
 
 export class Client {
   private oai: OpenAI;
@@ -19,12 +20,19 @@ export class Client {
     });
   }
 
-  async listModels(): Promise<Model[]> {
+  async listModels(type?: ModelType): Promise<Model[]> {
     const models = await this.oai.models.list();
-    return models.data.map((model) => ({
+    const mappedModels = models.data.map((model) => ({
       id: model.id,
       name: model.id,
     }));
+    
+    // Filter by type if specified
+    if (type === "completion") {
+      return completionModels(mappedModels);
+    }
+    
+    return mappedModels;
   }
 
   async complete(

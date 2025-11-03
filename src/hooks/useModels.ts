@@ -19,7 +19,7 @@ export function useModels() {
 
     const loadModels = async () => {
       try {
-        const models = await client.listModels();
+        const models = await client.listModels("completion");
         setModels(models);
       } catch (error) {
         console.error("error loading models", error);
