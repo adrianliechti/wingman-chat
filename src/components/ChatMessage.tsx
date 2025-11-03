@@ -4,7 +4,7 @@ import { ShareButton } from './ShareButton';
 import { PlayButton } from './PlayButton';
 import { SingleAttachmentDisplay, MultipleAttachmentsDisplay } from './AttachmentRenderer';
 import { Wrench, Loader2, AlertCircle } from "lucide-react";
-import { useState, useContext, useEffect } from 'react';
+import { useState, useContext, useEffect, useMemo, memo } from 'react';
 import { codeToHtml } from 'shiki';
 import { ThemeContext } from '../contexts/ThemeContext';
 
@@ -76,28 +76,30 @@ type ChatMessageProps = {
 };
 
 // Component to render code with Shiki
-function ShikiCodeRenderer({ content, name }: { content: string; name?: string }) {
+const ShikiCodeRenderer = memo(({ content, name }: { content: string; name?: string }) => {
   const [html, setHtml] = useState<string>('');
   const { isDark } = useContext(ThemeContext) || { isDark: false };
 
+  // Memoize the content parsing to avoid re-parsing on every render
+  const { displayContent, langId } = useMemo(() => {
+    try {
+      const parsedContent = JSON.parse(content);
+      return {
+        displayContent: JSON.stringify(parsedContent, null, 2),
+        langId: 'json'
+      };
+    } catch {
+      return {
+        displayContent: content,
+        langId: 'text'
+      };
+    }
+  }, [content]);
+
   useEffect(() => {
+    let cancelled = false;
+
     const renderCode = async () => {
-      let isJson = false;
-      let parsedContent = null;
-      let langId = 'text';
-      
-      // Try to parse as JSON
-      try {
-        parsedContent = JSON.parse(content);
-        isJson = true;
-        langId = 'json';
-      } catch {
-        // Not JSON, treat as text
-        langId = 'text';
-      }
-
-      const displayContent = isJson ? JSON.stringify(parsedContent, null, 2) : content;
-
       try {
         const renderedHtml = await codeToHtml(displayContent, {
           lang: langId,
@@ -107,15 +109,24 @@ function ShikiCodeRenderer({ content, name }: { content: string; name?: string }
             '#282c34': 'transparent', // one-dark-pro background
           }
         });
-        setHtml(renderedHtml);
+        
+        if (!cancelled) {
+          setHtml(renderedHtml);
+        }
       } catch {
         // Fallback to plain text if Shiki fails
-        setHtml(`<pre><code>${displayContent}</code></pre>`);
+        if (!cancelled) {
+          setHtml(`<pre><code>${displayContent}</code></pre>`);
+        }
       }
     };
 
     renderCode();
-  }, [content, isDark]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [displayContent, langId, isDark]);
 
   return (
     <div className="mt-3">
@@ -129,7 +140,9 @@ function ShikiCodeRenderer({ content, name }: { content: string; name?: string }
       </div>
     </div>
   );
-}
+});
+
+ShikiCodeRenderer.displayName = 'ShikiCodeRenderer';
 
 // Error message component
 function ErrorMessage({ title, message }: { title: string; message: string }) {
