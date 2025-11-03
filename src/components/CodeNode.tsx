@@ -201,10 +201,10 @@ ${generatedCode}`;
   const modelSelector = (
     <Menu>
       <MenuButton className="nodrag inline-flex items-center gap-1 px-2 py-1 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-xs transition-colors rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800">
+        <ChevronDown size={12} className="opacity-50" />
         <span>
           {currentModel?.name || 'Default'}
         </span>
-        <ChevronDown size={12} className="opacity-50" />
       </MenuButton>
       <MenuItems
         transition
