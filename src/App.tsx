@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Languages, PanelLeftOpen, PanelRightOpen } from "lucide-react";
+import { MessageCircle, Languages, PanelLeftOpen, PanelRightOpen, Workflow } from "lucide-react";
 import { Button } from "@headlessui/react";
 import { ChatPage } from "./pages/ChatPage";
 import { TranslatePage } from "./pages/TranslatePage";
+import { WorkflowPage } from "./pages/WorkflowPage";
+import { getConfig } from "./config";
 import { SidebarProvider } from "./contexts/SidebarProvider";
 import { useSidebar } from "./hooks/useSidebar";
 import { NavigationProvider } from "./contexts/NavigationProvider";
@@ -23,9 +25,10 @@ import { SearchProvider } from "./contexts/SearchProvider";
 import { ImageGenerationProvider } from "./contexts/ImageGenerationProvider";
 import { BridgeIndicator } from "./components/BridgeIndicator";
 
-type Page = "chat" | "translate";
+type Page = "chat" | "flow" | "translate";
 
 function AppContent() {
+  const config = getConfig();
   const [currentPage, setCurrentPage] = useState<Page>("chat");
   const { showSidebar, setShowSidebar, toggleSidebar, sidebarContent } = useSidebar();
   const { leftActions, rightActions } = useNavigation();
@@ -76,7 +79,9 @@ function AppContent() {
         case '#chat':
           return 'chat';
         case '#translate':
-          return 'translate';
+          return config.translator.enabled ? 'translate' : 'chat';
+        case '#flow':
+          return config.workflow ? 'flow' : 'chat';
         default:
           return 'chat';
       }
@@ -97,7 +102,7 @@ function AppContent() {
     // Listen for hash changes
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [config.workflow, config.translator.enabled]);
 
   // Auto-close sidebar on mobile screens and update sliders on resize
   useEffect(() => {
@@ -136,10 +141,21 @@ function AppContent() {
     };
   }, []);
 
-  const pages: { key: Page; label: string; icon: React.ReactNode }[] = [
-    { key: "chat", label: "Chat", icon: <MessageCircle size={20} /> },
-    { key: "translate", label: "Translate", icon: <Languages size={20} /> },
-  ];
+  const pages = [
+    { key: "chat" as const, label: "Chat", icon: <MessageCircle size={20} /> },
+    { key: "flow" as const, label: "Flow", icon: <Workflow size={20} /> },
+    { key: "translate" as const, label: "Translate", icon: <Languages size={20} /> },
+  ].filter(page => {
+    // Always show chat
+    if (page.key === "chat") return true;
+    // Show flow only if workflow is enabled
+    if (page.key === "flow") return config.workflow;
+    // Show translate only if translator is enabled
+    if (page.key === "translate") return config.translator.enabled;
+    return true;
+  });
+
+  const showNavigation = pages.length > 1;
 
   return (
     <div className="h-dvh w-dvw flex overflow-hidden relative">
@@ -201,17 +217,64 @@ function AppContent() {
               </div>
               
               {/* Modern pill navigation - positioned left on mobile, center on sm+ */}
-              <div className="flex items-center sm:hidden">
+              {showNavigation && (
+                <div className="flex items-center sm:hidden">
+                  <div 
+                    ref={mobileRef}
+                    className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
+                  >
+                    {/* Animated slider background */}
+                    <div
+                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
+                      style={{
+                        left: `${sliderStyles.mobile.left}px`,
+                        width: `${sliderStyles.mobile.width}px`,
+                        height: 'calc(100% - 8px)',
+                        top: '4px',
+                      }}
+                    />
+                    
+                    {pages.map(({ key, label, icon }) => (
+                      <Button
+                        key={key}
+                        data-page={key}
+                        onClick={() => {
+                          setCurrentPage(key);
+                          window.location.hash = `#${key}`;
+                        }}
+                        className={`
+                          relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out
+                          flex items-center gap-2 text-sm
+                          ${currentPage === key
+                            ? "text-neutral-900 dark:text-neutral-100"
+                            : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                          }
+                        `}
+                      >
+                        {icon}
+                        <span className="hidden sm:inline">{label}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {leftActions}
+            </div>
+            
+            {/* Center section - Modern pill navigation for sm+ breakpoints */}
+            {showNavigation && (
+              <div className="hidden sm:flex md:hidden items-center justify-center absolute left-1/2 transform -translate-x-1/2">
                 <div 
-                  ref={mobileRef}
+                  ref={tabletRef}
                   className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
                 >
                   {/* Animated slider background */}
                   <div
                     className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
                     style={{
-                      left: `${sliderStyles.mobile.left}px`,
-                      width: `${sliderStyles.mobile.width}px`,
+                      left: `${sliderStyles.tablet.left}px`,
+                      width: `${sliderStyles.tablet.width}px`,
                       height: 'calc(100% - 8px)',
                       top: '4px',
                     }}
@@ -240,91 +303,50 @@ function AppContent() {
                   ))}
                 </div>
               </div>
-              
-              {leftActions}
-            </div>
-            
-            {/* Center section - Modern pill navigation for sm+ breakpoints */}
-            <div className="hidden sm:flex md:hidden items-center justify-center absolute left-1/2 transform -translate-x-1/2">
-              <div 
-                ref={tabletRef}
-                className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
-              >
-                {/* Animated slider background */}
-                <div
-                  className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
-                  style={{
-                    left: `${sliderStyles.tablet.left}px`,
-                    width: `${sliderStyles.tablet.width}px`,
-                    height: 'calc(100% - 8px)',
-                    top: '4px',
-                  }}
-                />
-                
-                {pages.map(({ key, label, icon }) => (
-                  <Button
-                    key={key}
-                    data-page={key}
-                    onClick={() => {
-                      setCurrentPage(key);
-                      window.location.hash = `#${key}`;
-                    }}
-                    className={`
-                      relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out
-                      flex items-center gap-2 text-sm
-                      ${currentPage === key
-                        ? "text-neutral-900 dark:text-neutral-100"
-                        : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                      }
-                    `}
-                  >
-                    {icon}
-                    <span className="hidden sm:inline">{label}</span>
-                  </Button>
-                ))}
-              </div>
-            </div>
+            )}
             
             {/* Center section - Modern pill navigation for desktop */}
-            <div className="hidden md:flex items-center justify-center">
-              <div 
-                ref={desktopRef}
-                className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
-              >
-                {/* Animated slider background */}
-                <div
-                  className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
-                  style={{
-                    left: `${sliderStyles.desktop.left}px`,
-                    width: `${sliderStyles.desktop.width}px`,
-                    height: 'calc(100% - 8px)',
-                    top: '4px',
-                  }}
-                />
-                
-                {pages.map(({ key, label, icon }) => (
-                  <Button
-                    key={key}
-                    data-page={key}
-                    onClick={() => {
-                      setCurrentPage(key);
-                      window.location.hash = `#${key}`;
+            {showNavigation && (
+              <div className="hidden md:flex items-center justify-center">
+                <div 
+                  ref={desktopRef}
+                  className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
+                >
+                  {/* Animated slider background */}
+                  <div
+                    className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
+                    style={{
+                      left: `${sliderStyles.desktop.left}px`,
+                      width: `${sliderStyles.desktop.width}px`,
+                      height: 'calc(100% - 8px)',
+                      top: '4px',
                     }}
-                    className={`
-                      relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out
-                      flex items-center gap-2 text-sm
-                      ${currentPage === key
-                        ? "text-neutral-900 dark:text-neutral-100"
-                        : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                      }
-                    `}
-                  >
-                    {icon}
-                    <span className="hidden sm:inline">{label}</span>
-                  </Button>
-                ))}
+                  />
+                  
+                  {pages.map(({ key, label, icon }) => (
+                    <Button
+                      key={key}
+                      data-page={key}
+                      onClick={() => {
+                        setCurrentPage(key);
+                        window.location.hash = `#${key}`;
+                      }}
+                      className={`
+                        relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out
+                        flex items-center gap-2 text-sm
+                        ${currentPage === key
+                          ? "text-neutral-900 dark:text-neutral-100"
+                          : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                        }
+                      `}
+                    >
+                      {icon}
+                      <span className="hidden sm:inline">{label}</span>
+                    </Button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
             
             {/* Right section */}
             <div className="flex items-center gap-2 justify-end flex-1">
@@ -340,6 +362,7 @@ function AppContent() {
           {/* Main content */}
           <div className="flex-1 overflow-hidden">
             {currentPage === "chat" && <ChatPage />}
+            {currentPage === "flow" && <WorkflowPage />}
             {currentPage === "translate" && <TranslatePage />}
           </div>
         </div>

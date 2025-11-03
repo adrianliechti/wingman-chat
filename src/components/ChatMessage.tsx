@@ -4,7 +4,7 @@ import { ShareButton } from './ShareButton';
 import { PlayButton } from './PlayButton';
 import { SingleAttachmentDisplay, MultipleAttachmentsDisplay } from './AttachmentRenderer';
 import { Wrench, Loader2, AlertCircle } from "lucide-react";
-import { useState, useContext, useEffect } from 'react';
+import { useState, useContext, useEffect, useMemo, memo } from 'react';
 import { codeToHtml } from 'shiki';
 import { ThemeContext } from '../contexts/ThemeContext';
 
@@ -76,28 +76,30 @@ type ChatMessageProps = {
 };
 
 // Component to render code with Shiki
-function ShikiCodeRenderer({ content, name }: { content: string; name?: string }) {
+const ShikiCodeRenderer = memo(({ content, name }: { content: string; name?: string }) => {
   const [html, setHtml] = useState<string>('');
   const { isDark } = useContext(ThemeContext) || { isDark: false };
 
+  // Memoize the content parsing to avoid re-parsing on every render
+  const { displayContent, langId } = useMemo(() => {
+    try {
+      const parsedContent = JSON.parse(content);
+      return {
+        displayContent: JSON.stringify(parsedContent, null, 2),
+        langId: 'json'
+      };
+    } catch {
+      return {
+        displayContent: content,
+        langId: 'text'
+      };
+    }
+  }, [content]);
+
   useEffect(() => {
+    let cancelled = false;
+
     const renderCode = async () => {
-      let isJson = false;
-      let parsedContent = null;
-      let langId = 'text';
-      
-      // Try to parse as JSON
-      try {
-        parsedContent = JSON.parse(content);
-        isJson = true;
-        langId = 'json';
-      } catch {
-        // Not JSON, treat as text
-        langId = 'text';
-      }
-
-      const displayContent = isJson ? JSON.stringify(parsedContent, null, 2) : content;
-
       try {
         const renderedHtml = await codeToHtml(displayContent, {
           lang: langId,
@@ -107,15 +109,24 @@ function ShikiCodeRenderer({ content, name }: { content: string; name?: string }
             '#282c34': 'transparent', // one-dark-pro background
           }
         });
-        setHtml(renderedHtml);
+        
+        if (!cancelled) {
+          setHtml(renderedHtml);
+        }
       } catch {
         // Fallback to plain text if Shiki fails
-        setHtml(`<pre><code>${displayContent}</code></pre>`);
+        if (!cancelled) {
+          setHtml(`<pre><code>${displayContent}</code></pre>`);
+        }
       }
     };
 
     renderCode();
-  }, [content, isDark]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [displayContent, langId, isDark]);
 
   return (
     <div className="mt-3">
@@ -129,7 +140,9 @@ function ShikiCodeRenderer({ content, name }: { content: string; name?: string }
       </div>
     </div>
   );
-}
+});
+
+ShikiCodeRenderer.displayName = 'ShikiCodeRenderer';
 
 // Error message component
 function ErrorMessage({ title, message }: { title: string; message: string }) {
@@ -144,7 +157,7 @@ function ErrorMessage({ title, message }: { title: string; message: string }) {
       <div className="flex-1 py-3">
         <div className="border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20 rounded-lg p-4 max-w-none">
           <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 dark:text-red-400 flex-shrink-0 mt-0.5" />
+            <AlertCircle className="w-5 h-5 text-red-500 dark:text-red-400 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <h4 className="font-medium text-red-800 dark:text-red-200 mb-1">
                 {displayTitle}
@@ -202,9 +215,9 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
             >
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 {isToolError ? (
-                  <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 flex-shrink-0" />
+                  <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 shrink-0" />
                 ) : (
-                  <Wrench className="w-3 h-3 text-neutral-400 dark:text-neutral-500 flex-shrink-0" />
+                  <Wrench className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
                 )}
                 <span className={`text-xs font-medium whitespace-nowrap ${
                   isToolError 
@@ -278,7 +291,7 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
                 return (
                   <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
                     <div className="flex items-center gap-2 min-w-0">
-                      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 flex-shrink-0" />
+                      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
                       <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
                         {getToolDisplayName(toolCall.name)}
                       </span>
@@ -329,7 +342,7 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
             isUser 
               ? "rounded-lg py-3 px-3 chat-bubble-user" 
               : "flex-1 py-3"
-          } break-words overflow-x-auto`}
+          } wrap-break-words overflow-x-auto`}
         >
           {isUser ? (
             <pre className="whitespace-pre-wrap font-sans">{message.content}</pre>
@@ -345,7 +358,7 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
                 return (
                   <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
                     <div className="flex items-center gap-2 min-w-0">
-                      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 flex-shrink-0" />
+                      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
                       <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
                         {getToolDisplayName(toolCall.name)}
                       </span>
@@ -376,7 +389,7 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
           
           {!isUser && (
             <div className={`flex justify-between items-center mt-2 ${
-              props.isLast && !isResponding ? 'chat-message-actions !opacity-100' : 'chat-message-actions opacity-0'
+              props.isLast && !isResponding ? 'chat-message-actions opacity-100!' : 'chat-message-actions opacity-0'
             }`}>
               <div className="flex items-center gap-2">
                 {canShareMessage && <ShareButton text={stripMarkdown(message.content || '')} className="h-4 w-4" />}

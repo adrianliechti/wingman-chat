@@ -2,6 +2,7 @@ import { memo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
+import remarkGemoji from 'remark-gemoji';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import { MermaidRenderer } from './MermaidRenderer';
@@ -208,27 +209,22 @@ const components: Partial<Components> = {
     },
 };
 
-const remarkPlugins = [remarkGfm, remarkBreaks];
+const remarkPlugins = [remarkGfm, remarkBreaks, remarkGemoji];
 const rehypePlugins = [rehypeRaw, rehypeSanitize];
 
 const NonMemoizedMarkdown = ({ children }: { children: string }) => {
     if (!children) return null;
     
-    try {
-        return (
-            <ReactMarkdown 
-                remarkPlugins={remarkPlugins} 
-                components={components}
-                rehypePlugins={rehypePlugins}
-                remarkRehypeOptions={{ allowDangerousHtml: true }}
-            >
-                {children}
-            </ReactMarkdown>
-        );
-    } catch (error) {
-        console.error("Markdown rendering error:", error);
-        return <pre className="whitespace-pre-wrap">{children}</pre>;
-    }
+    return (
+        <ReactMarkdown 
+            remarkPlugins={remarkPlugins} 
+            components={components}
+            rehypePlugins={rehypePlugins}
+            remarkRehypeOptions={{ allowDangerousHtml: true }}
+        >
+            {children}
+        </ReactMarkdown>
+    );
 };
 
 export const Markdown = memo(

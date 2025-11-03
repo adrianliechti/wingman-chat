@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v3";
 import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 import mime from "mime";
@@ -7,6 +7,7 @@ import { Role, AttachmentType } from "../types/chat";
 import type { Tool } from "../types/chat";
 import type { Message, Model } from "../types/chat";
 import type { SearchResult } from "../types/search";
+import { completionModels, type ModelType } from "./models";
 
 export class Client {
   private oai: OpenAI;
@@ -19,12 +20,19 @@ export class Client {
     });
   }
 
-  async listModels(): Promise<Model[]> {
+  async listModels(type?: ModelType): Promise<Model[]> {
     const models = await this.oai.models.list();
-    return models.data.map((model) => ({
+    const mappedModels = models.data.map((model) => ({
       id: model.id,
       name: model.id,
     }));
+    
+    // Filter by type if specified
+    if (type === "completion") {
+      return completionModels(mappedModels);
+    }
+    
+    return mappedModels;
   }
 
   async complete(
@@ -217,6 +225,97 @@ Return only the prompts themselves, without numbering or bullet points.`,
     } catch (error) {
       console.error("Error generating related prompts:", error);
       return [];
+    }
+  }
+
+  async convertCSV(model: string, text: string): Promise<string> {
+    const Schema = z.object({
+      csvData: z.string(),
+    }).strict();
+
+    if (!text.trim()) {
+      return "";
+    }
+
+    try {
+      const completion = await this.oai.chat.completions.parse({
+        model: model,
+        messages: [
+          {
+            role: "system",
+            content: `Extract all tabular data from the following content and convert it into a valid CSV format.
+
+Guidelines:
+- Identify any tables, lists, or structured data that can be represented in tabular form
+- Use appropriate column headers
+- Ensure all rows have the same number of columns
+- Use proper CSV formatting with commas as delimiters
+- Quote fields that contain commas, newlines, or special characters
+- If multiple tables are present, combine them logically or focus on the most significant one
+- If no tabular data is found, create a simple CSV with relevant structured information
+- Return ONLY the CSV data in the csvData field, no additional text or explanation`,
+          },
+          {
+            role: "user",
+            content: text,
+          },
+        ],
+        response_format: zodResponseFormat(Schema, "convert_csv"),
+      });
+
+      const result = completion.choices[0].message.parsed;
+      return result?.csvData ?? "";
+    } catch (error) {
+      console.error("Error converting to CSV:", error);
+      return "";
+    }
+  }
+
+  async convertMD(model: string, text: string): Promise<string> {
+    const Schema = z.object({
+      mdData: z.string(),
+    }).strict();
+
+    if (!text.trim()) {
+      return "";
+    }
+
+    try {
+      const completion = await this.oai.chat.completions.parse({
+        model: model,
+        messages: [
+          {
+            role: "system",
+            content: `Convert the following content into well-formatted GitHub Flavored Markdown (GFM).
+
+Guidelines:
+- Preserve the structure and hierarchy of the content
+- Use appropriate Markdown headings (# for h1, ## for h2, etc.)
+- Convert lists to Markdown format (- for unordered, 1. for ordered)
+- Use **bold** and *italic* where appropriate
+- Convert tables to GFM table format with pipes (|) and alignment
+- Use fenced code blocks (\`\`\`) with language identifiers for syntax highlighting
+- Use ~~strikethrough~~ for deleted text where appropriate
+- Support task lists with - [ ] and - [x] syntax
+- Use blockquotes (>) for quoted text where appropriate
+- Preserve links and convert to [text](url) format
+- Support automatic URL linking
+- Use emoji shortcodes where appropriate (e.g., :smile:)
+- Return ONLY the Markdown data in the mdData field, no additional text or explanation`,
+          },
+          {
+            role: "user",
+            content: text,
+          },
+        ],
+        response_format: zodResponseFormat(Schema, "convert_md"),
+      });
+
+      const result = completion.choices[0].message.parsed;
+      return result?.mdData ?? "";
+    } catch (error) {
+      console.error("Error converting to Markdown:", error);
+      return "";
     }
   }
 
@@ -552,9 +651,9 @@ Quality Standards:
     }
   }
 
-  async speakText(model: string, input: string, voice?: string): Promise<void> {
+  async generateAudio(model: string, input: string, voice?: string): Promise<Blob> {
     if (!input.trim()) {
-      return;
+      throw new Error("Input text cannot be empty");
     }
 
     const response = await this.oai.audio.speech.create({
@@ -568,7 +667,11 @@ Quality Standards:
     });
 
     const audioBuffer = await response.arrayBuffer();      
-    const audioBlob = new Blob([audioBuffer], { type: 'audio/wav' });
+    return new Blob([audioBuffer], { type: 'audio/wav' });
+  }
+
+  async speakText(model: string, input: string, voice?: string): Promise<void> {
+    const audioBlob = await this.generateAudio(model, input, voice);
     const audioUrl = URL.createObjectURL(audioBlob);
     
     const audio = new Audio(audioUrl);
@@ -618,7 +721,7 @@ Quality Standards:
     const data = new FormData();
     data.append('query', query);
 
-    const response = await fetch(new URL(`/api/v1/retrieve`, window.location.origin), {
+    const response = await fetch(new URL(`/api/v1/search`, window.location.origin), {
       method: "POST",
       body: data,
     });
@@ -638,6 +741,23 @@ Quality Standards:
       source: result.source || undefined,
       content: result.content,
     }));
+  }
+
+  async research(instructions: string): Promise<string> {
+    const data = new FormData();
+    data.append('instructions', instructions);
+
+    const response = await fetch(new URL(`/api/v1/research`, window.location.origin), {
+      method: "POST",
+      body: data,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Research request failed with status ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result.content || '';
   }
 
   async generateImage(

@@ -294,7 +294,7 @@ export function ChatPage() {
                       return (
                         <div className="mb-6 mx-auto max-w-2xl">
                           <div className="flex items-start justify-center gap-2 px-4 py-3">
-                            <Info size={16} className="text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5" />
+                            <Info size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0 mt-0.5" />
                             <p className="text-xs text-neutral-600 dark:text-neutral-400 text-left">
                               {disclaimer}
                             </p>
@@ -398,7 +398,7 @@ export function ChatPage() {
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <DialogPanel className="w-full max-w-md rounded-xl bg-white dark:bg-neutral-900 p-6 shadow-2xl border border-neutral-200 dark:border-neutral-800">
             <div className="flex items-center gap-3 mb-4">
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 <AlertTriangle className="h-6 w-6 text-amber-500" />
               </div>
               <DialogTitle className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">

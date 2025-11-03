@@ -1,0 +1,93 @@
+import { useCallback } from 'react';
+import type { ReactNode } from 'react';
+import { useNodesState, useEdgesState, addEdge, type Node, type Connection, type OnConnect } from '@xyflow/react';
+import { WorkflowContext } from './WorkflowContext';
+import type { WorkflowEdge } from '../types/workflow';
+
+interface WorkflowProviderProps {
+  children: ReactNode;
+}
+
+export function WorkflowProvider({ children }: WorkflowProviderProps) {
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<WorkflowEdge>([]);
+
+  const addNode = useCallback((node: Node) => {
+    setNodes((nds) => {
+      // Deselect all existing nodes and select the new one
+      const updatedNodes = nds.map((n) => ({ ...n, selected: false }));
+      return [...updatedNodes, { ...node, selected: true }];
+    });
+  }, [setNodes]);
+
+  const updateNode = useCallback((id: string, updates: Partial<Node>) => {
+    setNodes((nds) => 
+      nds.map((node) => 
+        node.id === id ? { ...node, ...updates } as Node : node
+      )
+    );
+  }, [setNodes]);
+
+  const deleteNode = useCallback((id: string) => {
+    setNodes((nds) => nds.filter((node) => node.id !== id));
+    setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
+  }, [setNodes, setEdges]);
+
+  const onConnect: OnConnect = useCallback((connection: Connection) => {
+    setEdges((eds) => addEdge(connection, eds));
+  }, [setEdges]);
+
+  const deleteConnection = useCallback((id: string) => {
+    setEdges((eds) => eds.filter((edge) => edge.id !== id));
+  }, [setEdges]);
+
+  const updateEdgeLabel = useCallback((edgeId: string, label: string) => {
+    setEdges((eds) => 
+      eds.map((edge) => 
+        edge.id === edgeId 
+          ? { 
+              ...edge, 
+              data: { ...edge.data, label },
+              label: label || undefined,
+              labelStyle: label ? { fill: '#3b82f6', fontWeight: 500 } : undefined,
+              labelBgStyle: label ? { fill: '#ffffff', fillOpacity: 0.9 } : undefined,
+              labelBgPadding: label ? [8, 4] as [number, number] : undefined,
+              labelBgBorderRadius: label ? 4 : undefined,
+            } 
+          : edge
+      )
+    );
+  }, [setEdges]);
+
+  const executeWorkflow = useCallback(async () => {
+    // TODO: Implement workflow execution logic
+    console.log('Executing workflow with nodes:', nodes);
+    console.log('Edges:', edges);
+  }, [nodes, edges]);
+
+  const clearWorkflow = useCallback(() => {
+    setNodes([]);
+    setEdges([]);
+  }, [setNodes, setEdges]);
+
+  return (
+    <WorkflowContext.Provider
+      value={{
+        nodes,
+        edges,
+        onNodesChange,
+        onEdgesChange,
+        onConnect,
+        addNode,
+        updateNode,
+        deleteNode,
+        deleteConnection,
+        updateEdgeLabel,
+        executeWorkflow,
+        clearWorkflow,
+      }}
+    >
+      {children}
+    </WorkflowContext.Provider>
+  );
+}

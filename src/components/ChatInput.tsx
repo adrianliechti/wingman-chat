@@ -1,8 +1,11 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
-import { Send, Paperclip, ScreenShare, Image, X, Sparkles, File, Loader2, FileText, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle, Rocket } from "lucide-react";
+import { Send, Paperclip, ScreenShare, Image, X, Sparkles, Loader2, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle, Rocket } from "lucide-react";
+
+import { ChatInputAttachments } from "./ChatInputAttachments";
+import { ChatInputSuggestions } from "./ChatInputSuggestions";
 
 import { AttachmentType, Role } from "../types/chat";
 import type { Attachment, Message } from "../types/chat";
@@ -52,7 +55,9 @@ export function ChatInput() {
   const contentEditableRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Generate static random placeholder text for new chats, updates when profile name changes
+  // Generate static random placeholder text for new chats only
+  // Only recalculate when starting a new chat, not on every profile change
+  const isNewChat = messages.length === 0;
   const randomPlaceholder = useMemo(() => {
     const personalizedVariations = [
       "Hi [Name], ready to get started?",
@@ -70,14 +75,14 @@ export function ChatInput() {
       "How can I support you?"
     ];
 
-    if (profile?.name) {
-      const randomIndex = Math.floor(Math.random() * personalizedVariations.length);
-      return personalizedVariations[randomIndex].replace('[Name]', profile.name);
-    } else {
-      const randomIndex = Math.floor(Math.random() * genericVariations.length);
-      return genericVariations[randomIndex];
-    }
-  }, [profile?.name]);
+    const variations = profile?.name ? personalizedVariations : genericVariations;
+    const randomIndex = Math.floor(Math.random() * variations.length);
+    
+    return profile?.name 
+      ? variations[randomIndex].replace('[Name]', profile.name)
+      : variations[randomIndex];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNewChat ? profile?.name : null]);
 
   const placeholderText = messages.length === 0 ? randomPlaceholder : "Ask anything";
 
@@ -88,7 +93,7 @@ export function ChatInput() {
   const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription();
 
   // MCP indicator logic
-  const getMCPIndicator = () => {
+  const mcpIndicator = useMemo(() => {
     // null = no MCP server, false = connecting, true = connected
     if (mcpConnected === null) {
       // No MCP server configured - show brain
@@ -100,54 +105,53 @@ export function ChatInput() {
       // Connecting or error - show loading spinner
       return <LoaderCircle size={14} className="animate-spin" />;
     }
-  };
+  }, [mcpConnected]);
 
 
 
-  const handleFiles = async (files: File[]) => {
-    // Process all files in parallel for better performance
-    const processFile = async (file: File, index: number) => {
-      const fileId = `${file.name}-${index}`;
+  const handleFiles = useCallback(async (files: File[]) => {
+    const fileIds = files.map((file, index) => `${file.name}-${index}`);
+    
+    // Set all extracting states at once
+    setExtractingAttachments(prev => new Set([...prev, ...fileIds]));
 
-      setExtractingAttachments(prev => new Set([...prev, fileId]));
+    const processedAttachments = await Promise.allSettled(
+      files.map(async (file, index) => {
+        const fileId = fileIds[index];
+        try {
+          let attachment: Attachment | null = null;
+          const fileType = file.type || getFileExt(file.name);
 
-      try {
-        let attachment: Attachment | null = null;
-
-        if (textTypes.includes(file.type) || textTypes.includes(getFileExt(file.name))) {
-          const text = await readAsText(file);
-          attachment = { type: AttachmentType.Text, name: file.name, data: text };
-        } else if (imageTypes.includes(file.type) || imageTypes.includes(getFileExt(file.name))) {
-          const blob = await resizeImageBlob(file, 1920, 1920);
-          const url = await readAsDataURL(blob);
-          attachment = { type: AttachmentType.Image, name: file.name, data: url };
-        } else if (documentTypes.includes(file.type) || documentTypes.includes(getFileExt(file.name))) {
-          const text = await client.extractText(file);
-          attachment = { type: AttachmentType.Text, name: file.name, data: text };
+          if (textTypes.includes(fileType)) {
+            const text = await readAsText(file);
+            attachment = { type: AttachmentType.Text, name: file.name, data: text };
+          } else if (imageTypes.includes(fileType)) {
+            const blob = await resizeImageBlob(file, 1920, 1920);
+            const url = await readAsDataURL(blob);
+            attachment = { type: AttachmentType.Image, name: file.name, data: url };
+          } else if (documentTypes.includes(fileType)) {
+            const text = await client.extractText(file);
+            attachment = { type: AttachmentType.Text, name: file.name, data: text };
+          }
+          
+          return { fileId, attachment };
+        } catch (error) {
+          console.error(`Error processing file ${file.name}:`, error);
+          return { fileId, attachment: null };
         }
-
-        if (attachment) {
-          setAttachments(prev => [...prev, attachment]);
-        }
-
-        return attachment;
-      } catch (error) {
-        console.error(`Error processing file ${file.name}:`, error);
-        return null;
-      } finally {
-        setExtractingAttachments(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(fileId);
-          return newSet;
-        });
-      }
-    };
-
-    // Process all files in parallel using Promise.allSettled to handle individual failures gracefully
-    await Promise.allSettled(
-      files.map((file, index) => processFile(file, index))
+      })
     );
-  };
+
+    // Batch state updates
+    const validAttachments = processedAttachments
+      .filter((result): result is PromiseFulfilledResult<{ fileId: string; attachment: Attachment }> => 
+        result.status === 'fulfilled' && result.value.attachment !== null
+      )
+      .map(result => result.value.attachment);
+
+    setAttachments(prev => [...prev, ...validAttachments]);
+    setExtractingAttachments(new Set()); // Clear all at once
+  }, [client]);
 
   const isDragging = useDropZone(containerRef, handleFiles);
 
@@ -210,52 +214,16 @@ export function ChatInput() {
     setShowPromptSuggestions(false);
   };
 
-  // Helper function to get the appropriate icon for each attachment type
-  const getAttachmentIcon = (attachment: Attachment) => {
-    switch (attachment.type) {
-      case AttachmentType.Image:
-        return <Image size={24} />;
-      case AttachmentType.Text:
-        return <FileText size={24} />;
-      case AttachmentType.File:
-        return <File size={24} />;
-      default:
-        return <File size={24} />;
-    }
-  };
-
   // Force layout recalculation on mount to fix initial sizing issues
   useEffect(() => {
-    const forceLayout = () => {
-      if (containerRef.current) {
-        // Force a repaint by reading offsetHeight
-        void containerRef.current.offsetHeight;
-      }
-      if (contentEditableRef.current) {
-        // Force a repaint for the content editable area
-        void contentEditableRef.current.offsetHeight;
-      }
-    };
-
-    // Run immediately and on next tick to ensure DOM is ready
-    forceLayout();
-    const timer = setTimeout(forceLayout, 0);
-
-    // Also force layout on window load to handle CSS custom properties
-    const handleLoad = () => forceLayout();
-    window.addEventListener('load', handleLoad);
-
-    // Handle resize events to maintain proper sizing
-    const handleResize = () => {
-      requestAnimationFrame(forceLayout);
-    };
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('load', handleLoad);
-      window.removeEventListener('resize', handleResize);
-    };
+    if (containerRef.current) {
+      // Force a repaint by reading offsetHeight
+      void containerRef.current.offsetHeight;
+    }
+    if (contentEditableRef.current) {
+      // Force a repaint for the content editable area
+      void contentEditableRef.current.offsetHeight;
+    }
   }, []);
 
   // Auto-focus on desktop devices only (not on touch devices like iPad)
@@ -275,7 +243,7 @@ export function ChatInput() {
     }
   }, [messages.length]);
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = useCallback(async (e: FormEvent) => {
     e.preventDefault();
 
     // Prevent submission while responding
@@ -319,15 +287,15 @@ export function ChatInput() {
         contentEditableRef.current.innerHTML = "";
       }
     }
-  };
+  }, [isResponding, content, attachments, isContinuousCaptureActive, captureFrame, sendMessage]);
 
-  const handleAttachmentClick = () => {
+  const handleAttachmentClick = useCallback(() => {
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
-  };
+  }, []);
 
-  const handleContinuousCaptureToggle = async () => {
+  const handleContinuousCaptureToggle = useCallback(async () => {
     try {
       if (isContinuousCaptureActive) {
         stopCapture();
@@ -337,29 +305,39 @@ export function ChatInput() {
     } catch (error) {
       console.error("Error toggling continuous capture:", error);
     }
-  };
+  }, [isContinuousCaptureActive, stopCapture, startCapture]);
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
       handleFiles(Array.from(files));
       e.target.value = "";
     }
-  };
+  }, [handleFiles]);
 
-  const handleRemoveAttachment = (index: number) => {
+  const handleRemoveAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
-  };
+  }, []);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleContentChange = useCallback((e: React.FormEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement;
+    const input = target.innerText || target.textContent || '';
+    setContent(input);
+
+    if (input.trim() && showPromptSuggestions) {
+      setShowPromptSuggestions(false);
+    }
+  }, [showPromptSuggestions]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e as unknown as FormEvent);
     }
-  };
+  }, [handleSubmit]);
 
   // Handle transcription button click
-  const handleTranscriptionClick = async () => {
+  const handleTranscriptionClick = useCallback(async () => {
     if (isTranscribing) {
       setTranscribingContent(true);
       try {
@@ -385,7 +363,7 @@ export function ChatInput() {
         console.error('Failed to start transcription:', error);
       }
     }
-  };
+  }, [isTranscribing, stopTranscription, startTranscription]);
 
   return (
     <form onSubmit={handleSubmit}>
@@ -400,7 +378,7 @@ export function ChatInput() {
             ? 'bg-white/60 dark:bg-neutral-950/70'
             : 'bg-white/30 dark:bg-neutral-950/50'
           } rounded-t-2xl md:rounded-2xl`
-          } backdrop-blur-2xl flex flex-col min-h-[4rem] md:min-h-[3rem] shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 transition-all duration-200`}
+          } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 transition-all duration-200`}
       >
         <input
           type="file"
@@ -413,7 +391,7 @@ export function ChatInput() {
 
         {/* Drop zone overlay */}
         {isDragging && (
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 rounded-t-2xl md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-sm">
+          <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 rounded-t-2xl md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-sm">
             <div className="text-slate-700 dark:text-slate-300 font-semibold text-lg text-center">
               Drop files here
             </div>
@@ -424,85 +402,25 @@ export function ChatInput() {
         )}
 
         {/* Attachments display */}
-        {(attachments.length > 0 || extractingAttachments.size > 0) && (
-          <div className="flex flex-wrap gap-3 p-3">
-            {/* Loading attachments */}
-            {Array.from(extractingAttachments).map((fileId) => (
-              <div
-                key={fileId}
-                className="relative size-14 bg-white/30 dark:bg-neutral-800/60 backdrop-blur-lg rounded-xl border-2 border-dashed border-white/50 dark:border-white/30 flex items-center justify-center shadow-sm"
-                title="Processing file..."
-              >
-                <Loader2 size={18} className="animate-spin text-neutral-500 dark:text-neutral-400" />
-              </div>
-            ))}
-
-            {/* Processed attachments */}
-            {attachments.map((attachment, index) => (
-              <div
-                key={index}
-                className="relative size-14 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm flex items-center justify-center group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all"
-                title={attachment.name}
-              >
-                {attachment.type === AttachmentType.Image ? (
-                  <img
-                    src={attachment.data}
-                    alt={attachment.name}
-                    className="size-full object-cover rounded-xl"
-                  />
-                ) : (
-                  <div className="text-neutral-600 dark:text-neutral-300">
-                    {getAttachmentIcon(attachment)}
-                  </div>
-                )}
-                <Button
-                  type="button"
-                  className="absolute top-0.5 right-0.5 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm shadow-sm"
-                  onClick={() => handleRemoveAttachment(index)}
-                >
-                  <X size={10} />
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
+        <ChatInputAttachments
+          attachments={attachments}
+          extractingAttachments={extractingAttachments}
+          onRemove={handleRemoveAttachment}
+        />
 
         {/* Prompt suggestions */}
-        {showPromptSuggestions && (
-          <div className="p-3">
-            {loadingPrompts ? (
-              <div className="flex items-center justify-center py-4">
-                <Loader2 size={16} className="animate-spin text-neutral-500 dark:text-neutral-400" />
-                <span className="ml-2 text-sm text-neutral-500 dark:text-neutral-400">
-                  Generating suggestions...
-                </span>
-              </div>
-            ) : promptSuggestions.length > 0 ? (
-              <div className="space-y-2">
-                {promptSuggestions.map((suggestion, index) => (
-                  <Button
-                    key={index}
-                    type="button"
-                    onClick={() => handlePromptSelect(suggestion)}
-                    className="w-full text-left p-3 text-sm bg-white/25 dark:bg-black/15 backdrop-blur-lg hover:bg-white/40 dark:hover:bg-black/25 rounded-lg border border-white/30 dark:border-white/20 transition-colors focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-                  >
-                    {suggestion}
-                  </Button>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-4 text-sm text-neutral-500 dark:text-neutral-400">
-                No suggestions available
-              </div>
-            )}
-          </div>
-        )}
+        <ChatInputSuggestions
+          show={showPromptSuggestions}
+          loading={loadingPrompts}
+          suggestions={promptSuggestions}
+          onSelect={handlePromptSelect}
+        />
 
         {/* Input area */}
         <div className="relative flex-1">
           <div
             ref={contentEditableRef}
-            className="p-3 md:p-4 flex-1 max-h-[40vh] overflow-y-auto min-h-[2.5rem] whitespace-pre-wrap break-words text-neutral-800 dark:text-neutral-200"
+            className="p-3 md:p-4 flex-1 max-h-[40vh] overflow-y-auto min-h-10 whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200"
             style={{
               scrollbarWidth: "thin",
               minHeight: "2.5rem",
@@ -511,16 +429,7 @@ export function ChatInput() {
             role="textbox"
             contentEditable
             suppressContentEditableWarning={true}
-            onInput={(e) => {
-              const target = e.target as HTMLDivElement;
-
-              const input = target.innerText || target.textContent || '';
-              setContent(input);
-
-              if (input.trim() && showPromptSuggestions) {
-                setShowPromptSuggestions(false);
-              }
-            }}
+            onInput={handleContentChange}
             onKeyDown={handleKeyDown}
             onPaste={async (e) => {
               e.preventDefault();
@@ -572,7 +481,7 @@ export function ChatInput() {
             {models.length > 0 && (
               <Menu>
                 <MenuButton className="flex items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm">
-                  {getMCPIndicator()}
+                  {mcpIndicator}
                   <span>
                     {model?.name ?? model?.id ?? "Select Model"}
                   </span>
@@ -580,17 +489,17 @@ export function ChatInput() {
                 <MenuItems
                   transition
                   anchor="bottom start"
-                  className="sidebar-scroll !max-h-[50vh] mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10"
+                  className="sidebar-scroll max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10"
                 >
                   {models.map((modelItem) => (
                     <MenuItem key={modelItem.id}>
                       <Button
                         onClick={() => onModelChange(modelItem)}
                         title={modelItem.description}
-                        className="group flex w-full flex-col items-start px-3 py-2 data-[focus]:bg-white/30 dark:data-[focus]:bg-white/8 hover:bg-white/25 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all duration-200 border-b border-white/20 dark:border-white/10 last:border-b-0"
+                        className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-white/30 dark:data-focus:bg-white/8 hover:bg-white/25 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all duration-200 border-b border-white/20 dark:border-white/10 last:border-b-0"
                       >
                         <div className="flex items-center gap-2.5 w-full">
-                          <div className="flex-shrink-0 w-3.5 flex justify-center">
+                          <div className="shrink-0 w-3.5 flex justify-center">
                             {model?.id === modelItem.id && (
                               <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
                             )}

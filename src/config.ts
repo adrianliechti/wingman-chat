@@ -20,6 +20,8 @@ interface config {
   tts?: ttsConfig;
   stt?: sttConfig;
 
+  workflow?: workflowConfig;
+
   voice?: voiceConfig;
   vision?: visionConfig;
   
@@ -52,6 +54,10 @@ interface sttConfig {
    enabled: boolean;
 }
 
+interface workflowConfig {
+   enabled: boolean;
+}
+
 interface voiceConfig {
   enabled: boolean;
 }
@@ -75,6 +81,7 @@ interface internetConfig {
 
 interface repositoryConfig {
   enabled: boolean;
+
   embedder?: string;
   extractor?: string;
 
@@ -87,8 +94,10 @@ interface artifactsConfig {
 
 interface translatorConfig {
   enabled: boolean;
+
   model?: string
   files: string[];
+  
   languages: string[];
 }
 
@@ -102,6 +111,8 @@ interface Config {
 
   tts: boolean;
   stt: boolean;
+  
+  workflow: boolean;
   
   voice: boolean;
   vision: boolean;
@@ -156,6 +167,8 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       tts: cfg.tts?.enabled ?? false,
       stt: cfg.stt?.enabled ?? false,
+      
+      workflow: cfg.workflow?.enabled ?? false,
       
       voice: cfg.voice?.enabled ?? false,
       vision: cfg.vision?.enabled ?? false,

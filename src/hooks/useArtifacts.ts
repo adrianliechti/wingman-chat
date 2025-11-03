@@ -63,7 +63,7 @@ export function useArtifacts(): ArtifactsHook {
               message: `File created: ${path}`,
               path 
             });
-          } catch (error) {
+          } catch {
             return JSON.stringify({ error: 'Failed to create file' });
           }
         }
@@ -104,7 +104,7 @@ export function useArtifacts(): ArtifactsHook {
               files: fileList,
               count: fileList.length
             });
-          } catch (error) {
+          } catch {
             return JSON.stringify({ error: 'Failed to list files' });
           }
         }
@@ -152,7 +152,7 @@ export function useArtifacts(): ArtifactsHook {
             } else {
               return JSON.stringify({ error: `Failed to delete: ${path}` });
             }
-          } catch (error) {
+          } catch {
             return JSON.stringify({ error: 'Failed to delete item' });
           }
         }
@@ -217,7 +217,7 @@ export function useArtifacts(): ArtifactsHook {
               fromPath,
               toPath
             });
-          } catch (error) {
+          } catch {
             return JSON.stringify({ error: 'Failed to move file' });
           }
         }
@@ -263,7 +263,7 @@ export function useArtifacts(): ArtifactsHook {
               success: true, 
               file: fileInfo
             });
-          } catch (error) {
+          } catch {
             return JSON.stringify({ error: 'Failed to read file content' });
           }
         }
@@ -290,7 +290,7 @@ export function useArtifacts(): ArtifactsHook {
               success: true, 
               currentPath: activeFile
             });
-          } catch (error) {
+          } catch {
             return JSON.stringify({ error: 'Failed to get current path' });
           }
         }
@@ -335,7 +335,7 @@ export function useArtifacts(): ArtifactsHook {
               success: true, 
               currentFile: fileInfo
             });
-          } catch (error) {
+          } catch {
             return JSON.stringify({ error: 'Failed to get current file info' });
           }
         }

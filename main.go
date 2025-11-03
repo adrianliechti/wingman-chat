@@ -46,6 +46,8 @@ func main() {
 	repositoryExtractor := os.Getenv("REPOSITORY_EXTRACTOR")
 	repositoryContextPages := os.Getenv("REPOSITORY_CONTEXT_PAGES")
 
+	workflow := os.Getenv("WORKFLOW_ENABLED") == "true"
+
 	mux := http.NewServeMux()
 	dist := os.DirFS("dist")
 
@@ -104,6 +106,10 @@ func main() {
 			ContextPages *int `json:"context_pages,omitempty" yaml:"context_pages,omitempty"`
 		}
 
+		type workflowType struct {
+			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+		}
+
 		type translatorType struct {
 			Enabled   bool     `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 			Model     string   `json:"model,omitempty" yaml:"model,omitempty"`
@@ -134,6 +140,8 @@ func main() {
 
 			Artifacts  *artifactsType  `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 			Repository *repositoryType `json:"repository,omitempty" yaml:"repository,omitempty"`
+
+			Workflow   *workflowType   `json:"workflow,omitempty" yaml:"workflow,omitempty"`
 			Translator *translatorType `json:"translator,omitempty" yaml:"translator,omitempty"`
 
 			Backgrounds map[string][]backgroundType `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
@@ -215,6 +223,12 @@ func main() {
 
 			if n, err := strconv.Atoi(repositoryContextPages); err == nil && n > 0 {
 				config.Repository.ContextPages = &n
+			}
+		}
+
+		if workflow {
+			config.Workflow = &workflowType{
+				Enabled: true,
 			}
 		}
 
