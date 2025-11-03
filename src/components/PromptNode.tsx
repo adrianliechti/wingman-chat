@@ -45,7 +45,7 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
   useEffect(() => {
     const loadModels = async () => {
       try {
-        const modelList = await client.listModels();
+        const modelList = await client.listModels("completion");
         setModels(modelList);
       } catch (error) {
         console.error('Error loading models:', error);
