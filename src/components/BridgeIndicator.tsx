@@ -19,7 +19,7 @@ export function BridgeIndicator() {
       <MenuItems
         transition
         anchor="bottom start"
-        className="w-64 mt-2 rounded-lg border bg-white/90 dark:bg-black/90 backdrop-blur-xl border-white/30 dark:border-white/20 overflow-hidden shadow-lg z-50 transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-[closed]:scale-95 data-[closed]:opacity-0"
+        className="w-64 mt-2 rounded-lg border bg-white/90 dark:bg-black/90 backdrop-blur-xl border-white/30 dark:border-white/20 overflow-hidden shadow-lg z-50 transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0"
       >
         <div className="p-3 border-b border-neutral-200 dark:border-neutral-700">
           <div className="font-semibold text-neutral-900 dark:text-neutral-100 mb-1">

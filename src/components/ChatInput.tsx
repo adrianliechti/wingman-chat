@@ -400,7 +400,7 @@ export function ChatInput() {
             ? 'bg-white/60 dark:bg-neutral-950/70'
             : 'bg-white/30 dark:bg-neutral-950/50'
           } rounded-t-2xl md:rounded-2xl`
-          } backdrop-blur-2xl flex flex-col min-h-[4rem] md:min-h-[3rem] shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 transition-all duration-200`}
+          } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 transition-all duration-200`}
       >
         <input
           type="file"
@@ -413,7 +413,7 @@ export function ChatInput() {
 
         {/* Drop zone overlay */}
         {isDragging && (
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 rounded-t-2xl md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-sm">
+          <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 rounded-t-2xl md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-sm">
             <div className="text-slate-700 dark:text-slate-300 font-semibold text-lg text-center">
               Drop files here
             </div>
@@ -502,7 +502,7 @@ export function ChatInput() {
         <div className="relative flex-1">
           <div
             ref={contentEditableRef}
-            className="p-3 md:p-4 flex-1 max-h-[40vh] overflow-y-auto min-h-[2.5rem] whitespace-pre-wrap break-words text-neutral-800 dark:text-neutral-200"
+            className="p-3 md:p-4 flex-1 max-h-[40vh] overflow-y-auto min-h-10 whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200"
             style={{
               scrollbarWidth: "thin",
               minHeight: "2.5rem",
@@ -580,17 +580,17 @@ export function ChatInput() {
                 <MenuItems
                   transition
                   anchor="bottom start"
-                  className="sidebar-scroll !max-h-[50vh] mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10"
+                  className="sidebar-scroll max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10"
                 >
                   {models.map((modelItem) => (
                     <MenuItem key={modelItem.id}>
                       <Button
                         onClick={() => onModelChange(modelItem)}
                         title={modelItem.description}
-                        className="group flex w-full flex-col items-start px-3 py-2 data-[focus]:bg-white/30 dark:data-[focus]:bg-white/8 hover:bg-white/25 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all duration-200 border-b border-white/20 dark:border-white/10 last:border-b-0"
+                        className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-white/30 dark:data-focus:bg-white/8 hover:bg-white/25 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all duration-200 border-b border-white/20 dark:border-white/10 last:border-b-0"
                       >
                         <div className="flex items-center gap-2.5 w-full">
-                          <div className="flex-shrink-0 w-3.5 flex justify-center">
+                          <div className="shrink-0 w-3.5 flex justify-center">
                             {model?.id === modelItem.id && (
                               <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
                             )}

@@ -232,7 +232,7 @@ export function TranslatePage() {
       <main className="flex-1 flex flex-col overflow-hidden relative">
         
         {/* Text Translation Section */}
-        <div className="w-full flex-grow overflow-hidden flex p-4 pt-20">
+        <div className="w-full grow overflow-hidden flex p-4 pt-20">
           <div className={`w-full h-full ${
             layoutMode === 'wide' 
               ? 'max-w-full mx-auto' 
@@ -276,7 +276,7 @@ export function TranslatePage() {
                   
                   {/* Drop zone overlay */}
                   {isDragging && supportedFiles.length > 0 && (
-                    <div className="absolute inset-0 bg-gradient-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 rounded-lg flex flex-col items-center justify-center pointer-events-none z-20 backdrop-blur-sm">
+                    <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 rounded-lg flex flex-col items-center justify-center pointer-events-none z-20 backdrop-blur-sm">
                       <div className="text-slate-700 dark:text-slate-300 font-semibold text-lg text-center">
                         Drop files here
                       </div>
@@ -293,7 +293,7 @@ export function TranslatePage() {
                         {/* Subtle delete button in top-right */}
                         <Button
                           onClick={handleFileClear}
-                          className="absolute -top-2 -right-2 !p-1.5 !bg-neutral-50/70 dark:!bg-neutral-900/60 backdrop-blur-lg hover:!bg-neutral-50/80 dark:hover:!bg-neutral-900/70 rounded-full opacity-70 hover:opacity-100 transition-all border border-neutral-200/70 dark:border-neutral-700/60 shadow-sm"
+                          className="absolute -top-2 -right-2 p-1.5! bg-neutral-50/70! dark:bg-neutral-900/60! backdrop-blur-lg hover:bg-neutral-50/80! dark:hover:bg-neutral-900/70! rounded-full opacity-70 hover:opacity-100 transition-all border border-neutral-200/70 dark:border-neutral-700/60 shadow-sm"
                           title="Remove file"
                         >
                           <XIcon size={12} />
@@ -316,13 +316,13 @@ export function TranslatePage() {
                 </div>
 
                 {/* Translate button */}
-                <div className="relative flex items-center justify-center py-2 md:py-0 md:w-12 flex-shrink-0">
+                <div className="relative flex items-center justify-center py-2 md:py-0 md:w-12 shrink-0">
                   {/* Responsive divider: horizontal on mobile, vertical on desktop */}
                   <div className="absolute md:inset-y-0 md:w-px md:left-1/2 md:-translate-x-px inset-x-0 h-px md:h-auto bg-black/20 dark:bg-white/20"></div>
                   
                   <Button
                     onClick={() => performTranslate()}
-                    className="!bg-neutral-50/60 dark:!bg-neutral-900/50 backdrop-blur-lg border border-neutral-200/60 dark:border-neutral-700/50 hover:!bg-neutral-50/70 dark:hover:!bg-neutral-900/60 !text-neutral-700 dark:!text-neutral-300 hover:!text-neutral-900 dark:hover:!text-neutral-100 z-10 relative px-2 py-2 rounded-lg shadow-lg transition-all"
+                    className="bg-neutral-50/60! dark:bg-neutral-900/50! backdrop-blur-lg border border-neutral-200/60 dark:border-neutral-700/50 hover:bg-neutral-50/70! dark:hover:bg-neutral-900/60! text-neutral-700! dark:text-neutral-300! hover:text-neutral-900! dark:hover:text-neutral-100! z-10 relative px-2 py-2 rounded-lg shadow-lg transition-all"
                     title={selectedFile ? `Translate file to ${selectedLanguage?.name || 'Selected Language'}` : `Translate to ${selectedLanguage?.name || 'Selected Language'}`}
                     disabled={
                       isLoading || 
@@ -351,13 +351,13 @@ export function TranslatePage() {
                       <MenuItems
                         transition
                         anchor="bottom start"
-                        className="!max-h-[50vh] mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
+                        className="max-h-[50vh]! mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
                       >
                         {supportedLanguages.map((lang) => (
                           <MenuItem key={lang.code}>
                             <Button
                               onClick={() => setTargetLang(lang.code)}
-                              className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
+                              className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
                             >
                               {lang.name}
                             </Button>
@@ -384,7 +384,7 @@ export function TranslatePage() {
                             <MenuItem key={toneOption.value}>
                               <Button
                                 onClick={() => setTone(toneOption.value)}
-                                className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
+                                className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
                               >
                                 {toneOption.label}
                               </Button>
@@ -412,7 +412,7 @@ export function TranslatePage() {
                             <MenuItem key={styleOption.value}>
                               <Button
                                 onClick={() => setStyle(styleOption.value)}
-                                className="group flex w-full items-center px-4 py-2 data-[focus]:bg-neutral-100 dark:data-[focus]:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
+                                className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
                               >
                                 {styleOption.label}
                               </Button>
@@ -477,8 +477,8 @@ export function TranslatePage() {
                           onClick={() => setErrorExpanded(!errorExpanded)}
                           className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-red-100/50 dark:hover:bg-red-900/20 transition-colors cursor-pointer"
                         >
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <AlertCircle className="w-3 h-3 text-red-500 flex-shrink-0" />
+                          <div className="flex items-center gap-2 shrink-0">
+                            <AlertCircle className="w-3 h-3 text-red-500 shrink-0" />
                             <span className="text-xs font-medium text-red-600 dark:text-red-400">
                               {selectedFile ? 'File translation failed' : 'Translation failed'}
                             </span>
@@ -488,7 +488,7 @@ export function TranslatePage() {
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="flex items-center gap-2 shrink-0">
                             {errorExpanded ? 
                               <ChevronDown className="w-3 h-3 text-red-500" /> : 
                               <ChevronRight className="w-3 h-3 text-red-500" />
@@ -498,7 +498,7 @@ export function TranslatePage() {
                         
                         {errorExpanded && (
                           <div className="px-3 pb-3 border-t border-red-200/50 dark:border-red-800/50">
-                            <div className="mt-2 text-xs text-red-700 dark:text-red-300 break-words">
+                            <div className="mt-2 text-xs text-red-700 dark:text-red-300 break-word">
                               {error}
                             </div>
                           </div>

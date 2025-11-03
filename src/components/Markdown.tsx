@@ -215,21 +215,16 @@ const rehypePlugins = [rehypeRaw, rehypeSanitize];
 const NonMemoizedMarkdown = ({ children }: { children: string }) => {
     if (!children) return null;
     
-    try {
-        return (
-            <ReactMarkdown 
-                remarkPlugins={remarkPlugins} 
-                components={components}
-                rehypePlugins={rehypePlugins}
-                remarkRehypeOptions={{ allowDangerousHtml: true }}
-            >
-                {children}
-            </ReactMarkdown>
-        );
-    } catch (error) {
-        console.error("Markdown rendering error:", error);
-        return <pre className="whitespace-pre-wrap">{children}</pre>;
-    }
+    return (
+        <ReactMarkdown 
+            remarkPlugins={remarkPlugins} 
+            components={components}
+            rehypePlugins={rehypePlugins}
+            remarkRehypeOptions={{ allowDangerousHtml: true }}
+        >
+            {children}
+        </ReactMarkdown>
+    );
 };
 
 export const Markdown = memo(
