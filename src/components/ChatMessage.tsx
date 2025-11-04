@@ -3,10 +3,9 @@ import { CopyButton } from './CopyButton';
 import { ShareButton } from './ShareButton';
 import { PlayButton } from './PlayButton';
 import { SingleAttachmentDisplay, MultipleAttachmentsDisplay } from './AttachmentRenderer';
+import { CodeRenderer } from './CodeRenderer';
 import { Wrench, Loader2, AlertCircle } from "lucide-react";
-import { useState, useContext, useEffect, useMemo, memo } from 'react';
-import { codeToHtml } from 'shiki';
-import { ThemeContext } from '../contexts/ThemeContext';
+import { useState } from 'react';
 
 import { Role } from "../types/chat";
 import type { Message } from "../types/chat";
@@ -29,42 +28,51 @@ function getToolCallPreview(_toolName: string, arguments_: string): string | nul
     
     // Common parameter names to look for (in order of preference)
     const commonParams = [
-      'query', 'q', 'search', 'search_query',
-      'url', 'link', 'address',
-      'file', 'filename', 'path', 'filepath',
-      'text', 'content', 'message', 'data',
-      'prompt', 'input',
-      'location', 'city', 'place',
-      'email', 'to', 'recipient',
-      'title', 'name', 'subject',
-      'code', 'script', 'command'
+      // Search & Query
+      'query', 'q', 'search', 'search_query', 'keyword', 'term',
+      // Web & Network
+      'url', 'link', 'uri', 'address', 'endpoint',
+      // Files & Paths
+      'file', 'filename', 'path', 'filepath', 'directory', 'folder',
+      // Content & Data
+      'text', 'content', 'message', 'body', 'data', 'value',
+      // AI & Generation
+      'prompt', 'input', 'question', 'instruction',
+      // Location
+      'location', 'city', 'place', 'address',
+      // Communication
+      'email', 'to', 'recipient', 'subject',
+      // Identification
+      'id', 'name', 'title', 'label',
+      // Code & Commands
+      'command', 'expression', 'statement'
     ];
     
     // Find the first matching parameter
     for (const param of commonParams) {
       if (args[param] && typeof args[param] === 'string') {
-        const value = args[param].toString();
-        return value;
+        return args[param];
       }
-    }
-    
-    // If no common params found, try to find any string value
-    const stringValues = Object.values(args).filter(v => 
-      typeof v === 'string' && v.length > 0
-    );
-    
-    if (stringValues.length > 0) {
-      const value = stringValues[0] as string;
-      return value;
     }
     
     return null;
   } catch {
-    // If parsing fails, try to extract simple quoted strings
-    const match = arguments_.match(/"([^"]+)"/);
-    if (match) {
-      return match[1];
+    return null;
+  }
+}
+
+// Helper function to extract code from arguments
+function extractCodeFromArguments(arguments_: string): { code: string; packages?: string[] } | null {
+  try {
+    const args = JSON.parse(arguments_);
+    if (args.code && typeof args.code === 'string') {
+      return {
+        code: args.code,
+        packages: args.packages
+      };
     }
+    return null;
+  } catch {
     return null;
   }
 }
@@ -74,75 +82,6 @@ type ChatMessageProps = {
   isLast?: boolean;
   isResponding?: boolean;
 };
-
-// Component to render code with Shiki
-const ShikiCodeRenderer = memo(({ content, name }: { content: string; name?: string }) => {
-  const [html, setHtml] = useState<string>('');
-  const { isDark } = useContext(ThemeContext) || { isDark: false };
-
-  // Memoize the content parsing to avoid re-parsing on every render
-  const { displayContent, langId } = useMemo(() => {
-    try {
-      const parsedContent = JSON.parse(content);
-      return {
-        displayContent: JSON.stringify(parsedContent, null, 2),
-        langId: 'json'
-      };
-    } catch {
-      return {
-        displayContent: content,
-        langId: 'text'
-      };
-    }
-  }, [content]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const renderCode = async () => {
-      try {
-        const renderedHtml = await codeToHtml(displayContent, {
-          lang: langId,
-          theme: isDark ? 'one-dark-pro' : 'one-light',
-          colorReplacements: {
-            '#fafafa': 'transparent', // one-light background
-            '#282c34': 'transparent', // one-dark-pro background
-          }
-        });
-        
-        if (!cancelled) {
-          setHtml(renderedHtml);
-        }
-      } catch {
-        // Fallback to plain text if Shiki fails
-        if (!cancelled) {
-          setHtml(`<pre><code>${displayContent}</code></pre>`);
-        }
-      }
-    };
-
-    renderCode();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [displayContent, langId, isDark]);
-
-  return (
-    <div className="mt-3">
-      {name && (
-        <div className="text-xs text-neutral-500 dark:text-neutral-500 mb-1 opacity-60">
-          {name}
-        </div>
-      )}
-      <div className="max-h-96 overflow-y-auto overflow-x-hidden">
-        <div dangerouslySetInnerHTML={{ __html: html }} />
-      </div>
-    </div>
-  );
-});
-
-ShikiCodeRenderer.displayName = 'ShikiCodeRenderer';
 
 // Error message component
 function ErrorMessage({ title, message }: { title: string; message: string }) {
@@ -190,27 +129,34 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
   // Handle tool messages
   if (isToolResult) {
     const toolResult = message.toolResult;
-
-    // Get the query preview from tool arguments (similar to tool call)
-    const queryPreview = toolResult?.arguments ? getToolCallPreview(toolResult.name || '', toolResult.arguments) : null;
-
-    const toggleExpansion = () => setToolResultExpanded(!toolResultExpanded);
-
-    // Check if this is a tool error (using error field)
     const isToolError = !!message.error;
+    const codeData = toolResult?.arguments ? extractCodeFromArguments(toolResult.arguments) : null;
+    const queryPreview = !codeData && toolResult?.arguments 
+      ? getToolCallPreview(toolResult.name || '', toolResult.arguments) 
+      : null;
 
-    // Helper to render JSON or text content using Shiki
     const renderContent = (content: string, name?: string) => {
-      return <ShikiCodeRenderer content={content} name={name} />;
+      try {
+        const parsed = JSON.parse(content);
+        const formatted = JSON.stringify(parsed, null, 2);
+        return <CodeRenderer code={formatted} language="json" name={name} />;
+      } catch {
+        return <CodeRenderer code={content} language="text" name={name} />;
+      }
+    };
+
+    const getPreviewText = () => {
+      if (codeData) return codeData.code.split('\n')[0];
+      if (queryPreview) return queryPreview;
+      return null;
     };
 
     return (
       <div className="flex justify-start mb-2">
         <div className="flex-1 py-1 max-w-full">
           <div className={`${isToolError ? 'bg-red-50/30 dark:bg-red-950/5' : ''} rounded-lg overflow-hidden max-w-full`}>
-            {/* Header - clickable to expand/collapse */}
             <button 
-              onClick={toggleExpansion}
+              onClick={() => setToolResultExpanded(!toolResultExpanded)}
               className="w-full flex items-center text-left transition-colors cursor-pointer"
             >
               <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -226,22 +172,26 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
                 }`}>
                   {isToolError ? 'Tool Error' : `${toolResult?.name ? getToolDisplayName(toolResult.name) : 'Tool'}`}
                 </span>
-                {queryPreview && !toolResultExpanded && (
+                {!toolResultExpanded && getPreviewText() && (
                   <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
-                    {queryPreview}
+                    {getPreviewText()}
                   </span>
                 )}
               </div>
             </button>
 
-            {/* Expanded Content */}
             {toolResultExpanded && (
               <div className="ml-5">
-                {toolResult?.arguments && renderContent(toolResult.arguments, 'Arguments')}
+                {codeData ? (
+                  <CodeRenderer code={codeData.code} language="python" />
+                ) : (
+                  toolResult?.arguments && renderContent(toolResult.arguments, 'Arguments')
+                )}
                 {(message.error || message.content || toolResult?.data) && (
                   message.error ? (
-                    <ShikiCodeRenderer 
-                      content={message.error.message}
+                    <CodeRenderer 
+                      code={message.error.message}
+                      language="text"
                       name="Error"
                     />
                   ) : (
@@ -252,10 +202,8 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
             )}
           </div>
           
-          {/* Tool Attachments rendered after the Tool Result container */}
           {message.attachments && message.attachments.length > 0 && (
             <div className="mt-2">
-              {/* For tool messages: single if one, otherwise multiple */}
               {message.attachments.length === 1 ? (
                 <SingleAttachmentDisplay attachment={message.attachments[0]} />
               ) : (
