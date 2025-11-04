@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { Plus as PlusIcon, Mic, MicOff, Package, PackageOpen, AlertTriangle, Info, BookText, BookOpenText } from "lucide-react";
+import { Plus as PlusIcon, Mic, MicOff, Package, PackageOpen, AlertTriangle, Info } from "lucide-react";
 import { Button, Dialog, DialogPanel, DialogTitle } from "@headlessui/react";
 import { getConfig } from "../config";
 import { useAutoScroll } from "../hooks/useAutoScroll";
@@ -30,7 +30,7 @@ export function ChatPage() {
   
   const { layoutMode } = useLayout();
   const { isAvailable: voiceAvailable, startVoice, stopVoice } = useVoice();
-  const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
+  const { showArtifactsDrawer, setShowArtifactsDrawer } = useArtifacts();
   const { isAvailable: repositoryAvailable, toggleRepositoryDrawer, showRepositoryDrawer } = useRepositories();
   
   // Only need backgroundImage to check if background should be shown
@@ -91,15 +91,6 @@ export function ChatPage() {
             {showRepositoryDrawer ? <PackageOpen size={20} /> : <Package size={20} />}
           </Button>
         )}
-        {artifactsAvailable && (
-          <Button
-            className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-            onClick={toggleArtifactsDrawer}
-            title={showArtifactsDrawer ? 'Close artifacts' : 'Open artifacts'}
-          >
-            {showArtifactsDrawer ? <BookOpenText size={20} /> : <BookText size={20} />}
-          </Button>
-        )}
         {voiceAvailable && (
           <Button
             className={`p-2 rounded transition-all duration-150 ease-out ${
@@ -126,7 +117,7 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, createChat, isVoiceMode, toggleVoiceMode, voiceAvailable, repositoryAvailable, showRepositoryDrawer, toggleRepositoryDrawer, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer]);
+  }, [setRightActions, createChat, isVoiceMode, toggleVoiceMode, voiceAvailable, repositoryAvailable, showRepositoryDrawer, toggleRepositoryDrawer]);
 
   // Handle repository drawer animation
   useEffect(() => {
@@ -355,12 +346,12 @@ export function ChatPage() {
       )}
 
       {/* Backdrop overlay for artifacts drawer on mobile */}
-      {artifactsAvailable && shouldRenderArtifactsDrawer && (
+      {shouldRenderArtifactsDrawer && (
         <div
           className={`fixed inset-0 bg-black/20 z-30 transition-opacity duration-300 md:hidden ${
             isArtifactsDrawerAnimating ? 'opacity-100' : 'opacity-0'
           }`}
-          onClick={() => toggleArtifactsDrawer()}
+          onClick={() => setShowArtifactsDrawer(false)}
         />
       )}
 
@@ -379,7 +370,7 @@ export function ChatPage() {
       )}
 
       {/* Artifacts drawer - right side - takes priority over repository drawer */}
-      {artifactsAvailable && shouldRenderArtifactsDrawer && (
+      {shouldRenderArtifactsDrawer && (
         <div className={`w-full bg-neutral-50/60 dark:bg-neutral-950/70 backdrop-blur-sm shadow-2xl border-l border-neutral-200 dark:border-neutral-900 top-18 bottom-4 z-40 rounded-xl transition-all duration-300 ease-out transform ${
           isArtifactsDrawerAnimating 
             ? 'translate-x-0 opacity-100 scale-100' 

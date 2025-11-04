@@ -6,7 +6,6 @@ import type { Tool } from '../types/chat';
 export interface ArtifactsHook extends ArtifactsContextType {
   artifactsTools: () => Tool[];
   artifactsInstructions: () => string;
-  isEnabled: boolean;
 }
 
 export function useArtifacts(): ArtifactsHook {
@@ -369,13 +368,10 @@ You have access to a virtual file system through the artifacts tools. Use these 
 The user can view and interact with these files through the artifacts drawer interface.
 `.trim();
   }, []);
-
-  const isEnabled = context.isAvailable && (context.showArtifactsDrawer || fs.listFiles().length > 0);
   
   return {
     ...context,
     artifactsTools,
     artifactsInstructions,
-    isEnabled,
   };
 }

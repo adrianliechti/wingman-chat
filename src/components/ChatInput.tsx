@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
-import { Send, Paperclip, ScreenShare, Image, X, Sparkles, Loader2, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle, Rocket } from "lucide-react";
+import { Send, Paperclip, ScreenShare, Image, X, Sparkles, Loader2, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle, Rocket, Table } from "lucide-react";
 
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSuggestions } from "./ChatInputSuggestions";
@@ -28,6 +28,7 @@ import { useSettings } from "../hooks/useSettings";
 import { useScreenCapture } from "../hooks/useScreenCapture";
 import { useSearch } from "../hooks/useSearch";
 import { useImageGeneration } from "../hooks/useImageGeneration";
+import { useArtifacts } from "../hooks/useArtifacts";
 
 export function ChatInput() {
   const config = getConfig();
@@ -39,6 +40,7 @@ export function ChatInput() {
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
   const { isAvailable: isSearchAvailable, isEnabled: isSearchEnabled, setEnabled: setSearchEnabled } = useSearch();
   const { isAvailable: isImageGenerationAvailable, isEnabled: isImageGenerationEnabled, setEnabled: setImageGenerationEnabled } = useImageGeneration();
+  const { isAvailable: isArtifactsAvailable, isEnabled: isArtifactsEnabled, setEnabled: setArtifactsEnabled, fs, setShowArtifactsDrawer, showArtifactsDrawer } = useArtifacts();
   
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
@@ -575,6 +577,35 @@ export function ChatInput() {
                 {isImageGenerationEnabled && (
                   <span className="hidden sm:inline">
                     Images
+                  </span>
+                )}
+              </Button>
+            )}
+
+            {isArtifactsAvailable && (
+              <Button
+                type="button"
+                className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isArtifactsEnabled
+                  ? 'text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200 bg-green-100/80 dark:bg-green-900/40 border border-green-200 dark:border-green-800 rounded-lg'
+                  : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                  }`}
+                onClick={() => {
+                  // If enabled and files exist, toggle the drawer
+                  if (isArtifactsEnabled && fs && fs.listFiles().length > 0) {
+                    setShowArtifactsDrawer(!showArtifactsDrawer);
+                  } else {
+                    // Otherwise toggle enabled state
+                    setArtifactsEnabled(!isArtifactsEnabled);
+                  }
+                }}
+                title={isArtifactsEnabled && fs && fs.listFiles().length > 0 
+                  ? `${showArtifactsDrawer ? 'Close' : 'Open'} artifacts (${fs.listFiles().length} file${fs.listFiles().length !== 1 ? 's' : ''})`
+                  : isArtifactsEnabled ? 'Disable artifacts' : 'Enable artifacts'}
+              >
+                <Table size={14} />
+                {isArtifactsEnabled && (
+                  <span className="hidden sm:inline">
+                    Artifacts
                   </span>
                 )}
               </Button>
