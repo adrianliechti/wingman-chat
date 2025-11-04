@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
-import { Send, Paperclip, ScreenShare, Image, X, Sparkles, Loader2, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle, Rocket, Table } from "lucide-react";
+import { Send, Paperclip, ScreenShare, Image, X, Sparkles, Loader2, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle, Rocket, Table, Sliders } from "lucide-react";
 
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSuggestions } from "./ChatInputSuggestions";
@@ -40,7 +40,7 @@ export function ChatInput() {
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
   const { isAvailable: isSearchAvailable, isEnabled: isSearchEnabled, setEnabled: setSearchEnabled } = useSearch();
   const { isAvailable: isImageGenerationAvailable, isEnabled: isImageGenerationEnabled, setEnabled: setImageGenerationEnabled } = useImageGeneration();
-  const { isAvailable: isArtifactsAvailable, isEnabled: isArtifactsEnabled, setEnabled: setArtifactsEnabled, fs, setShowArtifactsDrawer, showArtifactsDrawer } = useArtifacts();
+  const { isAvailable: isArtifactsAvailable, isEnabled: isArtifactsEnabled, setEnabled: setArtifactsEnabled, fs } = useArtifacts();
   
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
@@ -544,71 +544,100 @@ export function ChatInput() {
           </div>
 
           <div className="flex items-center gap-1">
-            {isSearchAvailable && (
-              <Button
-                type="button"
-                className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isSearchEnabled
-                  ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg'
-                  : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+            {/* Features Menu */}
+            {(isSearchAvailable || isImageGenerationAvailable || isArtifactsAvailable) && (
+              <Menu>
+                <MenuButton 
+                  className={`p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 ${
+                    isSearchEnabled || isImageGenerationEnabled || isArtifactsEnabled
+                      ? 'bg-neutral-100/80 dark:bg-white/10 rounded-lg'
+                      : ''
                   }`}
-                onClick={() => setSearchEnabled(!isSearchEnabled)}
-                title={isSearchEnabled ? 'Disable internet access' : 'Enable internet access'}
-              >
-                <Globe size={14} />
-                {isSearchEnabled && (
-                  <span className="hidden sm:inline">
-                    Internet
-                  </span>
-                )}
-              </Button>
-            )}
-
-            {isImageGenerationAvailable && (
-              <Button
-                type="button"
-                className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isImageGenerationEnabled
-                  ? 'text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-200 bg-purple-100/80 dark:bg-purple-900/40 border border-purple-200 dark:border-purple-800 rounded-lg'
-                  : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-                  }`}
-                onClick={() => setImageGenerationEnabled(!isImageGenerationEnabled)}
-                title={isImageGenerationEnabled ? 'Disable image generation' : 'Enable image generation'}
-              >
-                <Image size={14} />
-                {isImageGenerationEnabled && (
-                  <span className="hidden sm:inline">
-                    Images
-                  </span>
-                )}
-              </Button>
-            )}
-
-            {isArtifactsAvailable && (
-              <Button
-                type="button"
-                className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isArtifactsEnabled
-                  ? 'text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200 bg-green-100/80 dark:bg-green-900/40 border border-green-200 dark:border-green-800 rounded-lg'
-                  : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-                  }`}
-                onClick={() => {
-                  // If enabled and files exist, toggle the drawer
-                  if (isArtifactsEnabled && fs && fs.listFiles().length > 0) {
-                    setShowArtifactsDrawer(!showArtifactsDrawer);
-                  } else {
-                    // Otherwise toggle enabled state
-                    setArtifactsEnabled(!isArtifactsEnabled);
-                  }
-                }}
-                title={isArtifactsEnabled && fs && fs.listFiles().length > 0 
-                  ? `${showArtifactsDrawer ? 'Close' : 'Open'} artifacts (${fs.listFiles().length} file${fs.listFiles().length !== 1 ? 's' : ''})`
-                  : isArtifactsEnabled ? 'Disable artifacts' : 'Enable artifacts'}
-              >
-                <Table size={14} />
-                {isArtifactsEnabled && (
-                  <span className="hidden sm:inline">
-                    Artifacts
-                  </span>
-                )}
-              </Button>
+                  title="Features"
+                >
+                  <Sliders size={16} />
+                </MenuButton>
+                <MenuItems
+                  modal={false}
+                  transition
+                  anchor="bottom end"
+                  className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10"
+                >
+                  {isSearchAvailable && (
+                    <MenuItem>
+                      <Button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setSearchEnabled(!isSearchEnabled);
+                        }}
+                        className="group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Globe size={16} />
+                          <div className="flex flex-col items-start">
+                            <span className="font-medium text-sm">Internet</span>
+                            <span className="text-xs text-neutral-600 dark:text-neutral-400">Search the web</span>
+                          </div>
+                        </div>
+                        {isSearchEnabled && (
+                          <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
+                        )}
+                      </Button>
+                    </MenuItem>
+                  )}
+                  {isImageGenerationAvailable && (
+                    <MenuItem>
+                      <Button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setImageGenerationEnabled(!isImageGenerationEnabled);
+                        }}
+                        className="group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Image size={16} />
+                          <div className="flex flex-col items-start">
+                            <span className="font-medium text-sm">Images</span>
+                            <span className="text-xs text-neutral-600 dark:text-neutral-400">Generate images</span>
+                          </div>
+                        </div>
+                        {isImageGenerationEnabled && (
+                          <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
+                        )}
+                      </Button>
+                    </MenuItem>
+                  )}
+                  {isArtifactsAvailable && (
+                    <MenuItem>
+                      <Button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setArtifactsEnabled(!isArtifactsEnabled);
+                        }}
+                        className="group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Table size={16} />
+                          <div className="flex flex-col items-start">
+                            <span className="font-medium text-sm">Artifacts</span>
+                            <span className="text-xs text-neutral-600 dark:text-neutral-400">
+                              {isArtifactsEnabled && fs && fs.listFiles().length > 0 
+                                ? `${fs.listFiles().length} file${fs.listFiles().length !== 1 ? 's' : ''}`
+                                : 'Create files'}
+                            </span>
+                          </div>
+                        </div>
+                        {isArtifactsEnabled && (
+                          <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
+                        )}
+                      </Button>
+                    </MenuItem>
+                  )}
+                </MenuItems>
+              </Menu>
             )}
 
             {isScreenCaptureAvailable && (

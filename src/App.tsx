@@ -218,7 +218,7 @@ function AppContent() {
               
               {/* Modern pill navigation - positioned left on mobile, center on sm+ */}
               {showNavigation && (
-                <div className="flex items-center sm:hidden">
+                <div className="flex items-center sm:hidden -ml-2">
                   <div 
                     ref={mobileRef}
                     className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
