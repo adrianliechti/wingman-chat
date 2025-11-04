@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { Plus as PlusIcon, Mic, MicOff, Package, PackageOpen, AlertTriangle, Info, BookText, BookOpenText } from "lucide-react";
+import { Plus as PlusIcon, Mic, MicOff, Package, PackageOpen, AlertTriangle, Info, Book, BookOpen } from "lucide-react";
 import { Button, Dialog, DialogPanel, DialogTitle } from "@headlessui/react";
 import { getConfig } from "../config";
 import { useAutoScroll } from "../hooks/useAutoScroll";
@@ -30,7 +30,7 @@ export function ChatPage() {
   
   const { layoutMode } = useLayout();
   const { isAvailable: voiceAvailable, startVoice, stopVoice } = useVoice();
-  const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
+  const { isAvailable: artifactsAvailable, isEnabled: artifactsEnabled, showArtifactsDrawer, toggleArtifactsDrawer, fs } = useArtifacts();
   const { isAvailable: repositoryAvailable, toggleRepositoryDrawer, showRepositoryDrawer } = useRepositories();
   
   // Only need backgroundImage to check if background should be shown
@@ -82,6 +82,21 @@ export function ChatPage() {
   useEffect(() => {
     setRightActions(
       <div className="flex items-center gap-2">
+        {artifactsAvailable && artifactsEnabled && (
+          <Button
+            className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+            onClick={toggleArtifactsDrawer}
+            title={
+              fs && fs.listFiles().length > 0
+                ? showArtifactsDrawer 
+                  ? `Close artifacts (${fs.listFiles().length} file${fs.listFiles().length !== 1 ? 's' : ''})` 
+                  : `Open artifacts (${fs.listFiles().length} file${fs.listFiles().length !== 1 ? 's' : ''})`
+                : showArtifactsDrawer ? 'Close artifacts' : 'Open artifacts'
+            }
+          >
+            {showArtifactsDrawer ? <BookOpen size={20} /> : <Book size={20} />}
+          </Button>
+        )}
         {repositoryAvailable && (
           <Button
             className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
@@ -89,15 +104,6 @@ export function ChatPage() {
             title={showRepositoryDrawer ? 'Close repositories' : 'Open repositories'}
           >
             {showRepositoryDrawer ? <PackageOpen size={20} /> : <Package size={20} />}
-          </Button>
-        )}
-        {artifactsAvailable && (
-          <Button
-            className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-            onClick={toggleArtifactsDrawer}
-            title={showArtifactsDrawer ? 'Close artifacts' : 'Open artifacts'}
-          >
-            {showArtifactsDrawer ? <BookOpenText size={20} /> : <BookText size={20} />}
           </Button>
         )}
         {voiceAvailable && (
@@ -126,7 +132,7 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, createChat, isVoiceMode, toggleVoiceMode, voiceAvailable, repositoryAvailable, showRepositoryDrawer, toggleRepositoryDrawer, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer]);
+  }, [setRightActions, createChat, isVoiceMode, toggleVoiceMode, voiceAvailable, artifactsAvailable, artifactsEnabled, fs, showArtifactsDrawer, toggleArtifactsDrawer, repositoryAvailable, showRepositoryDrawer, toggleRepositoryDrawer]);
 
   // Handle repository drawer animation
   useEffect(() => {
@@ -294,7 +300,7 @@ export function ChatPage() {
                       return (
                         <div className="mb-6 mx-auto max-w-2xl">
                           <div className="flex items-start justify-center gap-2 px-4 py-3">
-                            <Info size={16} className="text-neutral-500 dark:text-neutral-400 flex-shrink-0 mt-0.5" />
+                            <Info size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0 mt-0.5" />
                             <p className="text-xs text-neutral-600 dark:text-neutral-400 text-left">
                               {disclaimer}
                             </p>
@@ -355,7 +361,7 @@ export function ChatPage() {
       )}
 
       {/* Backdrop overlay for artifacts drawer on mobile */}
-      {artifactsAvailable && shouldRenderArtifactsDrawer && (
+      {shouldRenderArtifactsDrawer && (
         <div
           className={`fixed inset-0 bg-black/20 z-30 transition-opacity duration-300 md:hidden ${
             isArtifactsDrawerAnimating ? 'opacity-100' : 'opacity-0'
@@ -379,7 +385,7 @@ export function ChatPage() {
       )}
 
       {/* Artifacts drawer - right side - takes priority over repository drawer */}
-      {artifactsAvailable && shouldRenderArtifactsDrawer && (
+      {shouldRenderArtifactsDrawer && (
         <div className={`w-full bg-neutral-50/60 dark:bg-neutral-950/70 backdrop-blur-sm shadow-2xl border-l border-neutral-200 dark:border-neutral-900 top-18 bottom-4 z-40 rounded-xl transition-all duration-300 ease-out transform ${
           isArtifactsDrawerAnimating 
             ? 'translate-x-0 opacity-100 scale-100' 
@@ -398,7 +404,7 @@ export function ChatPage() {
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <DialogPanel className="w-full max-w-md rounded-xl bg-white dark:bg-neutral-900 p-6 shadow-2xl border border-neutral-200 dark:border-neutral-800">
             <div className="flex items-center gap-3 mb-4">
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 <AlertTriangle className="h-6 w-6 text-amber-500" />
               </div>
               <DialogTitle className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">

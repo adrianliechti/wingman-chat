@@ -14,6 +14,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [showArtifactsDrawer, setShowArtifactsDrawer] = useState(false);
   const [isAvailable, setIsAvailable] = useState(false);
+  const [isEnabled, setIsEnabled] = useState(false);
 
   // Create singleton FileSystemManager instance
   const [fs] = useState(() => new FileSystemManager(
@@ -57,6 +58,11 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     setActiveFile(currentActive => 
       currentActive && currentFilePaths.includes(currentActive) ? currentActive : null
     );
+    
+    // Auto-enable artifacts if the chat has files
+    if (currentFilePaths.length > 0) {
+      setIsEnabled(true);
+    }
   }, [fs]);
 
   // Check artifacts availability from config
@@ -84,6 +90,8 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
       
       setActiveFile(path);
       setShowArtifactsDrawer(true);
+      // Auto-enable artifacts when a file is created
+      setIsEnabled(true);
     });
 
     const unsubscribeDeleted = fs.subscribe('fileDeleted', (path: string) => {
@@ -145,6 +153,14 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
 
   const value = {
     isAvailable,
+    isEnabled,
+    setEnabled: (enabled: boolean) => {
+      // Prevent disabling if files exist
+      if (!enabled && fs.listFiles().length > 0) {
+        return;
+      }
+      setIsEnabled(enabled);
+    },
     fs,
     openFiles,
     activeFile,

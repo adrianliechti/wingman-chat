@@ -21,6 +21,7 @@ export function ArtifactsDrawer() {
     activeFile, 
     openFile, 
     closeFile,
+    setShowArtifactsDrawer,
   } = useArtifacts();
 
   const [showFileBrowser, setShowFileBrowser] = useState(false);
@@ -265,6 +266,15 @@ export function ArtifactsDrawer() {
             })}
           </div>
         </div>
+
+        {/* Close Drawer Button */}
+        <Button
+          onClick={() => setShowArtifactsDrawer(false)}
+          className="flex items-center justify-center px-2.5 h-full text-xs shrink-0 border-l border-neutral-200 dark:border-neutral-600 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/30 transition-colors"
+          title="Close artifacts"
+        >
+          <X size={14} />
+        </Button>
       </div>
 
       {/* Content Area with Sidebar */}

@@ -4,6 +4,8 @@ import type { FileSystem } from '../types/file';
 
 export interface ArtifactsContextType {
   isAvailable: boolean;
+  isEnabled: boolean;
+  setEnabled: (enabled: boolean) => void;
   fs: FileSystemManager;
   openFiles: string[];
   activeFile: string | null;

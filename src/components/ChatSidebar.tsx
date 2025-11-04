@@ -20,7 +20,10 @@ export function ChatSidebar() {
       }, 150);
       return () => clearTimeout(timer);
     } else {
-      setShouldAnimateItems(false);
+      const timer = setTimeout(() => {
+        setShouldAnimateItems(false);
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [showSidebar]);
   
@@ -57,7 +60,7 @@ export function ChatSidebar() {
     >
       {/* Static header with title and hamburger menu */}
       <div 
-        className="flex items-center justify-between px-2 py-2.5 flex-shrink-0 min-h-14"
+        className="flex items-center justify-between px-2 py-2.5 shrink-0 min-h-14"
       >
         <h2 className="text-xl font-semibold px-2 whitespace-nowrap overflow-hidden text-ellipsis text-neutral-800 dark:text-neutral-200">{config.title}</h2>
         <Button
@@ -83,7 +86,7 @@ export function ChatSidebar() {
               }
             }}
             style={{ '--item-index': index } as React.CSSProperties}
-            className={`flex items-center justify-between sidebar-item-base cursor-pointer relative flex-shrink-0 group ${
+            className={`flex items-center justify-between sidebar-item-base cursor-pointer relative shrink-0 group ${
               chatItem.id === chat?.id ? "sidebar-item-selected" : ""
             } ${shouldAnimateItems ? "sidebar-item-animate" : "sidebar-item-hidden"}`}
           >
@@ -101,14 +104,15 @@ export function ChatSidebar() {
                 <MoreVertical size={16} />
               </MenuButton>
               <MenuItems
+                modal={false}
                 transition
                 anchor="bottom end"
-                className="w-32 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-[closed]:scale-95 data-[closed]:opacity-0 z-50"
+                className="w-32 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
               >
                 <MenuItem>
                   <Button
                     onClick={() => forkChat(chatItem)}
-                    className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-[focus]:bg-neutral-500/10 dark:data-[focus]:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
+                    className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
                   >
                     <GitBranch size={14} />
                     Fork
@@ -117,7 +121,7 @@ export function ChatSidebar() {
                 <MenuItem>
                   <Button
                     onClick={() => deleteChat(chatItem.id)}
-                    className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-[focus]:bg-red-500/10 dark:data-[focus]:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 "
+                    className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 "
                   >
                     <Trash size={14} />
                     Delete
