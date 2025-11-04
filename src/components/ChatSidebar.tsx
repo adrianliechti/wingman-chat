@@ -104,6 +104,7 @@ export function ChatSidebar() {
                 <MoreVertical size={16} />
               </MenuButton>
               <MenuItems
+                modal={false}
                 transition
                 anchor="bottom end"
                 className="w-32 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"

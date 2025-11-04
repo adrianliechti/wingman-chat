@@ -487,6 +487,7 @@ export function ChatInput() {
                   </span>
                 </MenuButton>
                 <MenuItems
+                  modal={false}
                   transition
                   anchor="bottom start"
                   className="sidebar-scroll max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10"
@@ -496,7 +497,7 @@ export function ChatInput() {
                       <Button
                         onClick={() => onModelChange(modelItem)}
                         title={modelItem.description}
-                        className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-white/30 dark:data-focus:bg-white/8 hover:bg-white/25 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all duration-200 border-b border-white/20 dark:border-white/10 last:border-b-0"
+                        className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                       >
                         <div className="flex items-center gap-2.5 w-full">
                           <div className="shrink-0 w-3.5 flex justify-center">

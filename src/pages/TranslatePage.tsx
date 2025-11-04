@@ -349,6 +349,7 @@ export function TranslatePage() {
                         </span>
                       </MenuButton>
                       <MenuItems
+                        modal={false}
                         transition
                         anchor="bottom start"
                         className="max-h-[50vh]! mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
@@ -376,6 +377,7 @@ export function TranslatePage() {
                           </span>
                         </MenuButton>
                         <MenuItems
+                          modal={false}
                           transition
                           anchor="bottom start"
                           className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
@@ -404,6 +406,7 @@ export function TranslatePage() {
                           </span>
                         </MenuButton>
                         <MenuItems
+                          modal={false}
                           transition
                           anchor="bottom start"
                           className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"

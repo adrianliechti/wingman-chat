@@ -39,15 +39,15 @@ function Select<T extends string | null>({ label, value, onChange, options, help
           </span>
         </Listbox.Button>
         <Transition as={Fragment} leave="transition ease-in duration-100" leaveFrom="opacity-100" leaveTo="opacity-0">
-          <Listbox.Options anchor="bottom" className="mt-1 w-[var(--button-width)] max-h-60 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100/80 dark:bg-neutral-800/80 p-1 backdrop-blur-xl sm:text-sm z-10 transition duration-100 ease-in data-[leave]:data-[closed]:opacity-0">
+          <Listbox.Options modal={false} anchor="bottom" className="mt-1 w-(--button-width) max-h-60 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100/80 dark:bg-neutral-800/80 p-1 backdrop-blur-xl sm:text-sm z-10 transition duration-100 ease-in data-leave:data-closed:opacity-0">
             {options.map((option) => (
               <Listbox.Option
                 key={String(option.value)}
-                className="group relative cursor-pointer select-none py-2 pl-10 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 data-[focus]:bg-neutral-200 dark:data-[focus]:bg-neutral-700/80"
+                className="group relative cursor-pointer select-none py-2 pl-10 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 data-focus:bg-neutral-200 dark:data-focus:bg-neutral-700/80"
                 value={option.value}
               >
-                <span className="block truncate font-normal group-data-[selected]:font-semibold">{option.label}</span>
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-blue-600 dark:text-blue-400 group-data-[selected]:visible invisible">
+                <span className="block truncate font-normal group-data-selected:font-semibold">{option.label}</span>
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-blue-600 dark:text-blue-400 group-data-selected:visible invisible">
                   <Check className="h-5 w-5" aria-hidden="true" />
                 </span>
               </Listbox.Option>
@@ -533,8 +533,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         <div className="fixed inset-0 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4 text-center">
             <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
-              <Dialog.Panel className="w-full max-w-2xl h-[32rem] sm:h-[36rem] transform overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 text-left align-middle shadow-xl transition-all flex flex-col">
-                <div className="flex items-center justify-between p-4 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0">
+              <Dialog.Panel className="w-full max-w-2xl h-128 sm:h-144 transform overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 text-left align-middle shadow-xl transition-all flex flex-col">
+                <div className="flex items-center justify-between p-4 border-b border-neutral-200 dark:border-neutral-700 shrink-0">
                   <Dialog.Title as="h3" className="hidden sm:block text-lg font-medium leading-6 text-neutral-900 dark:text-neutral-100">Settings</Dialog.Title>
                   <div className="sm:hidden flex-1 pr-4">
                     <Select 
@@ -549,7 +549,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </div>
 
                 <div className="flex flex-1 min-h-0">
-                  <nav className="hidden sm:block w-48 border-r border-neutral-200 dark:border-neutral-800 p-1 flex-shrink-0">
+                  <nav className="hidden sm:block w-48 border-r border-neutral-200 dark:border-neutral-800 p-1 shrink-0">
                     <div className="space-y-1">
                       {sections.map((section) => (
                         <Button

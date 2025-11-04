@@ -17,6 +17,7 @@ export function BridgeIndicator() {
       </MenuButton>
       
       <MenuItems
+        modal={false}
         transition
         anchor="bottom start"
         className="w-64 mt-2 rounded-lg border bg-white/90 dark:bg-black/90 backdrop-blur-xl border-white/30 dark:border-white/20 overflow-hidden shadow-lg z-50 transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0"

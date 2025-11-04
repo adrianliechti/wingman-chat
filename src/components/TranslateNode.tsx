@@ -76,6 +76,7 @@ export const TranslateNode = memo(({ id, data, selected }: NodeProps<TranslateNo
         </span>
       </MenuButton>
       <MenuItems
+        modal={false}
         transition
         anchor="bottom end"
         className="max-h-[50vh]! mt-1 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50 min-w-[140px]"
