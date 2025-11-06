@@ -29,7 +29,7 @@ interface config {
   
   bridge?: bridgeConfig;
   internet?: internetConfig;
-  repl?: replConfig;
+  interpreter?: interpreterConfig;
   
   artifacts?: artifactsConfig;
   repository?: repositoryConfig;  
@@ -80,7 +80,7 @@ interface internetConfig {
   enabled: boolean;
 }
 
-interface replConfig {
+interface interpreterConfig {
   enabled: boolean;
 }
 
@@ -127,7 +127,7 @@ interface Config {
   bridge: Bridge;
 
   internet: internetConfig;
-  repl: replConfig;
+  interpreter: interpreterConfig;
   
   artifacts: artifactsConfig;
   repository: repositoryConfig;  
@@ -190,7 +190,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
         enabled: false,
       },
 
-      repl: cfg.repl ?? {
+      interpreter: cfg.interpreter ?? {
         enabled: false,
       },
 

@@ -23,7 +23,7 @@ import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
 import { SearchProvider } from "./contexts/SearchProvider";
 import { ImageGenerationProvider } from "./contexts/ImageGenerationProvider";
-import { ReplProvider } from "./contexts/ReplProvider";
+import { InterpreterProvider } from "./contexts/InterpreterProvider";
 import { BridgeIndicator } from "./components/BridgeIndicator";
 
 type Page = "chat" | "flow" | "translate";
@@ -386,7 +386,7 @@ const providers = [
   ScreenCaptureProvider,
   SearchProvider,
   ImageGenerationProvider,
-  ReplProvider,
+  InterpreterProvider,
   ChatProvider,
   VoiceProvider,
   TranslateProvider,

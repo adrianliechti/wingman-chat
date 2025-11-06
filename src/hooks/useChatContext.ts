@@ -7,7 +7,7 @@ import { useRepositories } from "./useRepositories";
 import { useBridge } from "./useBridge";
 import { useSearch } from "./useSearch";
 import { useImageGeneration } from "./useImageGeneration";
-import { useRepl } from "./useRepl";
+import { useInterpreter } from "./useInterpreter";
 import { MCPClient } from "../lib/mcp";
 
 export interface ChatContext {
@@ -33,7 +33,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
   const { bridgeTools, bridgeInstructions } = useBridge();
   const { searchTools, searchInstructions } = useSearch();
   const { imageGenerationTools, imageGenerationInstructions } = useImageGeneration();
-  const { replTools, replInstructions } = useRepl();
+  const { interpreterTools, interpreterInstructions } = useInterpreter();
   
   // MCP Integration - simplified client management
   const [mcpConnected, setMcpConnected] = useState<boolean | null>(null);
@@ -112,10 +112,10 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     const imageGenTools = imageGenerationTools();
     const imageGenInstructions = imageGenerationInstructions();
 
-    const replTools_ = replTools();
-    const replInstructions_ = replInstructions();
+    const interpreterTools_ = interpreterTools();
+    const interpreterInstructions_ = interpreterInstructions();
 
-    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools, ...replTools_, ...mcpTools];
+    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools, ...interpreterTools_, ...mcpTools];
 
     const instructionsList: string[] = [];
 
@@ -143,8 +143,8 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
       instructionsList.push(imageGenInstructions);
     }
 
-    if (replTools_.length > 0 && replInstructions_?.trim()) {
-      instructionsList.push(replInstructions_);
+    if (interpreterTools_.length > 0 && interpreterInstructions_?.trim()) {
+      instructionsList.push(interpreterInstructions_);
     }
 
     // Add mode-specific instructions
@@ -173,8 +173,8 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     searchInstructions,
     imageGenerationTools,
     imageGenerationInstructions,
-    replTools,
-    replInstructions,
+    interpreterTools,
+    interpreterInstructions,
     mcpConnected,
     mcpTools
   ]);

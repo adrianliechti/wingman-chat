@@ -1,31 +1,31 @@
 import { useState, useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
-import { ReplContext } from "./ReplContext";
-import type { ReplContextType } from "./ReplContext";
+import { InterpreterContext } from "./InterpreterContext";
+import type { InterpreterContextType } from "./InterpreterContext";
 import type { Tool } from "../types/chat";
 import { getConfig } from "../config";
-import { executeCode } from "../lib/repl";
+import { executeCode } from "../lib/interpreter";
 
-interface ReplProviderProps {
+interface InterpreterProviderProps {
   children: ReactNode;
 }
 
-export function ReplProvider({ children }: ReplProviderProps) {
+export function InterpreterProvider({ children }: InterpreterProviderProps) {
   const [isEnabled, setEnabled] = useState(false);
   const [isAvailable, setIsAvailable] = useState(false);
 
-  // Check REPL availability from config
+  // Check interpreter availability from config
   useEffect(() => {
     try {
       const config = getConfig();
-      setIsAvailable(config.repl.enabled);
+      setIsAvailable(config.interpreter.enabled);
     } catch (error) {
-      console.warn('Failed to get REPL config:', error);
+      console.warn('Failed to get interpreter config:', error);
       setIsAvailable(false);
     }
   }, []);
 
-  const replTools = useCallback((): Tool[] => {
+  const interpreterTools = useCallback((): Tool[] => {
     if (!isEnabled) {
       return [];
     }
@@ -86,34 +86,34 @@ export function ReplProvider({ children }: ReplProviderProps) {
     ];
   }, [isEnabled]);
 
-  const replInstructions = useCallback((): string => {
+  const interpreterInstructions = useCallback((): string => {
     if (!isEnabled) {
       return "";
     }
 
     return `
-      You have access to a Python REPL.
+      You have access to a Python interpreter.
       
       - Use the execute_python_code tool when you need to perform calculations, data analysis, create visualizations, or run Python scripts.
       - You can specify required packages in the packages parameter (e.g., ['numpy', 'pandas', 'matplotlib']).
       - The code will be executed in a sandboxed environment and you'll receive the output.
       - Use this for complex mathematical operations, data transformations, plotting graphs, or any computational tasks.
       
-      Always use the Python REPL when the user asks for calculations, data analysis, or visualization tasks.
+      Always use the Python interpreter when the user asks for calculations, data analysis, or visualization tasks.
     `.trim();
   }, [isEnabled]);
 
-  const contextValue: ReplContextType = {
+  const contextValue: InterpreterContextType = {
     isEnabled,
     setEnabled,
     isAvailable,
-    replTools,
-    replInstructions,
+    interpreterTools,
+    interpreterInstructions,
   };
 
   return (
-    <ReplContext.Provider value={contextValue}>
+    <InterpreterContext.Provider value={contextValue}>
       {children}
-    </ReplContext.Provider>
+    </InterpreterContext.Provider>
   );
 }

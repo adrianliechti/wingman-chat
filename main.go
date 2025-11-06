@@ -39,7 +39,7 @@ func main() {
 
 	internet := os.Getenv("INTERNET_ENABLED") == "true"
 
-	repl := os.Getenv("REPL_ENABLED") == "true"
+	interpreter := os.Getenv("INTERPRETER_ENABLED") == "true"
 
 	artifacts := os.Getenv("ARTIFACTS_ENABLED") == "true"
 
@@ -92,7 +92,7 @@ func main() {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 		}
 
-		type replType struct {
+		type interpreterType struct {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 		}
 
@@ -139,9 +139,9 @@ func main() {
 			Voice  *voiceType  `json:"voice,omitempty" yaml:"voice,omitempty"`
 			Vision *visionType `json:"vision,omitempty" yaml:"vision,omitempty"`
 
-			Image    *imageType    `json:"image,omitempty" yaml:"image,omitempty"`
-			Internet *internetType `json:"internet,omitempty" yaml:"internet,omitempty"`
-			REPL     *replType     `json:"repl,omitempty" yaml:"repl,omitempty"`
+			Image       *imageType       `json:"image,omitempty" yaml:"image,omitempty"`
+			Internet    *internetType    `json:"internet,omitempty" yaml:"internet,omitempty"`
+			Interpreter *interpreterType `json:"interpreter,omitempty" yaml:"repl,omitempty"`
 
 			Bridge *bridgeType `json:"bridge,omitempty" yaml:"bridge,omitempty"`
 
@@ -209,8 +209,8 @@ func main() {
 			}
 		}
 
-		if repl {
-			config.REPL = &replType{
+		if interpreter {
+			config.Interpreter = &interpreterType{
 				Enabled: true,
 			}
 		}

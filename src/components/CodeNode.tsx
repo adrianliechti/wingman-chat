@@ -6,7 +6,7 @@ import type { BaseNodeData } from '../types/workflow';
 import type { Model, Tool } from '../types/chat';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
-import { executeCode } from '../lib/repl';
+import { executeCode } from '../lib/interpreter';
 import { getConfig } from '../config';
 import { Role } from '../types/chat';
 import { WorkflowNode } from './WorkflowNode';

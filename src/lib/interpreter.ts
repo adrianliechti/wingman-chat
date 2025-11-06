@@ -1,28 +1,20 @@
-/**
- * Python REPL using Pyodide
- * Executes Python code in the browser with optional packages
- */
-
 import { loadPyodide as loadPyodideRuntime, version as pyodideVersion, type PyodideInterface } from 'pyodide';
 
-export interface ReplExecutionRequest {
+export interface CodeExecutionRequest {
   code: string;
   packages?: string[];
 }
 
-export interface ReplExecutionResult {
+export interface CodeExecutionResult {
   success: boolean;
   output: string;
   error?: string;
 }
 
-// Pyodide singleton instance
 let pyodideInstance: PyodideInterface | null = null;
 let pyodideLoading: Promise<PyodideInterface> | null = null;
+const loadedPackages = new Set<string>();
 
-/**
- * Load Pyodide runtime
- */
 async function loadPyodide(): Promise<PyodideInterface> {
   if (pyodideInstance) {
     return pyodideInstance;
@@ -34,13 +26,15 @@ async function loadPyodide(): Promise<PyodideInterface> {
 
   pyodideLoading = (async () => {
     try {
-      // Initialize Pyodide from CDN (recommended approach)
-      // Version automatically matches the npm package version
+      const indexURL = import.meta.env.DEV 
+        ? `https://cdn.jsdelivr.net/pyodide/v${pyodideVersion}/full/`
+        : '/assets/pyodide/';
+      
       pyodideInstance = await loadPyodideRuntime({
-        indexURL: `https://cdn.jsdelivr.net/pyodide/v${pyodideVersion}/full/`,
+        indexURL,
       });
       
-      console.log(`Pyodide v${pyodideVersion} loaded successfully`);
+      console.log(`Pyodide v${pyodideVersion} loaded successfully from ${import.meta.env.DEV ? 'CDN' : 'local assets'}`);
       return pyodideInstance;
     } catch (error) {
       console.error('Failed to load Pyodide:', error);
@@ -52,26 +46,24 @@ async function loadPyodide(): Promise<PyodideInterface> {
   return pyodideLoading;
 }
 
-/**
- * Execute Python code with optional package dependencies
- * Uses Pyodide to run Python in the browser
- */
-export async function executeCode(request: ReplExecutionRequest): Promise<ReplExecutionResult> {
+export async function executeCode(request: CodeExecutionRequest): Promise<CodeExecutionResult> {
   const { code, packages = [] } = request;
 
   try {
-    // Load Pyodide
     const pyodide = await loadPyodide();
 
-    // Install required packages
     if (packages.length > 0) {
       try {
         await pyodide.loadPackagesFromImports(code);
+        
         for (const pkg of packages) {
-          try {
-            await pyodide.loadPackage(pkg);
-          } catch (pkgError) {
-            console.warn(`Package ${pkg} not available in Pyodide, skipping`);
+          if (!loadedPackages.has(pkg)) {
+            try {
+              await pyodide.loadPackage(pkg);
+              loadedPackages.add(pkg);
+            } catch {
+              console.warn(`Package ${pkg} not available in Pyodide, skipping`);
+            }
           }
         }
       } catch (error) {
@@ -79,7 +71,6 @@ export async function executeCode(request: ReplExecutionRequest): Promise<ReplEx
       }
     }
 
-    // Capture stdout
     let output = '';
     pyodide.setStdout({
       batched: (text: string) => {
@@ -93,10 +84,8 @@ export async function executeCode(request: ReplExecutionRequest): Promise<ReplEx
       }
     });
 
-    // Execute the code
     const result = await pyodide.runPythonAsync(code);
 
-    // If there's a result and no output, show the result
     if (result !== undefined && result !== null && !output.trim()) {
       output = String(result);
     }
@@ -105,13 +94,13 @@ export async function executeCode(request: ReplExecutionRequest): Promise<ReplEx
       success: true,
       output: output.trim() || 'Code executed successfully (no output)',
     };
-  } catch (error: any) {
-    console.error('Python execution error:', error);
+  } catch (error) {
+    console.error('Code execution error:', error);
     
     return {
       success: false,
       output: '',
-      error: error.message || String(error),
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }

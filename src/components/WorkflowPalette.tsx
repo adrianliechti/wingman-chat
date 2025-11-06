@@ -151,7 +151,7 @@ export function WorkflowPalette() {
           icon={<Sparkles size={20} />}
           createNode={createPromptNode}
         />
-        {config.repl?.enabled && (
+        {config.interpreter?.enabled && (
           <WorkflowPaletteItem
             label="Code"
             icon={<Code2 size={20} />}
