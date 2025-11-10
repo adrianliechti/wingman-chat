@@ -80,7 +80,7 @@ export function WorkflowNode({
         minWidth={minWidth} 
         minHeight={minHeight}
         isVisible={selected}
-        lineStyle={{ borderColor: 'transparent' }}
+        lineStyle={{ borderColor: 'transparent', borderWidth: 10 }}
         handleStyle={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'transparent' }}
       />
       
