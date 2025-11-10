@@ -74,7 +74,7 @@ export function WorkflowNode({
     <div
       className={`bg-white/90 dark:bg-black/40 backdrop-blur-lg rounded-2xl shadow-lg border ${
         error ? 'border-red-500/70' : selected ? styles.border : 'border-white/40 dark:border-white/20'
-      } p-4 flex flex-col w-full h-full overflow-hidden`}
+      } p-4 flex flex-col w-full h-full overflow-hidden nowheel`}
     >
       <NodeResizer 
         minWidth={minWidth} 

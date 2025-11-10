@@ -180,7 +180,7 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
 
         {data.outputText && (
           <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex-1 overflow-y-auto px-1 py-2 text-sm rounded-lg bg-gray-100/50 dark:bg-black/10 scrollbar-hide nowheel">
+            <div className="flex-1 overflow-y-auto px-1 py-2 text-sm rounded-lg bg-gray-100/50 dark:bg-black/10 scrollbar-hide">
               <div className="prose prose-sm dark:prose-invert max-w-none">
                 <Markdown>
                   {data.outputText}

@@ -52,7 +52,7 @@ export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) =
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
           placeholder="Enter your text here..."
-          className="w-full h-full px-1 py-2 text-sm border-0 rounded-none bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none transition-all resize-none min-h-[120px] scrollbar-hide nodrag"
+          className="w-full h-full px-1 py-2 text-sm border-0 rounded-none bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none transition-all resize-none min-h-[120px] overflow-y-auto scrollbar-hide nodrag"
         />
       </div>
     </WorkflowNode>
