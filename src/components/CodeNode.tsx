@@ -262,7 +262,7 @@ ${generatedCode}`;
             onMouseDown={(e) => e.stopPropagation()}
             placeholder="Describe what you want the code to do..."
             rows={3}
-            className="w-full px-3 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-green-500/50 focus:ring-1 focus:ring-green-500/30 focus:outline-none transition-all resize-none nodrag"
+            className="w-full px-3 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-green-500/50 focus:ring-1 focus:ring-green-500/30 focus:outline-none transition-all resize-y min-h-[60px] nodrag"
           />
         </div>
 
