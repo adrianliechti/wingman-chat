@@ -137,10 +137,7 @@ export const CodeNode = memo(({ id, data, selected }: NodeProps<CodeNodeType>) =
           // Build execution code with input_data if available
           let executionCode = generatedCode;
           if (contextText) {
-            const escapedContext = contextText
-              .replace(/\\/g, '\\\\')
-              .replace(/"/g, '\\"')
-              .replace(/\n/g, '\\n');
+            const escapedContext = JSON.stringify(contextText).slice(1, -1);
             
             executionCode = `# Input data from connected nodes
 input_data = """${escapedContext}"""

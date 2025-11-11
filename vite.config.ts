@@ -71,7 +71,7 @@ export default defineConfig({
       onwarn(warning, warn) {
         // Suppress Pyodide Node.js module externalization warnings
         if (warning.code === 'MODULE_LEVEL_DIRECTIVE' || 
-            (warning.message && warning.message.includes('externalized for browser compatibility'))) {
+            warning.message?.includes('externalized for browser compatibility')) {
           return;
         }
         warn(warning);
