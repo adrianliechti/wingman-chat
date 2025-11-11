@@ -10,6 +10,15 @@ export type Model = {
     mcpServer?: string;
 }
 
+export type MCP = {
+    id: string;
+
+    name: string;
+    description?: string;
+    
+    url: string;
+};
+
 export type ToolCall = {
     id: string;
     

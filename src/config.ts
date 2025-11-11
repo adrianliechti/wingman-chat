@@ -1,6 +1,6 @@
 import { Bridge } from "./lib/bridge";
 import { Client } from "./lib/client";
-import type { Model } from "./types/chat";
+import type { MCP, Model } from "./types/chat";
 
 interface backgroundConfig {
   url: string;
@@ -15,8 +15,10 @@ interface config {
   disclaimer: string;
 
   models: modelConfig[];
+  mcps: mcpConfig[];
+
   backgrounds?: backgroundPackConfig;
-  
+
   tts?: ttsConfig;
   stt?: sttConfig;
 
@@ -24,15 +26,15 @@ interface config {
 
   voice?: voiceConfig;
   vision?: visionConfig;
-  
+
   image?: imageConfig;
-  
+
   bridge?: bridgeConfig;
   internet?: internetConfig;
   interpreter?: interpreterConfig;
-  
+
   artifacts?: artifactsConfig;
-  repository?: repositoryConfig;  
+  repository?: repositoryConfig;
   translator?: translatorConfig;
 }
 
@@ -47,16 +49,23 @@ interface modelConfig {
   prompts?: string[];
 }
 
+interface mcpConfig {
+  id: string;
+  name: string;
+
+  description: string;
+}
+
 interface ttsConfig {
   enabled: boolean;
 }
 
 interface sttConfig {
-   enabled: boolean;
+  enabled: boolean;
 }
 
 interface workflowConfig {
-   enabled: boolean;
+  enabled: boolean;
 }
 
 interface voiceConfig {
@@ -102,7 +111,7 @@ interface translatorConfig {
 
   model?: string
   files: string[];
-  
+
   languages: string[];
 }
 
@@ -113,25 +122,26 @@ interface Config {
   client: Client;
 
   models: Model[];
+  mcps: MCP[];
 
   tts: boolean;
   stt: boolean;
-  
+
   workflow: boolean;
-  
+
   voice: boolean;
   vision: boolean;
 
   image: imageConfig;
-  
+
   bridge: Bridge;
 
   internet: internetConfig;
   interpreter: interpreterConfig;
-  
+
   artifacts: artifactsConfig;
-  repository: repositoryConfig;  
-  translator: translatorConfig; 
+  repository: repositoryConfig;
+  translator: translatorConfig;
 
   backgrounds: backgroundPackConfig;
 }
@@ -146,7 +156,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       throw new Error(`failed to load config.json: ${resp.statusText}`);
     }
 
-    const cfg : config = await resp.json();
+    const cfg: config = await resp.json();
 
     const bridgeUrl = cfg.bridge?.url ?? ""
 
@@ -154,9 +164,9 @@ export const loadConfig = async (): Promise<Config | undefined> => {
     const bridge = Bridge.create(bridgeUrl);
 
     config = {
-      title : cfg.title,
+      title: cfg.title,
       disclaimer: cfg.disclaimer,
-      
+
       client: client,
 
       models: cfg.models?.map((model) => {
@@ -172,18 +182,29 @@ export const loadConfig = async (): Promise<Config | undefined> => {
         };
       }) ?? [],
 
+      mcps: cfg.mcps?.map((mcp) => {
+        return {
+          id: mcp.id,
+
+          name: mcp.name,
+          description: mcp.description,
+
+          url: new URL(`/api/v1/mcp/${mcp.id}`, window.location.origin).toString(),
+        };
+      }) ?? [],
+
       tts: cfg.tts?.enabled ?? false,
       stt: cfg.stt?.enabled ?? false,
-      
+
       workflow: cfg.workflow?.enabled ?? false,
-      
+
       voice: cfg.voice?.enabled ?? false,
       vision: cfg.vision?.enabled ?? false,
-      
+
       image: cfg.image ?? {
         enabled: false,
       },
-      
+
       bridge: bridge,
 
       internet: cfg.internet ?? {
@@ -201,7 +222,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       artifacts: cfg.artifacts ?? {
         enabled: false
       },
-      
+
       translator: cfg.translator ?? {
         enabled: true,
 
@@ -213,7 +234,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
           // ".pptx",
           // ".xlsx",
         ],
-        
+
         languages: [
           "en",
           "de",

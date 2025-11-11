@@ -30,6 +30,7 @@ import { useSearch } from "../hooks/useSearch";
 import { useImageGeneration } from "../hooks/useImageGeneration";
 import { useArtifacts } from "../hooks/useArtifacts";
 import { useInterpreter } from "../hooks/useInterpreter";
+import { useToolsContext } from "../hooks/useToolsContext";
 
 export function ChatInput() {
   const config = getConfig();
@@ -43,6 +44,7 @@ export function ChatInput() {
   const { isAvailable: isImageGenerationAvailable, isEnabled: isImageGenerationEnabled, setEnabled: setImageGenerationEnabled } = useImageGeneration();
   const { isAvailable: isArtifactsAvailable, isEnabled: isArtifactsEnabled, setEnabled: setArtifactsEnabled } = useArtifacts();
   const { isAvailable: isInterpreterAvailable, isEnabled: isInterpreterEnabled, setEnabled: setInterpreterEnabled } = useInterpreter();
+  const { mcps, isConnected, isConnecting, toggleMCP } = useToolsContext();
   
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
@@ -547,11 +549,11 @@ export function ChatInput() {
 
           <div className="flex items-center gap-1">
             {/* Features Menu */}
-            {(isSearchAvailable || isImageGenerationAvailable || isArtifactsAvailable || isInterpreterAvailable) && (
+            {(isSearchAvailable || isImageGenerationAvailable || isArtifactsAvailable || isInterpreterAvailable || mcps.length > 0) && (
               <Menu>
                 <MenuButton 
                   className={`p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 ${
-                    isSearchEnabled || isImageGenerationEnabled || isArtifactsEnabled || isInterpreterEnabled
+                    isSearchEnabled || isImageGenerationEnabled || isArtifactsEnabled || isInterpreterEnabled || mcps.some(mcp => isConnected(mcp.id))
                       ? 'bg-neutral-100/80 dark:bg-white/10 rounded-lg'
                       : ''
                   }`}
@@ -563,7 +565,7 @@ export function ChatInput() {
                   modal={false}
                   transition
                   anchor="bottom end"
-                  className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10"
+                  className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto sidebar-scroll"
                 >
                   {isSearchAvailable && (
                     <MenuItem>
@@ -657,6 +659,42 @@ export function ChatInput() {
                       </Button>
                     </MenuItem>
                   )}
+                  {/* MCP Servers */}
+                  {mcps.map((mcp) => (
+                    <MenuItem key={mcp.id}>
+                      <Button
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          try {
+                            await toggleMCP(mcp.id);
+                          } catch (error) {
+                            console.error(`Failed to toggle MCP ${mcp.name}:`, error);
+                          }
+                        }}
+                        disabled={isConnecting(mcp.id)}
+                        className="group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Rocket size={16} />
+                          <div className="flex flex-col items-start">
+                            <span className="font-medium text-sm">{mcp.name}</span>
+                            {mcp.description && (
+                              <span className="text-xs text-neutral-600 dark:text-neutral-400">{mcp.description}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {isConnecting(mcp.id) && (
+                            <LoaderCircle size={14} className="animate-spin text-neutral-600 dark:text-neutral-400" />
+                          )}
+                          {isConnected(mcp.id) && !isConnecting(mcp.id) && (
+                            <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
+                          )}
+                        </div>
+                      </Button>
+                    </MenuItem>
+                  ))}
                 </MenuItems>
               </Menu>
             )}

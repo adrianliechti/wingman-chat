@@ -8,6 +8,7 @@ import { useBridge } from "./useBridge";
 import { useSearch } from "./useSearch";
 import { useImageGeneration } from "./useImageGeneration";
 import { useInterpreter } from "./useInterpreter";
+import { useToolsContext } from "./useToolsContext";
 import { MCPClient } from "../lib/mcp";
 
 export interface ChatContext {
@@ -34,6 +35,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
   const { searchTools, searchInstructions } = useSearch();
   const { imageGenerationTools, imageGenerationInstructions } = useImageGeneration();
   const { interpreterTools, interpreterInstructions } = useInterpreter();
+  const { getAllTools: getGlobalMCPTools } = useToolsContext();
   
   // MCP Integration - simplified client management
   const [mcpConnected, setMcpConnected] = useState<boolean | null>(null);
@@ -115,7 +117,10 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     const interpreterTools_ = interpreterTools();
     const interpreterInstructions_ = interpreterInstructions();
 
-    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools, ...interpreterTools_, ...mcpTools];
+    // Get global MCP tools from the shared context
+    const globalMCPTools = getGlobalMCPTools();
+
+    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools, ...interpreterTools_, ...mcpTools, ...globalMCPTools];
 
     const instructionsList: string[] = [];
 
@@ -176,6 +181,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     interpreterTools,
     interpreterInstructions,
     mcpConnected,
-    mcpTools
+    mcpTools,
+    getGlobalMCPTools
   ]);
 }
