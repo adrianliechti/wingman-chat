@@ -7,6 +7,7 @@ import { useRepositories } from "./useRepositories";
 import { useBridge } from "./useBridge";
 import { useSearch } from "./useSearch";
 import { useImageGeneration } from "./useImageGeneration";
+import { useInterpreter } from "./useInterpreter";
 import { MCPClient } from "../lib/mcp";
 
 export interface ChatContext {
@@ -32,6 +33,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
   const { bridgeTools, bridgeInstructions } = useBridge();
   const { searchTools, searchInstructions } = useSearch();
   const { imageGenerationTools, imageGenerationInstructions } = useImageGeneration();
+  const { interpreterTools, interpreterInstructions } = useInterpreter();
   
   // MCP Integration - simplified client management
   const [mcpConnected, setMcpConnected] = useState<boolean | null>(null);
@@ -110,7 +112,10 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     const imageGenTools = imageGenerationTools();
     const imageGenInstructions = imageGenerationInstructions();
 
-    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools, ...mcpTools];
+    const interpreterTools_ = interpreterTools();
+    const interpreterInstructions_ = interpreterInstructions();
+
+    const completionTools = [...bridgeTools, ...repositoryTools, ...filesTools, ...webSearchTools, ...imageGenTools, ...interpreterTools_, ...mcpTools];
 
     const instructionsList: string[] = [];
 
@@ -136,6 +141,10 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
 
     if (imageGenTools.length > 0 && imageGenInstructions?.trim()) {
       instructionsList.push(imageGenInstructions);
+    }
+
+    if (interpreterTools_.length > 0 && interpreterInstructions_?.trim()) {
+      instructionsList.push(interpreterInstructions_);
     }
 
     // Add mode-specific instructions
@@ -164,6 +173,8 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     searchInstructions,
     imageGenerationTools,
     imageGenerationInstructions,
+    interpreterTools,
+    interpreterInstructions,
     mcpConnected,
     mcpTools
   ]);

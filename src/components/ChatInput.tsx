@@ -29,6 +29,7 @@ import { useScreenCapture } from "../hooks/useScreenCapture";
 import { useSearch } from "../hooks/useSearch";
 import { useImageGeneration } from "../hooks/useImageGeneration";
 import { useArtifacts } from "../hooks/useArtifacts";
+import { useInterpreter } from "../hooks/useInterpreter";
 
 export function ChatInput() {
   const config = getConfig();
@@ -40,7 +41,8 @@ export function ChatInput() {
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
   const { isAvailable: isSearchAvailable, isEnabled: isSearchEnabled, setEnabled: setSearchEnabled } = useSearch();
   const { isAvailable: isImageGenerationAvailable, isEnabled: isImageGenerationEnabled, setEnabled: setImageGenerationEnabled } = useImageGeneration();
-  const { isAvailable: isArtifactsAvailable, isEnabled: isArtifactsEnabled, setEnabled: setArtifactsEnabled, fs } = useArtifacts();
+  const { isAvailable: isArtifactsAvailable, isEnabled: isArtifactsEnabled, setEnabled: setArtifactsEnabled } = useArtifacts();
+  const { isAvailable: isInterpreterAvailable, isEnabled: isInterpreterEnabled, setEnabled: setInterpreterEnabled } = useInterpreter();
   
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
@@ -545,11 +547,11 @@ export function ChatInput() {
 
           <div className="flex items-center gap-1">
             {/* Features Menu */}
-            {(isSearchAvailable || isImageGenerationAvailable || isArtifactsAvailable) && (
+            {(isSearchAvailable || isImageGenerationAvailable || isArtifactsAvailable || isInterpreterAvailable) && (
               <Menu>
                 <MenuButton 
                   className={`p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 ${
-                    isSearchEnabled || isImageGenerationEnabled || isArtifactsEnabled
+                    isSearchEnabled || isImageGenerationEnabled || isArtifactsEnabled || isInterpreterEnabled
                       ? 'bg-neutral-100/80 dark:bg-white/10 rounded-lg'
                       : ''
                   }`}
@@ -623,14 +625,33 @@ export function ChatInput() {
                           <Table size={16} />
                           <div className="flex flex-col items-start">
                             <span className="font-medium text-sm">Artifacts</span>
-                            <span className="text-xs text-neutral-600 dark:text-neutral-400">
-                              {isArtifactsEnabled && fs && fs.listFiles().length > 0 
-                                ? `${fs.listFiles().length} file${fs.listFiles().length !== 1 ? 's' : ''}`
-                                : 'Create files'}
-                            </span>
+                            <span className="text-xs text-neutral-600 dark:text-neutral-400">Create/edit files</span>
                           </div>
                         </div>
                         {isArtifactsEnabled && (
+                          <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
+                        )}
+                      </Button>
+                    </MenuItem>
+                  )}
+                  {isInterpreterAvailable && (
+                    <MenuItem>
+                      <Button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setInterpreterEnabled(!isInterpreterEnabled);
+                        }}
+                        className="group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Package size={16} />
+                          <div className="flex flex-col items-start">
+                            <span className="font-medium text-sm">Interpreter</span>
+                            <span className="text-xs text-neutral-600 dark:text-neutral-400">Use Python engine</span>
+                          </div>
+                        </div>
+                        {isInterpreterEnabled && (
                           <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
                         )}
                       </Button>

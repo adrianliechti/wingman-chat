@@ -185,7 +185,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
 
         {data.outputText && (
           <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex-1 overflow-y-auto px-1 py-2 text-sm rounded-lg bg-gray-100/50 dark:bg-black/10 scrollbar-hide nowheel">
+            <div className="flex-1 overflow-y-auto px-1 py-2 text-sm rounded-lg bg-gray-100/50 dark:bg-black/10 scrollbar-hide">
               <Markdown>{data.outputText}</Markdown>
             </div>
           </div>

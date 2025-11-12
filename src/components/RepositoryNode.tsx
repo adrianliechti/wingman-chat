@@ -165,7 +165,7 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
 
         {/* Output Display */}
         {data.outputText && (
-          <div className="flex-1 overflow-y-auto min-h-0 px-1 py-2 text-sm bg-white/30 dark:bg-black/10 rounded-md border border-neutral-200 dark:border-neutral-700 prose prose-sm dark:prose-invert max-w-none nodrag nowheel">
+          <div className="flex-1 overflow-y-auto min-h-0 px-1 py-2 text-sm bg-white/30 dark:bg-black/10 rounded-md border border-neutral-200 dark:border-neutral-700 prose prose-sm dark:prose-invert max-w-none nodrag">
             <Markdown>
               {data.outputText}
             </Markdown>

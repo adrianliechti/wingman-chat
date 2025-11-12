@@ -20,6 +20,7 @@ import { MarkdownNode } from './MarkdownNode';
 import { AudioNode } from './AudioNode';
 import { ImageNode } from './ImageNode';
 import { CsvNode } from './CsvNode';
+import { CodeNode } from './CodeNode';
 import { WorkflowLabelDialog } from './WorkflowLabelDialog';
 import type { WorkflowEdge } from '../types/workflow';
 
@@ -34,6 +35,7 @@ const nodeTypes: NodeTypes = {
   audio: AudioNode,
   image: ImageNode,
   csv: CsvNode,
+  code: CodeNode,
 };
 
 export function WorkflowCanvas() {

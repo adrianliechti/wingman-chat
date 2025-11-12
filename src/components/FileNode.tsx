@@ -159,7 +159,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
             <Textarea
               value={data.outputText || ''}
               readOnly
-              className="w-full h-full px-3 py-2 text-xs border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-gray-100/50 dark:bg-black/10 text-gray-700 dark:text-gray-300 resize-none min-h-20 scrollbar-hide nowheel"
+              className="w-full h-full px-3 py-2 text-xs border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-gray-100/50 dark:bg-black/10 text-gray-700 dark:text-gray-300 resize-none min-h-20 scrollbar-hide"
             />
           </div>
         </div>

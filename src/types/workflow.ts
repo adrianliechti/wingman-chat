@@ -1,6 +1,6 @@
 import type { Node, Edge } from '@xyflow/react';
 
-export type NodeType = 'search' | 'prompt' | 'translate' | 'file' | 'text' | 'repository' | 'markdown' | 'audio' | 'image' | 'csv';
+export type NodeType = 'search' | 'prompt' | 'translate' | 'file' | 'text' | 'repository' | 'markdown' | 'audio' | 'image' | 'csv' | 'code';
 
 // Base interface that all node data types must extend
 // This ensures all nodes have a consistent outputText field for connections
