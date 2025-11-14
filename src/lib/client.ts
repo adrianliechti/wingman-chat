@@ -210,10 +210,7 @@ export class Client {
     try {
       const response = await this.oai.responses.parse({
         model: model,
-        input: [
-          {
-            role: "system",
-            content: `Based on the conversation history provided, generate 3-5 related follow-up prompts that would help the user explore the topic more deeply. The prompts should be:
+        instructions: `Based on the conversation history provided, generate 3-5 related follow-up prompts that would help the user explore the topic more deeply. The prompts should be:
 
 - From the user's point of view 
 - Specific and actionable
@@ -223,12 +220,7 @@ export class Client {
 - Vary in type (clarifying questions, requests for examples, deeper analysis, practical applications, etc.)
 
 Return only the prompts themselves, without numbering or bullet points.`,
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
+        input: prompt,
         text: {
           format: zodTextFormat(Schema, "list_prompts"),
         },
@@ -254,10 +246,7 @@ Return only the prompts themselves, without numbering or bullet points.`,
     try {
       const response = await this.oai.responses.parse({
         model: model,
-        input: [
-          {
-            role: "system",
-            content: `Extract all tabular data from the following content and convert it into a valid CSV format.
+        instructions: `Extract all tabular data from the following content and convert it into a valid CSV format.
 
 Guidelines:
 - Identify any tables, lists, or structured data that can be represented in tabular form
@@ -268,12 +257,7 @@ Guidelines:
 - If multiple tables are present, combine them logically or focus on the most significant one
 - If no tabular data is found, create a simple CSV with relevant structured information
 - Return ONLY the CSV data in the csvData field, no additional text or explanation`,
-          },
-          {
-            role: "user",
-            content: text,
-          },
-        ],
+        input: text,
         text: {
           format: zodTextFormat(Schema, "convert_csv"),
         },
@@ -299,10 +283,7 @@ Guidelines:
     try {
       const response = await this.oai.responses.parse({
         model: model,
-        input: [
-          {
-            role: "system",
-            content: `Convert the following content into well-formatted GitHub Flavored Markdown (GFM).
+        instructions: `Convert the following content into well-formatted GitHub Flavored Markdown (GFM).
 
 Guidelines:
 - Preserve the structure and hierarchy of the content
@@ -318,12 +299,7 @@ Guidelines:
 - Support automatic URL linking
 - Use emoji shortcodes where appropriate (e.g., :smile:)
 - Return ONLY the Markdown data in the mdData field, no additional text or explanation`,
-          },
-          {
-            role: "user",
-            content: text,
-          },
-        ],
+        input: text,
         text: {
           format: zodTextFormat(Schema, "convert_md"),
         },
@@ -345,74 +321,46 @@ Guidelines:
       }).strict()).min(3).max(6),
     }).strict();
 
+    // Validate input
     if (!text.trim() || selectionStart < 0 || selectionEnd <= selectionStart || selectionStart >= text.length) {
-      return { alternatives: [], contextToReplace: text.substring(selectionStart, selectionEnd), keyChanges: [] };
+      return { 
+        alternatives: [], 
+        contextToReplace: text.substring(selectionStart, selectionEnd), 
+        keyChanges: [] 
+      };
     }
 
-    // Helper function to split text into sentences
-    const splitSentences = (text: string): { text: string, start: number, end: number }[] => {
-      const sentences: { text: string, start: number, end: number }[] = [];
-      const sentencePattern = /[.!?]+\s*|\n+/g;
-      let lastIndex = 0;
+    // Helper to expand selection to complete sentences
+    const expandToSentences = (text: string, start: number, end: number): string => {
+      const sentenceBoundaries = /[.!?]+\s*|\n+/g;
+      const boundaries: number[] = [0];
       let match;
-
-      while ((match = sentencePattern.exec(text)) !== null) {
-        const sentenceText = text.substring(lastIndex, match.index + match[0].length).trim();
-        if (sentenceText) {
-          sentences.push({
-            text: sentenceText,
-            start: lastIndex,
-            end: match.index + match[0].length
-          });
-        }
-        lastIndex = match.index + match[0].length;
+      while ((match = sentenceBoundaries.exec(text)) !== null) {
+        boundaries.push(match.index + match[0].length);
       }
-
-      // Add remaining text as final sentence if any
-      if (lastIndex < text.length) {
-        const sentenceText = text.substring(lastIndex).trim();
-        if (sentenceText) {
-          sentences.push({
-            text: sentenceText,
-            start: lastIndex,
-            end: text.length
-          });
+      boundaries.push(text.length);
+      
+      let sentenceStart = 0;
+      let sentenceEnd = text.length;
+      for (let i = 0; i < boundaries.length - 1; i++) {
+        const currentStart = boundaries[i];
+        const currentEnd = boundaries[i + 1];
+        if (currentStart < end && currentEnd > start) {
+          sentenceStart = Math.min(sentenceStart === 0 ? currentStart : sentenceStart, currentStart);
+          sentenceEnd = Math.max(sentenceEnd === text.length ? currentEnd : sentenceEnd, currentEnd);
         }
       }
-
-      return sentences;
+      
+      return text.substring(sentenceStart, sentenceEnd).trim();
     };
 
-    // Helper function to find sentences that overlap with the selection
-    const findSentencesInSelection = (sentences: { text: string, start: number, end: number }[], selectionStart: number, selectionEnd: number): string => {
-      const overlappingSentences = sentences.filter(sentence =>
-        // Sentence overlaps if it starts before selection ends and ends after selection starts
-        sentence.start < selectionEnd && sentence.end > selectionStart
-      );
-
-      if (overlappingSentences.length === 0) {
-        // Fallback to the selection itself
-        return text.substring(selectionStart, selectionEnd).trim();
-      }
-
-      // Combine all overlapping sentences
-      const firstSentence = overlappingSentences[0];
-      const lastSentence = overlappingSentences[overlappingSentences.length - 1];
-
-      return text.substring(firstSentence.start, lastSentence.end).trim();
-    };
-
-    const sentences = splitSentences(text);
-    const contextToRewrite = findSentencesInSelection(sentences, selectionStart, selectionEnd);
+    const contextToRewrite = expandToSentences(text, selectionStart, selectionEnd);
     const selectedText = text.substring(selectionStart, selectionEnd);
 
     try {
       const response = await this.oai.responses.parse({
         model: model,
-        input: [
-          {
-            role: "system",
-            content: `You will be given text that contains a user's selection. Your task is to rewrite the complete sentence(s) containing that selection while maintaining the same meaning.
+        instructions: `You will be given text that contains a user's selection. Your task is to rewrite the complete sentence(s) containing that selection while maintaining the same meaning.
 
 Guidelines:
 - Rewrite the complete sentence(s) that contain the selected text
@@ -428,16 +376,11 @@ For each alternative, also provide a "keyChange" that shows only the significant
 - What the user would see as the main change
 
 Return 3-6 alternative rewritten versions with their key changes.`,
-          },
-          {
-            role: "user",
-            content: `Text to rewrite: "${contextToRewrite}"
+        input: `Text to rewrite: "${contextToRewrite}"
 
 Selected text within: "${selectedText}"
 
 Please provide alternative ways to rewrite this text. For each alternative, include both the complete rewritten text and the key change that represents the main difference from the original selected text.`,
-          },
-        ],
         text: {
           format: zodTextFormat(Schema, "rewrite_selection"),
         },
@@ -445,13 +388,17 @@ Please provide alternative ways to rewrite this text. For each alternative, incl
 
       const result = response.output_parsed;
       return {
-        alternatives: result?.alternatives.map((a) => a.text) ?? [],
+        alternatives: result?.alternatives.map(a => a.text) ?? [],
         contextToReplace: contextToRewrite,
-        keyChanges: result?.alternatives.map((a) => a.keyChange) ?? []
+        keyChanges: result?.alternatives.map(a => a.keyChange) ?? []
       };
     } catch (error) {
       console.error("Error generating text alternatives:", error);
-      return { alternatives: [], contextToReplace: contextToRewrite, keyChanges: [] };
+      return { 
+        alternatives: [], 
+        contextToReplace: contextToRewrite, 
+        keyChanges: [] 
+      };
     }
   }
 
@@ -629,10 +576,7 @@ Please provide alternative ways to rewrite this text. For each alternative, incl
     try {
       const response = await this.oai.responses.parse({
         model: model,
-        input: [
-          {
-            role: "system",
-            content: `You are an expert text rewriting assistant. Your task is to rewrite the given text while preserving its core meaning and essential information.
+        instructions: `You are an expert text rewriting assistant. Your task is to rewrite the given text while preserving its core meaning and essential information.
 
 Core Guidelines:
 - ${languageInstruction}
@@ -648,13 +592,8 @@ Quality Standards:
 - The rewritten text should sound natural and engaging
 - Preserve the original intent and message
 - Adapt the complexity level as needed while maintaining clarity
-- If conflicting instructions are given, prioritize user-specific prompts over predefined styles`
-          },
-          {
-            role: "user",
-            content: `Please rewrite this text: "${text}"`
-          },
-        ],
+- If conflicting instructions are given, prioritize user-specific prompts over predefined styles`,
+        input: `Please rewrite this text: "${text}"`,
         text: {
           format: zodTextFormat(Schema, "rewrite_text"),
         },
