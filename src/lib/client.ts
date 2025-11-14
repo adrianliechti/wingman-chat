@@ -327,65 +327,40 @@ Guidelines:
       }).strict()).min(3).max(6),
     }).strict();
 
+    // Validate input
     if (!text.trim() || selectionStart < 0 || selectionEnd <= selectionStart || selectionStart >= text.length) {
-      return { alternatives: [], contextToReplace: text.substring(selectionStart, selectionEnd), keyChanges: [] };
+      return { 
+        alternatives: [], 
+        contextToReplace: text.substring(selectionStart, selectionEnd), 
+        keyChanges: [] 
+      };
     }
 
-    // Helper function to split text into sentences
-    const splitSentences = (text: string): { text: string, start: number, end: number }[] => {
-      const sentences: { text: string, start: number, end: number }[] = [];
-      const sentencePattern = /[.!?]+\s*|\n+/g;
-      let lastIndex = 0;
+    // Helper to expand selection to complete sentences
+    const expandToSentences = (text: string, start: number, end: number): string => {
+      const sentenceBoundaries = /[.!?]+\s*|\n+/g;
+      const boundaries: number[] = [0];
       let match;
-
-      while ((match = sentencePattern.exec(text)) !== null) {
-        const sentenceText = text.substring(lastIndex, match.index + match[0].length).trim();
-        if (sentenceText) {
-          sentences.push({
-            text: sentenceText,
-            start: lastIndex,
-            end: match.index + match[0].length
-          });
-        }
-        lastIndex = match.index + match[0].length;
+      while ((match = sentenceBoundaries.exec(text)) !== null) {
+        boundaries.push(match.index + match[0].length);
       }
-
-      // Add remaining text as final sentence if any
-      if (lastIndex < text.length) {
-        const sentenceText = text.substring(lastIndex).trim();
-        if (sentenceText) {
-          sentences.push({
-            text: sentenceText,
-            start: lastIndex,
-            end: text.length
-          });
-        }
-      }
-
-      return sentences;
-    };
-
-    // Helper function to find sentences that overlap with the selection
-    const findSentencesInSelection = (sentences: { text: string, start: number, end: number }[], selectionStart: number, selectionEnd: number): string => {
-      const overlappingSentences = sentences.filter(sentence => 
-        // Sentence overlaps if it starts before selection ends and ends after selection starts
-        sentence.start < selectionEnd && sentence.end > selectionStart
-      );
-
-      if (overlappingSentences.length === 0) {
-        // Fallback to the selection itself
-        return text.substring(selectionStart, selectionEnd).trim();
-      }
-
-      // Combine all overlapping sentences
-      const firstSentence = overlappingSentences[0];
-      const lastSentence = overlappingSentences[overlappingSentences.length - 1];
+      boundaries.push(text.length);
       
-      return text.substring(firstSentence.start, lastSentence.end).trim();
+      let sentenceStart = 0;
+      let sentenceEnd = text.length;
+      for (let i = 0; i < boundaries.length - 1; i++) {
+        const currentStart = boundaries[i];
+        const currentEnd = boundaries[i + 1];
+        if (currentStart < end && currentEnd > start) {
+          sentenceStart = Math.min(sentenceStart === 0 ? currentStart : sentenceStart, currentStart);
+          sentenceEnd = Math.max(sentenceEnd === text.length ? currentEnd : sentenceEnd, currentEnd);
+        }
+      }
+      
+      return text.substring(sentenceStart, sentenceEnd).trim();
     };
 
-    const sentences = splitSentences(text);
-    const contextToRewrite = findSentencesInSelection(sentences, selectionStart, selectionEnd);
+    const contextToRewrite = expandToSentences(text, selectionStart, selectionEnd);
     const selectedText = text.substring(selectionStart, selectionEnd);
 
     try {
@@ -425,13 +400,17 @@ Please provide alternative ways to rewrite this text. For each alternative, incl
 
       const result = completion.choices[0].message.parsed;
       return {
-        alternatives: result?.alternatives.map((a) => a.text) ?? [],
+        alternatives: result?.alternatives.map(a => a.text) ?? [],
         contextToReplace: contextToRewrite,
-        keyChanges: result?.alternatives.map((a) => a.keyChange) ?? []
+        keyChanges: result?.alternatives.map(a => a.keyChange) ?? []
       };
     } catch (error) {
       console.error("Error generating text alternatives:", error);
-      return { alternatives: [], contextToReplace: contextToRewrite, keyChanges: [] };
+      return { 
+        alternatives: [], 
+        contextToReplace: contextToRewrite, 
+        keyChanges: [] 
+      };
     }
   }
 
