@@ -257,7 +257,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
         if (!chatObj.title || conversation.length % 3 === 0) {
           client
             .summarizeTitle(model!.id, conversation)
-            .then(title => updateChat(id, () => ({ title })));
+            .then(title => {
+              if (title) {
+                updateChat(id, () => ({ title }));
+              }
+            });
         }
       } catch (error) {
         console.error(error);
