@@ -141,7 +141,7 @@ func main() {
 
 			Image       *imageType       `json:"image,omitempty" yaml:"image,omitempty"`
 			Internet    *internetType    `json:"internet,omitempty" yaml:"internet,omitempty"`
-			Interpreter *interpreterType `json:"interpreter,omitempty" yaml:"repl,omitempty"`
+			Interpreter *interpreterType `json:"interpreter,omitempty" yaml:"interpreter,omitempty"`
 
 			Bridge *bridgeType `json:"bridge,omitempty" yaml:"bridge,omitempty"`
 
