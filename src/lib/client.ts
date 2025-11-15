@@ -9,6 +9,13 @@ import type { Message, Model } from "../types/chat";
 import type { SearchResult } from "../types/search";
 import { completionModels, type ModelType } from "./models";
 
+import instructionsConvertCsv from "./instructions_convert_csv.txt?raw";
+import instructionsConvertMd from "./instructions_convert_md.txt?raw";
+import instructionsRelatedPrompts from "./instructions_related_prompts.txt?raw";
+import instructionsRewriteSelection from "./instructions_rewrite_selection.txt?raw";
+import instructionsRewriteText from "./instructions_rewrite_text.txt?raw";
+import instructionsSummarizeTitle from "./instructions_summarize_title.txt?raw";
+
 export class Client {
   private oai: OpenAI;
 
@@ -100,7 +107,8 @@ export class Client {
           if (m.toolCalls && m.toolCalls.length > 0) {
             assistantMessage.tool_calls = m.toolCalls.map(tc => ({
               id: tc.id,
-              type: 'function' as const,
+              type: 'function',
+
               function: {
                 name: tc.name,
                 arguments: tc.arguments,
@@ -128,18 +136,20 @@ export class Client {
 
     const stream = this.oai.chat.completions.stream({
       model: model,
-      tools: this.toTools(tools),
-      messages: messages,
+
       stream: true,
       stream_options: { include_usage: true },
+
+      tools: this.toTools(tools),
+
+      messages: messages,
     });
 
     if (handler) {
       stream.on("content", handler);
     }
 
-    const completion = await stream.finalChatCompletion() as OpenAI.ChatCompletion;
-    
+    const completion = await stream.finalChatCompletion();
     const message = completion.choices[0].message;
 
     // Check if the response was refused by the model
@@ -147,6 +157,7 @@ export class Client {
       return {
         role: Role.Assistant,
         content: "",
+
         error: {
           code: "CONTENT_REFUSAL",
           message: message.refusal
@@ -157,6 +168,7 @@ export class Client {
     return {
       role: Role.Assistant,
       content: message.content ?? "",
+
       toolCalls: message.tool_calls?.filter(tc => tc.type === 'function').map(tc => ({
         id: tc.id,
         name: tc.function.name,
@@ -165,23 +177,39 @@ export class Client {
     };
   }
 
-  async summarize(model: string, input: Message[]): Promise<string> {
+  async summarizeTitle(model: string, input: Message[]): Promise<string | null> {
+    const Schema = z.object({
+      title: z.string(),
+    }).strict();
+
     const history = input
       .slice(-6)
-      .map((m) => `${m.role}: ${m.content}`)
-      .join("\\n");
+      .map((m) => ({ role: m.role, content: m.content }));
 
-    const completion = await this.oai.chat.completions.create({
-      model: model,
-      messages: [
-        {
-          role: "user",
-          content: `Summarize the following conversation into a short title (less than 10 words). Return only the title itself, without any introductory phrases, explanations, or quotation marks.\n\nConversation:\n${history}`,
-        },
-      ]
-    });
+    try {
+      const completion = await this.oai.chat.completions.parse({
+        model: model,
 
-    return completion.choices[0].message.content?.trim() ?? "Summary not available";
+        messages: [
+          {
+            role: "system",
+            content: instructionsSummarizeTitle,
+          },
+          {
+            role: "user",
+            content: JSON.stringify(history),
+          },
+        ],
+
+        response_format: zodResponseFormat(Schema, "summarize_title"),
+      });
+
+      const result = completion.choices[0].message.parsed;
+      return result?.title ?? null;
+    } catch (error) {
+      console.error("Error generating title:", error);
+      return null;
+    }
   }
 
   async relatedPrompts(model: string, prompt: string): Promise<string[]> {
@@ -191,32 +219,21 @@ export class Client {
       }).strict()).min(3).max(10),
     }).strict();
 
-    if (!prompt) {
-      prompt = "No conversation history provided. Please suggest interesting prompts to start a new conversation.";
-    }
-
     try {
       const completion = await this.oai.chat.completions.parse({
         model: model,
+
         messages: [
           {
             role: "system",
-            content: `Based on the conversation history provided, generate 3-5 related follow-up prompts that would help the user explore the topic more deeply. The prompts should be:
-
-- From the user's point of view 
-- Specific and actionable
-- Build upon the current conversation context
-- Encourage deeper exploration or different perspectives
-- Be concise but clear (maximal 15 words each)
-- Vary in type (clarifying questions, requests for examples, deeper analysis, practical applications, etc.)
-
-Return only the prompts themselves, without numbering or bullet points.`,
+            content: instructionsRelatedPrompts,
           },
           {
             role: "user",
-            content: prompt,
+            content: prompt || "",
           },
         ],
+
         response_format: zodResponseFormat(Schema, "list_prompts"),
       });
 
@@ -240,26 +257,18 @@ Return only the prompts themselves, without numbering or bullet points.`,
     try {
       const completion = await this.oai.chat.completions.parse({
         model: model,
+
         messages: [
           {
             role: "system",
-            content: `Extract all tabular data from the following content and convert it into a valid CSV format.
-
-Guidelines:
-- Identify any tables, lists, or structured data that can be represented in tabular form
-- Use appropriate column headers
-- Ensure all rows have the same number of columns
-- Use proper CSV formatting with commas as delimiters
-- Quote fields that contain commas, newlines, or special characters
-- If multiple tables are present, combine them logically or focus on the most significant one
-- If no tabular data is found, create a simple CSV with relevant structured information
-- Return ONLY the CSV data in the csvData field, no additional text or explanation`,
+            content: instructionsConvertCsv,
           },
           {
             role: "user",
             content: text,
           },
         ],
+
         response_format: zodResponseFormat(Schema, "convert_csv"),
       });
 
@@ -283,31 +292,18 @@ Guidelines:
     try {
       const completion = await this.oai.chat.completions.parse({
         model: model,
+
         messages: [
           {
             role: "system",
-            content: `Convert the following content into well-formatted GitHub Flavored Markdown (GFM).
-
-Guidelines:
-- Preserve the structure and hierarchy of the content
-- Use appropriate Markdown headings (# for h1, ## for h2, etc.)
-- Convert lists to Markdown format (- for unordered, 1. for ordered)
-- Use **bold** and *italic* where appropriate
-- Convert tables to GFM table format with pipes (|) and alignment
-- Use fenced code blocks (\`\`\`) with language identifiers for syntax highlighting
-- Use ~~strikethrough~~ for deleted text where appropriate
-- Support task lists with - [ ] and - [x] syntax
-- Use blockquotes (>) for quoted text where appropriate
-- Preserve links and convert to [text](url) format
-- Support automatic URL linking
-- Use emoji shortcodes where appropriate (e.g., :smile:)
-- Return ONLY the Markdown data in the mdData field, no additional text or explanation`,
+            content: instructionsConvertMd,
           },
           {
             role: "user",
             content: text,
           },
         ],
+
         response_format: zodResponseFormat(Schema, "convert_md"),
       });
 
@@ -340,17 +336,22 @@ Guidelines:
     const expandToSentences = (text: string, start: number, end: number): string => {
       const sentenceBoundaries = /[.!?]+\s*|\n+/g;
       const boundaries: number[] = [0];
+
       let match;
+      
       while ((match = sentenceBoundaries.exec(text)) !== null) {
         boundaries.push(match.index + match[0].length);
       }
+      
       boundaries.push(text.length);
       
       let sentenceStart = 0;
       let sentenceEnd = text.length;
+      
       for (let i = 0; i < boundaries.length - 1; i++) {
         const currentStart = boundaries[i];
         const currentEnd = boundaries[i + 1];
+        
         if (currentStart < end && currentEnd > start) {
           sentenceStart = Math.min(sentenceStart === 0 ? currentStart : sentenceStart, currentStart);
           sentenceEnd = Math.max(sentenceEnd === text.length ? currentEnd : sentenceEnd, currentEnd);
@@ -366,35 +367,21 @@ Guidelines:
     try {
       const completion = await this.oai.chat.completions.parse({
         model: model,
+
         messages: [
           {
             role: "system",
-            content: `You will be given text that contains a user's selection. Your task is to rewrite the complete sentence(s) containing that selection while maintaining the same meaning.
-
-Guidelines:
-- Rewrite the complete sentence(s) that contain the selected text
-- Keep the core meaning intact but offer stylistic variations
-- Ensure the rewritten sentences are natural and grammatically correct
-- Maintain the same language, tone, and formality level
-- Focus on varying the expression while preserving the intent
-- Each alternative should be complete, standalone sentence(s)
-
-For each alternative, also provide a "keyChange" that shows only the significant difference compared to the original selected text. This should be:
-- Just the key word(s) or phrase that changes the meaning/style
-- Not the complete sentence, just the replacement part
-- What the user would see as the main change
-
-Return 3-6 alternative rewritten versions with their key changes.`,
+            content: instructionsRewriteSelection,
           },
           {
             role: "user",
-            content: `Text to rewrite: "${contextToRewrite}"
-
-Selected text within: "${selectedText}"
-
-Please provide alternative ways to rewrite this text. For each alternative, include both the complete rewritten text and the key change that represents the main difference from the original selected text.`,
+            content: JSON.stringify({
+              context: contextToRewrite,
+              selection: selectedText
+            }),
           },
         ],
+
         response_format: zodResponseFormat(Schema, "rewrite_selection"),
       });
 
@@ -488,12 +475,14 @@ Please provide alternative ways to rewrite this text. For each alternative, incl
     if (input instanceof Blob) {
       // Check file size limit (10MB)
       const maxFileSize = 10 * 1024 * 1024; // 10MB in bytes
+      
       if (input.size > maxFileSize) {
         throw new Error(`File size ${(input.size / 1024 / 1024).toFixed(1)}MB exceeds the maximum limit of 10MB`);
       }
     } else {
       // Check text length limit (50,000 characters)
       const maxTextLength = 50000;
+      
       if (input.length > maxTextLength) {
         throw new Error(`Text length ${input.length.toLocaleString()} characters exceeds the maximum limit of ${maxTextLength.toLocaleString()} characters`);
       }
@@ -588,32 +577,20 @@ Please provide alternative ways to rewrite this text. For each alternative, incl
     try {
       const completion = await this.oai.chat.completions.parse({
         model: model,
+
         messages: [
           {
             role: "system",
-            content: `You are an expert text rewriting assistant. Your task is to rewrite the given text while preserving its core meaning and essential information.
-
-Core Guidelines:
-- ${languageInstruction}
-- Maintain factual accuracy and important details
-- Ensure natural, fluent, and grammatically correct output
-- For German text: Use "ss" instead of "ß" (eszett) for better compatibility
-- Return only the rewritten text without explanations or formatting
-
-Rewriting Instructions:
-${finalInstructions}
-
-Quality Standards:
-- The rewritten text should sound natural and engaging
-- Preserve the original intent and message
-- Adapt the complexity level as needed while maintaining clarity
-- If conflicting instructions are given, prioritize user-specific prompts over predefined styles`
+            content: instructionsRewriteText
+              .replace('{languageInstruction}', languageInstruction)
+              .replace('{finalInstructions}', finalInstructions)
           },
           {
             role: "user",
-            content: `Please rewrite this text: "${text}"`
+            content: text,
           },
         ],
+
         response_format: zodResponseFormat(Schema, "rewrite_text"),
       });
 

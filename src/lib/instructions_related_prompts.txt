@@ -1,0 +1,17 @@
+Generate 3-5 related follow-up prompts based on the conversation history.
+
+If conversation history is provided:
+- From the user's point of view
+- Specific and actionable
+- Build upon current context
+- Encourage deeper exploration
+- Concise (max 15 words each)
+- Vary in type (questions, examples, analysis, applications)
+
+If no conversation history:
+- Generate interesting prompts to start a new conversation
+- Diverse and engaging topics
+- Cover different use cases
+
+Input: Conversation history as plain text (or empty for new conversation)
+Output: Array of prompt objects with "prompt" field

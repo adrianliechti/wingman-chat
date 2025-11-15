@@ -256,7 +256,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         if (!chatObj.title || conversation.length % 3 === 0) {
           client
-            .summarize(model!.id, conversation)
+            .summarizeTitle(model!.id, conversation)
             .then(title => updateChat(id, () => ({ title })));
         }
       } catch (error) {
