@@ -9,6 +9,7 @@ import { useSearch } from "./useSearch";
 import { useImageGeneration } from "./useImageGeneration";
 import { useInterpreter } from "./useInterpreter";
 import { MCPClient } from "../lib/mcp";
+import defaultInstructions from "../prompts/default.txt?raw";
 
 export interface ChatContext {
   tools: Tool[];
@@ -146,6 +147,9 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     if (interpreterTools_.length > 0 && interpreterInstructions_?.trim()) {
       instructionsList.push(interpreterInstructions_);
     }
+
+    // Add default output formatting instructions
+    instructionsList.push(defaultInstructions);
 
     // Add mode-specific instructions
     if (mode === 'voice') {

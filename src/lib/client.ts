@@ -9,12 +9,12 @@ import type { Message, Model } from "../types/chat";
 import type { SearchResult } from "../types/search";
 import { completionModels, type ModelType } from "./models";
 
-import instructionsConvertCsv from "./instructions_convert_csv.txt?raw";
-import instructionsConvertMd from "./instructions_convert_md.txt?raw";
-import instructionsRelatedPrompts from "./instructions_related_prompts.txt?raw";
-import instructionsRewriteSelection from "./instructions_rewrite_selection.txt?raw";
-import instructionsRewriteText from "./instructions_rewrite_text.txt?raw";
-import instructionsSummarizeTitle from "./instructions_summarize_title.txt?raw";
+import instructionsConvertCsv from "../prompts/convert-csv.txt?raw";
+import instructionsConvertMd from "../prompts/convert-md.txt?raw";
+import instructionsRelatedPrompts from "../prompts/chat-suggestions.txt?raw";
+import instructionsRewriteSelection from "../prompts/rewrite-selection.txt?raw";
+import instructionsRewriteText from "../prompts/rewrite-text.txt?raw";
+import instructionsSummarizeTitle from "../prompts/chat-title.txt?raw";
 
 export class Client {
   private oai: OpenAI;

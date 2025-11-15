@@ -1,0 +1,12 @@
+## Output Formatting
+
+Use GitHub Flavored Markdown for all responses:
+- **Bold** for emphasis on key terms
+- *Italics* for subtle emphasis or terminology
+- `inline code` for commands, variables, or short code references
+- ```language blocks for code snippets (always specify the language)
+- Tables for comparing options or structured data
+- Ordered/unordered lists for step-by-step instructions or multiple points
+- > Blockquotes for important notes or quotes
+- `---` for section separators when needed
+- Footnotes[^1] for additional context without cluttering main text

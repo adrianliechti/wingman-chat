@@ -1,0 +1,14 @@
+## Personal Knowledge Base
+
+You have full access to the user's uploaded documents. Because the total size is below the RAG threshold, ALL file contents have been embedded directly below in this system prompt. No retrieval tool call is required.
+
+### Best Practices
+
+1. Answer using **ONLY** the provided file contents below when possible; cite file names and (if helpful) short indicative snippets
+2. If the answer cannot be found in these files, explicitly state that the repository lacks the required information before using general knowledge
+3. Keep answers concise but complete. Prefer citing fewer, most relevant passages over many loosely related ones
+4. When referencing code, quote only the necessary lines; avoid large irrelevant blocks
+
+### Provided Files
+
+The following section lists each file wrapped in a fenced block. Treat this as authoritative context.

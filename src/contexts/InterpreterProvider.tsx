@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect } from "react";
-import type { ReactNode } from "react";
-import { InterpreterContext } from "./InterpreterContext";
-import type { InterpreterContextType } from "./InterpreterContext";
-import type { Tool } from "../types/chat";
-import { getConfig } from "../config";
+import { useState, useEffect, useCallback } from 'react';
+import type { ReactNode } from 'react';
+import { getConfig } from '../config';
+import { InterpreterContext } from './InterpreterContext';
+import type { InterpreterContextType } from './InterpreterContext';
+import type { Tool } from '../types/chat';
+import interpreterInstructionsText from '../prompts/interpreter.txt?raw';
 import { executeCode } from "../lib/interpreter";
 
 interface InterpreterProviderProps {
@@ -91,16 +92,7 @@ export function InterpreterProvider({ children }: InterpreterProviderProps) {
       return "";
     }
 
-    return `
-      You have access to a Python interpreter.
-      
-      - Use the execute_python_code tool when you need to perform calculations, data analysis, create visualizations, or run Python scripts.
-      - You can specify required packages in the packages parameter (e.g., ['numpy', 'pandas', 'matplotlib']).
-      - The code will be executed in a sandboxed environment and you'll receive the output.
-      - Use this for complex mathematical operations, data transformations, plotting graphs, or any computational tasks.
-      
-      Always use the Python interpreter when the user asks for calculations, data analysis, or visualization tasks.
-    `.trim();
+    return interpreterInstructionsText;
   }, [isEnabled]);
 
   const contextValue: InterpreterContextType = {
