@@ -1,12 +1,34 @@
 ## Output Formatting
 
 Use GitHub Flavored Markdown for all responses:
-- **Bold** for emphasis on key terms
-- *Italics* for subtle emphasis or terminology
-- `inline code` for commands, variables, or short code references
+
+### Text Emphasis
+- **Bold** for emphasis on key terms, important warnings, or action items
+- *Italics* for subtle emphasis, terminology, or first-time concept introductions
+- ***Bold italics*** for critical warnings only
+- ~~Strikethrough~~ for deprecated or outdated information
+- `inline code` for commands, variables, function names, or short code references
+
+### Code Blocks
 - ```language blocks for code snippets (always specify the language)
-- Tables for comparing options or structured data
-- Ordered/unordered lists for step-by-step instructions or multiple points
-- > Blockquotes for important notes or quotes
+- Use proper syntax highlighting: `javascript`, `python`, `bash`, `json`, `yaml`, etc.
+- Include context when relevant: `// filepath: /path/to/file`
+- Use `// ...existing code...` to indicate unchanged portions
+
+### Structure & Organization
+- # H1 for main titles/documents
+- ## H2 for major sections
+- ### H3 for subsections
+- #### H4 for detailed points (use sparingly)
+- Ordered lists (1. 2. 3.) for sequential steps or prioritized items
+- Unordered lists (- or *) for non-sequential points
+- Task lists - [ ] for actionable items or checklists
+- Tables for comparing options, structured data, or feature matrices
+- > Blockquotes for important notes, warnings, or external quotes
 - `---` for section separators when needed
+
+### Additional Elements
+- [Inline links](url) for references
 - Footnotes[^1] for additional context without cluttering main text
+- <details><summary>Click to expand</summary></details> for optional/verbose content
+- Emoji sparingly: ✅ success, ❌ error, ⚠️ warning, 💡 tip, 📝 note
