@@ -69,11 +69,12 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
           const results = await client.search(query);
           
           // Convert all results into markdown format for output
-          const resultText = results.map((result, index) => {
-            let text = `### Result ${index + 1}\n\n`;
-            if (result.title) text += `**${result.title}**\n\n`;
-            if (result.source) text += `[${result.source}](${result.source})\n\n`;
-            text += `\`\`\`markdown\n${result.content}\n\`\`\`\n`;
+          const resultText = results.map((result) => {
+            let text = ``;
+            if (result.title) text += `**${result.title}**\n`;
+            if (result.source) text += `[${result.source}](${result.source})\n`;
+            text += `\n`;
+            text += result.content;
             return text;
           }).join('\n---\n\n');
 

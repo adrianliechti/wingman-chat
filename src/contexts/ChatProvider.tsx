@@ -7,6 +7,8 @@ import { useChats } from "../hooks/useChats";
 import { useChatContext } from "../hooks/useChatContext";
 import { useSearch } from "../hooks/useSearch";
 import { useArtifacts } from "../hooks/useArtifacts";
+import { useImageGeneration } from "../hooks/useImageGeneration";
+import { useInterpreter } from "../hooks/useInterpreter";
 import { getConfig } from "../config";
 import { parseResource } from "../lib/resource";
 import { ChatContext } from './ChatContext';
@@ -23,7 +25,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { setEnabled: setSearchEnabled } = useSearch();
-  const { isAvailable: artifactsEnabled, setFileSystemForChat } = useArtifacts();
+  const { isAvailable: artifactsEnabled, setFileSystemForChat, setEnabled: setArtifactsEnabled } = useArtifacts();
+  const { setEnabled: setImageGenerationEnabled } = useImageGeneration();
+  const { setEnabled: setInterpreterEnabled } = useInterpreter();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const messagesRef = useRef<Message[]>([]);
@@ -60,16 +64,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const createChat = useCallback(() => {
     const newChat = createChatHook();
     setChatId(newChat.id);
-    // Disable search when creating a new chat to prevent accidental usage
+    // Disable tools when creating a new chat to prevent accidental usage
     setSearchEnabled(false);
+    setArtifactsEnabled(false);
+    setImageGenerationEnabled(false);
+    setInterpreterEnabled(false);
     return newChat;
-  }, [createChatHook, setSearchEnabled]);
+  }, [createChatHook, setSearchEnabled, setArtifactsEnabled, setImageGenerationEnabled, setInterpreterEnabled]);
 
   const selectChat = useCallback((chatId: string) => {
     setChatId(chatId);
-    // Disable search when switching chats to prevent accidental usage
+    // Disable tools when switching chats to prevent accidental usage
     setSearchEnabled(false);
-  }, [setSearchEnabled]);
+    setArtifactsEnabled(false);
+    setImageGenerationEnabled(false);
+    setInterpreterEnabled(false);
+  }, [setSearchEnabled, setArtifactsEnabled, setImageGenerationEnabled, setInterpreterEnabled]);
 
   const deleteChat = useCallback(
     (id: string) => {
@@ -256,8 +266,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         if (!chatObj.title || conversation.length % 3 === 0) {
           client
-            .summarize(model!.id, conversation)
-            .then(title => updateChat(id, () => ({ title })));
+            .summarizeTitle(model!.id, conversation)
+            .then(title => {
+              if (title) {
+                updateChat(id, () => ({ title }));
+              }
+            });
         }
       } catch (error) {
         console.error(error);

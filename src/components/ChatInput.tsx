@@ -172,6 +172,7 @@ export function ChatInput() {
 
     setLoadingPrompts(true);
     setShowPromptSuggestions(true);
+    setPromptSuggestions([]); // Clear old suggestions immediately
 
     try {
       let suggestions: string[];
@@ -481,7 +482,11 @@ export function ChatInput() {
               onClick={handlePromptSuggestionsClick}
               title="Show prompt suggestions"
             >
-              <Lightbulb size={16} />
+              {loadingPrompts ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Lightbulb size={16} />
+              )}
             </Button>
 
             {models.length > 0 && (

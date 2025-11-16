@@ -7,6 +7,7 @@ import { AttachmentType } from "../types/chat";
 import { getConfig } from "../config";
 import { readAsDataURL } from "../lib/utils";
 import type { Resource } from "../lib/resource";
+import imageGenerationInstructionsText from '../prompts/image-generation.txt?raw';
 
 interface ImageGenerationProviderProps {
   children: ReactNode;
@@ -115,17 +116,7 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
       return "";
     }
 
-    return `
-      You have access to image generation and editing functionality.
-      
-      - Use the generate_image tool when the user asks you to create, generate, make, edit, or modify an image.
-      - For new images: Create detailed and specific prompts describing the desired content, style, composition, colors, and other visual elements.
-      - For editing images: If the user has attached images to the chat, you can edit them by describing the modifications or changes you want to make.
-      - The tool automatically detects and uses any image attachments in the chat for editing purposes.
-      - Consider the user's preferences for style, composition, colors, and other visual elements.
-      
-      Always use this tool when the user requests image creation, generation, editing, or modification of visual content.
-    `.trim();
+    return imageGenerationInstructionsText;
   }, [isEnabled]);
 
   const contextValue: ImageGenerationContextType = {

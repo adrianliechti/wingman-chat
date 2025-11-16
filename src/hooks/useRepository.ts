@@ -7,6 +7,8 @@ import type { Tool } from '../types/chat';
 import type { RepositoryFile } from '../types/repository';
 import { useRepositories } from './useRepositories';
 import { getConfig } from '../config';
+import repositoryRagInstructions from '../prompts/repository-rag.txt?raw';
+import repositoryContextInstructions from '../prompts/repository-context.txt?raw';
 
 export interface FileChunk {
   file: RepositoryFile;
@@ -375,37 +377,9 @@ ${repository.instructions.trim()}
 
     if (files.length > 0) {
       if (useRAG) {
-        instructions.push(`
-## Personal RAG Knowledge Database
-
-You have access to a personal knowledge database containing the user's uploaded documents. This is a Retrieval-Augmented Generation (RAG) system that allows you to search and retrieve specific information from their files.
-
-### Best Practices:
-1. For *every* user query, you MUST first invoke the \`query_knowledge_database\` tool with a concise, natural-language query.
-2. Examine the tool's results.
-   - If you get ≥1 relevant documents or facts, answer the user *solely* using those results.
-   - Include source citations (e.g. doc IDs, relevance scores, or text snippets).
-3. Only if the tool returns no relevant information, you may answer from general knowledge—but still note "no document match; using fallback knowledge".
-4. If the tool call fails, report the failure and either retry or ask the user to clarify.
-5. Be concise, accurate, and transparent about sources.
-
-Use GitHub Flavored Markdown to format your responses including tables, code blocks, links, and lists.
-`.trim());
+        instructions.push(repositoryRagInstructions);
       } else {
-        instructions.push(`
-## Personal Knowledge Base
-
-You have full access to the user's uploaded documents. Because the total size is below the RAG threshold, ALL file contents have been embedded directly below in this system prompt. No retrieval tool call is required.
-
-### Best Practices:
-1. Answer using ONLY the provided file contents below when possible; cite file names and (if helpful) short indicative snippets.
-2. If the answer cannot be found in these files, explicitly state that the repository lacks the required information before using general knowledge.
-3. Keep answers concise but complete. Prefer citing fewer, most relevant passages over many loosely related ones.
-4. When referencing code, quote only the necessary lines; avoid large irrelevant blocks.
-
-### Provided Files
-The following section lists each file wrapped in a fenced block. Treat this as authoritative context.
-`.trim());
+        instructions.push(repositoryContextInstructions);
 
         // Include full content of every file (no truncation)
         for (const file of files) {

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Copy as CopyIcon, CopyCheck as CopyCheckIcon } from "lucide-react";
+import { copyToClipboard } from "../lib/copy";
 
 type CopyButtonProps = {
   text: string;
@@ -11,7 +12,7 @@ export const CopyButton = ({ text, className }: CopyButtonProps) => {
 
     const handleCopy = async () => {
         try {
-            await navigator.clipboard.writeText(text);
+            await copyToClipboard({ text });
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         } catch (error) {

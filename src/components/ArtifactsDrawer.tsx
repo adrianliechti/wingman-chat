@@ -51,13 +51,6 @@ export function ArtifactsDrawer() {
   // Get all files sorted by path
   const files = fs ? fs.listFiles().sort((a, b) => a.path.localeCompare(b.path)) : [];
 
-  // Auto-open file browser if no active file but files are available
-  useEffect(() => {
-    if (!activeFile && files.length > 0 && !showFileBrowser) {
-      setShowFileBrowser(true);
-    }
-  }, [activeFile, files.length, showFileBrowser]);
-
   const selectFile = (path: string) => {
     if (activeFile === path) {
       return;

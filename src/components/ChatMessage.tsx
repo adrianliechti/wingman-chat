@@ -1,6 +1,5 @@
 import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
-import { ShareButton } from './ShareButton';
 import { PlayButton } from './PlayButton';
 import { SingleAttachmentDisplay, MultipleAttachmentsDisplay } from './AttachmentRenderer';
 import { CodeRenderer } from './CodeRenderer';
@@ -10,8 +9,6 @@ import { useState } from 'react';
 import { Role } from "../types/chat";
 import type { Message } from "../types/chat";
 import { getConfig } from "../config";
-import { canShare } from "../lib/share";
-import { stripMarkdown } from "../lib/utils";
 
 // Helper function to convert tool names to user-friendly display names
 function getToolDisplayName(toolName: string): string {
@@ -123,8 +120,6 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
   
   const config = getConfig();
   const enableTTS = config.tts;
-  
-  const canShareMessage = canShare("Shared Message", message.content?.replace(/'/g, "'") || "");
 
   // Handle tool messages
   if (isToolResult) {
@@ -340,8 +335,7 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
               props.isLast && !isResponding ? 'chat-message-actions opacity-100!' : 'chat-message-actions opacity-0'
             }`}>
               <div className="flex items-center gap-2">
-                {canShareMessage && <ShareButton text={stripMarkdown(message.content || '')} className="h-4 w-4" />}
-                <CopyButton text={stripMarkdown(message.content || '')} className="h-4 w-4" />
+                <CopyButton text={message.content || ''} className="h-4 w-4" />
                 {enableTTS && <PlayButton text={message.content} className="h-4 w-4" />}
               </div>
             </div>

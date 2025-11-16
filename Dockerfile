@@ -6,6 +6,7 @@ COPY package.json .
 RUN npm install
 
 COPY . .
+RUN echo '{}' > public/config.json
 RUN npm run build
 
 

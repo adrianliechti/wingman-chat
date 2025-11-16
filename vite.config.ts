@@ -71,7 +71,7 @@ export default defineConfig({
       onwarn(warning, warn) {
         // Suppress Pyodide Node.js module externalization warnings
         if (warning.code === 'MODULE_LEVEL_DIRECTIVE' || 
-            (warning.message && warning.message.includes('externalized for browser compatibility'))) {
+            warning.message?.includes('externalized for browser compatibility')) {
           return;
         }
         warn(warning);
@@ -107,8 +107,10 @@ export default defineConfig({
             'remark-breaks', 
             'remark-gfm',
             'remark-gemoji',
+            'remark-math',
             'rehype-raw', 
-            'rehype-sanitize'
+            'rehype-sanitize',
+            'rehype-katex'
           ],
           // UI libraries
           'vendor-ui': [
@@ -130,7 +132,8 @@ export default defineConfig({
     },
     chunkSizeWarningLimit: 1000,
     minify: 'esbuild',
-    target: 'esnext'
+    target: 'esnext',
+    cssCodeSplit: true
   },
   worker: {
     format: 'es'
