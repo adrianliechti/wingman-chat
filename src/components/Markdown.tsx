@@ -173,7 +173,12 @@ const components: Partial<Components> = {
     code({ children, className, ...rest }) {
         const match = /language-(\w+)/.exec(className || "");
         
-        if (!match) {
+        // If no match but children contains newlines, it's likely a code block without language
+        const text = String(children).replace(/\n$/, "");
+        const isMultiLine = text.includes('\n');
+        
+        // Inline code (no language specified and single line)
+        if (!match && !isMultiLine) {
             return (
                 <code
                     {...rest}
@@ -183,9 +188,16 @@ const components: Partial<Components> = {
             );
         }
 
-        const language = match[1].toLowerCase();
-        
-        const text = String(children).replace(/\n$/, "");
+        // Code block without language - treat as markdown
+        if (!match && isMultiLine) {
+            return <Markdown>{text}</Markdown>;
+        }
+
+        // Default to markdown if no language or undefined/text/plain
+        let language = match![1].toLowerCase();
+        if (language === "undefined" || language === "text" || language === "plain") {
+            language = "markdown";
+        }
 
         if (language === "markdown" || language === "md") {
             return <Markdown>{text}</Markdown>;
@@ -225,6 +237,15 @@ const rehypePlugins = [rehypeRaw, rehypeSanitize, rehypeKatex];
 const NonMemoizedMarkdown = ({ children }: { children: string }) => {
     if (!children) return null;
     
+    // Preprocess markdown to fix common formatting issues
+    let processedContent = children;
+    
+    // Ensure blank line before code blocks that come after headings
+    processedContent = processedContent.replace(/^(#{1,6}\s+.+)\n```/gm, '$1\n\n```');
+    
+    // Ensure blank line after code blocks before headings
+    processedContent = processedContent.replace(/```\n(#{1,6}\s+)/gm, '```\n\n$1');
+    
     return (
         <ReactMarkdown 
             remarkPlugins={remarkPlugins} 
@@ -232,7 +253,7 @@ const NonMemoizedMarkdown = ({ children }: { children: string }) => {
             rehypePlugins={rehypePlugins}
             remarkRehypeOptions={{ allowDangerousHtml: true }}
         >
-            {children}
+            {processedContent}
         </ReactMarkdown>
     );
 };
