@@ -1,4 +1,4 @@
-import { Trash, PanelRightOpen, MoreVertical, GitBranch } from "lucide-react";
+import { Trash, PanelRightOpen, MoreVertical, GitBranch, Search, X } from "lucide-react";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { getConfig } from "../config";
 import { useMemo, useCallback, useState, useEffect } from "react";
@@ -10,6 +10,8 @@ export function ChatSidebar() {
   const { chats, chat, selectChat, deleteChat, createChat, updateChat } = useChat();
   const { setShowSidebar, showSidebar } = useSidebar();
   const [shouldAnimateItems, setShouldAnimateItems] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
   
   // Trigger item animations every time sidebar opens
   useEffect(() => {
@@ -32,6 +34,27 @@ export function ChatSidebar() {
     () => [...chats].sort((a, b) => new Date(b.updated || b.created || 0).getTime() - new Date(a.updated || a.created || 0).getTime()),
     [chats]
   );
+
+  // Filter chats based on search query
+  const filteredChats = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return sortedChats;
+    }
+    
+    const query = searchQuery.toLowerCase();
+    
+    return sortedChats.filter((chatItem) => {
+      // Search in title
+      if (chatItem.title?.toLowerCase().includes(query)) {
+        return true;
+      }
+      
+      // Search in message content
+      return chatItem.messages.some((message) => 
+        message.content?.toLowerCase().includes(query)
+      );
+    });
+  }, [sortedChats, searchQuery]);
 
   // Function to fork a chat (create a new chat with copied messages)
   const forkChat = useCallback((chatToFork: typeof chats[0]) => {
@@ -60,22 +83,47 @@ export function ChatSidebar() {
     >
       {/* Static header with title and hamburger menu */}
       <div 
-        className="flex items-center justify-between px-2 py-2.5 shrink-0 min-h-14"
+        className="flex items-center justify-between px-2 py-2.5 shrink-0 min-h-14 gap-2"
       >
-        <h2 className="text-xl font-semibold px-2 whitespace-nowrap overflow-hidden text-ellipsis text-neutral-800 dark:text-neutral-200">{config.title}</h2>
-        <Button
-          onClick={() => setShowSidebar(false)}
-          className="p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/20 rounded transition-all duration-200 "
-          aria-label="Close sidebar"
-        >
-          <PanelRightOpen size={20} />
-        </Button>
+        {showSearch ? (
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search chats..."
+            className="flex-1 px-3 py-1.5 bg-transparent border-b border-neutral-300 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 placeholder-neutral-400 dark:placeholder-neutral-600 focus:outline-none focus:border-neutral-400 dark:focus:border-neutral-500 transition-colors"
+            autoFocus
+          />
+        ) : (
+          <h2 className="text-xl font-semibold px-2 whitespace-nowrap overflow-hidden text-ellipsis text-neutral-800 dark:text-neutral-200">{config.title}</h2>
+        )}
+        <div className="flex items-center gap-1">
+          <Button
+            onClick={() => {
+              setShowSearch(!showSearch);
+              if (showSearch) {
+                setSearchQuery("");
+              }
+            }}
+            className="p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/20 rounded transition-all duration-200"
+            aria-label="Search chats"
+          >
+            {showSearch ? <X size={20} /> : <Search size={20} />}
+          </Button>
+          <Button
+            onClick={() => setShowSidebar(false)}
+            className="p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/20 rounded transition-all duration-200 "
+            aria-label="Close sidebar"
+          >
+            <PanelRightOpen size={20} />
+          </Button>
+        </div>
       </div>
       
       {/* Scrollable content area */}
       <div className="flex-1 sidebar-scroll overflow-y-auto overflow-x-hidden">
         <ul className="flex flex-col gap-2 py-2 px-2">
-        {sortedChats.map((chatItem, index) => (
+        {filteredChats.map((chatItem, index) => (
           <li
             key={chatItem.id}
             onClick={() => {
