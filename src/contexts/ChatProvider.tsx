@@ -7,7 +7,7 @@ import { useChats } from "../hooks/useChats";
 import { useChatContext } from "../hooks/useChatContext";
 import { useSearch } from "../hooks/useSearch";
 import { useArtifacts } from "../hooks/useArtifacts";
-import { useImageGeneration } from "../hooks/useImageGeneration";
+import { useRenderer } from "../hooks/useRenderer";
 import { useInterpreter } from "../hooks/useInterpreter";
 import { useToolsContext } from "../hooks/useToolsContext";
 import { getConfig } from "../config";
@@ -27,7 +27,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { setEnabled: setSearchEnabled } = useSearch();
   const { isAvailable: artifactsEnabled, setFileSystemForChat, setEnabled: setArtifactsEnabled } = useArtifacts();
-  const { setEnabled: setImageGenerationEnabled } = useImageGeneration();
+  const { setEnabled: setRendererEnabled } = useRenderer();
   const { setEnabled: setInterpreterEnabled } = useInterpreter();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
@@ -87,19 +87,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Disable tools when creating a new chat to prevent accidental usage
     setSearchEnabled(false);
     setArtifactsEnabled(false);
-    setImageGenerationEnabled(false);
+    setRendererEnabled(false);
     setInterpreterEnabled(false);
     return newChat;
-  }, [createChatHook, setSearchEnabled, setArtifactsEnabled, setImageGenerationEnabled, setInterpreterEnabled]);
+  }, [createChatHook, setSearchEnabled, setArtifactsEnabled, setRendererEnabled, setInterpreterEnabled]);
 
   const selectChat = useCallback((chatId: string) => {
     setChatId(chatId);
     // Disable tools when switching chats to prevent accidental usage
     setSearchEnabled(false);
     setArtifactsEnabled(false);
-    setImageGenerationEnabled(false);
+    setRendererEnabled(false);
     setInterpreterEnabled(false);
-  }, [setSearchEnabled, setArtifactsEnabled, setImageGenerationEnabled, setInterpreterEnabled]);
+  }, [setSearchEnabled, setArtifactsEnabled, setRendererEnabled, setInterpreterEnabled]);
 
   const deleteChat = useCallback(
     (id: string) => {

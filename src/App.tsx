@@ -22,7 +22,7 @@ import { BridgeProvider } from "./contexts/BridgeProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
 import { SearchProvider } from "./contexts/SearchProvider";
-import { ImageGenerationProvider } from "./contexts/ImageGenerationProvider";
+import { RendererProvider } from "./contexts/RendererProvider";
 import { InterpreterProvider } from "./contexts/InterpreterProvider";
 import { ToolsProvider } from "./contexts/ToolsProvider";
 import { BridgeIndicator } from "./components/BridgeIndicator";
@@ -386,7 +386,7 @@ const providers = [
   RepositoryProvider,
   ScreenCaptureProvider,
   SearchProvider,
-  ImageGenerationProvider,
+  RendererProvider,
   InterpreterProvider,
   ToolsProvider,
   ChatProvider,

@@ -27,7 +27,7 @@ import { useDropZone } from "../hooks/useDropZone";
 import { useSettings } from "../hooks/useSettings";
 import { useScreenCapture } from "../hooks/useScreenCapture";
 import { useSearch } from "../hooks/useSearch";
-import { useImageGeneration } from "../hooks/useImageGeneration";
+import { useRenderer } from "../hooks/useRenderer";
 import { useArtifacts } from "../hooks/useArtifacts";
 import { useInterpreter } from "../hooks/useInterpreter";
 import { useToolsContext } from "../hooks/useToolsContext";
@@ -41,7 +41,7 @@ export function ChatInput() {
   const { profile } = useSettings();
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
   const { isAvailable: isSearchAvailable, isEnabled: isSearchEnabled, setEnabled: setSearchEnabled } = useSearch();
-  const { isAvailable: isImageGenerationAvailable, isEnabled: isImageGenerationEnabled, setEnabled: setImageGenerationEnabled } = useImageGeneration();
+  const { isAvailable: isRendererAvailable, isEnabled: isRendererEnabled, setEnabled: setRendererEnabled } = useRenderer();
   const { isAvailable: isArtifactsAvailable, isEnabled: isArtifactsEnabled, setEnabled: setArtifactsEnabled } = useArtifacts();
   const { isAvailable: isInterpreterAvailable, isEnabled: isInterpreterEnabled, setEnabled: setInterpreterEnabled } = useInterpreter();
   const { mcps, isConnected, isConnecting, toggleMCP } = useToolsContext();
@@ -607,11 +607,11 @@ export function ChatInput() {
 
           <div className="flex items-center gap-1">
             {/* Features Menu */}
-            {(isSearchAvailable || isImageGenerationAvailable || isArtifactsAvailable || isInterpreterAvailable || mcps.length > 0) && (
+            {(isSearchAvailable || isRendererAvailable || isArtifactsAvailable || isInterpreterAvailable || mcps.length > 0) && (
               <Menu>
                 <MenuButton 
                   className={`p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 ${
-                    isSearchEnabled || isImageGenerationEnabled || isArtifactsEnabled || isInterpreterEnabled || mcps.some(mcp => isConnected(mcp.id))
+                    isSearchEnabled || isRendererEnabled || isArtifactsEnabled || isInterpreterEnabled || mcps.some(mcp => isConnected(mcp.id))
                       ? 'bg-neutral-100/80 dark:bg-white/10 rounded-lg'
                       : ''
                   }`}
@@ -648,13 +648,13 @@ export function ChatInput() {
                       </Button>
                     </MenuItem>
                   )}
-                  {isImageGenerationAvailable && (
+                  {isRendererAvailable && (
                     <MenuItem>
                       <Button
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          setImageGenerationEnabled(!isImageGenerationEnabled);
+                          setRendererEnabled(!isRendererEnabled);
                         }}
                         className="group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                       >
@@ -665,7 +665,7 @@ export function ChatInput() {
                             <span className="text-xs text-neutral-600 dark:text-neutral-400">Generate images</span>
                           </div>
                         </div>
-                        {isImageGenerationEnabled && (
+                        {isRendererEnabled && (
                           <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
                         )}
                       </Button>

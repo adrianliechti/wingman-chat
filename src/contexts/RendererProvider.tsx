@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
-import { ImageGenerationContext } from "./ImageGenerationContext";
-import type { ImageGenerationContextType } from "./ImageGenerationContext";
+import { RendererContext } from "./RendererContext";
+import type { RendererContextType } from "./RendererContext";
 import type { Tool, ToolContext, ToolProvider } from "../types/chat";
 import { AttachmentType } from "../types/chat";
 import { getConfig } from "../config";
@@ -9,11 +9,11 @@ import { readAsDataURL } from "../lib/utils";
 import type { Resource } from "../lib/resource";
 import imageGenerationInstructionsText from '../prompts/image-generation.txt?raw';
 
-interface ImageGenerationProviderProps {
+interface RendererProviderProps {
   children: ReactNode;
 }
 
-export function ImageGenerationProvider({ children }: ImageGenerationProviderProps) {
+export function RendererProvider({ children }: RendererProviderProps) {
   const [isEnabled, setEnabled] = useState(false);
   const [isAvailable, setIsAvailable] = useState(false);
   const config = getConfig();
@@ -111,7 +111,7 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
     ];
   }, [isEnabled, client, config]);
 
-  const imageGenerationProvider = useCallback((): ToolProvider | null => {
+  const rendererProvider = useCallback((): ToolProvider | null => {
     if (!isEnabled) {
       return null;
     }
@@ -125,16 +125,16 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
     };
   }, [isEnabled, imageGenerationTools]);
 
-  const contextValue: ImageGenerationContextType = {
+  const contextValue: RendererContextType = {
     isEnabled,
     setEnabled,
     isAvailable,
-    imageGenerationProvider,
+    rendererProvider,
   };
 
   return (
-    <ImageGenerationContext.Provider value={contextValue}>
+    <RendererContext.Provider value={contextValue}>
       {children}
-    </ImageGenerationContext.Provider>
+    </RendererContext.Provider>
   );
 }

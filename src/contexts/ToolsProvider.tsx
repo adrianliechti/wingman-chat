@@ -4,7 +4,7 @@ import { useArtifacts } from "../hooks/useArtifacts";
 import { useBridge } from "../hooks/useBridge";
 import { useSearch } from "../hooks/useSearch";
 import { useInterpreter } from "../hooks/useInterpreter";
-import { useImageGeneration } from "../hooks/useImageGeneration";
+import { useRenderer } from "../hooks/useRenderer";
 import { useRepository } from "../hooks/useRepository";
 import { useRepositories } from "../hooks/useRepositories";
 import { ToolsContext } from "./ToolsContext";
@@ -21,7 +21,7 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
   const { bridgeProvider } = useBridge();
   const { searchProvider } = useSearch();
   const { interpreterProvider } = useInterpreter();
-  const { imageGenerationProvider } = useImageGeneration();
+  const { rendererProvider } = useRenderer();
   const { currentRepository } = useRepositories();
   const { repositoryProvider } = useRepository(currentRepository?.id || '', 'auto');
 
@@ -50,9 +50,9 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
       providers.push(interpreterProviderInstance);
     }
     
-    const imageGenerationProviderInstance = imageGenerationProvider();
-    if (imageGenerationProviderInstance) {
-      providers.push(imageGenerationProviderInstance);
+    const rendererProviderInstance = rendererProvider();
+    if (rendererProviderInstance) {
+      providers.push(rendererProviderInstance);
     }
     
     // Add repository provider if available
@@ -71,7 +71,7 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     bridgeProvider,
     searchProvider,
     interpreterProvider,
-    imageGenerationProvider,
+    rendererProvider,
     repositoryProvider,
     mcpHook,
   ]);
