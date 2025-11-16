@@ -1,7 +1,9 @@
 import { memo, useState, useEffect } from 'react';
 import { codeToHtml } from 'shiki';
+import { ExternalLink } from 'lucide-react';
 import { CopyButton } from './CopyButton';
 import { useTheme } from '../hooks/useTheme';
+import { useArtifacts } from '../hooks/useArtifacts';
 
 interface CodeRendererProps {
   code: string;
@@ -11,7 +13,24 @@ interface CodeRendererProps {
 
 const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
   const { isDark } = useTheme();
+  const { isAvailable: isArtifactsAvailable, openFile, fs, setShowArtifactsDrawer } = useArtifacts();
   const [html, setHtml] = useState<string>('');
+
+  const handleOpenInArtifacts = () => {
+    if (!name || !isArtifactsAvailable) return;
+    
+    // Ensure the path starts with /
+    const filePath = name.startsWith('/') ? name : `/${name}`;
+    
+    // Create or update the file in the artifacts filesystem
+    fs.createFile(filePath, code);
+    
+    // Open the file in the artifacts drawer
+    openFile(filePath);
+    
+    // Make sure the artifacts drawer is visible
+    setShowArtifactsDrawer(true);
+  };
 
   useEffect(() => {
     if (!code) {
@@ -62,6 +81,15 @@ const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
           {name && <span className="ml-2 text-gray-500 dark:text-neutral-400">• {name}</span>}
         </span>
         <div className="flex items-center space-x-2">
+          {name && isArtifactsAvailable && (
+            <button
+              onClick={handleOpenInArtifacts}
+              className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors opacity-60 hover:opacity-100 p-1"
+              title="Open in Artifacts"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </button>
+          )}
           <CopyButton text={code} className="h-4 w-4" />
         </div>
       </div>
