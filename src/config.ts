@@ -27,10 +27,10 @@ interface config {
   voice?: voiceConfig;
   vision?: visionConfig;
 
-  image?: imageConfig;
-
   bridge?: bridgeConfig;
   internet?: internetConfig;
+
+  renderer?: rendererConfig;
   interpreter?: interpreterConfig;
 
   artifacts?: artifactsConfig;
@@ -79,7 +79,7 @@ interface visionConfig {
   enabled: boolean;
 }
 
-interface imageConfig {
+interface rendererConfig {
   enabled: boolean;
   model?: string
 }
@@ -135,11 +135,10 @@ interface Config {
   voice: boolean;
   vision: boolean;
 
-  image: imageConfig;
-
   bridge: Bridge;
-
   internet: internetConfig;
+
+  renderer: rendererConfig;
   interpreter: interpreterConfig;
 
   artifacts: artifactsConfig;
@@ -203,14 +202,14 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       voice: cfg.voice?.enabled ?? false,
       vision: cfg.vision?.enabled ?? false,
-
-      image: cfg.image ?? {
-        enabled: false,
-      },
-
+      
       bridge: bridge,
 
       internet: cfg.internet ?? {
+        enabled: false,
+      },
+
+      renderer: cfg.renderer ?? {
         enabled: false,
       },
 

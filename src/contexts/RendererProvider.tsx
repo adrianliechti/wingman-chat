@@ -23,7 +23,7 @@ export function RendererProvider({ children }: RendererProviderProps) {
   useEffect(() => {
     try {
       const config = getConfig();
-      setIsAvailable(config.image.enabled);
+      setIsAvailable(config.renderer.enabled);
     } catch (error) {
       console.warn('Failed to get image generation config:', error);
       setIsAvailable(false);
@@ -74,7 +74,7 @@ export function RendererProvider({ children }: RendererProviderProps) {
 
           try {
             const imageBlob = await client.generateImage(
-              config.image?.model || "",
+              config.renderer?.model || "",
               prompt as string,
               images
             );

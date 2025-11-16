@@ -180,7 +180,7 @@ export function WorkflowPalette() {
             createNode={createAudioNode}
           />
         )}
-        {config.image?.enabled && (
+        {config.renderer?.enabled && (
           <WorkflowPaletteItem
             label="Image"
             icon={<Image size={20} />}

@@ -34,10 +34,10 @@ func main() {
 	voice := os.Getenv("VOICE_ENABLED") == "true"
 	vision := os.Getenv("VISION_ENABLED") == "true"
 
-	image := os.Getenv("IMAGE_ENABLED") == "true"
-	imageModel := os.Getenv("IMAGE_MODEL")
-
 	internet := os.Getenv("INTERNET_ENABLED") == "true"
+
+	renderer := os.Getenv("RENDERER_ENABLED") == "true"
+	rendererModel := os.Getenv("RENDERER_MODEL")
 
 	interpreter := os.Getenv("INTERPRETER_ENABLED") == "true"
 
@@ -83,13 +83,13 @@ func main() {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 		}
 
-		type imageType struct {
-			Enabled bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-			Model   string `json:"model,omitempty" yaml:"model,omitempty"`
-		}
-
 		type internetType struct {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+		}
+
+		type rendererType struct {
+			Enabled bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+			Model   string `json:"model,omitempty" yaml:"model,omitempty"`
 		}
 
 		type interpreterType struct {
@@ -139,8 +139,8 @@ func main() {
 			Voice  *voiceType  `json:"voice,omitempty" yaml:"voice,omitempty"`
 			Vision *visionType `json:"vision,omitempty" yaml:"vision,omitempty"`
 
-			Image       *imageType       `json:"image,omitempty" yaml:"image,omitempty"`
 			Internet    *internetType    `json:"internet,omitempty" yaml:"internet,omitempty"`
+			Renderer    *rendererType    `json:"renderer,omitempty" yaml:"renderer,omitempty"`
 			Interpreter *interpreterType `json:"interpreter,omitempty" yaml:"interpreter,omitempty"`
 
 			Bridge *bridgeType `json:"bridge,omitempty" yaml:"bridge,omitempty"`
@@ -196,16 +196,16 @@ func main() {
 			}
 		}
 
-		if image {
-			config.Image = &imageType{
-				Enabled: true,
-				Model:   imageModel,
-			}
-		}
-
 		if internet {
 			config.Internet = &internetType{
 				Enabled: true,
+			}
+		}
+
+		if renderer {
+			config.Renderer = &rendererType{
+				Enabled: true,
+				Model:   rendererModel,
 			}
 		}
 
