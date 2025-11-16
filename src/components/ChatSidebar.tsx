@@ -83,7 +83,7 @@ export function ChatSidebar() {
     >
       {/* Static header with title and hamburger menu */}
       <div 
-        className="flex items-center justify-between px-2 py-2.5 shrink-0 min-h-14 gap-2"
+        className="flex items-center justify-between px-2 py-2.5 shrink-0 h-14 gap-2"
       >
         {showSearch ? (
           <input
@@ -91,11 +91,11 @@ export function ChatSidebar() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search chats..."
-            className="flex-1 px-3 py-1.5 bg-transparent border-b border-neutral-300 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 placeholder-neutral-400 dark:placeholder-neutral-600 focus:outline-none focus:border-neutral-400 dark:focus:border-neutral-500 transition-colors"
+            className="flex-1 px-3 py-2 bg-transparent border-b border-neutral-300 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 placeholder-neutral-400 dark:placeholder-neutral-600 focus:outline-none focus:border-neutral-400 dark:focus:border-neutral-500 transition-colors"
             autoFocus
           />
         ) : (
-          <h2 className="text-xl font-semibold px-2 whitespace-nowrap overflow-hidden text-ellipsis text-neutral-800 dark:text-neutral-200">{config.title}</h2>
+          <h2 className="text-xl font-semibold px-2 py-2 whitespace-nowrap overflow-hidden text-ellipsis text-neutral-800 dark:text-neutral-200">{config.title}</h2>
         )}
         <div className="flex items-center gap-1">
           <Button

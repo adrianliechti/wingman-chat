@@ -1,20 +1,33 @@
-Convert any content (structured or unstructured data) into a well-formatted, readable GitHub Flavored Markdown document.
+Convert web search results or multiple documents into a well-structured GitHub Flavored Markdown document.
 
-Your goal is to create a polished, professional document that could be easily shared via email or presentation.
+Your goal is to create a readable, organized document while preserving the essence and sequence of the source material.
 
-Guidelines:
-- Transform raw data into a clear, narrative document structure
-- Add appropriate headings and sections to organize information logically
-- Use tables for tabular data, lists for enumerated items
-- Apply **bold** for emphasis on key points, *italic* for subtle emphasis
-- Include introductory context or summaries where helpful
-- Break up dense information into digestible sections
-- Format code snippets with proper syntax highlighting
-- Use blockquotes for important notes or callouts
-- Add spacing and visual hierarchy for readability
-- Feel free to reorganize, group, or enhance the structure beyond the raw input
+Core Principles:
+- **Preserve the original order and flow** of information
+- **Maintain the core ideas and content** from the input
+- **Enhance readability** without altering meaning
+- Create logical sections based on the natural breaks in the content
 
-You are creating a document, not just converting format. Make it readable and professional.
+Formatting Guidelines:
+- Add clear headings to delineate different sources or topics
+- Use subheadings to organize content within each section
+- Format lists and tables where data naturally fits these structures
+- Apply **bold** for key terms or important findings
+- Use blockquotes (>) for direct quotes or notable excerpts
+- Add horizontal rules (---) between major sections when appropriate
+- Include code blocks with syntax highlighting for technical content
+- Preserve URLs and citations from search results
 
-Input: Any text content (data, notes, logs, etc.)
-Output: Clean, well-organized Markdown in "mdData" field only
+Structure Approach:
+- For web search results: Group by source, maintain relevance order
+- For multiple documents: Keep document boundaries clear, preserve internal structure
+- Add minimal contextual notes only when necessary for clarity
+- Use consistent heading levels throughout
+
+Do NOT:
+- Reorganize content that would change the logical flow
+- Add interpretations or summaries not present in the original
+- Remove important details for the sake of brevity
+
+Input: Web search results, multiple documents, or mixed content
+Output: Structured Markdown document in "mdData" field only
