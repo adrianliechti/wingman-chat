@@ -1,10 +1,9 @@
 import { createContext } from 'react';
-import type { Tool } from '../types/chat';
+import type { ToolProvider } from '../types/chat';
 
 export type BridgeContextType = {
   isConnected: boolean;
-  bridgeTools: Tool[];
-  bridgeInstructions: string | null;
+  bridgeProvider: () => ToolProvider | null;
 };
 
 export const BridgeContext = createContext<BridgeContextType | undefined>(undefined);

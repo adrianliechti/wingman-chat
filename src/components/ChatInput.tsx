@@ -98,20 +98,73 @@ export function ChatInput() {
   // Transcription hook
   const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription();
 
+  // Helper to check if a tool (MCP) is enabled/disabled based on model config
+  const isToolEnabledByModel = useCallback((toolId: string) => {
+    if (!model?.tools) {
+      return null; // No restrictions
+    }
+    
+    const enabledTools = model.tools.enabled || [];
+    const disabledTools = model.tools.disabled || [];
+    
+    // If there are enabled tools specified, this tool must be in that list
+    if (enabledTools.length > 0) {
+      return enabledTools.includes(toolId);
+    }
+    
+    // Otherwise, this tool must not be in the disabled list
+    return !disabledTools.includes(toolId);
+  }, [model?.tools]);
+  
+  const isToolRequiredByModel = useCallback((toolId: string) => {
+    if (!model?.tools) {
+      return false; // Not required if no restrictions
+    }
+    
+    const enabledTools = model.tools.enabled || [];
+    
+    // Tool is required if it's in the enabled list
+    return enabledTools.includes(toolId);
+  }, [model?.tools]);
+
   // MCP indicator logic
   const mcpIndicator = useMemo(() => {
-    // null = no MCP server, false = connecting, true = connected
+    // null = no MCP servers, false = connecting, true = all connected
     if (mcpConnected === null) {
-      // No MCP server configured - show brain
+      // No MCP servers configured or connected - show brain
       return <Sparkles size={14} />;
     } else if (mcpConnected === true) {
-      // Connected - show rocket
+      // All MCPs connected - show rocket
       return <Rocket size={14} />;
     } else {
-      // Connecting or error - show loading spinner
+      // At least one MCP connecting - show loading spinner
       return <LoaderCircle size={14} className="animate-spin" />;
     }
   }, [mcpConnected]);
+
+  // Auto-connect required MCP tools when model changes
+  useEffect(() => {
+    if (!model?.tools?.enabled || model.tools.enabled.length === 0) {
+      return;
+    }
+
+    // Connect all required (enabled) MCPs
+    const connectRequiredMCPs = async () => {
+      for (const toolId of model.tools!.enabled) {
+        const mcp = mcps.find(m => m.id === toolId);
+        if (mcp && !isConnected(mcp.id) && !isConnecting(mcp.id)) {
+          try {
+            await toggleMCP(mcp.id);
+          } catch (error) {
+            console.error(`Failed to auto-connect required MCP ${mcp.name}:`, error);
+          }
+        }
+      }
+    };
+
+    connectRequiredMCPs();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model?.tools?.enabled, mcps, isConnected, isConnecting, toggleMCP]);
 
 
 
@@ -665,41 +718,61 @@ export function ChatInput() {
                     </MenuItem>
                   )}
                   {/* MCP Servers */}
-                  {mcps.map((mcp) => (
-                    <MenuItem key={mcp.id}>
-                      <Button
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          try {
-                            await toggleMCP(mcp.id);
-                          } catch (error) {
-                            console.error(`Failed to toggle MCP ${mcp.name}:`, error);
+                  {mcps.map((mcp) => {
+                    const isEnabled = isToolEnabledByModel(mcp.id);
+                    const isRequired = isToolRequiredByModel(mcp.id);
+                    const canToggle = isEnabled !== false && !isRequired;
+                    
+                    return (
+                      <MenuItem key={mcp.id}>
+                        <Button
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!canToggle) return;
+                            try {
+                              await toggleMCP(mcp.id);
+                            } catch (error) {
+                              console.error(`Failed to toggle MCP ${mcp.name}:`, error);
+                            }
+                          }}
+                          disabled={isConnecting(mcp.id) || !canToggle}
+                          className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 ${
+                            !canToggle ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                          title={
+                            isEnabled === false 
+                              ? 'Disabled by model configuration' 
+                              : isRequired 
+                                ? 'Required by model configuration' 
+                                : undefined
                           }
-                        }}
-                        disabled={isConnecting(mcp.id)}
-                        className="group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Rocket size={16} />
-                          <div className="flex flex-col items-start">
-                            <span className="font-medium text-sm">{mcp.name}</span>
-                            {mcp.description && (
-                              <span className="text-xs text-neutral-600 dark:text-neutral-400">{mcp.description}</span>
+                        >
+                          <div className="flex items-center gap-3">
+                            <Rocket size={16} />
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium text-sm">
+                                {mcp.name}
+                                {isRequired && <span className="text-xs ml-1 text-neutral-500 dark:text-neutral-400">(required)</span>}
+                                {isEnabled === false && <span className="text-xs ml-1 text-neutral-500 dark:text-neutral-400">(disabled)</span>}
+                              </span>
+                              {mcp.description && (
+                                <span className="text-xs text-neutral-600 dark:text-neutral-400">{mcp.description}</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isConnecting(mcp.id) && (
+                              <LoaderCircle size={14} className="animate-spin text-neutral-600 dark:text-neutral-400" />
+                            )}
+                            {isConnected(mcp.id) && !isConnecting(mcp.id) && (
+                              <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
                             )}
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {isConnecting(mcp.id) && (
-                            <LoaderCircle size={14} className="animate-spin text-neutral-600 dark:text-neutral-400" />
-                          )}
-                          {isConnected(mcp.id) && !isConnecting(mcp.id) && (
-                            <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
-                          )}
-                        </div>
-                      </Button>
-                    </MenuItem>
-                  ))}
+                        </Button>
+                      </MenuItem>
+                    );
+                  })}
                 </MenuItems>
               </Menu>
             )}

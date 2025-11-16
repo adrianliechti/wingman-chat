@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import type { Tool } from '../types/chat';
+import type { Tool, ToolProvider } from '../types/chat';
 import { getConfig } from '../config';
 import { BridgeContext } from './BridgeContext';
 import type { BridgeContextType } from './BridgeContext';
@@ -41,10 +41,23 @@ export function BridgeProvider({ children }: BridgeProviderProps) {
     return () => clearInterval(interval);
   }, [bridge]);
 
+  const bridgeProvider = useCallback((): ToolProvider | null => {
+    if (!bridge.isConnected() || bridgeTools.length === 0) {
+      return null;
+    }
+
+    return {
+      id: 'bridge',
+      name: 'Bridge',
+      description: 'Tools provided via the bridge connection',
+      instructions: bridgeInstructions || undefined,
+      tools: bridgeTools,
+    };
+  }, [bridge, bridgeTools, bridgeInstructions]);
+
   const value: BridgeContextType = {
     isConnected: bridge.isConnected(),
-    bridgeTools,
-    bridgeInstructions,
+    bridgeProvider,
   };
 
   return <BridgeContext.Provider value={value}>{children}</BridgeContext.Provider>;

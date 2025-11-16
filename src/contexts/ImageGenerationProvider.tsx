@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
 import { ImageGenerationContext } from "./ImageGenerationContext";
 import type { ImageGenerationContextType } from "./ImageGenerationContext";
-import type { Tool, ToolContext } from "../types/chat";
+import type { Tool, ToolContext, ToolProvider } from "../types/chat";
 import { AttachmentType } from "../types/chat";
 import { getConfig } from "../config";
 import { readAsDataURL } from "../lib/utils";
@@ -111,20 +111,25 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
     ];
   }, [isEnabled, client, config]);
 
-  const imageGenerationInstructions = useCallback((): string => {
+  const imageGenerationProvider = useCallback((): ToolProvider | null => {
     if (!isEnabled) {
-      return "";
+      return null;
     }
 
-    return imageGenerationInstructionsText;
-  }, [isEnabled]);
+    return {
+      id: "image_generation",
+      name: "Image Generation",
+      description: "Generate or edit images based on text descriptions",
+      tools: imageGenerationTools(),
+      instructions: imageGenerationInstructionsText,
+    };
+  }, [isEnabled, imageGenerationTools]);
 
   const contextValue: ImageGenerationContextType = {
     isEnabled,
     setEnabled,
     isAvailable,
-    imageGenerationTools,
-    imageGenerationInstructions,
+    imageGenerationProvider,
   };
 
   return (

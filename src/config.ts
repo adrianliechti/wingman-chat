@@ -45,7 +45,10 @@ interface modelConfig {
   model?: string;
   description?: string;
 
-  mcp: string[];
+  tools?: {
+    enabled: string[];
+    disabled: string[];
+  };
   prompts?: string[];
 }
 
@@ -178,7 +181,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
           prompts: model.prompts,
 
-          mcpServer: model.mcp && model.mcp.length > 0 ? new URL(`/api/v1/mcp/${model.mcp[0]}`, window.location.origin).toString() : undefined,
+          tools: model.tools,
         };
       }) ?? [],
 

@@ -93,13 +93,6 @@ export class MCPClient {
   }
 
   /**
-   * Get available tools
-   */
-  getTools(): MCPTool[] {
-    return this.tools;
-  }
-
-  /**
    * Call an MCP tool
    */
   async callTool(toolName: string, args: Record<string, unknown>): Promise<string> {
@@ -129,7 +122,7 @@ export class MCPClient {
   /**
    * Convert MCP tools to our Tool format
    */
-  getChatTools(): Tool[] {
+  getTools(): Tool[] {
     if (!this.isConnected()) {
       return [];
     }

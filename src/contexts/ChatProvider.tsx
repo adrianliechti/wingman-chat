@@ -9,6 +9,7 @@ import { useSearch } from "../hooks/useSearch";
 import { useArtifacts } from "../hooks/useArtifacts";
 import { useImageGeneration } from "../hooks/useImageGeneration";
 import { useInterpreter } from "../hooks/useInterpreter";
+import { useToolsContext } from "../hooks/useToolsContext";
 import { getConfig } from "../config";
 import { parseResource } from "../lib/resource";
 import { ChatContext } from './ChatContext';
@@ -34,7 +35,26 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const chat = chats.find(c => c.id === chatId) ?? null;
   const model = chat?.model ?? selectedModel ?? models[0];
-  const { tools: chatTools, instructions: chatInstructions, mcpConnected, mcpTools } = useChatContext('chat', model);
+  const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat', model);
+  const { connectedMCPs, connectingMCPs } = useToolsContext();
+  
+  // Calculate MCP connection state
+  const mcpConnected = useMemo(() => {
+    if (connectedMCPs.size === 0 && connectingMCPs.size === 0) {
+      return null; // No MCP servers configured or connected
+    }
+    if (connectingMCPs.size > 0) {
+      return false; // At least one MCP is connecting
+    }
+    return true; // All MCPs are connected
+  }, [connectedMCPs.size, connectingMCPs.size]);
+  
+  // Get all MCP tools from connected MCPs
+  const mcpTools = useMemo(() => {
+    const tools = Array.from(connectedMCPs.values()).flatMap(conn => conn.tools);
+    return tools;
+  }, [connectedMCPs]);
+  
   const messages = useMemo(() => {
     const msgs = chat?.messages ?? [];
     messagesRef.current = msgs;

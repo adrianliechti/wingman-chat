@@ -1,12 +1,11 @@
 import { createContext } from "react";
-import type { Tool } from "../types/chat";
+import type { ToolProvider } from "../types/chat";
 
 export interface InterpreterContextType {
   isEnabled: boolean;
   setEnabled: (enabled: boolean) => void;
   isAvailable: boolean;
-  interpreterTools: () => Tool[];
-  interpreterInstructions: () => string;
+  interpreterProvider: () => ToolProvider | null;
 }
 
 export const InterpreterContext = createContext<InterpreterContextType | undefined>(undefined);

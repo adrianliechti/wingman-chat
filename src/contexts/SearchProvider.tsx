@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { getConfig } from '../config';
 import { SearchContext } from './SearchContext';
 import type { SearchContextType } from './SearchContext';
-import type { Tool } from '../types/chat';
+import type { Tool, ToolProvider } from '../types/chat';
 import searchInstructionsText from '../prompts/search.txt?raw';
 
 interface SearchProviderProps {
@@ -104,20 +104,25 @@ export function SearchProvider({ children }: SearchProviderProps) {
     ];
   }, [isEnabled, client]);
 
-  const searchInstructions = useCallback((): string => {
+  const searchProvider = useCallback((): ToolProvider | null => {
     if (!isEnabled) {
-      return "";
+      return null;
     }
 
-    return searchInstructionsText;
-  }, [isEnabled]);
+    return {
+      id: "web_search",
+      name: "Web Search",
+      description: "Search the web and scrape webpage content",
+      tools: searchTools(),
+      instructions: searchInstructionsText,
+    };
+  }, [isEnabled, searchTools]);
 
   const contextValue: SearchContextType = {
     isEnabled,
     setEnabled,
     isAvailable,
-    searchTools,
-    searchInstructions,
+    searchProvider,
   };
 
   return (

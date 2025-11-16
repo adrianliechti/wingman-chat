@@ -3,7 +3,9 @@ import { Menu, MenuButton, MenuItems, MenuItem } from '@headlessui/react';
 import { useBridge } from '../hooks/useBridge';
 
 export function BridgeIndicator() {
-  const { bridgeTools } = useBridge();
+  const { bridgeProvider } = useBridge();
+  const provider = bridgeProvider();
+  const bridgeTools = provider?.tools || [];
 
   // Don't render if no bridge tools are available
   if (bridgeTools.length === 0) {

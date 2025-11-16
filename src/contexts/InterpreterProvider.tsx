@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { getConfig } from '../config';
 import { InterpreterContext } from './InterpreterContext';
 import type { InterpreterContextType } from './InterpreterContext';
-import type { Tool } from '../types/chat';
+import type { Tool, ToolProvider } from '../types/chat';
 import interpreterInstructionsText from '../prompts/interpreter.txt?raw';
 import { executeCode } from "../lib/interpreter";
 
@@ -87,20 +87,25 @@ export function InterpreterProvider({ children }: InterpreterProviderProps) {
     ];
   }, [isEnabled]);
 
-  const interpreterInstructions = useCallback((): string => {
+  const interpreterProvider = useCallback((): ToolProvider | null => {
     if (!isEnabled) {
-      return "";
+      return null;
     }
 
-    return interpreterInstructionsText;
-  }, [isEnabled]);
+    return {
+      id: "interpreter",
+      name: "Code Interpreter",
+      description: "Execute Python code with package dependencies",
+      tools: interpreterTools(),
+      instructions: interpreterInstructionsText,
+    };
+  }, [isEnabled, interpreterTools]);
 
   const contextValue: InterpreterContextType = {
     isEnabled,
     setEnabled,
     isAvailable,
-    interpreterTools,
-    interpreterInstructions,
+    interpreterProvider,
   };
 
   return (

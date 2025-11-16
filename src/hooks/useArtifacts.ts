@@ -1,12 +1,11 @@
 import { useContext, useCallback } from 'react';
 import { ArtifactsContext } from '../contexts/ArtifactsContext';
 import type { ArtifactsContextType } from '../contexts/ArtifactsContext';
-import type { Tool } from '../types/chat';
+import type { Tool, ToolProvider } from '../types/chat';
 import artifactsInstructionsText from '../prompts/artifacts.txt?raw';
 
 export interface ArtifactsHook extends ArtifactsContextType {
-  artifactsTools: () => Tool[];
-  artifactsInstructions: () => string;
+  artifactsProvider: () => ToolProvider | null;
 }
 
 export function useArtifacts(): ArtifactsHook {
@@ -159,20 +158,20 @@ export function useArtifacts(): ArtifactsHook {
       },
       {
         name: 'move_file',
-        description: 'Move or rename a file in the virtual filesystem.',
+        description: 'Move or rename a file in the virtual filesystem from one path to another.',
         parameters: {
           type: 'object',
           properties: {
-            fromPath: {
+            from: {
               type: 'string',
-              description: 'The current file path (e.g., /src/old.js)'
+              description: 'The source file path (e.g., /src/old-name.js)'
             },
-            toPath: {
+            to: {
               type: 'string',
-              description: 'The new file path (e.g., /src/new.js)'
+              description: 'The destination file path (e.g., /src/new-name.js)'
             }
           },
-          required: ['fromPath', 'toPath']
+          required: ['from', 'to']
         },
         function: async (args: Record<string, unknown>): Promise<string> => {
           const fromPath = args.fromPath as string;
@@ -270,7 +269,7 @@ export function useArtifacts(): ArtifactsHook {
       },
       {
         name: 'current_path',
-        description: 'Get the path of the currently active file in the artifacts drawer.',
+        description: 'Get the file path of the currently opened file in the artifacts editor.',
         parameters: {
           type: 'object',
           properties: {},
@@ -297,7 +296,7 @@ export function useArtifacts(): ArtifactsHook {
       },
       {
         name: 'current_file',
-        description: 'Get information about the currently active file in the artifacts drawer.',
+        description: 'Get the file path and content of the currently opened file in the artifacts editor.',
         parameters: {
           type: 'object',
           properties: {},
@@ -343,13 +342,22 @@ export function useArtifacts(): ArtifactsHook {
     ];
   }, [fs, activeFile]);
 
-  const artifactsInstructions = useCallback((): string => {
-    return artifactsInstructionsText;
-  }, []);
+  const artifactsProvider = useCallback((): ToolProvider | null => {
+    if (!context.isEnabled) {
+      return null;
+    }
+
+    return {
+      id: "artifacts",
+      name: "Artifacts",
+      description: "Create and manage files in a virtual filesystem",
+      tools: artifactsTools(),
+      instructions: artifactsInstructionsText,
+    };
+  }, [context.isEnabled, artifactsTools]);
   
   return {
     ...context,
-    artifactsTools,
-    artifactsInstructions,
+    artifactsProvider,
   };
 }

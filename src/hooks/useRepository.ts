@@ -3,7 +3,7 @@ import pLimit from 'p-limit';
 import { Client } from '../lib/client';
 import { VectorDB } from '../lib/vectordb';
 import type { Document } from '../lib/vectordb';
-import type { Tool } from '../types/chat';
+import type { Tool, ToolProvider } from '../types/chat';
 import type { RepositoryFile } from '../types/repository';
 import { useRepositories } from './useRepositories';
 import { getConfig } from '../config';
@@ -22,8 +22,7 @@ export interface RepositoryHook {
   addFile: (file: File) => Promise<void>;
   removeFile: (fileId: string) => void;
   queryChunks: (query: string, topK?: number) => Promise<FileChunk[]>;
-  queryTools: () => Tool[];
-  queryInstructions: () => string;
+  repositoryProvider: () => ToolProvider | null;
   useRAG: boolean;
   totalPages: number;
   totalCharacters: number;
@@ -293,7 +292,7 @@ export function useRepository(repositoryId: string, mode: 'auto' | 'rag' | 'cont
     }
   }, [vectorDB, repositoryId, repository?.embedder, files]);
 
-  const queryTools = useCallback((): Tool[] => {
+  const getTools = useCallback((): Tool[] => {
     if (files.length === 0) {
       return [];
     }
@@ -362,7 +361,7 @@ export function useRepository(repositoryId: string, mode: 'auto' | 'rag' | 'cont
     }
   }, [queryChunks, files, useRAG]);
 
-  const queryInstructions = useCallback((): string => {
+  const getInstructions = useCallback((): string => {
     const instructions = [];
 
     if (repository?.instructions?.trim()) {
@@ -392,13 +391,34 @@ ${repository.instructions.trim()}
     return instructions.join('\n\n');
   }, [repository?.instructions, useRAG, files]);
 
+  const repositoryProvider = useCallback((): ToolProvider | null => {
+    if (!repository || files.length === 0) {
+      return null;
+    }
+
+    const tools = getTools();
+    const instructions = getInstructions();
+
+    // If no tools and no instructions, return null
+    if (tools.length === 0 && !instructions.trim()) {
+      return null;
+    }
+
+    return {
+      id: `repository:${repository.id}`,
+      name: repository.name,
+      description: repository.instructions || `Repository: ${repository.name}`,
+      instructions: instructions || undefined,
+      tools,
+    };
+  }, [repository, files, getTools, getInstructions]);
+
   return {
     files,
     removeFile,
     addFile,
     queryChunks,
-    queryTools,
-    queryInstructions,
+    repositoryProvider,
     useRAG,
     totalPages,
     totalCharacters,

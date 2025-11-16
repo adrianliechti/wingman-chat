@@ -1,12 +1,11 @@
 import { createContext } from "react";
-import type { Tool } from "../types/chat";
+import type { ToolProvider } from "../types/chat";
 
 export interface SearchContextType {
   isEnabled: boolean;
   setEnabled: (enabled: boolean) => void;
   isAvailable: boolean;
-  searchTools: () => Tool[];
-  searchInstructions: () => string;
+  searchProvider: () => ToolProvider | null;
 }
 
 export const SearchContext = createContext<SearchContextType | undefined>(undefined);

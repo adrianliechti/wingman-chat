@@ -1,8 +1,9 @@
 import { createContext } from "react";
-import type { MCP, Tool } from "../types/chat";
+import type { MCP, ToolProvider } from "../types/chat";
 import type { MCPConnection } from "../hooks/useMCP";
 
 export interface ToolsContextType {
+  // MCP management
   mcps: MCP[];
   connectedMCPs: Map<string, MCPConnection>;
   connectingMCPs: Set<string>;
@@ -14,7 +15,8 @@ export interface ToolsContextType {
   isConnected: (id: string) => boolean;
   isConnecting: (id: string) => boolean;
   
-  getAllTools: () => Tool[];
+  // Unified provider access (MCP + local providers)
+  getAllProviders: () => ToolProvider[];
 }
 
 export const ToolsContext = createContext<ToolsContextType | undefined>(undefined);

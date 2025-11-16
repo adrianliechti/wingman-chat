@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { getConfig } from "../config";
-import type { MCP, Tool } from "../types/chat";
+import type { MCP, Tool, ToolProvider } from "../types/chat";
 import { MCPClient } from "../lib/mcp";
 
 export interface MCPConnection {
@@ -58,7 +58,7 @@ export function useMCP() {
       
       await client.connect();
       
-      const tools = client.getChatTools();
+      const tools = client.getTools();
       
       setConnectedMCPs(prev => {
         const next = new Map(prev);
@@ -128,12 +128,17 @@ export function useMCP() {
     return connectingMCPs.has(id);
   }, [connectingMCPs]);
 
-  const getAllTools = useCallback(() => {
-    const tools: Tool[] = [];
+  const getAllProviders = useCallback(() => {
+    const providers: ToolProvider[] = [];
     connectedMCPs.forEach(connection => {
-      tools.push(...connection.tools);
+      providers.push({
+        id: connection.mcp.id,
+        name: connection.mcp.name,
+        description: connection.mcp.description,
+        tools: connection.tools,
+      });
     });
-    return tools;
+    return providers;
   }, [connectedMCPs]);
 
   return {
@@ -145,6 +150,6 @@ export function useMCP() {
     toggleMCP,
     isConnected,
     isConnecting,
-    getAllTools,
+    getAllProviders,
   };
 }
