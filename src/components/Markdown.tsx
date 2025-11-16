@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
+import type { PluggableList } from 'unified';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import remarkGemoji from 'remark-gemoji';
@@ -7,6 +8,7 @@ import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeKatex from 'rehype-katex';
+import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { MermaidRenderer } from './MermaidRenderer';
 import { CodeRenderer } from './CodeRenderer';
@@ -193,14 +195,46 @@ const components: Partial<Components> = {
             return <Markdown>{text}</Markdown>;
         }
 
-        // Default to markdown if no language or undefined/text/plain
-        let language = match![1].toLowerCase();
-        if (language === "undefined" || language === "text" || language === "plain") {
-            language = "markdown";
+        // If no match, it's not a language-specific block, so we can't proceed with language checks.
+        // This case should ideally not be hit if the above logic is correct, but as a safeguard:
+        if (!match) {
+            return <CodeRenderer code={text} language="text" />;
         }
 
-        if (language === "markdown" || language === "md") {
-            return <Markdown>{text}</Markdown>;
+        const language = match[1].toLowerCase();
+
+        if (language === "latex" || language === "tex" || language === "math" || language === "katex") {
+            // Extract filename if present (e.g., % filepath: navier-stokes.tex)
+            const filename = extractFilename(text);
+            
+            try {
+                // Render LaTeX using KaTeX in display mode
+                const html = katex.renderToString(text, {
+                    displayMode: true,
+                    throwOnError: false,
+                    strict: false,
+                    trust: true,
+                    fleqn: false,
+                });
+                
+                return (
+                    <div className="my-4">
+                        {filename && (
+                            <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-2 font-mono">
+                                {filename}
+                            </div>
+                        )}
+                        <div 
+                            className="overflow-x-auto"
+                            dangerouslySetInnerHTML={{ __html: html }}
+                        />
+                    </div>
+                );
+            } catch (error) {
+                // If KaTeX fails, fall back to code renderer
+                console.warn('KaTeX rendering failed:', error);
+                return <CodeRenderer code={text} language="latex" name={filename} />;
+            }
         }
 
         if (language === "mermaid" || language === "mmd") {
@@ -219,11 +253,9 @@ const components: Partial<Components> = {
             return <CsvRenderer csv={text} language={language} />;
         }
 
-        if (language === "latex" || language === "tex" || language === "math" || language === "katex") {
-            const formula = text.trim().startsWith('$$') && text.trim().endsWith('$$') 
-                ? text 
-                : `$$\n${text}\n$$`;
-            return <Markdown>{formula}</Markdown>;
+        // Default to markdown for common "plain text" languages
+        if (language === "markdown" || language === "md" || language === "undefined" || language === "text" || language === "plain") {
+            return <Markdown>{text}</Markdown>;
         }
 
         // Extract filename from code if present
@@ -234,8 +266,8 @@ const components: Partial<Components> = {
     },
 };
 
-const remarkPlugins = [remarkGfm, remarkBreaks, remarkGemoji, remarkMath];
-const rehypePlugins = [rehypeRaw, rehypeSanitize, rehypeKatex];
+const remarkPlugins: PluggableList = [remarkGfm, remarkBreaks, remarkGemoji, remarkMath];
+const rehypePlugins: PluggableList = [rehypeRaw, rehypeSanitize, [rehypeKatex, { strict: false }]];
 
 const NonMemoizedMarkdown = ({ children }: { children: string }) => {
     if (!children) return null;
@@ -244,13 +276,14 @@ const NonMemoizedMarkdown = ({ children }: { children: string }) => {
     let processedContent = children;
     
     // Convert LaTeX-style display math \[...\] to $$...$$
-    // Using a more permissive pattern to capture all content including escaped spaces
-    processedContent = processedContent.replace(/\\\[(.+?)\\\]/gs, (_match, content) => {
+    // Only match actual LaTeX delimiters (backslash-bracket), not regular brackets
+    processedContent = processedContent.replace(/\\\[([^\]]+?)\\\]/g, (_match, content) => {
         return `$$${content}$$`;
     });
     
     // Convert LaTeX-style inline math \(...\) to $...$
-    processedContent = processedContent.replace(/\\\((.+?)\\\)/gs, (_match, content) => {
+    // Only match actual LaTeX delimiters (backslash-paren), not regular parens
+    processedContent = processedContent.replace(/\\\(([^)]+?)\\\)/g, (_match, content) => {
         return `$${content}$`;
     });
     

@@ -7,7 +7,7 @@ import {
   type Edge
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useState } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useTheme } from '../hooks/useTheme';
 import { SearchNode } from './SearchNode';
@@ -24,6 +24,7 @@ import { CodeNode } from './CodeNode';
 import { WorkflowLabelDialog } from './WorkflowLabelDialog';
 import type { WorkflowEdge } from '../types/workflow';
 
+// Move nodeTypes outside component to prevent recreating on every render
 const nodeTypes: NodeTypes = {
   search: SearchNode,
   prompt: PromptNode,
@@ -38,28 +39,44 @@ const nodeTypes: NodeTypes = {
   code: CodeNode,
 };
 
+// Move defaultEdgeOptions outside to prevent recreating
+const defaultEdgeOptions = {
+  style: { strokeWidth: 2 },
+};
+
 export function WorkflowCanvas() {
   const { nodes, edges, onNodesChange, onEdgesChange, onConnect, updateEdgeLabel, deleteConnection } = useWorkflow();
   const { isDark } = useTheme();
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const handleEdgeClick = (_event: React.MouseEvent, edge: Edge) => {
+  // Memoize callbacks to prevent recreating on every render
+  const handleEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
     setSelectedEdge(edge);
     setIsDialogOpen(true);
-  };
+  }, []);
 
-  const handleSaveLabel = (label: string) => {
+  const handleSaveLabel = useCallback((label: string) => {
     if (selectedEdge) {
       updateEdgeLabel(selectedEdge.id, label);
     }
-  };
+  }, [selectedEdge, updateEdgeLabel]);
 
-  const handleDeleteEdge = () => {
+  const handleDeleteEdge = useCallback(() => {
     if (selectedEdge) {
       deleteConnection(selectedEdge.id);
     }
-  };
+  }, [selectedEdge, deleteConnection]);
+
+  const handleCloseDialog = useCallback(() => {
+    setIsDialogOpen(false);
+  }, []);
+
+  // Memoize the current label to prevent recalculating
+  const currentLabel = useMemo(() => 
+    (selectedEdge as WorkflowEdge)?.data?.label || '', 
+    [selectedEdge]
+  );
 
   return (
     <div className="w-full h-full">
@@ -80,9 +97,7 @@ export function WorkflowCanvas() {
         edgesReconnectable={true}
         edgesFocusable={true}
         elevateNodesOnSelect={true}
-        defaultEdgeOptions={{
-          style: { strokeWidth: 2 },
-        }}
+        defaultEdgeOptions={defaultEdgeOptions}
       >
         <Background 
           variant={BackgroundVariant.Dots} 
@@ -100,8 +115,8 @@ export function WorkflowCanvas() {
 
       <WorkflowLabelDialog
         isOpen={isDialogOpen}
-        onClose={() => setIsDialogOpen(false)}
-        currentLabel={(selectedEdge as WorkflowEdge)?.data?.label || ''}
+        onClose={handleCloseDialog}
+        currentLabel={currentLabel}
         onSave={handleSaveLabel}
         onDelete={handleDeleteEdge}
       />
