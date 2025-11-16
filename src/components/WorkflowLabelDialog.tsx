@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect } from 'react';
+import { Fragment, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { X, Tag, Trash2 } from 'lucide-react';
 
@@ -12,10 +12,6 @@ interface WorkflowLabelDialogProps {
 
 export function WorkflowLabelDialog({ isOpen, onClose, currentLabel, onSave, onDelete }: WorkflowLabelDialogProps) {
   const [label, setLabel] = useState(currentLabel);
-
-  useEffect(() => {
-    setLabel(currentLabel);
-  }, [currentLabel, isOpen]);
 
   const handleSave = () => {
     onSave(label.trim());
@@ -36,7 +32,7 @@ export function WorkflowLabelDialog({ isOpen, onClose, currentLabel, onSave, onD
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={onClose}>
+      <Dialog key={isOpen ? currentLabel : undefined} as="div" className="relative z-50" onClose={onClose}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"

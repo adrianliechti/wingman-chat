@@ -13,7 +13,15 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   const [openFiles, setOpenFiles] = useState<string[]>([]);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [showArtifactsDrawer, setShowArtifactsDrawer] = useState(false);
-  const [isAvailable, setIsAvailable] = useState(false);
+  const config = getConfig();
+  const [isAvailable] = useState(() => {
+    try {
+      return config.artifacts.enabled;
+    } catch (error) {
+      console.warn('Failed to get artifacts config:', error);
+      return false;
+    }
+  });
   const [isEnabled, setIsEnabled] = useState(false);
 
   // Create singleton FileSystemManager instance
@@ -64,17 +72,6 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
       setIsEnabled(true);
     }
   }, [fs]);
-
-  // Check artifacts availability from config
-  useEffect(() => {
-    try {
-      const config = getConfig();
-      setIsAvailable(config.artifacts.enabled);
-    } catch (error) {
-      console.warn('Failed to get artifacts config:', error);
-      setIsAvailable(false);
-    }
-  }, []);
 
   // Subscribe to filesystem events - use empty dependency array to prevent re-subscriptions
   useEffect(() => {

@@ -55,7 +55,6 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
       providers.push(rendererProviderInstance);
     }
     
-    // Add repository provider if available
     const repositoryProviderInstance = repositoryProvider();
     if (repositoryProviderInstance) {
       providers.push(repositoryProviderInstance);

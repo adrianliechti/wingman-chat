@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { getConfig } from '../config';
 import { InterpreterContext } from './InterpreterContext';
@@ -13,18 +13,15 @@ interface InterpreterProviderProps {
 
 export function InterpreterProvider({ children }: InterpreterProviderProps) {
   const [isEnabled, setEnabled] = useState(false);
-  const [isAvailable, setIsAvailable] = useState(false);
-
-  // Check interpreter availability from config
-  useEffect(() => {
+  const config = getConfig();
+  const [isAvailable] = useState(() => {
     try {
-      const config = getConfig();
-      setIsAvailable(config.interpreter.enabled);
+      return config.interpreter.enabled;
     } catch (error) {
       console.warn('Failed to get interpreter config:', error);
-      setIsAvailable(false);
+      return false;
     }
-  }, []);
+  });
 
   const interpreterTools = useCallback((): Tool[] => {
     if (!isEnabled) {

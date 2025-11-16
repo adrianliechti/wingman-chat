@@ -174,11 +174,11 @@ export function useArtifacts(): ArtifactsHook {
           required: ['from', 'to']
         },
         function: async (args: Record<string, unknown>): Promise<string> => {
-          const fromPath = args.fromPath as string;
-          const toPath = args.toPath as string;
+          const fromPath = args.from as string;
+          const toPath = args.to as string;
 
           if (!fromPath || !toPath) {
-            return JSON.stringify({ error: 'Both fromPath and toPath are required' });
+            return JSON.stringify({ error: 'Both from and to path are required' });
           }
 
           if (!fs) {

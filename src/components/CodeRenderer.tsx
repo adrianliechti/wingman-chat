@@ -33,14 +33,16 @@ const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
   };
 
   useEffect(() => {
-    if (!code) {
-      setHtml('');
-      return;
-    }
-
     let isCancelled = false;
 
     const highlightCode = async () => {
+      if (!code) {
+        if (!isCancelled) {
+          setHtml('');
+        }
+        return;
+      }
+
       try {
         const langId = language.toLowerCase();
         

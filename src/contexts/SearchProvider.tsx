@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { getConfig } from '../config';
 import { SearchContext } from './SearchContext';
@@ -12,20 +12,16 @@ interface SearchProviderProps {
 
 export function SearchProvider({ children }: SearchProviderProps) {
   const [isEnabled, setEnabled] = useState(false);
-  const [isAvailable, setIsAvailable] = useState(false);
   const config = getConfig();
-  const client = config.client;
-
-  // Check search availability from config
-  useEffect(() => {
+  const [isAvailable] = useState(() => {
     try {
-      const config = getConfig();
-      setIsAvailable(config.internet.enabled);
+      return config.internet.enabled;
     } catch (error) {
       console.warn('Failed to get search config:', error);
-      setIsAvailable(false);
+      return false;
     }
-  }, []);
+  });
+  const client = config.client;
 
   const searchTools = useCallback((): Tool[] => {
     if (!isEnabled) {

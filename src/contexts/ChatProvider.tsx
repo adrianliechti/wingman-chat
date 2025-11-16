@@ -56,9 +56,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [connectedMCPs]);
   
   const messages = useMemo(() => {
-    const msgs = chat?.messages ?? [];
-    messagesRef.current = msgs;
-    return msgs;
+    return chat?.messages ?? [];
   }, [chat?.messages]);
 
   useEffect(() => {

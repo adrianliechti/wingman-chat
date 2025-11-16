@@ -137,13 +137,17 @@ export function ChatPage() {
   // Handle repository drawer animation
   useEffect(() => {
     if (showRepositoryDrawer) {
-      setShouldRenderRepositoryDrawer(true);
       // Small delay to ensure the element is in the DOM before animating
+      queueMicrotask(() => {
+        setShouldRenderRepositoryDrawer(true);
+      });
       setTimeout(() => {
         setIsRepositoryDrawerAnimating(true);
       }, 10);
     } else {
-      setIsRepositoryDrawerAnimating(false);
+      queueMicrotask(() => {
+        setIsRepositoryDrawerAnimating(false);
+      });
       // Remove from DOM after animation completes
       const timer = setTimeout(() => {
         setShouldRenderRepositoryDrawer(false);
@@ -155,13 +159,17 @@ export function ChatPage() {
   // Handle artifacts drawer animation
   useEffect(() => {
     if (showArtifactsDrawer) {
-      setShouldRenderArtifactsDrawer(true);
       // Small delay to ensure the element is in the DOM before animating
+      queueMicrotask(() => {
+        setShouldRenderArtifactsDrawer(true);
+      });
       setTimeout(() => {
         setIsArtifactsDrawerAnimating(true);
       }, 10);
     } else {
-      setIsArtifactsDrawerAnimating(false);
+      queueMicrotask(() => {
+        setIsArtifactsDrawerAnimating(false);
+      });
       // Remove from DOM after animation completes
       const timer = setTimeout(() => {
         setShouldRenderArtifactsDrawer(false);

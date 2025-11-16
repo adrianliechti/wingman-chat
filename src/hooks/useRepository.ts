@@ -7,6 +7,7 @@ import type { Tool, ToolProvider } from '../types/chat';
 import type { RepositoryFile } from '../types/repository';
 import { useRepositories } from './useRepositories';
 import { getConfig } from '../config';
+import { markdownToText } from '../lib/utils';
 import repositoryRagInstructions from '../prompts/repository-rag.txt?raw';
 import repositoryContextInstructions from '../prompts/repository-context.txt?raw';
 
@@ -368,9 +369,9 @@ export function useRepository(repositoryId: string, mode: 'auto' | 'rag' | 'cont
       instructions.push(`
 ## Instructions
 
-\`\`\`\`text
-${repository.instructions.trim()}
-\`\`\`\`
+Follow the instructions below carefully:
+
+${markdownToText(repository.instructions.trim())}
 `.trim());
     }
 

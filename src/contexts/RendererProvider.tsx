@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import type { ReactNode } from "react";
 import { RendererContext } from "./RendererContext";
 import type { RendererContextType } from "./RendererContext";
@@ -15,20 +15,16 @@ interface RendererProviderProps {
 
 export function RendererProvider({ children }: RendererProviderProps) {
   const [isEnabled, setEnabled] = useState(false);
-  const [isAvailable, setIsAvailable] = useState(false);
   const config = getConfig();
-  const client = config.client;
-
-  // Check image generation availability from config
-  useEffect(() => {
+  const [isAvailable] = useState(() => {
     try {
-      const config = getConfig();
-      setIsAvailable(config.renderer.enabled);
+      return config.renderer.enabled;
     } catch (error) {
       console.warn('Failed to get image generation config:', error);
-      setIsAvailable(false);
+      return false;
     }
-  }, []);
+  });
+  const client = config.client;
 
   const imageGenerationTools = useCallback((): Tool[] => {
     if (!isEnabled) {

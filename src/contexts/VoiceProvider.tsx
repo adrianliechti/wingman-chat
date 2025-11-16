@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { useVoiceWebSockets } from "../hooks/useVoiceWebSockets";
 import { useChat } from "../hooks/useChat";
 import { useChatContext } from "../hooks/useChatContext";
@@ -13,21 +13,18 @@ interface VoiceProviderProps {
 
 export function VoiceProvider({ children }: VoiceProviderProps) {
   const [isListening, setIsListening] = useState(false);
-  const [isAvailable, setIsAvailable] = useState(false);
+  const config = getConfig();
+  const [isAvailable] = useState(() => {
+    try {
+      return config.voice;
+    } catch (error) {
+      console.warn('Failed to get voice config:', error);
+      return false;
+    }
+  });
   const { addMessage, messages, chat, models, model: selectedModel } = useChat();
   const model = chat?.model ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext('voice', model);
-
-  // Check voice availability from config
-  useEffect(() => {
-    try {
-      const config = getConfig();
-      setIsAvailable(config.voice);
-    } catch (error) {
-      console.warn('Failed to get voice config:', error);
-      setIsAvailable(false);
-    }
-  }, []);
 
   const onUserTranscript = useCallback((text: string) => {
     let content = text;

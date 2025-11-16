@@ -50,6 +50,14 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     if (profileInstructions.trim()) {
       instructionsList.push(profileInstructions);
     }
+    
+    if (defaultInstructions.trim()) {
+      instructionsList.push(defaultInstructions);
+    }
+
+    if (mode === 'voice') {
+      instructionsList.push('Respond concisely and naturally for voice interaction.');
+    }
 
     // Add instructions from filtered providers
     filteredProviders.forEach(provider => {
@@ -58,13 +66,8 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
       }
     });
 
-    // Add default output formatting instructions
-    instructionsList.push(defaultInstructions);
-
-    // Add mode-specific instructions
-    if (mode === 'voice') {
-      instructionsList.push('Respond concisely and naturally for voice interaction.');
-    }
+    console.log('instructions:', instructionsList.join('\n\n'));
+    console.log('tools:', completionTools);
 
     return {
       tools: completionTools,

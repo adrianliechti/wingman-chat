@@ -17,20 +17,6 @@ export interface FileNodeData extends BaseNodeData {
 // FileNode type
 export type FileNodeType = Node<FileNodeData, 'file'>;
 
-// Factory function to create a new FileNode
-export function createFileNode(position: { x: number; y: number }): FileNodeType {
-  return {
-    id: crypto.randomUUID(),
-    type: 'file',
-    position,
-    data: {
-      fileName: '',
-      outputText: '',
-      useInput: false
-    }
-  };
-}
-
 export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) => {
   const { updateNode } = useWorkflow();
   const { isProcessing, executeAsync } = useWorkflowNode(id);

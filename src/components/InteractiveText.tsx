@@ -61,7 +61,9 @@ export function InteractiveText({
 
   // Clear highlighting when text changes
   useEffect(() => {
-    setSelectedWord(null);
+    return () => {
+      setSelectedWord(null);
+    };
   }, [text]);
 
   // Handle text selection

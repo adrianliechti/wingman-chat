@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { getConfig } from '../config';
 import { BackgroundContext } from './BackgroundContext';
 import type { BackgroundPack, BackgroundSetting, BackgroundContextValue } from './BackgroundContext';
@@ -19,25 +19,17 @@ export const BackgroundProvider: React.FC<React.PropsWithChildren<unknown>> = ({
     }
   }, []);
 
-  const [backgroundSetting, setBackgroundSetting] = useState<BackgroundSetting>(null);
-
-  // Load and validate stored setting when packs are available
-  useEffect(() => {
-    if (backgroundPacks.length === 0) return;
+  const [backgroundSetting, setBackgroundSetting] = useState<BackgroundSetting>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored && backgroundPacks.some((p) => p.name === stored)) {
-        setBackgroundSetting(stored);
-      } else {
-        setBackgroundSetting(null);
-        if (stored) {
-          localStorage.removeItem(STORAGE_KEY);
-        }
+      if (stored) {
+        return stored;
       }
     } catch {
-      setBackgroundSetting(null);
+      // ignore storage errors
     }
-  }, [backgroundPacks]);
+    return null;
+  });
 
   const setBackground = useCallback((setting: BackgroundSetting) => {
     setBackgroundSetting(setting);
@@ -55,7 +47,20 @@ export const BackgroundProvider: React.FC<React.PropsWithChildren<unknown>> = ({
   const backgroundImage = useMemo<string>(() => {
     if (!backgroundSetting) return '';
     const pack = backgroundPacks.find((p) => p.name === backgroundSetting);
-    if (!pack || pack.items.length === 0) return '';
+    if (!pack || pack.items.length === 0) {
+      // Invalid setting detected during render - schedule cleanup
+      if (backgroundSetting) {
+        queueMicrotask(() => {
+          setBackgroundSetting(null);
+          try {
+            localStorage.removeItem(STORAGE_KEY);
+          } catch {
+            // ignore storage errors
+          }
+        });
+      }
+      return '';
+    }
     const dayIndex = (new Date().getDate() - 1) % pack.items.length;
     return pack.items[dayIndex].url;
   }, [backgroundPacks, backgroundSetting]);
