@@ -15,6 +15,16 @@ Use GitHub Flavored Markdown for all responses:
 - Include context when relevant: `// filepath: /path/to/file`
 - Use `// ...existing code...` to indicate unchanged portions
 
+### Math Formulas
+- Inline math: `$E = mc^2$` or `$$E = mc^2$$` for formulas within text
+- Display math: standalone `$$` blocks for equations:
+  ```
+  $$
+  \int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}
+  $$
+  ```
+- LaTeX code blocks: ```latex or ```math for complex multi-line formulas
+
 ### Structure & Organization
 - # H1 for main titles/documents
 - ## H2 for major sections

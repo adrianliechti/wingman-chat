@@ -3,8 +3,11 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import remarkGemoji from 'remark-gemoji';
+import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { MermaidRenderer } from './MermaidRenderer';
 import { CodeRenderer } from './CodeRenderer';
 import { HtmlRenderer } from './HtmlRenderer';
@@ -204,13 +207,20 @@ const components: Partial<Components> = {
             return <CsvRenderer csv={text} language={language} />;
         }
 
+        if (language === "latex" || language === "tex" || language === "math" || language === "katex") {
+            const formula = text.trim().startsWith('$$') && text.trim().endsWith('$$') 
+                ? text 
+                : `$$\n${text}\n$$`;
+            return <Markdown>{formula}</Markdown>;
+        }
+
         // Use CodeRenderer for all other code blocks
         return <CodeRenderer code={text} language={language} />;
     },
 };
 
-const remarkPlugins = [remarkGfm, remarkBreaks, remarkGemoji];
-const rehypePlugins = [rehypeRaw, rehypeSanitize];
+const remarkPlugins = [remarkGfm, remarkBreaks, remarkGemoji, remarkMath];
+const rehypePlugins = [rehypeRaw, rehypeSanitize, rehypeKatex];
 
 const NonMemoizedMarkdown = ({ children }: { children: string }) => {
     if (!children) return null;
