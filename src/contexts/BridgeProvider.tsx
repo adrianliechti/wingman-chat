@@ -21,18 +21,24 @@ export function BridgeProvider({ children }: BridgeProviderProps) {
       if (bridge.isConnected()) {
         try {
           const tools = await bridge.listTools();
-          setBridgeTools(tools);
+          setBridgeTools(prev => {
+            // Only update if tools have changed
+            if (JSON.stringify(prev) !== JSON.stringify(tools)) {
+              return tools;
+            }
+            return prev;
+          });
         } catch (error) {
           console.error("Failed to fetch bridge tools:", error);
-          setBridgeTools([]);
+          setBridgeTools(prev => prev.length > 0 ? [] : prev);
         }
       } else {
-        setBridgeTools([]);
+        setBridgeTools(prev => prev.length > 0 ? [] : prev);
       }
       
       // Update instructions (can be available even when not connected)
       const instructions = bridge.getInstructions();
-      setBridgeInstructions(instructions);
+      setBridgeInstructions(prev => prev !== instructions ? instructions : prev);
     };
 
     updateBridge();
