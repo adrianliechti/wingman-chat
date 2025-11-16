@@ -12,7 +12,11 @@ Use GitHub Flavored Markdown for all responses:
 ### Code Blocks
 - ```language blocks for code snippets (always specify the language)
 - Use proper syntax highlighting: `javascript`, `python`, `bash`, `json`, `yaml`, etc.
-- Include context when relevant: `// filepath: /path/to/file`
+- Include filename as the first line using appropriate comment syntax:
+  - `// filepath: main.go` or `// file: main.go` for JavaScript, Go, C++, Rust, etc.
+  - `# filepath: main.py` or `# file: main.py` for Python, Ruby, Shell, etc.
+  - `/* filepath: styles.css */` or `/* file: styles.css */` for CSS, Java, C, etc.
+  - `<!-- filepath: index.html -->` or `<!-- file: index.html -->` for HTML, XML
 - Use `// ...existing code...` to indicate unchanged portions
 
 ### Math Formulas

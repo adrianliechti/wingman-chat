@@ -226,8 +226,11 @@ const components: Partial<Components> = {
             return <Markdown>{formula}</Markdown>;
         }
 
+        // Extract filename from code if present
+        const filename = extractFilename(text);
+
         // Use CodeRenderer for all other code blocks
-        return <CodeRenderer code={text} language={language} />;
+        return <CodeRenderer code={text} language={language} name={filename} />;
     },
 };
 
@@ -262,3 +265,31 @@ export const Markdown = memo(
     NonMemoizedMarkdown,
     (prevProps, nextProps) => prevProps.children === nextProps.children,
 );
+
+const extractFilename = (code: string): string | undefined => {
+    const lines = code.split('\n');
+    if (lines.length === 0) return undefined;
+    
+    const firstLine = lines[0].trim();
+    
+    // Pattern to match various comment styles with filepath
+    const patterns = [
+        /^\/\/\s*filepath:\s*(.+)$/i,           // // filepath: main.go
+        /^\/\/\s*file:\s*(.+)$/i,               // // file: main.go
+        /^#\s*filepath:\s*(.+)$/i,              // # filepath: main.py
+        /^#\s*file:\s*(.+)$/i,                  // # file: main.py
+        /^<!--\s*filepath:\s*(.+?)\s*-->$/i,    // <!-- filepath: index.html -->
+        /^<!--\s*file:\s*(.+?)\s*-->$/i,        // <!-- file: index.html -->
+        /^\/\*\s*filepath:\s*(.+?)\s*\*\/$/i,   // /* filepath: styles.css */
+        /^\/\*\s*file:\s*(.+?)\s*\*\/$/i,       // /* file: styles.css */
+    ];
+    
+    for (const pattern of patterns) {
+        const match = firstLine.match(pattern);
+        if (match) {
+            return match[1].trim();
+        }
+    }
+    
+    return undefined;
+};
