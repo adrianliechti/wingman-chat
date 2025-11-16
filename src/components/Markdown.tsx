@@ -243,6 +243,17 @@ const NonMemoizedMarkdown = ({ children }: { children: string }) => {
     // Preprocess markdown to fix common formatting issues
     let processedContent = children;
     
+    // Convert LaTeX-style display math \[...\] to $$...$$
+    // Using a more permissive pattern to capture all content including escaped spaces
+    processedContent = processedContent.replace(/\\\[(.+?)\\\]/gs, (_match, content) => {
+        return `$$${content}$$`;
+    });
+    
+    // Convert LaTeX-style inline math \(...\) to $...$
+    processedContent = processedContent.replace(/\\\((.+?)\\\)/gs, (_match, content) => {
+        return `$${content}$`;
+    });
+    
     // Ensure blank line before code blocks that come after headings
     processedContent = processedContent.replace(/^(#{1,6}\s+.+)\n```/gm, '$1\n\n```');
     
