@@ -32,7 +32,7 @@ export function ChatInput() {
   const config = getConfig();
   const client = config.client;
 
-  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding, isInitializing } = useChat();
+  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding } = useChat();
   const { currentRepository, setCurrentRepository } = useRepositories();
   const { profile } = useSettings();
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
@@ -121,18 +121,27 @@ export function ChatInput() {
 
   // Tool providers indicator logic
   const toolIndicator = useMemo(() => {
-    // null = no providers, true = initializing, false = all ready
-    if (isInitializing === null) {
-      // No tool providers configured - show brain
-      return <Sparkles size={14} />;
-    } else if (isInitializing === false) {
-      // All providers ready - show rocket
-      return <Rocket size={14} />;
-    } else {
+    // Check if any providers are connected
+    const hasConnectedProviders = providers.some(
+      (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Connected
+    );
+
+    // Check if any providers are initializing
+    const hasInitializingProviders = providers.some(
+      (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Initializing
+    );
+
+    if (hasInitializingProviders) {
       // At least one provider initializing - show loading spinner
       return <LoaderCircle size={14} className="animate-spin" />;
+    } else if (hasConnectedProviders) {
+      // At least one provider connected - show rocket
+      return <Rocket size={14} />;
+    } else {
+      // No providers connected - show sparkles
+      return <Sparkles size={14} />;
     }
-  }, [isInitializing]);
+  }, [providers, getProviderState]);
 
   // Auto-connect required tools when model changes
   useEffect(() => {
