@@ -410,7 +410,7 @@ ${markdownToText(repository.instructions.trim())}
       name: repository.name,
       description: repository.instructions || `Repository: ${repository.name}`,
       instructions: instructions || undefined,
-      tools,
+      tools: async () => tools,
     };
   }, [repository, files, getTools, getInstructions]);
 

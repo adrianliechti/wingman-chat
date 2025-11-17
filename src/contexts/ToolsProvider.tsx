@@ -26,7 +26,7 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
   const { repositoryProvider } = useRepository(currentRepository?.id || '', 'auto');
 
   // Combine local providers with MCP providers
-  const getAllProviders = useCallback((): ToolProvider[] => {
+  const getProviders = useCallback((): ToolProvider[] => {
     const providers: ToolProvider[] = [];
     
     // Add local providers if enabled
@@ -84,7 +84,7 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     toggleMCP: mcpHook.toggleMCP,
     isConnected: mcpHook.isConnected,
     isConnecting: mcpHook.isConnecting,
-    getAllProviders,
+    getProviders,
   };
 
   return <ToolsContext.Provider value={value}>{children}</ToolsContext.Provider>;

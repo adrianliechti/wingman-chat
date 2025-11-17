@@ -6,6 +6,9 @@ import { MCPClient } from "../lib/mcp";
 export interface MCPConnection {
   mcp: MCP;
   client: MCPClient;
+
+  instructions: string | undefined;
+
   tools: Tool[];
 }
 
@@ -59,10 +62,11 @@ export function useMCP() {
       await client.connect();
       
       const tools = client.getTools();
+      const instructions = client.getInstructions();
       
       setConnectedMCPs(prev => {
         const next = new Map(prev);
-        next.set(id, { mcp, client, tools });
+        next.set(id, { mcp, client, instructions, tools });
         return next;
       });
 
@@ -133,9 +137,13 @@ export function useMCP() {
     connectedMCPs.forEach(connection => {
       providers.push({
         id: connection.mcp.id,
+
         name: connection.mcp.name,
         description: connection.mcp.description,
-        tools: connection.tools,
+
+        instructions: connection.instructions,
+
+        tools: async () => connection.tools,
       });
     });
     return providers;

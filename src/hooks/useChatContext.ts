@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useState, useEffect } from "react";
 import type { Tool, Model } from "../types/chat";
 import { useProfile } from "./useProfile";
 import { useToolsContext } from "./useToolsContext";
@@ -15,68 +15,77 @@ export interface ChatContext {
  */
 export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | null): ChatContext {
   const { generateInstructions } = useProfile();
-  const { getAllProviders } = useToolsContext();
+  const { getProviders } = useToolsContext();
+  const [context, setContext] = useState<ChatContext>({ tools: [], instructions: '' });
 
-  return useMemo(() => {
-    const profileInstructions = generateInstructions();
-    
-    // Get all providers from the unified ToolsContext
-    const providers = getAllProviders();
-    
-    // Filter providers based on model configuration
-    let filteredProviders = providers;
-    if (model?.tools) {
-      const enabledTools = new Set(model.tools.enabled || []);
-      const disabledTools = new Set(model.tools.disabled || []);
+  useEffect(() => {
+    const loadContext = async () => {
+      const profileInstructions = generateInstructions();
       
-      filteredProviders = providers.filter(provider => {
-        // Check provider ID against enabled/disabled lists
-        const matchId = provider.id;
+      // Get all providers from the unified ToolsContext
+      const providers = getProviders();
+      
+      // Filter providers based on model configuration
+      let filteredProviders = providers;
+      if (model?.tools) {
+        const enabledTools = new Set(model.tools.enabled || []);
+        const disabledTools = new Set(model.tools.disabled || []);
         
-        // If there are enabled tools specified, only include those
-        if (enabledTools.size > 0) {
-          return enabledTools.has(matchId);
-        }
-        // Otherwise, exclude disabled tools
-        return !disabledTools.has(matchId);
-      });
-    }
-    
-    // Extract tools from filtered providers
-    const completionTools = filteredProviders.flatMap(p => p.tools);
-
-    const instructionsList: string[] = [];
-
-    if (profileInstructions.trim()) {
-      instructionsList.push(profileInstructions);
-    }
-    
-    if (defaultInstructions.trim()) {
-      instructionsList.push(defaultInstructions);
-    }
-
-    if (mode === 'voice') {
-      instructionsList.push('Respond concisely and naturally for voice interaction.');
-    }
-
-    // Add instructions from filtered providers
-    filteredProviders.forEach(provider => {
-      if (provider.instructions?.trim()) {
-        instructionsList.push(provider.instructions);
+        filteredProviders = providers.filter(provider => {
+          // Check provider ID against enabled/disabled lists
+          const matchId = provider.id;
+          
+          // If there are enabled tools specified, only include those
+          if (enabledTools.size > 0) {
+            return enabledTools.has(matchId);
+          }
+          // Otherwise, exclude disabled tools
+          return !disabledTools.has(matchId);
+        });
       }
-    });
+      
+      // Extract tools from filtered providers asynchronously
+      const toolsPromises = filteredProviders.map(p => p.tools());
+      const toolsArrays = await Promise.all(toolsPromises);
+      const completionTools = toolsArrays.flat();
 
-    console.log('instructions:', instructionsList.join('\n\n'));
-    console.log('tools:', completionTools);
+      const instructionsList: string[] = [];
 
-    return {
-      tools: completionTools,
-      instructions: instructionsList.join('\n\n'),
+      if (profileInstructions.trim()) {
+        instructionsList.push(profileInstructions);
+      }
+      
+      if (defaultInstructions.trim()) {
+        instructionsList.push(defaultInstructions);
+      }
+
+      if (mode === 'voice') {
+        instructionsList.push('Respond concisely and naturally for voice interaction.');
+      }
+
+      // Add instructions from filtered providers
+      filteredProviders.forEach(provider => {
+        if (provider.instructions?.trim()) {
+          instructionsList.push(provider.instructions);
+        }
+      });
+
+      console.log('instructions:', instructionsList.join('\n\n'));
+      console.log('tools:', completionTools);
+
+      setContext({
+        tools: completionTools,
+        instructions: instructionsList.join('\n\n'),
+      });
     };
+
+    loadContext();
   }, [
     mode,
     model,
     generateInstructions,
-    getAllProviders
+    getProviders
   ]);
+
+  return context;
 }

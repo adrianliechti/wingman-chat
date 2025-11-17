@@ -349,10 +349,13 @@ export function useArtifacts(): ArtifactsHook {
 
     return {
       id: "artifacts",
+
       name: "Artifacts",
       description: "Create and manage files in a virtual filesystem",
-      tools: artifactsTools(),
+
       instructions: artifactsInstructionsText,
+      
+      tools: async () => artifactsTools(),
     };
   }, [context.isEnabled, artifactsTools]);
   

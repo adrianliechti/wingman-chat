@@ -106,11 +106,14 @@ export function SearchProvider({ children }: SearchProviderProps) {
     }
 
     return {
-      id: "web_search",
-      name: "Web Search",
-      description: "Search the web and scrape webpage content",
-      tools: searchTools(),
+      id: "internet",
+
+      name: "Internet Access",
+      description: "Search and fetch websites",
+
       instructions: searchInstructionsText,
+      
+      tools: async () => searchTools(),
     };
   }, [isEnabled, searchTools]);
 

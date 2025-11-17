@@ -31,8 +31,10 @@ function processContent(content: ContentBlock[]): string {
  */
 export class MCPClient {
   private client: Client | null = null;
-  private tools: MCPTool[] = [];
   private serverUrl: string;
+
+  private tools: MCPTool[] = [];
+  private instructions: string | undefined;
 
   constructor(serverUrl: string) {
     this.serverUrl = serverUrl;
@@ -63,6 +65,8 @@ export class MCPClient {
     });
 
     await this.client.connect(transport);
+
+    this.instructions = this.client.getInstructions()
 
     const toolsResponse = await this.client.listTools();
     this.tools = toolsResponse.tools || [];
@@ -119,6 +123,14 @@ export class MCPClient {
     }
   }
 
+  getInstructions(): string | undefined {
+    if (!this.isConnected()) {
+      return undefined;
+    }
+
+    return this.instructions;
+  }
+
   /**
    * Convert MCP tools to our Tool format
    */
@@ -130,7 +142,9 @@ export class MCPClient {
     return this.tools.map((tool) => ({
       name: tool.name,
       description: tool.description || "",
+
       parameters: tool.inputSchema || {},
+      
       function: async (args: Record<string, unknown>) => {
         return this.callTool(tool.name, args);
       },

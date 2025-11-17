@@ -91,10 +91,13 @@ export function InterpreterProvider({ children }: InterpreterProviderProps) {
 
     return {
       id: "interpreter",
+
       name: "Code Interpreter",
       description: "Execute Python code with package dependencies",
-      tools: interpreterTools(),
+
       instructions: interpreterInstructionsText,
+
+      tools: async () => interpreterTools(),
     };
   }, [isEnabled, interpreterTools]);
 

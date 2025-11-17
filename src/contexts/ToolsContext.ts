@@ -16,7 +16,7 @@ export interface ToolsContextType {
   isConnecting: (id: string) => boolean;
   
   // Unified provider access (MCP + local providers)
-  getAllProviders: () => ToolProvider[];
+  getProviders: () => ToolProvider[];
 }
 
 export const ToolsContext = createContext<ToolsContextType | undefined>(undefined);

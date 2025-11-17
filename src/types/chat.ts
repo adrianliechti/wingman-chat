@@ -31,7 +31,7 @@ export type ToolProvider = {
 
     instructions?: string;
 
-    tools: Tool[];
+    tools: () => Promise<Tool[]>;
 };
 
 export type Tool = {

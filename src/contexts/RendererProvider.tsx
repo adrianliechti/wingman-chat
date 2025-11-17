@@ -7,7 +7,7 @@ import { AttachmentType } from "../types/chat";
 import { getConfig } from "../config";
 import { readAsDataURL } from "../lib/utils";
 import type { Resource } from "../lib/resource";
-import imageGenerationInstructionsText from '../prompts/image-generation.txt?raw';
+import rendererInstructionsText from '../prompts/image-generation.txt?raw';
 
 interface RendererProviderProps {
   children: ReactNode;
@@ -26,7 +26,7 @@ export function RendererProvider({ children }: RendererProviderProps) {
   });
   const client = config.client;
 
-  const imageGenerationTools = useCallback((): Tool[] => {
+  const rendererTools = useCallback((): Tool[] => {
     if (!isEnabled) {
       return [];
     }
@@ -113,13 +113,16 @@ export function RendererProvider({ children }: RendererProviderProps) {
     }
 
     return {
-      id: "image_generation",
+      id: "renderer",
+
       name: "Image Generation",
       description: "Generate or edit images based on text descriptions",
-      tools: imageGenerationTools(),
-      instructions: imageGenerationInstructionsText,
+
+      instructions: rendererInstructionsText,
+
+      tools: async () => rendererTools(),
     };
-  }, [isEnabled, imageGenerationTools]);
+  }, [isEnabled, rendererTools]);
 
   const contextValue: RendererContextType = {
     isEnabled,

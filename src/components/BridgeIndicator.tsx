@@ -1,11 +1,26 @@
+import { useState, useEffect } from 'react';
 import { Cable } from 'lucide-react';
 import { Menu, MenuButton, MenuItems, MenuItem } from '@headlessui/react';
 import { useBridge } from '../hooks/useBridge';
+import type { Tool } from '../types/chat';
 
 export function BridgeIndicator() {
   const { bridgeProvider } = useBridge();
-  const provider = bridgeProvider();
-  const bridgeTools = provider?.tools || [];
+  const [bridgeTools, setBridgeTools] = useState<Tool[]>([]);
+
+  useEffect(() => {
+    const loadTools = async () => {
+      const provider = bridgeProvider();
+      if (provider) {
+        const tools = await provider.tools();
+        setBridgeTools(tools);
+      } else {
+        setBridgeTools([]);
+      }
+    };
+
+    loadTools();
+  }, [bridgeProvider]);
 
   // Don't render if no bridge tools are available
   if (bridgeTools.length === 0) {

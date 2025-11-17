@@ -54,10 +54,13 @@ export function BridgeProvider({ children }: BridgeProviderProps) {
 
     return {
       id: 'bridge',
+
       name: 'Bridge',
       description: 'Tools provided via the bridge connection',
+      
       instructions: bridgeInstructions || undefined,
-      tools: bridgeTools,
+      
+      tools: async () => bridgeTools,
     };
   }, [bridge, bridgeTools, bridgeInstructions]);
 
