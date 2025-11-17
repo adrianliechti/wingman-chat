@@ -81,12 +81,12 @@ export class MCPClient implements ToolProvider {
     // Setup error and close handlers
     client.onclose = () => {
       console.warn('MCP client connection closed');
-      this.handleDisconnect();
+      //this.handleDisconnect();
     };
 
     client.onerror = (error) => {
       console.error('MCP client connection error:', error);
-      this.handleDisconnect();
+      //this.handleDisconnect();
     };
 
     await client.connect(transport);

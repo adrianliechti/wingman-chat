@@ -264,7 +264,7 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center text-center w-full h-full">
-                      <FileText size={18} className={`mb-1 flex-shrink-0 ${
+                      <FileText size={18} className={`mb-1 shrink-0 ${
                         file.status === 'error' 
                           ? 'text-red-600 dark:text-red-400' 
                           : 'text-neutral-600 dark:text-neutral-300'
@@ -474,7 +474,7 @@ export function RepositoryDrawer() {
                 onClick={() => handleRepositorySelect(null)}
               >
                 <div className="flex items-center gap-2">
-                  <X size={16} className="text-slate-600 dark:text-slate-300 flex-shrink-0" />
+                  <X size={16} className="text-slate-600 dark:text-slate-300 shrink-0" />
                   <span className={`block truncate text-sm ${
                     !currentRepository
                       ? 'font-semibold text-neutral-900 dark:text-neutral-100' 
@@ -493,7 +493,7 @@ export function RepositoryDrawer() {
               >
                 {isCreatingNew ? (
                   <div className="flex items-center gap-2 flex-1">
-                    <Plus size={16} className="text-slate-600 dark:text-slate-400 flex-shrink-0" />
+                    <Plus size={16} className="text-slate-600 dark:text-slate-400 shrink-0" />
                     <input
                       type="text"
                       value={editingName}
@@ -554,7 +554,7 @@ export function RepositoryDrawer() {
                     className="group relative flex items-center justify-between px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-900/20"
                   >
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <Folder size={16} className="text-slate-600 dark:text-slate-400 flex-shrink-0" />
+                      <Folder size={16} className="text-slate-600 dark:text-slate-400 shrink-0" />
                         
                       {isBeingEdited ? (
                         <div className="flex items-center gap-2 flex-1">

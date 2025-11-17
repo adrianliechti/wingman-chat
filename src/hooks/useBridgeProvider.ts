@@ -10,16 +10,7 @@ export function useBridgeProvider(): ToolProvider | null {
       return null;
     }
 
-    return {
-      id: 'bridge',
-      name: 'Bridge',
-      description: 'Local connected tools',
-      instructions: bridge.getInstructions() || undefined,
-      tools: () => bridge.listTools(),
-      isEnabled: true,
-      isInitializing: false,
-      setEnabled: () => {}, // Bridge is always on when connected
-    };
+    return bridge;
   }, [bridge]);
 
   return provider;
