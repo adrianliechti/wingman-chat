@@ -70,8 +70,6 @@ export class MCPClient {
 
     const toolsResponse = await this.client.listTools();
     this.tools = toolsResponse.tools || [];
-
-    console.log(`Connected to MCP server ${this.serverUrl}, found ${this.tools.length} tools`);
   }
 
   /**
@@ -105,7 +103,6 @@ export class MCPClient {
     }
 
     try {
-      console.log('Calling MCP tool:', toolName, args);
       const result = await this.client.callTool({
         name: toolName,
         arguments: args

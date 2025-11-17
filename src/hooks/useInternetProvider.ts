@@ -41,12 +41,8 @@ export function useInternetProvider(): ToolProvider | null {
         function: async (args: Record<string, unknown>) => {
           const { query } = args;
           
-          console.log("[web_search] Starting search", { query });
-          
           try {
             const results = await client.search(query as string);
-            
-            console.log("[web_search] Search completed successfully", { query, resultsCount: results.length });
             
             if (results.length === 0) {
               return "No search results found for the given query.";
@@ -54,7 +50,6 @@ export function useInternetProvider(): ToolProvider | null {
 
             return JSON.stringify(results, null, 2);
           } catch (error) {
-            console.error("[web_search] Search failed", { query, error: error instanceof Error ? error.message : error });
             return `Web search failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
           }
         }
@@ -75,12 +70,8 @@ export function useInternetProvider(): ToolProvider | null {
         function: async (args: Record<string, unknown>) => {
           const { url } = args;
           
-          console.log("[web_scraper] Starting scrape", { url });
-          
           try {
             const content = await client.fetchText(url as string);
-            
-            console.log("[web_scraper] Scrape completed successfully", { url, contentLength: content.length });
             
             if (!content.trim()) {
               return "No text content could be extracted from the provided URL.";
@@ -88,7 +79,6 @@ export function useInternetProvider(): ToolProvider | null {
 
             return content;
           } catch (error) {
-            console.error("[web_scraper] Scrape failed", { url, error: error instanceof Error ? error.message : error });
             return `Web scraping failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
           }
         }

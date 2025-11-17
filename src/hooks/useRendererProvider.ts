@@ -44,8 +44,6 @@ export function useRendererProvider(): ToolProvider | null {
         function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const { prompt } = args;
 
-          console.log("[generate_image] Starting image generation", { prompt });
-
           const images: Blob[] = [];
 
           // Extract image attachments from context
@@ -58,8 +56,8 @@ export function useRendererProvider(): ToolProvider | null {
                 const response = await fetch(imageAttachment.data);
                 const blob = await response.blob();
                 images.push(blob);
-              } catch (error) {
-                console.warn("[generate_image] Failed to convert attachment to blob:", error);
+              } catch {
+                // Failed to convert attachment
               }
             }
           }
@@ -77,8 +75,6 @@ export function useRendererProvider(): ToolProvider | null {
 
             const imageName = `${Date.now()}.png`;
 
-            console.log("[generate_image] Image generation completed successfully")
-
             // Return ResourceResult format
             const resourceResult: Resource = {
               type: "resource",
@@ -92,7 +88,6 @@ export function useRendererProvider(): ToolProvider | null {
 
             return JSON.stringify(resourceResult);
           } catch (error) {
-            console.error("[generate_image] Image generation failed", { prompt, error: error instanceof Error ? error.message : error });
             return JSON.stringify({
               success: false,
               error: `Image generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`

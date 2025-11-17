@@ -53,9 +53,10 @@ export class Bridge {
                 }
 
                 const config : BridgeConfig = await response.json();
-                console.log("Bridge config", config);
-                
-                bridge.instructions = config.instructions || null;
+
+                if (config.instructions?.trim()) {
+                    bridge.instructions = config.instructions;
+                }
             } catch {
                 return;
             }
@@ -116,8 +117,6 @@ export class Bridge {
                     }
 
                     try {
-                        console.log("call local tool", tool.name, args);
-
                         const callResult = await this.mcp.callTool({
                             name: tool.name,
                             arguments: args,

@@ -69,9 +69,6 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
         }
       });
 
-      console.log('instructions:', instructionsList.join('\n\n'));
-      console.log('tools:', completionTools);
-
       setContext({
         tools: completionTools,
         instructions: instructionsList.join('\n\n'),

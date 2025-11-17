@@ -34,30 +34,19 @@ export function useRepositoryProvider(repositoryId: string, mode: 'auto' | 'rag'
           },
           function: async (args: Record<string, unknown>): Promise<string> => {
             const query = args.query as string;
-            console.log("[repository] Query", { query });
 
             if (!query) {
-              console.log("[repository] Query failed - no query provided");
               return JSON.stringify({ error: 'No query provided' });
             }
 
             try {
               const results = await queryChunks(query, 5);
-              console.log("[repository] Query completed", { query, resultsCount: results.length });
 
               if (results.length === 0) {
-                console.log("[repository] No relevant documents found", { query });
                 return JSON.stringify([]);
               }
 
-              const jsonResults = results.map((result, index) => {
-                console.log("[repository] Processing result", { 
-                  index: index + 1, 
-                  fileName: result.file.name, 
-                  similarity: (result.similarity || 0).toFixed(3),
-                  textPreview: result.text.substring(0, 100) + "..."
-                });
-
+              const jsonResults = results.map((result) => {
                 return {
                   file_name: result.file.name,
                   file_chunk: result.text,
@@ -65,10 +54,8 @@ export function useRepositoryProvider(repositoryId: string, mode: 'auto' | 'rag'
                 };
               });
 
-              console.log("[repository] Returning results", { count: jsonResults.length });
               return JSON.stringify(jsonResults);
-            } catch (error) {
-              console.error("[repository] Query failed", { query, error });
+            } catch {
               return JSON.stringify({ error: 'Failed to query repository' });
             }
           }
@@ -93,17 +80,15 @@ ${markdownToText(repository.instructions.trim())}
 `.trim());
     }
 
-    if (files.length > 0) {
-      if (useRAG) {
-        instructions.push(repositoryRagInstructions);
-      } else {
-        instructions.push(repositoryContextInstructions);
+    if (useRAG) {
+      instructions.push(repositoryRagInstructions);
+    } else {
+      instructions.push(repositoryContextInstructions);
 
-        // Include full content of every file (no truncation)
-        for (const file of files) {
-          if (!file.text || !file.text.trim()) continue;
-          instructions.push(`\n\n\`\`\`text ${file.name}\n${file.text}\n\`\`\``);
-        }
+      // Include full content of every file (no truncation)
+      for (const file of files) {
+        if (!file.text || !file.text.trim()) continue;
+        instructions.push(`\n\n\`\`\`text ${file.name}\n${file.text}\n\`\`\``);
       }
     }
 
@@ -111,7 +96,7 @@ ${markdownToText(repository.instructions.trim())}
   }, [repository, useRAG, files]);
 
   const provider = useMemo<ToolProvider | null>(() => {
-    if (!repository || files.length === 0) {
+    if (!repository) {
       return null;
     }
 
@@ -131,9 +116,9 @@ ${markdownToText(repository.instructions.trim())}
       tools: async () => tools,
       isEnabled: true,
       isInitializing: false,
-      setEnabled: () => {}, // Repository is always on when loaded
+      setEnabled: () => { }, // Repository is always on when loaded
     };
-  }, [repository, files, getTools, getInstructions]);
+  }, [repository, getTools, getInstructions]);
 
   return provider;
 }

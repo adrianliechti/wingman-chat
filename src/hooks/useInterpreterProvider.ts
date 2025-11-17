@@ -47,20 +47,10 @@ export function useInterpreterProvider(): ToolProvider | null {
         function: async (args: Record<string, unknown>) => {
           const { code, packages } = args;
           
-          console.log("[execute_python_code] Starting execution", { 
-            codeLength: (code as string)?.length,
-            packages 
-          });
-          
           try {
             const result = await executeCode({
               code: code as string,
               packages: packages as string[] | undefined
-            });
-            
-            console.log("[execute_python_code] Execution completed", { 
-              success: result.success,
-              outputLength: result.output.length 
             });
             
             if (!result.success) {
@@ -69,9 +59,6 @@ export function useInterpreterProvider(): ToolProvider | null {
 
             return result.output;
           } catch (error) {
-            console.error("[execute_python_code] Execution failed", { 
-              error: error instanceof Error ? error.message : error 
-            });
             return `Code execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
           }
         }
