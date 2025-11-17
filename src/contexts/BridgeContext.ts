@@ -1,8 +1,8 @@
 import { createContext } from 'react';
-import type { Bridge } from '../lib/bridge';
+import type { MCPClient } from '../lib/mcp';
 
 export type BridgeContextType = {
-  bridge: Bridge;
+  bridge?: MCPClient;
 };
 
 export const BridgeContext = createContext<BridgeContextType | undefined>(undefined);

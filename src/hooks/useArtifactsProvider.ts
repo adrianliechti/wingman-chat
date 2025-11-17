@@ -5,7 +5,7 @@ import type { Tool, ToolProvider } from '../types/chat';
 import artifactsInstructionsText from '../prompts/artifacts.txt?raw';
 
 export function useArtifactsProvider(): ToolProvider | null {
-  const { fs, activeFile, isAvailable, isEnabled, setEnabled } = useArtifacts();
+  const { fs, activeFile, isAvailable } = useArtifacts();
 
   const artifactsTools = useCallback((): Tool[] => {
     return [
@@ -336,12 +336,9 @@ export function useArtifactsProvider(): ToolProvider | null {
       description: "Create and edit files",
       icon: Table,
       instructions: artifactsInstructionsText,
-      tools: async () => artifactsTools(),
-      isEnabled: isEnabled,
-      isInitializing: false,
-      setEnabled: setEnabled,
+      tools: artifactsTools(),
     };
-  }, [isAvailable, isEnabled, setEnabled, artifactsTools]);
+  }, [isAvailable, artifactsTools]);
 
   return provider;
 }

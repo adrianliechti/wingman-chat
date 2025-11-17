@@ -20,26 +20,26 @@ export type MCP = {
     id: string;
 
     name: string;
-    description?: string;
+    description: string;
 
     url: string;
 };
 
-export type ToolProvider = {
-    id: string;
-    
-    name: string;
-    description?: string;
+export enum ProviderState {
+  Disconnected = 'disconnected',
+  Initializing = 'initializing',
+  Connected = 'connected',
+  Failed = 'failed',
+}
 
-    icon?: ToolIcon;
-    instructions?: string;
-    
-    isEnabled: boolean;
-    isInitializing: boolean;
-    setEnabled: (enabled: boolean) => void | Promise<void>;
-
-    tools: () => Promise<Tool[]>;
-};
+export interface ToolProvider {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly icon?: ToolIcon;
+  readonly instructions?: string;
+  readonly tools: Tool[];
+}
 
 export type Tool = {
     name: string;

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import type { Tool, Model } from "../types/chat";
+import type { Tool, Model, ToolProvider } from "../types/chat";
+import { ProviderState } from "../types/chat";
 import { useProfile } from "./useProfile";
 import { useToolsContext } from "./useToolsContext";
 import defaultInstructions from "../prompts/default.txt?raw";
@@ -9,25 +10,21 @@ export interface ChatContext {
   instructions: () => string;
 }
 
-/**
- * Shared hook for gathering completion tools and instructions
- * Used by both ChatProvider and VoiceProvider
- */
 export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | null): ChatContext {
   const { generateInstructions } = useProfile();
-  const { providers } = useToolsContext();
+  const { providers, getProviderState } = useToolsContext();
 
   const context = useMemo<ChatContext>(() => {
     const getFilteredProviders = () => {
       // Filter providers that are enabled
-      let filteredProviders = providers.filter(p => p.isEnabled);
+      let filteredProviders = providers.filter((p: ToolProvider) => getProviderState(p.id) === ProviderState.Connected);
       
       // Further filter based on model configuration
       if (model?.tools) {
         const enabledTools = new Set(model.tools.enabled || []);
         const disabledTools = new Set(model.tools.disabled || []);
         
-        filteredProviders = filteredProviders.filter(provider => {
+        filteredProviders = filteredProviders.filter((provider: ToolProvider) => {
           // Check provider ID against enabled/disabled lists
           const matchId = provider.id;
           
@@ -47,9 +44,8 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
       tools: async () => {
         const filteredProviders = getFilteredProviders();
         
-        // Extract tools from filtered providers asynchronously
-        const toolsPromises = filteredProviders.map(p => p.tools());
-        const toolsArrays = await Promise.all(toolsPromises);
+        // Extract tools from filtered providers
+        const toolsArrays = filteredProviders.map((p: ToolProvider) => p.tools);
 
         console.log("Compiled Tools from Providers:", toolsArrays);
 
@@ -75,7 +71,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
         }
 
         // Add instructions from filtered providers
-        filteredProviders.forEach(provider => {
+        filteredProviders.forEach((provider: ToolProvider) => {
           if (provider.instructions?.trim()) {
             instructionsList.push(provider.instructions);
           }
@@ -86,7 +82,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
         return instructionsList.join('\n\n');
       }
     };
-  }, [mode, model, generateInstructions, providers]);
+  }, [mode, model, generateInstructions, providers, getProviderState]);
 
   return context;
 }

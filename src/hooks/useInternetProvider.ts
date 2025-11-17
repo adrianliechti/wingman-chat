@@ -1,11 +1,10 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Globe } from 'lucide-react';
 import { getConfig } from '../config';
 import type { Tool, ToolProvider } from '../types/chat';
 import searchInstructionsText from '../prompts/search.txt?raw';
 
 export function useInternetProvider(): ToolProvider | null {
-  const [isEnabled, setEnabled] = useState(false);
   const config = getConfig();
   
   const isAvailable = useMemo(() => {
@@ -20,10 +19,6 @@ export function useInternetProvider(): ToolProvider | null {
   const client = config.client;
 
   const searchTools = useCallback((): Tool[] => {
-    if (!isEnabled) {
-      return [];
-    }
-
     return [
       {
         name: "web_search",
@@ -84,7 +79,7 @@ export function useInternetProvider(): ToolProvider | null {
         }
       }
     ];
-  }, [isEnabled, client]);
+  }, [client]);
 
   const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {
@@ -97,12 +92,9 @@ export function useInternetProvider(): ToolProvider | null {
       description: "Search and fetch websites",
       icon: Globe,
       instructions: searchInstructionsText,
-      tools: async () => searchTools(),
-      isEnabled: isEnabled,
-      isInitializing: false,
-      setEnabled: setEnabled,
+      tools: searchTools(),
     };
-  }, [isAvailable, isEnabled, searchTools]);
+  }, [isAvailable, searchTools]);
 
   return provider;
 }

@@ -4,40 +4,39 @@ import type { ContentBlock } from "@modelcontextprotocol/sdk/types.js";
 import type { Tool, ToolProvider } from '../types/chat';
 import { Rocket } from "lucide-react";
 
-/**
- * MCP Client that implements ToolProvider interface
- * Handles connection to a single MCP server
- */
 export class MCPClient implements ToolProvider {
   readonly id: string;
+  readonly url: string;
+
   readonly name: string;
   readonly description?: string;
+  
   readonly icon = Rocket;
 
   private client: Client | null = null;
-  private url: string;
-  private pingInterval: ReturnType<typeof setInterval> | undefined;
   
-  isEnabled: boolean = false;
-  isInitializing: boolean = false;
+  private pingInterval: ReturnType<typeof setInterval> | undefined;
 
-  constructor(id: string, url: string, name: string, description?: string) {
+  instructions?: string;
+  tools: Tool[] = [];
+
+  constructor(
+    id: string, 
+    url: string, 
+    name: string, 
+    description: string
+  ) {
     this.id = id;
     this.url = url;
     
     this.name = name;
     this.description = description;
   }
-
-  /**
-   * Connect to the MCP server
-   */
+  
   async connect(): Promise<void> {
     if (this.client) {
       await this.disconnect();
     }
-
-    this.isInitializing = true;
 
     const opts = {
       reconnectionOptions: {
@@ -69,18 +68,16 @@ export class MCPClient implements ToolProvider {
 
     await client.connect(transport);
 
-    // Only assign to instance properties after successful initialization
+    console.log('MCP client connected');
+    
     this.client = client;
-    this.isEnabled = true;
-    this.isInitializing = false;
-
-    // Start periodic ping
+    
+    // Load and store tools and instructions after connection
+    await this.loadToolsAndInstructions();
+    
     this.startPing();
   }
-
-  /**
-   * Disconnect from the MCP server
-   */
+  
   async disconnect(): Promise<void> {
     this.stopPing();
     
@@ -91,24 +88,64 @@ export class MCPClient implements ToolProvider {
         console.error('Error disconnecting MCP client:', error);
       }
       this.client = null;
-      this.isEnabled = false;
-      this.isInitializing = false;
+      this.tools = [];
+      this.instructions = undefined;
     }
   }
-
-  /**
-   * Handle disconnect event
-   */
+  
   private handleDisconnect(): void {
     this.stopPing();
     this.client = null;
-    this.isEnabled = false;
-    this.isInitializing = false;
+    this.tools = [];
+    this.instructions = undefined;
   }
+  
+  private async loadToolsAndInstructions(): Promise<void> {
+    if (!this.client) {
+      return;
+    }
 
-  /**
-   * Start periodic ping to detect connection issues
-   */
+    try {
+      // Load instructions
+      this.instructions = this.client.getInstructions();
+      
+      // Load tools
+      const toolsResponse = await this.client.listTools();
+      const tools = toolsResponse.tools || [];
+
+      this.tools = tools.map((tool) => ({
+        name: tool.name,
+
+        description: tool.description || "",
+        parameters: tool.inputSchema || {},
+
+        function: async (args: Record<string, unknown>) => {
+          if (!this.client) {
+            throw new Error('MCP client not connected');
+          }
+
+          try {
+            const result = await this.client.callTool({
+              name: tool.name,
+              arguments: args
+            });
+            
+            if (result && result.content) {
+              return processContent(result.content as ContentBlock[]);
+            }
+            
+            return "no result";
+          } catch (error) {
+            console.error(`Error calling MCP tool ${tool.name}:`, error);
+            throw error;
+          }
+        },
+      }));
+    } catch (error) {
+      console.error('Error loading tools and instructions:', error);
+    }
+  }
+  
   private startPing(): void {
     // Clear any existing interval
     if (this.pingInterval) {
@@ -127,96 +164,21 @@ export class MCPClient implements ToolProvider {
       } else {
         this.stopPing();
       }
-    }, 30000);
+    }, 20000);
   }
-
-  /**
-   * Stop periodic ping
-   */
+  
   private stopPing(): void {
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
       this.pingInterval = undefined;
     }
   }
-
-  /**
-   * ToolProvider interface: Set enabled state
-   */
-  async setEnabled(enabled: boolean): Promise<void> {
-    if (enabled && !this.isEnabled) {
-      await this.connect();
-    } else if (!enabled && this.isEnabled) {
-      await this.disconnect();
-    }
-  }
-
-  /**
-   * Check if connected
-   */
+  
   isConnected(): boolean {
     return this.client !== null;
   }
-
-  /**
-   * Call an MCP tool
-   */
-  async callTool(toolName: string, args: Record<string, unknown>): Promise<string> {
-    if (!this.client) {
-      throw new Error('MCP client not connected');
-    }
-
-    try {
-      const result = await this.client.callTool({
-        name: toolName,
-        arguments: args
-      });
-      
-      // Process the content from the result
-      if (result && result.content) {
-        return processContent(result.content as ContentBlock[]);
-      }
-      
-      return "no result";
-    } catch (error) {
-      console.error(`Error calling MCP tool ${toolName}:`, error);
-      throw error;
-    }
-  }
-
-  get instructions(): string | undefined {
-    if (!this.isConnected()) {
-      return undefined;
-    }
-
-    return this.client?.getInstructions();
-  }
-
-  /**
-   * ToolProvider interface: Get tools
-   */
-  async tools(): Promise<Tool[]> {
-    if (!this.isConnected() || !this.client) {
-      return [];
-    }
-
-    const toolsResponse = await this.client.listTools();
-    const tools = toolsResponse.tools || [];
-
-    return tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description || "",
-      parameters: tool.inputSchema || {},
-      function: async (args: Record<string, unknown>) => {
-        return this.callTool(tool.name, args);
-      },
-    }));
-  }
 }
 
-/**
- * Process MCP content blocks into a string response
- */
 function processContent(content: ContentBlock[]): string {
   if (!content || content.length === 0) {
     return "no content";

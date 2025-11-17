@@ -6,7 +6,7 @@ export function useBridgeProvider(): ToolProvider | null {
   const { bridge } = useBridge();
 
   const provider = useMemo<ToolProvider | null>(() => {
-    if (!bridge.isConnected()) {
+    if (!bridge || !bridge.isConnected()) {
       return null;
     }
 

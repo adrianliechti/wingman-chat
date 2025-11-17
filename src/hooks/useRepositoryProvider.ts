@@ -113,10 +113,7 @@ ${markdownToText(repository.instructions.trim())}
       name: 'Repository',
       description: 'Include your files',
       instructions: instructions || undefined,
-      tools: async () => tools,
-      isEnabled: true,
-      isInitializing: false,
-      setEnabled: () => { }, // Repository is always on when loaded
+      tools: tools,
     };
   }, [repository, getTools, getInstructions]);
 

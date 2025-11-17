@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { Image } from 'lucide-react';
 import { getConfig } from "../config";
 import type { Tool, ToolContext, ToolProvider } from "../types/chat";
@@ -8,7 +8,6 @@ import type { Resource } from "../lib/resource";
 import rendererInstructionsText from '../prompts/image-generation.txt?raw';
 
 export function useRendererProvider(): ToolProvider | null {
-  const [isEnabled, setEnabled] = useState(false);
   const config = getConfig();
   
   const isAvailable = useMemo(() => {
@@ -23,10 +22,6 @@ export function useRendererProvider(): ToolProvider | null {
   const client = config.client;
 
   const rendererTools = useCallback((): Tool[] => {
-    if (!isEnabled) {
-      return [];
-    }
-
     return [
       {
         name: "generate_image",
@@ -96,7 +91,7 @@ export function useRendererProvider(): ToolProvider | null {
         }
       }
     ];
-  }, [isEnabled, client, config]);
+  }, [client, config]);
 
   const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {
@@ -109,12 +104,9 @@ export function useRendererProvider(): ToolProvider | null {
       description: "Generate or edit images",
       icon: Image,
       instructions: rendererInstructionsText,
-      tools: async () => rendererTools(),
-      isEnabled: isEnabled,
-      isInitializing: false,
-      setEnabled: setEnabled,
+      tools: rendererTools(),
     };
-  }, [isAvailable, isEnabled, rendererTools]);
+  }, [isAvailable, rendererTools]);
 
   return provider;
 }

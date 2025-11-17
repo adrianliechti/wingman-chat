@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Package } from 'lucide-react';
 import { getConfig } from '../config';
 import type { Tool, ToolProvider } from '../types/chat';
@@ -6,7 +6,6 @@ import interpreterInstructionsText from '../prompts/interpreter.txt?raw';
 import { executeCode } from "../lib/interpreter";
 
 export function useInterpreterProvider(): ToolProvider | null {
-  const [isEnabled, setEnabled] = useState(false);
   const config = getConfig();
   
   const isAvailable = useMemo(() => {
@@ -19,10 +18,6 @@ export function useInterpreterProvider(): ToolProvider | null {
   }, [config.interpreter.enabled]);
 
   const interpreterTools = useCallback((): Tool[] => {
-    if (!isEnabled) {
-      return [];
-    }
-
     return [
       {
         name: "execute_python_code",
@@ -64,7 +59,7 @@ export function useInterpreterProvider(): ToolProvider | null {
         }
       }
     ];
-  }, [isEnabled]);
+  }, []);
 
   const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {
@@ -77,12 +72,9 @@ export function useInterpreterProvider(): ToolProvider | null {
       description: 'Use Python engine',
       icon: Package,
       instructions: interpreterInstructionsText,
-      tools: async () => interpreterTools(),
-      isEnabled: isEnabled,
-      isInitializing: false,
-      setEnabled: setEnabled,
+      tools: interpreterTools(),
     };
-  }, [isAvailable, isEnabled, interpreterTools]);
+  }, [isAvailable, interpreterTools]);
 
   return provider;
 }

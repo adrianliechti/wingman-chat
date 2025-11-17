@@ -84,6 +84,8 @@ interface rendererConfig {
 }
 
 interface bridgeConfig {
+  enabled: boolean;
+
   url: string;
 }
 
@@ -199,7 +201,10 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       voice: cfg.voice?.enabled ?? false,
       vision: cfg.vision?.enabled ?? false,
       
-      bridge: cfg.bridge ?? { url: "" },
+      bridge: cfg.bridge ?? {
+        enabled: false,
+        url: ""
+      },
 
       internet: cfg.internet ?? {
         enabled: false,

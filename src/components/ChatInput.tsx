@@ -2,13 +2,13 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
-import { Send, Paperclip, ScreenShare, X, Sparkles, Loader2, Lightbulb, Mic, Square, Package, Check, LoaderCircle, Rocket, Sliders } from "lucide-react";
+import { Send, Paperclip, ScreenShare, X, Sparkles, Loader2, Lightbulb, Mic, Square, Package, Check, LoaderCircle, Rocket, Sliders, TriangleAlert } from "lucide-react";
 
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSuggestions } from "./ChatInputSuggestions";
 
-import { AttachmentType, Role } from "../types/chat";
-import type { Attachment, Message } from "../types/chat";
+import { AttachmentType, Role, ProviderState } from "../types/chat";
+import type { Attachment, Message, ToolProvider } from "../types/chat";
 import {
   getFileExt,
   readAsDataURL,
@@ -36,7 +36,7 @@ export function ChatInput() {
   const { currentRepository, setCurrentRepository } = useRepositories();
   const { profile } = useSettings();
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
-  const { providers } = useToolsContext();
+  const { providers, getProviderState, setProviderEnabled } = useToolsContext();
 
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
@@ -142,11 +142,11 @@ export function ChatInput() {
 
     const enableTools = async () => {
       for (const providerId of model.tools!.enabled) {
-        const provider = providers.find(p => p.id === providerId);
+        const provider = providers.find((p: ToolProvider) => p.id === providerId);
 
         if (provider) {
           try {
-            await provider.setEnabled(true);
+            await setProviderEnabled(provider.id, true);
           } catch (error) {
             console.error(`Failed to auto-connect required provider ${provider.name}:`, error);
           }
@@ -601,48 +601,56 @@ export function ChatInput() {
             {/* Features - Show inline buttons for 2 or fewer providers, otherwise show menu */}
             {providers.length > 0 && providers.length <= 2 ? (
               // Inline toggle buttons for 2 or fewer providers
-              providers.map((provider) => {
+              providers.map((provider: ToolProvider) => {
                 const IconComponent = provider.icon || Sparkles;
                 const isEnabled = isToolEnabledByModel(provider.id);
                 const isRequired = isToolRequiredByModel(provider.id);
                 const canToggle = isEnabled !== false && !isRequired;
+                const state = getProviderState(provider.id);
+                const providerEnabled = state === ProviderState.Connected;
+                const providerInitializing = state === ProviderState.Initializing;
+                const providerFailed = state === ProviderState.Failed;
 
                 return (
                   <Button
                     key={provider.id}
                     type="button"
                     className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
-                      provider.isEnabled
+                      providerEnabled
                         ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg'
                         : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
                     } ${!canToggle ? 'opacity-50 cursor-not-allowed' : ''}`}
                     onClick={async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      if (!canToggle || provider.isInitializing) return;
+                      if (!canToggle || providerInitializing) return;
                       try {
-                        await provider.setEnabled(!provider.isEnabled);
+                        await setProviderEnabled(provider.id, !providerEnabled);
                       } catch (error) {
                         console.error(`Failed to toggle provider ${provider.name}:`, error);
                       }
                     }}
-                    disabled={provider.isInitializing || !canToggle}
+                    disabled={providerInitializing || !canToggle}
                     title={
                       isEnabled === false
                         ? `${provider.name} - Disabled by model configuration`
                         : isRequired
                           ? `${provider.name} - Required by model configuration`
-                          : provider.isEnabled
-                            ? `${provider.name} - Click to disable`
-                            : `${provider.name} - Click to enable`
+                          : providerFailed
+                            ? `${provider.name} - Failed to connect (click to retry)`
+                            : providerEnabled
+                              ? `${provider.name} - Click to disable`
+                              : `${provider.name} - Click to enable`
                     }
                   >
-                    {provider.isInitializing ? (
+                    {providerInitializing ? (
                       <LoaderCircle size={14} className="animate-spin" />
+                    ) : providerFailed ? (
+                      <TriangleAlert size={14} />
                     ) : (
                       <IconComponent size={14} />
                     )}
-                    {provider.isEnabled && (
+                    {providerEnabled && (
                       <span className="hidden sm:inline">
                         {provider.name}
                       </span>
@@ -665,12 +673,16 @@ export function ChatInput() {
                   anchor="bottom end"
                   className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto sidebar-scroll"
                 >
-                  {providers.map((provider) => {
+                  {providers.map((provider: ToolProvider) => {
                     const IconComponent = provider.icon || Sparkles;
 
                     const isEnabled = isToolEnabledByModel(provider.id);
                     const isRequired = isToolRequiredByModel(provider.id);
                     const canToggle = isEnabled !== false && !isRequired;
+                    const state = getProviderState(provider.id);
+                    const providerEnabled = state === ProviderState.Connected;
+                    const providerInitializing = state === ProviderState.Initializing;
+                    const providerFailed = state === ProviderState.Failed;
 
                     return (
                       <MenuItem key={provider.id}>
@@ -680,12 +692,12 @@ export function ChatInput() {
                             e.stopPropagation();
                             if (!canToggle) return;
                             try {
-                              await provider.setEnabled(!provider.isEnabled);
+                              await setProviderEnabled(provider.id, !providerEnabled);
                             } catch (error) {
                               console.error(`Failed to toggle provider ${provider.name}:`, error);
                             }
                           }}
-                          disabled={provider.isInitializing || !canToggle}
+                          disabled={providerInitializing || !canToggle}
                           className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 ${!canToggle ? 'opacity-50 cursor-not-allowed' : ''
                             }`}
                           title={
@@ -710,9 +722,11 @@ export function ChatInput() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2 pl-2">
-                            {provider.isInitializing ? (
+                            {providerInitializing ? (
                               <LoaderCircle size={16} className="animate-spin text-neutral-600 dark:text-neutral-400" />
-                            ) : provider.isEnabled ? (
+                            ) : providerFailed ? (
+                              <TriangleAlert size={16} className="text-neutral-600 dark:text-neutral-400" strokeWidth={2.5} />
+                            ) : providerEnabled ? (
                               <Check size={16} className="text-neutral-800 dark:text-neutral-200" strokeWidth={2.5} />
                             ) : (
                               <div className="w-4 h-4" />

@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { Role } from "../types/chat";
-import type { Message, Model, ToolContext } from "../types/chat";
+import type { Message, ToolProvider, Model, ToolContext } from '../types/chat';
+import { ProviderState } from '../types/chat';
 import type { FileSystem } from "../types/file";
 import { useModels } from "../hooks/useModels";
 import { useChats } from "../hooks/useChats";
@@ -30,7 +31,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const chat = chats.find(c => c.id === chatId) ?? null;
   const model = chat?.model ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat', model);
-  const { providers } = useToolsContext();
+  const { providers, getProviderState, setProviderEnabled } = useToolsContext();
   
   // Calculate tool providers connection state
   const isInitializing = useMemo(() => {
@@ -38,12 +39,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
     if (!hasProviders) {
       return null; // No providers configured
     }
-    const isAnyInitializing = providers.some(p => p.isInitializing);
+    const isAnyInitializing = providers.some((p: ToolProvider) => getProviderState(p.id) === ProviderState.Initializing);
     if (isAnyInitializing) {
       return true; // At least one provider is initializing
     }
     return false; // All providers are ready
-  }, [providers]);
+  }, [providers, getProviderState]);
   
   const messages = useMemo(() => {
     return chat?.messages ?? [];
@@ -73,15 +74,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
     const newChat = createChatHook();
     setChatId(newChat.id);
     // Disable all tools when creating a new chat to prevent accidental usage
-    providers.forEach(p => p.setEnabled(false));
+    providers.forEach((p: ToolProvider) => setProviderEnabled(p.id, false));
     return newChat;
-  }, [createChatHook, providers]);
+  }, [createChatHook, providers, setProviderEnabled]);
 
   const selectChat = useCallback((chatId: string) => {
     setChatId(chatId);
     // Disable all tools when switching chats to prevent accidental usage
-    providers.forEach(p => p.setEnabled(false));
-  }, [providers]);
+    providers.forEach((p: ToolProvider) => setProviderEnabled(p.id, false));
+  }, [providers, setProviderEnabled]);
 
   const deleteChat = useCallback(
     (id: string) => {
