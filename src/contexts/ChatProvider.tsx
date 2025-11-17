@@ -151,6 +151,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
       };
 
       try {
+        // Get tools and instructions when needed
+        const tools = await chatTools();
+        const instructions = chatInstructions();
+
         // Main completion loop to handle tool calls
         while (true) {
           // Create empty assistant message for this completion iteration
@@ -158,9 +162,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
           
           const assistantMessage = await client.complete(
             model!.id,
-            chatInstructions,
+            instructions,
             conversation,
-            chatTools,
+            tools,
             (_, snapshot) => {
               // Use the conversation state instead of fetching from chats to avoid stale closure
               updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: snapshot }] }))
@@ -187,7 +191,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
           // Handle each tool call
           for (const toolCall of toolCalls) {
-            const tool = chatTools.find((t) => t.name === toolCall.name);
+            const tool = tools.find((t) => t.name === toolCall.name);
 
             if (!tool) {
               // Tool not found - add error message
@@ -318,7 +322,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         updateChat(id, () => ({ messages: conversation }));
       }
-    }, [getOrCreateChat, chats, updateChat, chatTools, chatInstructions, client, model, setIsResponding]);
+    }, [getOrCreateChat, chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions]);
 
   const value: ChatContextType = {
     // Models

@@ -97,7 +97,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   const startVoice = useCallback(async () => {
     try {
-      await start(undefined, undefined, chatInstructions, messages, chatTools);
+      await start(undefined, undefined, chatInstructions(), messages, await chatTools());
       setIsListening(true);
     } catch (error) {
       console.error('Failed to start voice mode:', error);

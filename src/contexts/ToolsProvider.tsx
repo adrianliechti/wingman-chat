@@ -1,6 +1,6 @@
-import { useMemo } from "react";
-import { Rocket } from "lucide-react";
-import { useMCP } from "../hooks/useMCP";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { getConfig } from "../config";
+import { MCPClient } from "../lib/mcp";
 import { useArtifactsProvider } from "../hooks/useArtifactsProvider";
 import { useBridgeProvider } from "../hooks/useBridgeProvider";
 import { useInternetProvider } from "../hooks/useInternetProvider";
@@ -17,7 +17,14 @@ interface ToolsProviderProps {
 }
 
 export function ToolsProvider({ children }: ToolsProviderProps) {
-  const mcpHook = useMCP();
+  const config = getConfig();
+  const mcps = useMemo(() => config.mcps || [], [config.mcps]);
+  
+  const [mcpClients] = useState<MCPClient[]>(() => 
+    mcps.map(mcp => new MCPClient(mcp.id, mcp.name, mcp.url, mcp.description))
+  );
+  const clientsRef = useRef<MCPClient[]>(mcpClients);
+
   const artifactsProvider = useArtifactsProvider();
   const bridgeProvider = useBridgeProvider();
   const internetProvider = useInternetProvider();
@@ -25,6 +32,17 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
   const rendererProvider = useRendererProvider();
   const { currentRepository } = useRepositories();
   const repositoryProvider = useRepositoryProvider(currentRepository?.id || '', 'auto');
+
+  // Cleanup on unmount
+  useEffect(() => {
+    const clients = clientsRef.current;
+    return () => {
+      // Disconnect all clients on unmount
+      clients.forEach(client => {
+        client.disconnect().catch(console.error);
+      });
+    };
+  }, []);
 
   // Build all providers with UI metadata
   const providers = useMemo<ToolProvider[]>(() => {
@@ -47,35 +65,8 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
       list.push(interpreterProvider);
     }
     
-    // Add MCP providers
-    mcpHook.mcps.forEach((mcp) => {
-      const connection = mcpHook.connectedMCPs.get(mcp.id);
-      if (connection) {
-        list.push({
-          id: connection.mcp.id,
-          name: connection.mcp.name,
-          description: connection.mcp.description,
-          icon: Rocket,
-          instructions: connection.instructions,
-          tools: async () => connection.tools,
-          isEnabled: true,
-          isInitializing: mcpHook.isConnecting(mcp.id),
-          setEnabled: () => mcpHook.toggleMCP(mcp.id),
-        });
-      } else {
-        // Add disconnected MCP for UI toggle
-        list.push({
-          id: mcp.id,
-          name: mcp.name,
-          description: mcp.description,
-          icon: Rocket,
-          tools: async () => [],
-          isEnabled: false,
-          isInitializing: mcpHook.isConnecting(mcp.id),
-          setEnabled: () => mcpHook.toggleMCP(mcp.id),
-        });
-      }
-    });
+    // Add MCP clients (they are already ToolProviders)
+    list.push(...mcpClients);
     
     // Add bridge provider if available
     if (bridgeProvider) {
@@ -93,7 +84,7 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     rendererProvider,
     interpreterProvider,
     artifactsProvider,
-    mcpHook,
+    mcpClients,
     bridgeProvider,
     repositoryProvider,
   ]);

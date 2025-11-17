@@ -15,7 +15,7 @@ export function useBridgeProvider(): ToolProvider | null {
       name: 'Bridge',
       description: 'Local connected tools',
       instructions: bridge.getInstructions() || undefined,
-      tools: async () => bridge.listTools(),
+      tools: () => bridge.listTools(),
       isEnabled: true,
       isInitializing: false,
       setEnabled: () => {}, // Bridge is always on when connected
