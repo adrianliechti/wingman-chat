@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import { Package } from 'lucide-react';
 import { getConfig } from '../config';
 import type { Tool, ToolProvider } from '../types/chat';
 import interpreterInstructionsText from '../prompts/interpreter.txt?raw';
@@ -87,6 +88,7 @@ export function useInterpreterProvider(): ToolProvider | null {
       id: 'interpreter',
       name: 'Interpreter',
       description: 'Use Python engine',
+      icon: Package,
       instructions: interpreterInstructionsText,
       tools: async () => interpreterTools(),
       isEnabled: isEnabled,

@@ -3,13 +3,9 @@ import pLimit from 'p-limit';
 import { Client } from '../lib/client';
 import { VectorDB } from '../lib/vectordb';
 import type { Document } from '../lib/vectordb';
-import type { Tool, ToolProvider } from '../types/chat';
 import type { RepositoryFile } from '../types/repository';
 import { useRepositories } from './useRepositories';
 import { getConfig } from '../config';
-import { markdownToText } from '../lib/utils';
-import repositoryRagInstructions from '../prompts/repository-rag.txt?raw';
-import repositoryContextInstructions from '../prompts/repository-context.txt?raw';
 
 export interface FileChunk {
   file: RepositoryFile;
@@ -23,7 +19,6 @@ export interface RepositoryHook {
   addFile: (file: File) => Promise<void>;
   removeFile: (fileId: string) => void;
   queryChunks: (query: string, topK?: number) => Promise<FileChunk[]>;
-  repositoryProvider: () => ToolProvider | null;
   useRAG: boolean;
   totalPages: number;
   totalCharacters: number;
@@ -293,136 +288,11 @@ export function useRepository(repositoryId: string, mode: 'auto' | 'rag' | 'cont
     }
   }, [vectorDB, repositoryId, repository?.embedder, files]);
 
-  const getTools = useCallback((): Tool[] => {
-    if (files.length === 0) {
-      return [];
-    }
-
-    if (useRAG) {
-      // Large repository: use RAG with vector search
-      return [
-        {
-          name: 'query_knowledge_database',
-          description: 'Search and retrieve information from a knowledge database using natural language queries. Returns relevant documents, facts, or answers based on the search criteria.',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: `The search query or question to find relevant information in the knowledge database. Use natural language and be specific about what information you're looking for.`
-              }
-            },
-            required: ['query']
-          },
-          function: async (args: Record<string, unknown>): Promise<string> => {
-            const query = args.query as string;
-            console.log("[repository] Query", { query });
-
-            if (!query) {
-              console.log("[repository] Query failed - no query provided");
-              return JSON.stringify({ error: 'No query provided' });
-            }
-
-            try {
-              const results = await queryChunks(query, 5);
-              console.log("[repository] Query completed", { query, resultsCount: results.length });
-
-              if (results.length === 0) {
-                console.log("[repository] No relevant documents found", { query });
-                return JSON.stringify([]);
-              }
-
-              const jsonResults = results.map((result, index) => {
-                console.log("[repository] Processing result", { 
-                  index: index + 1, 
-                  fileName: result.file.name, 
-                  similarity: (result.similarity || 0).toFixed(3),
-                  textPreview: result.text.substring(0, 100) + "..."
-                });
-
-                return {
-                  file_name: result.file.name,
-                  file_chunk: result.text,
-                  similarity: result.similarity || 0
-                };
-              });
-
-              console.log("[repository] Returning results", { count: jsonResults.length });
-              return JSON.stringify(jsonResults);
-            } catch (error) {
-              console.error("[repository] Query failed", { query, error });
-              return JSON.stringify({ error: 'Failed to query repository' });
-            }
-          }
-        }
-      ];
-    } else {
-  // Small repository: no retrieval tool; content injected directly into system prompt
-  return [];
-    }
-  }, [queryChunks, files, useRAG]);
-
-  const getInstructions = useCallback((): string => {
-    const instructions = [];
-
-    if (repository?.instructions?.trim()) {
-      instructions.push(`
-## Instructions
-
-Follow the instructions below carefully:
-
-${markdownToText(repository.instructions.trim())}
-`.trim());
-    }
-
-    if (files.length > 0) {
-      if (useRAG) {
-        instructions.push(repositoryRagInstructions);
-      } else {
-        instructions.push(repositoryContextInstructions);
-
-        // Include full content of every file (no truncation)
-        for (const file of files) {
-          if (!file.text || !file.text.trim()) continue;
-          instructions.push(`\n\n\`\`\`text ${file.name}\n${file.text}\n\`\`\``);
-        }
-      }
-    }
-
-    return instructions.join('\n\n');
-  }, [repository?.instructions, useRAG, files]);
-
-  const repositoryProvider = useCallback((): ToolProvider | null => {
-    if (!repository || files.length === 0) {
-      return null;
-    }
-
-    const tools = getTools();
-    const instructions = getInstructions();
-
-    // If no tools and no instructions, return null
-    if (tools.length === 0 && !instructions.trim()) {
-      return null;
-    }
-
-    return {
-      id: `repository:${repository.id}`,
-      name: repository.name,
-      description: repository.instructions || `Repository: ${repository.name}`,
-      instructions: instructions || undefined,
-      tools: async () => tools,
-      isEnabled: true,
-      isInitializing: false,
-      setEnabled: () => {}, // Repository is always on when loaded
-    };
-  }, [repository, files, getTools, getInstructions]);
-
   return {
     files,
     removeFile,
     addFile,
     queryChunks,
-    repositoryProvider,
     useRAG,
     totalPages,
     totalCharacters,

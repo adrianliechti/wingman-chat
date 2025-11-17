@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
+import { Image } from 'lucide-react';
 import { getConfig } from "../config";
 import type { Tool, ToolContext, ToolProvider } from "../types/chat";
 import { AttachmentType } from "../types/chat";
@@ -109,8 +110,9 @@ export function useRendererProvider(): ToolProvider | null {
 
     return {
       id: "renderer",
-      name: "Image Generation",
-      description: "Generate or edit images based on text descriptions",
+      name: "Renderer",
+      description: "Generate or edit images",
+      icon: Image,
       instructions: rendererInstructionsText,
       tools: async () => rendererTools(),
       isEnabled: isEnabled,

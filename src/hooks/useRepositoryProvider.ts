@@ -1,0 +1,139 @@
+import { useCallback, useMemo } from 'react';
+import { useRepository } from './useRepository';
+import { useRepositories } from './useRepositories';
+import type { Tool, ToolProvider } from '../types/chat';
+import { markdownToText } from '../lib/utils';
+import repositoryRagInstructions from '../prompts/repository-rag.txt?raw';
+import repositoryContextInstructions from '../prompts/repository-context.txt?raw';
+
+export function useRepositoryProvider(repositoryId: string, mode: 'auto' | 'rag' | 'context' = 'auto'): ToolProvider | null {
+  const { files, queryChunks, useRAG } = useRepository(repositoryId, mode);
+  const { repositories } = useRepositories();
+  const repository = repositories.find(r => r.id === repositoryId);
+
+  const getTools = useCallback((): Tool[] => {
+    if (files.length === 0) {
+      return [];
+    }
+
+    if (useRAG) {
+      // Large repository: use RAG with vector search
+      return [
+        {
+          name: 'query_knowledge_database',
+          description: 'Search and retrieve information from a knowledge database using natural language queries. Returns relevant documents, facts, or answers based on the search criteria.',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: `The search query or question to find relevant information in the knowledge database. Use natural language and be specific about what information you're looking for.`
+              }
+            },
+            required: ['query']
+          },
+          function: async (args: Record<string, unknown>): Promise<string> => {
+            const query = args.query as string;
+            console.log("[repository] Query", { query });
+
+            if (!query) {
+              console.log("[repository] Query failed - no query provided");
+              return JSON.stringify({ error: 'No query provided' });
+            }
+
+            try {
+              const results = await queryChunks(query, 5);
+              console.log("[repository] Query completed", { query, resultsCount: results.length });
+
+              if (results.length === 0) {
+                console.log("[repository] No relevant documents found", { query });
+                return JSON.stringify([]);
+              }
+
+              const jsonResults = results.map((result, index) => {
+                console.log("[repository] Processing result", { 
+                  index: index + 1, 
+                  fileName: result.file.name, 
+                  similarity: (result.similarity || 0).toFixed(3),
+                  textPreview: result.text.substring(0, 100) + "..."
+                });
+
+                return {
+                  file_name: result.file.name,
+                  file_chunk: result.text,
+                  similarity: result.similarity || 0
+                };
+              });
+
+              console.log("[repository] Returning results", { count: jsonResults.length });
+              return JSON.stringify(jsonResults);
+            } catch (error) {
+              console.error("[repository] Query failed", { query, error });
+              return JSON.stringify({ error: 'Failed to query repository' });
+            }
+          }
+        }
+      ];
+    } else {
+      // Small repository: no retrieval tool; content injected directly into system prompt
+      return [];
+    }
+  }, [queryChunks, files, useRAG]);
+
+  const getInstructions = useCallback((): string => {
+    const instructions = [];
+
+    if (repository?.instructions?.trim()) {
+      instructions.push(`
+## Instructions
+
+Follow the instructions below carefully:
+
+${markdownToText(repository.instructions.trim())}
+`.trim());
+    }
+
+    if (files.length > 0) {
+      if (useRAG) {
+        instructions.push(repositoryRagInstructions);
+      } else {
+        instructions.push(repositoryContextInstructions);
+
+        // Include full content of every file (no truncation)
+        for (const file of files) {
+          if (!file.text || !file.text.trim()) continue;
+          instructions.push(`\n\n\`\`\`text ${file.name}\n${file.text}\n\`\`\``);
+        }
+      }
+    }
+
+    return instructions.join('\n\n');
+  }, [repository, useRAG, files]);
+
+  const provider = useMemo<ToolProvider | null>(() => {
+    if (!repository || files.length === 0) {
+      return null;
+    }
+
+    const tools = getTools();
+    const instructions = getInstructions();
+
+    // If no tools and no instructions, return null
+    if (tools.length === 0 && !instructions.trim()) {
+      return null;
+    }
+
+    return {
+      id: 'repository',
+      name: 'Repository',
+      description: 'Include your files',
+      instructions: instructions || undefined,
+      tools: async () => tools,
+      isEnabled: true,
+      isInitializing: false,
+      setEnabled: () => {}, // Repository is always on when loaded
+    };
+  }, [repository, files, getTools, getInstructions]);
+
+  return provider;
+}

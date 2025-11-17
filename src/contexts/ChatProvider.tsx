@@ -73,14 +73,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
     const newChat = createChatHook();
     setChatId(newChat.id);
     // Disable all tools when creating a new chat to prevent accidental usage
-    providers.forEach(p => p.setEnabled?.(false));
+    providers.forEach(p => p.setEnabled(false));
     return newChat;
   }, [createChatHook, providers]);
 
   const selectChat = useCallback((chatId: string) => {
     setChatId(chatId);
     // Disable all tools when switching chats to prevent accidental usage
-    providers.forEach(p => p.setEnabled?.(false));
+    providers.forEach(p => p.setEnabled(false));
   }, [providers]);
 
   const deleteChat = useCallback(

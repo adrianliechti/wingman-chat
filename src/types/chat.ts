@@ -1,5 +1,7 @@
 import type { File } from "./file";
 
+export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
+
 export type Model = {
     id: string;
     name: string;
@@ -29,7 +31,7 @@ export type ToolProvider = {
     name: string;
     description?: string;
 
-    icon?: string;
+    icon?: ToolIcon;
     instructions?: string;
     
     isEnabled: boolean;

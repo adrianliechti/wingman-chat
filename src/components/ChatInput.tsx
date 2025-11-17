@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
-import { Send, Paperclip, ScreenShare, Image, X, Sparkles, Loader2, Lightbulb, Mic, Square, Package, Check, Globe, LoaderCircle, Rocket, Table, Sliders } from "lucide-react";
+import { Send, Paperclip, ScreenShare, X, Sparkles, Loader2, Lightbulb, Mic, Square, Package, Check, LoaderCircle, Rocket, Sliders } from "lucide-react";
 
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSuggestions } from "./ChatInputSuggestions";
@@ -37,7 +37,7 @@ export function ChatInput() {
   const { profile } = useSettings();
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
   const { providers } = useToolsContext();
-  
+
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
 
@@ -75,11 +75,11 @@ export function ChatInput() {
 
     const variations = profile?.name ? personalizedVariations : genericVariations;
     const randomIndex = Math.floor(Math.random() * variations.length);
-    
-    return profile?.name 
+
+    return profile?.name
       ? variations[randomIndex].replace('[Name]', profile.name)
       : variations[randomIndex];
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNewChat ? profile?.name : null]);
 
   const placeholderText = messages.length === 0 ? randomPlaceholder : "Ask anything";
@@ -95,26 +95,26 @@ export function ChatInput() {
     if (!model?.tools) {
       return null; // No restrictions
     }
-    
+
     const enabledTools = model.tools.enabled || [];
     const disabledTools = model.tools.disabled || [];
-    
+
     // If there are enabled tools specified, this tool must be in that list
     if (enabledTools.length > 0) {
       return enabledTools.includes(providerId);
     }
-    
+
     // Otherwise, this tool must not be in the disabled list
     return !disabledTools.includes(providerId);
   }, [model?.tools]);
-  
+
   const isToolRequiredByModel = useCallback((providerId: string) => {
     if (!model?.tools) {
       return false; // Not required if no restrictions
     }
-    
+
     const enabledTools = model.tools.enabled || [];
-    
+
     // Tool is required if it's in the enabled list
     return enabledTools.includes(providerId);
   }, [model?.tools]);
@@ -143,8 +143,8 @@ export function ChatInput() {
     const enableTools = async () => {
       for (const providerId of model.tools!.enabled) {
         const provider = providers.find(p => p.id === providerId);
-        
-        if (provider?.setEnabled) {
+
+        if (provider) {
           try {
             await provider.setEnabled(true);
           } catch (error) {
@@ -155,14 +155,14 @@ export function ChatInput() {
     };
 
     enableTools();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model?.tools?.enabled, providers]);
 
 
 
   const handleFiles = useCallback(async (files: File[]) => {
     const fileIds = files.map((file, index) => `${file.name}-${index}`);
-    
+
     // Set all extracting states at once
     setExtractingAttachments(prev => new Set([...prev, ...fileIds]));
 
@@ -184,7 +184,7 @@ export function ChatInput() {
             const text = await client.extractText(file);
             attachment = { type: AttachmentType.Text, name: file.name, data: text };
           }
-          
+
           return { fileId, attachment };
         } catch (error) {
           console.error(`Error processing file ${file.name}:`, error);
@@ -195,7 +195,7 @@ export function ChatInput() {
 
     // Batch state updates
     const validAttachments = processedAttachments
-      .filter((result): result is PromiseFulfilledResult<{ fileId: string; attachment: Attachment }> => 
+      .filter((result): result is PromiseFulfilledResult<{ fileId: string; attachment: Attachment }> =>
         result.status === 'fulfilled' && result.value.attachment !== null
       )
       .map(result => result.value.attachment);
@@ -598,10 +598,62 @@ export function ChatInput() {
           </div>
 
           <div className="flex items-center gap-1">
-            {/* Features Menu */}
-            {providers.filter(p => p.setEnabled).length > 0 && (
+            {/* Features - Show inline buttons for 2 or fewer providers, otherwise show menu */}
+            {providers.length > 0 && providers.length <= 2 ? (
+              // Inline toggle buttons for 2 or fewer providers
+              providers.map((provider) => {
+                const IconComponent = provider.icon || Sparkles;
+                const isEnabled = isToolEnabledByModel(provider.id);
+                const isRequired = isToolRequiredByModel(provider.id);
+                const canToggle = isEnabled !== false && !isRequired;
+
+                return (
+                  <Button
+                    key={provider.id}
+                    type="button"
+                    className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
+                      provider.isEnabled
+                        ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg'
+                        : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                    } ${!canToggle ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!canToggle || provider.isInitializing) return;
+                      try {
+                        await provider.setEnabled(!provider.isEnabled);
+                      } catch (error) {
+                        console.error(`Failed to toggle provider ${provider.name}:`, error);
+                      }
+                    }}
+                    disabled={provider.isInitializing || !canToggle}
+                    title={
+                      isEnabled === false
+                        ? `${provider.name} - Disabled by model configuration`
+                        : isRequired
+                          ? `${provider.name} - Required by model configuration`
+                          : provider.isEnabled
+                            ? `${provider.name} - Click to disable`
+                            : `${provider.name} - Click to enable`
+                    }
+                  >
+                    {provider.isInitializing ? (
+                      <LoaderCircle size={14} className="animate-spin" />
+                    ) : (
+                      <IconComponent size={14} />
+                    )}
+                    {provider.isEnabled && (
+                      <span className="hidden sm:inline">
+                        {provider.name}
+                      </span>
+                    )}
+                  </Button>
+                );
+              })
+            ) : providers.length > 2 ? (
+              // Menu for more than 2 providers
               <Menu>
-                <MenuButton 
+                <MenuButton
                   className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                   title="Features"
                 >
@@ -613,24 +665,20 @@ export function ChatInput() {
                   anchor="bottom end"
                   className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto sidebar-scroll"
                 >
-                  {providers.filter(p => p.setEnabled).map((provider) => {
-                    const IconComponent = provider.icon === 'Globe' ? Globe :
-                      provider.icon === 'Image' ? Image :
-                      provider.icon === 'Table' ? Table :
-                      provider.icon === 'Package' ? Package :
-                      provider.icon === 'Rocket' ? Rocket : Sparkles;
-                    
+                  {providers.map((provider) => {
+                    const IconComponent = provider.icon || Sparkles;
+
                     const isEnabled = isToolEnabledByModel(provider.id);
                     const isRequired = isToolRequiredByModel(provider.id);
                     const canToggle = isEnabled !== false && !isRequired;
-                    
+
                     return (
                       <MenuItem key={provider.id}>
                         <Button
                           onClick={async (e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            if (!canToggle || !provider.setEnabled) return;
+                            if (!canToggle) return;
                             try {
                               await provider.setEnabled(!provider.isEnabled);
                             } catch (error) {
@@ -638,14 +686,13 @@ export function ChatInput() {
                             }
                           }}
                           disabled={provider.isInitializing || !canToggle}
-                          className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 ${
-                            !canToggle ? 'opacity-50 cursor-not-allowed' : ''
-                          }`}
+                          className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 ${!canToggle ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
                           title={
-                            isEnabled === false 
-                              ? 'Disabled by model configuration' 
-                              : isRequired 
-                                ? 'Required by model configuration' 
+                            isEnabled === false
+                              ? 'Disabled by model configuration'
+                              : isRequired
+                                ? 'Required by model configuration'
                                 : undefined
                           }
                         >
@@ -662,12 +709,14 @@ export function ChatInput() {
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 pl-2">
                             {provider.isInitializing ? (
-                              <LoaderCircle size={14} className="animate-spin text-neutral-600 dark:text-neutral-400" />
+                              <LoaderCircle size={16} className="animate-spin text-neutral-600 dark:text-neutral-400" />
                             ) : provider.isEnabled ? (
-                              <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
-                            ) : null}
+                              <Check size={16} className="text-neutral-800 dark:text-neutral-200" strokeWidth={2.5} />
+                            ) : (
+                              <div className="w-4 h-4" />
+                            )}
                           </div>
                         </Button>
                       </MenuItem>
@@ -675,7 +724,7 @@ export function ChatInput() {
                   })}
                 </MenuItems>
               </Menu>
-            )}
+            ) : null}
 
             {isScreenCaptureAvailable && (
               <Button

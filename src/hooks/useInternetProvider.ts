@@ -1,9 +1,10 @@
 import { useState, useCallback, useMemo } from 'react';
+import { Globe } from 'lucide-react';
 import { getConfig } from '../config';
 import type { Tool, ToolProvider } from '../types/chat';
 import searchInstructionsText from '../prompts/search.txt?raw';
 
-export function useSearchProvider(): ToolProvider | null {
+export function useInternetProvider(): ToolProvider | null {
   const [isEnabled, setEnabled] = useState(false);
   const config = getConfig();
   
@@ -102,8 +103,9 @@ export function useSearchProvider(): ToolProvider | null {
 
     return {
       id: "internet",
-      name: "Internet Access",
+      name: "Internet",
       description: "Search and fetch websites",
+      icon: Globe,
       instructions: searchInstructionsText,
       tools: async () => searchTools(),
       isEnabled: isEnabled,

@@ -1,11 +1,12 @@
 import { useMemo } from "react";
+import { Rocket } from "lucide-react";
 import { useMCP } from "../hooks/useMCP";
-import { useArtifacts } from "../hooks/useArtifacts";
+import { useArtifactsProvider } from "../hooks/useArtifactsProvider";
 import { useBridge } from "../hooks/useBridge";
-import { useSearchProvider } from "../hooks/useSearchProvider";
+import { useInternetProvider } from "../hooks/useInternetProvider";
 import { useInterpreterProvider } from "../hooks/useInterpreterProvider";
 import { useRendererProvider } from "../hooks/useRendererProvider";
-import { useRepository } from "../hooks/useRepository";
+import { useRepositoryProvider } from "../hooks/useRepositoryProvider";
 import { useRepositories } from "../hooks/useRepositories";
 import { ToolsContext } from "./ToolsContext";
 import type { ToolsContextType } from "./ToolsContext";
@@ -17,49 +18,33 @@ interface ToolsProviderProps {
 
 export function ToolsProvider({ children }: ToolsProviderProps) {
   const mcpHook = useMCP();
-  const artifacts = useArtifacts();
+  const artifactsProvider = useArtifactsProvider();
   const { bridgeProvider } = useBridge();
-  const searchProvider = useSearchProvider();
+  const internetProvider = useInternetProvider();
   const interpreterProvider = useInterpreterProvider();
   const rendererProvider = useRendererProvider();
   const { currentRepository } = useRepositories();
-  const { repositoryProvider } = useRepository(currentRepository?.id || '', 'auto');
+  const repositoryProvider = useRepositoryProvider(currentRepository?.id || '', 'auto');
 
   // Build all providers with UI metadata
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
     
     // Add local providers (only if available in config)
-    if (searchProvider) {
-      list.push({
-        ...searchProvider,
-        icon: 'Globe',
-      });
+    if (internetProvider) {
+      list.push(internetProvider);
     }
     
     if (rendererProvider) {
-      list.push({
-        ...rendererProvider,
-        icon: 'Image',
-      });
+      list.push(rendererProvider);
     }
     
-    if (artifacts.isAvailable) {
-      const provider = artifacts.artifactsProvider();
-      if (provider) {
-        list.push({
-          ...provider,
-          icon: 'Table',
-          setEnabled: (enabled) => artifacts.setEnabled(enabled),
-        });
-      }
+    if (artifactsProvider) {
+      list.push(artifactsProvider);
     }
     
     if (interpreterProvider) {
-      list.push({
-        ...interpreterProvider,
-        icon: 'Package',
-      });
+      list.push(interpreterProvider);
     }
     
     // Add MCP providers
@@ -70,7 +55,7 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
           id: connection.mcp.id,
           name: connection.mcp.name,
           description: connection.mcp.description,
-          icon: 'Rocket',
+          icon: Rocket,
           instructions: connection.instructions,
           tools: async () => connection.tools,
           isEnabled: true,
@@ -83,7 +68,7 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
           id: mcp.id,
           name: mcp.name,
           description: mcp.description,
-          icon: 'Rocket',
+          icon: Rocket,
           tools: async () => [],
           isEnabled: false,
           isInitializing: mcpHook.isConnecting(mcp.id),
@@ -99,17 +84,16 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     }
     
     // Add repository provider if available
-    const repo = repositoryProvider();
-    if (repo) {
-      list.push(repo);
+    if (repositoryProvider) {
+      list.push(repositoryProvider);
     }
     
     return list;
   }, [
-    searchProvider,
+    internetProvider,
     rendererProvider,
     interpreterProvider,
-    artifacts,
+    artifactsProvider,
     mcpHook,
     bridgeProvider,
     repositoryProvider,
