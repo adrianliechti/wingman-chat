@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Rocket } from "lucide-react";
 import { useMCP } from "../hooks/useMCP";
 import { useArtifactsProvider } from "../hooks/useArtifactsProvider";
-import { useBridge } from "../hooks/useBridge";
+import { useBridgeProvider } from "../hooks/useBridgeProvider";
 import { useInternetProvider } from "../hooks/useInternetProvider";
 import { useInterpreterProvider } from "../hooks/useInterpreterProvider";
 import { useRendererProvider } from "../hooks/useRendererProvider";
@@ -19,7 +19,7 @@ interface ToolsProviderProps {
 export function ToolsProvider({ children }: ToolsProviderProps) {
   const mcpHook = useMCP();
   const artifactsProvider = useArtifactsProvider();
-  const { bridgeProvider } = useBridge();
+  const bridgeProvider = useBridgeProvider();
   const internetProvider = useInternetProvider();
   const interpreterProvider = useInterpreterProvider();
   const rendererProvider = useRendererProvider();
@@ -78,9 +78,8 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     });
     
     // Add bridge provider if available
-    const bridge = bridgeProvider();
-    if (bridge) {
-      list.push(bridge);
+    if (bridgeProvider) {
+      list.push(bridgeProvider);
     }
     
     // Add repository provider if available

@@ -29,11 +29,11 @@ function processContent(content: ContentBlock[]): string {
 }
 
 export class Bridge {
-    private mcp: Client | undefined;
+    private client: Client | undefined;
     private instructions: string | null = null;
 
-    private constructor(mcp?: Client) {
-        this.mcp = mcp;
+    private constructor(client?: Client) {
+        this.client = client;
     }
 
     public static create(baseUrl: string): Bridge {
@@ -75,11 +75,11 @@ export class Bridge {
                 });
 
                 await client.connect(transport);
-                bridge.mcp = client;
+                bridge.client = client;
 
                 const instructions = client.getInstructions();
 
-                if (instructions !== undefined) {
+                if (instructions?.trim()) {
                     bridge.instructions = instructions;
                 }
 
@@ -94,15 +94,15 @@ export class Bridge {
     }
 
     public isConnected(): boolean {
-        return this.mcp !== undefined;
+        return this.client !== undefined;
     }
 
     public async listTools(): Promise<Tool[]> {
-        if (!this.mcp) {
+        if (!this.client) {
             return [];
         }
 
-        const result = await this.mcp.listTools();
+        const result = await this.client.listTools();
 
         return result.tools.map((tool) => {
             return {
@@ -112,12 +112,12 @@ export class Bridge {
                 parameters: tool.inputSchema,
 
                 function: async (args: Record<string, unknown>) => {
-                    if (!this.mcp) {
+                    if (!this.client) {
                         return "tool currently unavailable";
                     }
 
                     try {
-                        const callResult = await this.mcp.callTool({
+                        const callResult = await this.client.callTool({
                             name: tool.name,
                             arguments: args,
                         });

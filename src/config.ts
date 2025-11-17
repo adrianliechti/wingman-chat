@@ -1,4 +1,3 @@
-import { Bridge } from "./lib/bridge";
 import { Client } from "./lib/client";
 import type { MCP, Model } from "./types/chat";
 
@@ -135,7 +134,7 @@ interface Config {
   voice: boolean;
   vision: boolean;
 
-  bridge: Bridge;
+  bridge: bridgeConfig;
   internet: internetConfig;
 
   renderer: rendererConfig;
@@ -160,10 +159,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
     const cfg: config = await resp.json();
 
-    const bridgeUrl = cfg.bridge?.url ?? ""
-
     const client = new Client();
-    const bridge = Bridge.create(bridgeUrl);
 
     config = {
       title: cfg.title,
@@ -203,7 +199,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       voice: cfg.voice?.enabled ?? false,
       vision: cfg.vision?.enabled ?? false,
       
-      bridge: bridge,
+      bridge: cfg.bridge ?? { url: "" },
 
       internet: cfg.internet ?? {
         enabled: false,

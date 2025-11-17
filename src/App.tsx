@@ -22,7 +22,6 @@ import { BridgeProvider } from "./contexts/BridgeProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
 import { ToolsProvider } from "./contexts/ToolsProvider";
-import { BridgeIndicator } from "./components/BridgeIndicator";
 
 type Page = "chat" | "flow" | "translate";
 
@@ -350,7 +349,6 @@ function AppContent() {
             {/* Right section */}
             <div className="flex items-center gap-2 justify-end flex-1">
               <SettingsButton />
-              <BridgeIndicator />
               {rightActions}
             </div>
           </div>
