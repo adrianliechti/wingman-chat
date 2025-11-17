@@ -1,26 +1,21 @@
-import { useState, useCallback } from 'react';
-import type { ReactNode } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { getConfig } from '../config';
-import { SearchContext } from './SearchContext';
-import type { SearchContextType } from './SearchContext';
 import type { Tool, ToolProvider } from '../types/chat';
 import searchInstructionsText from '../prompts/search.txt?raw';
 
-interface SearchProviderProps {
-  children: ReactNode;
-}
-
-export function SearchProvider({ children }: SearchProviderProps) {
+export function useSearchProvider(): ToolProvider | null {
   const [isEnabled, setEnabled] = useState(false);
   const config = getConfig();
-  const [isAvailable] = useState(() => {
+  
+  const isAvailable = useMemo(() => {
     try {
       return config.internet.enabled;
     } catch (error) {
       console.warn('Failed to get search config:', error);
       return false;
     }
-  });
+  }, [config.internet.enabled]);
+
   const client = config.client;
 
   const searchTools = useCallback((): Tool[] => {
@@ -100,37 +95,22 @@ export function SearchProvider({ children }: SearchProviderProps) {
     ];
   }, [isEnabled, client]);
 
-  const searchProvider = useCallback((): ToolProvider | null => {
+  const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {
       return null;
     }
 
     return {
       id: "internet",
-
       name: "Internet Access",
       description: "Search and fetch websites",
-
       instructions: searchInstructionsText,
-      
       tools: async () => searchTools(),
-      
       isEnabled: isEnabled,
       isInitializing: false,
       setEnabled: setEnabled,
     };
-  }, [isAvailable, isEnabled, searchTools, setEnabled]);
+  }, [isAvailable, isEnabled, searchTools]);
 
-  const contextValue: SearchContextType = {
-    isEnabled,
-    setEnabled,
-    isAvailable,
-    searchProvider,
-  };
-
-  return (
-    <SearchContext.Provider value={contextValue}>
-      {children}
-    </SearchContext.Provider>
-  );
+  return provider;
 }

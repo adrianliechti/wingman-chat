@@ -1,29 +1,24 @@
-import { useState, useCallback } from "react";
-import type { ReactNode } from "react";
-import { RendererContext } from "./RendererContext";
-import type { RendererContextType } from "./RendererContext";
+import { useState, useCallback, useMemo } from "react";
+import { getConfig } from "../config";
 import type { Tool, ToolContext, ToolProvider } from "../types/chat";
 import { AttachmentType } from "../types/chat";
-import { getConfig } from "../config";
 import { readAsDataURL } from "../lib/utils";
 import type { Resource } from "../lib/resource";
 import rendererInstructionsText from '../prompts/image-generation.txt?raw';
 
-interface RendererProviderProps {
-  children: ReactNode;
-}
-
-export function RendererProvider({ children }: RendererProviderProps) {
+export function useRendererProvider(): ToolProvider | null {
   const [isEnabled, setEnabled] = useState(false);
   const config = getConfig();
-  const [isAvailable] = useState(() => {
+  
+  const isAvailable = useMemo(() => {
     try {
       return config.renderer.enabled;
     } catch (error) {
       console.warn('Failed to get image generation config:', error);
       return false;
     }
-  });
+  }, [config.renderer.enabled]);
+
   const client = config.client;
 
   const rendererTools = useCallback((): Tool[] => {
@@ -107,37 +102,22 @@ export function RendererProvider({ children }: RendererProviderProps) {
     ];
   }, [isEnabled, client, config]);
 
-  const rendererProvider = useCallback((): ToolProvider | null => {
+  const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {
       return null;
     }
 
     return {
       id: "renderer",
-
       name: "Image Generation",
       description: "Generate or edit images based on text descriptions",
-
       instructions: rendererInstructionsText,
-
       tools: async () => rendererTools(),
-      
       isEnabled: isEnabled,
       isInitializing: false,
       setEnabled: setEnabled,
     };
-  }, [isAvailable, isEnabled, rendererTools, setEnabled]);
+  }, [isAvailable, isEnabled, rendererTools]);
 
-  const contextValue: RendererContextType = {
-    isEnabled,
-    setEnabled,
-    isAvailable,
-    rendererProvider,
-  };
-
-  return (
-    <RendererContext.Provider value={contextValue}>
-      {children}
-    </RendererContext.Provider>
-  );
+  return provider;
 }

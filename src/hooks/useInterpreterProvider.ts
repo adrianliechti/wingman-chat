@@ -1,27 +1,21 @@
-import { useState, useCallback } from 'react';
-import type { ReactNode } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { getConfig } from '../config';
-import { InterpreterContext } from './InterpreterContext';
-import type { InterpreterContextType } from './InterpreterContext';
 import type { Tool, ToolProvider } from '../types/chat';
 import interpreterInstructionsText from '../prompts/interpreter.txt?raw';
 import { executeCode } from "../lib/interpreter";
 
-interface InterpreterProviderProps {
-  children: ReactNode;
-}
-
-export function InterpreterProvider({ children }: InterpreterProviderProps) {
+export function useInterpreterProvider(): ToolProvider | null {
   const [isEnabled, setEnabled] = useState(false);
   const config = getConfig();
-  const [isAvailable] = useState(() => {
+  
+  const isAvailable = useMemo(() => {
     try {
       return config.interpreter.enabled;
     } catch (error) {
       console.warn('Failed to get interpreter config:', error);
       return false;
     }
-  });
+  }, [config.interpreter.enabled]);
 
   const interpreterTools = useCallback((): Tool[] => {
     if (!isEnabled) {
@@ -84,7 +78,7 @@ export function InterpreterProvider({ children }: InterpreterProviderProps) {
     ];
   }, [isEnabled]);
 
-  const interpreterProvider = useCallback((): ToolProvider | null => {
+  const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {
       return null;
     }
@@ -99,18 +93,7 @@ export function InterpreterProvider({ children }: InterpreterProviderProps) {
       isInitializing: false,
       setEnabled: setEnabled,
     };
-  }, [isAvailable, isEnabled, interpreterTools, setEnabled]);
+  }, [isAvailable, isEnabled, interpreterTools]);
 
-  const contextValue: InterpreterContextType = {
-    isEnabled,
-    setEnabled,
-    isAvailable,
-    interpreterProvider,
-  };
-
-  return (
-    <InterpreterContext.Provider value={contextValue}>
-      {children}
-    </InterpreterContext.Provider>
-  );
+  return provider;
 }

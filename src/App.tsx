@@ -21,9 +21,6 @@ import { ArtifactsProvider } from "./contexts/ArtifactsProvider";
 import { BridgeProvider } from "./contexts/BridgeProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
-import { SearchProvider } from "./contexts/SearchProvider";
-import { RendererProvider } from "./contexts/RendererProvider";
-import { InterpreterProvider } from "./contexts/InterpreterProvider";
 import { ToolsProvider } from "./contexts/ToolsProvider";
 import { BridgeIndicator } from "./components/BridgeIndicator";
 
@@ -385,9 +382,6 @@ const providers = [
   ArtifactsProvider,
   RepositoryProvider,
   ScreenCaptureProvider,
-  SearchProvider,
-  RendererProvider,
-  InterpreterProvider,
   ToolsProvider,
   ChatProvider,
   VoiceProvider,

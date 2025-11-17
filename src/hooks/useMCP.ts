@@ -137,13 +137,13 @@ export function useMCP() {
     connectedMCPs.forEach(connection => {
       providers.push({
         id: connection.mcp.id,
-
         name: connection.mcp.name,
         description: connection.mcp.description,
-
         instructions: connection.instructions,
-
         tools: async () => connection.tools,
+        isEnabled: true,
+        isInitializing: false,
+        setEnabled: () => {},
       });
     });
     return providers;

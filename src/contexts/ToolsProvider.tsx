@@ -2,9 +2,9 @@ import { useMemo } from "react";
 import { useMCP } from "../hooks/useMCP";
 import { useArtifacts } from "../hooks/useArtifacts";
 import { useBridge } from "../hooks/useBridge";
-import { useSearch } from "../hooks/useSearch";
-import { useInterpreter } from "../hooks/useInterpreter";
-import { useRenderer } from "../hooks/useRenderer";
+import { useSearchProvider } from "../hooks/useSearchProvider";
+import { useInterpreterProvider } from "../hooks/useInterpreterProvider";
+import { useRendererProvider } from "../hooks/useRendererProvider";
 import { useRepository } from "../hooks/useRepository";
 import { useRepositories } from "../hooks/useRepositories";
 import { ToolsContext } from "./ToolsContext";
@@ -19,9 +19,9 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
   const mcpHook = useMCP();
   const artifacts = useArtifacts();
   const { bridgeProvider } = useBridge();
-  const search = useSearch();
-  const interpreter = useInterpreter();
-  const renderer = useRenderer();
+  const searchProvider = useSearchProvider();
+  const interpreterProvider = useInterpreterProvider();
+  const rendererProvider = useRendererProvider();
   const { currentRepository } = useRepositories();
   const { repositoryProvider } = useRepository(currentRepository?.id || '', 'auto');
 
@@ -30,26 +30,18 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     const list: ToolProvider[] = [];
     
     // Add local providers (only if available in config)
-    if (search.isAvailable) {
-      const provider = search.searchProvider();
-      if (provider) {
-        list.push({
-          ...provider,
-          icon: 'Globe',
-          setEnabled: (enabled) => search.setEnabled(enabled),
-        });
-      }
+    if (searchProvider) {
+      list.push({
+        ...searchProvider,
+        icon: 'Globe',
+      });
     }
     
-    if (renderer.isAvailable) {
-      const provider = renderer.rendererProvider();
-      if (provider) {
-        list.push({
-          ...provider,
-          icon: 'Image',
-          setEnabled: (enabled) => renderer.setEnabled(enabled),
-        });
-      }
+    if (rendererProvider) {
+      list.push({
+        ...rendererProvider,
+        icon: 'Image',
+      });
     }
     
     if (artifacts.isAvailable) {
@@ -63,15 +55,11 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
       }
     }
     
-    if (interpreter.isAvailable) {
-      const provider = interpreter.interpreterProvider();
-      if (provider) {
-        list.push({
-          ...provider,
-          icon: 'Package',
-          setEnabled: (enabled) => interpreter.setEnabled(enabled),
-        });
-      }
+    if (interpreterProvider) {
+      list.push({
+        ...interpreterProvider,
+        icon: 'Package',
+      });
     }
     
     // Add MCP providers
@@ -118,10 +106,10 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     
     return list;
   }, [
-    search,
-    renderer,
+    searchProvider,
+    rendererProvider,
+    interpreterProvider,
     artifacts,
-    interpreter,
     mcpHook,
     bridgeProvider,
     repositoryProvider,

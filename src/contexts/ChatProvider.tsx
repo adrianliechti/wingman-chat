@@ -5,10 +5,7 @@ import type { FileSystem } from "../types/file";
 import { useModels } from "../hooks/useModels";
 import { useChats } from "../hooks/useChats";
 import { useChatContext } from "../hooks/useChatContext";
-import { useSearch } from "../hooks/useSearch";
 import { useArtifacts } from "../hooks/useArtifacts";
-import { useRenderer } from "../hooks/useRenderer";
-import { useInterpreter } from "../hooks/useInterpreter";
 import { useToolsContext } from "../hooks/useToolsContext";
 import { getConfig } from "../config";
 import { parseResource } from "../lib/resource";
@@ -25,10 +22,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
-  const { setEnabled: setSearchEnabled } = useSearch();
-  const { isAvailable: artifactsEnabled, setFileSystemForChat, setEnabled: setArtifactsEnabled } = useArtifacts();
-  const { setEnabled: setRendererEnabled } = useRenderer();
-  const { setEnabled: setInterpreterEnabled } = useInterpreter();
+  const { isAvailable: artifactsEnabled, setFileSystemForChat } = useArtifacts();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const messagesRef = useRef<Message[]>([]);
@@ -78,22 +72,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const createChat = useCallback(() => {
     const newChat = createChatHook();
     setChatId(newChat.id);
-    // Disable tools when creating a new chat to prevent accidental usage
-    setSearchEnabled(false);
-    setArtifactsEnabled(false);
-    setRendererEnabled(false);
-    setInterpreterEnabled(false);
+    // Disable all tools when creating a new chat to prevent accidental usage
+    providers.forEach(p => p.setEnabled?.(false));
     return newChat;
-  }, [createChatHook, setSearchEnabled, setArtifactsEnabled, setRendererEnabled, setInterpreterEnabled]);
+  }, [createChatHook, providers]);
 
   const selectChat = useCallback((chatId: string) => {
     setChatId(chatId);
-    // Disable tools when switching chats to prevent accidental usage
-    setSearchEnabled(false);
-    setArtifactsEnabled(false);
-    setRendererEnabled(false);
-    setInterpreterEnabled(false);
-  }, [setSearchEnabled, setArtifactsEnabled, setRendererEnabled, setInterpreterEnabled]);
+    // Disable all tools when switching chats to prevent accidental usage
+    providers.forEach(p => p.setEnabled?.(false));
+  }, [providers]);
 
   const deleteChat = useCallback(
     (id: string) => {

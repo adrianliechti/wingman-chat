@@ -23,7 +23,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
       const profileInstructions = generateInstructions();
       
       // Filter providers that are enabled
-      let filteredProviders = providers.filter(p => p.enabled);
+      let filteredProviders = providers.filter(p => p.isEnabled);
       
       // Further filter based on model configuration
       if (model?.tools) {
