@@ -1,163 +1,84 @@
-import type { Tool, ToolProvider } from "../types/chat";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import type { ContentBlock } from "@modelcontextprotocol/sdk/types.js";
+import { MCPClient } from './mcp';
+import type { Tool, ToolProvider } from '../types/chat';
 
-interface BridgeConfig {
-  name: string;
-  instructions?: string; 
-}
-
-function processContent(content: ContentBlock[]): string {
-  if (!content || content.length === 0) {
-    return "no content";
-  }
-
-  if (content.every(item => item.type === "text")) {
-    return content
-      .map(item => item.text)
-      .filter(text => text.trim() !== "")
-      .join("\n\n");
-  }
-
-  if (content.length === 1) {
-    return JSON.stringify(content[0]);
-  }
-
-  return JSON.stringify(content)
-}
-
+/**
+ * Bridge Client that wraps MCPClient for SSE-based bridge connections
+ * Delegates to MCPClient implementation
+ */
 export class Bridge implements ToolProvider {
-    public id: string;
+  private client: MCPClient;
 
-    public name: string;
-    public description?: string;
+  constructor(id: string, name: string, url: string, description?: string) {
+    this.client = new MCPClient(id, url, name, description);
+  }
 
-    public isEnabled: boolean = true;
-    public isInitializing: boolean = true;
-    
-    public instructions?: string;
+  get id(): string {
+    return this.client.id;
+  }
 
-    private client: Client | undefined;
+  get name(): string {
+    return this.client.name;
+  }
 
-    private constructor() {
-        this.id = "bridge";
-        this.name = "Bridge";
-        this.description = 'Local connected tools';
+  get description(): string | undefined {
+    return this.client.description;
+  }
+
+  get icon() {
+    return this.client.icon;
+  }
+
+  get isEnabled(): boolean {
+    return this.client.isEnabled;
+  }
+
+  get isInitializing(): boolean {
+    return this.client.isInitializing;
+  }
+
+  async connect(): Promise<void> {
+    return this.client.connect();
+  }
+
+  async disconnect(): Promise<void> {
+    return this.client.disconnect();
+  }
+
+  async setEnabled(enabled: boolean): Promise<void> {
+    return this.client.setEnabled(enabled);
+  }
+
+  isConnected(): boolean {
+    return this.client.isConnected();
+  }
+
+  get instructions(): string | undefined {
+    return this.client.instructions;
+  }
+
+  async tools(): Promise<Tool[]> {
+    return this.client.tools();
+  }
+
+  /**
+   * Static factory method to create and connect a Bridge instance
+   */
+  public static async create(baseUrl: string): Promise<Bridge | null> {
+    if (baseUrl === "") {
+      return null;
     }
 
-    public static create(baseUrl: string): Bridge {
-        const bridge = new Bridge();
+    try {
+      const url = new URL("/mcp", baseUrl).toString();
+      const bridge = new Bridge('bridge', url, 'Bridge', 'Local connected tools');
+      
+      await bridge.connect();
 
-        if (baseUrl === "") {
-            return bridge;
-        }
-
-        (async () => {
-            try {
-                const response = await fetch(new URL("/.well-known/wingman", baseUrl));
-
-                if (!response.ok) {
-                    console.info("Bridge not available");
-                    return;
-                }
-
-                const config : BridgeConfig = await response.json();
-
-                if (config.name?.trim()) {
-                    //bridge.name = config.name;
-                }
-
-                if (config.instructions?.trim()) {
-                    bridge.instructions = config.instructions;
-                }
-            } catch {
-                return;
-            }
-
-            let client: Client | undefined;
-            let transport: Transport | undefined;
-
-            try {
-                transport = new SSEClientTransport(
-                    new URL("/sse", baseUrl),
-                );
-
-                client = new Client({
-                    name: 'wingman-bridge',
-                    version: '1.0.0'
-                });
-
-                await client.connect(transport);
-                bridge.client = client;
-
-                const instructions = client.getInstructions();
-
-                if (instructions?.trim()) {
-                    bridge.instructions = instructions;
-                }
-
-                bridge.isInitializing = false;
-                console.info("Bridge connected");
-            } catch {
-                if (client) client.close();
-                if (transport) transport.close();
-                bridge.isInitializing = false;
-            }
-        })();
-
-        return bridge;
+      console.info("Bridge connected");
+      return bridge;
+    } catch (error) {
+      console.error("Bridge connection failed:", error);
+      return null;
     }
-
-    public setEnabled(enabled: boolean): void {
-        this.isEnabled = enabled;
-    }
-
-    public close(): void {
-        if (this.client) {
-            this.client.close();
-            this.client = undefined;
-        }
-    }
-
-    public isConnected(): boolean {
-        return this.client !== undefined;
-    }
-
-    public async tools(): Promise<Tool[]> {
-        if (!this.client) {
-            return [];
-        }
-
-        const result = await this.client.listTools();
-
-        return result.tools.map((tool) => {
-            return {
-                name: tool.name,
-                description: tool.description ?? "",
-
-                parameters: tool.inputSchema,
-
-                function: async (args: Record<string, unknown>) => {
-                    if (!this.client) {
-                        return "tool currently unavailable";
-                    }
-
-                    try {
-                        const callResult = await this.client.callTool({
-                            name: tool.name,
-                            arguments: args,
-                        });
-
-                        return processContent((callResult?.content as ContentBlock[]) || []);
-                    }
-                    catch (error) {
-                        console.error(`Error calling tool ${tool.name}:`, error);
-                        return "tool failed";
-                    }
-                },
-            };
-        });
-    }
+  }
 }

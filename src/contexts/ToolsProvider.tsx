@@ -21,7 +21,7 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
   const mcps = useMemo(() => config.mcps || [], [config.mcps]);
   
   const [mcpClients] = useState<MCPClient[]>(() => 
-    mcps.map(mcp => new MCPClient(mcp.id, mcp.name, mcp.url, mcp.description))
+    mcps.map(mcp => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description))
   );
   const clientsRef = useRef<MCPClient[]>(mcpClients);
 

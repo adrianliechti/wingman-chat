@@ -5,28 +5,6 @@ import type { Tool, ToolProvider } from '../types/chat';
 import { Rocket } from "lucide-react";
 
 /**
- * Process MCP content blocks into a string response
- */
-function processContent(content: ContentBlock[]): string {
-  if (!content || content.length === 0) {
-    return "no content";
-  }
-
-  if (content.every(item => item.type === "text")) {
-    return content
-      .map(item => item.text)
-      .filter(text => text.trim() !== "")
-      .join("\n\n");
-  }
-
-  if (content.length === 1) {
-    return JSON.stringify(content[0]);
-  }
-
-  return JSON.stringify(content);
-}
-
-/**
  * MCP Client that implements ToolProvider interface
  * Handles connection to a single MCP server
  */
@@ -37,19 +15,18 @@ export class MCPClient implements ToolProvider {
   readonly icon = Rocket;
 
   private client: Client | null = null;
-  private serverUrl: string;
+  private url: string;
   private pingInterval: ReturnType<typeof setInterval> | undefined;
   
   isEnabled: boolean = false;
   isInitializing: boolean = false;
 
-  constructor(id: string, name: string, serverUrl: string, description?: string) {
+  constructor(id: string, url: string, name: string, description?: string) {
     this.id = id;
+    this.url = url;
     
     this.name = name;
     this.description = description;
-
-    this.serverUrl = serverUrl;
   }
 
   /**
@@ -71,7 +48,8 @@ export class MCPClient implements ToolProvider {
       }
     };
 
-    const transport = new StreamableHTTPClientTransport(new URL(this.serverUrl), opts);
+    const url = new URL(this.url);
+    const transport = new StreamableHTTPClientTransport(url, opts);
 
     const client = new Client({
       name: 'Wingman Chat',
@@ -234,4 +212,26 @@ export class MCPClient implements ToolProvider {
       },
     }));
   }
+}
+
+/**
+ * Process MCP content blocks into a string response
+ */
+function processContent(content: ContentBlock[]): string {
+  if (!content || content.length === 0) {
+    return "no content";
+  }
+
+  if (content.every(item => item.type === "text")) {
+    return content
+      .map(item => item.text)
+      .filter(text => text.trim() !== "")
+      .join("\n\n");
+  }
+
+  if (content.length === 1) {
+    return JSON.stringify(content[0]);
+  }
+
+  return JSON.stringify(content);
 }
