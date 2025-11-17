@@ -101,7 +101,7 @@ export function SearchProvider({ children }: SearchProviderProps) {
   }, [isEnabled, client]);
 
   const searchProvider = useCallback((): ToolProvider | null => {
-    if (!isEnabled) {
+    if (!isAvailable) {
       return null;
     }
 
@@ -114,8 +114,12 @@ export function SearchProvider({ children }: SearchProviderProps) {
       instructions: searchInstructionsText,
       
       tools: async () => searchTools(),
+      
+      isEnabled: isEnabled,
+      isInitializing: false,
+      setEnabled: setEnabled,
     };
-  }, [isEnabled, searchTools]);
+  }, [isAvailable, isEnabled, searchTools, setEnabled]);
 
   const contextValue: SearchContextType = {
     isEnabled,

@@ -411,6 +411,9 @@ ${markdownToText(repository.instructions.trim())}
       description: repository.instructions || `Repository: ${repository.name}`,
       instructions: instructions || undefined,
       tools: async () => tools,
+      isEnabled: true,
+      isInitializing: false,
+      setEnabled: () => {}, // Repository is always on when loaded
     };
   }, [repository, files, getTools, getInstructions]);
 

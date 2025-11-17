@@ -85,21 +85,21 @@ export function InterpreterProvider({ children }: InterpreterProviderProps) {
   }, [isEnabled]);
 
   const interpreterProvider = useCallback((): ToolProvider | null => {
-    if (!isEnabled) {
+    if (!isAvailable) {
       return null;
     }
 
     return {
-      id: "interpreter",
-
-      name: "Code Interpreter",
-      description: "Execute Python code with package dependencies",
-
+      id: 'interpreter',
+      name: 'Interpreter',
+      description: 'Use Python engine',
       instructions: interpreterInstructionsText,
-
       tools: async () => interpreterTools(),
+      isEnabled: isEnabled,
+      isInitializing: false,
+      setEnabled: setEnabled,
     };
-  }, [isEnabled, interpreterTools]);
+  }, [isAvailable, isEnabled, interpreterTools, setEnabled]);
 
   const contextValue: InterpreterContextType = {
     isEnabled,

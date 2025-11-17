@@ -29,7 +29,12 @@ export type ToolProvider = {
     name: string;
     description?: string;
 
+    icon?: string;
     instructions?: string;
+    
+    isEnabled: boolean;
+    isInitializing: boolean;
+    setEnabled: (enabled: boolean) => void | Promise<void>;
 
     tools: () => Promise<Tool[]>;
 };

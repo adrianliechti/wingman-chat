@@ -108,7 +108,7 @@ export function RendererProvider({ children }: RendererProviderProps) {
   }, [isEnabled, client, config]);
 
   const rendererProvider = useCallback((): ToolProvider | null => {
-    if (!isEnabled) {
+    if (!isAvailable) {
       return null;
     }
 
@@ -121,8 +121,12 @@ export function RendererProvider({ children }: RendererProviderProps) {
       instructions: rendererInstructionsText,
 
       tools: async () => rendererTools(),
+      
+      isEnabled: isEnabled,
+      isInitializing: false,
+      setEnabled: setEnabled,
     };
-  }, [isEnabled, rendererTools]);
+  }, [isAvailable, isEnabled, rendererTools, setEnabled]);
 
   const contextValue: RendererContextType = {
     isEnabled,

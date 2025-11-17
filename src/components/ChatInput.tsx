@@ -26,25 +26,17 @@ import { useTranscription } from "../hooks/useTranscription";
 import { useDropZone } from "../hooks/useDropZone";
 import { useSettings } from "../hooks/useSettings";
 import { useScreenCapture } from "../hooks/useScreenCapture";
-import { useSearch } from "../hooks/useSearch";
-import { useRenderer } from "../hooks/useRenderer";
-import { useArtifacts } from "../hooks/useArtifacts";
-import { useInterpreter } from "../hooks/useInterpreter";
 import { useToolsContext } from "../hooks/useToolsContext";
 
 export function ChatInput() {
   const config = getConfig();
   const client = config.client;
 
-  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding, mcpConnected } = useChat();
+  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding, isInitializing } = useChat();
   const { currentRepository, setCurrentRepository } = useRepositories();
   const { profile } = useSettings();
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
-  const { isAvailable: isSearchAvailable, isEnabled: isSearchEnabled, setEnabled: setSearchEnabled } = useSearch();
-  const { isAvailable: isRendererAvailable, isEnabled: isRendererEnabled, setEnabled: setRendererEnabled } = useRenderer();
-  const { isAvailable: isArtifactsAvailable, isEnabled: isArtifactsEnabled, setEnabled: setArtifactsEnabled } = useArtifacts();
-  const { isAvailable: isInterpreterAvailable, isEnabled: isInterpreterEnabled, setEnabled: setInterpreterEnabled } = useInterpreter();
-  const { mcps, isConnected, isConnecting, toggleMCP } = useToolsContext();
+  const { providers } = useToolsContext();
   
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
@@ -98,8 +90,8 @@ export function ChatInput() {
   // Transcription hook
   const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription();
 
-  // Helper to check if a tool (MCP) is enabled/disabled based on model config
-  const isToolEnabledByModel = useCallback((toolId: string) => {
+  // Helper to check if a tool is enabled/disabled based on model config
+  const isToolEnabledByModel = useCallback((providerId: string) => {
     if (!model?.tools) {
       return null; // No restrictions
     }
@@ -109,14 +101,14 @@ export function ChatInput() {
     
     // If there are enabled tools specified, this tool must be in that list
     if (enabledTools.length > 0) {
-      return enabledTools.includes(toolId);
+      return enabledTools.includes(providerId);
     }
     
     // Otherwise, this tool must not be in the disabled list
-    return !disabledTools.includes(toolId);
+    return !disabledTools.includes(providerId);
   }, [model?.tools]);
   
-  const isToolRequiredByModel = useCallback((toolId: string) => {
+  const isToolRequiredByModel = useCallback((providerId: string) => {
     if (!model?.tools) {
       return false; // Not required if no restrictions
     }
@@ -124,47 +116,47 @@ export function ChatInput() {
     const enabledTools = model.tools.enabled || [];
     
     // Tool is required if it's in the enabled list
-    return enabledTools.includes(toolId);
+    return enabledTools.includes(providerId);
   }, [model?.tools]);
 
-  // MCP indicator logic
-  const mcpIndicator = useMemo(() => {
-    // null = no MCP servers, false = connecting, true = all connected
-    if (mcpConnected === null) {
-      // No MCP servers configured or connected - show brain
+  // Tool providers indicator logic
+  const toolIndicator = useMemo(() => {
+    // null = no providers, true = initializing, false = all ready
+    if (isInitializing === null) {
+      // No tool providers configured - show brain
       return <Sparkles size={14} />;
-    } else if (mcpConnected === true) {
-      // All MCPs connected - show rocket
+    } else if (isInitializing === false) {
+      // All providers ready - show rocket
       return <Rocket size={14} />;
     } else {
-      // At least one MCP connecting - show loading spinner
+      // At least one provider initializing - show loading spinner
       return <LoaderCircle size={14} className="animate-spin" />;
     }
-  }, [mcpConnected]);
+  }, [isInitializing]);
 
-  // Auto-connect required MCP tools when model changes
+  // Auto-connect required tools when model changes
   useEffect(() => {
     if (!model?.tools?.enabled || model.tools.enabled.length === 0) {
       return;
     }
 
-    // Connect all required (enabled) MCPs
-    const connectRequiredMCPs = async () => {
-      for (const toolId of model.tools!.enabled) {
-        const mcp = mcps.find(m => m.id === toolId);
-        if (mcp && !isConnected(mcp.id) && !isConnecting(mcp.id)) {
+    const enableTools = async () => {
+      for (const providerId of model.tools!.enabled) {
+        const provider = providers.find(p => p.id === providerId);
+        
+        if (provider?.setEnabled) {
           try {
-            await toggleMCP(mcp.id);
+            await provider.setEnabled(true);
           } catch (error) {
-            console.error(`Failed to auto-connect required MCP ${mcp.name}:`, error);
+            console.error(`Failed to auto-connect required provider ${provider.name}:`, error);
           }
         }
       }
     };
 
-    connectRequiredMCPs();
+    enableTools();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model?.tools?.enabled, mcps, isConnected, isConnecting, toggleMCP]);
+  }, [model?.tools?.enabled, providers]);
 
 
 
@@ -545,7 +537,7 @@ export function ChatInput() {
             {models.length > 0 && (
               <Menu>
                 <MenuButton className="flex items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm">
-                  {mcpIndicator}
+                  {toolIndicator}
                   <span>
                     {model?.name ?? model?.id ?? "Select Model"}
                   </span>
@@ -607,14 +599,10 @@ export function ChatInput() {
 
           <div className="flex items-center gap-1">
             {/* Features Menu */}
-            {(isSearchAvailable || isRendererAvailable || isArtifactsAvailable || isInterpreterAvailable || mcps.length > 0) && (
+            {providers.filter(p => p.setEnabled).length > 0 && (
               <Menu>
                 <MenuButton 
-                  className={`p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 ${
-                    isSearchEnabled || isRendererEnabled || isArtifactsEnabled || isInterpreterEnabled || mcps.some(mcp => isConnected(mcp.id))
-                      ? 'bg-neutral-100/80 dark:bg-white/10 rounded-lg'
-                      : ''
-                  }`}
+                  className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                   title="Features"
                 >
                   <Sliders size={16} />
@@ -625,118 +613,31 @@ export function ChatInput() {
                   anchor="bottom end"
                   className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto sidebar-scroll"
                 >
-                  {isSearchAvailable && (
-                    <MenuItem>
-                      <Button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setSearchEnabled(!isSearchEnabled);
-                        }}
-                        className="group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Globe size={16} />
-                          <div className="flex flex-col items-start">
-                            <span className="font-medium text-sm">Internet</span>
-                            <span className="text-xs text-neutral-600 dark:text-neutral-400">Search the web</span>
-                          </div>
-                        </div>
-                        {isSearchEnabled && (
-                          <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
-                        )}
-                      </Button>
-                    </MenuItem>
-                  )}
-                  {isRendererAvailable && (
-                    <MenuItem>
-                      <Button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setRendererEnabled(!isRendererEnabled);
-                        }}
-                        className="group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Image size={16} />
-                          <div className="flex flex-col items-start">
-                            <span className="font-medium text-sm">Images</span>
-                            <span className="text-xs text-neutral-600 dark:text-neutral-400">Generate images</span>
-                          </div>
-                        </div>
-                        {isRendererEnabled && (
-                          <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
-                        )}
-                      </Button>
-                    </MenuItem>
-                  )}
-                  {isArtifactsAvailable && (
-                    <MenuItem>
-                      <Button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setArtifactsEnabled(!isArtifactsEnabled);
-                        }}
-                        className="group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Table size={16} />
-                          <div className="flex flex-col items-start">
-                            <span className="font-medium text-sm">Artifacts</span>
-                            <span className="text-xs text-neutral-600 dark:text-neutral-400">Create/edit files</span>
-                          </div>
-                        </div>
-                        {isArtifactsEnabled && (
-                          <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
-                        )}
-                      </Button>
-                    </MenuItem>
-                  )}
-                  {isInterpreterAvailable && (
-                    <MenuItem>
-                      <Button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setInterpreterEnabled(!isInterpreterEnabled);
-                        }}
-                        className="group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Package size={16} />
-                          <div className="flex flex-col items-start">
-                            <span className="font-medium text-sm">Interpreter</span>
-                            <span className="text-xs text-neutral-600 dark:text-neutral-400">Use Python engine</span>
-                          </div>
-                        </div>
-                        {isInterpreterEnabled && (
-                          <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
-                        )}
-                      </Button>
-                    </MenuItem>
-                  )}
-                  {/* MCP Servers */}
-                  {mcps.map((mcp) => {
-                    const isEnabled = isToolEnabledByModel(mcp.id);
-                    const isRequired = isToolRequiredByModel(mcp.id);
+                  {providers.filter(p => p.setEnabled).map((provider) => {
+                    const IconComponent = provider.icon === 'Globe' ? Globe :
+                      provider.icon === 'Image' ? Image :
+                      provider.icon === 'Table' ? Table :
+                      provider.icon === 'Package' ? Package :
+                      provider.icon === 'Rocket' ? Rocket : Sparkles;
+                    
+                    const isEnabled = isToolEnabledByModel(provider.id);
+                    const isRequired = isToolRequiredByModel(provider.id);
                     const canToggle = isEnabled !== false && !isRequired;
                     
                     return (
-                      <MenuItem key={mcp.id}>
+                      <MenuItem key={provider.id}>
                         <Button
                           onClick={async (e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            if (!canToggle) return;
+                            if (!canToggle || !provider.setEnabled) return;
                             try {
-                              await toggleMCP(mcp.id);
+                              await provider.setEnabled(!provider.isEnabled);
                             } catch (error) {
-                              console.error(`Failed to toggle MCP ${mcp.name}:`, error);
+                              console.error(`Failed to toggle provider ${provider.name}:`, error);
                             }
                           }}
-                          disabled={isConnecting(mcp.id) || !canToggle}
+                          disabled={provider.isInitializing || !canToggle}
                           className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 ${
                             !canToggle ? 'opacity-50 cursor-not-allowed' : ''
                           }`}
@@ -749,25 +650,24 @@ export function ChatInput() {
                           }
                         >
                           <div className="flex items-center gap-3">
-                            <Rocket size={16} />
+                            <IconComponent size={16} />
                             <div className="flex flex-col items-start">
                               <span className="font-medium text-sm">
-                                {mcp.name}
+                                {provider.name}
                                 {isRequired && <span className="text-xs ml-1 text-neutral-500 dark:text-neutral-400">(required)</span>}
                                 {isEnabled === false && <span className="text-xs ml-1 text-neutral-500 dark:text-neutral-400">(disabled)</span>}
                               </span>
-                              {mcp.description && (
-                                <span className="text-xs text-neutral-600 dark:text-neutral-400">{mcp.description}</span>
+                              {provider.description && (
+                                <span className="text-xs text-neutral-600 dark:text-neutral-400">{provider.description}</span>
                               )}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            {isConnecting(mcp.id) && (
+                            {provider.isInitializing ? (
                               <LoaderCircle size={14} className="animate-spin text-neutral-600 dark:text-neutral-400" />
-                            )}
-                            {isConnected(mcp.id) && !isConnecting(mcp.id) && (
+                            ) : provider.isEnabled ? (
                               <Check size={16} className="text-neutral-600 dark:text-neutral-400" />
-                            )}
+                            ) : null}
                           </div>
                         </Button>
                       </MenuItem>

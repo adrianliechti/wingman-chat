@@ -36,24 +36,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const chat = chats.find(c => c.id === chatId) ?? null;
   const model = chat?.model ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat', model);
-  const { connectedMCPs, connectingMCPs } = useToolsContext();
+  const { providers } = useToolsContext();
   
-  // Calculate MCP connection state
-  const mcpConnected = useMemo(() => {
-    if (connectedMCPs.size === 0 && connectingMCPs.size === 0) {
-      return null; // No MCP servers configured or connected
+  // Calculate tool providers connection state
+  const isInitializing = useMemo(() => {
+    const hasProviders = providers.length > 0;
+    if (!hasProviders) {
+      return null; // No providers configured
     }
-    if (connectingMCPs.size > 0) {
-      return false; // At least one MCP is connecting
+    const isAnyInitializing = providers.some(p => p.isInitializing);
+    if (isAnyInitializing) {
+      return true; // At least one provider is initializing
     }
-    return true; // All MCPs are connected
-  }, [connectedMCPs.size, connectingMCPs.size]);
-  
-  // Get all MCP tools from connected MCPs
-  const mcpTools = useMemo(() => {
-    const tools = Array.from(connectedMCPs.values()).flatMap(conn => conn.tools);
-    return tools;
-  }, [connectedMCPs]);
+    return false; // All providers are ready
+  }, [providers]);
   
   const messages = useMemo(() => {
     return chat?.messages ?? [];
@@ -346,7 +342,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     chats,
     chat,
     messages,
-    isResponding,
 
     // Chat actions
     createChat,
@@ -358,9 +353,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     addMessage,
     sendMessage,
 
-    // MCP state
-    mcpConnected,
-    mcpTools,
+    isResponding,
+    isInitializing,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

@@ -343,7 +343,7 @@ export function useArtifacts(): ArtifactsHook {
   }, [fs, activeFile]);
 
   const artifactsProvider = useCallback((): ToolProvider | null => {
-    if (!context.isEnabled) {
+    if (!context.isAvailable) {
       return null;
     }
 
@@ -356,8 +356,12 @@ export function useArtifacts(): ArtifactsHook {
       instructions: artifactsInstructionsText,
       
       tools: async () => artifactsTools(),
+      
+      isEnabled: context.isEnabled,
+      isInitializing: false,
+      setEnabled: context.setEnabled,
     };
-  }, [context.isEnabled, artifactsTools]);
+  }, [context.isAvailable, context.isEnabled, context.setEnabled, artifactsTools]);
   
   return {
     ...context,

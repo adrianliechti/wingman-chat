@@ -61,6 +61,10 @@ export function BridgeProvider({ children }: BridgeProviderProps) {
       instructions: bridgeInstructions || undefined,
       
       tools: async () => bridgeTools,
+      
+      isEnabled: true,
+      isInitializing: false,
+      setEnabled: () => {}, // Bridge is always on when connected
     };
   }, [bridge, bridgeTools, bridgeInstructions]);
 

@@ -15,23 +15,22 @@ export interface ChatContext {
  */
 export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | null): ChatContext {
   const { generateInstructions } = useProfile();
-  const { getProviders } = useToolsContext();
+  const { providers } = useToolsContext();
   const [context, setContext] = useState<ChatContext>({ tools: [], instructions: '' });
 
   useEffect(() => {
     const loadContext = async () => {
       const profileInstructions = generateInstructions();
       
-      // Get all providers from the unified ToolsContext
-      const providers = getProviders();
+      // Filter providers that are enabled
+      let filteredProviders = providers.filter(p => p.enabled);
       
-      // Filter providers based on model configuration
-      let filteredProviders = providers;
+      // Further filter based on model configuration
       if (model?.tools) {
         const enabledTools = new Set(model.tools.enabled || []);
         const disabledTools = new Set(model.tools.disabled || []);
         
-        filteredProviders = providers.filter(provider => {
+        filteredProviders = filteredProviders.filter(provider => {
           // Check provider ID against enabled/disabled lists
           const matchId = provider.id;
           
@@ -84,7 +83,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
     mode,
     model,
     generateInstructions,
-    getProviders
+    providers
   ]);
 
   return context;
