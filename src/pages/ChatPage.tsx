@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { Plus as PlusIcon, Mic, MicOff, Package, PackageOpen, AlertTriangle, Info, Book, BookOpen } from "lucide-react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { Plus as PlusIcon, Mic, MicOff, Package, PackageOpen, AlertTriangle, Info, Book, BookOpen, ArrowDown } from "lucide-react";
 import { Button, Dialog, DialogPanel, DialogTitle } from "@headlessui/react";
 import { getConfig } from "../config";
 import { useAutoScroll } from "../hooks/useAutoScroll";
@@ -71,7 +71,7 @@ export function ChatPage() {
   const { setSidebarContent } = useSidebar();
   const { setRightActions } = useNavigation();
 
-  const { containerRef, bottomRef, handleScroll, enableAutoScroll } = useAutoScroll({
+  const { containerRef, bottomRef, enableAutoScroll, isAutoScrollEnabled } = useAutoScroll({
     dependencies: [chat, messages],
   });
 
@@ -193,17 +193,6 @@ export function ChatPage() {
     return () => setSidebarContent(null);
   }, [sidebarContent, setSidebarContent]);
 
-  // Force scroll to bottom only for new user messages, not streaming updates
-  const prevMessagesLengthRef = useRef(messages.length);
-  useEffect(() => {
-    // Only force scroll if a completely new message was added (not just updated)
-    if (messages.length > prevMessagesLengthRef.current) {
-      // This indicates a new message was added (user or assistant), not just streaming content
-      enableAutoScroll();
-    }
-    prevMessagesLengthRef.current = messages.length;
-  }, [messages.length, enableAutoScroll]);
-
   // Observer for chat input height changes to adjust message container padding
   useEffect(() => {
     const observeHeight = () => {
@@ -289,11 +278,10 @@ export function ChatPage() {
             </div>
           ) : (
             <div
-              className={`flex-1 overflow-auto sidebar-scroll transition-opacity duration-300 ${
+              className={`flex-1 overflow-auto sidebar-scroll transition-opacity duration-300 relative ${
                 isVoiceMode ? 'opacity-90' : 'opacity-100'
               }`}
               ref={containerRef}
-              onScroll={handleScroll}
             >
               <div className={`px-3 pt-18 transition-all duration-150 ease-out ${
                 layoutMode === 'wide'
@@ -329,6 +317,20 @@ export function ChatPage() {
                 {/* sentinel for scrollIntoView */}
                 <div ref={bottomRef} />
               </div>
+            </div>
+          )}
+
+          {/* Jump to latest button - fixed position */}
+          {messages.length > 0 && !isAutoScrollEnabled && (
+            <div className="fixed left-0 right-0 flex justify-center pointer-events-none z-10" style={{ bottom: `${chatInputHeight + 16}px` }}>
+              <button
+                type="button"
+                onClick={enableAutoScroll}
+                className="pointer-events-auto inline-flex items-center justify-center rounded-full bg-white/90 dark:bg-neutral-800/90 text-neutral-700 dark:text-neutral-300 p-2 shadow-md border border-neutral-200/50 dark:border-neutral-700/50 hover:bg-white dark:hover:bg-neutral-800 hover:shadow-lg transition-all backdrop-blur-sm cursor-pointer"
+                aria-label="Scroll to bottom"
+              >
+                <ArrowDown size={16} />
+              </button>
             </div>
           )}
         </main>

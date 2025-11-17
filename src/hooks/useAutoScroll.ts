@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 
 interface UseAutoScrollOptions {
   /**
@@ -10,132 +10,104 @@ interface UseAutoScrollOptions {
    * Defaults to 20 px for touchpad-friendly sensitivity.
    */
   bottomThreshold?: number;
-  /**
-   * Delay in ms to debounce scroll during streaming. Defaults to 100ms.
-   */
-  scrollDebounceMs?: number;
 }
 
 export function useAutoScroll({ 
   dependencies, 
   bottomThreshold = 20,
-  scrollDebounceMs = 100 
 }: UseAutoScrollOptions) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerElementRef = useRef<HTMLDivElement | null>(null);
+  const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
+  const [bottomNode, setBottomNode] = useState<HTMLDivElement | null>(null);
   const isAutoScrollEnabledRef = useRef(true);
-  const isProgrammaticScrollRef = useRef(false);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
-  const rafIdRef = useRef<number | undefined>(undefined);
+  const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
 
-  const scrollToBottom = useCallback(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    // Cancel any pending scroll animation
-    if (rafIdRef.current) {
-      cancelAnimationFrame(rafIdRef.current);
-    }
-
-    // Mark as programmatic scroll
-    isProgrammaticScrollRef.current = true;
-
-    // Use requestAnimationFrame for smooth scrolling during streaming
-    const performScroll = () => {
-      const targetScrollTop = container.scrollHeight - container.clientHeight;
-      
-      // Use instant scrolling during streaming for better performance
-      // Only use smooth scrolling for user-triggered scrolls
-      container.scrollTop = targetScrollTop;
-      
-      // Reset programmatic flag after a short delay
-      setTimeout(() => {
-        isProgrammaticScrollRef.current = false;
-      }, 50);
-    };
-
-    rafIdRef.current = requestAnimationFrame(performScroll);
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    containerElementRef.current = node;
+    setContainerNode(node);
   }, []);
 
-  const handleScroll = useCallback(() => {
-    // Ignore programmatic scrolls
-    if (isProgrammaticScrollRef.current) return;
-    
-    const container = containerRef.current;
+  const bottomRef = useCallback((node: HTMLDivElement | null) => {
+    setBottomNode(node);
+  }, []);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const container = containerElementRef.current;
     if (!container) return;
 
-    // Calculate if user is at bottom
-    const scrollBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    const isAtBottom = scrollBottom <= bottomThreshold;
-    
-    // Update auto-scroll state
-    isAutoScrollEnabledRef.current = isAtBottom;
-  }, [bottomThreshold]);
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior,
+    });
+  }, []);
 
   const enableAutoScroll = useCallback(() => {
     isAutoScrollEnabledRef.current = true;
-    scrollToBottom();
+    setIsAutoScrollEnabled(true);
+    scrollToBottom('smooth');
   }, [scrollToBottom]);
 
-  // Debounced auto-scroll for streaming content
+  // Auto-scroll when dependencies change (e.g., new messages during streaming)
   useEffect(() => {
-    if (!isAutoScrollEnabledRef.current) return;
-
-    // Clear existing timeout
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
+    if (isAutoScrollEnabledRef.current) {
+      scrollToBottom('auto');
     }
-
-    // Debounce scrolling during rapid updates (streaming)
-    scrollTimeoutRef.current = setTimeout(() => {
-      if (isAutoScrollEnabledRef.current) {
-        scrollToBottom();
-      }
-    }, scrollDebounceMs);
-
-    return () => {
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, dependencies);
 
-  // Cleanup on unmount
+  // Track sentinel visibility to know when we're really at the bottom
   useEffect(() => {
+    if (!containerNode || !bottomNode) return;
+    if (typeof IntersectionObserver === "undefined") {
+      isAutoScrollEnabledRef.current = true;
+      setIsAutoScrollEnabled(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry) return;
+
+        const isAtBottom = entry.isIntersecting;
+        isAutoScrollEnabledRef.current = isAtBottom;
+        setIsAutoScrollEnabled(isAtBottom);
+      },
+      {
+        root: containerNode,
+        rootMargin: `0px 0px ${bottomThreshold}px 0px`,
+        threshold: [0, 1],
+      }
+    );
+
+    observer.observe(bottomNode);
+
     return () => {
-      if (rafIdRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
-      }
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
+      observer.disconnect();
     };
-  }, []);
+  }, [bottomNode, bottomThreshold, containerNode]);
 
   // Handle container resize (important for markdown rendering)
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    if (!containerNode) return;
+    if (typeof ResizeObserver === "undefined") return;
 
     const resizeObserver = new ResizeObserver(() => {
       if (isAutoScrollEnabledRef.current) {
-        scrollToBottom();
+        scrollToBottom('auto');
       }
     });
 
-    resizeObserver.observe(container);
+    resizeObserver.observe(containerNode);
 
     return () => {
       resizeObserver.disconnect();
     };
-  }, [scrollToBottom]);
+  }, [containerNode, scrollToBottom]);
 
   return {
     containerRef,
     bottomRef,
-    handleScroll,
     enableAutoScroll,
-    isAutoScrollEnabled: isAutoScrollEnabledRef,
+    isAutoScrollEnabled,
   };
 }
