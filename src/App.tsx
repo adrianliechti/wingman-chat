@@ -4,6 +4,7 @@ import { Button } from "@headlessui/react";
 import { ChatPage } from "./pages/ChatPage";
 import { TranslatePage } from "./pages/TranslatePage";
 import { WorkflowPage } from "./pages/WorkflowPage";
+import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
 import { getConfig } from "./config";
 import { SidebarProvider } from "./contexts/SidebarProvider";
 import { useSidebar } from "./hooks/useSidebar";
@@ -385,6 +386,12 @@ const providers = [
 ];
 
 function App() {
+  // Check if we're on an MCP OAuth route
+  const pathname = window.location.pathname;
+  if (pathname === '/mcp/callback') {
+    return <OAuthCallbackPage />;
+  }
+
   return providers.reduceRight(
     (acc, Provider) => <Provider>{acc}</Provider>,
     <AppContent />

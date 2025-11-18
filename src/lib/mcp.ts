@@ -16,6 +16,9 @@ export class MCPClient implements ToolProvider {
   private client: Client | null = null;
   
   private pingInterval: ReturnType<typeof setInterval> | undefined;
+  
+  // Callback for when auth is required
+  onAuthRequired?: () => Promise<void>;
 
   instructions?: string;
   tools: Tool[] = [];
@@ -76,6 +79,16 @@ export class MCPClient implements ToolProvider {
     await this.loadToolsAndInstructions();
     
     this.startPing();
+    
+    // Check if auth is required after connection
+    if (this.needsAuth() && this.onAuthRequired) {
+      // Trigger the auth callback - this should be handled by UI
+      try {
+        await this.onAuthRequired();
+      } catch (error) {
+        console.warn('Auth required but user action needed:', error);
+      }
+    }
   }
   
   async disconnect(): Promise<void> {
@@ -177,6 +190,116 @@ export class MCPClient implements ToolProvider {
   isConnected(): boolean {
     return this.client !== null;
   }
+  
+  needsAuth(): boolean {
+    const tokenKey = `${this.id}_token`;
+    return !localStorage.getItem(tokenKey);
+  }
+
+  async initAuth(popupWindow?: Window | null): Promise<void> {
+    return new Promise((resolve, reject) => {
+      // Check if we already have a token
+      const tokenKey = `${this.id}_token`;
+      const existingToken = localStorage.getItem(tokenKey);
+      
+      if (existingToken) {
+        console.log('MCP OAuth token already exists');
+        // Close popup if it was pre-opened
+        if (popupWindow && !popupWindow.closed) {
+          popupWindow.close();
+        }
+        resolve();
+        return;
+      }
+      
+      console.log('Opening OAuth popup...');
+      
+      // Generate fake authorization code
+      const fakeCode = generateRandomState();
+      
+      // Use pre-opened popup or create new one
+      let authWindow = popupWindow;
+      if (!authWindow || authWindow.closed) {
+        // If no pre-opened window and we're not in a user action context,
+        // this will be blocked by popup blockers
+        const width = 600;
+        const height = 700;
+        const left = window.screen.width / 2 - width / 2;
+        const top = window.screen.height / 2 - height / 2;
+        
+        authWindow = window.open(
+          'about:blank',
+          'MCP OAuth Authorization',
+          `width=${width},height=${height},left=${left},top=${top},popup=1`
+        );
+      }
+      
+      if (!authWindow || authWindow.closed) {
+        const error = new Error('Popup was blocked by browser. Please allow popups for this site or manually trigger authentication.');
+        console.warn('Popup blocked:', error.message);
+        reject(error);
+        return;
+      }
+      
+      // Navigate to callback URL
+      authWindow.location.href = `/mcp/callback?code=${fakeCode}`;
+      
+      console.log('OAuth popup opened successfully');
+      
+      // Listen for OAuth callback
+      const handleMessage = (event: MessageEvent) => {
+        // Verify origin
+        if (event.origin !== window.location.origin) {
+          return;
+        }
+        
+        if (event.data?.type === 'oauth_callback') {
+          window.removeEventListener('message', handleMessage);
+          
+          if (event.data.error) {
+            reject(new Error(`OAuth failed: ${event.data.error}`));
+            return;
+          }
+          
+          if (event.data.token) {
+            // Store token in localStorage
+            localStorage.setItem(tokenKey, event.data.token);
+            console.log('MCP OAuth token stored successfully');
+            resolve();
+          } else {
+            reject(new Error('No token received from OAuth'));
+          }
+        }
+      };
+      
+      window.addEventListener('message', handleMessage);
+      
+      // Timeout after 5 minutes
+      const timeout = setTimeout(() => {
+        window.removeEventListener('message', handleMessage);
+        if (authWindow && !authWindow.closed) {
+          authWindow.close();
+        }
+        reject(new Error('OAuth timeout'));
+      }, 300000);
+      
+      // Check if popup was closed
+      const checkClosed = setInterval(() => {
+        if (authWindow.closed) {
+          clearInterval(checkClosed);
+          clearTimeout(timeout);
+          window.removeEventListener('message', handleMessage);
+          reject(new Error('OAuth popup closed'));
+        }
+      }, 1000);
+    });
+  }
+}
+
+function generateRandomState(): string {
+  const array = new Uint8Array(16);
+  crypto.getRandomValues(array);
+  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function processContent(content: ContentBlock[]): string {

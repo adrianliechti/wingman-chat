@@ -12,6 +12,7 @@ import { ToolsContext } from "./ToolsContext";
 import type { ToolsContextValue } from "./ToolsContext";
 import type { ToolProvider } from "../types/chat";
 import { ProviderState } from "../types/chat";
+import { MCPAuthPrompt } from "../components/MCPAuthPrompt";
 
 interface ToolsProviderProps {
   children: React.ReactNode;
@@ -24,9 +25,27 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
   // State management for all providers
   const [providerStates, setProviderStates] = useState<Map<string, ProviderState>>(new Map());
   
+  // Auth prompt state
+  const [authPrompt, setAuthPrompt] = useState<{ clientId: string; clientName: string } | null>(null);
+  const authResolveRef = useRef<(() => void) | null>(null);
+  const authRejectRef = useRef<((error: Error) => void) | null>(null);
+  
   // Create MCP clients
   const [mcpClients] = useState<MCPClient[]>(() => 
-    mcps.map(mcp => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description))
+    mcps.map(mcp => {
+      const client = new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description);
+      
+      // Set up auth callback
+      client.onAuthRequired = () => {
+        return new Promise<void>((resolve, reject) => {
+          authResolveRef.current = resolve;
+          authRejectRef.current = reject;
+          setAuthPrompt({ clientId: client.id, clientName: client.name });
+        });
+      };
+      
+      return client;
+    })
   );
   const clientsRef = useRef<MCPClient[]>(mcpClients);
 
@@ -131,6 +150,47 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
       }
     }
   }, [mcpClients]);
+  
+  const handleAuthorize = useCallback(() => {
+    if (!authPrompt) return;
+    
+    const client = mcpClients.find(c => c.id === authPrompt.clientId);
+    if (!client) return;
+    
+    // Open popup in response to user click
+    const width = 600;
+    const height = 700;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+    
+    const popup = window.open(
+      'about:blank',
+      'MCP OAuth Authorization',
+      `width=${width},height=${height},left=${left},top=${top},popup=1`
+    );
+    
+    // Trigger auth with the pre-opened popup
+    client.initAuth(popup)
+      .then(() => {
+        if (authResolveRef.current) {
+          authResolveRef.current();
+        }
+        setAuthPrompt(null);
+      })
+      .catch((error) => {
+        if (authRejectRef.current) {
+          authRejectRef.current(error);
+        }
+        setAuthPrompt(null);
+      });
+  }, [authPrompt, mcpClients]);
+  
+  const handleCancelAuth = useCallback(() => {
+    if (authRejectRef.current) {
+      authRejectRef.current(new Error('User cancelled authentication'));
+    }
+    setAuthPrompt(null);
+  }, []);
 
   const value: ToolsContextValue = {
     providers,
@@ -138,5 +198,15 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     setProviderEnabled,
   };
 
-  return <ToolsContext.Provider value={value}>{children}</ToolsContext.Provider>;
+  return (
+    <ToolsContext.Provider value={value}>
+      {children}
+      <MCPAuthPrompt
+        isOpen={authPrompt !== null}
+        serverName={authPrompt?.clientName || ''}
+        onAuthorize={handleAuthorize}
+        onCancel={handleCancelAuth}
+      />
+    </ToolsContext.Provider>
+  );
 }
