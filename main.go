@@ -56,6 +56,13 @@ func main() {
 	mux.Handle("/", http.FileServerFS(dist))
 
 	mux.HandleFunc("GET /config.json", func(w http.ResponseWriter, r *http.Request) {
+		type toolType struct {
+			ID string `json:"id,omitempty" yaml:"id,omitempty"`
+
+			Name        string `json:"name,omitempty" yaml:"name,omitempty"`
+			Description string `json:"description,omitempty" yaml:"description,omitempty"`
+		}
+
 		type modelType struct {
 			ID string `json:"id,omitempty" yaml:"id,omitempty"`
 
@@ -131,6 +138,7 @@ func main() {
 			Title      string `json:"title,omitempty" yaml:"title,omitempty"`
 			Disclaimer string `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
 
+			Tools  []toolType  `json:"tools,omitempty" yaml:"tools,omitempty"`
 			Models []modelType `json:"models,omitempty" yaml:"models,omitempty"`
 
 			TTS *ttsType `json:"tts,omitempty" yaml:"tts,omitempty"`
@@ -157,6 +165,10 @@ func main() {
 		config := configType{
 			Title:      title,
 			Disclaimer: disclaimer,
+		}
+
+		if data, err := os.ReadFile("tools.yaml"); err == nil {
+			yaml.Unmarshal(data, &config.Tools)
 		}
 
 		if data, err := os.ReadFile("models.yaml"); err == nil {

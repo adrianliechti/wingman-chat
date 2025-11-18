@@ -13,8 +13,8 @@ interface config {
   title: string;
   disclaimer: string;
 
-  models: modelConfig[];
-  mcps: mcpConfig[];
+  tools: toolConfig[];
+  models: modelConfig[];  
 
   backgrounds?: backgroundPackConfig;
 
@@ -51,7 +51,7 @@ interface modelConfig {
   prompts?: string[];
 }
 
-interface mcpConfig {
+interface toolConfig {
   id: string;
   name: string;
 
@@ -125,8 +125,8 @@ interface Config {
 
   client: Client;
 
-  models: Model[];
   mcps: MCP[];
+  models: Model[];  
 
   tts: boolean;
   stt: boolean;
@@ -169,6 +169,17 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       client: client,
 
+      mcps: cfg.tools?.map((mcp) => {
+        return {
+          id: mcp.id,
+
+          name: mcp.name,
+          description: mcp.description,
+
+          url: new URL(`/api/v1/mcp/${mcp.id}`, window.location.origin).toString(),
+        };
+      }) ?? [],
+      
       models: cfg.models?.map((model) => {
         return {
           id: model.id,
@@ -181,18 +192,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
           tools: model.tools,
         };
       }) ?? [],
-
-      mcps: cfg.mcps?.map((mcp) => {
-        return {
-          id: mcp.id,
-
-          name: mcp.name,
-          description: mcp.description,
-
-          url: new URL(`/api/v1/mcp/${mcp.id}`, window.location.origin).toString(),
-        };
-      }) ?? [],
-
+      
       tts: cfg.tts?.enabled ?? false,
       stt: cfg.stt?.enabled ?? false,
 
