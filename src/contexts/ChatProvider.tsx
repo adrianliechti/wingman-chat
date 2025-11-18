@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { Role } from "../types/chat";
 import type { Message, ToolProvider, Model, ToolContext } from '../types/chat';
 import { ProviderState } from '../types/chat';
@@ -25,29 +25,34 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { isAvailable: artifactsEnabled, setFileSystemForChat } = useArtifacts();
   const [chatId, setChatId] = useState<string | null>(null);
-  const [streamingMessages, setStreamingMessages] = useState<Message[] | null>(null);
+  const [isResponding, setIsResponding] = useState<boolean>(false);
+  const messagesRef = useRef<Message[]>([]);
 
-  const chat = useMemo(() => chats.find(c => c.id === chatId) ?? null, [chats, chatId]);
+  const chat = chats.find(c => c.id === chatId) ?? null;
   const model = chat?.model ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat', model);
   const { providers, getProviderState, setProviderEnabled } = useToolsContext();
   
   // Calculate tool providers connection state
   const isInitializing = useMemo(() => {
-    if (providers.length === 0) return null;
-    return providers.some((p: ToolProvider) => getProviderState(p.id) === ProviderState.Initializing);
+    const hasProviders = providers.length > 0;
+    if (!hasProviders) {
+      return null; // No providers configured
+    }
+    const isAnyInitializing = providers.some((p: ToolProvider) => getProviderState(p.id) === ProviderState.Initializing);
+    if (isAnyInitializing) {
+      return true; // At least one provider is initializing
+    }
+    return false; // All providers are ready
   }, [providers, getProviderState]);
   
   const messages = useMemo(() => {
-    // Use streaming messages during active streaming, otherwise use persisted messages
-    if (streamingMessages !== null) {
-      return streamingMessages;
-    }
     return chat?.messages ?? [];
-  }, [chat?.messages, streamingMessages]);
+  }, [chat?.messages]);
 
-  // Derive isResponding from streaming state
-  const isResponding = streamingMessages !== null;
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // Set up the filesystem for the current chat
   useEffect(() => {
@@ -102,37 +107,44 @@ export function ChatProvider({ children }: ChatProviderProps) {
       throw new Error('no model selected');
     }
 
-    if (chatId && chat) {
-      return { id: chatId, chat };
+    let id = chatId;
+    let chatItem = id ? chats.find(c => c.id === id) || null : null;
+
+    if (!chatItem) {
+      chatItem = createChatHook();
+      chatItem.model = model;
+
+      setChatId(chatItem.id);
+      updateChat(chatItem.id, () => ({ model }));
+
+      id = chatItem.id;
     }
 
-    const newChat = createChatHook();
-    newChat.model = model;
-
-    setChatId(newChat.id);
-    updateChat(newChat.id, () => ({ model }));
-
-    return { id: newChat.id, chat: newChat };
-  }, [model, chatId, chat, createChatHook, updateChat]);
+    return { id: id!, chat: chatItem! };
+  }, [model, createChatHook, updateChat, setChatId, chatId, chats]);
 
   const addMessage = useCallback(
     (message: Message) => {
       const { id } = getOrCreateChat();
-      const currentMessages = chat?.messages ?? [];
+      
+      const currentMessages = messagesRef.current;
       const updatedMessages = [...currentMessages, message];
+      
+      messagesRef.current = updatedMessages;
       updateChat(id, () => ({ messages: updatedMessages }));
     },
-    [getOrCreateChat, chat?.messages, updateChat]
+    [getOrCreateChat, updateChat]
   );
 
   const sendMessage = useCallback(
     async (message: Message) => {
       const { id, chat: chatObj } = getOrCreateChat();
 
-      const history = chatObj.messages || [];
+      const history = chats.find(c => c.id === id)?.messages || [];
       let conversation = [...history, message];
 
       updateChat(id, () => ({ messages: conversation }));
+      setIsResponding(true);
 
       // Create tool context with current message attachments
       const toolContext: ToolContext = {
@@ -146,8 +158,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         // Main completion loop to handle tool calls
         while (true) {
-          // Initialize streaming with empty assistant message
-          setStreamingMessages([...conversation, { role: Role.Assistant, content: '' }]);
+          // Create empty assistant message for this completion iteration
+          updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: '' }] }));
           
           const assistantMessage = await client.complete(
             model!.id,
@@ -155,13 +167,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
             conversation,
             tools,
             (_, snapshot) => {
-              // Update local streaming state only - no persistence during streaming
-              setStreamingMessages([...conversation, { role: Role.Assistant, content: snapshot }]);
+              // Use the conversation state instead of fetching from chats to avoid stale closure
+              updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: snapshot }] }))
             }
           );
-          
-          // Clear streaming state now that stream is complete
-          setStreamingMessages(null);
           
           // Add the assistant message to conversation
           conversation = [...conversation, {
@@ -260,8 +269,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           updateChat(id, () => ({ messages: conversation }));
         }
 
-        // Clear streaming state and mark as complete
-        setStreamingMessages(null);
+        setIsResponding(false);
 
         if (!chatObj.title || conversation.length % 3 === 0) {
           client
@@ -274,7 +282,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         }
       } catch (error) {
         console.error(error);
-        setStreamingMessages(null);
+        setIsResponding(false);
 
         if (error?.toString().includes('missing finish_reason')) return;
 
@@ -315,7 +323,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         updateChat(id, () => ({ messages: conversation }));
       }
-    }, [getOrCreateChat, updateChat, client, model, chatTools, chatInstructions]);
+    }, [getOrCreateChat, chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions]);
 
   const value: ChatContextType = {
     // Models
