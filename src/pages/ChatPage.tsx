@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus as PlusIcon, Package, PackageOpen, Book, BookOpen, FileCode, Info, ArrowDown, BookOpenText, BookText } from "lucide-react";
+import { Plus as PlusIcon, Package, PackageOpen, Info, ArrowDown, BookOpenText, BookText } from "lucide-react";
 import { Button } from "@headlessui/react";
 import { getConfig } from "../config";
 import { useAutoScroll } from "../hooks/useAutoScroll";
@@ -205,7 +205,7 @@ export function ChatPage() {
       
       {/* Main content area */}
       <div className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-300 ${
-        showArtifactsDrawer ? 'md:mr-[calc(70vw+0.75rem)]' : 
+        showArtifactsDrawer ? 'md:mr-[calc(60vw+0.75rem)]' : 
         showRepositoryDrawer ? 'md:mr-[calc(20rem+0.75rem)]' : ''
       }`}>
         <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -271,9 +271,12 @@ export function ChatPage() {
             </div>
           )}
 
-          {/* Jump to latest button - fixed position */}
+          {/* Jump to latest button - positioned relative to chat area */}
           {messages.length > 0 && !isAutoScrollEnabled && (
-            <div className="fixed left-0 right-0 flex justify-center pointer-events-none z-10" style={{ bottom: `${chatInputHeight + 16}px` }}>
+            <div className={`fixed flex justify-center pointer-events-none z-10 transition-all duration-300 ease-out ${
+              showArtifactsDrawer ? 'left-0 right-[calc(60vw+0.75rem)]' :
+              showRepositoryDrawer ? 'left-0 right-[calc(20rem+0.75rem)]' : 'left-0 right-0'
+            }`} style={{ bottom: `${chatInputHeight + 16}px` }}>
               <button
                 type="button"
                 onClick={enableAutoScroll}
@@ -290,7 +293,7 @@ export function ChatPage() {
         <footer className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-300 ease-out ${
             messages.length === 0 ? 'md:bottom-1/3 md:transform md:translate-y-1/2' : ''
           } ${
-            showArtifactsDrawer ? 'right-0 md:right-[calc(70vw+0.75rem)]' :
+            showArtifactsDrawer ? 'right-0 md:right-[calc(60vw+0.75rem)]' :
             showRepositoryDrawer ? 'right-0 md:right-[calc(20rem+0.75rem)]' : 'right-0'
           }`}>
             <div className="relative pointer-events-auto md:max-w-4xl mx-auto">
@@ -336,15 +339,17 @@ export function ChatPage() {
 
       {/* Artifacts drawer - right side - takes priority over repository drawer */}
       {shouldRenderArtifactsDrawer && (
-        <div className={`w-full bg-neutral-50/60 dark:bg-neutral-950/70 backdrop-blur-sm shadow-2xl border-l border-neutral-200 dark:border-neutral-900 top-18 bottom-4 z-40 rounded-xl transition-all duration-300 ease-out transform ${
+        <div className={`w-full top-18 bottom-4 z-40 transition-all duration-300 ease-out transform ${
           isArtifactsDrawerAnimating 
-            ? 'translate-x-0 opacity-100 scale-100' 
-            : 'translate-x-full opacity-0 scale-95'
+            ? 'translate-x-0 opacity-100' 
+            : 'translate-x-full opacity-0'
         } ${ 
-          // On mobile: full width overlay from right edge, on desktop: positioned with right-3 and 70% width
-          'fixed right-0 md:right-3 md:w-[70vw] max-w-none'
+          // On mobile: full width overlay from right edge, on desktop: positioned with right edge and 60% width
+          'fixed right-0 md:w-[60vw] max-w-none'
         }`}>
-          <ArtifactsDrawer />
+          <div className="h-full border-l border-black/10 dark:border-white/10">
+            <ArtifactsDrawer />
+          </div>
         </div>
       )}
     </div>

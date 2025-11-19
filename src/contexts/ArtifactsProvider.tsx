@@ -10,9 +10,9 @@ interface ArtifactsProviderProps {
 }
 
 export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
-  const [openFiles, setOpenFiles] = useState<string[]>([]);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [showArtifactsDrawer, setShowArtifactsDrawer] = useState(false);
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
   const config = getConfig();
   const [isAvailable] = useState(() => {
     try {
@@ -23,6 +23,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     }
   });
   const [isEnabled, setIsEnabled] = useState(false);
+  const [version, setVersion] = useState(0);
 
   // Create singleton FileSystemManager instance
   const [fs] = useState(() => new FileSystemManager(
@@ -39,7 +40,6 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
       // Reset to empty filesystem when no chat or artifacts disabled
       fs.updateHandlers(null, null);
       // Reset UI state
-      setOpenFiles([]);
       setActiveFile(null);
       return;
     }
@@ -59,9 +59,6 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     const currentFileSystem = getFileSystem();
     const currentFilePaths = Object.keys(currentFileSystem);
     
-    // Only keep open files that exist in the new filesystem
-    setOpenFiles(prev => prev.filter(path => currentFilePaths.includes(path)));
-    
     // Clear active file if it doesn't exist in the new filesystem
     setActiveFile(currentActive => 
       currentActive && currentFilePaths.includes(currentActive) ? currentActive : null
@@ -71,20 +68,13 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     if (currentFilePaths.length > 0) {
       setIsEnabled(true);
     }
+
+    setVersion(v => v + 1);
   }, [fs]);
 
   // Subscribe to filesystem events - use empty dependency array to prevent re-subscriptions
   useEffect(() => {
     const unsubscribeCreated = fs.subscribe('fileCreated', (path: string) => {
-      // Batch state updates together
-      setOpenFiles(prev => {
-        if (prev.includes(path)) {
-          return prev;
-        }
-        const newFiles = [...prev, path];
-        return newFiles;
-      });
-      
       setActiveFile(path);
       setShowArtifactsDrawer(true);
       // Auto-enable artifacts when a file is created
@@ -92,14 +82,11 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     });
 
     const unsubscribeDeleted = fs.subscribe('fileDeleted', (path: string) => {
-      setOpenFiles(prev => prev.filter(file => file !== path));
-      
       // Clear active file if it was the deleted one
       setActiveFile(currentActive => currentActive === path ? null : currentActive);
     });
 
     const unsubscribeRenamed = fs.subscribe('fileRenamed', (oldPath: string, newPath: string) => {
-      setOpenFiles(prev => prev.map(file => file === oldPath ? newPath : file));
       setActiveFile(prev => prev === oldPath ? newPath : prev);
     });
 
@@ -117,35 +104,22 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   }, [fs]); // fs is stable from useState, so this effectively runs once
 
   const openFile = useCallback((path: string) => {
-    setOpenFiles(prev => {
-      if (prev.includes(path)) {
-        return prev;
-      }
-      const newFiles = [...prev, path];
-      return newFiles;
-    });
     setActiveFile(path);
   }, []);
 
   const closeFile = useCallback((path: string) => {
-    setOpenFiles(prev => {
-      const newFiles = prev.filter(file => file !== path);
-      
-      // If closing the active file, set a new active file
-      if (path === activeFile) {
-        const index = prev.indexOf(path);
-        const newActiveFile = newFiles.length > 0 
-          ? newFiles[Math.min(index, newFiles.length - 1)]
-          : null;
-        setActiveFile(newActiveFile);
-      }
-      
-      return newFiles;
-    });
+    // If closing the active file, clear it
+    if (path === activeFile) {
+      setActiveFile(null);
+    }
   }, [activeFile]);
 
   const toggleArtifactsDrawer = useCallback(() => {
     setShowArtifactsDrawer(prev => !prev);
+  }, []);
+
+  const toggleFileBrowser = useCallback(() => {
+    setShowFileBrowser(prev => !prev);
   }, []);
 
   const value = {
@@ -159,13 +133,15 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
       setIsEnabled(enabled);
     },
     fs,
-    openFiles,
     activeFile,
     showArtifactsDrawer,
+    showFileBrowser,
+    version,
     openFile,
     closeFile,
     setShowArtifactsDrawer,
     toggleArtifactsDrawer,
+    toggleFileBrowser,
     setFileSystemForChat,
   };
 

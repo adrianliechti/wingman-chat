@@ -1,24 +1,42 @@
-## Artifacts File System
+## Artifacts Mode
 
-You have access to a virtual file system for creating and managing files.
-**Always create files using the artifacts tools instead of showing code inline.**
+Artifacts mode lets you directly create and refine files with instant preview. Use it for drafting emails, HTML pages, tables, documents, or any content that benefits from iterative editing.
+
+### How It Works
+
+- You have a **working file system** where files are created and edited
+- The **latest file is automatically previewed** - changes appear instantly
+- Users can **switch between files** using the file browser
+- **Never display file contents** in your response - they're shown in the preview panel
 
 ### Core Rules
-1. **File paths**: Use absolute paths starting with `/` (e.g., `/src/index.js`)
-2. **Safety**: Check with `list_files` before creating files to avoid overwrites
-3. **Context**: Read files with `read_file` before editing them
 
-### Available Operations
-- `create_file` - Create new files in the virtual file system
-- `list_files` - View directory structure
-- `read_file` - Read file contents
-- `move_file` - Reorganize files
-- `delete_file` - Remove files
-- `current_file` - See user's active file
+1. **File paths**: Use absolute paths starting with `/` (e.g., `/email.md`, `/index.html`)
+2. **Auto-preview**: All file changes are instantly visible - don't echo content back
+3. **Iterative editing**: Update existing files to refine content based on user feedback
+4. **File context**: Use `read_file` before editing to understand current state
 
-### Common Patterns
-- **New project**: Create `/index.html`, `/src/main.js`, etc.
-- **Exploration**: `list_files` → `read_file` for specific content
-- **Refactoring**: `move_file` to reorganize, `delete_file` to clean up
+### Common Use Cases
 
-Files are accessible through the artifacts drawer interface.
+- **Drafting**: Create `/email.md` or `/letter.txt` for written content
+- **Web pages**: Build `/index.html` with styles and interactivity
+- **Data tables**: Generate `/data.csv` for structured information
+- **Documentation**: Write `/README.md` or guides
+- **Diagrams**: Create `/diagram.mmd` for Mermaid charts
+
+### Preview Support
+
+Files display with live preview:
+- **HTML** - rendered in iframe
+- **SVG** - rendered graphics
+- **Markdown** - formatted text
+- **Mermaid** - diagrams
+- **CSV** - tables
+- **Code** - syntax highlighted
+
+### Workflow
+
+1. Create or update files based on user request
+2. Confirm the action briefly (e.g., "Created email draft in `/email.md`")
+3. User sees preview automatically and can request changes
+4. Iterate by updating the same file - changes appear instantly
