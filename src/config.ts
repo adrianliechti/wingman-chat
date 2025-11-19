@@ -39,22 +39,24 @@ interface config {
 
 interface modelConfig {
   id: string;
-  name: string;
 
-  model?: string;
+  name: string;
   description?: string;
 
   tools?: {
     enabled: string[];
     disabled: string[];
   };
+
   prompts?: string[];
 }
 
 interface toolConfig {
   id: string;
-  name: string;
+  
+  url: string;
 
+  name: string;
   description: string;
 }
 
@@ -176,7 +178,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
           name: mcp.name,
           description: mcp.description,
 
-          url: new URL(`/api/v1/mcp/${mcp.id}`, window.location.origin).toString(),
+          url: mcp.url ?? new URL(`/api/v1/mcp/${mcp.id}`, window.location.origin).toString(),
         };
       }) ?? [],
       
