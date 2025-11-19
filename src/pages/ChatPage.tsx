@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus as PlusIcon, Package, PackageOpen, Book, BookOpen, Info, ArrowDown } from "lucide-react";
+import { Plus as PlusIcon, Package, PackageOpen, Book, BookOpen, FileCode, Info, ArrowDown, BookOpenText, BookText } from "lucide-react";
 import { Button } from "@headlessui/react";
 import { getConfig } from "../config";
 import { useAutoScroll } from "../hooks/useAutoScroll";
@@ -27,7 +27,7 @@ export function ChatPage() {
   } = useChat();
   
   const { layoutMode } = useLayout();
-  const { isAvailable: artifactsAvailable, isEnabled: artifactsEnabled, showArtifactsDrawer, toggleArtifactsDrawer, fs } = useArtifacts();
+  const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
   const { isAvailable: repositoryAvailable, toggleRepositoryDrawer, showRepositoryDrawer } = useRepositories();
   
   // Only need backgroundImage to check if background should be shown
@@ -54,21 +54,6 @@ export function ChatPage() {
   useEffect(() => {
     setRightActions(
       <div className="flex items-center gap-2">
-        {artifactsAvailable && artifactsEnabled && (
-          <Button
-            className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-            onClick={toggleArtifactsDrawer}
-            title={
-              fs && fs.listFiles().length > 0
-                ? showArtifactsDrawer 
-                  ? `Close artifacts (${fs.listFiles().length} file${fs.listFiles().length !== 1 ? 's' : ''})` 
-                  : `Open artifacts (${fs.listFiles().length} file${fs.listFiles().length !== 1 ? 's' : ''})`
-                : showArtifactsDrawer ? 'Close artifacts' : 'Open artifacts'
-            }
-          >
-            {showArtifactsDrawer ? <BookOpen size={20} /> : <Book size={20} />}
-          </Button>
-        )}
         {repositoryAvailable && (
           <Button
             className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
@@ -76,6 +61,15 @@ export function ChatPage() {
             title={showRepositoryDrawer ? 'Close repositories' : 'Open repositories'}
           >
             {showRepositoryDrawer ? <PackageOpen size={20} /> : <Package size={20} />}
+          </Button>
+        )}
+        {artifactsAvailable && (
+          <Button
+            className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+            onClick={toggleArtifactsDrawer}
+            title={showArtifactsDrawer ? 'Close artifacts' : 'Open artifacts'}
+          >
+            {showArtifactsDrawer ? <BookOpenText size={20} /> : <BookText size={20} />}
           </Button>
         )}
         <Button
@@ -91,7 +85,7 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, createChat, artifactsAvailable, artifactsEnabled, fs, showArtifactsDrawer, toggleArtifactsDrawer, repositoryAvailable, showRepositoryDrawer, toggleRepositoryDrawer]);
+  }, [setRightActions, createChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, repositoryAvailable, showRepositoryDrawer, toggleRepositoryDrawer]);
 
   // Handle repository drawer animation
   useEffect(() => {
@@ -317,7 +311,7 @@ export function ChatPage() {
       )}
 
       {/* Backdrop overlay for artifacts drawer on mobile */}
-      {shouldRenderArtifactsDrawer && (
+      {shouldRenderArtifactsDrawer && artifactsAvailable && (
         <div
           className={`fixed inset-0 bg-black/20 z-30 transition-opacity duration-300 md:hidden ${
             isArtifactsDrawerAnimating ? 'opacity-100' : 'opacity-0'
