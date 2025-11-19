@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { Package } from 'lucide-react';
+import { SquareChevronRight } from 'lucide-react';
 import { getConfig } from '../config';
 import type { Tool, ToolProvider } from '../types/chat';
 import interpreterInstructionsText from '../prompts/interpreter.txt?raw';
@@ -70,7 +70,7 @@ export function useInterpreterProvider(): ToolProvider | null {
       id: 'interpreter',
       name: 'Interpreter',
       description: 'Use Python engine',
-      icon: Package,
+      icon: SquareChevronRight,
       instructions: interpreterInstructionsText,
       tools: interpreterTools(),
     };

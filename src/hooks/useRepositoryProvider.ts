@@ -5,6 +5,7 @@ import type { Tool, ToolProvider } from '../types/chat';
 import { markdownToText } from '../lib/utils';
 import repositoryRagInstructions from '../prompts/repository-rag.txt?raw';
 import repositoryContextInstructions from '../prompts/repository-context.txt?raw';
+import { Package } from 'lucide-react';
 
 export function useRepositoryProvider(repositoryId: string, mode: 'auto' | 'rag' | 'context' = 'auto'): ToolProvider | null {
   const { files, queryChunks, useRAG } = useRepository(repositoryId, mode);
@@ -112,6 +113,7 @@ ${markdownToText(repository.instructions.trim())}
       id: 'repository',
       name: 'Repository',
       description: 'Include your files',
+      icon: Package,
       instructions: instructions || undefined,
       tools: tools,
     };
