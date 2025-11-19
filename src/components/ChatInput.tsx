@@ -6,6 +6,7 @@ import { Send, Paperclip, ScreenShare, X, Sparkles, Loader2, Lightbulb, Mic, Squ
 
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSuggestions } from "./ChatInputSuggestions";
+import { VoiceWaves } from "./VoiceWaves";
 
 import { AttachmentType, Role, ProviderState } from "../types/chat";
 import type { Attachment, Message, ToolProvider } from "../types/chat";
@@ -23,6 +24,7 @@ import { getConfig } from "../config";
 import { useChat } from "../hooks/useChat";
 import { useRepositories } from "../hooks/useRepositories";
 import { useTranscription } from "../hooks/useTranscription";
+import { useVoice } from "../hooks/useVoice";
 import { useDropZone } from "../hooks/useDropZone";
 import { useSettings } from "../hooks/useSettings";
 import { useScreenCapture } from "../hooks/useScreenCapture";
@@ -37,6 +39,19 @@ export function ChatInput() {
   const { profile } = useSettings();
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
   const { providers, getProviderState, setProviderEnabled } = useToolsContext();
+  const { isAvailable: voiceAvailable, isListening, startVoice, stopVoice } = useVoice();
+
+  // Track if realtime mode model is selected
+  const isRealtimeSelected = model?.id === 'realtime';
+
+  // Start/stop voice when realtime mode model is selected/deselected
+  useEffect(() => {
+    if (isRealtimeSelected && voiceAvailable && !isListening) {
+      startVoice();
+    } else if (!isRealtimeSelected && isListening) {
+      stopVoice();
+    }
+  }, [isRealtimeSelected, voiceAvailable, isListening, startVoice, stopVoice]);
 
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
@@ -479,51 +494,59 @@ export function ChatInput() {
 
         {/* Input area */}
         <div className="relative flex-1">
-          <div
-            ref={contentEditableRef}
-            className="p-3 md:p-4 flex-1 max-h-[40vh] overflow-y-auto min-h-10 whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200"
-            style={{
-              scrollbarWidth: "thin",
-              minHeight: "2.5rem",
-              height: "auto"
-            }}
-            role="textbox"
-            contentEditable
-            suppressContentEditableWarning={true}
-            onInput={handleContentChange}
-            onKeyDown={handleKeyDown}
-            onPaste={async (e) => {
-              e.preventDefault();
-
-              const text = e.clipboardData.getData('text/plain');
-
-              const imageItems = Array.from(e.clipboardData.items)
-                .filter(item => item.type.startsWith('image/'))
-                .map(item => item.getAsFile())
-                .filter(Boolean) as File[];
-
-              if (text.trim()) {
-                document.execCommand('insertText', false, text);
-              }
-
-              if (imageItems.length > 0) {
-                await handleFiles(imageItems);
-              }
-            }}
-          />
-
-          {/* CSS-animated placeholder */}
-          {shouldShowPlaceholder && (
-            <div
-              className={`absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200 ${messages.length === 0 ? 'typewriter-text' : ''
-                }`}
-              style={messages.length === 0 ? {
-                '--text-length': placeholderText.length,
-                '--animation-duration': `${Math.max(1.5, placeholderText.length * 0.1)}s`
-              } as React.CSSProperties & { '--text-length': number; '--animation-duration': string } : {}}
-            >
-              {placeholderText}
+          {isListening ? (
+            <div className="p-3 md:p-4 flex items-center justify-center h-14">
+              <VoiceWaves />
             </div>
+          ) : (
+            <>
+              <div
+                ref={contentEditableRef}
+                className="p-3 md:p-4 flex-1 max-h-[40vh] overflow-y-auto min-h-10 whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200"
+                style={{
+                  scrollbarWidth: "thin",
+                  minHeight: "2.5rem",
+                  height: "auto"
+                }}
+                role="textbox"
+                contentEditable
+                suppressContentEditableWarning={true}
+                onInput={handleContentChange}
+                onKeyDown={handleKeyDown}
+                onPaste={async (e) => {
+                  e.preventDefault();
+
+                  const text = e.clipboardData.getData('text/plain');
+
+                  const imageItems = Array.from(e.clipboardData.items)
+                    .filter(item => item.type.startsWith('image/'))
+                    .map(item => item.getAsFile())
+                    .filter(Boolean) as File[];
+
+                  if (text.trim()) {
+                    document.execCommand('insertText', false, text);
+                  }
+
+                  if (imageItems.length > 0) {
+                    await handleFiles(imageItems);
+                  }
+                }}
+              />
+
+              {/* CSS-animated placeholder */}
+              {shouldShowPlaceholder && (
+                <div
+                  className={`absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200 ${messages.length === 0 ? 'typewriter-text' : ''
+                    }`}
+                  style={messages.length === 0 ? {
+                    '--text-length': placeholderText.length,
+                    '--animation-duration': `${Math.max(1.5, placeholderText.length * 0.1)}s`
+                  } as React.CSSProperties & { '--text-length': number; '--animation-duration': string } : {}}
+                >
+                  {placeholderText}
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -584,6 +607,30 @@ export function ChatInput() {
                       </Button>
                     </MenuItem>
                   ))}
+                  {voiceAvailable && (
+                    <MenuItem>
+                      <Button
+                        onClick={() => onModelChange(isRealtimeSelected ? models[0] : { id: 'realtime', name: 'Voice Mode', description: 'Real-time voice conversation' })}
+                        className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
+                      >
+                        <div className="flex items-center gap-2.5 w-full">
+                          <div className="shrink-0 w-3.5 flex justify-center">
+                            {isRealtimeSelected && (
+                              <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
+                            )}
+                          </div>
+                          <div className="flex flex-col items-start flex-1">
+                            <div className="font-semibold text-sm leading-tight">
+                              Voice Mode
+                            </div>
+                            <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-relaxed opacity-90">
+                              Real-time voice conversation
+                            </div>
+                          </div>
+                        </div>
+                      </Button>
+                    </MenuItem>
+                  )}
                 </MenuItems>
               </Menu>
             )}
@@ -607,8 +654,11 @@ export function ChatInput() {
           </div>
 
           <div className="flex items-center gap-1">
-            {/* Features - Show inline buttons for 2 or fewer providers, otherwise show menu */}
-            {providers.length > 0 && providers.length <= 2 ? (
+            {/* Hide all buttons except stop button when in realtime mode */}
+            {!isRealtimeSelected && (
+              <>
+                {/* Features - Show inline buttons for 2 or fewer providers, otherwise show menu */}
+                {providers.length > 0 && providers.length <= 2 ? (
               // Inline toggle buttons for 2 or fewer providers
               providers.map((provider: ToolProvider) => {
                 const IconComponent = provider.icon || Sparkles;
@@ -749,7 +799,7 @@ export function ChatInput() {
               </Menu>
             ) : null}
 
-            {isScreenCaptureAvailable && (
+            {!isRealtimeSelected && isScreenCaptureAvailable && (
               <Button
                 type="button"
                 className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isContinuousCaptureActive
@@ -768,16 +818,34 @@ export function ChatInput() {
               </Button>
             )}
 
-            <Button
-              type="button"
-              className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-              onClick={handleAttachmentClick}
-            >
-              <Paperclip size={16} />
-            </Button>
+            {!isRealtimeSelected && (
+              <Button
+                type="button"
+                className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                onClick={handleAttachmentClick}
+              >
+                <Paperclip size={16} />
+              </Button>
+            )}
+              </>
+            )}
 
-            {/* Dynamic Send/Mic/Loading Button */}
-            {isResponding ? (
+            {/* Dynamic Send/Mic/Voice/Loading Button */}
+            {isRealtimeSelected ? (
+              <Button
+                type="button"
+                className="p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                onClick={() => {
+                  // Stop voice mode by selecting the first regular model
+                  if (models.length > 0) {
+                    onModelChange(models[0]);
+                  }
+                }}
+                title="Stop voice mode"
+              >
+                <Square size={16} />
+              </Button>
+            ) : isResponding ? (
               <Button
                 type="button"
                 className="p-1.5 text-neutral-600 dark:text-neutral-400"
@@ -806,10 +874,11 @@ export function ChatInput() {
               ) : (
                 <Button
                   type="button"
-                  className={`p-1.5 transition-colors ${isTranscribing
-                    ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200'
-                    : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-                    }`}
+                  className={`p-1.5 transition-colors ${
+                    isTranscribing
+                      ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200'
+                      : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                  }`}
                   onClick={handleTranscriptionClick}
                   title={isTranscribing ? 'Stop recording' : 'Start recording'}
                   disabled={isResponding}

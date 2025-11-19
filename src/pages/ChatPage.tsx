@@ -1,18 +1,16 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
-import { Plus as PlusIcon, Mic, MicOff, Package, PackageOpen, AlertTriangle, Info, Book, BookOpen, ArrowDown } from "lucide-react";
-import { Button, Dialog, DialogPanel, DialogTitle } from "@headlessui/react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus as PlusIcon, Package, PackageOpen, Book, BookOpen, Info, ArrowDown } from "lucide-react";
+import { Button } from "@headlessui/react";
 import { getConfig } from "../config";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import { useSidebar } from "../hooks/useSidebar";
 import { useNavigation } from "../hooks/useNavigation";
 import { useLayout } from "../hooks/useLayout";
 import { useChat } from "../hooks/useChat";
-import { useVoice } from "../hooks/useVoice";
 import { useBackground } from "../hooks/useBackground";
 import { ChatInput } from "../components/ChatInput";
 import { ChatMessage } from "../components/ChatMessage";
 import { ChatSidebar } from "../components/ChatSidebar";
-import { VoiceWaves } from "../components/VoiceWaves";
 import { BackgroundImage } from "../components/BackgroundImage";
 import { useRepositories } from "../hooks/useRepositories";
 import { useArtifacts } from "../hooks/useArtifacts";
@@ -29,43 +27,17 @@ export function ChatPage() {
   } = useChat();
   
   const { layoutMode } = useLayout();
-  const { isAvailable: voiceAvailable, startVoice, stopVoice } = useVoice();
   const { isAvailable: artifactsAvailable, isEnabled: artifactsEnabled, showArtifactsDrawer, toggleArtifactsDrawer, fs } = useArtifacts();
   const { isAvailable: repositoryAvailable, toggleRepositoryDrawer, showRepositoryDrawer } = useRepositories();
   
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
   
-  // Local state for voice mode (UI state)
-  const [isVoiceMode, setIsVoiceMode] = useState(false);
-  
-  // Voice mode preview dialog state
-  const [showVoicePreviewDialog, setShowVoicePreviewDialog] = useState(false);
-  
   // Repository drawer state
   const [isRepositoryDrawerAnimating, setIsRepositoryDrawerAnimating] = useState(false);
   const [isArtifactsDrawerAnimating, setIsArtifactsDrawerAnimating] = useState(false);
   const [shouldRenderRepositoryDrawer, setShouldRenderRepositoryDrawer] = useState(false);
   const [shouldRenderArtifactsDrawer, setShouldRenderArtifactsDrawer] = useState(false);
-  
-  // Toggle voice mode handler
-  const toggleVoiceMode = useCallback(async () => {
-    if (isVoiceMode) {
-      await stopVoice();
-      setIsVoiceMode(false);
-    } else {
-      // Show preview dialog before starting voice mode
-      setShowVoicePreviewDialog(true);
-    }
-  }, [isVoiceMode, stopVoice]);
-  
-  // Start voice mode after dialog confirmation
-  const startVoiceMode = useCallback(async () => {
-    setShowVoicePreviewDialog(false);
-    
-    await startVoice();
-    setIsVoiceMode(true);
-  }, [startVoice]);
   
   // Sidebar integration (now only controls visibility)
   const { setSidebarContent } = useSidebar();
@@ -78,7 +50,7 @@ export function ChatPage() {
   // Ref to track chat input height for dynamic padding
   const [chatInputHeight, setChatInputHeight] = useState(112); // Default to pb-28 (7rem = 112px)
 
-  // Set up navigation actions (only once on mount)
+  // Set up navigation actions
   useEffect(() => {
     setRightActions(
       <div className="flex items-center gap-2">
@@ -106,19 +78,6 @@ export function ChatPage() {
             {showRepositoryDrawer ? <PackageOpen size={20} /> : <Package size={20} />}
           </Button>
         )}
-        {voiceAvailable && (
-          <Button
-            className={`p-2 rounded transition-all duration-150 ease-out ${
-              isVoiceMode 
-                ? 'text-red-600 dark:text-red-400 hover:text-neutral-800 dark:hover:text-neutral-200' 
-                : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
-            }`}
-            onClick={toggleVoiceMode}
-            title={isVoiceMode ? 'Stop voice mode' : 'Start voice mode'}
-          >
-            {isVoiceMode ? <MicOff size={20} /> : <Mic size={20} />}
-          </Button>
-        )}
         <Button
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
           onClick={createChat}
@@ -132,7 +91,7 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, createChat, isVoiceMode, toggleVoiceMode, voiceAvailable, artifactsAvailable, artifactsEnabled, fs, showArtifactsDrawer, toggleArtifactsDrawer, repositoryAvailable, showRepositoryDrawer, toggleRepositoryDrawer]);
+  }, [setRightActions, createChat, artifactsAvailable, artifactsEnabled, fs, showArtifactsDrawer, toggleArtifactsDrawer, repositoryAvailable, showRepositoryDrawer, toggleRepositoryDrawer]);
 
   // Handle repository drawer animation
   useEffect(() => {
@@ -278,9 +237,7 @@ export function ChatPage() {
             </div>
           ) : (
             <div
-              className={`flex-1 overflow-auto sidebar-scroll transition-opacity duration-300 relative ${
-                isVoiceMode ? 'opacity-90' : 'opacity-100'
-              }`}
+              className="flex-1 overflow-auto sidebar-scroll transition-opacity duration-300 relative"
               ref={containerRef}
             >
               <div className={`px-3 pt-18 transition-all duration-150 ease-out ${
@@ -335,9 +292,8 @@ export function ChatPage() {
           )}
         </main>
 
-        {/* Chat Input - hidden during voice mode */}
-        {!isVoiceMode && (
-          <footer className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-300 ease-out ${
+        {/* Chat Input */}
+        <footer className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-300 ease-out ${
             messages.length === 0 ? 'md:bottom-1/3 md:transform md:translate-y-1/2' : ''
           } ${
             showArtifactsDrawer ? 'right-0 md:right-[calc(70vw+0.75rem)]' :
@@ -347,17 +303,7 @@ export function ChatPage() {
               <ChatInput />
             </div>
           </footer>
-        )}
 
-        {/* Full-width waves during voice mode */}
-        {isVoiceMode && (
-          <div className={`fixed bottom-0 left-0 h-32 z-20 pointer-events-none transition-all duration-300 ease-out ${
-            showArtifactsDrawer ? 'right-0 md:right-[calc(70vw+0.75rem)]' :
-            showRepositoryDrawer ? 'right-0 md:right-[calc(20rem+0.75rem)]' : 'right-0'
-          }`}>
-            <VoiceWaves />
-          </div>
-        )}
       </div>
 
       {/* Backdrop overlay for repository drawer on mobile */}
@@ -407,54 +353,6 @@ export function ChatPage() {
           <ArtifactsDrawer />
         </div>
       )}
-
-      {/* Voice Mode Preview Dialog */}
-      <Dialog open={showVoicePreviewDialog} onClose={() => setShowVoicePreviewDialog(false)} className="relative z-50">
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" aria-hidden="true" />
-        <div className="fixed inset-0 flex items-center justify-center p-4">
-          <DialogPanel className="w-full max-w-md rounded-xl bg-white dark:bg-neutral-900 p-6 shadow-2xl border border-neutral-200 dark:border-neutral-800">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="shrink-0">
-                <AlertTriangle className="h-6 w-6 text-amber-500" />
-              </div>
-              <DialogTitle className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
-                Voice Mode Early Preview
-              </DialogTitle>
-            </div>
-            
-            <div className="mb-6">
-              <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
-                Current limitations:
-              </p>
-              <ul className="text-sm text-neutral-700 dark:text-neutral-300 space-y-2">
-                <li className="flex items-start gap-2">
-                  <span className="text-neutral-400 dark:text-neutral-500 mt-1">•</span>
-                  <span>Knowledge Bases uses RAG mode only</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-neutral-400 dark:text-neutral-500 mt-1">•</span>
-                  <span>Context Window limited to ~30 pages</span>
-                </li>
-              </ul>
-            </div>
-            
-            <div className="flex gap-3 justify-end">
-              <Button
-                onClick={() => setShowVoicePreviewDialog(false)}
-                className="px-4 py-2 text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={startVoiceMode}
-                className="px-4 py-2 text-sm font-medium bg-neutral-800 hover:bg-neutral-900 dark:bg-neutral-700 dark:hover:bg-neutral-600 text-white rounded-lg transition-colors"
-              >
-                Continue
-              </Button>
-            </div>
-          </DialogPanel>
-        </div>
-      </Dialog>
     </div>
   );
 }
