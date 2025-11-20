@@ -174,67 +174,70 @@ export function ArtifactsDrawer() {
         </div>
       )}
       
-      {/* Header Bar with File Title and Actions */}
-      <div className="shrink-0 h-9 flex">
-        {/* File title */}
-        <div className="flex-1 flex items-center min-w-0 px-3">
-          {activeFile && (
-            <>
-              <FileIcon name={activeFile} />
-              <span className="text-sm font-medium truncate flex-1 text-left ml-1.5 text-neutral-700 dark:text-neutral-300" title={getFileName(activeFile)}>
-                {getFileName(activeFile)}
-              </span>
-            </>
-          )}
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-1 px-2">
-          {/* View mode toggle - only show for files that support preview */}
-          {supportsPreview() && (
-            <Button
-              onClick={() => setViewMode(viewMode === 'preview' ? 'code' : 'preview')}
-              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-              title={viewMode === 'preview' ? 'Switch to code' : 'Switch to preview'}
-            >
-              {viewMode === 'preview' ? <Code size={16} /> : <Eye size={16} />}
-            </Button>
-          )}
-          
-          {/* File browser toggle */}
-          {files.length > 0 && (
-            <Button
-              onClick={toggleFileBrowser}
-              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-              title={showFileBrowser ? 'Close file browser' : 'Open file browser'}
-            >
-              {showFileBrowser ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Main Content Area with Right Sidebar */}
+      {/* Main Content Area with Right Sidebar and Bottom Bar */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Main editor area */}
+        {/* Main editor and bottom bar container */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {renderEditor()}
+          {/* Editor area */}
+          <div className="flex-1 overflow-hidden">
+            {renderEditor()}
+          </div>
+
+          {/* Bottom Bar with File Title and Actions */}
+          <div className="shrink-0 h-9 flex border-t border-black/10 dark:border-white/10">
+            {/* File title */}
+            <div className="flex-1 flex items-center min-w-0 px-3">
+              {activeFile && (
+                <>
+                  <FileIcon name={activeFile} />
+                  <span className="text-sm font-medium truncate flex-1 text-left ml-1.5 text-neutral-700 dark:text-neutral-300" title={getFileName(activeFile)}>
+                    {getFileName(activeFile)}
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-1 px-2">
+              {/* View mode toggle - only show for files that support preview */}
+              {supportsPreview() && (
+                <Button
+                  onClick={() => setViewMode(viewMode === 'preview' ? 'code' : 'preview')}
+                  className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  title={viewMode === 'preview' ? 'Switch to code' : 'Switch to preview'}
+                >
+                  {viewMode === 'preview' ? <Code size={16} /> : <Eye size={16} />}
+                </Button>
+              )}
+              
+              {/* File browser toggle */}
+              {files.length > 0 && (
+                <Button
+                  onClick={toggleFileBrowser}
+                  className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  title={showFileBrowser ? 'Close file browser' : 'Open file browser'}
+                >
+                  {showFileBrowser ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Right Side Panel - File Browser */}
-        <div className={`transition-all duration-300 ease-out relative ${
-          showFileBrowser ? 'w-48 min-w-48 max-w-64' : 'w-0'
+        {/* Right Side Panel - File Browser (full height) */}
+        <div className={`transition-all duration-500 ease-in-out relative ${
+          showFileBrowser ? 'w-48 min-w-48 max-w-64 opacity-100' : 'w-0 opacity-0'
         } shrink-0 overflow-hidden`}>
-          {showFileBrowser && (
-            <div className="absolute inset-y-0 left-0 w-px bg-black/10 dark:bg-white/10"></div>
-          )}
-          {showFileBrowser && fs && (
-            <ArtifactsBrowser
-              key={version}
-              fs={fs}
-              openTabs={activeFile ? [activeFile] : []}
-              onFileClick={openFile}
-            />
+          <div className="absolute inset-y-0 left-0 w-px bg-black/10 dark:bg-white/10"></div>
+          {fs && (
+            <div className={`h-full transition-opacity duration-500 ${showFileBrowser ? 'opacity-100' : 'opacity-0'}`}>
+              <ArtifactsBrowser
+                key={version}
+                fs={fs}
+                openTabs={activeFile ? [activeFile] : []}
+                onFileClick={openFile}
+              />
+            </div>
           )}
         </div>
       </div>

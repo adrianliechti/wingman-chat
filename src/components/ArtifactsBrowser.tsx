@@ -237,7 +237,8 @@ export function ArtifactsBrowser({
 
   return (
     <div className="min-w-fit max-w-64 h-full flex flex-col">
-      <div className="flex-1 overflow-auto">
+      {/* File list - grows to fill space */}
+      <div className="flex-1 overflow-auto min-h-0">
         {files.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-8 text-center">
             <File size={32} className="text-neutral-300 dark:text-neutral-600 mb-3" />
@@ -266,9 +267,9 @@ export function ArtifactsBrowser({
         )}
       </div>
       
-      {/* Download Button at bottom of file browser */}
+      {/* Download Button - fixed at bottom */}
       {files.length > 0 && (
-        <div className="p-2 border-t border-black/5 dark:border-white/5">
+        <div className="shrink-0 h-9 flex items-center px-2 border-t border-black/5 dark:border-white/5">
           <Button
             onClick={async () => {
               try {
@@ -278,7 +279,7 @@ export function ArtifactsBrowser({
                 alert('Failed to download files. Please try again.');
               }
             }}
-            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-xs"
+            className="w-full flex items-center justify-center gap-1.5 p-2 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors text-xs"
             title={`Download all files as zip (${files.length} file${files.length !== 1 ? 's' : ''})`}
           >
             <Download size={12} />
