@@ -63,8 +63,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     // Create focused methods for filesystem access
     const getFileSystem = () => chat.artifacts || {};
-    const setFileSystem = (artifacts: FileSystem) => {
-      updateChat(chat.id, () => ({ artifacts }));
+    const setFileSystem = (updater: (current: FileSystem) => FileSystem) => {
+      updateChat(chat.id, (current) => ({ 
+        artifacts: updater(current.artifacts || {}) 
+      }));
     };
 
     setFileSystemForChat(getFileSystem, setFileSystem);

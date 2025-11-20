@@ -34,7 +34,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   // Method to update the filesystem functions (called by ChatProvider)
   const setFileSystemForChat = useCallback((
     getFileSystem: (() => FileSystem) | null,
-    setFileSystem: ((artifacts: FileSystem) => void) | null
+    setFileSystem: ((updater: (current: FileSystem) => FileSystem) => void) | null
   ) => {
     if (!getFileSystem || !setFileSystem) {
       // Reset to empty filesystem when no chat or artifacts disabled
@@ -44,14 +44,8 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
       return;
     }
 
-    // Wrap the setFileSystem to match the expected signature
-    const wrappedSetter = (updateFn: (current: FileSystem) => FileSystem) => {
-      const cache = fs.getCurrentFileSystem();
-      const newFs = updateFn(cache);
-      setFileSystem(newFs);
-      // Update cache to ensure consistency
-      fs.updateCache(newFs);
-    };
+    // setFileSystem already uses updater pattern, just pass it through
+    const wrappedSetter = setFileSystem;
     
     fs.updateHandlers(getFileSystem, wrappedSetter);
     
@@ -79,19 +73,22 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
       setShowArtifactsDrawer(true);
       // Auto-enable artifacts when a file is created
       setIsEnabled(true);
+      setVersion(v => v + 1);
     });
 
     const unsubscribeDeleted = fs.subscribe('fileDeleted', (path: string) => {
       // Clear active file if it was the deleted one
       setActiveFile(currentActive => currentActive === path ? null : currentActive);
+      setVersion(v => v + 1);
     });
 
     const unsubscribeRenamed = fs.subscribe('fileRenamed', (oldPath: string, newPath: string) => {
       setActiveFile(prev => prev === oldPath ? newPath : prev);
+      setVersion(v => v + 1);
     });
 
     const unsubscribeUpdated = fs.subscribe('fileUpdated', () => {
-      // No state changes needed for content updates
+      setVersion(v => v + 1);
     });
 
     // Cleanup function

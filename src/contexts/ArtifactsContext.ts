@@ -18,7 +18,7 @@ export interface ArtifactsContextType {
   toggleFileBrowser: () => void;
   setFileSystemForChat: (
     getFileSystem: (() => FileSystem) | null,
-    setFileSystem: ((artifacts: FileSystem) => void) | null
+    setFileSystem: ((updater: (current: FileSystem) => FileSystem) => void) | null
   ) => void;
 }
 
