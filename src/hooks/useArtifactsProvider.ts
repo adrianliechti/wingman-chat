@@ -27,15 +27,11 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: ['path', 'content']
         },
         function: async (args: Record<string, unknown>): Promise<string> => {
-          const path = args.path as string;
+          const path = normalizePath(args.path as string);
           const content = args.content as string;
 
           if (!path || !content) {
             return JSON.stringify({ error: 'Path and content are required' });
-          }
-
-          if (!path.startsWith('/')) {
-            return JSON.stringify({ error: 'Path must start with /' });
           }
 
           try {
@@ -43,10 +39,10 @@ export function useArtifactsProvider(): ToolProvider | null {
               return JSON.stringify({ error: 'File system not available' });
             }
             fs.createFile(path, content);
-            return JSON.stringify({ 
-              success: true, 
+            return JSON.stringify({
+              success: true,
               message: `File created: ${path}`,
-              path 
+              path
             });
           } catch {
             return JSON.stringify({ error: 'Failed to create file' });
@@ -67,16 +63,17 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: []
         },
         function: async (args: Record<string, unknown>): Promise<string> => {
-          const directory = args.directory as string | undefined;
+          const path = normalizePath((args.directory as string) ?? '/');
+
+          if (!fs) {
+            return JSON.stringify({ error: 'File system not available' });
+          }
 
           try {
-            if (!fs) {
-              return JSON.stringify({ error: 'File system not available' });
-            }
             const allFiles = fs.listFiles();
-            const filteredFiles = directory 
-              ? allFiles.filter(file => file.path.startsWith(directory))
-              : allFiles;
+            const filteredFiles = !path || path === '/'
+              ? allFiles
+              : allFiles.filter(file => file.path.startsWith(path));
 
             const fileList = filteredFiles.map(file => ({
               path: file.path,
@@ -84,8 +81,8 @@ export function useArtifactsProvider(): ToolProvider | null {
               contentType: file.contentType
             }));
 
-            return JSON.stringify({ 
-              success: true, 
+            return JSON.stringify({
+              success: true,
               files: fileList,
               count: fileList.length
             });
@@ -108,7 +105,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: ['path']
         },
         function: async (args: Record<string, unknown>): Promise<string> => {
-          const path = args.path as string;
+          const path = normalizePath(args.path as string);
 
           if (!path) {
             return JSON.stringify({ error: 'Path is required' });
@@ -117,9 +114,10 @@ export function useArtifactsProvider(): ToolProvider | null {
           if (!fs) {
             return JSON.stringify({ error: 'File system not available' });
           }
+
           const file = fs.getFile(path);
           const isFolder = fs.listFiles().some(f => f.path.startsWith(path + '/'));
-          
+
           if (!file && !isFolder) {
             return JSON.stringify({ error: `File or folder not found: ${path}` });
           }
@@ -128,10 +126,10 @@ export function useArtifactsProvider(): ToolProvider | null {
             const success = fs.deleteFile(path);
             if (success) {
               const itemType = file ? 'file' : 'folder';
-              return JSON.stringify({ 
-                success: true, 
+              return JSON.stringify({
+                success: true,
                 message: `${itemType} deleted: ${path}`,
-                path 
+                path
               });
             } else {
               return JSON.stringify({ error: `Failed to delete: ${path}` });
@@ -159,8 +157,8 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: ['from', 'to']
         },
         function: async (args: Record<string, unknown>): Promise<string> => {
-          const fromPath = args.from as string;
-          const toPath = args.to as string;
+          const fromPath = normalizePath(args.from as string);
+          const toPath = normalizePath(args.to as string);
 
           if (!fromPath || !toPath) {
             return JSON.stringify({ error: 'Both from and to path are required' });
@@ -180,21 +178,17 @@ export function useArtifactsProvider(): ToolProvider | null {
             return JSON.stringify({ error: `Destination file already exists: ${toPath}` });
           }
 
-          if (!toPath.startsWith('/')) {
-            return JSON.stringify({ error: 'Destination path must start with /' });
-          }
-
           try {
             const success = fs.renameFile(fromPath, toPath);
-            
+
             if (!success) {
-              return JSON.stringify({ 
-                error: `Failed to move file from ${fromPath} to ${toPath}. Source may not exist or destination already exists.` 
+              return JSON.stringify({
+                error: `Failed to move file from ${fromPath} to ${toPath}. Source may not exist or destination already exists.`
               });
             }
 
-            return JSON.stringify({ 
-              success: true, 
+            return JSON.stringify({
+              success: true,
               message: `File moved from ${fromPath} to ${toPath}`,
               fromPath,
               toPath
@@ -218,7 +212,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: ['path']
         },
         function: async (args: Record<string, unknown>): Promise<string> => {
-          const path = args.path as string;
+          const path = normalizePath(args.path as string);
 
           if (!path) {
             return JSON.stringify({ error: 'Path is required' });
@@ -229,6 +223,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           }
 
           const file = fs.getFile(path);
+
           if (!file) {
             return JSON.stringify({ error: `File not found: ${path}` });
           }
@@ -241,8 +236,8 @@ export function useArtifactsProvider(): ToolProvider | null {
               contentType: file.contentType,
             };
 
-            return JSON.stringify({ 
-              success: true, 
+            return JSON.stringify({
+              success: true,
               file: fileInfo
             });
           } catch {
@@ -259,17 +254,21 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: []
         },
         function: async (): Promise<string> => {
+          if (!fs) {
+            return JSON.stringify({ error: 'File system not available' });
+          }
+
           try {
             if (!activeFile) {
-              return JSON.stringify({ 
+              return JSON.stringify({
                 success: true,
                 message: 'No file is currently active',
                 currentPath: null
               });
             }
 
-            return JSON.stringify({ 
-              success: true, 
+            return JSON.stringify({
+              success: true,
               currentPath: activeFile
             });
           } catch {
@@ -286,23 +285,23 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: []
         },
         function: async (): Promise<string> => {
+          if (!fs) {
+            return JSON.stringify({ error: 'File system not available' });
+          }
+
           try {
             if (!activeFile) {
-              return JSON.stringify({ 
+              return JSON.stringify({
                 success: true,
                 message: 'No file is currently active',
                 currentFile: null
               });
             }
-
-            if (!fs) {
-              return JSON.stringify({ error: 'File system not available' });
-            }
-
             const file = fs.getFile(activeFile);
+
             if (!file) {
-              return JSON.stringify({ 
-                error: `Active file not found: ${activeFile}` 
+              return JSON.stringify({
+                error: `Active file not found: ${activeFile}`
               });
             }
 
@@ -313,8 +312,8 @@ export function useArtifactsProvider(): ToolProvider | null {
               contentType: file.contentType,
             };
 
-            return JSON.stringify({ 
-              success: true, 
+            return JSON.stringify({
+              success: true,
               currentFile: fileInfo
             });
           } catch {
@@ -341,4 +340,32 @@ export function useArtifactsProvider(): ToolProvider | null {
   }, [isAvailable, artifactsTools]);
 
   return provider;
+}
+
+function normalizePath(path: string | undefined): string | undefined {
+  if (!path) {
+    return undefined;
+  }
+
+  // Remove leading/trailing whitespace
+  let normalized = path.trim();
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  // Ensure path starts with /
+  if (!normalized.startsWith('/')) {
+    normalized = '/' + normalized;
+  }
+
+  // Remove duplicate slashes
+  normalized = normalized.replace(/\/+/g, '/');
+
+  // Remove trailing slash unless it's the root
+  if (normalized.length > 1 && normalized.endsWith('/')) {
+    normalized = normalized.slice(0, -1);
+  }
+
+  return normalized;
 }
