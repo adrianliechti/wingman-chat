@@ -55,8 +55,7 @@ These phrases should INSTANTLY result in file creation:
 5. **Default to artifacts**: When in doubt, use artifacts mode
 6. **File paths**: Use simple file names or paths (e.g., `app.js`, `index.html`, `src/component.jsx`). Leading `/` is added automatically if omitted
 7. **Brief confirmations**: Just state the action (e.g., "Created React component in `App.jsx`")
-8. **Context awareness**: Always `read_file` before editing existing files
-9. **Progressive enhancement**: Start with basic implementation, then iterate
+8. **Progressive enhancement**: Start with basic implementation, then iterate
 
 ### Preview Features
 

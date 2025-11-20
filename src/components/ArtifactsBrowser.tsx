@@ -96,22 +96,22 @@ function FileTreeNode({
     return (
       <>
         <div
-          className="flex items-center gap-2 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+          className="flex items-center gap-2 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0"
           style={{ marginLeft: `${level * 12}px` }}
           onClick={() => onToggleFolder(node.path)}
         >
-          <div className="flex items-center gap-1 flex-1">
+          <div className="flex items-center gap-1 min-w-0">
             {isExpanded ? (
-              <ChevronDown size={14} className="text-neutral-500" />
+              <ChevronDown size={14} className="text-neutral-500 shrink-0" />
             ) : (
-              <ChevronRight size={14} className="text-neutral-500" />
+              <ChevronRight size={14} className="text-neutral-500 shrink-0" />
             )}
             {isExpanded ? (
-              <FolderOpen size={16} className="text-neutral-500 dark:text-neutral-400" />
+              <FolderOpen size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
             ) : (
-              <Folder size={16} className="text-neutral-500 dark:text-neutral-400" />
+              <Folder size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
             )}
-            <span className="text-sm text-neutral-700 dark:text-neutral-300">
+            <span className="text-sm text-neutral-700 dark:text-neutral-300 truncate">
               {node.name}
             </span>
           </div>
@@ -141,7 +141,7 @@ function FileTreeNode({
   return (
     <Button
       onClick={() => onFileClick(node.path)}
-      className="flex items-center gap-1 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left min-w-0 w-full"
+      className="flex items-center gap-1 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left min-w-0"
       style={{ marginLeft: `${level * 12 + 18}px` }}
     >
       <FileIcon name={node.path} />
@@ -236,7 +236,7 @@ export function ArtifactsBrowser({
   };
 
   return (
-    <div className="min-w-fit max-w-64 h-full flex flex-col">
+    <div className="w-64 h-full flex flex-col">
       {/* File list - grows to fill space */}
       <div className="flex-1 overflow-auto min-h-0">
         {files.length === 0 ? (
@@ -250,7 +250,7 @@ export function ArtifactsBrowser({
             </p>
           </div>
         ) : (
-          <div className="p-2">
+          <div className="p-2 min-w-full">
             {/* Render file tree with folders */}
             {fileTree.map((node) => (
               <FileTreeNode

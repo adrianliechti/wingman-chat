@@ -21,14 +21,12 @@ interface HtmlEditorProps {
 
 export function HtmlEditor({ content, viewMode = 'preview' }: HtmlEditorProps) {
   return (
-    <div className="flex-1 flex flex-col overflow-hidden relative">
-      <div className="flex-1 overflow-auto">
-        {viewMode === 'preview' ? (
-          <HtmlPreview content={content} />
-        ) : (
-          <CodeEditor content={content} language="html" />
-        )}
-      </div>
+    <div className="h-full flex flex-col overflow-hidden relative">
+      {viewMode === 'preview' ? (
+        <HtmlPreview content={content} />
+      ) : (
+        <CodeEditor content={content} language="html" />
+      )}
     </div>
   );
 }
