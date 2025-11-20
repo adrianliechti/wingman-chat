@@ -323,33 +323,36 @@ export function ChatPage() {
         />
       )}
 
-      {/* Repository drawer - right side */}
-      {repositoryAvailable && shouldRenderRepositoryDrawer && !showArtifactsDrawer && (
-        <div className={`w-80 bg-neutral-50/60 dark:bg-neutral-950/70 backdrop-blur-sm shadow-2xl border-l border-neutral-200 dark:border-neutral-900 top-18 bottom-4 z-40 rounded-xl transition-all duration-300 ease-out transform ${
-          isRepositoryDrawerAnimating 
-            ? 'translate-x-0 opacity-100 scale-100' 
-            : 'translate-x-full opacity-0 scale-95'
-        } ${ 
-          // On mobile: full width overlay from right edge, on desktop: positioned with right-3
-          'fixed right-0 md:right-3 md:w-80 w-full max-w-sm'
-        }`}>
-          <RepositoryDrawer />
-        </div>
-      )}
-
-      {/* Artifacts drawer - right side - takes priority over repository drawer */}
+      {/* Artifacts drawer - right side */}
       {shouldRenderArtifactsDrawer && (
-        <div className={`w-full top-18 bottom-4 z-40 transition-all duration-300 ease-out transform ${
+        <div className={`w-full top-18 bottom-4 transition-all duration-300 ease-out transform ${
           isArtifactsDrawerAnimating 
             ? 'translate-x-0 opacity-100' 
             : 'translate-x-full opacity-0'
         } ${ 
           // On mobile: full width overlay from right edge, on desktop: positioned with right edge and 60% width
           'fixed right-0 md:w-[60vw] max-w-none'
-        }`}>
+        } ${shouldRenderRepositoryDrawer ? 'z-30' : 'z-40'}`}>
           <div className="h-full border-l border-black/10 dark:border-white/10">
             <ArtifactsDrawer />
           </div>
+        </div>
+      )}
+
+      {/* Repository drawer - right side - renders over artifacts when both are visible */}
+      {repositoryAvailable && shouldRenderRepositoryDrawer && (
+        <div className={`w-80 top-18 bottom-4 z-40 transition-all duration-150 ease-linear transform ${
+          isRepositoryDrawerAnimating 
+            ? 'translate-x-0 opacity-100' 
+            : 'translate-x-full opacity-0'
+        } ${ 
+          // On mobile: full width overlay from right edge
+          // On desktop: if artifacts visible, position over it with right-3, otherwise normal position
+          showArtifactsDrawer 
+            ? 'fixed right-0 md:right-3 md:w-80 w-full max-w-sm'
+            : 'fixed right-0 md:right-3 md:w-80 w-full max-w-sm'
+        }`}>
+          <RepositoryDrawer />
         </div>
       )}
     </div>
