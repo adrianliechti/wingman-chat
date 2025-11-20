@@ -3,6 +3,10 @@ import type { Tool, Model, ToolProvider } from "../types/chat";
 import { ProviderState } from "../types/chat";
 import { useProfile } from "./useProfile";
 import { useToolsContext } from "./useToolsContext";
+import { useArtifactsProvider } from "./useArtifactsProvider";
+import { useRepositoryProvider } from "./useRepositoryProvider";
+import { useArtifacts } from "./useArtifacts";
+import { useRepositories } from "./useRepositories";
 import defaultInstructions from "../prompts/default.txt?raw";
 
 export interface ChatContext {
@@ -13,11 +17,28 @@ export interface ChatContext {
 export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | null): ChatContext {
   const { generateInstructions } = useProfile();
   const { providers, getProviderState } = useToolsContext();
+  
+  // Conditionally include artifacts and repository providers
+  const { fs, showArtifactsDrawer } = useArtifacts();
+  const { currentRepository } = useRepositories();
+  const artifactsProvider = useArtifactsProvider();
+  const repositoryProvider = useRepositoryProvider(currentRepository?.id || '', 'auto');
 
   const context = useMemo<ChatContext>(() => {
     const getFilteredProviders = () => {
-      // Filter providers that are enabled
+      // Start with base providers
       let filteredProviders = providers.filter((p: ToolProvider) => getProviderState(p.id) === ProviderState.Connected);
+      
+      // Add artifacts provider if conditions are met (files exist OR drawer is visible)
+      const hasFiles = fs.listFiles().length > 0;
+      if (artifactsProvider && (hasFiles || showArtifactsDrawer)) {
+        filteredProviders = [...filteredProviders, artifactsProvider];
+      }
+      
+      // Add repository provider if current repository is set
+      if (repositoryProvider && currentRepository) {
+        filteredProviders = [...filteredProviders, repositoryProvider];
+      }
       
       // Further filter based on model configuration
       if (model?.tools) {
@@ -82,7 +103,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
         return instructionsList.join('\n\n');
       }
     };
-  }, [mode, model, generateInstructions, providers, getProviderState]);
+  }, [mode, model, generateInstructions, providers, getProviderState, fs, showArtifactsDrawer, artifactsProvider, repositoryProvider, currentRepository]);
 
   return context;
 }

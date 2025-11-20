@@ -1,13 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { getConfig } from "../config";
 import { MCPClient } from "../lib/mcp";
-import { useArtifactsProvider } from "../hooks/useArtifactsProvider";
 import { useBridgeProvider } from "../hooks/useBridgeProvider";
 import { useInternetProvider } from "../hooks/useInternetProvider";
 import { useInterpreterProvider } from "../hooks/useInterpreterProvider";
 import { useRendererProvider } from "../hooks/useRendererProvider";
-import { useRepositoryProvider } from "../hooks/useRepositoryProvider";
-import { useRepositories } from "../hooks/useRepositories";
 import { ToolsContext } from "./ToolsContext";
 import type { ToolsContextValue } from "./ToolsContext";
 import type { ToolProvider } from "../types/chat";
@@ -30,13 +27,10 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
   );
   const clientsRef = useRef<MCPClient[]>(mcpClients);
 
-  const artifactsProvider = useArtifactsProvider();
   const bridgeProvider = useBridgeProvider();
   const internetProvider = useInternetProvider();
   const interpreterProvider = useInterpreterProvider();
   const rendererProvider = useRendererProvider();
-  const { currentRepository } = useRepositories();
-  const repositoryProvider = useRepositoryProvider(currentRepository?.id || '', 'auto');
 
   // Cleanup on unmount
   useEffect(() => {
@@ -62,10 +56,6 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
       list.push(rendererProvider);
     }
     
-    if (artifactsProvider) {
-      list.push(artifactsProvider);
-    }
-    
     if (interpreterProvider) {
       list.push(interpreterProvider);
     }
@@ -78,20 +68,15 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
       list.push(bridgeProvider);
     }
     
-    // Add repository provider if available
-    if (repositoryProvider) {
-      list.push(repositoryProvider);
-    }
+    // Note: artifacts and repository providers are added conditionally in useChatContext
     
     return list;
   }, [
     internetProvider,
     rendererProvider,
     interpreterProvider,
-    artifactsProvider,
     mcpClients,
     bridgeProvider,
-    repositoryProvider,
   ]);
 
   // Helper functions for state management
