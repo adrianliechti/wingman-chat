@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus as PlusIcon, Package, PackageOpen, Info, ArrowDown, BookOpenText, BookText } from "lucide-react";
 import { Button } from "@headlessui/react";
+import DOMPurify from "dompurify";
 import { getConfig } from "../config";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import { useSidebar } from "../hooks/useSidebar";
@@ -242,15 +243,15 @@ export function ChatPage() {
                 {(() => {
                   try {
                     const config = getConfig();
-                    const disclaimer = config.disclaimer;
+                    const disclaimer = DOMPurify.sanitize(config.disclaimer);
                     if (disclaimer && disclaimer.trim()) {
                       return (
                         <div className="mb-6 mx-auto max-w-2xl">
                           <div className="flex items-start justify-center gap-2 px-4 py-3">
-                            <Info size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0 mt-0.5" />
-                            <p className="text-xs text-neutral-600 dark:text-neutral-400 text-left">
-                              {disclaimer}
-                            </p>
+                            <Info size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+                            <p className="text-xs text-neutral-600 dark:text-neutral-400 text-left"
+                              dangerouslySetInnerHTML={{ __html: disclaimer }}
+                            />
                           </div>
                         </div>
                       );
