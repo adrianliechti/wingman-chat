@@ -104,7 +104,8 @@ func main() {
 		}
 
 		type bridgeType struct {
-			URL string `json:"url,omitempty" yaml:"url,omitempty"`
+			Enabled bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`			
+			URL     string `json:"url,omitempty" yaml:"url,omitempty"`
 		}
 
 		type artifactsType struct {
@@ -229,7 +230,8 @@ func main() {
 
 		if bridgeURL != "" {
 			config.Bridge = &bridgeType{
-				URL: bridgeURL,
+				Enabled: true,				
+				URL:     bridgeURL,
 			}
 		}
 
