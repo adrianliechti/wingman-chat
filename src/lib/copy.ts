@@ -17,7 +17,7 @@ export async function copyToClipboard(options: CopyOptions): Promise<void> {
   if (format === 'html') {
     clipboardData['text/html'] = new Blob([text], { type: 'text/html' });
   } else if (format === 'markdown') {
-    clipboardData['text/markdown'] = new Blob([text], { type: 'text/markdown' });
+    // clipboardData['text/markdown'] = new Blob([text], { type: 'text/markdown' });
     clipboardData['text/plain'] = new Blob([markdownToText(text)], { type: 'text/plain' });
     clipboardData['text/html'] = new Blob([markdownToHtml(text)], { type: 'text/html' });
   } else {
