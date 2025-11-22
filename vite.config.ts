@@ -35,11 +35,6 @@ export default defineConfig({
     exclude: ['pyodide']
   },
   server: {
-    headers: {
-      // Required headers for SharedArrayBuffer support (needed for Pyodide threading)
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin'
-    },
     proxy: {
       '/api/v1/realtime': {
         target: 'http://localhost:8081',

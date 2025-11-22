@@ -10,6 +10,7 @@ import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
 
 // MarkdownNode data interface
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface MarkdownNodeData extends BaseNodeData {
 }
 

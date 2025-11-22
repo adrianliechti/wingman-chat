@@ -1,40 +1,27 @@
-import { useState, useCallback, useEffect } from "react";
-import type { ReactNode } from "react";
-import { ImageGenerationContext } from "./ImageGenerationContext";
-import type { ImageGenerationContextType } from "./ImageGenerationContext";
-import type { Tool, ToolContext } from "../types/chat";
-import { AttachmentType } from "../types/chat";
+import { useCallback, useMemo } from "react";
+import { Image } from 'lucide-react';
 import { getConfig } from "../config";
+import type { Tool, ToolContext, ToolProvider } from "../types/chat";
+import { AttachmentType } from "../types/chat";
 import { readAsDataURL } from "../lib/utils";
 import type { Resource } from "../lib/resource";
-import imageGenerationInstructionsText from '../prompts/image-generation.txt?raw';
+import rendererInstructionsText from '../prompts/image-generation.txt?raw';
 
-interface ImageGenerationProviderProps {
-  children: ReactNode;
-}
-
-export function ImageGenerationProvider({ children }: ImageGenerationProviderProps) {
-  const [isEnabled, setEnabled] = useState(false);
-  const [isAvailable, setIsAvailable] = useState(false);
+export function useRendererProvider(): ToolProvider | null {
   const config = getConfig();
-  const client = config.client;
-
-  // Check image generation availability from config
-  useEffect(() => {
+  
+  const isAvailable = useMemo(() => {
     try {
-      const config = getConfig();
-      setIsAvailable(config.image.enabled);
+      return config.renderer.enabled;
     } catch (error) {
       console.warn('Failed to get image generation config:', error);
-      setIsAvailable(false);
+      return false;
     }
-  }, []);
+  }, [config.renderer.enabled]);
 
-  const imageGenerationTools = useCallback((): Tool[] => {
-    if (!isEnabled) {
-      return [];
-    }
+  const client = config.client;
 
+  const rendererTools = useCallback((): Tool[] => {
     return [
       {
         name: "generate_image",
@@ -52,8 +39,6 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
         function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const { prompt } = args;
 
-          console.log("[generate_image] Starting image generation", { prompt });
-
           const images: Blob[] = [];
 
           // Extract image attachments from context
@@ -66,15 +51,15 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
                 const response = await fetch(imageAttachment.data);
                 const blob = await response.blob();
                 images.push(blob);
-              } catch (error) {
-                console.warn("[generate_image] Failed to convert attachment to blob:", error);
+              } catch {
+                // Failed to convert attachment
               }
             }
           }
 
           try {
             const imageBlob = await client.generateImage(
-              config.image?.model || "",
+              config.renderer?.model || "",
               prompt as string,
               images
             );
@@ -84,8 +69,6 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
             const imageDataUrl = fullDataUrl.split(',')[1];
 
             const imageName = `${Date.now()}.png`;
-
-            console.log("[generate_image] Image generation completed successfully")
 
             // Return ResourceResult format
             const resourceResult: Resource = {
@@ -100,7 +83,6 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
 
             return JSON.stringify(resourceResult);
           } catch (error) {
-            console.error("[generate_image] Image generation failed", { prompt, error: error instanceof Error ? error.message : error });
             return JSON.stringify({
               success: false,
               error: `Image generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -109,27 +91,22 @@ export function ImageGenerationProvider({ children }: ImageGenerationProviderPro
         }
       }
     ];
-  }, [isEnabled, client, config]);
+  }, [client, config]);
 
-  const imageGenerationInstructions = useCallback((): string => {
-    if (!isEnabled) {
-      return "";
+  const provider = useMemo<ToolProvider | null>(() => {
+    if (!isAvailable) {
+      return null;
     }
 
-    return imageGenerationInstructionsText;
-  }, [isEnabled]);
+    return {
+      id: "renderer",
+      name: "Renderer",
+      description: "Generate or edit images",
+      icon: Image,
+      instructions: rendererInstructionsText,
+      tools: rendererTools(),
+    };
+  }, [isAvailable, rendererTools]);
 
-  const contextValue: ImageGenerationContextType = {
-    isEnabled,
-    setEnabled,
-    isAvailable,
-    imageGenerationTools,
-    imageGenerationInstructions,
-  };
-
-  return (
-    <ImageGenerationContext.Provider value={contextValue}>
-      {children}
-    </ImageGenerationContext.Provider>
-  );
+  return provider;
 }

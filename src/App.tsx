@@ -18,13 +18,9 @@ import { VoiceProvider } from "./contexts/VoiceProvider";
 import { SettingsButton } from "./components/SettingsButton";
 import { RepositoryProvider } from "./contexts/RepositoryProvider";
 import { ArtifactsProvider } from "./contexts/ArtifactsProvider";
-import { BridgeProvider } from "./contexts/BridgeProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
-import { SearchProvider } from "./contexts/SearchProvider";
-import { ImageGenerationProvider } from "./contexts/ImageGenerationProvider";
-import { InterpreterProvider } from "./contexts/InterpreterProvider";
-import { BridgeIndicator } from "./components/BridgeIndicator";
+import { ToolsProvider } from "./contexts/ToolsProvider";
 
 type Page = "chat" | "flow" | "translate";
 
@@ -352,7 +348,6 @@ function AppContent() {
             {/* Right section */}
             <div className="flex items-center gap-2 justify-end flex-1">
               <SettingsButton />
-              <BridgeIndicator />
               {rightActions}
             </div>
           </div>
@@ -380,13 +375,10 @@ const providers = [
   ProfileProvider,
   SidebarProvider,
   NavigationProvider,
-  BridgeProvider,
   ArtifactsProvider,
   RepositoryProvider,
   ScreenCaptureProvider,
-  SearchProvider,
-  ImageGenerationProvider,
-  InterpreterProvider,
+  ToolsProvider,
   ChatProvider,
   VoiceProvider,
   TranslateProvider,

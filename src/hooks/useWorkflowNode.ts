@@ -2,10 +2,6 @@ import { useMemo, useState, useCallback } from 'react';
 import { useWorkflow } from './useWorkflow';
 import { getConnectedNodeData, getText, getLabeledText } from '../lib/workflow';
 
-/**
- * Hook for workflow nodes that provides helper methods for working with connected data
- * and common node state management
- */
 export function useWorkflowNode(nodeId: string) {
   const { nodes, edges } = useWorkflow();
   const [isProcessing, setIsProcessing] = useState(false);

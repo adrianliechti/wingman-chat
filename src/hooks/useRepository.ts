@@ -3,12 +3,9 @@ import pLimit from 'p-limit';
 import { Client } from '../lib/client';
 import { VectorDB } from '../lib/vectordb';
 import type { Document } from '../lib/vectordb';
-import type { Tool } from '../types/chat';
 import type { RepositoryFile } from '../types/repository';
 import { useRepositories } from './useRepositories';
 import { getConfig } from '../config';
-import repositoryRagInstructions from '../prompts/repository-rag.txt?raw';
-import repositoryContextInstructions from '../prompts/repository-context.txt?raw';
 
 export interface FileChunk {
   file: RepositoryFile;
@@ -22,8 +19,6 @@ export interface RepositoryHook {
   addFile: (file: File) => Promise<void>;
   removeFile: (fileId: string) => void;
   queryChunks: (query: string, topK?: number) => Promise<FileChunk[]>;
-  queryTools: () => Tool[];
-  queryInstructions: () => string;
   useRAG: boolean;
   totalPages: number;
   totalCharacters: number;
@@ -293,112 +288,11 @@ export function useRepository(repositoryId: string, mode: 'auto' | 'rag' | 'cont
     }
   }, [vectorDB, repositoryId, repository?.embedder, files]);
 
-  const queryTools = useCallback((): Tool[] => {
-    if (files.length === 0) {
-      return [];
-    }
-
-    if (useRAG) {
-      // Large repository: use RAG with vector search
-      return [
-        {
-          name: 'query_knowledge_database',
-          description: 'Search and retrieve information from a knowledge database using natural language queries. Returns relevant documents, facts, or answers based on the search criteria.',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: `The search query or question to find relevant information in the knowledge database. Use natural language and be specific about what information you're looking for.`
-              }
-            },
-            required: ['query']
-          },
-          function: async (args: Record<string, unknown>): Promise<string> => {
-            const query = args.query as string;
-            console.log("[repository] Query", { query });
-
-            if (!query) {
-              console.log("[repository] Query failed - no query provided");
-              return JSON.stringify({ error: 'No query provided' });
-            }
-
-            try {
-              const results = await queryChunks(query, 5);
-              console.log("[repository] Query completed", { query, resultsCount: results.length });
-
-              if (results.length === 0) {
-                console.log("[repository] No relevant documents found", { query });
-                return JSON.stringify([]);
-              }
-
-              const jsonResults = results.map((result, index) => {
-                console.log("[repository] Processing result", { 
-                  index: index + 1, 
-                  fileName: result.file.name, 
-                  similarity: (result.similarity || 0).toFixed(3),
-                  textPreview: result.text.substring(0, 100) + "..."
-                });
-
-                return {
-                  file_name: result.file.name,
-                  file_chunk: result.text,
-                  similarity: result.similarity || 0
-                };
-              });
-
-              console.log("[repository] Returning results", { count: jsonResults.length });
-              return JSON.stringify(jsonResults);
-            } catch (error) {
-              console.error("[repository] Query failed", { query, error });
-              return JSON.stringify({ error: 'Failed to query repository' });
-            }
-          }
-        }
-      ];
-    } else {
-  // Small repository: no retrieval tool; content injected directly into system prompt
-  return [];
-    }
-  }, [queryChunks, files, useRAG]);
-
-  const queryInstructions = useCallback((): string => {
-    const instructions = [];
-
-    if (repository?.instructions?.trim()) {
-      instructions.push(`
-## Instructions
-
-\`\`\`\`text
-${repository.instructions.trim()}
-\`\`\`\`
-`.trim());
-    }
-
-    if (files.length > 0) {
-      if (useRAG) {
-        instructions.push(repositoryRagInstructions);
-      } else {
-        instructions.push(repositoryContextInstructions);
-
-        // Include full content of every file (no truncation)
-        for (const file of files) {
-          if (!file.text || !file.text.trim()) continue;
-          instructions.push(`\n\n\`\`\`text ${file.name}\n${file.text}\n\`\`\``);
-        }
-      }
-    }
-
-    return instructions.join('\n\n');
-  }, [repository?.instructions, useRAG, files]);
-
   return {
     files,
     removeFile,
     addFile,
     queryChunks,
-    queryTools,
-    queryInstructions,
     useRAG,
     totalPages,
     totalCharacters,

@@ -22,25 +22,10 @@ export interface CodeNodeData extends BaseNodeData {
 // CodeNode type
 export type CodeNodeType = Node<CodeNodeData, 'code'>;
 
-// Factory function to create a new CodeNode
-export function createCodeNode(position: { x: number; y: number }): CodeNodeType {
-  return {
-    id: crypto.randomUUID(),
-    type: 'code',
-    position,
-    data: {
-      outputText: '',
-      prompt: '',
-      generatedCode: ''
-    }
-  };
-}
-
 export const CodeNode = memo(({ id, data, selected }: NodeProps<CodeNodeType>) => {
   const { updateNode } = useWorkflow();
   const { getLabeledText, isProcessing, executeAsync } = useWorkflowNode(id);
   const [models, setModels] = useState<Model[]>([]);
-  const [prompt, setPrompt] = useState(data.prompt || '');
   const [showCode, setShowCode] = useState(false);
   const config = getConfig();
   const client = config.client;
@@ -57,22 +42,15 @@ export const CodeNode = memo(({ id, data, selected }: NodeProps<CodeNodeType>) =
     loadModels();
   }, [client]);
 
-  useEffect(() => {
-    setPrompt(data.prompt || '');
-  }, [data.prompt]);
-
   const handleExecute = async () => {
-    if (!prompt?.trim()) return;
-    
-    // Save the prompt to workflow state
-    updateNode(id, { data: { ...data, prompt } });
+    if (!data.prompt?.trim()) return;
     
     await executeAsync(async () => {
       // Get labeled text from connected nodes
       const contextText = getLabeledText();
       
       // Build the user message content
-      let messageContent = prompt || '';
+      let messageContent = data.prompt || '';
       
       // If there's connected data, append it as context
       if (contextText) {
@@ -237,7 +215,7 @@ ${generatedCode}`;
       color="green"
       onExecute={handleExecute}
       isProcessing={isProcessing}
-      canExecute={!!prompt?.trim()}
+      canExecute={!!data.prompt?.trim()}
       showInputHandle={true}
       showOutputHandle={true}
       error={data.error}
@@ -252,9 +230,8 @@ ${generatedCode}`;
         {/* Prompt Input */}
         <div className="shrink-0">
           <Textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onBlur={() => updateNode(id, { data: { ...data, prompt } })}
+            value={data.prompt ?? ''}
+            onChange={(e) => updateNode(id, { data: { ...data, prompt: e.target.value } })}
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             placeholder="Describe what you want the code to do..."

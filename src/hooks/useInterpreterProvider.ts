@@ -1,36 +1,23 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { ReactNode } from 'react';
+import { useCallback, useMemo } from 'react';
+import { SquareChevronRight } from 'lucide-react';
 import { getConfig } from '../config';
-import { InterpreterContext } from './InterpreterContext';
-import type { InterpreterContextType } from './InterpreterContext';
-import type { Tool } from '../types/chat';
+import type { Tool, ToolProvider } from '../types/chat';
 import interpreterInstructionsText from '../prompts/interpreter.txt?raw';
 import { executeCode } from "../lib/interpreter";
 
-interface InterpreterProviderProps {
-  children: ReactNode;
-}
-
-export function InterpreterProvider({ children }: InterpreterProviderProps) {
-  const [isEnabled, setEnabled] = useState(false);
-  const [isAvailable, setIsAvailable] = useState(false);
-
-  // Check interpreter availability from config
-  useEffect(() => {
+export function useInterpreterProvider(): ToolProvider | null {
+  const config = getConfig();
+  
+  const isAvailable = useMemo(() => {
     try {
-      const config = getConfig();
-      setIsAvailable(config.interpreter.enabled);
+      return config.interpreter.enabled;
     } catch (error) {
       console.warn('Failed to get interpreter config:', error);
-      setIsAvailable(false);
+      return false;
     }
-  }, []);
+  }, [config.interpreter.enabled]);
 
   const interpreterTools = useCallback((): Tool[] => {
-    if (!isEnabled) {
-      return [];
-    }
-
     return [
       {
         name: "execute_python_code",
@@ -55,20 +42,10 @@ export function InterpreterProvider({ children }: InterpreterProviderProps) {
         function: async (args: Record<string, unknown>) => {
           const { code, packages } = args;
           
-          console.log("[execute_python_code] Starting execution", { 
-            codeLength: (code as string)?.length,
-            packages 
-          });
-          
           try {
             const result = await executeCode({
               code: code as string,
               packages: packages as string[] | undefined
-            });
-            
-            console.log("[execute_python_code] Execution completed", { 
-              success: result.success,
-              outputLength: result.output.length 
             });
             
             if (!result.success) {
@@ -77,35 +54,27 @@ export function InterpreterProvider({ children }: InterpreterProviderProps) {
 
             return result.output;
           } catch (error) {
-            console.error("[execute_python_code] Execution failed", { 
-              error: error instanceof Error ? error.message : error 
-            });
             return `Code execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
           }
         }
       }
     ];
-  }, [isEnabled]);
+  }, []);
 
-  const interpreterInstructions = useCallback((): string => {
-    if (!isEnabled) {
-      return "";
+  const provider = useMemo<ToolProvider | null>(() => {
+    if (!isAvailable) {
+      return null;
     }
 
-    return interpreterInstructionsText;
-  }, [isEnabled]);
+    return {
+      id: 'interpreter',
+      name: 'Interpreter',
+      description: 'Use Python engine',
+      icon: SquareChevronRight,
+      instructions: interpreterInstructionsText,
+      tools: interpreterTools(),
+    };
+  }, [isAvailable, interpreterTools]);
 
-  const contextValue: InterpreterContextType = {
-    isEnabled,
-    setEnabled,
-    isAvailable,
-    interpreterTools,
-    interpreterInstructions,
-  };
-
-  return (
-    <InterpreterContext.Provider value={contextValue}>
-      {children}
-    </InterpreterContext.Provider>
-  );
+  return provider;
 }

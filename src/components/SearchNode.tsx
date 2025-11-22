@@ -18,19 +18,6 @@ export interface SearchNodeData extends BaseNodeData {
 // SearchNode type
 export type SearchNodeType = Node<SearchNodeData, 'search'>;
 
-// Factory function to create a new SearchNode
-export function createSearchNode(position: { x: number; y: number }): SearchNodeType {
-  return {
-    id: crypto.randomUUID(),
-    type: 'search',
-    position,
-    data: {
-      query: '',
-      outputText: ''
-    }
-  };
-}
-
 type SearchMode = 'search' | 'research' | 'fetch';
 
 export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType>) => {

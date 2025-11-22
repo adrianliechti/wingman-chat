@@ -1,14 +1,13 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { Role } from "../types/chat";
-import type { Message, Model, ToolContext } from "../types/chat";
+import type { Message, ToolProvider, Model, ToolContext } from '../types/chat';
+import { ProviderState } from '../types/chat';
 import type { FileSystem } from "../types/file";
 import { useModels } from "../hooks/useModels";
 import { useChats } from "../hooks/useChats";
 import { useChatContext } from "../hooks/useChatContext";
-import { useSearch } from "../hooks/useSearch";
 import { useArtifacts } from "../hooks/useArtifacts";
-import { useImageGeneration } from "../hooks/useImageGeneration";
-import { useInterpreter } from "../hooks/useInterpreter";
+import { useToolsContext } from "../hooks/useToolsContext";
 import { getConfig } from "../config";
 import { parseResource } from "../lib/resource";
 import { ChatContext } from './ChatContext';
@@ -24,21 +23,31 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
-  const { setEnabled: setSearchEnabled } = useSearch();
-  const { isAvailable: artifactsEnabled, setFileSystemForChat, setEnabled: setArtifactsEnabled } = useArtifacts();
-  const { setEnabled: setImageGenerationEnabled } = useImageGeneration();
-  const { setEnabled: setInterpreterEnabled } = useInterpreter();
+  const { isAvailable: artifactsEnabled, setFileSystemForChat } = useArtifacts();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const messagesRef = useRef<Message[]>([]);
 
   const chat = chats.find(c => c.id === chatId) ?? null;
   const model = chat?.model ?? selectedModel ?? models[0];
-  const { tools: chatTools, instructions: chatInstructions, mcpConnected, mcpTools } = useChatContext('chat', model);
+  const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat', model);
+  const { providers, getProviderState, setProviderEnabled } = useToolsContext();
+  
+  // Calculate tool providers connection state
+  const isInitializing = useMemo(() => {
+    const hasProviders = providers.length > 0;
+    if (!hasProviders) {
+      return null; // No providers configured
+    }
+    const isAnyInitializing = providers.some((p: ToolProvider) => getProviderState(p.id) === ProviderState.Initializing);
+    if (isAnyInitializing) {
+      return true; // At least one provider is initializing
+    }
+    return false; // All providers are ready
+  }, [providers, getProviderState]);
+  
   const messages = useMemo(() => {
-    const msgs = chat?.messages ?? [];
-    messagesRef.current = msgs;
-    return msgs;
+    return chat?.messages ?? [];
   }, [chat?.messages]);
 
   useEffect(() => {
@@ -54,8 +63,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     // Create focused methods for filesystem access
     const getFileSystem = () => chat.artifacts || {};
-    const setFileSystem = (artifacts: FileSystem) => {
-      updateChat(chat.id, () => ({ artifacts }));
+    const setFileSystem = (updater: (current: FileSystem) => FileSystem) => {
+      updateChat(chat.id, (current) => ({ 
+        artifacts: updater(current.artifacts || {}) 
+      }));
     };
 
     setFileSystemForChat(getFileSystem, setFileSystem);
@@ -64,22 +75,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const createChat = useCallback(() => {
     const newChat = createChatHook();
     setChatId(newChat.id);
-    // Disable tools when creating a new chat to prevent accidental usage
-    setSearchEnabled(false);
-    setArtifactsEnabled(false);
-    setImageGenerationEnabled(false);
-    setInterpreterEnabled(false);
+    // Disable all tools when creating a new chat to prevent accidental usage
+    providers.forEach((p: ToolProvider) => setProviderEnabled(p.id, false));
     return newChat;
-  }, [createChatHook, setSearchEnabled, setArtifactsEnabled, setImageGenerationEnabled, setInterpreterEnabled]);
+  }, [createChatHook, providers, setProviderEnabled]);
 
   const selectChat = useCallback((chatId: string) => {
     setChatId(chatId);
-    // Disable tools when switching chats to prevent accidental usage
-    setSearchEnabled(false);
-    setArtifactsEnabled(false);
-    setImageGenerationEnabled(false);
-    setInterpreterEnabled(false);
-  }, [setSearchEnabled, setArtifactsEnabled, setImageGenerationEnabled, setInterpreterEnabled]);
+    // Disable all tools when switching chats to prevent accidental usage
+    providers.forEach((p: ToolProvider) => setProviderEnabled(p.id, false));
+  }, [providers, setProviderEnabled]);
 
   const deleteChat = useCallback(
     (id: string) => {
@@ -149,6 +154,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
       };
 
       try {
+        // Get tools and instructions when needed
+        const tools = await chatTools();
+        const instructions = chatInstructions();
+
         // Main completion loop to handle tool calls
         while (true) {
           // Create empty assistant message for this completion iteration
@@ -156,9 +165,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
           
           const assistantMessage = await client.complete(
             model!.id,
-            chatInstructions,
+            instructions,
             conversation,
-            chatTools,
+            tools,
             (_, snapshot) => {
               // Use the conversation state instead of fetching from chats to avoid stale closure
               updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: snapshot }] }))
@@ -185,7 +194,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
           // Handle each tool call
           for (const toolCall of toolCalls) {
-            const tool = chatTools.find((t) => t.name === toolCall.name);
+            const tool = tools.find((t) => t.name === toolCall.name);
 
             if (!tool) {
               // Tool not found - add error message
@@ -316,7 +325,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         updateChat(id, () => ({ messages: conversation }));
       }
-    }, [getOrCreateChat, chats, updateChat, chatTools, chatInstructions, client, model, setIsResponding]);
+    }, [getOrCreateChat, chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions]);
 
   const value: ChatContextType = {
     // Models
@@ -328,7 +337,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     chats,
     chat,
     messages,
-    isResponding,
 
     // Chat actions
     createChat,
@@ -340,9 +348,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     addMessage,
     sendMessage,
 
-    // MCP state
-    mcpConnected,
-    mcpTools,
+    isResponding,
+    isInitializing,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

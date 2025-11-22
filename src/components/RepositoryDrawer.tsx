@@ -110,10 +110,10 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
       {isDragOver && (
         <div className="absolute inset-0 z-10 bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm border-2 border-dashed border-slate-400 dark:border-slate-500 rounded-lg flex items-center justify-center">
           <div className="text-center">
-            <div className="text-slate-600 dark:text-slate-400 mb-2">
+            <div className="text-neutral-600 dark:text-neutral-400 mb-2">
               <Plus size={32} className="mx-auto" />
             </div>
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
               Drop files here to add to repository
             </p>
           </div>
@@ -189,16 +189,16 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
       </Transition>
 
       {/* Instructions Display */}
-      <div className="px-4 pt-4 pb-2">
-        <div className="flex gap-4">
+      <div className="px-3 py-2">
+        <div className="flex gap-3">
           {/* Instructions Container */}
           <div className="flex-1">
             <div 
               onClick={startEditingInstructions}
-              className="text-sm text-neutral-500 dark:text-neutral-400 bg-white/30 dark:bg-neutral-800/30 p-3 rounded-lg border-2 border-dashed border-neutral-300 dark:border-neutral-600 cursor-pointer hover:border-slate-400 dark:hover:border-slate-500 hover:bg-white/40 dark:hover:bg-neutral-800/50 transition-colors group backdrop-blur-lg"
+              className="text-sm text-neutral-500 dark:text-neutral-400 bg-white/30 dark:bg-neutral-900/60 p-3 rounded-lg border-2 border-dashed border-neutral-300 dark:border-neutral-600 cursor-pointer hover:border-slate-400 dark:hover:border-slate-500 hover:bg-white/40 dark:hover:bg-neutral-900/80 transition-colors group backdrop-blur-lg"
             >
               <div className="flex items-center justify-center">
-                <div className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
+                <div className="flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-400">
                   {repository.instructions ? <Edit size={12} /> : <Plus size={12} />}
                   Instructions
                 </div>
@@ -209,15 +209,15 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
           {/* File Upload Container */}
           <div className="flex-1">
             <div
-              className={`border-2 border-dashed rounded-lg p-3 text-center transition-colors cursor-pointer bg-white/30 dark:bg-neutral-800/30 backdrop-blur-lg
+              className={`border-2 border-dashed rounded-lg p-3 text-center transition-colors cursor-pointer bg-white/30 dark:bg-neutral-900/60 backdrop-blur-lg
                 ${isDragOver 
                   ? 'border-slate-400 bg-slate-50/50 dark:bg-neutral-700/70' 
-                  : 'border-neutral-300 dark:border-neutral-600 hover:border-slate-400 dark:hover:border-slate-500 hover:bg-white/40 dark:hover:bg-neutral-800/50'
+                  : 'border-neutral-300 dark:border-neutral-600 hover:border-slate-400 dark:hover:border-slate-500 hover:bg-white/40 dark:hover:bg-neutral-900/80'
                 }`}
               onClick={() => document.getElementById('file-upload')?.click()}
             >
               <div className="flex items-center justify-center">
-                <div className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
+                <div className="flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-400">
                   <Plus size={12} />
                   Knowledge
                 </div>
@@ -236,7 +236,7 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
 
       {/* Files list */}
       {files.length > 0 && (
-        <div className="flex-1 overflow-auto px-4 pb-4 pt-4">
+        <div className="flex-1 overflow-auto px-3 py-2">
           <div className="flex flex-wrap gap-3">
             {files
               .slice()
@@ -249,11 +249,11 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
               >
                 <div className={`relative w-20 h-20 ${
                   file.status === 'processing' 
-                    ? 'bg-white/30 dark:bg-neutral-800/60 backdrop-blur-lg border-2 border-dashed border-white/50 dark:border-white/30'
+                    ? 'bg-white/30 dark:bg-neutral-900/80 backdrop-blur-lg border-2 border-dashed border-white/50 dark:border-neutral-600/60'
                     : file.status === 'error'
                     ? 'bg-red-100/40 dark:bg-red-900/25 backdrop-blur-lg border border-red-300/40 dark:border-red-600/25'
-                    : 'bg-white/40 dark:bg-neutral-800/60 backdrop-blur-lg border border-white/40 dark:border-white/25'
-                } rounded-xl shadow-sm flex flex-col items-center justify-center p-2 hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all`}>
+                    : 'bg-white/40 dark:bg-neutral-900/80 backdrop-blur-lg border border-white/40 dark:border-neutral-600/60'
+                } rounded-xl shadow-sm flex flex-col items-center justify-center p-2 hover:shadow-md hover:border-white/60 dark:hover:border-neutral-500/80 transition-all`}>
                   
                   {file.status === 'processing' ? (
                     <div className="flex flex-col items-center justify-center">
@@ -264,7 +264,7 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center text-center w-full h-full">
-                      <FileText size={18} className={`mb-1 flex-shrink-0 ${
+                      <FileText size={18} className={`mb-1 shrink-0 ${
                         file.status === 'error' 
                           ? 'text-red-600 dark:text-red-400' 
                           : 'text-neutral-600 dark:text-neutral-300'
@@ -302,7 +302,7 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
 
       {/* Hint section when empty */}
       {(!repository.instructions && files.length === 0) && (
-        <div className="flex-1 flex items-center justify-center px-4 pb-4">
+        <div className="flex-1 flex items-center justify-center px-3 py-3">
           <div className="text-center max-w-sm">
             <div className="text-neutral-400 dark:text-neutral-500 mb-2">
               <FileText size={32} className="mx-auto" />
@@ -319,7 +319,7 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
 
       {/* Repository Stats */}
       {files.length > 0 && (
-        <div className="px-4 pb-4 pt-2 border-t border-neutral-200 dark:border-neutral-700/70">
+        <div className="px-3 py-2 border-t border-neutral-200/60 dark:border-neutral-700/60">
           <div className="text-xs text-neutral-500 dark:text-neutral-400 text-center">
             {useRAG ? (
               <span>
@@ -447,16 +447,16 @@ export function RepositoryDrawer() {
 
 
   return (
-    <div className="h-full flex flex-col rounded-xl overflow-hidden animate-in fade-in duration-200 dark:bg-neutral-900/95 dark:backdrop-blur-lg dark:border dark:border-neutral-700/50 dark:shadow-2xl">
+    <div className="h-full flex flex-col rounded-lg overflow-hidden transition-all duration-150 ease-linear bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md border border-neutral-200/60 dark:border-neutral-700/60 shadow-sm">
       {/* Header with Unified Repository Selector */}
-      <div className="p-4 border-b border-neutral-200 dark:border-neutral-700/70">
+      <div className="px-3 py-3 border-b border-neutral-200/60 dark:border-neutral-700/60">
         <div className="relative w-full" ref={dropdownRef}>
           <Button
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="relative w-full rounded-lg bg-white/60 dark:bg-neutral-800/80 py-2 pl-3 pr-10 text-left shadow-md border border-neutral-300 dark:border-neutral-600/70 focus:ring-2 focus:ring-slate-500 dark:focus:ring-slate-400 hover:border-neutral-400 dark:hover:border-neutral-500/70 transition-colors backdrop-blur-lg"
+            className="relative w-full rounded-lg bg-white/40 dark:bg-neutral-900/60 py-2 pl-3 pr-10 text-left shadow-sm border border-neutral-200/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-slate-500/50 dark:focus:ring-slate-400/50 hover:border-neutral-300/80 dark:hover:border-neutral-600/80 transition-colors backdrop-blur-lg"
           >
             <span className="flex items-center gap-2">
-              <Folder size={16} className="text-slate-600 dark:text-slate-300" />
+              <Folder size={16} className="text-neutral-600 dark:text-neutral-300" />
               <span className="block truncate text-neutral-900 dark:text-neutral-100 font-medium">
                 {currentRepository?.name || 'None'}
               </span>
@@ -467,40 +467,38 @@ export function RepositoryDrawer() {
           </Button>
 
           {isDropdownOpen && (
-            <div className="absolute z-20 mt-1 w-full max-h-80 overflow-auto rounded-md bg-white dark:bg-neutral-800/95 py-1 shadow-lg ring-1 ring-black ring-opacity-5 dark:ring-neutral-600/50 dark:ring-opacity-75 backdrop-blur-lg dark:border dark:border-neutral-600/50">
+            <div className="absolute z-20 mt-1 w-full max-h-80 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100/80 dark:bg-neutral-800/80 p-1 backdrop-blur-xl">
               {/* None Option */}
               <div
-                className="group relative flex items-center justify-between px-3 py-2 w-full text-left border-b border-neutral-200 dark:border-neutral-600/70 hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer"
+                className="group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80 flex items-center gap-2"
                 onClick={() => handleRepositorySelect(null)}
               >
-                <div className="flex items-center gap-2">
-                  <X size={16} className="text-slate-600 dark:text-slate-300 flex-shrink-0" />
-                  <span className={`block truncate text-sm ${
-                    !currentRepository
-                      ? 'font-semibold text-neutral-900 dark:text-neutral-100' 
-                      : 'text-neutral-700 dark:text-neutral-200'
-                  }`}>
-                    None
-                  </span>
-                </div>
+                <X size={16} className="text-neutral-600 dark:text-neutral-300 shrink-0" />
+                <span className={`block truncate text-sm ${
+                  !currentRepository
+                    ? 'font-semibold' 
+                    : 'font-normal'
+                }`}>
+                  None
+                </span>
               </div>
 
               {/* Create New Repository Option */}
               <div
-                className={`group relative flex items-center justify-between px-3 py-2 border-b border-neutral-200 dark:border-neutral-600 ${
-                  !isCreatingNew ? 'hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer' : ''
+                className={`group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 ${
+                  !isCreatingNew ? 'hover:bg-neutral-200 dark:hover:bg-neutral-700/80' : ''
                 }`}
               >
                 {isCreatingNew ? (
-                  <div className="flex items-center gap-2 flex-1">
-                    <Plus size={16} className="text-slate-600 dark:text-slate-400 flex-shrink-0" />
+                  <div className="flex items-center gap-1 flex-1">
+                    <Plus size={16} className="text-neutral-600 dark:text-neutral-400 shrink-0" />
                     <input
                       type="text"
                       value={editingName}
                       onChange={(e) => setEditingName(e.target.value)}
                       onKeyDown={handleInputKeyDown}
                       autoFocus
-                      className="flex-1 text-sm bg-white dark:bg-neutral-700 border border-slate-500 rounded px-2 py-1 text-neutral-900 dark:text-neutral-100 focus:ring-1 focus:ring-slate-500"
+                      className="flex-1 text-sm bg-transparent border-0 border-b border-slate-500 rounded-none px-1 py-0 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-slate-600 dark:focus:border-slate-400"
                       placeholder="Repository name"
                       onClick={(e) => e.stopPropagation()}
                     />
@@ -509,7 +507,7 @@ export function RepositoryDrawer() {
                         e.stopPropagation();
                         saveNewRepository();
                       }}
-                      className="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 rounded transition-colors"
+                      className="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 rounded transition-colors shrink-0"
                       title="Create"
                     >
                       <Check size={12} />
@@ -519,7 +517,7 @@ export function RepositoryDrawer() {
                         e.stopPropagation();
                         cancelNewRepository();
                       }}
-                      className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded transition-colors"
+                      className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded transition-colors shrink-0"
                       title="Cancel"
                     >
                       <X size={12} />
@@ -532,7 +530,7 @@ export function RepositoryDrawer() {
                       e.stopPropagation();
                       startCreatingNew();
                     }}
-                    className="flex items-center gap-2 w-full text-sm text-slate-600 dark:text-slate-400 font-medium"
+                    className="flex items-center gap-2 w-full text-sm text-neutral-600 dark:text-neutral-400 font-medium"
                   >
                     <Plus size={16} />
                     Create New Repository
@@ -551,20 +549,20 @@ export function RepositoryDrawer() {
                 return (
                   <div
                     key={`${repository.id}-${repository.name}`}
-                    className="group relative flex items-center justify-between px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-900/20"
+                    className="group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80 flex items-center justify-between"
                   >
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <Folder size={16} className="text-slate-600 dark:text-slate-400 flex-shrink-0" />
+                      <Folder size={16} className="text-neutral-600 dark:text-neutral-400 shrink-0" />
                         
                       {isBeingEdited ? (
-                        <div className="flex items-center gap-2 flex-1">
+                        <div className="flex items-center gap-1 flex-1">
                           <input
                             type="text"
                             value={editingName}
                             onChange={(e) => setEditingName(e.target.value)}
                             onKeyDown={handleInputKeyDown}
                             autoFocus
-                            className="flex-1 text-sm bg-white dark:bg-neutral-700 border border-slate-500 rounded px-2 py-1 text-neutral-900 dark:text-neutral-100 focus:ring-1 focus:ring-slate-500"
+                            className="flex-1 text-sm bg-transparent border-0 border-b border-slate-500 rounded-none px-1 py-0 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-slate-600 dark:focus:border-slate-400"
                             onClick={(e) => e.stopPropagation()}
                           />
                           <Button
@@ -572,7 +570,7 @@ export function RepositoryDrawer() {
                               e.stopPropagation();
                               saveInlineEdit();
                             }}
-                            className="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 rounded transition-colors"
+                            className="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 rounded transition-colors shrink-0"
                             title="Save"
                           >
                             <Check size={12} />
@@ -582,7 +580,7 @@ export function RepositoryDrawer() {
                               e.stopPropagation();
                               cancelInlineEdit();
                             }}
-                            className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded transition-colors"
+                            className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded transition-colors shrink-0"
                             title="Cancel"
                           >
                             <X size={12} />
@@ -595,8 +593,8 @@ export function RepositoryDrawer() {
                         >
                           <span className={`block truncate text-sm ${
                             isCurrentRepo
-                              ? 'font-semibold text-neutral-900 dark:text-neutral-100' 
-                              : 'text-neutral-700 dark:text-neutral-300'
+                              ? 'font-semibold' 
+                              : 'font-normal'
                           }`}>
                             {repository.name}
                           </span>
@@ -612,7 +610,7 @@ export function RepositoryDrawer() {
                             e.stopPropagation();
                             startInlineEdit(repository);
                           }}
-                          className="p-1 text-neutral-400 hover:text-slate-600 dark:hover:text-slate-400 rounded transition-colors"
+                          className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-400 rounded transition-colors"
                           title="Edit repository name"
                         >
                           <Edit size={12} />
@@ -649,7 +647,7 @@ export function RepositoryDrawer() {
           repository={currentRepository}
         />
       ) : (
-        <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+        <div className="flex flex-col items-center justify-center h-full p-6 text-center">
           <Folder size={48} className="text-neutral-300 dark:text-neutral-600 mb-4" />
           <h3 className="text-lg font-medium text-neutral-900 dark:text-neutral-100 mb-2">
             No Repository Selected

@@ -21,24 +21,10 @@ export interface PromptNodeData extends BaseNodeData {
 // PromptNode type
 export type PromptNodeType = Node<PromptNodeData, 'prompt'>;
 
-// Factory function to create a new PromptNode
-export function createPromptNode(position: { x: number; y: number }): PromptNodeType {
-  return {
-    id: crypto.randomUUID(),
-    type: 'prompt',
-    position,
-    data: {
-      outputText: '',
-      prompt: ''
-    }
-  };
-}
-
 export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType>) => {
   const { updateNode } = useWorkflow();
   const { getLabeledText, isProcessing, executeAsync } = useWorkflowNode(id);
   const [models, setModels] = useState<Model[]>([]);
-  const [prompt, setPrompt] = useState(data.prompt || '');
   const config = getConfig();
   const client = config.client;
 
@@ -54,22 +40,15 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
     loadModels();
   }, [client]);
 
-  useEffect(() => {
-    setPrompt(data.prompt || '');
-  }, [data.prompt]);
-
   const handleExecute = async () => {
-    if (!prompt?.trim()) return;
-    
-    // Save the prompt to workflow state
-    updateNode(id, { data: { ...data, prompt } });
+    if (!data.prompt?.trim()) return;
     
     await executeAsync(async () => {
       // Get labeled text from connected nodes
       const contextText = getLabeledText();
       
       // Build the user message content
-      let messageContent = prompt || '';
+      let messageContent = data.prompt || '';
       
       // If there's connected data, append it as context
       if (contextText) {
@@ -152,7 +131,7 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
       color="purple"
       onExecute={handleExecute}
       isProcessing={isProcessing}
-      canExecute={!!prompt?.trim()}
+      canExecute={!!data.prompt?.trim()}
       showInputHandle={true}
       showOutputHandle={true}
       error={data.error}
@@ -167,9 +146,8 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
         {/* Prompt Input */}
         <div className="shrink-0">
           <Textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onBlur={() => updateNode(id, { data: { ...data, prompt } })}
+            value={data.prompt ?? ''}
+            onChange={(e) => updateNode(id, { data: { ...data, prompt: e.target.value } })}
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             placeholder="Instructions"

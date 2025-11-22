@@ -10,11 +10,20 @@ interface ArtifactsProviderProps {
 }
 
 export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
-  const [openFiles, setOpenFiles] = useState<string[]>([]);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [showArtifactsDrawer, setShowArtifactsDrawer] = useState(false);
-  const [isAvailable, setIsAvailable] = useState(false);
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const config = getConfig();
+  const [isAvailable] = useState(() => {
+    try {
+      return config.artifacts.enabled;
+    } catch (error) {
+      console.warn('Failed to get artifacts config:', error);
+      return false;
+    }
+  });
   const [isEnabled, setIsEnabled] = useState(false);
+  const [version, setVersion] = useState(0);
 
   // Create singleton FileSystemManager instance
   const [fs] = useState(() => new FileSystemManager(
@@ -25,34 +34,24 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   // Method to update the filesystem functions (called by ChatProvider)
   const setFileSystemForChat = useCallback((
     getFileSystem: (() => FileSystem) | null,
-    setFileSystem: ((artifacts: FileSystem) => void) | null
+    setFileSystem: ((updater: (current: FileSystem) => FileSystem) => void) | null
   ) => {
     if (!getFileSystem || !setFileSystem) {
       // Reset to empty filesystem when no chat or artifacts disabled
       fs.updateHandlers(null, null);
       // Reset UI state
-      setOpenFiles([]);
       setActiveFile(null);
       return;
     }
 
-    // Wrap the setFileSystem to match the expected signature
-    const wrappedSetter = (updateFn: (current: FileSystem) => FileSystem) => {
-      const cache = fs.getCurrentFileSystem();
-      const newFs = updateFn(cache);
-      setFileSystem(newFs);
-      // Update cache to ensure consistency
-      fs.updateCache(newFs);
-    };
+    // setFileSystem already uses updater pattern, just pass it through
+    const wrappedSetter = setFileSystem;
     
     fs.updateHandlers(getFileSystem, wrappedSetter);
     
     // Reset UI state when switching to a new chat
     const currentFileSystem = getFileSystem();
     const currentFilePaths = Object.keys(currentFileSystem);
-    
-    // Only keep open files that exist in the new filesystem
-    setOpenFiles(prev => prev.filter(path => currentFilePaths.includes(path)));
     
     // Clear active file if it doesn't exist in the new filesystem
     setActiveFile(currentActive => 
@@ -63,51 +62,33 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     if (currentFilePaths.length > 0) {
       setIsEnabled(true);
     }
-  }, [fs]);
 
-  // Check artifacts availability from config
-  useEffect(() => {
-    try {
-      const config = getConfig();
-      setIsAvailable(config.artifacts.enabled);
-    } catch (error) {
-      console.warn('Failed to get artifacts config:', error);
-      setIsAvailable(false);
-    }
-  }, []);
+    setVersion(v => v + 1);
+  }, [fs]);
 
   // Subscribe to filesystem events - use empty dependency array to prevent re-subscriptions
   useEffect(() => {
     const unsubscribeCreated = fs.subscribe('fileCreated', (path: string) => {
-      // Batch state updates together
-      setOpenFiles(prev => {
-        if (prev.includes(path)) {
-          return prev;
-        }
-        const newFiles = [...prev, path];
-        return newFiles;
-      });
-      
       setActiveFile(path);
       setShowArtifactsDrawer(true);
       // Auto-enable artifacts when a file is created
       setIsEnabled(true);
+      setVersion(v => v + 1);
     });
 
     const unsubscribeDeleted = fs.subscribe('fileDeleted', (path: string) => {
-      setOpenFiles(prev => prev.filter(file => file !== path));
-      
       // Clear active file if it was the deleted one
       setActiveFile(currentActive => currentActive === path ? null : currentActive);
+      setVersion(v => v + 1);
     });
 
     const unsubscribeRenamed = fs.subscribe('fileRenamed', (oldPath: string, newPath: string) => {
-      setOpenFiles(prev => prev.map(file => file === oldPath ? newPath : file));
       setActiveFile(prev => prev === oldPath ? newPath : prev);
+      setVersion(v => v + 1);
     });
 
     const unsubscribeUpdated = fs.subscribe('fileUpdated', () => {
-      // No state changes needed for content updates
+      setVersion(v => v + 1);
     });
 
     // Cleanup function
@@ -120,35 +101,22 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   }, [fs]); // fs is stable from useState, so this effectively runs once
 
   const openFile = useCallback((path: string) => {
-    setOpenFiles(prev => {
-      if (prev.includes(path)) {
-        return prev;
-      }
-      const newFiles = [...prev, path];
-      return newFiles;
-    });
     setActiveFile(path);
   }, []);
 
   const closeFile = useCallback((path: string) => {
-    setOpenFiles(prev => {
-      const newFiles = prev.filter(file => file !== path);
-      
-      // If closing the active file, set a new active file
-      if (path === activeFile) {
-        const index = prev.indexOf(path);
-        const newActiveFile = newFiles.length > 0 
-          ? newFiles[Math.min(index, newFiles.length - 1)]
-          : null;
-        setActiveFile(newActiveFile);
-      }
-      
-      return newFiles;
-    });
+    // If closing the active file, clear it
+    if (path === activeFile) {
+      setActiveFile(null);
+    }
   }, [activeFile]);
 
   const toggleArtifactsDrawer = useCallback(() => {
     setShowArtifactsDrawer(prev => !prev);
+  }, []);
+
+  const toggleFileBrowser = useCallback(() => {
+    setShowFileBrowser(prev => !prev);
   }, []);
 
   const value = {
@@ -162,13 +130,15 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
       setIsEnabled(enabled);
     },
     fs,
-    openFiles,
     activeFile,
     showArtifactsDrawer,
+    showFileBrowser,
+    version,
     openFile,
     closeFile,
     setShowArtifactsDrawer,
     toggleArtifactsDrawer,
+    toggleFileBrowser,
     setFileSystemForChat,
   };
 

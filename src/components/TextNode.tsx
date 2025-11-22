@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from 'react';
+import { memo } from 'react';
 import { StickyNote } from 'lucide-react';
 import { Textarea } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
@@ -7,31 +7,15 @@ import { useWorkflow } from '../hooks/useWorkflow';
 import { WorkflowNode } from './WorkflowNode';
 
 // TextNode data interface
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface TextNodeData extends BaseNodeData {
 }
 
 // TextNode type
 export type TextNodeType = Node<TextNodeData, 'text'>;
 
-// Factory function to create a new TextNode
-export function createTextNode(position: { x: number; y: number }): TextNodeType {
-  return {
-    id: crypto.randomUUID(),
-    type: 'text',
-    position,
-    data: {
-      outputText: ''
-    }
-  };
-}
-
 export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) => {
   const { updateNode } = useWorkflow();
-  const [content, setContent] = useState(data.outputText || '');
-
-  useEffect(() => {
-    setContent(data.outputText || '');
-  }, [data.outputText]);
 
   return (
     <WorkflowNode
@@ -46,9 +30,8 @@ export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) =
     >
       <div className="flex-1 flex flex-col min-h-0">
         <Textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          onBlur={() => updateNode(id, { data: { ...data, outputText: content } })}
+          value={data.outputText ?? ''}
+          onChange={(e) => updateNode(id, { data: { ...data, outputText: e.target.value } })}
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
           placeholder="Enter your text here..."

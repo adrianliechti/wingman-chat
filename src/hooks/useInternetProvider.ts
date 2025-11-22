@@ -1,37 +1,24 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { ReactNode } from 'react';
+import { useCallback, useMemo } from 'react';
+import { Globe } from 'lucide-react';
 import { getConfig } from '../config';
-import { SearchContext } from './SearchContext';
-import type { SearchContextType } from './SearchContext';
-import type { Tool } from '../types/chat';
+import type { Tool, ToolProvider } from '../types/chat';
 import searchInstructionsText from '../prompts/search.txt?raw';
 
-interface SearchProviderProps {
-  children: ReactNode;
-}
-
-export function SearchProvider({ children }: SearchProviderProps) {
-  const [isEnabled, setEnabled] = useState(false);
-  const [isAvailable, setIsAvailable] = useState(false);
+export function useInternetProvider(): ToolProvider | null {
   const config = getConfig();
-  const client = config.client;
-
-  // Check search availability from config
-  useEffect(() => {
+  
+  const isAvailable = useMemo(() => {
     try {
-      const config = getConfig();
-      setIsAvailable(config.internet.enabled);
+      return config.internet.enabled;
     } catch (error) {
       console.warn('Failed to get search config:', error);
-      setIsAvailable(false);
+      return false;
     }
-  }, []);
+  }, [config.internet.enabled]);
+
+  const client = config.client;
 
   const searchTools = useCallback((): Tool[] => {
-    if (!isEnabled) {
-      return [];
-    }
-
     return [
       {
         name: "web_search",
@@ -49,12 +36,8 @@ export function SearchProvider({ children }: SearchProviderProps) {
         function: async (args: Record<string, unknown>) => {
           const { query } = args;
           
-          console.log("[web_search] Starting search", { query });
-          
           try {
             const results = await client.search(query as string);
-            
-            console.log("[web_search] Search completed successfully", { query, resultsCount: results.length });
             
             if (results.length === 0) {
               return "No search results found for the given query.";
@@ -62,7 +45,6 @@ export function SearchProvider({ children }: SearchProviderProps) {
 
             return JSON.stringify(results, null, 2);
           } catch (error) {
-            console.error("[web_search] Search failed", { query, error: error instanceof Error ? error.message : error });
             return `Web search failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
           }
         }
@@ -83,12 +65,8 @@ export function SearchProvider({ children }: SearchProviderProps) {
         function: async (args: Record<string, unknown>) => {
           const { url } = args;
           
-          console.log("[web_scraper] Starting scrape", { url });
-          
           try {
             const content = await client.fetchText(url as string);
-            
-            console.log("[web_scraper] Scrape completed successfully", { url, contentLength: content.length });
             
             if (!content.trim()) {
               return "No text content could be extracted from the provided URL.";
@@ -96,33 +74,27 @@ export function SearchProvider({ children }: SearchProviderProps) {
 
             return content;
           } catch (error) {
-            console.error("[web_scraper] Scrape failed", { url, error: error instanceof Error ? error.message : error });
             return `Web scraping failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
           }
         }
       }
     ];
-  }, [isEnabled, client]);
+  }, [client]);
 
-  const searchInstructions = useCallback((): string => {
-    if (!isEnabled) {
-      return "";
+  const provider = useMemo<ToolProvider | null>(() => {
+    if (!isAvailable) {
+      return null;
     }
 
-    return searchInstructionsText;
-  }, [isEnabled]);
+    return {
+      id: "internet",
+      name: "Internet",
+      description: "Search and fetch websites",
+      icon: Globe,
+      instructions: searchInstructionsText,
+      tools: searchTools(),
+    };
+  }, [isAvailable, searchTools]);
 
-  const contextValue: SearchContextType = {
-    isEnabled,
-    setEnabled,
-    isAvailable,
-    searchTools,
-    searchInstructions,
-  };
-
-  return (
-    <SearchContext.Provider value={contextValue}>
-      {children}
-    </SearchContext.Provider>
-  );
+  return provider;
 }
