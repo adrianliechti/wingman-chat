@@ -230,7 +230,7 @@ export class Client {
           },
           {
             role: "user",
-            content: prompt || "",
+            content: prompt || "No input",
           },
         ],
 
