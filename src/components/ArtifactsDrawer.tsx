@@ -112,7 +112,7 @@ export function ArtifactsDrawer() {
   const renderEditor = () => {
     if (!activeFile) {
       return (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+        <div className="h-full flex flex-col items-center justify-center p-8 text-center">
           <Code size={64} className="text-neutral-300 dark:text-neutral-600 mb-6" />
           <h3 className="text-xl font-medium text-neutral-900 dark:text-neutral-100 mb-2">
             Empty

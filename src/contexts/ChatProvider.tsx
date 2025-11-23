@@ -23,7 +23,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
-  const { isAvailable: artifactsEnabled, setFileSystemForChat } = useArtifacts();
+  const { isAvailable: artifactsEnabled, setFileSystemForChat, setShowArtifactsDrawer } = useArtifacts();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const messagesRef = useRef<Message[]>([]);
@@ -70,7 +70,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
     };
 
     setFileSystemForChat(getFileSystem, setFileSystem);
-  }, [chat?.id, chat?.artifacts, artifactsEnabled, setFileSystemForChat, updateChat]);
+    
+    // Open artifacts drawer if the chat has files
+    if (chat.artifacts && Object.keys(chat.artifacts).length > 0) {
+      setShowArtifactsDrawer(true);
+    }
+  }, [chat?.id, chat?.artifacts, artifactsEnabled, setFileSystemForChat, updateChat, setShowArtifactsDrawer]);
 
   const createChat = useCallback(() => {
     const newChat = createChatHook();
