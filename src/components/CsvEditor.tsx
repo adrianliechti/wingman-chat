@@ -89,8 +89,8 @@ export function CsvEditor({ content, viewMode = 'table' }: CsvEditorProps) {
   const rows = parsedData.slice(1);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden relative">
-      <div className="flex-1 overflow-auto">
+    <div className="h-full flex flex-col overflow-hidden relative">
+      <div className="flex-1 overflow-auto min-h-0">
         {viewMode === 'code' ? (
           <div className="p-4">
             <pre className="text-gray-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto font-mono">

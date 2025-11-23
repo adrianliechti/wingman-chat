@@ -137,8 +137,8 @@ function MermaidPreview({ content }: { content: string }) {
 
 const NonMemoizedMermaidEditor = ({ content, viewMode = 'preview' }: MermaidEditorProps) => {
   return (
-    <div className="flex-1 flex flex-col overflow-hidden relative">
-      <div className="flex-1 overflow-auto">
+    <div className="h-full flex flex-col overflow-hidden relative">
+      <div className="flex-1 overflow-auto min-h-0">
         {viewMode === 'preview' ? (
           <MermaidPreview content={content} />
         ) : (
