@@ -15,9 +15,9 @@ import { FileIcon } from './FileIcon';
 import { getFileName } from '../lib/utils';
 
 export function ArtifactsDrawer() {
-  const { 
+  const {
     fs,
-    activeFile, 
+    activeFile,
     openFile,
     version,
     showFileBrowser,
@@ -28,18 +28,30 @@ export function ArtifactsDrawer() {
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Get files - memoized to prevent unnecessary recalculation
+  // Get files - memoized to prevent unnecessary recalculation
   // version is required to trigger updates when filesystem changes (fs instance is stable)
   const files = useMemo(() => {
     return fs ? fs.listFiles().sort((a, b) => a.path.localeCompare(b.path)) : [];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fs, version]);
 
+  // Automatically open the file if there's only one file
+  // and show the browser if there are multiple files
+  useEffect(() => {
+    if (activeFile) return;
+
+    if (files.length === 1) {
+      openFile(files[0].path);
+    } else if (files.length > 1 && !showFileBrowser) {
+      toggleFileBrowser();
+    }
+  }, [files, activeFile, openFile, showFileBrowser, toggleFileBrowser]);
+
   // Drag and drop handlers
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    
+
     // Clear any pending timeout
     if (dragTimeoutRef.current) {
       clearTimeout(dragTimeoutRef.current);
@@ -47,18 +59,18 @@ export function ArtifactsDrawer() {
     }
 
     const files = Array.from(e.dataTransfer.files);
-    
+
     for (const file of files) {
       try {
         const path = `/${file.name}`;
-        
+
         // Read the file content as text
         const content = await file.text();
-        
+
         // Create the file with string content
         if (fs) {
           fs.createFile(path, content, file.type);
-          
+
           // Open the file in a tab
           openFile(path);
         }
@@ -70,16 +82,16 @@ export function ArtifactsDrawer() {
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    
+
     if (!isDragOver) {
       setIsDragOver(true);
     }
-    
+
     // Clear any existing timeout and set a new one
     if (dragTimeoutRef.current) {
       clearTimeout(dragTimeoutRef.current);
     }
-    
+
     // Reset drag state after a short delay if no more drag events
     dragTimeoutRef.current = setTimeout(() => {
       setIsDragOver(false);
@@ -106,8 +118,8 @@ export function ArtifactsDrawer() {
             Empty
           </h3>
           <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
-            {files.length === 0 
-              ? "Files created by the AI will appear here" 
+            {files.length === 0
+              ? "Files created by the AI will appear here"
               : "Click a filename to select a file"}
           </p>
         </div>
@@ -136,8 +148,8 @@ export function ArtifactsDrawer() {
         return (
           <CodeEditor
             key={`${activeFile}-${version}`}
-            content={file.content} 
-            language={artifactLanguage(file.path)} 
+            content={file.content}
+            language={artifactLanguage(file.path)}
           />
         );
       case 'text':
@@ -154,7 +166,7 @@ export function ArtifactsDrawer() {
   };
 
   return (
-    <div 
+    <div
       className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-neutral-50 dark:bg-neutral-950"
       onDragOver={handleDragOver}
       onDrop={handleDrop}
@@ -173,7 +185,7 @@ export function ArtifactsDrawer() {
           </div>
         </div>
       )}
-      
+
       {/* Main Content Area with Right Sidebar and Bottom Bar */}
       <div className="flex-1 flex overflow-hidden">
         {/* Main editor and bottom bar container */}
@@ -209,7 +221,7 @@ export function ArtifactsDrawer() {
                   {viewMode === 'preview' ? <Code size={16} /> : <Eye size={16} />}
                 </Button>
               )}
-              
+
               {/* File browser toggle */}
               {files.length > 0 && (
                 <Button
@@ -225,9 +237,8 @@ export function ArtifactsDrawer() {
         </div>
 
         {/* Right Side Panel - File Browser (full height) */}
-        <div className={`transition-all duration-500 ease-in-out relative ${
-          showFileBrowser ? 'w-64 opacity-100' : 'w-0 opacity-0'
-        } shrink-0 overflow-hidden`}>
+        <div className={`transition-all duration-500 ease-in-out relative ${showFileBrowser ? 'w-64 opacity-100' : 'w-0 opacity-0'
+          } shrink-0 overflow-hidden`}>
           <div className="absolute inset-y-0 left-0 w-px bg-black/10 dark:bg-white/10"></div>
           {fs && (
             <div className={`h-full transition-opacity duration-500 ${showFileBrowser ? 'opacity-100' : 'opacity-0'}`}>
