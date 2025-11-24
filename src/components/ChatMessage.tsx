@@ -119,43 +119,39 @@ type ElicitationPromptProps = {
 
 function ElicitationPrompt({ toolName, message, onResolve }: ElicitationPromptProps) {
   return (
-    <div className="flex justify-start mb-2">
-      <div className="flex-1 py-1 max-w-full">
-        <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
-          <div className="flex items-start gap-3">
-            <ShieldQuestion className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
-                  {getToolDisplayName(toolName)} requires approval
-                </span>
-              </div>
-              <p className="text-sm text-amber-800 dark:text-amber-200 mb-3">
-                {message}
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => onResolve({ action: 'accept' })}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-green-600 hover:bg-green-700 text-white transition-colors cursor-pointer"
-                >
-                  <Check className="w-3 h-3" />
-                  Approve
-                </button>
-                <button
-                  onClick={() => onResolve({ action: 'decline' })}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer"
-                >
-                  <X className="w-3 h-3" />
-                  Deny
-                </button>
-                <button
-                  onClick={() => onResolve({ action: 'cancel' })}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-700 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-200 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
+    <div className="rounded-lg overflow-hidden max-w-full">
+      <div className="flex items-start gap-2 min-w-0">
+        <ShieldQuestion className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+              {getToolDisplayName(toolName)}
+            </span>
+            <span className="text-xs text-neutral-400 dark:text-neutral-500">
+              {message}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              onClick={() => onResolve({ action: 'accept' })}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-300 transition-colors cursor-pointer"
+            >
+              <Check className="w-3 h-3" />
+              Approve
+            </button>
+            <button
+              onClick={() => onResolve({ action: 'decline' })}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-300 transition-colors cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+              Deny
+            </button>
+            <button
+              onClick={() => onResolve({ action: 'cancel' })}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       </div>

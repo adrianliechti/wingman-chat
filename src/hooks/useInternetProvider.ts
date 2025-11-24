@@ -38,7 +38,7 @@ export function useInternetProvider(): ToolProvider | null {
           
           if (context?.elicit) {
             const result = await context.elicit({
-              message: `I need to search the web with the query: "${query}"\n\nThis will send your search query to the internet. Is it okay to proceed?`
+              message: `Search the web for ${query}`
             });
 
             if (result.action !== "accept") {
@@ -77,7 +77,7 @@ export function useInternetProvider(): ToolProvider | null {
           
           if (context?.elicit) {
             const result = await context.elicit({
-              message: `I need to scrape content from: ${url}\n\nThis will fetch and extract text content from the provided URL. Is it okay to proceed?`
+              message: `Scrape content from ${url}`
             });
 
             if (result.action !== "accept") {
