@@ -50,8 +50,17 @@ export type Tool = {
     function: (args: Record<string, unknown>, context?: ToolContext) => Promise<string>;
 }
 
+export type Elicitation = {
+    message: string;
+};
+
+export type ElicitationResult = {
+    action: "accept" | "decline" | "cancel";
+};
+
 export interface ToolContext {
     attachments?(): Attachment[];
+    elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
 }
 
 export type ToolCall = {
