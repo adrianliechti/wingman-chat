@@ -86,15 +86,21 @@ export function useInternetProvider(): ToolProvider | null {
       return null;
     }
 
+    const elicitation = config.internet.elicitation || false;
+    
+    const instructions = elicitation 
+      ? `${searchInstructionsText}\n\n### User Confirmation Required\n\n**Before using any web search or scraping tools**, you MUST ask the user for explicit confirmation to transfer data to the internet. Explain what information will be sent (e.g., the search query or URL) and wait for their approval before proceeding with the tool invocation.`
+      : searchInstructionsText;
+
     return {
       id: "internet",
       name: "Internet",
       description: "Search and fetch websites",
       icon: Globe,
-      instructions: searchInstructionsText,
+      instructions,
       tools: searchTools(),
     };
-  }, [isAvailable, searchTools]);
+  }, [isAvailable, searchTools, config.internet.elicitation]);
 
   return provider;
 }

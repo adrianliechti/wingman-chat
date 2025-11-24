@@ -93,6 +93,8 @@ interface bridgeConfig {
 
 interface internetConfig {
   enabled: boolean;
+
+  elicitation?: boolean;
 }
 
 interface interpreterConfig {

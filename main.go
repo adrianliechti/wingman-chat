@@ -35,6 +35,7 @@ func main() {
 	vision := os.Getenv("VISION_ENABLED") == "true"
 
 	internet := os.Getenv("INTERNET_ENABLED") == "true"
+	internetElicitation := os.Getenv("INTERNET_ELICITATION") == "true"
 
 	renderer := os.Getenv("RENDERER_ENABLED") == "true"
 	rendererModel := os.Getenv("RENDERER_MODEL")
@@ -92,6 +93,8 @@ func main() {
 
 		type internetType struct {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+
+			Elicitation bool `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
 		}
 
 		type rendererType struct {
@@ -104,7 +107,7 @@ func main() {
 		}
 
 		type bridgeType struct {
-			Enabled bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`			
+			Enabled bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 			URL     string `json:"url,omitempty" yaml:"url,omitempty"`
 		}
 
@@ -212,6 +215,8 @@ func main() {
 		if internet {
 			config.Internet = &internetType{
 				Enabled: true,
+
+				Elicitation: internetElicitation,
 			}
 		}
 
@@ -230,7 +235,7 @@ func main() {
 
 		if bridgeURL != "" {
 			config.Bridge = &bridgeType{
-				Enabled: true,				
+				Enabled: true,
 				URL:     bridgeURL,
 			}
 		}
