@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { Role } from "../types/chat";
-import type { Message, ToolProvider, Model, ToolContext } from '../types/chat';
+import type { Message, ToolProvider, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation } from '../types/chat';
 import { ProviderState } from '../types/chat';
 import type { FileSystem } from "../types/file";
 import { useModels } from "../hooks/useModels";
@@ -26,6 +26,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { isAvailable: artifactsEnabled, setFileSystemForChat, setShowArtifactsDrawer } = useArtifacts();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
+  const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
   const messagesRef = useRef<Message[]>([]);
 
   const chat = chats.find(c => c.id === chatId) ?? null;
@@ -153,10 +154,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
 
-      // Create tool context with current message attachments
-      const toolContext: ToolContext = {
-        attachments: () => message.attachments || []
-      };
+      // Create tool context with current message attachments and elicitation support
+      const createToolContext = (currentToolCall: { id: string; name: string }): ToolContext => ({
+        attachments: () => message.attachments || [],
+        elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
+          return new Promise((resolve) => {
+            setPendingElicitation({
+              toolCallId: currentToolCall.id,
+              toolName: currentToolCall.name,
+              elicitation,
+              resolve,
+            });
+          });
+        }
+      });
 
       try {
         // Get tools and instructions when needed
@@ -223,7 +234,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
             try {
               const args = JSON.parse(toolCall.arguments || "{}");
+              const toolContext = createToolContext(toolCall);
               let content = await tool.function(args, toolContext);
+              
+              // Clear pending elicitation after tool completes
+              setPendingElicitation(null);
 
               const data = content;
               const attachments = parseResource(data);
@@ -332,6 +347,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
       }
     }, [getOrCreateChat, chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions]);
 
+  const resolveElicitation = useCallback((result: ElicitationResult) => {
+    if (pendingElicitation) {
+      pendingElicitation.resolve(result);
+      setPendingElicitation(null);
+    }
+  }, [pendingElicitation]);
+
   const value: ChatContextType = {
     // Models
     models,
@@ -355,6 +377,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     isResponding,
     isInitializing,
+
+    // Elicitation
+    pendingElicitation,
+    resolveElicitation,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

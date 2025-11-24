@@ -3,12 +3,13 @@ import { CopyButton } from './CopyButton';
 import { PlayButton } from './PlayButton';
 import { SingleAttachmentDisplay, MultipleAttachmentsDisplay } from './AttachmentRenderer';
 import { CodeRenderer } from './CodeRenderer';
-import { Wrench, Loader2, AlertCircle } from "lucide-react";
+import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X } from "lucide-react";
 import { useState } from 'react';
 
 import { Role } from "../types/chat";
-import type { Message } from "../types/chat";
+import type { Message, ElicitationResult } from "../types/chat";
 import { getConfig } from "../config";
+import { useChat } from "../hooks/useChat";
 
 // Helper function to convert tool names to user-friendly display names
 function getToolDisplayName(toolName: string): string {
@@ -109,8 +110,62 @@ function ErrorMessage({ title, message }: { title: string; message: string }) {
   );
 }
 
+// Elicitation prompt component for tool approval/denial
+type ElicitationPromptProps = {
+  toolName: string;
+  message: string;
+  onResolve: (result: ElicitationResult) => void;
+};
+
+function ElicitationPrompt({ toolName, message, onResolve }: ElicitationPromptProps) {
+  return (
+    <div className="flex justify-start mb-2">
+      <div className="flex-1 py-1 max-w-full">
+        <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+          <div className="flex items-start gap-3">
+            <ShieldQuestion className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                  {getToolDisplayName(toolName)} requires approval
+                </span>
+              </div>
+              <p className="text-sm text-amber-800 dark:text-amber-200 mb-3">
+                {message}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => onResolve({ action: 'accept' })}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-green-600 hover:bg-green-700 text-white transition-colors cursor-pointer"
+                >
+                  <Check className="w-3 h-3" />
+                  Approve
+                </button>
+                <button
+                  onClick={() => onResolve({ action: 'decline' })}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-red-600 hover:bg-red-700 text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                  Deny
+                </button>
+                <button
+                  onClick={() => onResolve({ action: 'cancel' })}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-700 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-200 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ChatMessage({ message, isResponding, ...props }: ChatMessageProps) {
   const [toolResultExpanded, setToolResultExpanded] = useState(false);
+  const { pendingElicitation, resolveElicitation } = useChat();
   
   const isUser = message.role === Role.User;
   const isAssistant = message.role === Role.Assistant;
@@ -231,6 +286,20 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
             <div className="space-y-1">
               {message.toolCalls?.map((toolCall, index) => {
                 const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
+                const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === toolCall.id;
+                
+                // Show elicitation prompt if this tool call has a pending elicitation
+                if (isPendingElicitation) {
+                  return (
+                    <ElicitationPrompt
+                      key={toolCall.id || index}
+                      toolName={pendingElicitation.toolName}
+                      message={pendingElicitation.elicitation.message}
+                      onResolve={resolveElicitation}
+                    />
+                  );
+                }
+                
                 return (
                   <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
                     <div className="flex items-center gap-2 min-w-0">
