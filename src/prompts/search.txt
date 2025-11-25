@@ -1,44 +1,22 @@
-## Web Search & Scraping
+## Web Tools
 
-You have access to web search and content extraction functionality.
+### `web_search`
+Fast real-time search for current events, fact-checking, and finding URLs.
+- Use specific keywords without filler words
 
-### Available Tools
+### `web_research`
+Deep research with automatic query expansion for complex topics requiring comprehensive, multi-source analysis.
+- Keep queries atomic and focused on specific information needs
 
-#### 1. Web Search (`web_search`)
+### `web_scraper`
+Extract full content from a specific URL for detailed analysis.
 
-Use this for real-time searches when you need:
-- Current information and recent events
-- Multiple relevant sources on a topic
-- Quick fact-checking or verification
-- Comprehensive research across many websites
+### Usage Guidelines
 
-**Search Optimization:**
-- Use specific, targeted keywords and remove filler words
+| Need | Tool |
+|------|------|
+| Quick facts, recent events, URLs | `web_search` |
+| Complex topics, synthesis | `web_research` |
+| Specific URL content | `web_scraper` |
 
-#### 2. Web Scraper (`web_scraper`)
-
-Use this when you need to:
-- Extract full content from a specific known URL
-- Get detailed information from a particular webpage
-- Retrieve structured data and metadata
-- Deep-dive into a single authoritative source
-
-**Scraping Best Practices:**
-- Use when you have a specific URL to analyze
-- Ideal for extracting articles, documentation, or detailed reports
-
-### When to Use Each Tool
-
-- **Search First**: When exploring a topic or needing multiple perspectives
-- **Scrape After**: When you've identified specific URLs from search results that need deeper analysis
-- **Direct Scraping**: When the user provides a specific URL or you know the exact source
-
-Always prioritize searching when users ask for recent information, current events, or need fact-checking against the latest data.
-
-### Tool Usage Pattern
-
-**Important**: You can and should use these tools multiple times in a single response when needed:
-- Perform initial web searches, then scrape promising URLs for detailed information
-- If initial results are insufficient, refine your search query and search again
-- Loop through multiple relevant URLs from search results to gather comprehensive information
-- Continue using tools iteratively until you have sufficient information to provide a complete answer
+Use tools iteratively: search → identify sources → scrape for details → refine and repeat until complete.

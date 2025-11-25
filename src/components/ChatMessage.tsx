@@ -25,25 +25,26 @@ function getToolCallPreview(_toolName: string, arguments_: string): string | nul
     const args = JSON.parse(arguments_);
     
     // Common parameter names to look for (in order of preference)
+    // Prioritize short, descriptive fields over potentially long content
     const commonParams = [
-      // Search & Query
-      'query', 'q', 'search', 'search_query', 'keyword', 'term',
-      // Web & Network
-      'url', 'link', 'uri', 'address', 'endpoint',
-      // Files & Paths
-      'file', 'filename', 'path', 'filepath', 'directory', 'folder',
-      // Content & Data
-      'text', 'content', 'message', 'body', 'data', 'value',
-      // AI & Generation
-      'prompt', 'input', 'question', 'instruction',
-      // Location
-      'location', 'city', 'place', 'address',
-      // Communication
-      'email', 'to', 'recipient', 'subject',
-      // Identification
-      'id', 'name', 'title', 'label',
-      // Code & Commands
-      'command', 'expression', 'statement'
+      // Identification (short & descriptive)
+      'title', 'name', 'label',
+      // Location (usually short)
+      'city', 'location', 'place',
+      // Web & Network (usually concise)
+      'url', 'link', 'uri', 'endpoint', 'address',
+      // Files & Paths (usually concise)
+      'filename', 'file', 'path', 'filepath', 'folder', 'directory',
+      // Communication (usually short)
+      'subject', 'email', 'recipient', 'to',
+      // Commands (usually short)
+      'command',
+      // Search & Query (can vary in length, but often short)
+      'query', 'search', 'keyword', 'q', 'search_query', 'term',
+      // Short inputs
+      'question', 'input', 'value',
+      // Potentially long content (last resort)
+      'message', 'prompt', 'instruction', 'text', 'content', 'body', 'data'
     ];
     
     // Find the first matching parameter
@@ -269,8 +270,13 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
       return null;
     }
     
-    // Only show loading indicators for the last message when actively responding
-    if (!isResponding || !props.isLast) {
+    // Check if there's a pending elicitation for any of the tool calls
+    const hasPendingElicitation = hasToolCalls && message.toolCalls?.some(
+      toolCall => pendingElicitation && pendingElicitation.toolCallId === toolCall.id
+    );
+    
+    // Show loading indicators for the last message when actively responding OR when there's a pending elicitation
+    if (!props.isLast || (!isResponding && !hasPendingElicitation)) {
       return null;
     }
     
@@ -363,6 +369,25 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
             <div className="mt-3 space-y-1">
               {message.toolCalls?.map((toolCall, index) => {
                 const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
+                const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === toolCall.id;
+                
+                // Show elicitation prompt if this tool call has a pending elicitation
+                if (isPendingElicitation) {
+                  return (
+                    <ElicitationPrompt
+                      key={toolCall.id || index}
+                      toolName={pendingElicitation.toolName}
+                      message={pendingElicitation.elicitation.message}
+                      onResolve={resolveElicitation}
+                    />
+                  );
+                }
+                
+                // Only show loading indicator if actively responding
+                if (!isResponding) {
+                  return null;
+                }
+                
                 return (
                   <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
                     <div className="flex items-center gap-2 min-w-0">
