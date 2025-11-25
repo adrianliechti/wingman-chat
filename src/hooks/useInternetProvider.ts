@@ -36,7 +36,7 @@ export function useInternetProvider(): ToolProvider | null {
         function: async (args: Record<string, unknown>, context) => {
           const { query } = args;
           
-          if (context?.elicit) {
+          if (config.internet.elicitation && context?.elicit) {
             const result = await context.elicit({
               message: `Search the web for ${query}`
             });
@@ -75,7 +75,7 @@ export function useInternetProvider(): ToolProvider | null {
         function: async (args: Record<string, unknown>, context) => {
           const { url } = args;
           
-          if (context?.elicit) {
+          if (config.internet.elicitation && context?.elicit) {
             const result = await context.elicit({
               message: `Scrape content from ${url}`
             });
@@ -99,7 +99,7 @@ export function useInternetProvider(): ToolProvider | null {
         }
       }
     ];
-  }, [client]);
+  }, [client, config.internet.elicitation]);
 
   const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {
