@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Languages, PanelLeftOpen, PanelRightOpen, Workflow } from "lucide-react";
+import { MessageCircle, Languages, PanelLeftOpen, PanelRightOpen, Workflow, Disc3 } from "lucide-react";
 import { Button } from "@headlessui/react";
 import { ChatPage } from "./pages/ChatPage";
 import { TranslatePage } from "./pages/TranslatePage";
 import { WorkflowPage } from "./pages/WorkflowPage";
+import { RecorderPage } from "./pages/RecorderPage";
 import { getConfig } from "./config";
 import { SidebarProvider } from "./contexts/SidebarProvider";
 import { useSidebar } from "./hooks/useSidebar";
@@ -22,7 +23,7 @@ import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
 import { ToolsProvider } from "./contexts/ToolsProvider";
 
-type Page = "chat" | "flow" | "translate";
+type Page = "chat" | "flow" | "translate" | "recorder";
 
 function AppContent() {
   const config = getConfig();
@@ -79,6 +80,8 @@ function AppContent() {
           return config.translator.enabled ? 'translate' : 'chat';
         case '#flow':
           return config.workflow ? 'flow' : 'chat';
+        case '#recorder':
+          return 'recorder';
         default:
           return 'chat';
       }
@@ -142,6 +145,7 @@ function AppContent() {
     { key: "chat" as const, label: "Chat", icon: <MessageCircle size={20} /> },
     { key: "flow" as const, label: "Flow", icon: <Workflow size={20} /> },
     { key: "translate" as const, label: "Translate", icon: <Languages size={20} /> },
+    { key: "recorder" as const, label: "Recorder", icon: <Disc3 size={20} /> },
   ].filter(page => {
     // Always show chat
     if (page.key === "chat") return true;
@@ -149,6 +153,8 @@ function AppContent() {
     if (page.key === "flow") return config.workflow;
     // Show translate only if translator is enabled
     if (page.key === "translate") return config.translator.enabled;
+    // Always show recorder
+    if (page.key === "recorder") return true;
     return true;
   });
 
@@ -360,6 +366,7 @@ function AppContent() {
             {currentPage === "chat" && <ChatPage />}
             {currentPage === "flow" && <WorkflowPage />}
             {currentPage === "translate" && <TranslatePage />}
+            {currentPage === "recorder" && <RecorderPage />}
           </div>
         </div>
       </div>

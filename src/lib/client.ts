@@ -650,8 +650,24 @@ export class Client {
   async transcribe(model: string, blob: Blob): Promise<string> {
     const data = new FormData();
     
-    // Get file extension using mime package
-    const extension = mime.getExtension(blob.type) || 'audio';
+    // Get file extension - handle common audio types explicitly
+    let extension = 'audio';
+    if (blob.type.includes('webm')) {
+      extension = 'webm';
+    } else if (blob.type.includes('mp3') || blob.type.includes('mpeg')) {
+      extension = 'mp3';
+    } else if (blob.type.includes('wav')) {
+      extension = 'wav';
+    } else if (blob.type.includes('ogg')) {
+      extension = 'ogg';
+    } else if (blob.type.includes('m4a') || blob.type.includes('mp4')) {
+      extension = 'm4a';
+    } else if (blob.type.includes('flac')) {
+      extension = 'flac';
+    } else {
+      extension = mime.getExtension(blob.type) || 'audio';
+    }
+    
     const filename = `audio_recording.${extension}`;
     
     data.append('file', blob, filename);
