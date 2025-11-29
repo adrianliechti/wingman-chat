@@ -44,11 +44,21 @@ function detectFormat(text: string): 'html' | 'markdown' | 'plain' {
     /\*\*.*\*\*/,           // Bold
     /\*.*\*/,               // Italic
     /\[.*\]\(.*\)/,         // Links
+    /!\[.*\]\(.*\)/,        // Images
     /^[-*+]\s/m,            // Unordered lists
     /^\d+\.\s/m,            // Ordered lists
     /^>\s/m,                // Blockquotes
     /```/,                  // Code blocks
     /`[^`]+`/,              // Inline code
+    /^\|.+\|$/m,            // Tables (lines with pipes)
+    /^\|[-:| ]+\|$/m,       // Table separator rows
+    /^[-*_]{3,}$/m,         // Horizontal rules
+    /~~.+~~/,               // Strikethrough
+    /^\s*[-*+] \[[ x]\]/m,  // Task lists
+    /\[\^[^\]]+\]/,         // Footnote references [^1]
+    /^\[\^[^\]]+\]:/m,      // Footnote definitions [^1]:
+    /^={3,}$/m,             // Setext heading (===)
+    /^-{3,}$/m,             // Setext heading (---) - also HR
   ];
   
   if (markdownPatterns.some(pattern => pattern.test(text))) {

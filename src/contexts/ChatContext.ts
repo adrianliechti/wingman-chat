@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { Chat, Message, Model, Tool } from "../types/chat";
+import type { Chat, Message, Model, Tool, PendingElicitation, ElicitationResult } from "../types/chat";
 
 export interface ChatContextType {
   // Models
@@ -24,6 +24,10 @@ export interface ChatContextType {
 
   // Tool providers state (from global ToolsContext)
   isInitializing: boolean | null; // null = no providers, true = initializing, false = all ready
+
+  // Elicitation state
+  pendingElicitation: PendingElicitation | null;
+  resolveElicitation: (result: ElicitationResult) => void;
 }
 
 export const ChatContext = createContext<ChatContextType | undefined>(undefined);
