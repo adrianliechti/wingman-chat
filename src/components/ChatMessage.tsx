@@ -3,12 +3,13 @@ import { CopyButton } from './CopyButton';
 import { PlayButton } from './PlayButton';
 import { SingleAttachmentDisplay, MultipleAttachmentsDisplay } from './AttachmentRenderer';
 import { CodeRenderer } from './CodeRenderer';
-import { Wrench, Loader2, AlertCircle } from "lucide-react";
+import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X } from "lucide-react";
 import { useState } from 'react';
 
 import { Role } from "../types/chat";
-import type { Message } from "../types/chat";
+import type { Message, ElicitationResult } from "../types/chat";
 import { getConfig } from "../config";
+import { useChat } from "../hooks/useChat";
 
 // Helper function to convert tool names to user-friendly display names
 function getToolDisplayName(toolName: string): string {
@@ -24,25 +25,26 @@ function getToolCallPreview(_toolName: string, arguments_: string): string | nul
     const args = JSON.parse(arguments_);
     
     // Common parameter names to look for (in order of preference)
+    // Prioritize short, descriptive fields over potentially long content
     const commonParams = [
-      // Search & Query
-      'query', 'q', 'search', 'search_query', 'keyword', 'term',
-      // Web & Network
-      'url', 'link', 'uri', 'address', 'endpoint',
-      // Files & Paths
-      'file', 'filename', 'path', 'filepath', 'directory', 'folder',
-      // Content & Data
-      'text', 'content', 'message', 'body', 'data', 'value',
-      // AI & Generation
-      'prompt', 'input', 'question', 'instruction',
-      // Location
-      'location', 'city', 'place', 'address',
-      // Communication
-      'email', 'to', 'recipient', 'subject',
-      // Identification
-      'id', 'name', 'title', 'label',
-      // Code & Commands
-      'command', 'expression', 'statement'
+      // Identification (short & descriptive)
+      'title', 'name', 'label',
+      // Location (usually short)
+      'city', 'location', 'place',
+      // Web & Network (usually concise)
+      'url', 'link', 'uri', 'endpoint', 'address',
+      // Files & Paths (usually concise)
+      'filename', 'file', 'path', 'filepath', 'folder', 'directory',
+      // Communication (usually short)
+      'subject', 'email', 'recipient', 'to',
+      // Commands (usually short)
+      'command',
+      // Search & Query (can vary in length, but often short)
+      'query', 'search', 'keyword', 'q', 'search_query', 'term',
+      // Short inputs
+      'question', 'input', 'value',
+      // Potentially long content (last resort)
+      'message', 'prompt', 'instruction', 'text', 'content', 'body', 'data'
     ];
     
     // Find the first matching parameter
@@ -109,8 +111,58 @@ function ErrorMessage({ title, message }: { title: string; message: string }) {
   );
 }
 
+// Elicitation prompt component for tool approval/denial
+type ElicitationPromptProps = {
+  toolName: string;
+  message: string;
+  onResolve: (result: ElicitationResult) => void;
+};
+
+function ElicitationPrompt({ toolName, message, onResolve }: ElicitationPromptProps) {
+  return (
+    <div className="rounded-lg overflow-hidden max-w-full">
+      <div className="flex items-start gap-2 min-w-0">
+        <ShieldQuestion className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <div className="mb-1">
+            <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+              {getToolDisplayName(toolName)}
+            </span>
+            <div className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
+              {message}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              onClick={() => onResolve({ action: 'accept' })}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-300 transition-colors cursor-pointer"
+            >
+              <Check className="w-3 h-3" />
+              Approve
+            </button>
+            <button
+              onClick={() => onResolve({ action: 'decline' })}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-300 transition-colors cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+              Deny
+            </button>
+            <button
+              onClick={() => onResolve({ action: 'cancel' })}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ChatMessage({ message, isResponding, ...props }: ChatMessageProps) {
   const [toolResultExpanded, setToolResultExpanded] = useState(false);
+  const { pendingElicitation, resolveElicitation } = useChat();
   
   const isUser = message.role === Role.User;
   const isAssistant = message.role === Role.Assistant;
@@ -218,8 +270,13 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
       return null;
     }
     
-    // Only show loading indicators for the last message when actively responding
-    if (!isResponding || !props.isLast) {
+    // Check if there's a pending elicitation for any of the tool calls
+    const hasPendingElicitation = hasToolCalls && message.toolCalls?.some(
+      toolCall => pendingElicitation && pendingElicitation.toolCallId === toolCall.id
+    );
+    
+    // Show loading indicators for the last message when actively responding OR when there's a pending elicitation
+    if (!props.isLast || (!isResponding && !hasPendingElicitation)) {
       return null;
     }
     
@@ -231,6 +288,20 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
             <div className="space-y-1">
               {message.toolCalls?.map((toolCall, index) => {
                 const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
+                const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === toolCall.id;
+                
+                // Show elicitation prompt if this tool call has a pending elicitation
+                if (isPendingElicitation) {
+                  return (
+                    <ElicitationPrompt
+                      key={toolCall.id || index}
+                      toolName={pendingElicitation.toolName}
+                      message={pendingElicitation.elicitation.message}
+                      onResolve={resolveElicitation}
+                    />
+                  );
+                }
+                
                 return (
                   <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
                     <div className="flex items-center gap-2 min-w-0">
@@ -298,6 +369,25 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
             <div className="mt-3 space-y-1">
               {message.toolCalls?.map((toolCall, index) => {
                 const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
+                const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === toolCall.id;
+                
+                // Show elicitation prompt if this tool call has a pending elicitation
+                if (isPendingElicitation) {
+                  return (
+                    <ElicitationPrompt
+                      key={toolCall.id || index}
+                      toolName={pendingElicitation.toolName}
+                      message={pendingElicitation.elicitation.message}
+                      onResolve={resolveElicitation}
+                    />
+                  );
+                }
+                
+                // Only show loading indicator if actively responding
+                if (!isResponding) {
+                  return null;
+                }
+                
                 return (
                   <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
                     <div className="flex items-center gap-2 min-w-0">

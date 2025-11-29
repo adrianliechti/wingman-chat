@@ -40,6 +40,9 @@ export function ChatPage() {
   const [shouldRenderRepositoryDrawer, setShouldRenderRepositoryDrawer] = useState(false);
   const [shouldRenderArtifactsDrawer, setShouldRenderArtifactsDrawer] = useState(false);
   
+  // Track if we're on mobile for drawer positioning
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  
   // Sidebar integration (now only controls visibility)
   const { setSidebarContent } = useSidebar();
   const { setRightActions } = useNavigation();
@@ -50,6 +53,15 @@ export function ChatPage() {
 
   // Ref to track chat input height for dynamic padding
   const [chatInputHeight, setChatInputHeight] = useState(112); // Default to pb-28 (7rem = 112px)
+
+  // Track window resize for mobile detection
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Set up navigation actions
   useEffect(() => {
@@ -304,37 +316,23 @@ export function ChatPage() {
 
       </div>
 
-      {/* Backdrop overlay for repository drawer on mobile */}
-      {shouldRenderRepositoryDrawer && (
-        <div
-          className={`fixed inset-0 bg-black/20 z-30 transition-opacity duration-300 md:hidden ${
-            isRepositoryDrawerAnimating ? 'opacity-100' : 'opacity-0'
-          }`}
-          onClick={() => toggleRepositoryDrawer()}
-        />
-      )}
-
-      {/* Backdrop overlay for artifacts drawer on mobile */}
-      {shouldRenderArtifactsDrawer && artifactsAvailable && (
-        <div
-          className={`fixed inset-0 bg-black/20 z-30 transition-opacity duration-300 md:hidden ${
-            isArtifactsDrawerAnimating ? 'opacity-100' : 'opacity-0'
-          }`}
-          onClick={() => toggleArtifactsDrawer()}
-        />
-      )}
-
       {/* Artifacts drawer - right side */}
       {shouldRenderArtifactsDrawer && (
-        <div className={`w-full top-18 bottom-4 transition-all duration-300 ease-out transform ${
-          isArtifactsDrawerAnimating 
-            ? 'translate-x-0 opacity-100' 
-            : 'translate-x-full opacity-0'
-        } ${ 
-          // On mobile: full width overlay from right edge, on desktop: positioned with right edge and 60% width
-          'fixed right-0 md:w-[60vw] max-w-none'
-        } ${shouldRenderRepositoryDrawer ? 'z-30' : 'z-40'}`}>
-          <div className="h-full border-l border-black/10 dark:border-white/10">
+        <div 
+          className={`w-full transition-all duration-300 ease-out transform ${
+            isArtifactsDrawerAnimating 
+              ? 'translate-x-0 opacity-100' 
+              : 'translate-x-full opacity-0'
+          } ${ 
+            // On mobile: full width overlay from right edge, on desktop: positioned with right edge and 60% width
+            'fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-[60vw] max-w-none'
+          } ${shouldRenderRepositoryDrawer ? 'z-20' : 'z-25'}`}
+          style={{ 
+            top: isMobile ? '48px' : undefined,
+            bottom: isMobile ? `${chatInputHeight - 16}px` : undefined
+          }}
+        >
+          <div className="h-full md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm overflow-hidden">
             <ArtifactsDrawer />
           </div>
         </div>
@@ -342,17 +340,20 @@ export function ChatPage() {
 
       {/* Repository drawer - right side - renders over artifacts when both are visible */}
       {repositoryAvailable && shouldRenderRepositoryDrawer && (
-        <div className={`w-80 top-18 bottom-4 z-40 transition-all duration-150 ease-linear transform ${
-          isRepositoryDrawerAnimating 
-            ? 'translate-x-0 opacity-100' 
-            : 'translate-x-full opacity-0'
-        } ${ 
-          // On mobile: full width overlay from right edge
-          // On desktop: if artifacts visible, position over it with right-3, otherwise normal position
-          showArtifactsDrawer 
-            ? 'fixed right-0 md:right-3 md:w-80 w-full max-w-sm'
-            : 'fixed right-0 md:right-3 md:w-80 w-full max-w-sm'
-        }`}>
+        <div 
+          className={`w-full z-25 transition-all duration-150 ease-linear transform ${
+            isRepositoryDrawerAnimating 
+              ? 'translate-x-0 opacity-100' 
+              : 'translate-x-full opacity-0'
+          } ${ 
+            // On mobile: full width overlay from right edge, on desktop: 20rem width
+            'fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-80'
+          }`}
+          style={{ 
+            top: isMobile ? '48px' : undefined,
+            bottom: isMobile ? `${chatInputHeight - 16}px` : undefined
+          }}
+        >
           <RepositoryDrawer />
         </div>
       )}

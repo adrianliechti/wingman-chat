@@ -5,7 +5,7 @@ import type { Tool, ToolContext, ToolProvider } from "../types/chat";
 import { AttachmentType } from "../types/chat";
 import { readAsDataURL } from "../lib/utils";
 import type { Resource } from "../lib/resource";
-import rendererInstructionsText from '../prompts/image-generation.txt?raw';
+import rendererInstructionsText from '../prompts/renderer.txt?raw';
 
 export function useRendererProvider(): ToolProvider | null {
   const config = getConfig();
@@ -24,14 +24,63 @@ export function useRendererProvider(): ToolProvider | null {
   const rendererTools = useCallback((): Tool[] => {
     return [
       {
-        name: "generate_image",
-        description: "Generate or edit an image based on a text description. Can create new images from text prompts or edit existing images attached to the chat.",
+        name: "create_image",
+        description: "Create a new image based on a text description.",
         parameters: {
           type: "object",
           properties: {
             prompt: {
               type: "string",
-              description: "A detailed description of the image to generate or edit. For new images, describe the desired content, style, composition, and colors. For editing existing images, describe the changes or modifications you want to make."
+              description: "A detailed description of the image to generate. Describe the desired content, style, composition, and colors."
+            }
+          },
+          required: ["prompt"]
+        },
+        function: async (args: Record<string, unknown>) => {
+          const { prompt } = args;
+
+          try {
+            const imageBlob = await client.generateImage(
+              config.renderer?.model || "",
+              prompt as string,
+              []
+            );
+
+            // Convert the image to a data URL for storage in attachments
+            const fullDataUrl = await readAsDataURL(imageBlob);
+            const imageDataUrl = fullDataUrl.split(',')[1];
+
+            const imageName = `${Date.now()}.png`;
+
+            // Return ResourceResult format
+            const resourceResult: Resource = {
+              type: "resource",
+              resource: {
+                uri: `file:///image/` + imageName,
+                name: imageName,
+                mimeType: imageBlob.type,
+                blob: imageDataUrl
+              }
+            };
+
+            return JSON.stringify(resourceResult);
+          } catch (error) {
+            return JSON.stringify({
+              success: false,
+              error: `Image creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+            });
+          }
+        }
+      },
+      {
+        name: "edit_image",
+        description: "Edit an existing image based on a text description. Requires image attachments in the chat.",
+        parameters: {
+          type: "object",
+          properties: {
+            prompt: {
+              type: "string",
+              description: "A description of the changes or modifications you want to make to the existing image."
             }
           },
           required: ["prompt"]
@@ -55,6 +104,13 @@ export function useRendererProvider(): ToolProvider | null {
                 // Failed to convert attachment
               }
             }
+          }
+
+          if (images.length === 0) {
+            return JSON.stringify({
+              success: false,
+              error: 'No image attachments found. Please attach an image to edit.'
+            });
           }
 
           try {
@@ -85,7 +141,7 @@ export function useRendererProvider(): ToolProvider | null {
           } catch (error) {
             return JSON.stringify({
               success: false,
-              error: `Image generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+              error: `Image editing failed: ${error instanceof Error ? error.message : 'Unknown error'}`
             });
           }
         }
@@ -101,7 +157,7 @@ export function useRendererProvider(): ToolProvider | null {
     return {
       id: "renderer",
       name: "Renderer",
-      description: "Generate or edit images",
+      description: "Create and edit images",
       icon: Image,
       instructions: rendererInstructionsText,
       tools: rendererTools(),

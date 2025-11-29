@@ -751,12 +751,12 @@ export function RecorderPage() {
   return (
     <div className="h-full w-full flex flex-col overflow-hidden relative">
       <main className="flex-1 flex flex-col overflow-hidden relative">
-        <div className="w-full grow overflow-hidden flex p-4 pt-20">
+        <div className="w-full grow overflow-y-auto overflow-x-hidden flex p-4 pt-20">
           <div className="w-full h-full max-w-[1400px] mx-auto">
-            <div className="relative h-full w-full overflow-hidden">
-              <div className="h-full flex flex-col md:flex-row min-h-0">
+            <div className="relative h-full w-full md:overflow-hidden">
+              <div className="h-full flex flex-col md:flex-row md:min-h-0">
                 {/* Recorder section */}
-                <div className="flex-1 flex items-center justify-center select-none">
+                <div className="shrink-0 md:flex-1 flex items-center justify-center select-none py-4 md:py-0">
                   <div className="relative transform scale-[0.55] sm:scale-[0.65] md:scale-75 lg:scale-90 xl:scale-100">
         {/* Shadow layer - static, behind the device */}
         <div 
@@ -1147,12 +1147,12 @@ export function RecorderPage() {
                 {(transcriptionText || isTranscribing) && (
                   <>
                     {/* Divider */}
-                    <div className="relative flex items-center justify-center py-2 md:py-0 md:w-8 shrink-0 self-center h-[440px]">
+                    <div className="relative flex items-center justify-center py-2 md:py-0 md:w-8 shrink-0 md:self-center md:h-[440px]">
                       <div className="absolute md:inset-y-0 md:w-px md:left-1/2 md:-translate-x-px inset-x-0 h-px md:h-full bg-black/10 dark:bg-white/10"></div>
                     </div>
 
                     {/* Transcription panel */}
-                    <div className="flex-1 flex flex-col relative min-w-0 overflow-hidden self-center h-[440px]">
+                    <div className="flex-1 flex flex-col relative min-w-0 min-h-[200px] md:min-h-0 overflow-hidden md:self-center md:h-[440px]">
                       {/* Action buttons */}
                       <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
                         {transcriptionText && (
