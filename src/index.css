@@ -135,7 +135,7 @@ button[data-headlessui-state]:disabled,
 }
 
 .sidebar-item-base {
-  @apply p-1.5 sm:p-2 hover:text-neutral-600 dark:hover:text-neutral-300 rounded cursor-pointer transition-all duration-200;
+  @apply py-1.5 px-2 hover:text-neutral-600 dark:hover:text-neutral-300 rounded cursor-pointer transition-all duration-200;
 }
 
 .sidebar-item-hidden {
@@ -151,7 +151,7 @@ button[data-headlessui-state]:disabled,
 }
 
 .sidebar-item-selected {
-  @apply p-1.5 sm:p-2 text-neutral-900 dark:text-neutral-100 focus:outline-none;
+  @apply py-1.5 px-2 text-neutral-900 dark:text-neutral-100 focus:outline-none;
 }
 
 .chat-bubble {

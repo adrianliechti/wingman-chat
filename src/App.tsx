@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Languages, PanelLeftOpen, PanelRightOpen, Workflow, Disc3, ChevronDown, Settings } from "lucide-react";
+import { MessageCircle, Languages, PanelLeftOpen, Workflow, Disc3, ChevronDown, Settings } from "lucide-react";
 import { Button } from "@headlessui/react";
 import { ChatPage } from "./pages/ChatPage";
 import { TranslatePage } from "./pages/TranslatePage";
@@ -183,22 +183,17 @@ function AppContent() {
         </div>
       )}
 
-      {/* Backdrop overlay for sidebar */}
-      {sidebarContent && showSidebar && (
-        <div
-          className={`fixed inset-0 bg-black/5 z-40 transition-opacity duration-300 opacity-100`}
-          onClick={() => setShowSidebar(false)}
-        />
-      )}
-
-      {/* Generic sidebar that slides over content with glass effect */}
+      {/* Generic sidebar that pushes content */}
       {sidebarContent && (
         <aside
           className={`
-            h-full bg-white/20 dark:bg-black/15 backdrop-blur-lg shadow-2xl
-            fixed left-0 top-0 z-50 w-80
-            transform transition-transform duration-500 ease-in-out
-            ${showSidebar ? 'translate-x-0' : '-translate-x-full'}
+            fixed z-50
+            transition-transform duration-500 ease-in-out
+            ${showSidebar ? 'translate-x-0' : '-translate-x-[calc(100%+0.5rem)]'}
+            left-0 top-0 bottom-0 right-0 w-full h-full
+            md:w-56 md:left-2 md:top-2 md:bottom-2 md:right-auto md:h-auto
+            md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm
+            overflow-hidden
           `}
         >
           {sidebarContent}
@@ -206,9 +201,9 @@ function AppContent() {
       )}
 
       {/* Main app content */}
-      <div className="flex-1 flex flex-col overflow-hidden relative z-10">
+      <div className={`flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out ${showSidebar && sidebarContent ? 'md:ml-[calc(14rem+0.75rem)]' : 'ml-0'}`}>
         {/* Fixed navigation bar with glass effect */}
-        <nav className="fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 nav-header">
+        <nav className={`fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 nav-header transition-all duration-500 ease-in-out ${showSidebar && sidebarContent ? 'md:left-[calc(14rem+0.75rem)]' : ''}`}>
           <div className="flex items-center justify-between">
             {/* Left section */}
             <div className="flex items-center gap-1 flex-1">
@@ -216,11 +211,11 @@ function AppContent() {
               <div className="w-12 flex justify-start">
                 {sidebarContent && (
                   <Button
-                    className={`p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out hidden md:flex ${showSidebar ? 'sidebar-open' : ''}`}
+                    className={`p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-300 ease-in-out hidden md:flex ${showSidebar ? 'opacity-0 pointer-events-none' : 'opacity-100 delay-300'}`}
                     onClick={toggleSidebar}
-                    aria-label={showSidebar ? 'Close sidebar' : 'Open sidebar'}
+                    aria-label="Open sidebar"
                   >
-                    {showSidebar ? <PanelRightOpen size={20} /> : <PanelLeftOpen size={20} />}
+                    <PanelLeftOpen size={20} />
                   </Button>
                 )}
               </div>
@@ -235,6 +230,7 @@ function AppContent() {
                       className="relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out flex items-center gap-1.5 text-sm bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 shadow-sm"
                     >
                       {pages.find(p => p.key === currentPage)?.icon}
+                      <span>{pages.find(p => p.key === currentPage)?.label}</span>
                       <ChevronDown 
                         size={14} 
                         className={`transition-transform duration-200 ${mobileMenuOpen ? 'rotate-180' : ''}`}

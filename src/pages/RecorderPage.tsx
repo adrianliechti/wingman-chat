@@ -756,8 +756,8 @@ export function RecorderPage() {
             <div className="relative h-full w-full md:overflow-hidden">
               <div className="h-full flex flex-col md:flex-row md:min-h-0">
                 {/* Recorder section */}
-                <div className="shrink-0 md:flex-1 flex items-center justify-center select-none py-4 md:py-0">
-                  <div className="relative transform scale-[0.55] sm:scale-[0.65] md:scale-75 lg:scale-90 xl:scale-100">
+                <div className={`${(transcriptionText || isTranscribing) ? 'h-1/2 md:h-full md:flex-1' : 'flex-1'} flex items-center justify-center select-none py-4 md:py-0`}>
+                  <div className={`relative transform ${(transcriptionText || isTranscribing) ? 'scale-[0.65] sm:scale-[0.7]' : 'scale-100 sm:scale-100'} md:scale-75 lg:scale-90 xl:scale-100`}>
         {/* Shadow layer - static, behind the device */}
         <div 
           className="absolute bg-black/15 dark:bg-black/30 blur-2xl rounded-3xl"
@@ -1147,12 +1147,12 @@ export function RecorderPage() {
                 {(transcriptionText || isTranscribing) && (
                   <>
                     {/* Divider */}
-                    <div className="relative flex items-center justify-center py-2 md:py-0 md:w-8 shrink-0 md:self-center md:h-[440px]">
+                    <div className="relative flex items-center justify-center py-2 md:py-0 md:w-8 shrink-0">
                       <div className="absolute md:inset-y-0 md:w-px md:left-1/2 md:-translate-x-px inset-x-0 h-px md:h-full bg-black/10 dark:bg-white/10"></div>
                     </div>
 
                     {/* Transcription panel */}
-                    <div className="flex-1 flex flex-col relative min-w-0 min-h-[200px] md:min-h-0 overflow-hidden md:self-center md:h-[440px]">
+                    <div className="h-1/2 md:h-full md:flex-1 flex flex-col relative min-w-0 overflow-hidden">
                       {/* Action buttons */}
                       <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
                         {transcriptionText && (
