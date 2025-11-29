@@ -636,9 +636,9 @@ export function ChatInput() {
             )}
 
             {currentRepository && (
-              <div className="group flex items-center gap-1 px-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm cursor-pointer">
+              <div className="hidden lg:flex group items-center gap-1 px-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm cursor-pointer" title={currentRepository.name}>
                 <Package size={14} />
-                <span className="max-w-20 truncate" title={currentRepository.name}>
+                <span className="max-w-20 truncate">
                   {currentRepository.name}
                 </span>
                 <Button
