@@ -22,6 +22,7 @@ interface config {
   stt?: sttConfig;
 
   workflow?: workflowConfig;
+  recorder?: recorderConfig;
 
   voice?: voiceConfig;
   vision?: visionConfig;
@@ -69,6 +70,10 @@ interface sttConfig {
 }
 
 interface workflowConfig {
+  enabled: boolean;
+}
+
+interface recorderConfig {
   enabled: boolean;
 }
 
@@ -136,6 +141,7 @@ interface Config {
   stt: boolean;
 
   workflow: boolean;
+  recorder: boolean;
 
   voice: boolean;
   vision: boolean;
@@ -201,6 +207,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       stt: cfg.stt?.enabled ?? false,
 
       workflow: cfg.workflow?.enabled ?? false,
+      recorder: cfg.recorder?.enabled ?? false,
 
       voice: cfg.voice?.enabled ?? false,
       vision: cfg.vision?.enabled ?? false,

@@ -83,7 +83,7 @@ function AppContent() {
         case '#flow':
           return config.workflow ? 'flow' : 'chat';
         case '#recorder':
-          return 'recorder';
+          return config.recorder ? 'recorder' : 'chat';
         default:
           return 'chat';
       }
@@ -104,7 +104,7 @@ function AppContent() {
     // Listen for hash changes
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [config.workflow, config.translator.enabled]);
+  }, [config.workflow, config.translator.enabled, config.recorder]);
 
   // Auto-close sidebar on mobile screens and update sliders on resize
   useEffect(() => {
@@ -159,8 +159,8 @@ function AppContent() {
     if (page.key === "flow") return config.workflow;
     // Show translate only if translator is enabled
     if (page.key === "translate") return config.translator.enabled;
-    // Always show recorder
-    if (page.key === "recorder") return true;
+    // Show recorder only if recorder is enabled
+    if (page.key === "recorder") return config.recorder;
     return true;
   });
 
