@@ -50,6 +50,7 @@ func main() {
 	repositoryContextPages := os.Getenv("REPOSITORY_CONTEXT_PAGES")
 
 	workflow := os.Getenv("WORKFLOW_ENABLED") == "true"
+	recorder := os.Getenv("RECORDER_ENABLED") == "true"
 
 	mux := http.NewServeMux()
 	dist := os.DirFS("dist")
@@ -127,6 +128,10 @@ func main() {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 		}
 
+		type recorderType struct {
+			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+		}
+
 		type translatorType struct {
 			Enabled   bool     `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 			Model     string   `json:"model,omitempty" yaml:"model,omitempty"`
@@ -161,6 +166,7 @@ func main() {
 			Repository *repositoryType `json:"repository,omitempty" yaml:"repository,omitempty"`
 
 			Workflow   *workflowType   `json:"workflow,omitempty" yaml:"workflow,omitempty"`
+			Recorder   *recorderType   `json:"recorder,omitempty" yaml:"recorder,omitempty"`
 			Translator *translatorType `json:"translator,omitempty" yaml:"translator,omitempty"`
 
 			Backgrounds map[string][]backgroundType `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
@@ -260,6 +266,12 @@ func main() {
 
 		if workflow {
 			config.Workflow = &workflowType{
+				Enabled: true,
+			}
+		}
+
+		if recorder {
+			config.Recorder = &recorderType{
 				Enabled: true,
 			}
 		}
