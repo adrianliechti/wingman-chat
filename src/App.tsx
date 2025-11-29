@@ -305,7 +305,7 @@ function AppContent() {
         {mobileMenuOpen && (
           <div className="fixed top-14 left-3 z-30 md:hidden bg-white dark:bg-neutral-900 backdrop-blur-md border border-neutral-200 dark:border-neutral-800 shadow-lg rounded-xl overflow-hidden min-w-40">
             <div className="py-1">
-              {pages.filter(p => p.key !== currentPage).map(({ key, label, icon }) => (
+              {pages.map(({ key, label, icon }) => (
                 <button
                   key={key}
                   onClick={() => {
@@ -313,7 +313,11 @@ function AppContent() {
                     window.location.hash = `#${key}`;
                     setMobileMenuOpen(false);
                   }}
-                  className="w-full px-4 py-2.5 flex items-center gap-3 text-left text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${
+                    currentPage === key
+                      ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
+                      : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                  }`}
                 >
                   {icon}
                   <span className="font-medium text-sm">{label}</span>
