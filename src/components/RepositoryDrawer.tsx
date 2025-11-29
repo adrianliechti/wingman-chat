@@ -319,8 +319,8 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
 
       {/* Repository Stats */}
       {files.length > 0 && (
-        <div className="px-3 py-2 border-t border-neutral-200/60 dark:border-neutral-700/60">
-          <div className="text-xs text-neutral-500 dark:text-neutral-400 text-center">
+        <div className="shrink-0 h-14 flex items-center justify-center px-3">
+          <div className="text-xs text-neutral-500 dark:text-neutral-400">
             {useRAG ? (
               <span>
                 {Math.ceil(totalPages)} pages • Using RAG • Limitations may apply
@@ -447,7 +447,7 @@ export function RepositoryDrawer() {
 
 
   return (
-    <div className="h-full flex flex-col rounded-lg overflow-hidden transition-all duration-150 ease-linear bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md border border-neutral-200/60 dark:border-neutral-700/60 shadow-sm">
+    <div className="h-full flex flex-col md:rounded-lg overflow-hidden transition-all duration-150 ease-linear bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm">
       {/* Header with Unified Repository Selector */}
       <div className="px-3 py-3 border-b border-neutral-200/60 dark:border-neutral-700/60">
         <div className="relative w-full" ref={dropdownRef}>

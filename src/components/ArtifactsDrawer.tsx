@@ -167,7 +167,7 @@ export function ArtifactsDrawer() {
 
   return (
     <div
-      className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-neutral-50 dark:bg-neutral-950"
+      className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md pt-2 md:pt-0"
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
@@ -196,7 +196,7 @@ export function ArtifactsDrawer() {
           </div>
 
           {/* Bottom Bar with File Title and Actions */}
-          <div className="shrink-0 h-9 flex border-t border-black/10 dark:border-white/10">
+          <div className="shrink-0 h-14 flex border-t border-black/10 dark:border-white/10">
             {/* File title */}
             <div className="flex-1 flex items-center min-w-0 px-3">
               {activeFile && (

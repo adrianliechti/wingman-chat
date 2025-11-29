@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Languages, PanelLeftOpen, PanelRightOpen, Workflow } from "lucide-react";
+import { MessageCircle, Languages, PanelLeftOpen, PanelRightOpen, Workflow, ChevronDown, Settings } from "lucide-react";
 import { Button } from "@headlessui/react";
 import { ChatPage } from "./pages/ChatPage";
 import { TranslatePage } from "./pages/TranslatePage";
@@ -16,6 +16,7 @@ import { ChatProvider } from "./contexts/ChatProvider";
 import { TranslateProvider } from "./contexts/TranslateProvider";
 import { VoiceProvider } from "./contexts/VoiceProvider";
 import { SettingsButton } from "./components/SettingsButton";
+import { SettingsModal } from "./components/SettingsModal";
 import { RepositoryProvider } from "./contexts/RepositoryProvider";
 import { ArtifactsProvider } from "./contexts/ArtifactsProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
@@ -30,18 +31,20 @@ function AppContent() {
   const { showSidebar, setShowSidebar, toggleSidebar, sidebarContent } = useSidebar();
   const { leftActions, rightActions } = useNavigation();
   
-  // Refs and state for animated slider
-  const mobileRef = useRef<HTMLDivElement>(null);
+  // Mobile menu state
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  
+  // Refs and state for animated slider (tablet and desktop only)
   const tabletRef = useRef<HTMLDivElement>(null);
   const desktopRef = useRef<HTMLDivElement>(null);
   const [sliderStyles, setSliderStyles] = useState({
-    mobile: { left: 0, width: 0 },
     tablet: { left: 0, width: 0 },
     desktop: { left: 0, width: 0 }
   });
 
   // Shared function to update slider positions
-  const updateSlider = useCallback((containerRef: React.RefObject<HTMLDivElement | null>, key: 'mobile' | 'tablet' | 'desktop') => {
+  const updateSlider = useCallback((containerRef: React.RefObject<HTMLDivElement | null>, key: 'tablet' | 'desktop') => {
     if (containerRef.current) {
       const activeButton = containerRef.current.querySelector(`[data-page="${currentPage}"]`) as HTMLElement;
       if (activeButton) {
@@ -63,7 +66,6 @@ function AppContent() {
   useEffect(() => {
     // Initial update of all sliders
     setTimeout(() => {
-      updateSlider(mobileRef, 'mobile');
       updateSlider(tabletRef, 'tablet');
       updateSlider(desktopRef, 'desktop');
     }, 0);
@@ -109,9 +111,13 @@ function AppContent() {
         setShowSidebar(false);
       }
       
+      // Close mobile menu on resize to larger screens
+      if (window.innerWidth >= 640) {
+        setMobileMenuOpen(false);
+      }
+      
       // Update slider positions after a short delay
       setTimeout(() => {
-        updateSlider(mobileRef, 'mobile');
         updateSlider(tabletRef, 'tablet');
         updateSlider(desktopRef, 'desktop');
       }, 100);
@@ -213,45 +219,21 @@ function AppContent() {
                 )}
               </div>
               
-              {/* Modern pill navigation - positioned left on mobile, center on sm+ */}
+              {/* Mobile hamburger menu - visible on xs screens only */}
               {showNavigation && (
-                <div className="flex items-center sm:hidden -ml-2">
-                  <div 
-                    ref={mobileRef}
-                    className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
-                  >
-                    {/* Animated slider background */}
-                    <div
-                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
-                      style={{
-                        left: `${sliderStyles.mobile.left}px`,
-                        width: `${sliderStyles.mobile.width}px`,
-                        height: 'calc(100% - 8px)',
-                        top: '4px',
-                      }}
-                    />
-                    
-                    {pages.map(({ key, label, icon }) => (
-                      <Button
-                        key={key}
-                        data-page={key}
-                        onClick={() => {
-                          setCurrentPage(key);
-                          window.location.hash = `#${key}`;
-                        }}
-                        className={`
-                          relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out
-                          flex items-center gap-2 text-sm
-                          ${currentPage === key
-                            ? "text-neutral-900 dark:text-neutral-100"
-                            : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                          }
-                        `}
-                      >
-                        {icon}
-                        <span className="hidden sm:inline">{label}</span>
-                      </Button>
-                    ))}
+                <div className="flex items-center sm:hidden -ml-2 relative">
+                  <div className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20">
+                    {/* Current page button with dropdown indicator */}
+                    <Button
+                      onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                      className="relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out flex items-center gap-1.5 text-sm bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 shadow-sm"
+                    >
+                      {pages.find(p => p.key === currentPage)?.icon}
+                      <ChevronDown 
+                        size={14} 
+                        className={`transition-transform duration-200 ${mobileMenuOpen ? 'rotate-180' : ''}`}
+                      />
+                    </Button>
                   </div>
                 </div>
               )}
@@ -347,11 +329,62 @@ function AppContent() {
             
             {/* Right section */}
             <div className="flex items-center gap-2 justify-end flex-1">
-              <SettingsButton />
+              {/* Hide settings button on mobile - it's in the menu */}
+              <div className="hidden sm:block">
+                <SettingsButton />
+              </div>
               {rightActions}
             </div>
           </div>
         </nav>
+        
+        {/* Mobile dropdown menu */}
+        {mobileMenuOpen && (
+          <div className="fixed top-14 left-3 z-30 sm:hidden bg-white dark:bg-neutral-900 backdrop-blur-md border border-neutral-200 dark:border-neutral-800 shadow-lg rounded-xl overflow-hidden min-w-[160px]">
+            <div className="py-1">
+              {pages.filter(p => p.key !== currentPage).map(({ key, label, icon }) => (
+                <button
+                  key={key}
+                  onClick={() => {
+                    setCurrentPage(key);
+                    window.location.hash = `#${key}`;
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full px-4 py-2.5 flex items-center gap-3 text-left text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  {icon}
+                  <span className="font-medium text-sm">{label}</span>
+                </button>
+              ))}
+              
+              {/* Divider */}
+              <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
+              
+              {/* Settings */}
+              <button
+                onClick={() => {
+                  setSettingsOpen(true);
+                  setMobileMenuOpen(false);
+                }}
+                className="w-full px-4 py-2.5 flex items-center gap-3 text-left text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <Settings size={20} />
+                <span className="font-medium text-sm">Settings</span>
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {/* Mobile menu backdrop */}
+        {mobileMenuOpen && (
+          <div 
+            className="fixed inset-0 z-20 sm:hidden" 
+            onClick={() => setMobileMenuOpen(false)}
+          />
+        )}
+        
+        {/* Settings Modal for mobile menu */}
+        <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
         
         {/* Content area - no padding so it can scroll under the nav */}
         <div className="flex-1 overflow-hidden flex">
