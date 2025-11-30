@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
 import { Languages, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
 import type { BaseNodeData, Data } from '../types/workflow';
 import { getDataText } from '../types/workflow';
@@ -99,12 +99,13 @@ export const TranslateNode = memo(({ id, data, selected }: NodeProps<TranslateNo
       >
         {languages.map((lang) => (
           <MenuItem key={lang.code}>
-            <Button
+            <button
+              type="button"
               onClick={() => updateNode(id, { data: { ...data, language: lang.code } })}
               className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
             >
               {lang.name}
-            </Button>
+            </button>
           </MenuItem>
         ))}
       </MenuItems>

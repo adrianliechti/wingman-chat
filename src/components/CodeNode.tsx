@@ -1,6 +1,6 @@
 import { memo, useState, useEffect } from 'react';
 import { Code2, ChevronDown, Eye, EyeOff } from 'lucide-react';
-import { Button, Menu, MenuButton, MenuItem, MenuItems, Textarea } from '@headlessui/react';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
 import type { BaseNodeData } from '../types/workflow';
 import { createData, getDataText } from '../types/workflow';
@@ -194,12 +194,13 @@ ${generatedCode}`;
         ) : (
           models.map((model) => (
             <MenuItem key={model.id}>
-              <Button
+              <button
+                type="button"
                 onClick={() => updateNode(id, { data: { ...data, model: model.id } })}
                 className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
               >
                 {model.name}
-              </Button>
+              </button>
             </MenuItem>
           ))
         )}
@@ -230,7 +231,7 @@ ${generatedCode}`;
       <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
         {/* Prompt Input */}
         <div className="shrink-0">
-          <Textarea
+          <textarea
             value={data.prompt ?? ''}
             onChange={(e) => updateNode(id, { data: { ...data, prompt: e.target.value } })}
             onPointerDown={(e) => e.stopPropagation()}

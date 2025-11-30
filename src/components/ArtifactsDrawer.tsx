@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { File, Code, Eye, PanelRightOpen, PanelRightClose } from 'lucide-react';
-import { Button } from '@headlessui/react';
 import { useArtifacts } from '../hooks/useArtifacts';
 import { HtmlEditor } from './HtmlEditor';
 import { SvgEditor } from './SvgEditor';
@@ -213,24 +212,26 @@ export function ArtifactsDrawer() {
             <div className="flex items-center gap-1 px-2">
               {/* View mode toggle - only show for files that support preview */}
               {supportsPreview() && (
-                <Button
+                <button
+                  type="button"
                   onClick={() => setViewMode(viewMode === 'preview' ? 'code' : 'preview')}
                   className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
                   title={viewMode === 'preview' ? 'Switch to code' : 'Switch to preview'}
                 >
                   {viewMode === 'preview' ? <Code size={16} /> : <Eye size={16} />}
-                </Button>
+                </button>
               )}
 
               {/* File browser toggle */}
               {files.length > 0 && (
-                <Button
+                <button
+                  type="button"
                   onClick={toggleFileBrowser}
                   className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
                   title={showFileBrowser ? 'Close file browser' : 'Open file browser'}
                 >
                   {showFileBrowser ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
-                </Button>
+                </button>
               )}
             </div>
           </div>

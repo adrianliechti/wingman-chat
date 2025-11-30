@@ -1,6 +1,5 @@
 import { memo, useState, useRef } from 'react';
 import { FileText, Upload, Loader2 } from 'lucide-react';
-import { Textarea } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
 import type { BaseNodeData } from '../types/workflow';
 import { createData, getDataText } from '../types/workflow';
@@ -143,7 +142,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
           <div className={`flex-1 flex flex-col min-h-0 px-2 pb-2 transition-all ${
             isDragging ? 'opacity-50' : ''
           }`}>
-            <Textarea
+            <textarea
               value={getDataText(data.output)}
               readOnly
               className="w-full h-full px-3 py-2 text-xs border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-gray-100/50 dark:bg-black/10 text-gray-700 dark:text-gray-300 resize-none min-h-20 scrollbar-hide"

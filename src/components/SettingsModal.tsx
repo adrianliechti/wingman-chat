@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect } from 'react';
 import { X, Settings, MessageSquare, Trash2, ChevronsUpDown, Check, User, Package, Download, Upload } from 'lucide-react';
-import { Dialog, Transition, Listbox, Button } from '@headlessui/react';
+import { Dialog, Transition, Listbox } from '@headlessui/react';
 import { useSettings } from '../hooks/useSettings';
 import { useChat } from '../hooks/useChat';
 import { useRepositories } from '../hooks/useRepositories';
@@ -383,7 +383,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 {availableTraits.map((trait) => {
                   const isSelected = (profile.traits || []).includes(trait);
                   return (
-                    <Button
+                    <button
+                      type="button"
                       key={trait}
                       onClick={() => toggleTrait(trait)}
                       className={`text-xs px-2 py-1 rounded-md border transition-colors ${
@@ -393,7 +394,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       }`}
                     >
                       {isSelected ? `− ${trait}` : `+ ${trait}`}
-                    </Button>
+                    </button>
                   );
                 })}
               </div>
@@ -439,29 +440,32 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <p className="text-xs text-neutral-500 dark:text-neutral-400">You have {chats.length} chat{chats.length === 1 ? '' : 's'} saved locally.</p>
               </div>
               <div className="flex flex-col gap-1">
-                <Button
+                <button
+                  type="button"
                   onClick={importChats}
                   className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
                 >
                   <Upload size={16} />
                   Import Chats
-                </Button>
-                <Button
+                </button>
+                <button
+                  type="button"
                   onClick={exportChats}
                   disabled={chats.length === 0}
                   className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 disabled:text-neutral-400 dark:disabled:text-neutral-600 disabled:cursor-not-allowed"
                 >
                   <Download size={16} />
                   Export Chats
-                </Button>
-                <Button
+                </button>
+                <button
+                  type="button"
                   onClick={deleteChats}
                   disabled={chats.length === 0}
                   className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:text-neutral-400 dark:disabled:text-neutral-600 disabled:cursor-not-allowed"
                 >
                   <Trash2 size={16} />
                   Delete All
-                </Button>
+                </button>
               </div>
             </div>
           </div>
@@ -492,29 +496,32 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <p className="text-xs text-neutral-500 dark:text-neutral-400">You have {repositories.length} repositor{repositories.length === 1 ? 'y' : 'ies'} saved locally.</p>
               </div>
               <div className="flex flex-col gap-1">
-                <Button
+                <button
+                  type="button"
                   onClick={importRepositories}
                   className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
                 >
                   <Upload size={16} />
                   Import Repositories
-                </Button>
-                <Button
+                </button>
+                <button
+                  type="button"
                   onClick={exportRepositories}
                   disabled={repositories.length === 0}
                   className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 disabled:text-neutral-400 dark:disabled:text-neutral-600 disabled:cursor-not-allowed"
                 >
                   <Download size={16} />
                   Export Repositories
-                </Button>
-                <Button
+                </button>
+                <button
+                  type="button"
                   onClick={deleteRepositories}
                   disabled={repositories.length === 0}
                   className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:text-neutral-400 dark:disabled:text-neutral-600 disabled:cursor-not-allowed"
                 >
                   <Trash2 size={16} />
                   Delete All
-                </Button>
+                </button>
               </div>
             </div>
           </div>
@@ -543,16 +550,17 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       options={sectionOptions} 
                     />
                   </div>
-                  <Button onClick={onClose} className="p-1 rounded-full text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+                  <button type="button" onClick={onClose} className="p-1 rounded-full text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
                     <X size={20} />
-                  </Button>
+                  </button>
                 </div>
 
                 <div className="flex flex-1 min-h-0">
                   <nav className="hidden sm:block w-48 border-r border-neutral-200 dark:border-neutral-800 p-1 shrink-0">
                     <div className="space-y-1">
                       {sections.map((section) => (
-                        <Button
+                        <button
+                          type="button"
                           key={section.id}
                           onClick={() => setActiveSection(section.id)}
                           className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors rounded-md text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80 data-[active=true]:text-neutral-900 dark:data-[active=true]:text-neutral-100 data-[active=true]:bg-neutral-200 dark:data-[active=true]:bg-neutral-700/80"
@@ -560,7 +568,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         >
                           <section.icon size={16} />
                           {section.label}
-                        </Button>
+                        </button>
                       ))}
                     </div>
                   </nav>

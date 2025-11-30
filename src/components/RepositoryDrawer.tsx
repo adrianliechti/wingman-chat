@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Plus, Folder, FileText, X, ChevronDown, Check, Edit, Trash2, Loader2 } from 'lucide-react';
-import { Dialog, Transition, Button } from '@headlessui/react';
+import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { useRepositories } from '../hooks/useRepositories';
 import { useRepository } from '../hooks/useRepository';
@@ -164,21 +164,23 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
                     />
                     
                     <div className="flex gap-3 justify-end pt-2">
-                      <Button
+                      <button
+                        type="button"
                         onClick={cancelEditingInstructions}
                         className="px-4 py-2 text-sm bg-neutral-200 dark:bg-neutral-700 
                                  hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-300 
                                  rounded-md transition-colors"
                       >
                         Cancel
-                      </Button>
-                      <Button
+                      </button>
+                      <button
+                        type="button"
                         onClick={saveInstructions}
                         className="px-4 py-2 text-sm bg-slate-600 hover:bg-slate-700 
                                  text-white rounded-md transition-colors"
                       >
                         Save Instructions
-                      </Button>
+                      </button>
                     </div>
                   </div>
                 </Dialog.Panel>
@@ -285,14 +287,14 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
                   )}
                   
                   {/* Remove button - always available */}
-                  <Button
+                  <button
                     type="button"
                     className="absolute top-1 right-1 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm shadow-sm"
                     onClick={() => removeFile(file.id)}
                     title={file.status === 'processing' ? 'Cancel upload and remove file' : 'Remove file'}
                   >
                     <X size={10} />
-                  </Button>
+                  </button>
                 </div>
               </div>
             ))}
@@ -451,7 +453,8 @@ export function RepositoryDrawer() {
       {/* Header with Unified Repository Selector */}
       <div className="px-3 py-3 border-b border-neutral-200/60 dark:border-neutral-700/60">
         <div className="relative w-full" ref={dropdownRef}>
-          <Button
+          <button
+            type="button"
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
             className="relative w-full rounded-lg bg-white/40 dark:bg-neutral-900/60 py-2 pl-3 pr-10 text-left shadow-sm border border-neutral-200/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-slate-500/50 dark:focus:ring-slate-400/50 hover:border-neutral-300/80 dark:hover:border-neutral-600/80 transition-colors backdrop-blur-lg"
           >
@@ -464,7 +467,7 @@ export function RepositoryDrawer() {
             <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
               <ChevronDown size={16} className={`text-neutral-400 dark:text-neutral-300 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
             </span>
-          </Button>
+          </button>
 
           {isDropdownOpen && (
             <div className="absolute z-20 mt-1 w-full max-h-80 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100/80 dark:bg-neutral-800/80 p-1 backdrop-blur-xl">
@@ -502,8 +505,9 @@ export function RepositoryDrawer() {
                       placeholder="Repository name"
                       onClick={(e) => e.stopPropagation()}
                     />
-                    <Button
-                      onClick={(e) => {
+                    <button
+                      type="button"
+                      onClick={(e: React.MouseEvent) => {
                         e.stopPropagation();
                         saveNewRepository();
                       }}
@@ -511,9 +515,10 @@ export function RepositoryDrawer() {
                       title="Create"
                     >
                       <Check size={12} />
-                    </Button>
-                    <Button
-                      onClick={(e) => {
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e: React.MouseEvent) => {
                         e.stopPropagation();
                         cancelNewRepository();
                       }}
@@ -521,11 +526,12 @@ export function RepositoryDrawer() {
                       title="Cancel"
                     >
                       <X size={12} />
-                    </Button>
+                    </button>
                   </div>
                 ) : (
-                  <Button
-                    onClick={(e) => {
+                  <button
+                    type="button"
+                    onClick={(e: React.MouseEvent) => {
                       e.preventDefault();
                       e.stopPropagation();
                       startCreatingNew();
@@ -534,7 +540,7 @@ export function RepositoryDrawer() {
                   >
                     <Plus size={16} />
                     Create New Repository
-                  </Button>
+                  </button>
                 )}
               </div>
 
@@ -565,8 +571,9 @@ export function RepositoryDrawer() {
                             className="flex-1 text-sm bg-transparent border-0 border-b border-slate-500 rounded-none px-1 py-0 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-slate-600 dark:focus:border-slate-400"
                             onClick={(e) => e.stopPropagation()}
                           />
-                          <Button
-                            onClick={(e) => {
+                          <button
+                            type="button"
+                            onClick={(e: React.MouseEvent) => {
                               e.stopPropagation();
                               saveInlineEdit();
                             }}
@@ -574,9 +581,10 @@ export function RepositoryDrawer() {
                             title="Save"
                           >
                             <Check size={12} />
-                          </Button>
-                          <Button
-                            onClick={(e) => {
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e: React.MouseEvent) => {
                               e.stopPropagation();
                               cancelInlineEdit();
                             }}
@@ -584,10 +592,11 @@ export function RepositoryDrawer() {
                             title="Cancel"
                           >
                             <X size={12} />
-                          </Button>
+                          </button>
                         </div>
                       ) : (
-                        <Button
+                        <button
+                          type="button"
                           onClick={() => handleRepositorySelect(repository)}
                           className="flex items-center gap-2 flex-1 text-left min-w-0"
                         >
@@ -598,14 +607,15 @@ export function RepositoryDrawer() {
                           }`}>
                             {repository.name}
                           </span>
-                        </Button>
+                        </button>
                       )}
                     </div>
                       
                     {/* Action buttons - shown on hover/focus, hidden during inline edit */}
                     {!isBeingEdited && (
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity ml-2">
-                        <Button
+                        <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             startInlineEdit(repository);
@@ -614,8 +624,9 @@ export function RepositoryDrawer() {
                           title="Edit repository name"
                         >
                           <Edit size={12} />
-                        </Button>
-                        <Button
+                        </button>
+                        <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             if (window.confirm(`Are you sure you want to delete "${repository.name}"?`)) {
@@ -629,7 +640,7 @@ export function RepositoryDrawer() {
                           title="Delete repository"
                         >
                           <Trash2 size={12} />
-                        </Button>
+                        </button>
                       </div>
                     )}
                   </div>

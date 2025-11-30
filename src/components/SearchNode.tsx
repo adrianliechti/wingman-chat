@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
 import { Globe, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Menu, MenuButton, MenuItem, MenuItems, Button, Textarea, Input } from '@headlessui/react';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
 import type { BaseNodeData, Data } from '../types/workflow';
 import { getDataText } from '../types/workflow';
@@ -276,28 +276,31 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
         className="mt-1 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50 min-w-[120px]"
       >
         <MenuItem>
-          <Button
+          <button
+            type="button"
             onClick={() => setMode('search')}
             className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
           >
             Search
-          </Button>
+          </button>
         </MenuItem>
         <MenuItem>
-          <Button
+          <button
+            type="button"
             onClick={() => setMode('fetch')}
             className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
           >
             Website
-          </Button>
+          </button>
         </MenuItem>
         <MenuItem>
-          <Button
+          <button
+            type="button"
             onClick={() => setMode('research')}
             className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
           >
             Research
-          </Button>
+          </button>
         </MenuItem>
       </MenuItems>
     </Menu>
@@ -337,7 +340,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
         {/* Search mode: query field when no input, instructions when has input */}
         {mode === 'search' && !hasConnections && (
           <div className="shrink-0">
-            <Input
+            <input
               type="text"
               value={data.query ?? ''}
               onChange={(e) => updateNode(id, { data: { ...data, query: e.target.value } })}
@@ -351,7 +354,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
         
         {mode === 'search' && hasConnections && (
           <div className="shrink-0">
-            <Textarea
+            <textarea
               value={data.instructions ?? ''}
               onChange={(e) => updateNode(id, { data: { ...data, instructions: e.target.value } })}
               onPointerDown={(e) => e.stopPropagation()}
@@ -366,7 +369,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
         {/* Research mode: always show instructions field */}
         {mode === 'research' && (
           <div className="shrink-0">
-            <Textarea
+            <textarea
               value={data.instructions ?? ''}
               onChange={(e) => updateNode(id, { data: { ...data, instructions: e.target.value } })}
               onPointerDown={(e) => e.stopPropagation()}
@@ -384,7 +387,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
         {/* Website mode: URL field only when no input */}
         {mode === 'fetch' && !hasConnections && (
           <div className="shrink-0">
-            <Input
+            <input
               type="text"
               value={data.query ?? ''}
               onChange={(e) => updateNode(id, { data: { ...data, query: e.target.value } })}

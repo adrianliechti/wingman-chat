@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Database, ChevronDown } from 'lucide-react';
-import { Button, Input, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
 import type { BaseNodeData } from '../types/workflow';
 import { createData, getDataText } from '../types/workflow';
@@ -22,7 +22,7 @@ export type RepositoryNodeType = Node<RepositoryNodeData, 'repository'>;
 
 export const RepositoryNode = memo(({ id, data, selected }: NodeProps<RepositoryNodeType>) => {
   const { updateNode } = useWorkflow();
-  const { getText, connectedData, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
+  const { getText, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const { repositories } = useRepositories();
 
   // Get the current repository
@@ -34,7 +34,7 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
     let query = data.query?.trim() || '';
     
     // If connected nodes exist, use their data
-    if (connectedData.length > 0) {
+    if (hasConnections) {
       query = getText();
     }
 
@@ -107,12 +107,13 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
         ) : (
           repositories.map((repo) => (
             <MenuItem key={repo.id}>
-              <Button
+              <button
+                type="button"
                 onClick={() => updateNode(id, { data: { ...data, repository: repo.id } })}
                 className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
               >
                 {repo.name}
-              </Button>
+              </button>
             </MenuItem>
           ))
         )}
@@ -139,7 +140,7 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
         {/* Query Input */}
         <div className="shrink-0">
           <div className="flex gap-2">
-            <Input
+            <input
               type="text"
               value={displayValue}
               onChange={(e) => updateNode(id, { 

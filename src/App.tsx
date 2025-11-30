@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { MessageCircle, Languages, PanelLeftOpen, Workflow, Disc3, ChevronDown, Settings } from "lucide-react";
-import { Button } from "@headlessui/react";
 import { ChatPage } from "./pages/ChatPage";
 import { TranslatePage } from "./pages/TranslatePage";
 import { WorkflowPage } from "./pages/WorkflowPage";
@@ -171,7 +170,8 @@ function AppContent() {
       {/* Fixed hamburger button for mobile - only visible when sidebar is closed */}
       {sidebarContent && !showSidebar && (
         <div className="fixed top-0 left-0 z-40 md:hidden p-3">
-          <Button
+          <button
+            type="button"
             className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
             onClick={() => {
               setShowSidebar(true);
@@ -179,7 +179,7 @@ function AppContent() {
             aria-label="Open sidebar"
           >
             <PanelLeftOpen size={20} />
-          </Button>
+          </button>
         </div>
       )}
 
@@ -210,13 +210,14 @@ function AppContent() {
               {/* Fixed space for sidebar button - always reserve the space */}
               <div className="w-12 flex justify-start">
                 {sidebarContent && (
-                  <Button
+                  <button
+                    type="button"
                     className={`p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-300 ease-in-out hidden md:flex ${showSidebar ? 'opacity-0 pointer-events-none' : 'opacity-100 delay-300'}`}
                     onClick={toggleSidebar}
                     aria-label="Open sidebar"
                   >
                     <PanelLeftOpen size={20} />
-                  </Button>
+                  </button>
                 )}
               </div>
               
@@ -225,7 +226,8 @@ function AppContent() {
                 <div className="flex items-center md:hidden -ml-2 relative">
                   <div className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20">
                     {/* Current page button with dropdown indicator */}
-                    <Button
+                    <button
+                      type="button"
                       onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                       className="relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out flex items-center gap-1.5 text-sm bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 shadow-sm"
                     >
@@ -235,7 +237,7 @@ function AppContent() {
                         size={14} 
                         className={`transition-transform duration-200 ${mobileMenuOpen ? 'rotate-180' : ''}`}
                       />
-                    </Button>
+                    </button>
                   </div>
                 </div>
               )}
@@ -262,7 +264,8 @@ function AppContent() {
                   />
                   
                   {pages.map(({ key, label, icon }) => (
-                    <Button
+                    <button
+                      type="button"
                       key={key}
                       data-page={key}
                       onClick={() => {
@@ -280,7 +283,7 @@ function AppContent() {
                     >
                       {icon}
                       <span className="hidden sm:inline">{label}</span>
-                    </Button>
+                    </button>
                   ))}
                 </div>
               </div>

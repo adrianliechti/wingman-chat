@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus as PlusIcon, Package, PackageOpen, Info, ArrowDown, BookOpenText, BookText } from "lucide-react";
-import { Button } from "@headlessui/react";
 import DOMPurify from "dompurify";
 import { getConfig } from "../config";
 import { useAutoScroll } from "../hooks/useAutoScroll";
@@ -68,29 +67,32 @@ export function ChatPage() {
     setRightActions(
       <div className="flex items-center gap-2">
         {repositoryAvailable && (
-          <Button
+          <button
+            type="button"
             className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
             onClick={toggleRepositoryDrawer}
             title={showRepositoryDrawer ? 'Close repositories' : 'Open repositories'}
           >
             {showRepositoryDrawer ? <PackageOpen size={20} /> : <Package size={20} />}
-          </Button>
+          </button>
         )}
         {artifactsAvailable && (
-          <Button
+          <button
+            type="button"
             className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
             onClick={toggleArtifactsDrawer}
             title={showArtifactsDrawer ? 'Close artifacts' : 'Open artifacts'}
           >
             {showArtifactsDrawer ? <BookOpenText size={20} /> : <BookText size={20} />}
-          </Button>
+          </button>
         )}
-        <Button
+        <button
+          type="button"
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
           onClick={createChat}
         >
           <PlusIcon size={20} />
-        </Button>
+        </button>
       </div>
     );
 

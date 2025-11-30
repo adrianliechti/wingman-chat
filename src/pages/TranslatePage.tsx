@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useDropZone } from "../hooks/useDropZone";
-import { Button, Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { PilcrowRightIcon, Loader2, PlusIcon, GlobeIcon, FileIcon, UploadIcon, XIcon, DownloadIcon, ThermometerIcon, SwatchBookIcon, AlertCircle, ChevronDown, ChevronRight, SparklesIcon } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import { useLayout } from "../hooks/useLayout";
@@ -212,13 +212,14 @@ export function TranslatePage() {
   // Set up navigation actions when component mounts
   useEffect(() => {
     setRightActions(
-      <Button
+      <button
+        type="button"
         className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
         onClick={handleReset}
         title="Clear translation"
       >
         <PlusIcon size={20} />
-      </Button>
+      </button>
     );
 
     // Cleanup when component unmounts
@@ -253,14 +254,15 @@ export function TranslatePage() {
                   {/* File upload controls */}
                   <div className="absolute top-2 left-3 z-10">
                     {!selectedFile && supportedFiles.length > 0 && (
-                      <Button
+                      <button
+                        type="button"
                         onClick={handleFileUploadClick}
                         className="inline-flex items-center gap-1 pl-0.5 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors"
                         title={`Select a file to translate (${supportedFiles.map(sf => sf.ext).join(', ')})`}
                       >
                         <UploadIcon size={14} />
                         <span>Upload file</span>
-                      </Button>
+                      </button>
                     )}
                     {!selectedFile && supportedFiles.length === 0 && (
                       <div className="h-8"></div>
@@ -291,13 +293,14 @@ export function TranslatePage() {
                     <div className="absolute inset-2 flex items-center justify-center">
                       <div className="bg-neutral-50/60 dark:bg-neutral-900/50 backdrop-blur-lg p-6 rounded-xl shadow-lg border border-neutral-200/60 dark:border-neutral-700/50 flex flex-col items-center gap-4 relative">
                         {/* Subtle delete button in top-right */}
-                        <Button
+                        <button
+                          type="button"
                           onClick={handleFileClear}
                           className="absolute -top-2 -right-2 p-1.5! bg-neutral-50/70! dark:bg-neutral-900/60! backdrop-blur-lg hover:bg-neutral-50/80! dark:hover:bg-neutral-900/70! rounded-full opacity-70 hover:opacity-100 transition-all border border-neutral-200/70 dark:border-neutral-700/60 shadow-sm"
                           title="Remove file"
                         >
                           <XIcon size={12} />
-                        </Button>
+                        </button>
                         
                         <FileIcon size={48} className="text-neutral-700 dark:text-neutral-300" />
                         <span className="text-sm font-medium text-neutral-800 dark:text-neutral-200 text-center max-w-[200px] truncate">
@@ -320,7 +323,8 @@ export function TranslatePage() {
                   {/* Responsive divider: horizontal on mobile, vertical on desktop */}
                   <div className="absolute md:inset-y-0 md:w-px md:left-1/2 md:-translate-x-px inset-x-0 h-px md:h-auto bg-black/20 dark:bg-white/20"></div>
                   
-                  <Button
+                  <button
+                    type="button"
                     onClick={() => performTranslate()}
                     className="bg-neutral-50/60! dark:bg-neutral-900/50! backdrop-blur-lg border border-neutral-200/60 dark:border-neutral-700/50 hover:bg-neutral-50/70! dark:hover:bg-neutral-900/60! text-neutral-700! dark:text-neutral-300! hover:text-neutral-900! dark:hover:text-neutral-100! z-10 relative px-2 py-2 rounded-lg shadow-lg transition-all"
                     title={selectedFile ? `Translate file to ${selectedLanguage?.name || 'Selected Language'}` : `Translate to ${selectedLanguage?.name || 'Selected Language'}`}
@@ -334,7 +338,7 @@ export function TranslatePage() {
                     ) : (
                       <PilcrowRightIcon />
                     )}
-                  </Button>
+                  </button>
                 </div>
 
                 {/* Target section */}
@@ -356,12 +360,13 @@ export function TranslatePage() {
                       >
                         {supportedLanguages.map((lang) => (
                           <MenuItem key={lang.code}>
-                            <Button
+                            <button
+                              type="button"
                               onClick={() => setTargetLang(lang.code)}
                               className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
                             >
                               {lang.name}
-                            </Button>
+                            </button>
                           </MenuItem>
                         ))}
                       </MenuItems>
@@ -384,12 +389,13 @@ export function TranslatePage() {
                         >
                           {toneOptions.map((toneOption) => (
                             <MenuItem key={toneOption.value}>
-                              <Button
+                              <button
+                                type="button"
                                 onClick={() => setTone(toneOption.value)}
                                 className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
                               >
                                 {toneOption.label}
-                              </Button>
+                              </button>
                             </MenuItem>
                           ))}
                         </MenuItems>
@@ -413,12 +419,13 @@ export function TranslatePage() {
                         >
                           {styleOptions.map((styleOption) => (
                             <MenuItem key={styleOption.value}>
-                              <Button
+                              <button
+                                type="button"
                                 onClick={() => setStyle(styleOption.value)}
                                 className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
                               >
                                 {styleOption.label}
-                              </Button>
+                              </button>
                             </MenuItem>
                           ))}
                         </MenuItems>

@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import { StickyNote } from 'lucide-react';
 import type { Node, NodeProps } from '@xyflow/react';
 import type { BaseNodeData } from '../types/workflow';
@@ -19,17 +19,22 @@ export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) =
   // Support both old 'outputText' format and new 'output' format
   const currentText = data.output?.items?.[0]?.text ?? data.outputText ?? '';
   const [localValue, setLocalValue] = useState(currentText);
+  const isLocalChangeRef = useRef(false);
 
   // Sync local state with external updates (but not our own changes)
   useEffect(() => {
-    if (currentText !== localValue) {
-      setLocalValue(currentText);
+    // Skip if this update was triggered by local changes
+    if (isLocalChangeRef.current) {
+      isLocalChangeRef.current = false;
+      return;
     }
+    setLocalValue(currentText);
   }, [currentText]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     setLocalValue(newValue);
+    isLocalChangeRef.current = true;
     // Write to both formats for compatibility
     updateNode(id, { data: { ...data, output: createData(newValue), outputText: newValue } });
   };
@@ -37,9 +42,12 @@ export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) =
   // Ensure output is always set (handles initial mount with empty output or migration from old format)
   useEffect(() => {
     if (localValue && !data.output) {
+      isLocalChangeRef.current = true;
       updateNode(id, { data: { ...data, output: createData(localValue), outputText: localValue } });
     }
-  }, [localValue]);
+    // Only run on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <WorkflowNode

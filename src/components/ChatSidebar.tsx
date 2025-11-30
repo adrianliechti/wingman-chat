@@ -1,5 +1,5 @@
 import { Trash, PanelRightOpen, MoreVertical, GitBranch, Search, X } from "lucide-react";
-import { Button, Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { useMemo, useCallback, useState } from "react";
 import { useChat } from "../hooks/useChat";
 import { useSidebar } from "../hooks/useSidebar";
@@ -76,7 +76,8 @@ export function ChatSidebar() {
               className="w-full min-w-0 px-2 py-0.5 text-sm bg-transparent text-neutral-800 dark:text-neutral-200 placeholder-neutral-500 dark:placeholder-neutral-400 focus:outline-none"
               autoFocus
             />
-            <Button
+            <button
+              type="button"
               onClick={() => {
                 setShowSearch(false);
                 setSearchQuery("");
@@ -85,26 +86,28 @@ export function ChatSidebar() {
               aria-label="Close search"
             >
               <X size={20} />
-            </Button>
+            </button>
           </div>
         ) : (
           <>
             <div className="flex-1" />
             <div className="flex items-center gap-2 md:gap-1 shrink-0">
-              <Button
+              <button
+                type="button"
                 onClick={() => setShowSearch(true)}
                 className="p-2 md:p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/20 rounded transition-all duration-200"
                 aria-label="Search chats"
               >
                 <Search size={20} />
-              </Button>
-              <Button
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowSidebar(false)}
                 className="p-2 md:p-1.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/20 rounded transition-all duration-200"
                 aria-label="Close sidebar"
               >
                 <PanelRightOpen size={20} />
-              </Button>
+              </button>
             </div>
           </>
         )}
@@ -147,22 +150,24 @@ export function ChatSidebar() {
                 className="w-32 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
               >
                 <MenuItem>
-                  <Button
+                  <button
+                    type="button"
                     onClick={() => forkChat(chatItem)}
                     className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
                   >
                     <GitBranch size={14} />
                     Fork
-                  </Button>
+                  </button>
                 </MenuItem>
                 <MenuItem>
-                  <Button
+                  <button
+                    type="button"
                     onClick={() => deleteChat(chatItem.id)}
                     className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 "
                   >
                     <Trash size={14} />
                     Delete
-                  </Button>
+                  </button>
                 </MenuItem>
               </MenuItems>
             </Menu>

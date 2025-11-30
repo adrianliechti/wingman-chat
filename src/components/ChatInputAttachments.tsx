@@ -1,5 +1,4 @@
 import { memo } from "react";
-import { Button } from '@headlessui/react';
 import { Image, File, FileText, Loader2, X } from "lucide-react";
 
 import { AttachmentType } from "../types/chat";
@@ -64,13 +63,13 @@ export const ChatInputAttachments = memo(({
               {getAttachmentIcon(attachment)}
             </div>
           )}
-          <Button
+          <button
             type="button"
             className="absolute top-0.5 right-0.5 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm shadow-sm"
             onClick={() => onRemove(index)}
           >
             <X size={10} />
-          </Button>
+          </button>
         </div>
       ))}
     </div>

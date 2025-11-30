@@ -1,6 +1,6 @@
 import { memo, useState, useEffect, useRef } from 'react';
 import { Sparkles, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Button, Menu, MenuButton, MenuItem, MenuItems, Textarea } from '@headlessui/react';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
 import type { BaseNodeData, DataItem } from '../types/workflow';
 import { getDataText } from '../types/workflow';
@@ -29,14 +29,19 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
   const [localPrompt, setLocalPrompt] = useState(data.prompt ?? '');
   const [activeTab, setActiveTab] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isLocalChangeRef = useRef(false);
   const config = getConfig();
   const client = config.client;
 
   // Sync external data.prompt changes to local state (e.g., when undo/redo happens)
   useEffect(() => {
-    if (data.prompt !== localPrompt) {
-      setLocalPrompt(data.prompt ?? '');
+    // Skip if this update was triggered by local changes
+    if (isLocalChangeRef.current) {
+      isLocalChangeRef.current = false;
+      return;
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLocalPrompt(data.prompt ?? '');
   }, [data.prompt]);
 
   useEffect(() => {
@@ -165,12 +170,13 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
         ) : (
           models.map((model) => (
             <MenuItem key={model.id}>
-              <Button
+              <button
+                type="button"
                 onClick={() => updateNode(id, { data: { ...data, model: model.id } })}
                 className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
               >
                 {model.name}
-              </Button>
+              </button>
             </MenuItem>
           ))
         )}
@@ -201,12 +207,13 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
       <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
         {/* Prompt Input */}
         <div className="shrink-0">
-          <Textarea
+          <textarea
             ref={textareaRef}
             value={localPrompt}
             onChange={(e) => {
               const newValue = e.target.value;
               setLocalPrompt(newValue);
+              isLocalChangeRef.current = true;
               updateNode(id, { data: { ...data, prompt: newValue } });
             }}
             onPointerDown={(e) => e.stopPropagation()}
