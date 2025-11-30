@@ -13,23 +13,6 @@ import { Role } from '../types/chat';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
-import type { FileChunk } from '../hooks/useRepository';
-
-// Helper to format a single repository chunk as markdown
-function formatChunkResult(chunk: FileChunk): string {
-  const similarity = chunk.similarity ? ` (${(chunk.similarity * 100).toFixed(1)}% match)` : '';
-  return `**${chunk.file.name}**${similarity}\n\n${chunk.text}`;
-}
-
-// Helper to create structured data from repository chunks
-function createRepositoryData(chunks: FileChunk[]): Data<FileChunk> {
-  return {
-    items: chunks.map((chunk) => ({
-      value: chunk,
-      text: formatChunkResult(chunk),
-    })),
-  };
-}
 
 // RepositoryNode data interface
 export interface RepositoryNodeData extends BaseNodeData {
@@ -43,7 +26,7 @@ export type RepositoryNodeType = Node<RepositoryNodeData, 'repository'>;
 
 export const RepositoryNode = memo(({ id, data, selected }: NodeProps<RepositoryNodeType>) => {
   const { updateNode } = useWorkflow();
-  const { getText, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
+  const { connectedItems, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const { repositories } = useRepositories();
   const [activeTab, setActiveTab] = useState(0);
   const config = getConfig();
@@ -66,60 +49,95 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
 
     await executeAsync(async () => {
       try {
-        let searchQuery = '';
+        const results: Array<{ text: string }> = [];
 
         if (hasConnections) {
-          // With input: use LLM to form optimized query from inputs
-          const inputText = getText();
-          
-          try {
-            const systemPrompt = instructions
-              ? 'Generate a concise and effective search query for a document repository based on the user instructions and the provided context. Return only the search query, nothing else.'
-              : 'Generate a concise and effective search query for a document repository based on the provided context. Return only the search query, nothing else.';
-            
-            const userContent = instructions
-              ? `Instructions: ${instructions}\n\nContext:\n${inputText}\n\nGenerate the search query:`
-              : `Context:\n${inputText}\n\nGenerate the search query:`;
+          // With input: process each input separately
+          for (let i = 0; i < connectedItems.length; i++) {
+            const item = connectedItems[i];
+            try {
+              // Generate search query from input
+              let searchQuery: string;
+              try {
+                const response = await client.complete(
+                  '',
+                  'Generate a concise and effective search query for a document repository based on the provided context. Return only the search query, nothing else.',
+                  [{
+                    role: Role.User,
+                    content: `Context:\n${item.text}\n\nGenerate the search query:`,
+                  }],
+                  []
+                );
+                searchQuery = response.content.trim();
+              } catch {
+                searchQuery = item.text;
+              }
 
-            const response = await client.complete(
-              '',
-              systemPrompt,
-              [{
-                role: Role.User,
-                content: userContent,
-              }],
-              []
-            );
-            searchQuery = response.content.trim();
-          } catch (error) {
-            console.error('Error generating search query:', error);
-            // Fallback: combine instructions with input or just use input
-            searchQuery = instructions ? `${instructions} ${inputText}` : inputText;
+              // Query the repository
+              const chunks = await queryChunks(searchQuery, 10);
+
+              if (chunks.length === 0) {
+                results.push({ text: 'No relevant documents found.' });
+              } else {
+                // Format chunks as context for LLM
+                const chunksContext = chunks
+                  .map((chunk, idx) => `[Document ${idx + 1}: ${chunk.file.name}]\n${chunk.text}`)
+                  .join('\n\n---\n\n');
+
+                // Use LLM to synthesize results based on instructions or default
+                const systemPrompt = instructions
+                  ? `You are a helpful assistant. Based on the provided documents, ${instructions}. Be concise and informative.`
+                  : 'You are a helpful assistant. Based on the provided documents, synthesize a comprehensive and informative response that addresses the user query. Be concise and well-structured.';
+
+                const synthesisResponse = await client.complete(
+                  '',
+                  systemPrompt,
+                  [{
+                    role: Role.User,
+                    content: `User Query:\n${item.text}\n\nRelevant Documents:\n${chunksContext}\n\nProvide a synthesized response:`,
+                  }],
+                  []
+                );
+
+                results.push({ text: synthesisResponse.content.trim() });
+              }
+            } catch (error) {
+              results.push({
+                text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              });
+            }
           }
         } else {
-          // No input: use query field directly
+          // No input: use query field directly, return raw chunks
           if (!query) {
             updateNode(id, { data: { ...data, error: 'No search query provided' } });
             return;
           }
-          searchQuery = query;
-        }
 
-        // Query the repository
-        const chunks = await queryChunks(searchQuery, 10);
+          const chunks = await queryChunks(query, 10);
+
+          if (chunks.length === 0) {
+            results.push({ text: 'No results found for the query' });
+          } else {
+            // Without connections, show raw chunks in tabs
+            for (const chunk of chunks) {
+              const similarity = chunk.similarity ? ` (${(chunk.similarity * 100).toFixed(1)}% match)` : '';
+              results.push({ text: `**${chunk.file.name}**${similarity}\n\n${chunk.text}` });
+            }
+          }
+        }
 
         // Reset active tab when results change
         setActiveTab(0);
 
-        if (chunks.length === 0) {
-          updateNode(id, {
-            data: { ...data, output: createRepositoryData([{ file: { id: '', name: 'No Results', status: 'completed', progress: 100, uploadedAt: new Date() }, text: 'No results found for the query' }]), error: undefined }
-          });
-        } else {
-          updateNode(id, {
-            data: { ...data, output: createRepositoryData(chunks), error: undefined }
-          });
-        }
+        // Create output data
+        const outputData: Data<string> = {
+          items: results.map(r => ({ value: r.text, text: r.text })),
+        };
+
+        updateNode(id, {
+          data: { ...data, output: outputData, error: undefined }
+        });
       } catch (error) {
         console.error('Error executing repository query:', error);
         updateNode(id, {
