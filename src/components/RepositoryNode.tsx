@@ -3,6 +3,7 @@ import { Database, ChevronDown } from 'lucide-react';
 import { Button, Input, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
 import type { BaseNodeData } from '../types/workflow';
+import { createData, getDataText } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { useRepositories } from '../hooks/useRepositories';
@@ -58,7 +59,7 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
 
         if (chunks.length === 0) {
           updateNode(id, {
-            data: { ...data, outputText: 'No results found for the query', error: undefined }
+            data: { ...data, output: createData('No results found for the query'), error: undefined }
           });
         } else {
           // Format the results
@@ -70,7 +71,7 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
             .join('\n\n---\n\n');
 
           updateNode(id, {
-            data: { ...data, outputText, error: undefined }
+            data: { ...data, output: createData(outputText), error: undefined }
           });
         }
       } catch (error) {
@@ -164,10 +165,10 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
         </div>
 
         {/* Output Display */}
-        {data.outputText && (
+        {data.output && (
           <div className="flex-1 overflow-y-auto min-h-0 px-1 py-2 text-sm bg-white/30 dark:bg-black/10 rounded-md border border-neutral-200 dark:border-neutral-700 prose prose-sm dark:prose-invert max-w-none nodrag">
             <Markdown>
-              {data.outputText}
+              {getDataText(data.output)}
             </Markdown>
           </div>
         )}

@@ -3,6 +3,7 @@ import { Code2, ChevronDown, Eye, EyeOff } from 'lucide-react';
 import { Button, Menu, MenuButton, MenuItem, MenuItems, Textarea } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
 import type { BaseNodeData } from '../types/workflow';
+import { createData, getDataText } from '../types/workflow';
 import type { Model, Tool } from '../types/chat';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
@@ -24,7 +25,7 @@ export type CodeNodeType = Node<CodeNodeData, 'code'>;
 
 export const CodeNode = memo(({ id, data, selected }: NodeProps<CodeNodeType>) => {
   const { updateNode } = useWorkflow();
-  const { getLabeledText, isProcessing, executeAsync } = useWorkflowNode(id);
+  const { getText, isProcessing, executeAsync } = useWorkflowNode(id);
   const [models, setModels] = useState<Model[]>([]);
   const [showCode, setShowCode] = useState(false);
   const config = getConfig();
@@ -46,8 +47,8 @@ export const CodeNode = memo(({ id, data, selected }: NodeProps<CodeNodeType>) =
     if (!data.prompt?.trim()) return;
     
     await executeAsync(async () => {
-      // Get labeled text from connected nodes
-      const contextText = getLabeledText();
+      // Get text from connected nodes
+      const contextText = getText();
       
       // Build the user message content
       let messageContent = data.prompt || '';
@@ -109,7 +110,7 @@ export const CodeNode = memo(({ id, data, selected }: NodeProps<CodeNodeType>) =
 
           // Update node to show generated code
           updateNode(id, {
-            data: { ...data, generatedCode, outputText: 'Executing code...', error: undefined }
+            data: { ...data, generatedCode, output: createData('Executing code...'), error: undefined }
           });
 
           // Build execution code with input_data if available
@@ -134,7 +135,7 @@ ${generatedCode}`;
               data: { 
                 ...data, 
                 generatedCode,
-                outputText: '', 
+                output: createData(''), 
                 error: result.error || 'Code execution failed' 
               }
             });
@@ -146,7 +147,7 @@ ${generatedCode}`;
             data: { 
               ...data, 
               generatedCode,
-              outputText: result.output, 
+              output: createData(result.output), 
               error: undefined 
             }
           });
@@ -222,7 +223,7 @@ ${generatedCode}`;
       headerActions={
         <>
           {modelSelector}
-          {data.outputText && <CopyButton text={data.outputText} />}
+          {data.output && <CopyButton text={getDataText(data.output)} />}
         </>
       }
     >
@@ -254,7 +255,7 @@ ${generatedCode}`;
             )}
             {data.generatedCode}
           </div>
-        ) : data.outputText ? (
+        ) : getDataText(data.output) ? (
           <div className="flex-1 overflow-y-auto px-3 py-2 text-sm font-mono rounded-lg bg-gray-100/50 dark:bg-black/10 scrollbar-hide whitespace-pre-wrap nodrag">
             {data.generatedCode && (
               <button
@@ -265,7 +266,7 @@ ${generatedCode}`;
                 <Eye size={14} />
               </button>
             )}
-            {data.outputText}
+            {getDataText(data.output)}
           </div>
         ) : null}
       </div>

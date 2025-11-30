@@ -7,7 +7,6 @@ export function createPromptNode(position: { x: number; y: number }): PromptNode
     type: 'prompt',
     position,
     data: {
-      outputText: '',
       prompt: ''
     }
   };

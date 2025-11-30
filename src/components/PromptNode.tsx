@@ -1,8 +1,9 @@
-import { memo, useState, useEffect } from 'react';
-import { Sparkles, ChevronDown } from 'lucide-react';
+import { memo, useState, useEffect, useRef } from 'react';
+import { Sparkles, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button, Menu, MenuButton, MenuItem, MenuItems, Textarea } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
-import type { BaseNodeData } from '../types/workflow';
+import type { BaseNodeData, DataItem } from '../types/workflow';
+import { getDataText } from '../types/workflow';
 import type { Model } from '../types/chat';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
@@ -23,10 +24,20 @@ export type PromptNodeType = Node<PromptNodeData, 'prompt'>;
 
 export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType>) => {
   const { updateNode } = useWorkflow();
-  const { getLabeledText, isProcessing, executeAsync } = useWorkflowNode(id);
+  const { getText, connectedItems, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const [models, setModels] = useState<Model[]>([]);
+  const [localPrompt, setLocalPrompt] = useState(data.prompt ?? '');
+  const [activeTab, setActiveTab] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const config = getConfig();
   const client = config.client;
+
+  // Sync external data.prompt changes to local state (e.g., when undo/redo happens)
+  useEffect(() => {
+    if (data.prompt !== localPrompt) {
+      setLocalPrompt(data.prompt ?? '');
+    }
+  }, [data.prompt]);
 
   useEffect(() => {
     const loadModels = async () => {
@@ -41,42 +52,87 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
   }, [client]);
 
   const handleExecute = async () => {
-    if (!data.prompt?.trim()) return;
+    if (!localPrompt?.trim()) return;
     
     await executeAsync(async () => {
-      // Get labeled text from connected nodes
-      const contextText = getLabeledText();
-      
-      // Build the user message content
-      let messageContent = data.prompt || '';
-      
-      // If there's connected data, append it as context
-      if (contextText) {
-        messageContent = `${messageContent}\n\n---\n\n${contextText}`;
-      }
-
       try {
-        // Call the complete method
-        const response = await client.complete(
-          data.model || '', // use selected model or default
-          'Provide only the final answer. Do not include any preamble, explanation, or chain of thinking.',
-          [{
-            role: Role.User,
-            content: messageContent,
-          }],
-          [], // no tools
-          (_delta, snapshot) => {
-            // Update output in real-time as text streams in
-            updateNode(id, {
-              data: { ...data, outputText: snapshot, error: undefined }
-            });
-          }
-        );
+        if (hasConnections && connectedItems.length > 0) {
+          // Process prompt on each input item
+          const results: DataItem<string>[] = [];
+          
+          for (const item of connectedItems) {
+            // Build the user message content with this item's context
+            const messageContent = `${localPrompt}\n\n---\n\n${item.text}`;
 
-        // Set final output
-        updateNode(id, {
-          data: { ...data, outputText: response.content, error: undefined }
-        });
+            try {
+              const response = await client.complete(
+                data.model || '',
+                'Provide only the final answer. Do not include any preamble, explanation, or chain of thinking.',
+                [{
+                  role: Role.User,
+                  content: messageContent,
+                }],
+                [],
+                (_delta, snapshot) => {
+                  // Update data in real-time with current results + streaming item
+                  const currentResults = [...results, { value: snapshot, text: snapshot }];
+                  updateNode(id, {
+                    data: { ...data, output: { items: currentResults }, error: undefined }
+                  });
+                }
+              );
+
+              results.push({
+                value: response.content,
+                text: response.content,
+              });
+
+              // Update with completed result
+              updateNode(id, {
+                data: { ...data, output: { items: results }, error: undefined }
+              });
+            } catch (error) {
+              console.error('Error executing LLM for item:', error);
+              results.push({
+                value: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              });
+            }
+          }
+
+          // Set final data with all results
+          updateNode(id, {
+            data: { ...data, output: { items: results }, error: undefined }
+          });
+        } else {
+          // No connections: original behavior (single output)
+          const contextText = getText();
+          
+          let messageContent = localPrompt || '';
+          
+          if (contextText) {
+            messageContent = `${messageContent}\n\n---\n\n${contextText}`;
+          }
+
+          const response = await client.complete(
+            data.model || '',
+            'Provide only the final answer. Do not include any preamble, explanation, or chain of thinking.',
+            [{
+              role: Role.User,
+              content: messageContent,
+            }],
+            [],
+            (_delta, snapshot) => {
+              updateNode(id, {
+                data: { ...data, output: { items: [{ value: snapshot, text: snapshot }] }, error: undefined }
+              });
+            }
+          );
+
+          updateNode(id, {
+            data: { ...data, output: { items: [{ value: response.content, text: response.content }] }, error: undefined }
+          });
+        }
       } catch (error) {
         console.error('Error executing LLM:', error);
         updateNode(id, {
@@ -131,14 +187,14 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
       color="purple"
       onExecute={handleExecute}
       isProcessing={isProcessing}
-      canExecute={!!data.prompt?.trim()}
+      canExecute={!!localPrompt?.trim()}
       showInputHandle={true}
       showOutputHandle={true}
       error={data.error}
       headerActions={
         <>
           {modelSelector}
-          {data.outputText && <CopyButton text={data.outputText} />}
+          {data.output && <CopyButton text={getDataText(data.output)} />}
         </>
       }
     >
@@ -146,8 +202,13 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
         {/* Prompt Input */}
         <div className="shrink-0">
           <Textarea
-            value={data.prompt ?? ''}
-            onChange={(e) => updateNode(id, { data: { ...data, prompt: e.target.value } })}
+            ref={textareaRef}
+            value={localPrompt}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setLocalPrompt(newValue);
+              updateNode(id, { data: { ...data, prompt: newValue } });
+            }}
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             placeholder="Instructions"
@@ -156,17 +217,61 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
           />
         </div>
 
-        {data.outputText && (
+        {data.output && data.output.items.length > 1 ? (
+          // Multiple results: show with tabs
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto px-1 py-2 text-sm rounded-t-lg bg-gray-100/50 dark:bg-black/10 scrollbar-hide">
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <Markdown>
+                  {data.output.items[activeTab]?.text || ''}
+                </Markdown>
+              </div>
+            </div>
+            {/* Tab navigation at bottom */}
+            <div className="shrink-0 flex items-center justify-between px-2 py-1.5 bg-gray-200/50 dark:bg-black/20 rounded-b-lg border-t border-gray-200/50 dark:border-gray-700/50">
+              <button
+                onClick={() => setActiveTab(Math.max(0, activeTab - 1))}
+                disabled={activeTab === 0}
+                className="p-1 rounded hover:bg-gray-300/50 dark:hover:bg-gray-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors nodrag"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <div className="flex items-center gap-1">
+                {data.output.items.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setActiveTab(idx)}
+                    className={`w-6 h-6 text-xs rounded transition-colors nodrag ${
+                      idx === activeTab
+                        ? 'bg-purple-500 text-white'
+                        : 'bg-gray-300/50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400 hover:bg-gray-400/50 dark:hover:bg-gray-600/50'
+                    }`}
+                  >
+                    {idx + 1}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setActiveTab(Math.min(data.output!.items.length - 1, activeTab + 1))}
+                disabled={activeTab === data.output.items.length - 1}
+                className="p-1 rounded hover:bg-gray-300/50 dark:hover:bg-gray-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors nodrag"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        ) : data.output && data.output.items.length === 1 ? (
+          // Single result
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto px-1 py-2 text-sm rounded-lg bg-gray-100/50 dark:bg-black/10 scrollbar-hide">
               <div className="prose prose-sm dark:prose-invert max-w-none">
                 <Markdown>
-                  {data.outputText}
+                  {data.output.items[0].text}
                 </Markdown>
               </div>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </WorkflowNode>
   );

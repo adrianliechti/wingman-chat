@@ -9,7 +9,6 @@ export function createRepositoryNode(position: { x: number; y: number }): Reposi
     data: {
       repositoryId: '',
       query: '',
-      outputText: '',
       useInput: false
     }
   };

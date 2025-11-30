@@ -1,53 +1,47 @@
-// Helper function to get connected node data
-export function getConnectedNodeData(
+import type { Data } from '../types/workflow';
+import { getDataText } from '../types/workflow';
+
+// Helper function to get connected node data as a single combined Data
+// Expands and merges all items from connected nodes
+export function getConnectedData(
   nodeId: string,
   nodes: Array<{ id: string; data: Record<string, unknown> }>,
-  edges: Array<{ source: string; target: string; data?: Record<string, unknown> }>
-): Array<{ text: string; label: string }> {
+  edges: Array<{ source: string; target: string }>
+): Data {
   const incomingEdges = edges.filter(edge => edge.target === nodeId);
-  const connectedData: Array<{ text: string; label: string }> = [];
+  const result: Data = { items: [] };
   
   for (const edge of incomingEdges) {
     const sourceNode = nodes.find(n => n.id === edge.source);
     if (sourceNode?.data) {
-      const nodeData = sourceNode.data;
-      // Use edge label if available, otherwise fallback to node label or empty string
-      const label = (edge.data?.label as string) || (nodeData.label as string) || '';
+      const nodeOutput = sourceNode.data.output as Data | undefined;
       
-      if (nodeData.outputText && typeof nodeData.outputText === 'string') {
-        connectedData.push({ text: nodeData.outputText, label });
+      if (nodeOutput && nodeOutput.items && nodeOutput.items.length > 0) {
+        // Add each item from the data
+        result.items.push(...nodeOutput.items);
+      } else {
+        // Fallback: try to get text from output or legacy outputText property
+        let text = getDataText(nodeOutput);
+        if (!text && typeof sourceNode.data.outputText === 'string') {
+          text = sourceNode.data.outputText;
+        }
+        if (text) {
+          result.items.push({ value: text, text });
+        }
       }
     }
   }
   
-  return connectedData;
+  return result;
 }
 
-// Helper function to format connected data into plain text (no labels)
-export function getText(
-  connectedData: Array<{ text: string; label: string }>,
+// Helper function to get combined text from connected nodes
+export function getConnectedText(
+  nodeId: string,
+  nodes: Array<{ id: string; data: Record<string, unknown> }>,
+  edges: Array<{ source: string; target: string }>,
   separator: string = '\n\n'
 ): string {
-  if (connectedData.length === 0) {
-    return '';
-  }
-  
-  return connectedData.map(({ text }) => text).join(separator);
-}
-
-// Helper function to format connected data with label headers
-export function getLabeledText(
-  connectedData: Array<{ text: string; label: string }>
-): string {
-  if (connectedData.length === 0) {
-    return '';
-  }
-  
-  // Format each item with its label as a comment (if label exists)
-  return connectedData.map(({ text, label }) => {
-    if (label) {
-      return `// ${label}\n${text}`;
-    }
-    return text;
-  }).join('\n\n---\n\n');
+  const data = getConnectedData(nodeId, nodes, edges);
+  return data.items.map(item => item.text).join(separator);
 }

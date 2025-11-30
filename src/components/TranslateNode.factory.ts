@@ -7,7 +7,6 @@ export function createTranslateNode(position: { x: number; y: number }): Transla
     type: 'translate',
     position,
     data: {
-      outputText: '',
       useInput: false,
       language: 'en',
       tone: '',

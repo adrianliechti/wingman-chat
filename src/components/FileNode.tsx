@@ -3,6 +3,7 @@ import { FileText, Upload, Loader2 } from 'lucide-react';
 import { Textarea } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
 import type { BaseNodeData } from '../types/workflow';
+import { createData, getDataText } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
@@ -33,7 +34,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
           data: {
             ...data,
             fileName: file.name,
-            outputText: content
+            output: createData(content)
           }
         });
       } catch (error) {
@@ -42,7 +43,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
           data: {
             ...data,
             fileName: file.name,
-            outputText: 'Error extracting text from file'
+            output: createData('Error extracting text from file')
           }
         });
       }
@@ -104,7 +105,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
             <span className="text-sm">Extracting text...</span>
           </div>
         </div>
-      ) : !data.outputText ? (
+      ) : !data.output ? (
         <div 
           className="flex-1 flex items-center justify-center"
           onDragOver={handleDragOver}
@@ -143,7 +144,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
             isDragging ? 'opacity-50' : ''
           }`}>
             <Textarea
-              value={data.outputText || ''}
+              value={getDataText(data.output)}
               readOnly
               className="w-full h-full px-3 py-2 text-xs border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-gray-100/50 dark:bg-black/10 text-gray-700 dark:text-gray-300 resize-none min-h-20 scrollbar-hide"
             />
