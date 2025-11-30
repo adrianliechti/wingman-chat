@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
 import { getConfig } from "../config";
 import { downloadFromUrl } from "../lib/utils";
@@ -26,25 +26,12 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
   const [lastTranslatedText, setLastTranslatedText] = useState(""); // Track what was last translated
   const [error, setError] = useState<string | null>(null);
 
-  // Refs for stable references
-  const sourceTextRef = useRef(sourceText);
-  const targetLangRef = useRef(targetLang);
-
-  // Update refs when state changes
-  useEffect(() => {
-    sourceTextRef.current = sourceText;
-  }, [sourceText]);
-
-  useEffect(() => {
-    targetLangRef.current = targetLang;
-  }, [targetLang]);
-
   // Derived state
   const selectedLanguage = supportedLanguages().find(l => l.code === targetLang);
 
-  // Actions with stable references
+  // Translation action
   const performTranslate = useCallback(async (langCode?: string, textToTranslate?: string, toneToUse?: string, styleToUse?: string) => {
-    const langToUse = langCode ?? targetLangRef.current;
+    const langToUse = langCode ?? targetLang;
     const toneValue = toneToUse ?? tone;
     const styleValue = styleToUse ?? style;
     
@@ -96,7 +83,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     }
     
     // Handle text translation
-    const textToUse = textToTranslate ?? sourceTextRef.current;
+    const textToUse = textToTranslate ?? sourceText;
 
     if (!textToUse.trim()) {
       setTranslatedText("");
@@ -125,7 +112,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [client, selectedFile, tone, style, config.translator.model]);
+  }, [client, selectedFile, tone, style, config.translator.model, targetLang, sourceText]);
 
   const handleReset = useCallback(() => {
     setSourceText("");
@@ -152,10 +139,10 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     setLastTranslatedText("");
     
     // Automatically translate with new language if there's source text (but not if file is selected)
-    if (sourceTextRef.current.trim() && !selectedFile) {
-      await performTranslate(newLangCode, sourceTextRef.current, tone, style);
+    if (sourceText.trim() && !selectedFile) {
+      await performTranslate(newLangCode, sourceText, tone, style);
     }
-  }, [performTranslate, selectedFile, tone, style]);
+  }, [performTranslate, selectedFile, tone, style, sourceText]);
 
   // Auto-translate effect (1 second delay) - only if text hasn't been translated yet
   useEffect(() => {

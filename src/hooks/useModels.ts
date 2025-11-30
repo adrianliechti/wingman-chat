@@ -4,13 +4,33 @@ import { getConfig } from "../config";
 
 const STORAGE_KEY = "app_model";
 
+// Helper to get saved model from localStorage
+function getSavedModelId(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export function useModels() {
   const config = getConfig();
   const [models, setModels] = useState<Model[]>(() => {
     // Initialize with config models if available
     return config.models.length > 0 ? config.models : [];
   });
-  const [selectedModel, setSelectedModelState] = useState<Model | null>(null);
+  
+  // Initialize selected model from localStorage if models are already available
+  const [selectedModel, setSelectedModelState] = useState<Model | null>(() => {
+    if (config.models.length === 0) return null;
+    
+    const savedModelId = getSavedModelId();
+    if (savedModelId) {
+      const savedModel = config.models.find(model => model.id === savedModelId);
+      if (savedModel) return savedModel;
+    }
+    return config.models[0] || null;
+  });
 
   // Load models from API if not in config
   useEffect(() => {
@@ -18,8 +38,21 @@ export function useModels() {
 
     const loadModels = async () => {
       try {
-        const models = await config.client.listModels("completion");
-        setModels(models);
+        const loadedModels = await config.client.listModels("completion");
+        setModels(loadedModels);
+        
+        // Set selected model after loading
+        if (loadedModels.length > 0) {
+          const savedModelId = getSavedModelId();
+          if (savedModelId) {
+            const savedModel = loadedModels.find(model => model.id === savedModelId);
+            if (savedModel) {
+              setSelectedModelState(savedModel);
+              return;
+            }
+          }
+          setSelectedModelState(loadedModels[0]);
+        }
       } catch (error) {
         console.error("error loading models", error);
       }
@@ -27,31 +60,6 @@ export function useModels() {
 
     loadModels();
   }, [config.client, config.models.length]);
-
-  // Set selected model when models are loaded
-  useEffect(() => {
-    if (models.length === 0 || selectedModel) return;
-
-    const loadSelectedModel = () => {
-      try {
-        const savedModelId = localStorage.getItem(STORAGE_KEY);
-        if (savedModelId) {
-          const savedModel = models.find(model => model.id === savedModelId);
-          if (savedModel) {
-            setSelectedModelState(savedModel);
-            return;
-          }
-        }
-      } catch {
-        // Silently handle localStorage errors
-      }
-
-      // Use first model as fallback
-      setSelectedModelState(models[0] || null);
-    };
-
-    loadSelectedModel();
-  }, [models, selectedModel]);
 
   // Function to update selected model and save to localStorage
   const setSelectedModel = (model: Model | null) => {

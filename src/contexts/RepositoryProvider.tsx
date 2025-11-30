@@ -14,18 +14,17 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
   const [currentRepository, setCurrentRepository] = useState<Repository | null>(null);
   const [showRepositoryDrawer, setShowRepositoryDrawer] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [isAvailable, setIsAvailable] = useState(false);
-
-  // Check repository availability from config
-  useEffect(() => {
+  
+  // Check repository availability from config (computed once on mount)
+  const [isAvailable] = useState(() => {
     try {
       const config = getConfig();
-      setIsAvailable(config.repository.enabled);
+      return config.repository.enabled;
     } catch (error) {
       console.warn('Failed to get repository config:', error);
-      setIsAvailable(false);
+      return false;
     }
-  }, []);
+  });
 
   // Load repositories from database and state from localStorage on mount
   useEffect(() => {

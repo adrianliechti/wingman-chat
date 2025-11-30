@@ -66,7 +66,7 @@ export function TranslatePage() {
   const [errorExpanded, setErrorExpanded] = useState(false);
   const lastSelectionRef = useRef<string>('');
 
-  // Update editable text when translated text changes
+  // Sync currentText when translatedText changes from API response
   useEffect(() => {
     setCurrentText(translatedText);
   }, [translatedText]);

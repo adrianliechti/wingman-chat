@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Role } from "../types/chat";
 import type { Message, ToolProvider, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation } from '../types/chat';
 import { ProviderState } from '../types/chat';
@@ -27,7 +27,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
-  const messagesRef = useRef<Message[]>([]);
 
   const chat = chats.find(c => c.id === chatId) ?? null;
   const model = chat?.model ?? selectedModel ?? models[0];
@@ -50,10 +49,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const messages = useMemo(() => {
     return chat?.messages ?? [];
   }, [chat?.messages]);
-
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
 
   // Set up the filesystem for the current chat
   useEffect(() => {
@@ -135,11 +130,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
     (message: Message) => {
       const { id } = getOrCreateChat();
       
-      const currentMessages = messagesRef.current;
-      const updatedMessages = [...currentMessages, message];
-      
-      messagesRef.current = updatedMessages;
-      updateChat(id, () => ({ messages: updatedMessages }));
+      // Use the updater pattern to get fresh messages from the chat
+      updateChat(id, (currentChat) => ({ 
+        messages: [...(currentChat.messages || []), message] 
+      }));
     },
     [getOrCreateChat, updateChat]
   );
