@@ -1,18 +1,17 @@
 import { useState } from 'react';
 import { Copy as CopyIcon, CopyCheck as CopyCheckIcon } from "lucide-react";
-import { copyToClipboard } from "../lib/copy";
+import { copyToClipboard, type CopyOptions } from "../lib/copy";
 
-type CopyButtonProps = {
-  text: string;
+type CopyButtonProps = CopyOptions & {
   className?: string;
 };
 
-export const CopyButton = ({ text, className }: CopyButtonProps) => {
+export const CopyButton = ({ text, markdown, html, className }: CopyButtonProps) => {
     const [copied, setCopied] = useState(false);
 
     const handleCopy = async () => {
         try {
-            await copyToClipboard({ text });
+            await copyToClipboard({ text, markdown, html });
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         } catch (error) {

@@ -1,69 +1,30 @@
 import { markdownToHtml, markdownToText } from "./utils";
 
 export interface CopyOptions {
-  text: string;
+  text?: string;
+  markdown?: string;
+  html?: string;
 }
 
 export async function copyToClipboard(options: CopyOptions): Promise<void> {
-  const { text } = options;
-
-  if (!text) {
-    return;
-  }
+  const { text, markdown, html } = options;
 
   const clipboardData: Record<string, Blob> = {};
-  const format = detectFormat(text);
 
-  if (format === 'html') {
-    clipboardData['text/html'] = new Blob([text], { type: 'text/html' });
-  } else if (format === 'markdown') {
-    // clipboardData['text/markdown'] = new Blob([text], { type: 'text/markdown' });
-    clipboardData['text/plain'] = new Blob([markdownToText(text)], { type: 'text/plain' });
-    clipboardData['text/html'] = new Blob([markdownToHtml(text)], { type: 'text/html' });
-  } else {
+  if (html) {
+    // HTML: copy as html only
+    clipboardData['text/html'] = new Blob([html], { type: 'text/html' });
+  } else if (markdown) {
+    // Markdown: copy as plain text + html
+    clipboardData['text/plain'] = new Blob([markdownToText(markdown)], { type: 'text/plain' });
+    clipboardData['text/html'] = new Blob([markdownToHtml(markdown)], { type: 'text/html' });
+  } else if (text) {
+    // Plain text: copy as text only
     clipboardData['text/plain'] = new Blob([text], { type: 'text/plain' });
+  } else {
+    return;
   }
 
   const clipboardItem = new ClipboardItem(clipboardData);
   await navigator.clipboard.write([clipboardItem]);
-}
-
-function detectFormat(text: string): 'html' | 'markdown' | 'plain' {
-  const trimmed = text.trim();
-  
-  // Detect HTML
-  if (trimmed.startsWith('<!DOCTYPE') || 
-      trimmed.startsWith('<html') || 
-      (trimmed.startsWith('<') && trimmed.endsWith('>') && trimmed.includes('</'))) {
-    return 'html';
-  }
-  
-  // Detect Markdown (common patterns)
-  const markdownPatterns = [
-    /^#{1,6}\s/m,           // Headers
-    /\*\*.*\*\*/,           // Bold
-    /\*.*\*/,               // Italic
-    /\[.*\]\(.*\)/,         // Links
-    /!\[.*\]\(.*\)/,        // Images
-    /^[-*+]\s/m,            // Unordered lists
-    /^\d+\.\s/m,            // Ordered lists
-    /^>\s/m,                // Blockquotes
-    /```/,                  // Code blocks
-    /`[^`]+`/,              // Inline code
-    /^\|.+\|$/m,            // Tables (lines with pipes)
-    /^\|[-:| ]+\|$/m,       // Table separator rows
-    /^[-*_]{3,}$/m,         // Horizontal rules
-    /~~.+~~/,               // Strikethrough
-    /^\s*[-*+] \[[ x]\]/m,  // Task lists
-    /\[\^[^\]]+\]/,         // Footnote references [^1]
-    /^\[\^[^\]]+\]:/m,      // Footnote definitions [^1]:
-    /^={3,}$/m,             // Setext heading (===)
-    /^-{3,}$/m,             // Setext heading (---) - also HR
-  ];
-  
-  if (markdownPatterns.some(pattern => pattern.test(text))) {
-    return 'markdown';
-  }
-  
-  return 'plain';
 }
