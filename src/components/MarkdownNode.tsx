@@ -67,7 +67,7 @@ export const MarkdownNode = memo(({ id, data, selected }: NodeProps<MarkdownNode
       minWidth={400}
       error={data.error}
       headerActions={
-        data.outputText && <CopyButton text={data.outputText} />
+        data.outputText && <CopyButton markdown={data.outputText} />
       }
     >
       {data.error ? (
