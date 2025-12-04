@@ -22,6 +22,11 @@ function WorkflowPageContent() {
         </button>
       </>
     );
+
+    // Cleanup when component unmounts
+    return () => {
+      setRightActions(null);
+    };
   }, [setRightActions, clearWorkflow]);
 
   return (
