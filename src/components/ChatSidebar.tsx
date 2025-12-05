@@ -187,10 +187,37 @@ export function ChatSidebar() {
       {/* Scrollable content area */}
       <div className="flex-1 sidebar-scroll overflow-y-auto overflow-x-hidden">
         <div className="flex flex-col gap-0.5 pt-2 pb-1 px-1">
-        {groupedChats.map((group) => (
-          <div key={group.category}>
-            <div className="px-2 py-1.5 text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">
-              {group.category}
+        {groupedChats.map((group, index) => (
+          <div key={group.category} className={index > 0 ? "pt-2" : ""}>
+            <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
+              <span>{group.category}</span>
+              <Menu>
+                <MenuButton
+                  className="opacity-0 group-hover/section:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreVertical size={16} />
+                </MenuButton>
+                <MenuItems
+                  modal={false}
+                  transition
+                  anchor="bottom end"
+                  className="w-40 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
+                >
+                  <MenuItem>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        group.chats.forEach((chatItem) => deleteChat(chatItem.id));
+                      }}
+                      className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                    >
+                      <Trash size={14} />
+                      Delete All
+                    </button>
+                  </MenuItem>
+                </MenuItems>
+              </Menu>
             </div>
             <ul className="flex flex-col gap-0.5">
               {group.chats.map((chatItem) => (
@@ -203,19 +230,19 @@ export function ChatSidebar() {
                       setShowSidebar(false);
                     }
                   }}
-                  className={`flex items-center justify-between sidebar-item-base cursor-pointer relative shrink-0 group ${
+                  className={`flex items-center sidebar-item-base cursor-pointer relative shrink-0 group ${
                     chatItem.id === chat?.id ? "sidebar-item-selected" : ""
                   }`}
                 >
                   <div
-                    className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-neutral-800 dark:text-neutral-200"
+                    className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-neutral-800 dark:text-neutral-200 pr-4"
                     title={chatItem.title ?? "Untitled"}
                   >
                     {chatItem.title ?? "Untitled"}
                   </div>
                   <Menu>
                     <MenuButton
-                      className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200  shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
+                      className="absolute right-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <MoreVertical size={16} />
