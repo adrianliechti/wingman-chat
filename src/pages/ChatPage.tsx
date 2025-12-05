@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus as PlusIcon, Package, PackageOpen, Info, ArrowDown, BookOpenText, BookText } from "lucide-react";
+import { Plus as PlusIcon, Package, PackageOpen, Info, ArrowDown, BookOpenText, BookText, Globe } from "lucide-react";
 import DOMPurify from "dompurify";
 import { getConfig } from "../config";
 import { useAutoScroll } from "../hooks/useAutoScroll";
@@ -14,8 +14,10 @@ import { ChatSidebar } from "../components/ChatSidebar";
 import { BackgroundImage } from "../components/BackgroundImage";
 import { useRepositories } from "../hooks/useRepositories";
 import { useArtifacts } from "../hooks/useArtifacts";
+import { useToolsContext } from "../hooks/useToolsContext";
 import { RepositoryDrawer } from "../components/RepositoryDrawer";
 import { ArtifactsDrawer } from "../components/ArtifactsDrawer";
+import { ProviderState } from "../types/chat";
 
 export function ChatPage() {
   const {
@@ -29,6 +31,10 @@ export function ChatPage() {
   const { layoutMode } = useLayout();
   const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
   const { isAvailable: repositoryAvailable, toggleRepositoryDrawer, showRepositoryDrawer } = useRepositories();
+  const { getProviderState } = useToolsContext();
+  
+  // Check if internet provider is enabled (connected)
+  const isInternetEnabled = getProviderState("internet") === ProviderState.Connected;
   
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
@@ -217,6 +223,25 @@ export function ChatPage() {
   return (
     <div className="h-full w-full flex overflow-hidden relative">
       <BackgroundImage opacity={messages.length === 0 ? 80 : 0} />
+      
+      {/* Internet access warning banner - fixed at top */}
+      {isInternetEnabled && (
+        <div className={`fixed top-12 left-0 right-0 z-30 pointer-events-none transition-all duration-300 ${
+          showSidebar && chats.length > 0 ? 'md:left-[14rem]' : ''
+        } ${
+          showArtifactsDrawer ? 'md:right-[50vw]' :
+          showRepositoryDrawer ? 'md:right-[20rem]' : ''
+        }`}>
+          <div className="pointer-events-auto w-full bg-gradient-to-r from-amber-500/90 via-orange-500/90 to-amber-500/90 dark:from-amber-600/80 dark:via-orange-600/80 dark:to-amber-600/80 backdrop-blur-sm shadow-sm">
+            <div className="flex items-center justify-center gap-2 px-4 py-1.5">
+              <Globe size={14} className="text-white shrink-0" />
+              <p className="text-xs text-white font-medium">
+                Internet access enabled — Your messages may be used to search the web. Be cautious about sharing sensitive information.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Main content area */}
       <div className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-300 ${
