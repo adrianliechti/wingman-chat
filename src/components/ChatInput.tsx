@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { Button, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
 import { Send, Paperclip, ScreenShare, X, Sparkles, Loader2, Lightbulb, Mic, Square, Package, Check, LoaderCircle, Rocket, Sliders, TriangleAlert } from "lucide-react";
 
@@ -553,7 +553,7 @@ export function ChatInput() {
         {/* Controls */}
         <div className="flex items-center justify-between p-3 pt-0 pb-8 md:pb-3">
           <div className="flex items-center gap-2">
-            <Button
+            <button
               type="button"
               className="text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
               onClick={handlePromptSuggestionsClick}
@@ -564,7 +564,7 @@ export function ChatInput() {
               ) : (
                 <Lightbulb size={16} />
               )}
-            </Button>
+            </button>
 
             {models.length > 0 && (
               <Menu>
@@ -582,7 +582,8 @@ export function ChatInput() {
                 >
                   {models.map((modelItem) => (
                     <MenuItem key={modelItem.id}>
-                      <Button
+                      <button
+                        type="button"
                         onClick={() => onModelChange(modelItem)}
                         title={modelItem.description}
                         className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
@@ -604,12 +605,13 @@ export function ChatInput() {
                             )}
                           </div>
                         </div>
-                      </Button>
+                      </button>
                     </MenuItem>
                   ))}
                   {voiceAvailable && (
                     <MenuItem>
-                      <Button
+                      <button
+                        type="button"
                         onClick={() => onModelChange(isRealtimeSelected ? models[0] : { id: 'realtime', name: 'Voice Mode', description: 'Real-time voice conversation' })}
                         className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                       >
@@ -628,7 +630,7 @@ export function ChatInput() {
                             </div>
                           </div>
                         </div>
-                      </Button>
+                      </button>
                     </MenuItem>
                   )}
                 </MenuItems>
@@ -641,13 +643,14 @@ export function ChatInput() {
                 <span className="max-w-20 truncate">
                   {currentRepository.name}
                 </span>
-                <Button
+                <button
+                  type="button"
                   onClick={() => setCurrentRepository(null)}
                   className="opacity-0 group-hover:opacity-100 hover:text-red-500 dark:hover:text-red-400 transition-all ml-1"
                   title="Clear repository"
                 >
                   <X size={10} />
-                </Button>
+                </button>
               </div>
             )}
 
@@ -671,7 +674,7 @@ export function ChatInput() {
                 const providerFailed = state === ProviderState.Failed;
 
                 return (
-                  <Button
+                  <button
                     key={provider.id}
                     type="button"
                     className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
@@ -714,7 +717,7 @@ export function ChatInput() {
                         {provider.name}
                       </span>
                     )}
-                  </Button>
+                  </button>
                 );
               })
             ) : providers.length > 2 ? (
@@ -745,7 +748,8 @@ export function ChatInput() {
 
                     return (
                       <MenuItem key={provider.id}>
-                        <Button
+                        <button
+                          type="button"
                           onClick={async (e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -791,7 +795,7 @@ export function ChatInput() {
                               <div className="w-4 h-4" />
                             )}
                           </div>
-                        </Button>
+                        </button>
                       </MenuItem>
                     );
                   })}
@@ -800,7 +804,7 @@ export function ChatInput() {
             ) : null}
 
             {!isRealtimeSelected && isScreenCaptureAvailable && (
-              <Button
+              <button
                 type="button"
                 className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isContinuousCaptureActive
                   ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg'
@@ -815,24 +819,24 @@ export function ChatInput() {
                     Capturing
                   </span>
                 )}
-              </Button>
+              </button>
             )}
 
             {!isRealtimeSelected && (
-              <Button
+              <button
                 type="button"
                 className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                 onClick={handleAttachmentClick}
               >
                 <Paperclip size={16} />
-              </Button>
+              </button>
             )}
               </>
             )}
 
             {/* Dynamic Send/Mic/Voice/Loading Button */}
             {isRealtimeSelected ? (
-              <Button
+              <button
                 type="button"
                 className="p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
                 onClick={() => {
@@ -844,35 +848,35 @@ export function ChatInput() {
                 title="Stop voice mode"
               >
                 <Square size={16} />
-              </Button>
+              </button>
             ) : isResponding ? (
-              <Button
+              <button
                 type="button"
                 className="p-1.5 text-neutral-600 dark:text-neutral-400"
                 disabled
                 title="Generating response..."
               >
                 <LoaderCircle size={16} className="animate-spin" />
-              </Button>
+              </button>
             ) : content.trim() ? (
-              <Button
+              <button
                 className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                 type="submit"
               >
                 <Send size={16} />
-              </Button>
+              </button>
             ) : canTranscribe ? (
               transcribingContent ? (
-                <Button
+                <button
                   type="button"
                   className="p-1.5 text-neutral-600 dark:text-neutral-400"
                   disabled
                   title="Processing audio..."
                 >
                   <Loader2 size={16} className="animate-spin" />
-                </Button>
+                </button>
               ) : (
-                <Button
+                <button
                   type="button"
                   className={`p-1.5 transition-colors ${
                     isTranscribing
@@ -884,16 +888,16 @@ export function ChatInput() {
                   disabled={isResponding}
                 >
                   {isTranscribing ? <Square size={16} /> : <Mic size={16} />}
-                </Button>
+                </button>
               )
             ) : (
-              <Button
+              <button
                 className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                 type="submit"
                 disabled={isResponding}
               >
                 <Send size={16} />
-              </Button>
+              </button>
             )}
           </div>
         </div>

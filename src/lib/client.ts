@@ -245,6 +245,41 @@ export class Client {
     }
   }
 
+  async extractUrl(model: string, text: string): Promise<string | null> {
+    const Schema = z.object({
+      url: z.string().nullable(),
+    }).strict();
+
+    if (!text.trim()) {
+      return null;
+    }
+
+    try {
+      const completion = await this.oai.chat.completions.parse({
+        model: model,
+
+        messages: [
+          {
+            role: "system",
+            content: "Extract a valid URL from the given text. If the text contains a URL, extract it. If no valid URL is found, return null.",
+          },
+          {
+            role: "user",
+            content: text,
+          },
+        ],
+
+        response_format: zodResponseFormat(Schema, "extract_url"),
+      });
+
+      const result = completion.choices[0].message.parsed;
+      return result?.url ?? null;
+    } catch (error) {
+      console.error("Error extracting URL:", error);
+      return null;
+    }
+  }
+
   async convertCSV(model: string, text: string): Promise<string> {
     const Schema = z.object({
       csvData: z.string(),
@@ -650,8 +685,24 @@ export class Client {
   async transcribe(model: string, blob: Blob): Promise<string> {
     const data = new FormData();
     
-    // Get file extension using mime package
-    const extension = mime.getExtension(blob.type) || 'audio';
+    // Get file extension - handle common audio types explicitly
+    let extension = 'audio';
+    if (blob.type.includes('webm')) {
+      extension = 'webm';
+    } else if (blob.type.includes('mp3') || blob.type.includes('mpeg')) {
+      extension = 'mp3';
+    } else if (blob.type.includes('wav')) {
+      extension = 'wav';
+    } else if (blob.type.includes('ogg')) {
+      extension = 'ogg';
+    } else if (blob.type.includes('m4a') || blob.type.includes('mp4')) {
+      extension = 'm4a';
+    } else if (blob.type.includes('flac')) {
+      extension = 'flac';
+    } else {
+      extension = mime.getExtension(blob.type) || 'audio';
+    }
+    
     const filename = `audio_recording.${extension}`;
     
     data.append('file', blob, filename);

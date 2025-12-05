@@ -8,7 +8,6 @@ export function createMarkdownNode(position: { x: number; y: number }): Markdown
     position,
     data: {
       inputText: '',
-      outputText: '',
       error: undefined,
       useInput: false
     }

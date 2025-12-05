@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { Popover } from "@headlessui/react";
-import { Button } from "@headlessui/react";
 import { Loader2 } from "lucide-react";
 import { getConfig } from "../config";
 
@@ -194,7 +193,8 @@ function AlternativesList({
       {alternatives.map((alternative, index) => {
         const keyChange = keyChanges[index] || alternative;
         return (
-          <Button
+          <button
+            type="button"
             key={index}
             onClick={() => onSelect(alternative)}
             onMouseEnter={() => onMouseEnter(alternative)}
@@ -206,7 +206,7 @@ function AlternativesList({
               <span className="mx-1">{keyChange}</span>
               <span className="text-neutral-400 dark:text-neutral-500">...</span>
             </div>
-          </Button>
+          </button>
         );
       })}
     </div>

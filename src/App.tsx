@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Languages, PanelLeftOpen, PanelRightOpen, Workflow, ChevronDown, Settings } from "lucide-react";
-import { Button } from "@headlessui/react";
+import { MessageCircle, Languages, PanelLeftOpen, Workflow, Disc3, ChevronDown, Settings } from "lucide-react";
 import { ChatPage } from "./pages/ChatPage";
 import { TranslatePage } from "./pages/TranslatePage";
 import { WorkflowPage } from "./pages/WorkflowPage";
+import { RecorderPage } from "./pages/RecorderPage";
 import { getConfig } from "./config";
 import { SidebarProvider } from "./contexts/SidebarProvider";
 import { useSidebar } from "./hooks/useSidebar";
@@ -23,7 +23,7 @@ import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
 import { ToolsProvider } from "./contexts/ToolsProvider";
 
-type Page = "chat" | "flow" | "translate";
+type Page = "chat" | "flow" | "translate" | "recorder";
 
 function AppContent() {
   const config = getConfig();
@@ -81,6 +81,8 @@ function AppContent() {
           return config.translator.enabled ? 'translate' : 'chat';
         case '#flow':
           return config.workflow ? 'flow' : 'chat';
+        case '#recorder':
+          return config.recorder ? 'recorder' : 'chat';
         default:
           return 'chat';
       }
@@ -101,7 +103,7 @@ function AppContent() {
     // Listen for hash changes
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [config.workflow, config.translator.enabled]);
+  }, [config.workflow, config.translator.enabled, config.recorder]);
 
   // Auto-close sidebar on mobile screens and update sliders on resize
   useEffect(() => {
@@ -112,7 +114,7 @@ function AppContent() {
       }
       
       // Close mobile menu on resize to larger screens
-      if (window.innerWidth >= 640) {
+      if (window.innerWidth >= 768) {
         setMobileMenuOpen(false);
       }
       
@@ -148,6 +150,7 @@ function AppContent() {
     { key: "chat" as const, label: "Chat", icon: <MessageCircle size={20} /> },
     { key: "flow" as const, label: "Flow", icon: <Workflow size={20} /> },
     { key: "translate" as const, label: "Translate", icon: <Languages size={20} /> },
+    { key: "recorder" as const, label: "Recorder", icon: <Disc3 size={20} /> },
   ].filter(page => {
     // Always show chat
     if (page.key === "chat") return true;
@@ -155,6 +158,8 @@ function AppContent() {
     if (page.key === "flow") return config.workflow;
     // Show translate only if translator is enabled
     if (page.key === "translate") return config.translator.enabled;
+    // Show recorder only if recorder is enabled
+    if (page.key === "recorder") return config.recorder;
     return true;
   });
 
@@ -165,7 +170,8 @@ function AppContent() {
       {/* Fixed hamburger button for mobile - only visible when sidebar is closed */}
       {sidebarContent && !showSidebar && (
         <div className="fixed top-0 left-0 z-40 md:hidden p-3">
-          <Button
+          <button
+            type="button"
             className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
             onClick={() => {
               setShowSidebar(true);
@@ -173,26 +179,21 @@ function AppContent() {
             aria-label="Open sidebar"
           >
             <PanelLeftOpen size={20} />
-          </Button>
+          </button>
         </div>
       )}
 
-      {/* Backdrop overlay for sidebar */}
-      {sidebarContent && showSidebar && (
-        <div
-          className={`fixed inset-0 bg-black/5 z-40 transition-opacity duration-300 opacity-100`}
-          onClick={() => setShowSidebar(false)}
-        />
-      )}
-
-      {/* Generic sidebar that slides over content with glass effect */}
+      {/* Generic sidebar that pushes content */}
       {sidebarContent && (
         <aside
           className={`
-            h-full bg-white/20 dark:bg-black/15 backdrop-blur-lg shadow-2xl
-            fixed left-0 top-0 z-50 w-80
-            transform transition-transform duration-500 ease-in-out
-            ${showSidebar ? 'translate-x-0' : '-translate-x-full'}
+            fixed z-50
+            transition-transform duration-500 ease-in-out
+            ${showSidebar ? 'translate-x-0' : '-translate-x-[calc(100%+0.5rem)]'}
+            left-0 top-0 bottom-0 right-0 w-full h-full
+            md:w-56 md:left-2 md:top-2 md:bottom-2 md:right-auto md:h-auto
+            md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm
+            overflow-hidden
           `}
         >
           {sidebarContent}
@@ -200,89 +201,49 @@ function AppContent() {
       )}
 
       {/* Main app content */}
-      <div className="flex-1 flex flex-col overflow-hidden relative z-10">
+      <div className={`flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out ${showSidebar && sidebarContent ? 'md:ml-[calc(14rem+0.75rem)]' : 'ml-0'}`}>
         {/* Fixed navigation bar with glass effect */}
-        <nav className="fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 nav-header">
+        <nav className={`fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 nav-header transition-all duration-500 ease-in-out ${showSidebar && sidebarContent ? 'md:left-[calc(14rem+0.75rem)]' : ''}`}>
           <div className="flex items-center justify-between">
             {/* Left section */}
             <div className="flex items-center gap-1 flex-1">
               {/* Fixed space for sidebar button - always reserve the space */}
               <div className="w-12 flex justify-start">
                 {sidebarContent && (
-                  <Button
-                    className={`p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out hidden md:flex ${showSidebar ? 'sidebar-open' : ''}`}
+                  <button
+                    type="button"
+                    className={`p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-300 ease-in-out hidden md:flex ${showSidebar ? 'opacity-0 pointer-events-none' : 'opacity-100 delay-300'}`}
                     onClick={toggleSidebar}
-                    aria-label={showSidebar ? 'Close sidebar' : 'Open sidebar'}
+                    aria-label="Open sidebar"
                   >
-                    {showSidebar ? <PanelRightOpen size={20} /> : <PanelLeftOpen size={20} />}
-                  </Button>
+                    <PanelLeftOpen size={20} />
+                  </button>
                 )}
               </div>
               
-              {/* Mobile hamburger menu - visible on xs screens only */}
+              {/* Mobile hamburger menu - visible on smaller screens */}
               {showNavigation && (
-                <div className="flex items-center sm:hidden -ml-2 relative">
+                <div className="flex items-center md:hidden -ml-2 relative">
                   <div className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20">
                     {/* Current page button with dropdown indicator */}
-                    <Button
+                    <button
+                      type="button"
                       onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                       className="relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out flex items-center gap-1.5 text-sm bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 shadow-sm"
                     >
                       {pages.find(p => p.key === currentPage)?.icon}
+                      <span>{pages.find(p => p.key === currentPage)?.label}</span>
                       <ChevronDown 
                         size={14} 
                         className={`transition-transform duration-200 ${mobileMenuOpen ? 'rotate-180' : ''}`}
                       />
-                    </Button>
+                    </button>
                   </div>
                 </div>
               )}
               
               {leftActions}
             </div>
-            
-            {/* Center section - Modern pill navigation for sm+ breakpoints */}
-            {showNavigation && (
-              <div className="hidden sm:flex md:hidden items-center justify-center absolute left-1/2 transform -translate-x-1/2">
-                <div 
-                  ref={tabletRef}
-                  className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
-                >
-                  {/* Animated slider background */}
-                  <div
-                    className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
-                    style={{
-                      left: `${sliderStyles.tablet.left}px`,
-                      width: `${sliderStyles.tablet.width}px`,
-                      height: 'calc(100% - 8px)',
-                      top: '4px',
-                    }}
-                  />
-                  
-                  {pages.map(({ key, label, icon }) => (
-                    <Button
-                      key={key}
-                      data-page={key}
-                      onClick={() => {
-                        setCurrentPage(key);
-                        window.location.hash = `#${key}`;
-                      }}
-                      className={`
-                        relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out
-                        flex items-center gap-2 text-sm
-                        ${currentPage === key
-                          ? "text-neutral-900 dark:text-neutral-100"
-                          : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                        }
-                      `}
-                    >
-                      {icon}
-                      <span className="hidden sm:inline">{label}</span>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
             
             {/* Center section - Modern pill navigation for desktop */}
             {showNavigation && (
@@ -303,7 +264,8 @@ function AppContent() {
                   />
                   
                   {pages.map(({ key, label, icon }) => (
-                    <Button
+                    <button
+                      type="button"
                       key={key}
                       data-page={key}
                       onClick={() => {
@@ -321,7 +283,7 @@ function AppContent() {
                     >
                       {icon}
                       <span className="hidden sm:inline">{label}</span>
-                    </Button>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -330,7 +292,7 @@ function AppContent() {
             {/* Right section */}
             <div className="flex items-center gap-2 justify-end flex-1">
               {/* Hide settings button on mobile - it's in the menu */}
-              <div className="hidden sm:block">
+              <div className="hidden md:block">
                 <SettingsButton />
               </div>
               {rightActions}
@@ -340,7 +302,7 @@ function AppContent() {
         
         {/* Mobile dropdown menu */}
         {mobileMenuOpen && (
-          <div className="fixed top-14 left-3 z-30 sm:hidden bg-white dark:bg-neutral-900 backdrop-blur-md border border-neutral-200 dark:border-neutral-800 shadow-lg rounded-xl overflow-hidden min-w-[160px]">
+          <div className="fixed top-14 left-3 z-30 md:hidden bg-white dark:bg-neutral-900 backdrop-blur-md border border-neutral-200 dark:border-neutral-800 shadow-lg rounded-xl overflow-hidden min-w-40">
             <div className="py-1">
               {pages.map(({ key, label, icon }) => (
                 <button
@@ -382,7 +344,7 @@ function AppContent() {
         {/* Mobile menu backdrop */}
         {mobileMenuOpen && (
           <div 
-            className="fixed inset-0 z-20 sm:hidden" 
+            className="fixed inset-0 z-20 md:hidden" 
             onClick={() => setMobileMenuOpen(false)}
           />
         )}
@@ -397,6 +359,7 @@ function AppContent() {
             {currentPage === "chat" && <ChatPage />}
             {currentPage === "flow" && <WorkflowPage />}
             {currentPage === "translate" && <TranslatePage />}
+            {currentPage === "recorder" && <RecorderPage />}
           </div>
         </div>
       </div>

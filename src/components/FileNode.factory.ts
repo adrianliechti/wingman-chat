@@ -8,7 +8,6 @@ export function createFileNode(position: { x: number; y: number }): FileNodeType
     position,
     data: {
       fileName: '',
-      outputText: '',
       useInput: false
     }
   };

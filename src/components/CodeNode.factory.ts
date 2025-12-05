@@ -7,7 +7,6 @@ export function createCodeNode(position: { x: number; y: number }): CodeNodeType
     type: 'code',
     position,
     data: {
-      outputText: '',
       prompt: '',
       generatedCode: ''
     }

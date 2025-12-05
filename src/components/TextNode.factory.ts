@@ -7,7 +7,6 @@ export function createTextNode(position: { x: number; y: number }): TextNodeType
     type: 'text',
     position,
     data: {
-      outputText: ''
     }
   };
 }

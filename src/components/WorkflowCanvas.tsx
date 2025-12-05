@@ -7,7 +7,7 @@ import {
   type Edge
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useState, useCallback, useMemo } from 'react';
+import { useCallback, useRef } from 'react';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useTheme } from '../hooks/useTheme';
 import { SearchNode } from './SearchNode';
@@ -21,8 +21,6 @@ import { AudioNode } from './AudioNode';
 import { ImageNode } from './ImageNode';
 import { CsvNode } from './CsvNode';
 import { CodeNode } from './CodeNode';
-import { WorkflowLabelDialog } from './WorkflowLabelDialog';
-import type { WorkflowEdge } from '../types/workflow';
 
 // Move nodeTypes outside component to prevent recreating on every render
 const nodeTypes: NodeTypes = {
@@ -45,38 +43,24 @@ const defaultEdgeOptions = {
 };
 
 export function WorkflowCanvas() {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, updateEdgeLabel, deleteConnection } = useWorkflow();
+  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, deleteConnection } = useWorkflow();
   const { isDark } = useTheme();
-  const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const lastClickedEdge = useRef<{ id: string; time: number } | null>(null);
 
-  // Memoize callbacks to prevent recreating on every render
+  // Double-click to delete edge
   const handleEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
-    setSelectedEdge(edge);
-    setIsDialogOpen(true);
-  }, []);
-
-  const handleSaveLabel = useCallback((label: string) => {
-    if (selectedEdge) {
-      updateEdgeLabel(selectedEdge.id, label);
+    const now = Date.now();
+    const lastClick = lastClickedEdge.current;
+    
+    if (lastClick && lastClick.id === edge.id && now - lastClick.time < 300) {
+      // Double-click detected - delete the edge
+      deleteConnection(edge.id);
+      lastClickedEdge.current = null;
+    } else {
+      // First click - record it
+      lastClickedEdge.current = { id: edge.id, time: now };
     }
-  }, [selectedEdge, updateEdgeLabel]);
-
-  const handleDeleteEdge = useCallback(() => {
-    if (selectedEdge) {
-      deleteConnection(selectedEdge.id);
-    }
-  }, [selectedEdge, deleteConnection]);
-
-  const handleCloseDialog = useCallback(() => {
-    setIsDialogOpen(false);
-  }, []);
-
-  // Memoize the current label to prevent recalculating
-  const currentLabel = useMemo(() => 
-    (selectedEdge as WorkflowEdge)?.data?.label || '', 
-    [selectedEdge]
-  );
+  }, [deleteConnection]);
 
   return (
     <div className="w-full h-full">
@@ -112,14 +96,6 @@ export function WorkflowCanvas() {
           className="bg-white/90 dark:bg-black/40 backdrop-blur-lg border border-white/40 dark:border-white/20 rounded-lg"
         />
       </ReactFlow>
-
-      <WorkflowLabelDialog
-        isOpen={isDialogOpen}
-        onClose={handleCloseDialog}
-        currentLabel={currentLabel}
-        onSave={handleSaveLabel}
-        onDelete={handleDeleteEdge}
-      />
     </div>
   );
 }

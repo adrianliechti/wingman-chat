@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { File, Folder, FolderOpen, ChevronRight, ChevronDown, Download } from 'lucide-react';
-import { Button } from '@headlessui/react';
 import { FileIcon } from './FileIcon';
 import { FileSystemManager } from '../lib/fs';
 
@@ -139,7 +138,8 @@ function FileTreeNode({
   const isTabOpen = openTabs.includes(node.path);
 
   return (
-    <Button
+    <button
+      type="button"
       onClick={() => onFileClick(node.path)}
       className="flex items-center gap-1 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left min-w-0"
       style={{ marginLeft: `${level * 12 + 18}px` }}
@@ -155,7 +155,7 @@ function FileTreeNode({
       >
         {node.name}
       </span>
-    </Button>
+    </button>
   );
 }
 
@@ -270,7 +270,8 @@ export function ArtifactsBrowser({
       {/* Download Button - fixed at bottom */}
       {files.length > 0 && (
         <div className="shrink-0 h-9 flex items-center px-2 border-t border-black/5 dark:border-white/5">
-          <Button
+          <button
+            type="button"
             onClick={async () => {
               try {
                 await handleDownloadAsZip();
@@ -284,7 +285,7 @@ export function ArtifactsBrowser({
           >
             <Download size={12} />
             <span>Download</span>
-          </Button>
+          </button>
         </div>
       )}
     </div>

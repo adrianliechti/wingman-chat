@@ -7,8 +7,7 @@ export function createSearchNode(position: { x: number; y: number }): SearchNode
     type: 'search',
     position,
     data: {
-      query: '',
-      outputText: ''
+      query: ''
     }
   };
 }

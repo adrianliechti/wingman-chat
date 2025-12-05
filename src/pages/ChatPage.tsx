@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus as PlusIcon, Package, PackageOpen, Info, ArrowDown, BookOpenText, BookText } from "lucide-react";
-import { Button } from "@headlessui/react";
 import DOMPurify from "dompurify";
 import { getConfig } from "../config";
 import { useAutoScroll } from "../hooks/useAutoScroll";
@@ -44,7 +43,7 @@ export function ChatPage() {
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
   
   // Sidebar integration (now only controls visibility)
-  const { setSidebarContent } = useSidebar();
+  const { setSidebarContent, showSidebar } = useSidebar();
   const { setRightActions } = useNavigation();
 
   const { containerRef, bottomRef, enableAutoScroll, isAutoScrollEnabled } = useAutoScroll({
@@ -68,29 +67,32 @@ export function ChatPage() {
     setRightActions(
       <div className="flex items-center gap-2">
         {repositoryAvailable && (
-          <Button
+          <button
+            type="button"
             className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
             onClick={toggleRepositoryDrawer}
             title={showRepositoryDrawer ? 'Close repositories' : 'Open repositories'}
           >
             {showRepositoryDrawer ? <PackageOpen size={20} /> : <Package size={20} />}
-          </Button>
+          </button>
         )}
         {artifactsAvailable && (
-          <Button
+          <button
+            type="button"
             className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
             onClick={toggleArtifactsDrawer}
             title={showArtifactsDrawer ? 'Close artifacts' : 'Open artifacts'}
           >
             {showArtifactsDrawer ? <BookOpenText size={20} /> : <BookText size={20} />}
-          </Button>
+          </button>
         )}
-        <Button
+        <button
+          type="button"
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
           onClick={createChat}
         >
           <PlusIcon size={20} />
-        </Button>
+        </button>
       </div>
     );
 
@@ -218,7 +220,7 @@ export function ChatPage() {
       
       {/* Main content area */}
       <div className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-300 ${
-        showArtifactsDrawer ? 'md:mr-[calc(60vw+0.75rem)]' : 
+        showArtifactsDrawer ? 'md:mr-[calc(50vw+0.75rem)]' : 
         showRepositoryDrawer ? 'md:mr-[calc(20rem+0.75rem)]' : ''
       }`}>
         <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -287,7 +289,7 @@ export function ChatPage() {
           {/* Jump to latest button - positioned relative to chat area */}
           {messages.length > 0 && !isAutoScrollEnabled && (
             <div className={`fixed flex justify-center pointer-events-none z-10 transition-all duration-300 ease-out ${
-              showArtifactsDrawer ? 'left-0 right-[calc(60vw+0.75rem)]' :
+              showArtifactsDrawer ? 'left-0 right-[calc(50vw+0.75rem)]' :
               showRepositoryDrawer ? 'left-0 right-[calc(20rem+0.75rem)]' : 'left-0 right-0'
             }`} style={{ bottom: `${chatInputHeight + 16}px` }}>
               <button
@@ -303,10 +305,12 @@ export function ChatPage() {
         </main>
 
         {/* Chat Input */}
-        <footer className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-300 ease-out ${
+        <footer className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-500 ease-in-out ${
             messages.length === 0 ? 'md:bottom-1/3 md:transform md:translate-y-1/2' : ''
           } ${
-            showArtifactsDrawer ? 'right-0 md:right-[calc(60vw+0.75rem)]' :
+            showSidebar && chats.length > 0 ? 'md:left-[calc(14rem+0.75rem)]' : ''
+          } ${
+            showArtifactsDrawer ? 'right-0 md:right-[calc(50vw+0.75rem)]' :
             showRepositoryDrawer ? 'right-0 md:right-[calc(20rem+0.75rem)]' : 'right-0'
           }`}>
             <div className="relative pointer-events-auto md:max-w-4xl mx-auto">
@@ -325,7 +329,7 @@ export function ChatPage() {
               : 'translate-x-full opacity-0'
           } ${ 
             // On mobile: full width overlay from right edge, on desktop: positioned with right edge and 60% width
-            'fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-[60vw] max-w-none'
+            'fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-[50vw] max-w-none'
           } ${shouldRenderRepositoryDrawer ? 'z-20' : 'z-25'}`}
           style={{ 
             top: isMobile ? '48px' : undefined,
