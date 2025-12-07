@@ -27,6 +27,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
+  const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
 
   const chat = chats.find(c => c.id === chatId) ?? null;
   const model = chat?.model ?? selectedModel ?? models[0];
@@ -47,8 +48,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [providers, getProviderState]);
   
   const messages = useMemo(() => {
-    return chat?.messages ?? [];
-  }, [chat?.messages]);
+    const baseMessages = chat?.messages ?? [];
+
+    // Attach transient streaming content without persisting it on every token
+    if (streamingMessage && chat?.id === streamingMessage.chatId) {
+      return [...baseMessages, streamingMessage.message];
+    }
+
+    return baseMessages;
+  }, [chat?.messages, chat?.id, streamingMessage]);
 
   // Set up the filesystem for the current chat
   useEffect(() => {
@@ -170,17 +178,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         // Main completion loop to handle tool calls
         while (true) {
-          // Create empty assistant message for this completion iteration
-          updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: '' }] }));
-          
+          // Track streaming content in-memory to avoid writing the full conversation on every token
+          setStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: '' } });
+
           const assistantMessage = await client.complete(
             model!.id,
             instructions,
             conversation,
             tools,
             (_, snapshot) => {
-              // Use the conversation state instead of fetching from chats to avoid stale closure
-              updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: snapshot }] }))
+              setStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: snapshot } });
             }
           );
           
@@ -191,8 +198,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
             toolCalls: assistantMessage.toolCalls,
           }];
 
-          // Update UI with the assistant message
+          // Commit the completed message once per turn
           updateChat(id, () => ({ messages: conversation }));
+
+          // Clear streaming buffer now that the message is persisted
+          setStreamingMessage(null);
 
           // Check if there are tool calls to handle
           const toolCalls = assistantMessage.toolCalls;
@@ -287,6 +297,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         setIsResponding(false);
 
+        // Ensure streaming buffer is cleared after completion
+        setStreamingMessage(null);
+
         if (!chatObj.title || conversation.length % 3 === 0) {
           client
             .summarizeTitle(model!.id, conversation)
@@ -300,7 +313,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
         console.error(error);
         setIsResponding(false);
 
-        if (error?.toString().includes('missing finish_reason')) return;
+        if (error?.toString().includes('missing finish_reason')) {
+          setStreamingMessage(null);
+          return;
+        }
 
         // Determine error code and user-friendly message based on error type
         let errorCode = 'COMPLETION_ERROR';
@@ -338,6 +354,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
         }];
 
         updateChat(id, () => ({ messages: conversation }));
+
+        // Ensure streaming buffer is cleared on errors
+        setStreamingMessage(null);
       }
     }, [getOrCreateChat, chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions]);
 
