@@ -246,7 +246,7 @@ export function ChatPage() {
             </div>
           ) : (
             <div
-              className="flex-1 overflow-auto sidebar-scroll transition-opacity duration-300 relative"
+              className="flex-1 overflow-auto transition-opacity duration-300 relative"
               ref={containerRef}
             >
               <div className={`px-3 pt-18 transition-all duration-150 ease-out ${

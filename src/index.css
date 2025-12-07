@@ -18,6 +18,50 @@
   --viewport-height: 100dvh;
 }
 
+/* Global scrollbar: thin and only visible while interacting (iOS-like) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: none;
+  overflow-anchor: none;
+}
+
+*::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 999px;
+}
+
+*:hover,
+*:focus-visible,
+*:active {
+  scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
+}
+
+*:hover::-webkit-scrollbar-thumb,
+*:focus-visible::-webkit-scrollbar-thumb,
+*:active::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.25);
+}
+
+.dark *:hover,
+.dark *:focus-visible,
+.dark *:active {
+  scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+}
+
+.dark *:hover::-webkit-scrollbar-thumb,
+.dark *:focus-visible::-webkit-scrollbar-thumb,
+.dark *:active::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.35);
+}
+
 html, body {
   height: 100%;
   overflow: hidden;
@@ -78,46 +122,6 @@ button[data-headlessui-state]:disabled,
 .max-content-width {
   max-width: 900px;
   margin: 0 auto;
-}
-
-.sidebar-scroll {
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: none;
-  overflow-anchor: none;
-  
-  /* Firefox - hidden by default, visible on hover */
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-
-.sidebar-scroll:hover {
-  scrollbar-color: rgba(0, 0, 0, 0.3) transparent;
-}
-
-.dark .sidebar-scroll:hover {
-  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
-}
-
-/* Webkit browsers - hidden by default, visible on hover */
-.sidebar-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-
-.sidebar-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.sidebar-scroll::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 4px;
-}
-
-.sidebar-scroll:hover::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.3);
-}
-
-.dark .sidebar-scroll:hover::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.3);
 }
 
 .sidebar-item-base {

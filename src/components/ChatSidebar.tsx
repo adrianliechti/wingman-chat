@@ -185,7 +185,7 @@ export function ChatSidebar() {
       </div>
       
       {/* Scrollable content area */}
-      <div className="flex-1 sidebar-scroll overflow-y-auto overflow-x-hidden">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
         <div className="flex flex-col gap-0.5 pt-2 pb-1 px-1">
         {groupedChats.map((group, index) => (
           <div key={group.category} className={index > 0 ? "pt-2" : ""}>
