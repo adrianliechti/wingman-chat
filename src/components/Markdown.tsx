@@ -212,7 +212,8 @@ const components: Partial<Components> = {
                 const html = katex.renderToString(text, {
                     displayMode: true,
                     throwOnError: false,
-                    strict: false,
+                    strict: 'ignore',
+                    errorColor: 'transparent',
                     trust: true,
                     fleqn: false,
                 });
@@ -267,7 +268,18 @@ const components: Partial<Components> = {
 };
 
 const remarkPlugins: PluggableList = [remarkGfm, remarkBreaks, remarkGemoji, remarkMath];
-const rehypePlugins: PluggableList = [rehypeRaw, rehypeSanitize, [rehypeKatex, { strict: false }]];
+const rehypePlugins: PluggableList = [
+    rehypeRaw,
+    rehypeSanitize,
+    [
+        rehypeKatex,
+        {
+            strict: 'ignore',
+            throwOnError: false,
+            errorColor: 'transparent',
+        },
+    ],
+];
 
 const NonMemoizedMarkdown = ({ children }: { children: string }) => {
     if (!children) return null;
