@@ -12,8 +12,8 @@ interface UseAutoScrollOptions {
   bottomThreshold?: number;
 }
 
-export function useAutoScroll({ 
-  dependencies, 
+export function useAutoScroll({
+  dependencies,
   bottomThreshold = 20,
 }: UseAutoScrollOptions) {
   const containerElementRef = useRef<HTMLDivElement | null>(null);
@@ -31,69 +31,99 @@ export function useAutoScroll({
     setBottomNode(node);
   }, []);
 
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    // Defer to the next frame so layout (e.g., markdown render) has settled
+    requestAnimationFrame(() => {
+      const container = containerElementRef.current;
+      if (!container) return;
+
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior,
+      });
+    });
+  }, []);
+
+  const updateAutoScrollState = useCallback(() => {
     const container = containerElementRef.current;
     if (!container) return;
 
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior,
-    });
-  }, []);
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const isAtBottom = distanceToBottom <= bottomThreshold;
+
+    isAutoScrollEnabledRef.current = isAtBottom;
+    setIsAutoScrollEnabled(isAtBottom);
+  }, [bottomThreshold]);
 
   const enableAutoScroll = useCallback(() => {
     isAutoScrollEnabledRef.current = true;
     setIsAutoScrollEnabled(true);
-    scrollToBottom('smooth');
+    scrollToBottom("smooth");
   }, [scrollToBottom]);
 
-  // Auto-scroll when dependencies change (e.g., new messages during streaming)
+  // Track user scroll intent: leave auto-scroll when they scroll up, re-enable when near bottom
+  useEffect(() => {
+    const container = containerNode;
+    if (!container) return;
+
+    let ticking = false;
+
+    const handleScroll = () => {
+      if (ticking) return;
+      ticking = true;
+
+      requestAnimationFrame(() => {
+        ticking = false;
+        updateAutoScrollState();
+      });
+    };
+
+    // Initial check in case we're already at bottom on mount
+    updateAutoScrollState();
+    container.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+    };
+  }, [containerNode, updateAutoScrollState]);
+
+  // Auto-scroll when dependencies change (e.g., new tokens during streaming)
   useEffect(() => {
     if (isAutoScrollEnabledRef.current) {
-      scrollToBottom('auto');
+      scrollToBottom("auto");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, dependencies);
 
-  // Track sentinel visibility to know when we're really at the bottom
+  // Keep pinned to the bottom when content height changes (images, markdown layout)
   useEffect(() => {
-    if (!containerNode || !bottomNode) return;
-    if (typeof IntersectionObserver === "undefined") {
-      isAutoScrollEnabledRef.current = true;
-      setIsAutoScrollEnabled(true);
-      return;
-    }
+    if (!bottomNode) return;
+    if (typeof ResizeObserver === "undefined") return;
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry) return;
+    const contentNode = bottomNode.parentElement;
+    if (!contentNode) return;
 
-        const isAtBottom = entry.isIntersecting;
-        isAutoScrollEnabledRef.current = isAtBottom;
-        setIsAutoScrollEnabled(isAtBottom);
-      },
-      {
-        root: containerNode,
-        rootMargin: `0px 0px ${bottomThreshold}px 0px`,
-        threshold: [0, 1],
+    const resizeObserver = new ResizeObserver(() => {
+      if (isAutoScrollEnabledRef.current) {
+        scrollToBottom("auto");
       }
-    );
+    });
 
-    observer.observe(bottomNode);
+    resizeObserver.observe(contentNode);
 
     return () => {
-      observer.disconnect();
+      resizeObserver.disconnect();
     };
-  }, [bottomNode, bottomThreshold, containerNode]);
+  }, [bottomNode, scrollToBottom]);
 
-  // Handle container resize (important for markdown rendering)
+  // Handle container resize (viewport changes, split panes)
   useEffect(() => {
     if (!containerNode) return;
     if (typeof ResizeObserver === "undefined") return;
 
     const resizeObserver = new ResizeObserver(() => {
       if (isAutoScrollEnabledRef.current) {
-        scrollToBottom('auto');
+        scrollToBottom("auto");
       }
     });
 
