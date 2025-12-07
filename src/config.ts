@@ -87,7 +87,9 @@ interface visionConfig {
 
 interface rendererConfig {
   enabled: boolean;
+  
   model?: string
+  elicitation?: boolean;
 }
 
 interface bridgeConfig {

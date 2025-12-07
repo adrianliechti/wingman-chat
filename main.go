@@ -39,6 +39,7 @@ func main() {
 
 	renderer := os.Getenv("RENDERER_ENABLED") == "true"
 	rendererModel := os.Getenv("RENDERER_MODEL")
+	rendererElicitation := os.Getenv("RENDERER_ELICITATION") == "true"
 
 	interpreter := os.Getenv("INTERPRETER_ENABLED") == "true"
 
@@ -99,8 +100,9 @@ func main() {
 		}
 
 		type rendererType struct {
-			Enabled bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-			Model   string `json:"model,omitempty" yaml:"model,omitempty"`
+			Enabled     bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+			Model       string `json:"model,omitempty" yaml:"model,omitempty"`
+			Elicitation bool   `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
 		}
 
 		type interpreterType struct {
@@ -228,8 +230,9 @@ func main() {
 
 		if renderer {
 			config.Renderer = &rendererType{
-				Enabled: true,
-				Model:   rendererModel,
+				Enabled:     true,
+				Model:       rendererModel,
+				Elicitation: rendererElicitation,
 			}
 		}
 

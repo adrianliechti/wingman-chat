@@ -36,8 +36,21 @@ export function useRendererProvider(): ToolProvider | null {
           },
           required: ["prompt"]
         },
-        function: async (args: Record<string, unknown>) => {
+        function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const { prompt } = args;
+
+          if (config.renderer.elicitation && context?.elicit) {
+            const result = await context.elicit({
+              message: `Generate an image: ${prompt}`
+            });
+
+            if (result.action !== "accept") {
+              return JSON.stringify({
+                success: false,
+                error: "Image creation cancelled by user."
+              });
+            }
+          }
 
           try {
             const imageBlob = await client.generateImage(
@@ -87,6 +100,19 @@ export function useRendererProvider(): ToolProvider | null {
         },
         function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const { prompt } = args;
+
+          if (config.renderer.elicitation && context?.elicit) {
+            const result = await context.elicit({
+              message: `Edit the attached image(s): ${prompt}`
+            });
+
+            if (result.action !== "accept") {
+              return JSON.stringify({
+                success: false,
+                error: "Image editing cancelled by user."
+              });
+            }
+          }
 
           const images: Blob[] = [];
 
@@ -147,7 +173,7 @@ export function useRendererProvider(): ToolProvider | null {
         }
       }
     ];
-  }, [client, config]);
+  }, [client, config.renderer.elicitation, config.renderer?.model]);
 
   const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {
