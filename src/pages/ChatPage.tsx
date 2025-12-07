@@ -295,7 +295,7 @@ export function ChatPage() {
               <button
                 type="button"
                 onClick={enableAutoScroll}
-                className="pointer-events-auto inline-flex items-center justify-center rounded-full bg-white/90 dark:bg-neutral-800/90 text-neutral-700 dark:text-neutral-300 p-2 shadow-md border border-neutral-200/50 dark:border-neutral-700/50 hover:bg-white dark:hover:bg-neutral-800 hover:shadow-lg transition-all backdrop-blur-sm cursor-pointer"
+                className="pointer-events-auto inline-flex items-center justify-center rounded-full bg-white/90 dark:bg-neutral-800/90 text-neutral-700 dark:text-neutral-300 p-2 shadow-md border border-neutral-200/50 dark:border-neutral-700/50 hover:bg-white dark:hover:bg-neutral-800 hover:shadow-lg transition-all backdrop-blur-sm"
                 aria-label="Scroll to bottom"
               >
                 <ArrowDown size={16} />

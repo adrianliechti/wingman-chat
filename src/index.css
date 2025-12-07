@@ -92,20 +92,15 @@ body {
   outline: none !important;
 }
 
-[role="button"] {
-  cursor: pointer !important;
-}
-
-[role="button"]:disabled {
-  cursor: not-allowed !important;
-}
-
-/* Headless UI Button and MenuButton components */
+button,
+[role="button"],
 button[data-headlessui-state],
 [data-headlessui-state=""] {
   cursor: pointer;
 }
 
+button:disabled,
+[role="button"]:disabled,
 button[data-headlessui-state]:disabled,
 [data-headlessui-state]:disabled {
   cursor: not-allowed;

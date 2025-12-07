@@ -638,7 +638,7 @@ export function ChatInput() {
             )}
 
             {currentRepository && (
-              <div className="hidden lg:flex group items-center gap-1 px-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm cursor-pointer" title={currentRepository.name}>
+              <div className="hidden lg:flex group items-center gap-1 px-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm" title={currentRepository.name}>
                 <Package size={14} />
                 <span className="max-w-20 truncate">
                   {currentRepository.name}
@@ -677,11 +677,11 @@ export function ChatInput() {
                   <button
                     key={provider.id}
                     type="button"
-                    className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
+                    className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${
                       providerEnabled
                         ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg'
                         : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-                    } ${!canToggle ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    }`}
                     onClick={async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -761,8 +761,7 @@ export function ChatInput() {
                             }
                           }}
                           disabled={providerInitializing || !canToggle}
-                          className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 ${!canToggle ? 'opacity-50 cursor-not-allowed' : ''
-                            }`}
+                          className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50`}
                           title={
                             isEnabled === false
                               ? 'Disabled by model configuration'

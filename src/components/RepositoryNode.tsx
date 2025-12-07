@@ -226,7 +226,7 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
               <button
                 onClick={handleExecute}
                 disabled={!canExecute}
-                className="px-4 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 dark:hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 nodrag"
+                className="px-4 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 dark:hover:bg-purple-500/30 disabled:opacity-50 transition-all flex items-center gap-1.5 nodrag"
               >
                 Search
               </button>
@@ -258,7 +258,7 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
               <button
                 onClick={() => setActiveTab(Math.max(0, activeTab - 1))}
                 disabled={activeTab === 0}
-                className="p-1 rounded hover:bg-neutral-300/50 dark:hover:bg-neutral-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors nodrag"
+                className="p-1 rounded hover:bg-neutral-300/50 dark:hover:bg-neutral-700/50 disabled:opacity-30 transition-colors nodrag"
               >
                 <ChevronLeft size={14} />
               </button>
@@ -280,7 +280,7 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
               <button
                 onClick={() => setActiveTab(Math.min(data.output!.items.length - 1, activeTab + 1))}
                 disabled={activeTab === data.output.items.length - 1}
-                className="p-1 rounded hover:bg-neutral-300/50 dark:hover:bg-neutral-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors nodrag"
+                className="p-1 rounded hover:bg-neutral-300/50 dark:hover:bg-neutral-700/50 disabled:opacity-30 transition-colors nodrag"
               >
                 <ChevronRight size={14} />
               </button>

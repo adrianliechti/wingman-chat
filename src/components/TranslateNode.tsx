@@ -146,7 +146,7 @@ export const TranslateNode = memo(({ id, data, selected }: NodeProps<TranslateNo
               <button
                 onClick={() => setActiveTab(Math.max(0, activeTab - 1))}
                 disabled={activeTab === 0}
-                className="p-1 rounded hover:bg-gray-300/50 dark:hover:bg-gray-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors nodrag"
+                className="p-1 rounded hover:bg-gray-300/50 dark:hover:bg-gray-700/50 disabled:opacity-30 transition-colors nodrag"
               >
                 <ChevronLeft size={14} />
               </button>
@@ -168,7 +168,7 @@ export const TranslateNode = memo(({ id, data, selected }: NodeProps<TranslateNo
               <button
                 onClick={() => setActiveTab(Math.min(data.output!.items.length - 1, activeTab + 1))}
                 disabled={activeTab === data.output.items.length - 1}
-                className="p-1 rounded hover:bg-gray-300/50 dark:hover:bg-gray-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors nodrag"
+                className="p-1 rounded hover:bg-gray-300/50 dark:hover:bg-gray-700/50 disabled:opacity-30 transition-colors nodrag"
               >
                 <ChevronRight size={14} />
               </button>

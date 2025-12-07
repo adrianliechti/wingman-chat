@@ -933,7 +933,6 @@ export function RecorderPage() {
             {/* Record button */}
             <g
               onClick={handleRecordClick}
-              className="cursor-pointer"
             >
               <rect
                 width="60"
@@ -953,7 +952,6 @@ export function RecorderPage() {
             {/* Play button */}
             <g
               onClick={handlePlayClick}
-              className="cursor-pointer"
             >
               <rect
                 x="65"
@@ -972,7 +970,6 @@ export function RecorderPage() {
             {/* Stop button */}
             <g
               onClick={handleStopClick}
-              className="cursor-pointer"
             >
               <rect
                 x="130"
@@ -995,8 +992,7 @@ export function RecorderPage() {
             <g 
               transform="translate(195, -10)"
               onClick={handleTranscribe}
-              className="cursor-pointer"
-              style={{ pointerEvents: 'all' }}
+              style={{ pointerEvents: 'all', cursor: 'pointer' }}
             >
               {/* Background for click area */}
               <rect
@@ -1027,8 +1023,7 @@ export function RecorderPage() {
             <g 
               transform="translate(195, 45)"
               onClick={handleDownload}
-              className="cursor-pointer"
-              style={{ pointerEvents: 'all' }}
+              style={{ pointerEvents: 'all', cursor: 'pointer' }}
             >
               {/* Background for click area */}
               <rect
@@ -1073,8 +1068,7 @@ export function RecorderPage() {
             width="20"
             height="100"
             fill="transparent"
-            className="cursor-pointer"
-            style={{ pointerEvents: 'auto' }}
+            style={{ pointerEvents: 'auto', cursor: 'pointer' }}
             onMouseDown={handleToggleUp}
             onMouseUp={handleToggleRelease}
             onMouseLeave={handleToggleRelease}
@@ -1088,8 +1082,7 @@ export function RecorderPage() {
             width="20"
             height="100"
             fill="transparent"
-            className="cursor-pointer"
-            style={{ pointerEvents: 'auto' }}
+            style={{ pointerEvents: 'auto', cursor: 'pointer' }}
             onMouseDown={handleToggleDown}
             onMouseUp={handleToggleRelease}
             onMouseLeave={handleToggleRelease}

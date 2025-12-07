@@ -452,7 +452,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   type="button"
                   onClick={exportChats}
                   disabled={chats.length === 0}
-                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 disabled:text-neutral-400 dark:disabled:text-neutral-600 disabled:cursor-not-allowed"
+                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 disabled:text-neutral-400 dark:disabled:text-neutral-600"
                 >
                   <Download size={16} />
                   Export Chats
@@ -461,7 +461,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   type="button"
                   onClick={deleteChats}
                   disabled={chats.length === 0}
-                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:text-neutral-400 dark:disabled:text-neutral-600 disabled:cursor-not-allowed"
+                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:text-neutral-400 dark:disabled:text-neutral-600"
                 >
                   <Trash2 size={16} />
                   Delete All
@@ -508,7 +508,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   type="button"
                   onClick={exportRepositories}
                   disabled={repositories.length === 0}
-                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 disabled:text-neutral-400 dark:disabled:text-neutral-600 disabled:cursor-not-allowed"
+                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 disabled:text-neutral-400 dark:disabled:text-neutral-600"
                 >
                   <Download size={16} />
                   Export Repositories
@@ -517,7 +517,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   type="button"
                   onClick={deleteRepositories}
                   disabled={repositories.length === 0}
-                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:text-neutral-400 dark:disabled:text-neutral-600 disabled:cursor-not-allowed"
+                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:text-neutral-400 dark:disabled:text-neutral-600"
                 >
                   <Trash2 size={16} />
                   Delete All
