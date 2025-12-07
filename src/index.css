@@ -80,10 +80,6 @@ button[data-headlessui-state]:disabled,
   margin: 0 auto;
 }
 
-.sidebar {
-  @apply bg-neutral-100 dark:bg-neutral-900 dark:text-neutral-200;
-}
-
 .sidebar-scroll {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: none;
@@ -124,30 +120,8 @@ button[data-headlessui-state]:disabled,
   background-color: rgba(255, 255, 255, 0.3);
 }
 
-/* Hide scrollbars completely */
-.hide-scrollbar {
-  -ms-overflow-style: none;  /* Internet Explorer 10+ */
-  scrollbar-width: none;  /* Firefox */
-}
-
-.hide-scrollbar::-webkit-scrollbar {
-  display: none;  /* Safari and Chrome */
-}
-
 .sidebar-item-base {
   @apply py-1.5 pl-2.5 pr-0.5 hover:text-neutral-600 dark:hover:text-neutral-300 rounded cursor-pointer transition-all duration-200;
-}
-
-.sidebar-item-hidden {
-  opacity: 0;
-  transform: translateX(30px);
-}
-
-.sidebar-item-animate {
-  opacity: 0;
-  transform: translateX(30px);
-  animation: slideInFromRight 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
-  animation-delay: calc(0.05s + (var(--item-index, 0) * 0.03s));
 }
 
 .sidebar-item-selected {
@@ -159,10 +133,6 @@ button[data-headlessui-state]:disabled,
 }
 
 .chat-bubble-user {
-  @apply bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200;
-}
-
-.chat-bubble-assistant {
   @apply bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200;
 }
 
@@ -183,10 +153,6 @@ button[data-headlessui-state]:disabled,
   @apply p-2 text-white dark:text-neutral-200 hover:text-gray-300 bg-neutral-800 dark:bg-neutral-700 rounded cursor-default;
 }
 
-.typewriter-cursor {
-  animation: blink 1s infinite;
-}
-
 .typewriter-text {
   overflow: hidden;
   white-space: nowrap;
@@ -198,62 +164,6 @@ button[data-headlessui-state]:disabled,
 .typewriter-text::after {
   content: '';
 }
-
-@keyframes slideInFromRight {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-@keyframes slideInFromLeft {
-  from {
-    transform: translateX(-100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-@keyframes slideOutToLeft {
-  from {
-    transform: translateX(0) scale(1);
-    opacity: 1;
-  }
-  to {
-    transform: translateX(-100%) scale(0.95);
-    opacity: 0;
-  }
-}
-
-@keyframes backdropFadeIn {
-  from {
-    opacity: 0;
-    backdrop-filter: blur(0px);
-  }
-  to {
-    opacity: 1;
-    backdrop-filter: blur(4px);
-  }
-}
-
-@keyframes backdropFadeOut {
-  from {
-    opacity: 1;
-    backdrop-filter: blur(4px);
-  }
-  to {
-    opacity: 0;
-    backdrop-filter: blur(0px);
-  }
-}
-
 @keyframes blink {
   0%, 50% {
     opacity: 1;
@@ -269,23 +179,5 @@ button[data-headlessui-state]:disabled,
   }
   to { 
     width: 100%;
-  }
-}
-
-@media (max-width: 767px) {
-  .mobile-sidebar-enter {
-    animation: slideInFromLeft 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
-  }
-  
-  .mobile-sidebar-exit {
-    animation: slideOutToLeft 0.3s cubic-bezier(0.55, 0.055, 0.675, 0.19) forwards;
-  }
-  
-  .mobile-backdrop-enter {
-    animation: backdropFadeIn 0.3s ease-out forwards;
-  }
-  
-  .mobile-backdrop-exit {
-    animation: backdropFadeOut 0.25s ease-in forwards;
   }
 }
