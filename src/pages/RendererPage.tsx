@@ -113,7 +113,7 @@ export function RendererPage() {
     });
   }, []);
 
-  const useAsReference = useCallback(async (index: number) => {
+  const addAsReference = useCallback(async (index: number) => {
     if (referenceImages.length >= 4) {
       return;
     }
@@ -363,7 +363,7 @@ export function RendererPage() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            useAsReference(index);
+                            addAsReference(index);
                           }}
                           disabled={referenceImages.length >= 4}
                           className="p-1.5 bg-white/90 dark:bg-neutral-900/90 text-neutral-800 dark:text-neutral-200 rounded-lg hover:bg-white dark:hover:bg-neutral-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
