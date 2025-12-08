@@ -2,10 +2,13 @@ import type { File } from "./file";
 
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
+export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "synthesizer" | "transcriber";
+
 export type Model = {
     id: string;
     name: string;
 
+    type?: ModelType;
     description?: string;
 
     tools?: {

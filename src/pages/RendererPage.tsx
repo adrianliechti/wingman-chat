@@ -4,6 +4,8 @@ import { resizeImageBlob } from "../lib/utils";
 import { X, ImagePlus, Sparkles, Download, PlusIcon } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import { useDropZone } from "../hooks/useDropZone";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import type { Model } from "../types/chat";
 
 export function RendererPage() {
   const config = getConfig();
@@ -14,10 +16,33 @@ export function RendererPage() {
   const [generatedImages, setGeneratedImages] = useState<{ blob: Blob; url: string }[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [gridSize, setGridSize] = useState(3);
+  
+  const [models, setModels] = useState<Model[]>([]);
+  const [selectedModel, setSelectedModel] = useState<Model | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const gridIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Load available renderer models
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const availableModels = await config.client.listModels("renderer");
+        setModels(availableModels);
+        
+        // Set initial selected model from config or first available
+        if (availableModels.length > 0) {
+          const configuredModel = availableModels.find(m => m.id === config.renderer?.model);
+          setSelectedModel(configuredModel || availableModels[0]);
+        }
+      } catch (error) {
+        console.error("Failed to load models:", error);
+      }
+    };
+    
+    loadModels();
+  }, [config.client, config.renderer?.model]);
 
   const handleReset = useCallback(() => {
     setPrompt("");
@@ -136,7 +161,7 @@ export function RendererPage() {
     }, 2000);
 
     try {
-      const model = config.renderer.model || "";
+      const model = selectedModel?.id || config.renderer.model || "";
       const images = referenceImages.map(img => img.blob);
       
       const resultBlob = await config.client.generateImage(model, prompt, images.length > 0 ? images : undefined);
@@ -280,7 +305,37 @@ export function RendererPage() {
 
               {/* Right: Output section */}
               <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-y-auto p-3">
-                <div className="flex flex-wrap gap-3 content-start">
+                {/* Model selector at top-left */}
+                {models.length > 0 && (
+                  <div className="absolute top-2 left-3 z-10">
+                    <Menu>
+                      <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
+                        <Sparkles size={14} />
+                        <span>{selectedModel?.name || 'Select Model'}</span>
+                      </MenuButton>
+                      <MenuItems
+                        modal={false}
+                        transition
+                        anchor="bottom start"
+                        className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
+                      >
+                        {models.map((model) => (
+                          <MenuItem key={model.id}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedModel(model)}
+                              className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
+                            >
+                              {model.name}
+                            </button>
+                          </MenuItem>
+                        ))}
+                      </MenuItems>
+                    </Menu>
+                  </div>
+                )}
+                
+                <div className="flex flex-wrap gap-3 content-start pt-10">
                   {/* Generated images */}
                   {generatedImages.map((img, index) => (
                     <div
