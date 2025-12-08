@@ -56,11 +56,20 @@ export function modelName(id: string): string {
   return id
     .split("-")
     .map(word => {
-      // Replace specific terms with their capitalized versions
-      if (word.toLowerCase() === "gpt") {
+      const lowerWord = word.toLowerCase();
+      
+      if (lowerWord === "o1" || lowerWord === "o3" || lowerWord === "o4") {
+        return lowerWord;
+      }
+      
+      if (lowerWord === "gpt") {
         return "GPT";
       }
-      // Capitalize first letter of each word
+
+      if (lowerWord === "github") {
+        return "GitHub";
+      }
+
       return word.charAt(0).toUpperCase() + word.slice(1);
     })
     .join(" ");

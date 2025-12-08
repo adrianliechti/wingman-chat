@@ -245,7 +245,7 @@ export function RendererPage() {
                   onPaste={handlePaste}
                   onKeyDown={handleKeyDown}
                   placeholder="Describe the image you want to generate..."
-                  className="absolute inset-0 w-full h-full pl-4 pr-2 pt-4 pb-2 bg-transparent border-none resize-none overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-none"
+                  className="absolute inset-0 w-full h-full pl-4 pr-2 pt-4 md:pt-12 pb-2 bg-transparent border-none resize-none overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-none"
                 />
 
                 {/* Reference images at bottom */}
@@ -253,7 +253,7 @@ export function RendererPage() {
                   {referenceImages.map((img, index) => (
                     <div
                       key={index}
-                      className="relative size-16 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-lg border border-white/40 dark:border-white/25 shadow-sm flex items-center justify-center group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all"
+                      className="relative size-16 md:size-24 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-lg border border-white/40 dark:border-white/25 shadow-sm flex items-center justify-center group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all"
                       title="Reference image"
                     >
                       <img
@@ -275,7 +275,7 @@ export function RendererPage() {
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="size-16 bg-white/30 dark:bg-neutral-800/60 backdrop-blur-lg rounded-lg border-2 border-dashed border-white/50 dark:border-white/30 shadow-sm flex items-center justify-center text-neutral-500 dark:text-neutral-400 hover:border-white/70 dark:hover:border-white/50 hover:shadow-md transition-all"
+                      className="size-16 md:size-24 bg-white/30 dark:bg-neutral-800/60 backdrop-blur-lg rounded-lg border-2 border-dashed border-white/50 dark:border-white/30 shadow-sm flex items-center justify-center text-neutral-500 dark:text-neutral-400 hover:border-white/70 dark:hover:border-white/50 hover:shadow-md transition-all"
                       title="Add reference image"
                     >
                       <ImagePlus size={18} />

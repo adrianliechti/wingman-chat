@@ -259,16 +259,18 @@ function AppContent() {
                   ref={desktopRef}
                   className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
                 >
-                  {/* Animated slider background */}
-                  <div
-                    className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
-                    style={{
-                      left: `${sliderStyles.desktop.left}px`,
-                      width: `${sliderStyles.desktop.width}px`,
-                      height: 'calc(100% - 8px)',
-                      top: '4px',
-                    }}
-                  />
+                  {/* Animated slider background - only show if current page is in first 3 */}
+                  {pages.slice(0, 3).some(p => p.key === currentPage) && (
+                    <div
+                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
+                      style={{
+                        left: `${sliderStyles.desktop.left}px`,
+                        width: `${sliderStyles.desktop.width}px`,
+                        height: 'calc(100% - 8px)',
+                        top: '4px',
+                      }}
+                    />
+                  )}
                   
                   {/* Show first 3 items */}
                   {pages.slice(0, 3).map(({ key, label, icon }) => (
