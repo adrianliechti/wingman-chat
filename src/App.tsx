@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Languages, PanelLeftOpen, Workflow, Disc3, ChevronDown, Settings } from "lucide-react";
+import { MessageCircle, Languages, PanelLeftOpen, Workflow, Disc3, ChevronDown, Settings, Image, MoreHorizontal } from "lucide-react";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { ChatPage } from "./pages/ChatPage";
 import { TranslatePage } from "./pages/TranslatePage";
 import { WorkflowPage } from "./pages/WorkflowPage";
 import { RecorderPage } from "./pages/RecorderPage";
+import { RendererPage } from "./pages/RendererPage";
 import { getConfig } from "./config";
 import { SidebarProvider } from "./contexts/SidebarProvider";
 import { useSidebar } from "./hooks/useSidebar";
@@ -23,7 +25,7 @@ import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
 import { ToolsProvider } from "./contexts/ToolsProvider";
 
-type Page = "chat" | "flow" | "translate" | "recorder";
+type Page = "chat" | "flow" | "translate" | "recorder" | "renderer";
 
 function AppContent() {
   const config = getConfig();
@@ -83,6 +85,8 @@ function AppContent() {
           return config.workflow ? 'flow' : 'chat';
         case '#recorder':
           return config.recorder ? 'recorder' : 'chat';
+        case '#renderer':
+          return config.renderer.enabled ? 'renderer' : 'chat';
         default:
           return 'chat';
       }
@@ -103,7 +107,7 @@ function AppContent() {
     // Listen for hash changes
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [config.workflow, config.translator.enabled, config.recorder]);
+  }, [config.workflow, config.translator.enabled, config.recorder, config.renderer.enabled]);
 
   // Auto-close sidebar on mobile screens and update sliders on resize
   useEffect(() => {
@@ -151,6 +155,7 @@ function AppContent() {
     { key: "flow" as const, label: "Flow", icon: <Workflow size={20} /> },
     { key: "translate" as const, label: "Translate", icon: <Languages size={20} /> },
     { key: "recorder" as const, label: "Recorder", icon: <Disc3 size={20} /> },
+    { key: "renderer" as const, label: "Renderer", icon: <Image size={20} /> },
   ].filter(page => {
     // Always show chat
     if (page.key === "chat") return true;
@@ -160,6 +165,8 @@ function AppContent() {
     if (page.key === "translate") return config.translator.enabled;
     // Show recorder only if recorder is enabled
     if (page.key === "recorder") return config.recorder;
+    // Show renderer only if renderer is enabled
+    if (page.key === "renderer") return config.renderer.enabled;
     return true;
   });
 
@@ -252,18 +259,21 @@ function AppContent() {
                   ref={desktopRef}
                   className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
                 >
-                  {/* Animated slider background */}
-                  <div
-                    className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
-                    style={{
-                      left: `${sliderStyles.desktop.left}px`,
-                      width: `${sliderStyles.desktop.width}px`,
-                      height: 'calc(100% - 8px)',
-                      top: '4px',
-                    }}
-                  />
+                  {/* Animated slider background - only show if current page is in first 3 */}
+                  {pages.slice(0, 3).some(p => p.key === currentPage) && (
+                    <div
+                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
+                      style={{
+                        left: `${sliderStyles.desktop.left}px`,
+                        width: `${sliderStyles.desktop.width}px`,
+                        height: 'calc(100% - 8px)',
+                        top: '4px',
+                      }}
+                    />
+                  )}
                   
-                  {pages.map(({ key, label, icon }) => (
+                  {/* Show first 3 items */}
+                  {pages.slice(0, 3).map(({ key, label, icon }) => (
                     <button
                       type="button"
                       key={key}
@@ -285,6 +295,50 @@ function AppContent() {
                       <span className="hidden sm:inline">{label}</span>
                     </button>
                   ))}
+                  
+                  {/* Overflow menu for remaining items */}
+                  {pages.length > 3 && (
+                    <Menu>
+                      <MenuButton
+                        className={`
+                          relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out
+                          flex items-center gap-2 text-sm
+                          ${pages.slice(3).some(p => p.key === currentPage)
+                            ? "text-neutral-900 dark:text-neutral-100"
+                            : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                          }
+                        `}
+                      >
+                        <MoreHorizontal size={20} />
+                      </MenuButton>
+                      <MenuItems
+                        modal={false}
+                        transition
+                        anchor="bottom"
+                        className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden shadow-lg z-50 min-w-40"
+                      >
+                        {pages.slice(3).map(({ key, label, icon }) => (
+                          <MenuItem key={key}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCurrentPage(key);
+                                window.location.hash = `#${key}`;
+                              }}
+                              className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${
+                                currentPage === key
+                                  ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
+                                  : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                              }`}
+                            >
+                              {icon}
+                              <span className="font-medium text-sm">{label}</span>
+                            </button>
+                          </MenuItem>
+                        ))}
+                      </MenuItems>
+                    </Menu>
+                  )}
                 </div>
               </div>
             )}
@@ -360,6 +414,7 @@ function AppContent() {
             {currentPage === "flow" && <WorkflowPage />}
             {currentPage === "translate" && <TranslatePage />}
             {currentPage === "recorder" && <RecorderPage />}
+            {currentPage === "renderer" && <RendererPage />}
           </div>
         </div>
       </div>

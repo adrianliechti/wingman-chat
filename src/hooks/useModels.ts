@@ -38,7 +38,7 @@ export function useModels() {
 
     const loadModels = async () => {
       try {
-        const loadedModels = await config.client.listModels("completion");
+        const loadedModels = await config.client.listModels("completer");
         setModels(loadedModels);
         
         // Set selected model after loading

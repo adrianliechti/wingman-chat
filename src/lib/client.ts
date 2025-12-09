@@ -5,9 +5,9 @@ import mime from "mime";
 
 import { Role, AttachmentType } from "../types/chat";
 import type { Tool } from "../types/chat";
-import type { Message, Model } from "../types/chat";
+import type { Message, Model, ModelType } from "../types/chat";
 import type { SearchResult } from "../types/search";
-import { completionModels, type ModelType } from "./models";
+import { modelType, modelName } from "./models";
 
 import instructionsConvertCsv from "../prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "../prompts/convert-md.txt?raw";
@@ -29,14 +29,19 @@ export class Client {
 
   async listModels(type?: ModelType): Promise<Model[]> {
     const models = await this.oai.models.list();
-    const mappedModels = models.data.map((model) => ({
-      id: model.id,
-      name: model.id,
-    }));
+    const mappedModels = models.data.map((model) => {
+      const type = modelType(model.id);
+      const name = modelName(model.id);
+
+      return {
+        id: model.id,
+        name: name,
+        type: type,
+      };
+    });
     
-    // Filter by type if specified
-    if (type === "completion") {
-      return completionModels(mappedModels);
+    if (type) {
+      return mappedModels.filter((model) => model.type === type);
     }
     
     return mappedModels;
