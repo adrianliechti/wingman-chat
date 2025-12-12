@@ -101,6 +101,7 @@ interface bridgeConfig {
 interface internetConfig {
   enabled: boolean;
 
+  researcher?: boolean;
   elicitation?: boolean;
 }
 

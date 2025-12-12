@@ -19,7 +19,7 @@ export function useInternetProvider(): ToolProvider | null {
   const client = config.client;
 
   const searchTools = useCallback((): Tool[] => {
-    return [
+    const tools: Tool[] = [
       {
         name: "web_search",
         description: "Performs a quick web search to find current information, recent events, or specific facts. Best for simple lookups, fact-checking, and finding URLs to specific resources.",
@@ -58,8 +58,11 @@ export function useInternetProvider(): ToolProvider | null {
             return `Web search failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
           }
         }
-      },
-      {
+      }
+    ];
+
+    if (config.internet.researcher) {
+      tools.push({
         name: "web_research",
         description: "Performs deep web research with smart query expansion, returning comprehensive results in natural language. Best for complex topics requiring multiple sources and thorough analysis.",
         parameters: {
@@ -97,48 +100,51 @@ export function useInternetProvider(): ToolProvider | null {
             return `Web research failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
           }
         }
-      },
-      {
-        name: "web_scraper",
-        description: "Extracts and returns the full text content from a specific webpage. Use when you need detailed information from a known URL or to deep-dive into a page found via search.",
-        parameters: {
-          type: "object",
-          properties: {
-            url: {
-              type: "string",
-              description: "The complete URL of the webpage to extract content from."
-            }
-          },
-          required: ["url"]
-        },
-        function: async (args: Record<string, unknown>, context) => {
-          const { url } = args;
-          
-          if (config.internet.elicitation && context?.elicit) {
-            const result = await context.elicit({
-              message: `Scrape content from ${url}`
-            });
+      });
+    }
 
-            if (result.action !== "accept") {
-              return "Scraping cancelled by user.";
-            }
+    tools.push({
+      name: "web_scraper",
+      description: "Extracts and returns the full text content from a specific webpage. Use when you need detailed information from a known URL or to deep-dive into a page found via search.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: {
+            type: "string",
+            description: "The complete URL of the webpage to extract content from."
           }
+        },
+        required: ["url"]
+      },
+      function: async (args: Record<string, unknown>, context) => {
+        const { url } = args;
+        
+        if (config.internet.elicitation && context?.elicit) {
+          const result = await context.elicit({
+            message: `Scrape content from ${url}`
+          });
 
-          try {
-            const content = await client.fetchText(url as string);
-            
-            if (!content.trim()) {
-              return "No text content could be extracted from the provided URL.";
-            }
-
-            return content;
-          } catch (error) {
-            return `Web scraping failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          if (result.action !== "accept") {
+            return "Scraping cancelled by user.";
           }
         }
+
+        try {
+          const content = await client.fetchText(url as string);
+          
+          if (!content.trim()) {
+            return "No text content could be extracted from the provided URL.";
+          }
+
+          return content;
+        } catch (error) {
+          return `Web scraping failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
       }
-    ];
-  }, [client, config.internet.elicitation]);
+    });
+
+    return tools;
+  }, [client, config.internet.elicitation, config.internet.researcher]);
 
   const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {

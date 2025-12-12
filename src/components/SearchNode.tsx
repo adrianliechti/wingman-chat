@@ -51,6 +51,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
   const [activeTab, setActiveTab] = useState(0);
   const config = getConfig();
   const client = config.client;
+  const researcherEnabled = config.internet.researcher;
 
   const handleExecute = async () => {
     const query = data.query?.trim() || '';
@@ -293,15 +294,17 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
             Website
           </button>
         </MenuItem>
-        <MenuItem>
-          <button
-            type="button"
-            onClick={() => setMode('research')}
-            className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
-          >
-            Research
-          </button>
-        </MenuItem>
+        {researcherEnabled && (
+          <MenuItem>
+            <button
+              type="button"
+              onClick={() => setMode('research')}
+              className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
+            >
+              Research
+            </button>
+          </MenuItem>
+        )}
       </MenuItems>
     </Menu>
   );

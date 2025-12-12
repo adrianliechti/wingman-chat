@@ -35,6 +35,7 @@ func main() {
 	vision := os.Getenv("VISION_ENABLED") == "true"
 
 	internet := os.Getenv("INTERNET_ENABLED") == "true"
+	internetResearcher := os.Getenv("INTERNET_RESEARCHER") == "true"
 	internetElicitation := os.Getenv("INTERNET_ELICITATION") == "true"
 
 	renderer := os.Getenv("RENDERER_ENABLED") == "true"
@@ -96,6 +97,7 @@ func main() {
 		type internetType struct {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 
+			Researcher  bool `json:"researcher,omitempty" yaml:"researcher,omitempty"`
 			Elicitation bool `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
 		}
 
@@ -224,6 +226,7 @@ func main() {
 			config.Internet = &internetType{
 				Enabled: true,
 
+				Researcher:  internetResearcher,
 				Elicitation: internetElicitation,
 			}
 		}
