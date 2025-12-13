@@ -23,7 +23,6 @@
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior: none;
   overflow-anchor: none;
 }
 
@@ -60,6 +59,13 @@
 .dark *:focus-visible::-webkit-scrollbar-thumb,
 .dark *:active::-webkit-scrollbar-thumb {
   background-color: rgba(255, 255, 255, 0.35);
+}
+
+/* Prevent horizontal-only scroll containers from blocking vertical page scroll */
+.overflow-x-auto {
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+  overflow-y: visible !important;
 }
 
 html, body {

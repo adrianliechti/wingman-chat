@@ -729,9 +729,15 @@ export class Client {
     return result.text || '';
   }
 
-  async search(query: string): Promise<SearchResult[]> {
+  async search(query: string, options?: { domains?: string[] }): Promise<SearchResult[]> {
     const data = new FormData();
     data.append('query', query);
+
+    if (options?.domains) {
+      for (const domain of options.domains) {
+        data.append('domain', domain);
+      }
+    }
 
     const response = await fetch(new URL(`/api/v1/search`, window.location.origin), {
       method: "POST",
