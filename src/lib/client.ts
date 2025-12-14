@@ -782,7 +782,7 @@ export class Client {
       type: 'function',
       name: tool.name,
       description: tool.description,
-      strict: true,
+      strict: false,
       parameters: {
         ...tool.parameters,
         additionalProperties: false,
