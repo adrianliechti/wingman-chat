@@ -39,19 +39,19 @@ export class Client {
         type: type,
       };
     });
-    
+
     if (type) {
       return mappedModels.filter((model) => model.type === type);
     }
-    
+
     return mappedModels;
   }
 
   async complete(
-    model: string, 
-    instructions: string, 
-    input: Message[], 
-    tools: Tool[], 
+    model: string,
+    instructions: string,
+    input: Message[],
+    tools: Tool[],
     handler?: (delta: string, snapshot: string) => void
   ): Promise<Message> {
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
@@ -107,7 +107,7 @@ export class Client {
             role: Role.Assistant,
             content: content.filter((c) => c.type === "text"),
           };
-          
+
           // Add tool calls if they exist
           if (m.toolCalls && m.toolCalls.length > 0) {
             assistantMessage.tool_calls = m.toolCalls.map(tc => ({
@@ -120,7 +120,7 @@ export class Client {
               },
             }));
           }
-          
+
           messages.push(assistantMessage);
           break;
         }
@@ -365,10 +365,10 @@ export class Client {
 
     // Validate input
     if (!text.trim() || selectionStart < 0 || selectionEnd <= selectionStart || selectionStart >= text.length) {
-      return { 
-        alternatives: [], 
-        contextToReplace: text.substring(selectionStart, selectionEnd), 
-        keyChanges: [] 
+      return {
+        alternatives: [],
+        contextToReplace: text.substring(selectionStart, selectionEnd),
+        keyChanges: []
       };
     }
 
@@ -378,26 +378,26 @@ export class Client {
       const boundaries: number[] = [0];
 
       let match;
-      
+
       while ((match = sentenceBoundaries.exec(text)) !== null) {
         boundaries.push(match.index + match[0].length);
       }
-      
+
       boundaries.push(text.length);
-      
+
       let sentenceStart = 0;
       let sentenceEnd = text.length;
-      
+
       for (let i = 0; i < boundaries.length - 1; i++) {
         const currentStart = boundaries[i];
         const currentEnd = boundaries[i + 1];
-        
+
         if (currentStart < end && currentEnd > start) {
           sentenceStart = Math.min(sentenceStart === 0 ? currentStart : sentenceStart, currentStart);
           sentenceEnd = Math.max(sentenceEnd === text.length ? currentEnd : sentenceEnd, currentEnd);
         }
       }
-      
+
       return text.substring(sentenceStart, sentenceEnd).trim();
     };
 
@@ -433,10 +433,10 @@ export class Client {
       };
     } catch (error) {
       console.error("Error generating text alternatives:", error);
-      return { 
-        alternatives: [], 
-        contextToReplace: contextToRewrite, 
-        keyChanges: [] 
+      return {
+        alternatives: [],
+        contextToReplace: contextToRewrite,
+        keyChanges: []
       };
     }
   }
@@ -489,15 +489,15 @@ export class Client {
     }
 
     const result = await resp.json();
-    
+
     if (!Array.isArray(result)) {
-       return [];
+      return [];
     }
-      
+
     return result.map((item: { text?: string } | string) => {
-        if (typeof item === 'string') return item;
-        return item.text || '';
-      });
+      if (typeof item === 'string') return item;
+      return item.text || '';
+    });
   }
 
   async embedText(model: string, text: string): Promise<number[]> {
@@ -515,14 +515,14 @@ export class Client {
     if (input instanceof Blob) {
       // Check file size limit (10MB)
       const maxFileSize = 10 * 1024 * 1024; // 10MB in bytes
-      
+
       if (input.size > maxFileSize) {
         throw new Error(`File size ${(input.size / 1024 / 1024).toFixed(1)}MB exceeds the maximum limit of 10MB`);
       }
     } else {
       // Check text length limit (50,000 characters)
       const maxTextLength = 50000;
-      
+
       if (input.length > maxTextLength) {
         throw new Error(`Text length ${input.length.toLocaleString()} characters exceeds the maximum limit of ${maxTextLength.toLocaleString()} characters`);
       }
@@ -530,9 +530,9 @@ export class Client {
 
     const data = new FormData();
     data.append("lang", lang);
-    
+
     const headers: HeadersInit = {};
-    
+
     if (input instanceof Blob) {
       data.append("file", input);
       headers["Accept"] = input.type || "application/octet-stream";
@@ -551,22 +551,22 @@ export class Client {
     }
 
     const contentType = resp.headers.get("content-type")?.toLowerCase() || "";
-    
+
     if (contentType.includes("text/plain") || contentType.includes("text/markdown")) {
       const translatedText = await resp.text();
       // Replace German ß with ss automatically
       return translatedText.replace(/ß/g, 'ss');
     }
-    
+
     return resp.blob();
   }
 
   async rewriteText(
-    model: string, 
-    text: string, 
-    lang?: string, 
-    tone?: string, 
-    style?: string, 
+    model: string,
+    text: string,
+    lang?: string,
+    tone?: string,
+    style?: string,
     userPrompt?: string
   ): Promise<string> {
     const Schema = z.object({
@@ -578,20 +578,20 @@ export class Client {
     }
 
     // Build tone instruction
-    const toneInstruction = !tone ? '' : 
+    const toneInstruction = !tone ? '' :
       tone === 'enthusiastic' ? 'Use an enthusiastic and energetic tone.' :
-      tone === 'friendly' ? 'Use a warm and friendly tone.' :
-      tone === 'confident' ? 'Use a confident and assertive tone.' :
-      tone === 'diplomatic' ? 'Use a diplomatic and tactful tone.' :
-      '';
+        tone === 'friendly' ? 'Use a warm and friendly tone.' :
+          tone === 'confident' ? 'Use a confident and assertive tone.' :
+            tone === 'diplomatic' ? 'Use a diplomatic and tactful tone.' :
+              '';
 
     // Build style instruction
     const styleInstruction = !style ? '' :
       style === 'simple' ? 'Use simple and clear language.' :
-      style === 'business' ? 'Use professional business language.' :
-      style === 'academic' ? 'Use formal academic language.' :
-      style === 'casual' ? 'Use casual and informal language.' :
-      '';
+        style === 'business' ? 'Use professional business language.' :
+          style === 'academic' ? 'Use formal academic language.' :
+            style === 'casual' ? 'Use casual and informal language.' :
+              '';
 
     // Combine predefined instructions
     const predefinedInstructions = [toneInstruction, styleInstruction].filter(Boolean);
@@ -605,12 +605,12 @@ export class Client {
       instructions.push(`Custom instruction: ${userPrompt.trim()}`);
     }
 
-    const finalInstructions = instructions.length > 0 
-      ? instructions.join(' ') 
+    const finalInstructions = instructions.length > 0
+      ? instructions.join(' ')
       : 'Maintain the original tone and style';
 
     // Language handling
-    const languageInstruction = lang 
+    const languageInstruction = lang
       ? `Ensure the text is in ${lang} language${lang !== 'en' ? ', translating if necessary' : ''}.`
       : 'Maintain the original language of the text.';
 
@@ -636,10 +636,10 @@ export class Client {
 
       const result = completion.choices[0].message.parsed;
       let rewrittenText = result?.rewrittenText ?? text;
-      
+
       // Replace German ß with ss automatically
       rewrittenText = rewrittenText.replace(/ß/g, 'ss');
-      
+
       return rewrittenText;
     } catch (error) {
       console.error("Error rewriting text:", error);
@@ -662,34 +662,34 @@ export class Client {
       response_format: "wav",
     });
 
-    const audioBuffer = await response.arrayBuffer();      
+    const audioBuffer = await response.arrayBuffer();
     return new Blob([audioBuffer], { type: 'audio/wav' });
   }
 
   async speakText(model: string, input: string, voice?: string): Promise<void> {
     const audioBlob = await this.generateAudio(model, input, voice);
     const audioUrl = URL.createObjectURL(audioBlob);
-    
+
     const audio = new Audio(audioUrl);
-    
+
     return new Promise((resolve, reject) => {
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
         resolve();
       };
-      
+
       audio.onerror = (error) => {
         URL.revokeObjectURL(audioUrl);
         reject(new Error(`Audio playback failed: ${error}`));
       };
-      
+
       audio.play().catch(reject);
     });
   }
 
   async transcribe(model: string, blob: Blob): Promise<string> {
     const data = new FormData();
-    
+
     // Get file extension - handle common audio types explicitly
     let extension = 'audio';
     if (blob.type.includes('webm')) {
@@ -707,12 +707,12 @@ export class Client {
     } else {
       extension = mime.getExtension(blob.type) || 'audio';
     }
-    
+
     const filename = `audio_recording.${extension}`;
-    
+
     data.append('file', blob, filename);
 
-    if(model) {
+    if (model) {
       data.append('model', model);
     }
 
@@ -729,9 +729,15 @@ export class Client {
     return result.text || '';
   }
 
-  async search(query: string): Promise<SearchResult[]> {
+  async search(query: string, options?: { domains?: string[] }): Promise<SearchResult[]> {
     const data = new FormData();
     data.append('query', query);
+
+    if (options?.domains) {
+      for (const domain of options.domains) {
+        data.append('domain', domain);
+      }
+    }
 
     const response = await fetch(new URL(`/api/v1/search`, window.location.origin), {
       method: "POST",
@@ -743,7 +749,7 @@ export class Client {
     }
 
     const results = await response.json();
-    
+
     if (!Array.isArray(results)) {
       return [];
     }
