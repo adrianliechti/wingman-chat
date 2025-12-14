@@ -3,9 +3,6 @@ import { WavStreamPlayer, WavRecorder } from 'wavtools';
 import { AttachmentType } from '../types/chat';
 import type { Message, Tool } from '../types/chat';
 
-/**
- * Hook to manage OpenAI Realtime voice streaming via WebSockets with PCM16.
- */
 export function useVoiceWebSockets(
   onUser: (text: string) => void,
   onAssistant: (text: string) => void

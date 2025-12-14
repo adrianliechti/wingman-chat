@@ -78,7 +78,7 @@ function ImageAttachment({ attachment, className }: {
       <div className="absolute inset-0 flex items-center justify-center">
         <button
           onClick={handleDownload}
-          className="opacity-0 group-hover/image:opacity-100 transition-opacity duration-200 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 p-2 rounded-full shadow-lg cursor-pointer"
+          className="opacity-0 group-hover/image:opacity-100 transition-opacity duration-200 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 p-2 rounded-full shadow-lg"
           title="Download image"
           aria-label={`Download ${attachment.name}`}
         >

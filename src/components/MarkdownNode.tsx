@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { FileText } from 'lucide-react';
 import type { Node, NodeProps } from '@xyflow/react';
 import type { BaseNodeData } from '../types/workflow';
+import { createData, getDataText } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
@@ -10,6 +11,7 @@ import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
 
 // MarkdownNode data interface
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface MarkdownNodeData extends BaseNodeData {
 }
 
@@ -18,13 +20,13 @@ export type MarkdownNodeType = Node<MarkdownNodeData, 'markdown'>;
 
 export const MarkdownNode = memo(({ id, data, selected }: NodeProps<MarkdownNodeType>) => {
   const { updateNode } = useWorkflow();
-  const { getLabeledText, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
+  const { getText, hasConnections, isProcessing, executeAsync } = useWorkflowNode(id);
   const config = getConfig();
   const client = config.client;
 
   const handleExecute = async () => {
     // Get input from connected nodes only
-    const inputContent = getLabeledText();
+    const inputContent = getText();
     
     if (!inputContent) return;
     
@@ -40,7 +42,7 @@ export const MarkdownNode = memo(({ id, data, selected }: NodeProps<MarkdownNode
 
         // Set final output
         updateNode(id, {
-          data: { ...data, outputText: markdownOutput, error: undefined }
+          data: { ...data, output: createData(markdownOutput), error: undefined }
         });
       } catch (error) {
         console.error('Error formatting markdown:', error);
@@ -66,7 +68,7 @@ export const MarkdownNode = memo(({ id, data, selected }: NodeProps<MarkdownNode
       minWidth={400}
       error={data.error}
       headerActions={
-        data.outputText && <CopyButton text={data.outputText} />
+        data.output && <CopyButton markdown={getDataText(data.output)} />
       }
     >
       {data.error ? (
@@ -75,9 +77,9 @@ export const MarkdownNode = memo(({ id, data, selected }: NodeProps<MarkdownNode
             <p className="text-red-600 dark:text-red-400 text-sm">{data.error}</p>
           </div>
         </div>
-      ) : data.outputText ? (
+      ) : data.output ? (
         <div className="flex-1 overflow-y-auto px-1 py-2 text-sm rounded-lg bg-white dark:bg-black/20 text-gray-700 dark:text-gray-300 scrollbar-hide">
-          <Markdown>{data.outputText}</Markdown>
+          <Markdown>{getDataText(data.output)}</Markdown>
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center min-h-0 p-4">

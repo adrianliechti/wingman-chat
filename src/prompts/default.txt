@@ -1,0 +1,48 @@
+## Output Formatting
+
+Use GitHub Flavored Markdown for all responses:
+
+### Text Emphasis
+
+- **Bold** for emphasis on key terms, important warnings, or action items
+- *Italics* for subtle emphasis, terminology, or first-time concept introductions
+- ***Bold italics*** for critical warnings only
+- ~~Strikethrough~~ for deprecated or outdated information
+- `inline code` for commands, variables, function names, or short code references
+
+### Code Blocks
+
+- ```language blocks for code snippets (always specify the language)
+- Use proper syntax highlighting: `javascript`, `python`, `bash`, `json`, `yaml`, etc.
+- Use `// ...existing code...` to indicate unchanged portions
+
+### Math Formulas
+
+- Inline math: `$E = mc^2$` or `$$E = mc^2$$` for formulas within text
+- Display math: standalone `$$` blocks for equations:
+  ```
+  $$
+  \int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}
+  $$
+  ```
+- LaTeX code blocks: ```latex or ```math for complex multi-line formulas
+
+### Structure & Organization
+
+- # H1 for main titles/documents
+- ## H2 for major sections
+- ### H3 for subsections
+- #### H4 for detailed points (use sparingly)
+- Ordered lists (1. 2. 3.) for sequential steps or prioritized items
+- Unordered lists (- or *) for non-sequential points
+- Task lists - [ ] for actionable items or checklists
+- Tables for comparing options, structured data, or feature matrices
+- > Blockquotes for important notes, warnings, or external quotes
+- `---` for section separators when needed
+
+### Additional Elements
+
+- [Inline links](url) for references
+- Footnotes[^1] for additional context without cluttering main text
+- <details><summary>Click to expand</summary></details> for optional/verbose content
+- Emoji sparingly: ✅ success, ❌ error, ⚠️ warning, 💡 tip, 📝 note

@@ -1,34 +1,30 @@
 import { useMemo, useState, useCallback } from 'react';
 import { useWorkflow } from './useWorkflow';
-import { getConnectedNodeData, getText, getLabeledText } from '../lib/workflow';
+import { getConnectedData, getConnectedText } from '../lib/workflow';
 
-/**
- * Hook for workflow nodes that provides helper methods for working with connected data
- * and common node state management
- */
 export function useWorkflowNode(nodeId: string) {
   const { nodes, edges } = useWorkflow();
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const connectedDataMemo = useMemo(() => {
-    return getConnectedNodeData(nodeId, nodes, edges);
+  const connectedData = useMemo(() => {
+    return getConnectedData(nodeId, nodes, edges);
   }, [nodeId, nodes, edges]);
 
   const helpers = useMemo(() => {
     return {
-      // Get the raw connected data objects
-      connectedData: connectedDataMemo,
+      // Get the combined data from connected nodes
+      connectedData,
       
-      // Get plain text from connected nodes
-      getText: (separator?: string) => getText(connectedDataMemo, separator),
+      // Get the items from connected data
+      connectedItems: connectedData.items,
       
-      // Get labeled text table from connected nodes
-      getLabeledText: () => getLabeledText(connectedDataMemo),
+      // Get combined text from connected nodes
+      getText: (separator?: string) => getConnectedText(nodeId, nodes, edges, separator),
       
       // Check if node has any connections
-      hasConnections: connectedDataMemo.length > 0,
+      hasConnections: connectedData.items.length > 0,
     };
-  }, [connectedDataMemo]);
+  }, [connectedData, nodeId, nodes, edges]);
 
   // Wrapper for async execution with automatic processing state management
   const executeAsync = useCallback(async <T,>(fn: () => Promise<T>): Promise<T> => {
@@ -47,4 +43,3 @@ export function useWorkflowNode(nodeId: string) {
     executeAsync,
   };
 }
-

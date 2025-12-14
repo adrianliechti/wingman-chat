@@ -1,0 +1,6 @@
+Summarize the conversation into a short, descriptive title.
+
+Requirements:
+- Less than 10 words
+- Capture the main topic or theme
+- No introductory phrases or quotation marks

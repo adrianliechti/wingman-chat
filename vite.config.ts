@@ -35,11 +35,6 @@ export default defineConfig({
     exclude: ['pyodide']
   },
   server: {
-    headers: {
-      // Required headers for SharedArrayBuffer support (needed for Pyodide threading)
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin'
-    },
     proxy: {
       '/api/v1/realtime': {
         target: 'http://localhost:8081',
@@ -107,8 +102,10 @@ export default defineConfig({
             'remark-breaks', 
             'remark-gfm',
             'remark-gemoji',
+            'remark-math',
             'rehype-raw', 
-            'rehype-sanitize'
+            'rehype-sanitize',
+            'rehype-katex'
           ],
           // UI libraries
           'vendor-ui': [
@@ -130,7 +127,8 @@ export default defineConfig({
     },
     chunkSizeWarningLimit: 1000,
     minify: 'esbuild',
-    target: 'esnext'
+    target: 'esnext',
+    cssCodeSplit: true
   },
   worker: {
     format: 'es'

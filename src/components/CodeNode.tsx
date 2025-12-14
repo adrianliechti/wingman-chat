@@ -1,8 +1,9 @@
 import { memo, useState, useEffect } from 'react';
-import { Code2, ChevronDown, Eye, EyeOff } from 'lucide-react';
-import { Button, Menu, MenuButton, MenuItem, MenuItems, Textarea } from '@headlessui/react';
+import { Code2, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
-import type { BaseNodeData } from '../types/workflow';
+import type { BaseNodeData, Data } from '../types/workflow';
+import { getDataText } from '../types/workflow';
 import type { Model, Tool } from '../types/chat';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
@@ -22,33 +23,19 @@ export interface CodeNodeData extends BaseNodeData {
 // CodeNode type
 export type CodeNodeType = Node<CodeNodeData, 'code'>;
 
-// Factory function to create a new CodeNode
-export function createCodeNode(position: { x: number; y: number }): CodeNodeType {
-  return {
-    id: crypto.randomUUID(),
-    type: 'code',
-    position,
-    data: {
-      outputText: '',
-      prompt: '',
-      generatedCode: ''
-    }
-  };
-}
-
 export const CodeNode = memo(({ id, data, selected }: NodeProps<CodeNodeType>) => {
   const { updateNode } = useWorkflow();
-  const { getLabeledText, isProcessing, executeAsync } = useWorkflowNode(id);
+  const { connectedData, isProcessing, executeAsync } = useWorkflowNode(id);
   const [models, setModels] = useState<Model[]>([]);
-  const [prompt, setPrompt] = useState(data.prompt || '');
   const [showCode, setShowCode] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
   const config = getConfig();
   const client = config.client;
 
   useEffect(() => {
     const loadModels = async () => {
       try {
-        const modelList = await client.listModels("completion");
+        const modelList = await client.listModels("completer");
         setModels(modelList);
       } catch (error) {
         console.error('Error loading models:', error);
@@ -57,42 +44,40 @@ export const CodeNode = memo(({ id, data, selected }: NodeProps<CodeNodeType>) =
     loadModels();
   }, [client]);
 
-  useEffect(() => {
-    setPrompt(data.prompt || '');
-  }, [data.prompt]);
-
   const handleExecute = async () => {
-    if (!prompt?.trim()) return;
-    
-    // Save the prompt to workflow state
-    updateNode(id, { data: { ...data, prompt } });
+    if (!data.prompt?.trim()) return;
     
     await executeAsync(async () => {
-      // Get labeled text from connected nodes
-      const contextText = getLabeledText();
-      
-      // Build the user message content
-      let messageContent = prompt || '';
-      
-      // If there's connected data, append it as context
-      if (contextText) {
-        messageContent = `${messageContent}\n\n---\n\nInput data from connected nodes:\n${contextText}`;
-      }
-
       try {
+        // Get input items from connected nodes
+        const inputItems = connectedData.items;
+        
+        // If no inputs, create a single execution without input data
+        const itemsToProcess = inputItems.length > 0 
+          ? inputItems 
+          : [{ value: '', text: '' }];
+
         let generatedCode = '';
         let packages: string[] = [];
+
+        // Build the prompt with a sample input to generate the code
+        const sampleInput = itemsToProcess[0]?.text || '';
+        let messageContent = data.prompt || '';
+        
+        if (sampleInput) {
+          messageContent = `${messageContent}\n\n---\n\nSample input data (the code will be run for each input item):\n${sampleInput}`;
+        }
 
         // Define the execute_python_code tool for function calling
         const tools: Tool[] = [{
           name: "execute_python_code",
-          description: "Execute Python code to solve the task. Use this to perform calculations, data analysis, create visualizations, or run any Python script.",
+          description: "Execute Python code to solve the task. Use this to perform calculations, data analysis, create visualizations, or run any Python script. The variable 'input_data' will contain the input text to process.",
           parameters: {
             type: "object",
             properties: {
               code: {
                 type: "string",
-                description: "The Python code to execute. Can include imports, functions, calculations, and print statements. If input_data is available from connected nodes, it will be accessible as a variable."
+                description: "The Python code to execute. The variable 'input_data' will be available containing the input text to process. Use print() to output the result."
               },
               packages: {
                 type: "array",
@@ -114,7 +99,15 @@ export const CodeNode = memo(({ id, data, selected }: NodeProps<CodeNodeType>) =
         // Call the complete method with the tool
         const response = await client.complete(
           data.model || '',
-          'You are a Python code generator. Generate clean, efficient Python code to solve the user\'s task. Use the execute_python_code function to run the code. If input_data is available, use it in your solution.\n\nIMPORTANT: Only generate code that produces TEXT OUTPUT using print() statements or returns values. Do NOT create files, save data to disk, or generate file paths. All output must be text-based and printed to stdout.',
+          `You are a Python code generator. Generate clean, efficient Python code to solve the user's task. Use the execute_python_code function to run the code.
+
+The variable 'input_data' will contain the text input to process. Your code will be executed once for each input item.
+
+IMPORTANT: 
+- Only generate code that produces TEXT OUTPUT using print() statements
+- The 'input_data' variable is already defined and contains the input text
+- Do NOT create files, save data to disk, or generate file paths
+- All output must be text-based and printed to stdout`,
           [{
             role: Role.User,
             content: messageContent,
@@ -129,49 +122,66 @@ export const CodeNode = memo(({ id, data, selected }: NodeProps<CodeNodeType>) =
           generatedCode = args.code;
           packages = args.packages || [];
 
-          // Update node to show generated code
+          // Update node to show generated code and processing status
           updateNode(id, {
-            data: { ...data, generatedCode, outputText: 'Executing code...', error: undefined }
+            data: { 
+              ...data, 
+              generatedCode, 
+              output: { items: [{ value: 'Executing code...', text: 'Executing code...' }] }, 
+              error: undefined 
+            }
           });
 
-          // Build execution code with input_data if available
-          let executionCode = generatedCode;
-          if (contextText) {
-            const escapedContext = JSON.stringify(contextText).slice(1, -1);
+          // Execute the code for each input item
+          const resultItems: { value: string; text: string }[] = [];
+          
+          for (const item of itemsToProcess) {
+            const inputText = item.text;
+            const escapedInput = JSON.stringify(inputText).slice(1, -1);
             
-            executionCode = `# Input data from connected nodes
-input_data = """${escapedContext}"""
+            // Build execution code with input_data
+            const executionCode = `# Input data for this execution
+input_data = """${escapedInput}"""
 
 ${generatedCode}`;
-          }
 
-          // Execute the Python code
-          const result = await executeCode({
-            code: executionCode,
-            packages: packages
-          });
-
-          if (!result.success) {
-            updateNode(id, {
-              data: { 
-                ...data, 
-                generatedCode,
-                outputText: '', 
-                error: result.error || 'Code execution failed' 
-              }
+            // Execute the Python code
+            const result = await executeCode({
+              code: executionCode,
+              packages: packages
             });
-            return;
+
+            if (!result.success) {
+              resultItems.push({ 
+                value: result.error || 'Code execution failed', 
+                text: `Error: ${result.error || 'Code execution failed'}` 
+              });
+            } else {
+              resultItems.push({ 
+                value: result.output, 
+                text: result.output 
+              });
+            }
           }
 
-          // Update with the execution result
+          // Update output with all results
+          const output: Data<string> = {
+            items: resultItems
+          };
+
           updateNode(id, {
             data: { 
               ...data, 
               generatedCode,
-              outputText: result.output, 
+              output, 
               error: undefined 
             }
           });
+
+          // Reset to first tab if current tab would be out of bounds
+          if (activeTab >= resultItems.length) {
+            setActiveTab(0);
+          }
         } else {
           // If no tool was called, use the response content as error
           updateNode(id, {
@@ -194,6 +204,8 @@ ${generatedCode}`;
   };
 
   const currentModel = models.find(m => m.id === data.model);
+  const outputItems = data.output?.items || [];
+  const hasMultipleOutputs = outputItems.length > 1;
 
   const modelSelector = (
     <Menu>
@@ -215,12 +227,13 @@ ${generatedCode}`;
         ) : (
           models.map((model) => (
             <MenuItem key={model.id}>
-              <Button
+              <button
+                type="button"
                 onClick={() => updateNode(id, { data: { ...data, model: model.id } })}
                 className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
               >
                 {model.name}
-              </Button>
+              </button>
             </MenuItem>
           ))
         )}
@@ -237,24 +250,23 @@ ${generatedCode}`;
       color="green"
       onExecute={handleExecute}
       isProcessing={isProcessing}
-      canExecute={!!prompt?.trim()}
+      canExecute={!!data.prompt?.trim()}
       showInputHandle={true}
       showOutputHandle={true}
       error={data.error}
       headerActions={
         <>
           {modelSelector}
-          {data.outputText && <CopyButton text={data.outputText} />}
+          {data.output && <CopyButton text={getDataText(data.output)} />}
         </>
       }
     >
       <div className="space-y-2.5 flex-1 flex flex-col min-h-0">
         {/* Prompt Input */}
         <div className="shrink-0">
-          <Textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onBlur={() => updateNode(id, { data: { ...data, prompt } })}
+          <textarea
+            value={data.prompt ?? ''}
+            onChange={(e) => updateNode(id, { data: { ...data, prompt: e.target.value } })}
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             placeholder="Describe what you want the code to do..."
@@ -277,18 +289,54 @@ ${generatedCode}`;
             )}
             {data.generatedCode}
           </div>
-        ) : data.outputText ? (
-          <div className="flex-1 overflow-y-auto px-3 py-2 text-sm font-mono rounded-lg bg-gray-100/50 dark:bg-black/10 scrollbar-hide whitespace-pre-wrap nodrag">
-            {data.generatedCode && (
-              <button
-                onClick={() => setShowCode(!showCode)}
-                title="Show Code"
-                className="float-right ml-2 inline-flex items-center justify-center size-6 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors rounded-md hover:bg-neutral-200/50 dark:hover:bg-neutral-700/50"
-              >
-                <Eye size={14} />
-              </button>
+        ) : outputItems.length > 0 ? (
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className={`flex-1 overflow-y-auto px-3 py-2 text-sm font-mono bg-gray-100/50 dark:bg-black/10 scrollbar-hide whitespace-pre-wrap nodrag ${hasMultipleOutputs ? 'rounded-t-lg' : 'rounded-lg'}`}>
+              {data.generatedCode && (
+                <button
+                  onClick={() => setShowCode(!showCode)}
+                  title="Show Code"
+                  className="float-right ml-2 inline-flex items-center justify-center size-6 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors rounded-md hover:bg-neutral-200/50 dark:hover:bg-neutral-700/50"
+                >
+                  <Eye size={14} />
+                </button>
+              )}
+              {outputItems[activeTab]?.text || ''}
+            </div>
+            {/* Tab navigation at bottom - only show if multiple outputs */}
+            {hasMultipleOutputs && (
+              <div className="shrink-0 flex items-center justify-between px-2 py-1.5 bg-gray-200/50 dark:bg-black/20 rounded-b-lg border-t border-gray-200/50 dark:border-gray-700/50">
+                <button
+                  onClick={() => setActiveTab(Math.max(0, activeTab - 1))}
+                  disabled={activeTab === 0}
+                  className="p-1 rounded hover:bg-gray-300/50 dark:hover:bg-gray-700/50 disabled:opacity-30 transition-colors nodrag"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <div className="flex items-center gap-1">
+                  {outputItems.map((_, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setActiveTab(idx)}
+                      className={`w-6 h-6 text-xs rounded transition-colors nodrag ${
+                        idx === activeTab
+                          ? 'bg-green-500 text-white'
+                          : 'bg-gray-300/50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400 hover:bg-gray-400/50 dark:hover:bg-gray-600/50'
+                      }`}
+                    >
+                      {idx + 1}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setActiveTab(Math.min(outputItems.length - 1, activeTab + 1))}
+                  disabled={activeTab === outputItems.length - 1}
+                  className="p-1 rounded hover:bg-gray-300/50 dark:hover:bg-gray-700/50 disabled:opacity-30 transition-colors nodrag"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
             )}
-            {data.outputText}
           </div>
         ) : null}
       </div>

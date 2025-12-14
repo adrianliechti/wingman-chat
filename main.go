@@ -34,10 +34,13 @@ func main() {
 	voice := os.Getenv("VOICE_ENABLED") == "true"
 	vision := os.Getenv("VISION_ENABLED") == "true"
 
-	image := os.Getenv("IMAGE_ENABLED") == "true"
-	imageModel := os.Getenv("IMAGE_MODEL")
-
 	internet := os.Getenv("INTERNET_ENABLED") == "true"
+	internetResearcher := os.Getenv("INTERNET_RESEARCHER") == "true"
+	internetElicitation := os.Getenv("INTERNET_ELICITATION") == "true"
+
+	renderer := os.Getenv("RENDERER_ENABLED") == "true"
+	rendererModel := os.Getenv("RENDERER_MODEL")
+	rendererElicitation := os.Getenv("RENDERER_ELICITATION") == "true"
 
 	interpreter := os.Getenv("INTERPRETER_ENABLED") == "true"
 
@@ -49,6 +52,7 @@ func main() {
 	repositoryContextPages := os.Getenv("REPOSITORY_CONTEXT_PAGES")
 
 	workflow := os.Getenv("WORKFLOW_ENABLED") == "true"
+	recorder := os.Getenv("RECORDER_ENABLED") == "true"
 
 	mux := http.NewServeMux()
 	dist := os.DirFS("dist")
@@ -56,6 +60,13 @@ func main() {
 	mux.Handle("/", http.FileServerFS(dist))
 
 	mux.HandleFunc("GET /config.json", func(w http.ResponseWriter, r *http.Request) {
+		type toolType struct {
+			ID string `json:"id,omitempty" yaml:"id,omitempty"`
+
+			Name        string `json:"name,omitempty" yaml:"name,omitempty"`
+			Description string `json:"description,omitempty" yaml:"description,omitempty"`
+		}
+
 		type modelType struct {
 			ID string `json:"id,omitempty" yaml:"id,omitempty"`
 
@@ -83,13 +94,17 @@ func main() {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 		}
 
-		type imageType struct {
-			Enabled bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-			Model   string `json:"model,omitempty" yaml:"model,omitempty"`
-		}
-
 		type internetType struct {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+
+			Researcher  bool `json:"researcher,omitempty" yaml:"researcher,omitempty"`
+			Elicitation bool `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
+		}
+
+		type rendererType struct {
+			Enabled     bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+			Model       string `json:"model,omitempty" yaml:"model,omitempty"`
+			Elicitation bool   `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
 		}
 
 		type interpreterType struct {
@@ -97,7 +112,8 @@ func main() {
 		}
 
 		type bridgeType struct {
-			URL string `json:"url,omitempty" yaml:"url,omitempty"`
+			Enabled bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+			URL     string `json:"url,omitempty" yaml:"url,omitempty"`
 		}
 
 		type artifactsType struct {
@@ -116,6 +132,10 @@ func main() {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 		}
 
+		type recorderType struct {
+			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+		}
+
 		type translatorType struct {
 			Enabled   bool     `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 			Model     string   `json:"model,omitempty" yaml:"model,omitempty"`
@@ -131,6 +151,7 @@ func main() {
 			Title      string `json:"title,omitempty" yaml:"title,omitempty"`
 			Disclaimer string `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
 
+			Tools  []toolType  `json:"tools,omitempty" yaml:"tools,omitempty"`
 			Models []modelType `json:"models,omitempty" yaml:"models,omitempty"`
 
 			TTS *ttsType `json:"tts,omitempty" yaml:"tts,omitempty"`
@@ -139,9 +160,9 @@ func main() {
 			Voice  *voiceType  `json:"voice,omitempty" yaml:"voice,omitempty"`
 			Vision *visionType `json:"vision,omitempty" yaml:"vision,omitempty"`
 
-			Image       *imageType       `json:"image,omitempty" yaml:"image,omitempty"`
 			Internet    *internetType    `json:"internet,omitempty" yaml:"internet,omitempty"`
-			Interpreter *interpreterType `json:"interpreter,omitempty" yaml:"repl,omitempty"`
+			Renderer    *rendererType    `json:"renderer,omitempty" yaml:"renderer,omitempty"`
+			Interpreter *interpreterType `json:"interpreter,omitempty" yaml:"interpreter,omitempty"`
 
 			Bridge *bridgeType `json:"bridge,omitempty" yaml:"bridge,omitempty"`
 
@@ -149,6 +170,7 @@ func main() {
 			Repository *repositoryType `json:"repository,omitempty" yaml:"repository,omitempty"`
 
 			Workflow   *workflowType   `json:"workflow,omitempty" yaml:"workflow,omitempty"`
+			Recorder   *recorderType   `json:"recorder,omitempty" yaml:"recorder,omitempty"`
 			Translator *translatorType `json:"translator,omitempty" yaml:"translator,omitempty"`
 
 			Backgrounds map[string][]backgroundType `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
@@ -157,6 +179,10 @@ func main() {
 		config := configType{
 			Title:      title,
 			Disclaimer: disclaimer,
+		}
+
+		if data, err := os.ReadFile("tools.yaml"); err == nil {
+			yaml.Unmarshal(data, &config.Tools)
 		}
 
 		if data, err := os.ReadFile("models.yaml"); err == nil {
@@ -196,16 +222,20 @@ func main() {
 			}
 		}
 
-		if image {
-			config.Image = &imageType{
-				Enabled: true,
-				Model:   imageModel,
-			}
-		}
-
 		if internet {
 			config.Internet = &internetType{
 				Enabled: true,
+
+				Researcher:  internetResearcher,
+				Elicitation: internetElicitation,
+			}
+		}
+
+		if renderer {
+			config.Renderer = &rendererType{
+				Enabled:     true,
+				Model:       rendererModel,
+				Elicitation: rendererElicitation,
 			}
 		}
 
@@ -217,7 +247,8 @@ func main() {
 
 		if bridgeURL != "" {
 			config.Bridge = &bridgeType{
-				URL: bridgeURL,
+				Enabled: true,
+				URL:     bridgeURL,
 			}
 		}
 
@@ -241,6 +272,12 @@ func main() {
 
 		if workflow {
 			config.Workflow = &workflowType{
+				Enabled: true,
+			}
+		}
+
+		if recorder {
+			config.Recorder = &recorderType{
 				Enabled: true,
 			}
 		}

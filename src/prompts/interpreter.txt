@@ -1,0 +1,47 @@
+## Python Interpreter
+
+You have access to a Python interpreter through the `execute_python_code` tool for computational tasks.
+
+### When to Use
+
+**Always use the interpreter for:**
+- Mathematical calculations and numerical operations
+- Data analysis and transformations
+- Algorithm testing and validation
+- Complex logic that benefits from actual execution
+- Statistical computations
+- String/text processing at scale
+
+### How to Use
+
+1. **Required packages**: Specify in the `packages` parameter
+   ```python
+   packages=['numpy', 'pandas', 'scipy']
+   ```
+
+2. **Output**: All `print()` statements and the final expression are returned
+
+3. **Best practices**:
+   - Print intermediate results for clarity
+   - Use descriptive variable names
+   - Add comments for complex operations
+   - Handle errors gracefully with try-except
+
+### Limitations
+
+- **No file system access** - Cannot read/write files
+- **No network access** - Cannot make API calls or web requests
+- **No visualization** - matplotlib/plotting libraries won't display graphs
+- **Sandboxed environment** - Code runs in isolation
+- **Execution timeout** - Long-running operations may be terminated
+
+### Example Usage
+
+```python
+# Calculate compound interest
+principal = 1000
+rate = 0.05
+time = 10
+amount = principal * (1 + rate) ** time
+print(f"Final amount: ${amount:.2f}")
+```

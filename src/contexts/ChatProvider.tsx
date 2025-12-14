@@ -1,12 +1,13 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Role } from "../types/chat";
-import type { Message, Model, ToolContext } from "../types/chat";
+import type { Message, ToolProvider, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation } from '../types/chat';
+import { ProviderState } from '../types/chat';
 import type { FileSystem } from "../types/file";
 import { useModels } from "../hooks/useModels";
 import { useChats } from "../hooks/useChats";
 import { useChatContext } from "../hooks/useChatContext";
-import { useSearch } from "../hooks/useSearch";
 import { useArtifacts } from "../hooks/useArtifacts";
+import { useToolsContext } from "../hooks/useToolsContext";
 import { getConfig } from "../config";
 import { parseResource } from "../lib/resource";
 import { ChatContext } from './ChatContext';
@@ -22,24 +23,40 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
-  const { setEnabled: setSearchEnabled } = useSearch();
-  const { isAvailable: artifactsEnabled, setFileSystemForChat } = useArtifacts();
+  const { isAvailable: artifactsEnabled, setFileSystemForChat, setShowArtifactsDrawer } = useArtifacts();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
-  const messagesRef = useRef<Message[]>([]);
+  const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
+  const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
 
   const chat = chats.find(c => c.id === chatId) ?? null;
   const model = chat?.model ?? selectedModel ?? models[0];
-  const { tools: chatTools, instructions: chatInstructions, mcpConnected, mcpTools } = useChatContext('chat', model);
+  const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat', model);
+  const { providers, getProviderState, setProviderEnabled } = useToolsContext();
+  
+  // Calculate tool providers connection state
+  const isInitializing = useMemo(() => {
+    const hasProviders = providers.length > 0;
+    if (!hasProviders) {
+      return null; // No providers configured
+    }
+    const isAnyInitializing = providers.some((p: ToolProvider) => getProviderState(p.id) === ProviderState.Initializing);
+    if (isAnyInitializing) {
+      return true; // At least one provider is initializing
+    }
+    return false; // All providers are ready
+  }, [providers, getProviderState]);
+  
   const messages = useMemo(() => {
-    const msgs = chat?.messages ?? [];
-    messagesRef.current = msgs;
-    return msgs;
-  }, [chat?.messages]);
+    const baseMessages = chat?.messages ?? [];
 
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+    // Attach transient streaming content without persisting it on every token
+    if (streamingMessage && chat?.id === streamingMessage.chatId) {
+      return [...baseMessages, streamingMessage.message];
+    }
+
+    return baseMessages;
+  }, [chat?.messages, chat?.id, streamingMessage]);
 
   // Set up the filesystem for the current chat
   useEffect(() => {
@@ -50,26 +67,33 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     // Create focused methods for filesystem access
     const getFileSystem = () => chat.artifacts || {};
-    const setFileSystem = (artifacts: FileSystem) => {
-      updateChat(chat.id, () => ({ artifacts }));
+    const setFileSystem = (updater: (current: FileSystem) => FileSystem) => {
+      updateChat(chat.id, (current) => ({ 
+        artifacts: updater(current.artifacts || {}) 
+      }));
     };
 
     setFileSystemForChat(getFileSystem, setFileSystem);
-  }, [chat?.id, chat?.artifacts, artifactsEnabled, setFileSystemForChat, updateChat]);
+    
+    // Open artifacts drawer if the chat has files
+    if (chat.artifacts && Object.keys(chat.artifacts).length > 0) {
+      setShowArtifactsDrawer(true);
+    }
+  }, [chat?.id, chat?.artifacts, artifactsEnabled, setFileSystemForChat, updateChat, setShowArtifactsDrawer]);
 
   const createChat = useCallback(() => {
     const newChat = createChatHook();
     setChatId(newChat.id);
-    // Disable search when creating a new chat to prevent accidental usage
-    setSearchEnabled(false);
+    // Disable all tools when creating a new chat to prevent accidental usage
+    providers.forEach((p: ToolProvider) => setProviderEnabled(p.id, false));
     return newChat;
-  }, [createChatHook, setSearchEnabled]);
+  }, [createChatHook, providers, setProviderEnabled]);
 
   const selectChat = useCallback((chatId: string) => {
     setChatId(chatId);
-    // Disable search when switching chats to prevent accidental usage
-    setSearchEnabled(false);
-  }, [setSearchEnabled]);
+    // Disable all tools when switching chats to prevent accidental usage
+    providers.forEach((p: ToolProvider) => setProviderEnabled(p.id, false));
+  }, [providers, setProviderEnabled]);
 
   const deleteChat = useCallback(
     (id: string) => {
@@ -114,11 +138,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
     (message: Message) => {
       const { id } = getOrCreateChat();
       
-      const currentMessages = messagesRef.current;
-      const updatedMessages = [...currentMessages, message];
-      
-      messagesRef.current = updatedMessages;
-      updateChat(id, () => ({ messages: updatedMessages }));
+      // Use the updater pattern to get fresh messages from the chat
+      updateChat(id, (currentChat) => ({ 
+        messages: [...(currentChat.messages || []), message] 
+      }));
     },
     [getOrCreateChat, updateChat]
   );
@@ -133,25 +156,38 @@ export function ChatProvider({ children }: ChatProviderProps) {
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
 
-      // Create tool context with current message attachments
-      const toolContext: ToolContext = {
-        attachments: () => message.attachments || []
-      };
+      // Create tool context with current message attachments and elicitation support
+      const createToolContext = (currentToolCall: { id: string; name: string }): ToolContext => ({
+        attachments: () => message.attachments || [],
+        elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
+          return new Promise((resolve) => {
+            setPendingElicitation({
+              toolCallId: currentToolCall.id,
+              toolName: currentToolCall.name,
+              elicitation,
+              resolve,
+            });
+          });
+        }
+      });
 
       try {
+        // Get tools and instructions when needed
+        const tools = await chatTools();
+        const instructions = chatInstructions();
+
         // Main completion loop to handle tool calls
         while (true) {
-          // Create empty assistant message for this completion iteration
-          updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: '' }] }));
-          
+          // Track streaming content in-memory to avoid writing the full conversation on every token
+          setStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: '' } });
+
           const assistantMessage = await client.complete(
             model!.id,
-            chatInstructions,
+            instructions,
             conversation,
-            chatTools,
+            tools,
             (_, snapshot) => {
-              // Use the conversation state instead of fetching from chats to avoid stale closure
-              updateChat(id, () => ({ messages: [...conversation, { role: Role.Assistant, content: snapshot }] }))
+              setStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: snapshot } });
             }
           );
           
@@ -162,8 +198,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
             toolCalls: assistantMessage.toolCalls,
           }];
 
-          // Update UI with the assistant message
+          // Commit the completed message once per turn
           updateChat(id, () => ({ messages: conversation }));
+
+          // Clear streaming buffer now that the message is persisted
+          setStreamingMessage(null);
 
           // Check if there are tool calls to handle
           const toolCalls = assistantMessage.toolCalls;
@@ -175,7 +214,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
           // Handle each tool call
           for (const toolCall of toolCalls) {
-            const tool = chatTools.find((t) => t.name === toolCall.name);
+            const tool = tools.find((t) => t.name === toolCall.name);
 
             if (!tool) {
               // Tool not found - add error message
@@ -199,7 +238,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
             try {
               const args = JSON.parse(toolCall.arguments || "{}");
+              const toolContext = createToolContext(toolCall);
               let content = await tool.function(args, toolContext);
+              
+              // Clear pending elicitation after tool completes
+              setPendingElicitation(null);
 
               const data = content;
               const attachments = parseResource(data);
@@ -254,16 +297,26 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         setIsResponding(false);
 
+        // Ensure streaming buffer is cleared after completion
+        setStreamingMessage(null);
+
         if (!chatObj.title || conversation.length % 3 === 0) {
           client
-            .summarize(model!.id, conversation)
-            .then(title => updateChat(id, () => ({ title })));
+            .summarizeTitle(model!.id, conversation)
+            .then(title => {
+              if (title) {
+                updateChat(id, () => ({ title }));
+              }
+            });
         }
       } catch (error) {
         console.error(error);
         setIsResponding(false);
 
-        if (error?.toString().includes('missing finish_reason')) return;
+        if (error?.toString().includes('missing finish_reason')) {
+          setStreamingMessage(null);
+          return;
+        }
 
         // Determine error code and user-friendly message based on error type
         let errorCode = 'COMPLETION_ERROR';
@@ -301,8 +354,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
         }];
 
         updateChat(id, () => ({ messages: conversation }));
+
+        // Ensure streaming buffer is cleared on errors
+        setStreamingMessage(null);
       }
-    }, [getOrCreateChat, chats, updateChat, chatTools, chatInstructions, client, model, setIsResponding]);
+    }, [getOrCreateChat, chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions]);
+
+  const resolveElicitation = useCallback((result: ElicitationResult) => {
+    if (pendingElicitation) {
+      pendingElicitation.resolve(result);
+      setPendingElicitation(null);
+    }
+  }, [pendingElicitation]);
 
   const value: ChatContextType = {
     // Models
@@ -314,7 +377,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     chats,
     chat,
     messages,
-    isResponding,
 
     // Chat actions
     createChat,
@@ -326,9 +388,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
     addMessage,
     sendMessage,
 
-    // MCP state
-    mcpConnected,
-    mcpTools,
+    isResponding,
+    isInitializing,
+
+    // Elicitation
+    pendingElicitation,
+    resolveElicitation,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

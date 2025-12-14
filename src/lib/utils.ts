@@ -1,4 +1,9 @@
 import mime from 'mime';
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import remarkGfm from 'remark-gfm';
+import remarkRehype from 'remark-rehype';
+import rehypeStringify from 'rehype-stringify';
 
 export function lookupContentType(ext: string): string {
   const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
@@ -189,49 +194,84 @@ export function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
-export function stripMarkdown(text: string): string {
-  if (!text) return '';
+export function markdownToHtml(markdown: string): string {
+  if (!markdown) return '';
   
-  return text
-    // Remove headers but add spacing (2 lines before, 1 after)
-    .replace(/^#{1,6}\s+(.+)$/gm, '\n\n$1\n')
-    // Remove bold/italic
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    .replace(/_([^_]+)_/g, '$1')
-    // Remove strikethrough
-    .replace(/~~([^~]+)~~/g, '$1')
-    // Remove inline code
-    .replace(/`([^`]+)`/g, '$1')
-    // Remove malformed code blocks (double backticks)
-    .replace(/``[\w]*\n?([\s\S]*?)``/g, (_, code) => {
-      const cleanCode = code.trim();
-      return `\n\n${cleanCode}\n\n`;
-    })
-    // Remove code blocks but keep content with spacing
-    .replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) => {
-      const cleanCode = code.trim();
-      return `\n\n${cleanCode}\n\n`;
-    })
-    // Remove any remaining single backticks (malformed inline code)
-    .replace(/`/g, '')
-    // Remove links but keep text
+  try {
+    const result = unified()
+      .use(remarkParse)        // Parse markdown
+      .use(remarkGfm)          // Support tables, strikethrough, task lists, etc.
+      .use(remarkRehype, { allowDangerousHtml: true })       // Convert to HTML with raw HTML support
+      .use(rehypeStringify, { allowDangerousHtml: true })    // Stringify to HTML
+      .processSync(markdown);
+    
+    let html = String(result);
+    
+    // Add Word-compatible styling for tables
+    html = html
+      .replace(/<table>/g, '<table border="1" cellspacing="0" cellpadding="4" style="border-collapse: collapse; border: 1px solid black;">')
+      .replace(/<td>/g, '<td style="border: 1px solid black; padding: 4px;">')
+      .replace(/<th>/g, '<th style="border: 1px solid black; padding: 4px; font-weight: bold;">');
+    
+    return html;
+  } catch (error) {
+    console.error('Failed to convert markdown to HTML:', error);
+    return markdown;
+  }
+}
+
+export function markdownToText(markdown: string): string {
+  if (!markdown) return '';
+
+  const escapeHtml = (text: string) => text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const unescapeHtml = (text: string) => text
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+
+  // Simple markdown patterns to plain text
+  const text = markdown
+    // Remove HTML tags
+    .replace(/<[^>]*>/g, '')
+    // Headers - just the text with double newline
+    .replace(/^#{1,6}\s+(.+)$/gm, '$1\n')
+    // Bold/italic - keep text only
+    .replace(/(\*\*|__)(.*?)\1/g, '$2')
+    .replace(/(\*|_)(.*?)\1/g, '$2')
+    // Strikethrough
+    .replace(/~~(.*?)~~/g, '$1')
+    // Code blocks - keep content with escaping
+    .replace(/```[\s\S]*?\n([\s\S]*?)```/g, (_, code) => escapeHtml(code.trim()) + '\n\n')
+    .replace(/`([^`]+)`/g, (_, code) => escapeHtml(code))
+    // Links - keep text only
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    // Remove images
+    .replace(/\[([^\]]+)\]\[[^\]]*\]/g, '$1')
+    // Images - keep alt text
     .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
-    // Remove horizontal rules
-    .replace(/^[-*_]{3,}$/gm, '')
-    // Remove blockquotes but keep indentation
-    .replace(/^>\s+/gm, '  ')
-    // Convert unordered list markers to bullet points
-    .replace(/^[\s]*[-*+]\s+/gm, '• ')
-    // Convert numbered lists to numbered format
-    .replace(/^[\s]*(\d+)\.\s+/gm, '$1. ')
-    // Clean up extra whitespace (but preserve intentional spacing)
-    .replace(/\n{4,}/g, '\n\n\n')
-    .replace(/^\n+/, '')
+    // Lists - keep items with newlines
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    // Blockquotes
+    .replace(/^\s*>\s+/gm, '')
+    // Horizontal rules
+    .replace(/^[\s]*[-*_]{3,}[\s]*$/gm, '')
+    // Tables - preserve structure roughly
+    .replace(/\|/g, ' ')
+    .replace(/^[\s]*:?-+:?[\s]*$/gm, '')
+    // Multiple blank lines to double newline
+    .replace(/\n{3,}/g, '\n\n')
+    // Trim
     .trim();
+
+  return unescapeHtml(text);
 }
 
 export function downloadFromUrl(url: string, filename: string = ''): void {

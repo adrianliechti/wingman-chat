@@ -3,11 +3,17 @@ import { useWorkflow } from '../hooks/useWorkflow';
 import type { Node } from '@xyflow/react';
 import { useState, useEffect, useRef } from 'react';
 import { getConfig } from '../config';
-import { createSearchNode } from './SearchNode';
-import { createPromptNode } from './PromptNode';
-import { createTextNode } from './TextNode';
-import { createFileNode } from './FileNode';
-import { createCodeNode } from './CodeNode';
+import { createSearchNode } from './SearchNode.factory';
+import { createPromptNode } from './PromptNode.factory';
+import { createTextNode } from './TextNode.factory';
+import { createFileNode } from './FileNode.factory';
+import { createCodeNode } from './CodeNode.factory';
+import { createTranslateNode } from './TranslateNode.factory';
+import { createRepositoryNode } from './RepositoryNode.factory';
+import { createMarkdownNode } from './MarkdownNode.factory';
+import { createAudioNode } from './AudioNode.factory';
+import { createImageNode } from './ImageNode.factory';
+import { createCsvNode } from './CsvNode.factory';
 
 type NodeFactory = (position: { x: number; y: number }) => Node;
 
@@ -46,7 +52,7 @@ function WorkflowPaletteItem({ label, icon, createNode }: WorkflowPaletteItemPro
     <button
       onClick={handleClick}
       title={label}
-      className="size-10 bg-transparent dark:bg-transparent rounded-lg flex items-center justify-center hover:bg-neutral-200 dark:hover:bg-white/10 transition-all text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 cursor-pointer"
+      className="size-10 bg-transparent dark:bg-transparent rounded-lg flex items-center justify-center hover:bg-neutral-200 dark:hover:bg-white/10 transition-all text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100"
     >
       {icon}
     </button>
@@ -69,49 +75,6 @@ export function WorkflowPalette() {
     window.addEventListener('resize', checkHeight);
     return () => window.removeEventListener('resize', checkHeight);
   }, []);
-
-  // Temporary factories for nodes not yet refactored
-  const createTranslateNode = (pos: { x: number; y: number }) => ({
-    id: crypto.randomUUID(),
-    type: 'translate' as const,
-    position: pos,
-    data: { outputText: '', useInput: false, language: 'en', tone: '', style: '' }
-  });
-
-  const createRepositoryNode = (pos: { x: number; y: number }) => ({
-    id: crypto.randomUUID(),
-    type: 'repository' as const,
-    position: pos,
-    data: { repositoryId: '', query: '', outputText: '', useInput: false }
-  });
-
-  const createMarkdownNode = (pos: { x: number; y: number }) => ({
-    id: crypto.randomUUID(),
-    type: 'markdown' as const,
-    position: pos,
-    data: { inputText: '', outputText: '', error: undefined, useInput: false }
-  });
-
-  const createAudioNode = (pos: { x: number; y: number }) => ({
-    id: crypto.randomUUID(),
-    type: 'audio' as const,
-    position: pos,
-    data: { audioUrl: undefined, error: undefined, useInput: false }
-  });
-
-  const createImageNode = (pos: { x: number; y: number }) => ({
-    id: crypto.randomUUID(),
-    type: 'image' as const,
-    position: pos,
-    data: { imageUrl: undefined, error: undefined, useInput: false }
-  });
-
-  const createCsvNode = (pos: { x: number; y: number }) => ({
-    id: crypto.randomUUID(),
-    type: 'csv' as const,
-    position: pos,
-    data: { csvData: undefined, error: undefined, useInput: false }
-  });
 
   return (
     <div 
@@ -180,7 +143,7 @@ export function WorkflowPalette() {
             createNode={createAudioNode}
           />
         )}
-        {config.image?.enabled && (
+        {config.renderer?.enabled && (
           <WorkflowPaletteItem
             label="Image"
             icon={<Image size={20} />}

@@ -1,56 +1,76 @@
-import type { Model } from "../types/chat";
+import type { ModelType } from "../types/chat";
 
-export type ModelType = "completion";
+export function modelType(id: string): ModelType | undefined {
+  const lowerId = id.toLowerCase();
+  
+  // Check for embedding models
+  if (
+    lowerId.includes("embedding") || 
+    lowerId.includes("embed") ||
+    lowerId.includes("bge") ||
+    lowerId.includes("clip") ||
+    lowerId.includes("gte") ||
+    lowerId.includes("minilm")
+  ) {
+    return "embedder";
+  }
+  
+  // Check for text-to-speech models
+  if (
+    lowerId.includes("tts") ||
+    lowerId.includes("audio") ||
+    lowerId.includes("eleven")
+  ) {
+    return "synthesizer";
+  }
+  
+  // Check for transcription models
+  if (
+    lowerId.includes("transcribe") ||
+    lowerId.includes("whisper")
+  ) {
+    return "transcriber";
+  }
+  
+  // Check for reranker models
+  if (lowerId.includes("reranker")) {
+    return "reranker";
+  }
+  
+  // Check for image generation models (renderer)
+  if (
+    lowerId.includes("image") ||
+    lowerId.includes("flux") ||
+    lowerId.includes("dall-e") ||
+    lowerId.includes("stable-diffusion") ||
+    lowerId.includes("midjourney")
+  ) {
+    return "renderer";
+  }
+  
+  // Default to completer
+  return "completer";
+}
 
-export function completionModels(models: Model[]): Model[] {
-  return models.filter((model) => {
-    const id = model.id.toLowerCase();
-    
-    // Exclude embedding models
-    if (
-      id.includes("embedding") || 
-      id.includes("embed") ||
-      id.includes("bge") ||
-      id.includes("clip") ||
-      id.includes("gte") ||
-      id.includes("minilm")
-    ) {
-      return false;
-    }
-    
-    // Exclude text-to-speech models
-    if (
-      id.includes("tts") ||
-      id.includes("audio") ||
-      id.includes("eleven")
-    ) {
-      return false;
-    }
-    
-    // Exclude image generation models
-    if (
-      id.includes("image") ||
-      id.includes("flux") ||
-      id.includes("dall-e")
-    ) {
-      return false;
-    }
-    
-    // Exclude transcription models
-    if (
-      id.includes("transcribe") ||
-      id.includes("whisper")
-    ) {
-      return false;
-    }
-    
-    // Exclude reranker models
-    if (
-      id.includes("reranker")
-    ) {
-      return false;
-    }
-    
-    return true;
-  });
+export function modelName(id: string): string {
+  return id
+    .split("-")
+    .map(word => {
+      const lowerWord = word.toLowerCase();
+      
+      if (lowerWord === "o1" || lowerWord === "o3" || lowerWord === "o4") {
+        return lowerWord;
+      }
+      
+      if (lowerWord === "gpt") {
+        return "GPT";
+      }
+
+      if (lowerWord === "github") {
+        return "GitHub";
+      }
+
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
 }

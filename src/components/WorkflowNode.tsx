@@ -120,7 +120,7 @@ export function WorkflowNode({
             <button
               onClick={onExecute}
               disabled={isProcessing || !canExecute}
-              className={`${styles.button} transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+              className={`${styles.button} transition-colors disabled:opacity-50`}
               title="Execute"
             >
               {isProcessing ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}

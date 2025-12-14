@@ -85,7 +85,6 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) {
         videoTrack.addEventListener('ended', () => {
-          console.log('Screen sharing ended by user');
           cleanupResources();
         });
       }

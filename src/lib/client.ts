@@ -5,9 +5,16 @@ import mime from "mime";
 
 import { Role, AttachmentType } from "../types/chat";
 import type { Tool, ToolCall } from "../types/chat";
-import type { Message, Model } from "../types/chat";
+import type { Message, Model, ModelType } from "../types/chat";
 import type { SearchResult } from "../types/search";
-import { completionModels, type ModelType } from "./models";
+import { modelType, modelName } from "./models";
+
+import instructionsConvertCsv from "../prompts/convert-csv.txt?raw";
+import instructionsConvertMd from "../prompts/convert-md.txt?raw";
+import instructionsRelatedPrompts from "../prompts/chat-suggestions.txt?raw";
+import instructionsRewriteSelection from "../prompts/rewrite-selection.txt?raw";
+import instructionsRewriteText from "../prompts/rewrite-text.txt?raw";
+import instructionsSummarizeTitle from "../prompts/chat-title.txt?raw";
 
 export class Client {
   private oai: OpenAI;
@@ -22,14 +29,19 @@ export class Client {
 
   async listModels(type?: ModelType): Promise<Model[]> {
     const models = await this.oai.models.list();
-    const mappedModels = models.data.map((model) => ({
-      id: model.id,
-      name: model.id,
-    }));
+    const mappedModels = models.data.map((model) => {
+      const type = modelType(model.id);
+      const name = modelName(model.id);
 
-    // Filter by type if specified
-    if (type === "completion") {
-      return completionModels(mappedModels);
+      return {
+        id: model.id,
+        name: name,
+        type: type,
+      };
+    });
+
+    if (type) {
+      return mappedModels.filter((model) => model.type === type);
     }
 
     return mappedModels;
@@ -94,7 +106,7 @@ export class Client {
               output: m.content,
             });
           }
-          
+
           break;
         }
 
@@ -115,7 +127,7 @@ export class Client {
               content: m.content,
             });
           }
-          
+
           break;
         }
       }
@@ -179,21 +191,34 @@ export class Client {
       role: Role.Assistant,
       content: content,
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-    }
+    };
   }
 
-  async summarize(model: string, input: Message[]): Promise<string> {
+  async summarizeTitle(model: string, input: Message[]): Promise<string | null> {
+    const Schema = z.object({
+      title: z.string(),
+    }).strict();
+
     const history = input
       .slice(-6)
-      .map((m) => `${m.role}: ${m.content}`)
-      .join("\\n");
+      .map((m) => ({ role: m.role, content: m.content }));
 
-    const response = await this.oai.responses.create({
-      model: model,
-      input: `Summarize the following conversation into a short title (less than 10 words). Return only the title itself, without any introductory phrases, explanations, or quotation marks.\n\nConversation:\n${history}`,
-    });
+    try {
+      const response = await this.oai.responses.parse({
+        model: model,
+        instructions: instructionsSummarizeTitle,
+        input: JSON.stringify(history),
+        text: {
+          format: zodTextFormat(Schema, "summarize_title"),
+        },
+      });
 
-    return response.output_text?.trim() ?? "Summary not available";
+      const result = response.output_parsed;
+      return result?.title ?? null;
+    } catch (error) {
+      console.error("Error generating title:", error);
+      return null;
+    }
   }
 
   async relatedPrompts(model: string, prompt: string): Promise<string[]> {
@@ -203,24 +228,11 @@ export class Client {
       }).strict()).min(3).max(10),
     }).strict();
 
-    if (!prompt) {
-      prompt = "No conversation history provided. Please suggest interesting prompts to start a new conversation.";
-    }
-
     try {
       const response = await this.oai.responses.parse({
         model: model,
-        instructions: `Based on the conversation history provided, generate 3-5 related follow-up prompts that would help the user explore the topic more deeply. The prompts should be:
-
-- From the user's point of view 
-- Specific and actionable
-- Build upon the current conversation context
-- Encourage deeper exploration or different perspectives
-- Be concise but clear (maximal 15 words each)
-- Vary in type (clarifying questions, requests for examples, deeper analysis, practical applications, etc.)
-
-Return only the prompts themselves, without numbering or bullet points.`,
-        input: prompt,
+        instructions: instructionsRelatedPrompts,
+        input: prompt || "No input",
         text: {
           format: zodTextFormat(Schema, "list_prompts"),
         },
@@ -231,6 +243,33 @@ Return only the prompts themselves, without numbering or bullet points.`,
     } catch (error) {
       console.error("Error generating related prompts:", error);
       return [];
+    }
+  }
+
+  async extractUrl(model: string, text: string): Promise<string | null> {
+    const Schema = z.object({
+      url: z.string().nullable(),
+    }).strict();
+
+    if (!text.trim()) {
+      return null;
+    }
+
+    try {
+      const response = await this.oai.responses.parse({
+        model: model,
+        instructions: "Extract a valid URL from the given text. If the text contains a URL, extract it. If no valid URL is found, return null.",
+        input: text,
+        text: {
+          format: zodTextFormat(Schema, "extract_url"),
+        },
+      });
+
+      const result = response.output_parsed;
+      return result?.url ?? null;
+    } catch (error) {
+      console.error("Error extracting URL:", error);
+      return null;
     }
   }
 
@@ -246,17 +285,7 @@ Return only the prompts themselves, without numbering or bullet points.`,
     try {
       const response = await this.oai.responses.parse({
         model: model,
-        instructions: `Extract all tabular data from the following content and convert it into a valid CSV format.
-
-Guidelines:
-- Identify any tables, lists, or structured data that can be represented in tabular form
-- Use appropriate column headers
-- Ensure all rows have the same number of columns
-- Use proper CSV formatting with commas as delimiters
-- Quote fields that contain commas, newlines, or special characters
-- If multiple tables are present, combine them logically or focus on the most significant one
-- If no tabular data is found, create a simple CSV with relevant structured information
-- Return ONLY the CSV data in the csvData field, no additional text or explanation`,
+        instructions: instructionsConvertCsv,
         input: text,
         text: {
           format: zodTextFormat(Schema, "convert_csv"),
@@ -283,22 +312,7 @@ Guidelines:
     try {
       const response = await this.oai.responses.parse({
         model: model,
-        instructions: `Convert the following content into well-formatted GitHub Flavored Markdown (GFM).
-
-Guidelines:
-- Preserve the structure and hierarchy of the content
-- Use appropriate Markdown headings (# for h1, ## for h2, etc.)
-- Convert lists to Markdown format (- for unordered, 1. for ordered)
-- Use **bold** and *italic* where appropriate
-- Convert tables to GFM table format with pipes (|) and alignment
-- Use fenced code blocks (\`\`\`) with language identifiers for syntax highlighting
-- Use ~~strikethrough~~ for deleted text where appropriate
-- Support task lists with - [ ] and - [x] syntax
-- Use blockquotes (>) for quoted text where appropriate
-- Preserve links and convert to [text](url) format
-- Support automatic URL linking
-- Use emoji shortcodes where appropriate (e.g., :smile:)
-- Return ONLY the Markdown data in the mdData field, no additional text or explanation`,
+        instructions: instructionsConvertMd,
         input: text,
         text: {
           format: zodTextFormat(Schema, "convert_md"),
@@ -323,10 +337,10 @@ Guidelines:
 
     // Validate input
     if (!text.trim() || selectionStart < 0 || selectionEnd <= selectionStart || selectionStart >= text.length) {
-      return { 
-        alternatives: [], 
-        contextToReplace: text.substring(selectionStart, selectionEnd), 
-        keyChanges: [] 
+      return {
+        alternatives: [],
+        contextToReplace: text.substring(selectionStart, selectionEnd),
+        keyChanges: []
       };
     }
 
@@ -334,23 +348,28 @@ Guidelines:
     const expandToSentences = (text: string, start: number, end: number): string => {
       const sentenceBoundaries = /[.!?]+\s*|\n+/g;
       const boundaries: number[] = [0];
+
       let match;
+
       while ((match = sentenceBoundaries.exec(text)) !== null) {
         boundaries.push(match.index + match[0].length);
       }
+
       boundaries.push(text.length);
-      
+
       let sentenceStart = 0;
       let sentenceEnd = text.length;
+
       for (let i = 0; i < boundaries.length - 1; i++) {
         const currentStart = boundaries[i];
         const currentEnd = boundaries[i + 1];
+
         if (currentStart < end && currentEnd > start) {
           sentenceStart = Math.min(sentenceStart === 0 ? currentStart : sentenceStart, currentStart);
           sentenceEnd = Math.max(sentenceEnd === text.length ? currentEnd : sentenceEnd, currentEnd);
         }
       }
-      
+
       return text.substring(sentenceStart, sentenceEnd).trim();
     };
 
@@ -360,27 +379,11 @@ Guidelines:
     try {
       const response = await this.oai.responses.parse({
         model: model,
-        instructions: `You will be given text that contains a user's selection. Your task is to rewrite the complete sentence(s) containing that selection while maintaining the same meaning.
-
-Guidelines:
-- Rewrite the complete sentence(s) that contain the selected text
-- Keep the core meaning intact but offer stylistic variations
-- Ensure the rewritten sentences are natural and grammatically correct
-- Maintain the same language, tone, and formality level
-- Focus on varying the expression while preserving the intent
-- Each alternative should be complete, standalone sentence(s)
-
-For each alternative, also provide a "keyChange" that shows only the significant difference compared to the original selected text. This should be:
-- Just the key word(s) or phrase that changes the meaning/style
-- Not the complete sentence, just the replacement part
-- What the user would see as the main change
-
-Return 3-6 alternative rewritten versions with their key changes.`,
-        input: `Text to rewrite: "${contextToRewrite}"
-
-Selected text within: "${selectedText}"
-
-Please provide alternative ways to rewrite this text. For each alternative, include both the complete rewritten text and the key change that represents the main difference from the original selected text.`,
+        instructions: instructionsRewriteSelection,
+        input: JSON.stringify({
+          context: contextToRewrite,
+          selection: selectedText
+        }),
         text: {
           format: zodTextFormat(Schema, "rewrite_selection"),
         },
@@ -394,10 +397,10 @@ Please provide alternative ways to rewrite this text. For each alternative, incl
       };
     } catch (error) {
       console.error("Error generating text alternatives:", error);
-      return { 
-        alternatives: [], 
-        contextToReplace: contextToRewrite, 
-        keyChanges: [] 
+      return {
+        alternatives: [],
+        contextToReplace: contextToRewrite,
+        keyChanges: []
       };
     }
   }
@@ -476,12 +479,14 @@ Please provide alternative ways to rewrite this text. For each alternative, incl
     if (input instanceof Blob) {
       // Check file size limit (10MB)
       const maxFileSize = 10 * 1024 * 1024; // 10MB in bytes
+
       if (input.size > maxFileSize) {
         throw new Error(`File size ${(input.size / 1024 / 1024).toFixed(1)}MB exceeds the maximum limit of 10MB`);
       }
     } else {
       // Check text length limit (50,000 characters)
       const maxTextLength = 50000;
+
       if (input.length > maxTextLength) {
         throw new Error(`Text length ${input.length.toLocaleString()} characters exceeds the maximum limit of ${maxTextLength.toLocaleString()} characters`);
       }
@@ -576,24 +581,10 @@ Please provide alternative ways to rewrite this text. For each alternative, incl
     try {
       const response = await this.oai.responses.parse({
         model: model,
-        instructions: `You are an expert text rewriting assistant. Your task is to rewrite the given text while preserving its core meaning and essential information.
-
-Core Guidelines:
-- ${languageInstruction}
-- Maintain factual accuracy and important details
-- Ensure natural, fluent, and grammatically correct output
-- For German text: Use "ss" instead of "ß" (eszett) for better compatibility
-- Return only the rewritten text without explanations or formatting
-
-Rewriting Instructions:
-${finalInstructions}
-
-Quality Standards:
-- The rewritten text should sound natural and engaging
-- Preserve the original intent and message
-- Adapt the complexity level as needed while maintaining clarity
-- If conflicting instructions are given, prioritize user-specific prompts over predefined styles`,
-        input: `Please rewrite this text: "${text}"`,
+        instructions: instructionsRewriteText
+          .replace('{languageInstruction}', languageInstruction)
+          .replace('{finalInstructions}', finalInstructions),
+        input: text,
         text: {
           format: zodTextFormat(Schema, "rewrite_text"),
         },
@@ -655,8 +646,24 @@ Quality Standards:
   async transcribe(model: string, blob: Blob): Promise<string> {
     const data = new FormData();
 
-    // Get file extension using mime package
-    const extension = mime.getExtension(blob.type) || 'audio';
+    // Get file extension - handle common audio types explicitly
+    let extension = 'audio';
+    if (blob.type.includes('webm')) {
+      extension = 'webm';
+    } else if (blob.type.includes('mp3') || blob.type.includes('mpeg')) {
+      extension = 'mp3';
+    } else if (blob.type.includes('wav')) {
+      extension = 'wav';
+    } else if (blob.type.includes('ogg')) {
+      extension = 'ogg';
+    } else if (blob.type.includes('m4a') || blob.type.includes('mp4')) {
+      extension = 'm4a';
+    } else if (blob.type.includes('flac')) {
+      extension = 'flac';
+    } else {
+      extension = mime.getExtension(blob.type) || 'audio';
+    }
+
     const filename = `audio_recording.${extension}`;
 
     data.append('file', blob, filename);

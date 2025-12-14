@@ -1,37 +1,53 @@
-import { memo, useState, useEffect } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import { StickyNote } from 'lucide-react';
-import { Textarea } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
 import type { BaseNodeData } from '../types/workflow';
+import { createData } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { WorkflowNode } from './WorkflowNode';
 
 // TextNode data interface
 export interface TextNodeData extends BaseNodeData {
+  outputText?: string;  // Legacy property, kept for backward compatibility
 }
 
 // TextNode type
 export type TextNodeType = Node<TextNodeData, 'text'>;
 
-// Factory function to create a new TextNode
-export function createTextNode(position: { x: number; y: number }): TextNodeType {
-  return {
-    id: crypto.randomUUID(),
-    type: 'text',
-    position,
-    data: {
-      outputText: ''
-    }
-  };
-}
-
 export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) => {
   const { updateNode } = useWorkflow();
-  const [content, setContent] = useState(data.outputText || '');
+  // Support both old 'outputText' format and new 'output' format
+  const currentText = data.output?.items?.[0]?.text ?? data.outputText ?? '';
+  const [localValue, setLocalValue] = useState(currentText);
+  const isLocalChangeRef = useRef(false);
 
+  // Sync local state with external updates (but not our own changes)
   useEffect(() => {
-    setContent(data.outputText || '');
-  }, [data.outputText]);
+    // Skip if this update was triggered by local changes
+    if (isLocalChangeRef.current) {
+      isLocalChangeRef.current = false;
+      return;
+    }
+    setLocalValue(currentText);
+  }, [currentText]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    setLocalValue(newValue);
+    isLocalChangeRef.current = true;
+    // Write to both formats for compatibility
+    updateNode(id, { data: { ...data, output: createData(newValue), outputText: newValue } });
+  };
+
+  // Ensure output is always set (handles initial mount with empty output or migration from old format)
+  useEffect(() => {
+    if (localValue && !data.output) {
+      isLocalChangeRef.current = true;
+      updateNode(id, { data: { ...data, output: createData(localValue), outputText: localValue } });
+    }
+    // Only run on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <WorkflowNode
@@ -45,14 +61,13 @@ export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) =
       error={data.error}
     >
       <div className="flex-1 flex flex-col min-h-0">
-        <Textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          onBlur={() => updateNode(id, { data: { ...data, outputText: content } })}
+        <textarea
+          value={localValue}
+          onChange={handleChange}
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
           placeholder="Enter your text here..."
-          className="w-full h-full px-1 py-2 text-sm border-0 rounded-none bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none transition-all resize-none min-h-[120px] overflow-y-auto scrollbar-hide nodrag"
+          className="w-full h-full p-3 text-sm border-0 bg-transparent text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none resize-none nodrag"
         />
       </div>
     </WorkflowNode>

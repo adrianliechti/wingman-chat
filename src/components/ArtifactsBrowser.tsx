@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Edit3, Trash2, File, Folder, FolderOpen, ChevronRight, ChevronDown, Check, X, Download } from 'lucide-react';
-import { Button } from '@headlessui/react';
+import { File, Folder, FolderOpen, ChevronRight, ChevronDown, Download } from 'lucide-react';
 import { FileIcon } from './FileIcon';
-import { getFileName } from '../lib/utils';
 import { FileSystemManager } from '../lib/fs';
 
 // Helper function to build folder tree structure
@@ -79,14 +77,8 @@ interface FileTreeNodeProps {
   level: number;
   openTabs: string[];
   onFileClick: (path: string) => void;
-  onDeleteFile: (path: string, event: React.MouseEvent) => void;
-  onDeleteFolder: (path: string) => void;
-  onRenameFile: (oldPath: string, newPath: string) => void;
   expandedFolders: Set<string>;
   onToggleFolder: (path: string) => void;
-  renamingFile: string | null;
-  onStartRename: (path: string) => void;
-  onCancelRename: () => void;
 }
 
 function FileTreeNode({ 
@@ -94,149 +86,34 @@ function FileTreeNode({
   level, 
   openTabs, 
   onFileClick, 
-  onDeleteFile, 
-  onDeleteFolder,
-  onRenameFile,
   expandedFolders, 
-  onToggleFolder,
-  renamingFile,
-  onStartRename,
-  onCancelRename
+  onToggleFolder
 }: FileTreeNodeProps) {
-  const [renamingValue, setRenamingValue] = useState('');
   const isExpanded = expandedFolders.has(node.path);
-  const isBeingRenamed = renamingFile === node.path;
-
-  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
-    e.stopPropagation();
-    
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (renamingValue.trim() && renamingValue !== node.name) {
-        const pathParts = node.path.split('/');
-        pathParts[pathParts.length - 1] = renamingValue.trim();
-        const newPath = pathParts.join('/');
-        onRenameFile(node.path, newPath);
-      }
-      onCancelRename();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      onCancelRename();
-    }
-  };
-
-  const startRename = () => {
-    setRenamingValue(node.name);
-    onStartRename(node.path);
-  };
-
-  const saveRename = () => {
-    if (renamingValue.trim() && renamingValue !== node.name) {
-      const pathParts = node.path.split('/');
-      pathParts[pathParts.length - 1] = renamingValue.trim();
-      const newPath = pathParts.join('/');
-      onRenameFile(node.path, newPath);
-    }
-    onCancelRename();
-  };
 
   if (node.type === 'folder') {
     return (
       <>
         <div
-          className={`group flex items-center gap-2 p-1 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded-md transition-colors`}
+          className="flex items-center gap-2 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0"
           style={{ marginLeft: `${level * 12}px` }}
+          onClick={() => onToggleFolder(node.path)}
         >
-          {isBeingRenamed ? (
-            <div className="flex items-center gap-2 flex-1">
-              <div className="flex items-center gap-1">
-                {isExpanded ? (
-                  <ChevronDown size={14} className="text-neutral-500" />
-                ) : (
-                  <ChevronRight size={14} className="text-neutral-500" />
-                )}
-                {isExpanded ? (
-                  <FolderOpen size={16} className="text-blue-600 dark:text-blue-400" />
-                ) : (
-                  <Folder size={16} className="text-blue-600 dark:text-blue-400" />
-                )}
-              </div>
-              <input
-                type="text"
-                value={renamingValue}
-                onChange={(e) => setRenamingValue(e.target.value)}
-                onKeyDown={handleRenameKeyDown}
-                autoFocus
-                className="flex-1 max-w-28 text-sm bg-white dark:bg-neutral-700 border border-slate-500 rounded px-2 py-1 text-neutral-900 dark:text-neutral-100 focus:ring-1 focus:ring-slate-500"
-                onClick={(e) => e.stopPropagation()}
-              />
-              <Button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  saveRename();
-                }}
-                className="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 rounded transition-colors"
-                title="Save"
-              >
-                <Check size={12} />
-              </Button>
-              <Button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCancelRename();
-                }}
-                className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded transition-colors"
-                title="Cancel"
-              >
-                <X size={12} />
-              </Button>
-            </div>
-          ) : (
-            <>
-              <div 
-                className="flex items-center gap-1 flex-1 cursor-pointer"
-                onClick={() => onToggleFolder(node.path)}
-              >
-                {isExpanded ? (
-                  <ChevronDown size={14} className="text-neutral-500" />
-                ) : (
-                  <ChevronRight size={14} className="text-neutral-500" />
-                )}
-                {isExpanded ? (
-                  <FolderOpen size={16} className="text-blue-600 dark:text-blue-400" />
-                ) : (
-                  <Folder size={16} className="text-blue-600 dark:text-blue-400" />
-                )}
-                <span className="text-sm text-neutral-700 dark:text-neutral-300">
-                  {node.name}
-                </span>
-              </div>
-              
-              {/* Folder Actions */}
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    startRename();
-                  }}
-                  className="p-1 text-neutral-400 hover:text-slate-600 dark:hover:text-slate-400 rounded transition-colors"
-                  title="Rename folder"
-                >
-                  <Edit3 size={12} />
-                </Button>
-                <Button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteFolder(node.path);
-                  }}
-                  className="p-1 text-neutral-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
-                  title="Delete folder"
-                >
-                  <Trash2 size={12} />
-                </Button>
-              </div>
-            </>
-          )}
+          <div className="flex items-center gap-1 min-w-0">
+            {isExpanded ? (
+              <ChevronDown size={14} className="text-neutral-500 shrink-0" />
+            ) : (
+              <ChevronRight size={14} className="text-neutral-500 shrink-0" />
+            )}
+            {isExpanded ? (
+              <FolderOpen size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+            ) : (
+              <Folder size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+            )}
+            <span className="text-sm text-neutral-700 dark:text-neutral-300 truncate">
+              {node.name}
+            </span>
+          </div>
         </div>
         {isExpanded && node.children && (
           <>
@@ -247,14 +124,8 @@ function FileTreeNode({
                 level={level + 1}
                 openTabs={openTabs}
                 onFileClick={onFileClick}
-                onDeleteFile={onDeleteFile}
-                onDeleteFolder={onDeleteFolder}
-                onRenameFile={onRenameFile}
                 expandedFolders={expandedFolders}
                 onToggleFolder={onToggleFolder}
-                renamingFile={renamingFile}
-                onStartRename={onStartRename}
-                onCancelRename={onCancelRename}
               />
             ))}
           </>
@@ -267,85 +138,24 @@ function FileTreeNode({
   const isTabOpen = openTabs.includes(node.path);
 
   return (
-    <div
-      className={`group flex items-center gap-2 p-1 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded-md transition-colors`}
+    <button
+      type="button"
+      onClick={() => onFileClick(node.path)}
+      className="flex items-center gap-1 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left min-w-0"
       style={{ marginLeft: `${level * 12 + 18}px` }}
     >
-      {isBeingRenamed ? (
-        <div className="flex items-center gap-1 flex-1">
-          <FileIcon name={node.path} />
-          <input
-            type="text"
-            value={renamingValue}
-            onChange={(e) => setRenamingValue(e.target.value)}
-            onKeyDown={handleRenameKeyDown}
-            autoFocus
-            className="flex-1 max-w-28 text-sm bg-white dark:bg-neutral-700 border border-slate-500 rounded px-2 py-1 text-neutral-900 dark:text-neutral-100 focus:ring-1 focus:ring-slate-500"
-            onClick={(e) => e.stopPropagation()}
-          />
-          <Button
-            onClick={(e) => {
-              e.stopPropagation();
-              saveRename();
-            }}
-            className="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 rounded transition-colors"
-            title="Save"
-          >
-            <Check size={12} />
-          </Button>
-          <Button
-            onClick={(e) => {
-              e.stopPropagation();
-              onCancelRename();
-            }}
-            className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded transition-colors"
-            title="Cancel"
-          >
-            <X size={12} />
-          </Button>
-        </div>
-      ) : (
-        <>
-          <Button
-            onClick={() => onFileClick(node.path)}
-            className="flex items-center gap-1 flex-1 text-left min-w-0"
-          >
-            <FileIcon name={node.path} />
-            <span 
-              className={`text-sm truncate ${
-                isTabOpen 
-                  ? 'font-medium text-neutral-900 dark:text-neutral-100' 
-                  : 'text-neutral-700 dark:text-neutral-300'
-              }`}
-              title={node.name}
-            >
-              {node.name}
-            </span>
-          </Button>
-
-          {/* File Actions */}
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Button
-              onClick={(e) => {
-                e.stopPropagation();
-                startRename();
-              }}
-              className="p-1 text-neutral-400 hover:text-slate-600 dark:hover:text-slate-400 rounded transition-colors"
-              title="Rename file"
-            >
-              <Edit3 size={12} />
-            </Button>
-            <Button
-              onClick={(e) => onDeleteFile(node.path, e)}
-              className="p-1 text-neutral-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
-              title="Delete file"
-            >
-              <Trash2 size={12} />
-            </Button>
-          </div>
-        </>
-      )}
-    </div>
+      <FileIcon name={node.path} />
+      <span 
+        className={`text-sm truncate ${
+          isTabOpen 
+            ? 'font-medium text-neutral-900 dark:text-neutral-100' 
+            : 'text-neutral-700 dark:text-neutral-300'
+        }`}
+        title={node.name}
+      >
+        {node.name}
+      </span>
+    </button>
   );
 }
 
@@ -353,8 +163,6 @@ interface ArtifactsBrowserProps {
   fs: FileSystemManager;
   openTabs: string[];
   onFileClick: (path: string) => void;
-  onDeleteFile?: (path: string, event: React.MouseEvent) => void;
-  onRenameFile?: (oldPath: string, newPath: string) => void;
   onDownloadAsZip?: () => Promise<void>;
 }
 
@@ -362,16 +170,12 @@ export function ArtifactsBrowser({
   fs,
   openTabs,
   onFileClick,
-  onDeleteFile,
-  onRenameFile,
   onDownloadAsZip
 }: ArtifactsBrowserProps) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-  const [renamingFile, setRenamingFile] = useState<string | null>(null);
 
-  // Subscribe to filesystem events to handle UI state updates (but no force updates)
+  // Subscribe to filesystem events to handle UI state updates
   useEffect(() => {
-
     const unsubscribeCreated = fs.subscribe('fileCreated', (path: string) => {
       // Auto-expand parent folders when new files are created
       const pathParts = path.split('/').filter(part => part.length > 0);
@@ -405,52 +209,13 @@ export function ArtifactsBrowser({
         
         return newExpanded;
       });
-
-      // If the deleted file was being renamed, cancel rename
-      setRenamingFile(prev => prev === path ? null : prev);
-    });
-
-    const unsubscribeRenamed = fs.subscribe('fileRenamed', (oldPath: string, newPath: string) => {
-      // Update expanded folders if this was a folder rename
-      setExpandedFolders(prev => {
-        const newExpanded = new Set(prev);
-        if (newExpanded.has(oldPath)) {
-          newExpanded.delete(oldPath);
-          newExpanded.add(newPath);
-        }
-        
-        // Update any nested expanded folders
-        const expandedArray = Array.from(newExpanded);
-        for (const expandedPath of expandedArray) {
-          if (expandedPath.startsWith(oldPath + '/')) {
-            const relativePath = expandedPath.substring(oldPath.length);
-            const newExpandedPath = newPath + relativePath;
-            newExpanded.delete(expandedPath);
-            newExpanded.add(newExpandedPath);
-          }
-        }
-        
-        return newExpanded;
-      });
-
-      // Update renaming file if it was renamed
-      setRenamingFile(prev => prev === oldPath ? newPath : prev);
     });
 
     return () => {
       unsubscribeCreated();
       unsubscribeDeleted();
-      unsubscribeRenamed();
     };
   }, [fs]);
-
-  // Default handlers that use fs directly
-  const handleDeleteFile = onDeleteFile || ((path: string, event: React.MouseEvent) => {
-    event.stopPropagation();
-    if (window.confirm(`Are you sure you want to delete "${getFileName(path)}"?`)) {
-      fs.deleteFile(path);
-    }
-  });
 
   const handleDownloadAsZip = onDownloadAsZip || (() => fs.downloadAsZip());
 
@@ -458,28 +223,7 @@ export function ArtifactsBrowser({
   const files = fs.listFiles().map(file => ({ path: file.path, content: file.content }));
 
   // Build the file tree
-  const fileTree = buildFileTree(files);  const handleDeleteFolder = (path: string) => {
-    // Get all files within this folder
-    const affectedFiles = files.filter(file => file.path.startsWith(path + '/'));
-    const folderName = getFileName(path);
-    
-    if (affectedFiles.length === 0) {
-      // Empty folder, just confirm deletion
-      if (window.confirm(`Are you sure you want to delete the empty folder "${folderName}"?`)) {
-        // The filesystem event handler will take care of updating expanded folders
-        // when the folder is deleted
-      }
-    } else {
-      // Folder contains files, show detailed confirmation
-      const fileCount = affectedFiles.length;
-      const fileText = fileCount === 1 ? 'file' : 'files';
-      if (window.confirm(`Are you sure you want to delete the folder "${folderName}" and all ${fileCount} ${fileText} inside it?`)) {
-        // Use the file system's deleteFile method which now handles folders
-        // The filesystem event handler will take care of updating expanded folders
-        fs.deleteFile(path);
-      }
-    }
-  };
+  const fileTree = buildFileTree(files);
 
   const handleToggleFolder = (path: string) => {
     const newExpanded = new Set(expandedFolders);
@@ -491,32 +235,10 @@ export function ArtifactsBrowser({
     setExpandedFolders(newExpanded);
   };
 
-  const handleRenameFile = (oldPath: string, newPath: string) => {
-    if (onRenameFile) {
-      // Use the provided callback
-      onRenameFile(oldPath, newPath);
-    } else {
-      // Use the file system's built-in rename method which handles both files and folders
-      // The filesystem event handler will take care of updating expanded folders and rename state
-      const success = fs.renameFile(oldPath, newPath);
-      if (!success) {
-        console.error(`Failed to rename ${oldPath} to ${newPath}`);
-        return;
-      }
-    }
-  };
-
-  const handleStartRename = (path: string) => {
-    setRenamingFile(path);
-  };
-
-  const handleCancelRename = () => {
-    setRenamingFile(null);
-  };
-
   return (
     <div className="w-64 h-full flex flex-col">
-      <div className="flex-1 overflow-auto">
+      {/* File list - grows to fill space */}
+      <div className="flex-1 overflow-auto min-h-0">
         {files.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-8 text-center">
             <File size={32} className="text-neutral-300 dark:text-neutral-600 mb-3" />
@@ -528,7 +250,7 @@ export function ArtifactsBrowser({
             </p>
           </div>
         ) : (
-          <div className="p-2">
+          <div className="p-2 min-w-full">
             {/* Render file tree with folders */}
             {fileTree.map((node) => (
               <FileTreeNode
@@ -537,24 +259,19 @@ export function ArtifactsBrowser({
                 level={0}
                 openTabs={openTabs}
                 onFileClick={onFileClick}
-                onDeleteFile={handleDeleteFile}
-                onDeleteFolder={handleDeleteFolder}
-                onRenameFile={handleRenameFile}
                 expandedFolders={expandedFolders}
                 onToggleFolder={handleToggleFolder}
-                renamingFile={renamingFile}
-                onStartRename={handleStartRename}
-                onCancelRename={handleCancelRename}
               />
             ))}
           </div>
         )}
       </div>
       
-      {/* Download Button at bottom of file browser */}
+      {/* Download Button - fixed at bottom */}
       {files.length > 0 && (
-        <div className="p-2">
-          <Button
+        <div className="shrink-0 h-9 flex items-center px-2 border-t border-black/5 dark:border-white/5">
+          <button
+            type="button"
             onClick={async () => {
               try {
                 await handleDownloadAsZip();
@@ -563,12 +280,12 @@ export function ArtifactsBrowser({
                 alert('Failed to download files. Please try again.');
               }
             }}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-700 dark:hover:bg-neutral-600 text-neutral-600 dark:text-neutral-300 rounded-md transition-colors text-sm"
+            className="w-full flex items-center justify-center gap-1.5 p-2 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors text-xs"
             title={`Download all files as zip (${files.length} file${files.length !== 1 ? 's' : ''})`}
           >
-            <Download size={14} />
-            Download ZIP
-          </Button>
+            <Download size={12} />
+            <span>Download</span>
+          </button>
         </div>
       )}
     </div>

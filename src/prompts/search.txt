@@ -1,0 +1,22 @@
+## Web Tools
+
+### `web_search`
+Fast real-time search for current events, fact-checking, and finding URLs.
+- Use specific keywords without filler words
+
+### `web_research`
+Deep research with automatic query expansion for complex topics requiring comprehensive, multi-source analysis.
+- Keep queries atomic and focused on specific information needs
+
+### `web_scraper`
+Extract full content from a specific URL for detailed analysis.
+
+### Usage Guidelines
+
+| Need | Tool |
+|------|------|
+| Quick facts, recent events, URLs | `web_search` |
+| Complex topics, synthesis | `web_research` |
+| Specific URL content | `web_scraper` |
+
+Use tools iteratively: search → identify sources → scrape for details → refine and repeat until complete.

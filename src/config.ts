@@ -1,6 +1,5 @@
-import { Bridge } from "./lib/bridge";
 import { Client } from "./lib/client";
-import type { Model } from "./types/chat";
+import type { MCP, Model } from "./types/chat";
 
 interface backgroundConfig {
   url: string;
@@ -14,37 +13,52 @@ interface config {
   title: string;
   disclaimer: string;
 
-  models: modelConfig[];
+  tools: toolConfig[];
+  models: modelConfig[];  
+
   backgrounds?: backgroundPackConfig;
-  
+
   tts?: ttsConfig;
   stt?: sttConfig;
 
   workflow?: workflowConfig;
+  recorder?: recorderConfig;
 
   voice?: voiceConfig;
   vision?: visionConfig;
-  
-  image?: imageConfig;
-  
+
   bridge?: bridgeConfig;
   internet?: internetConfig;
+
+  renderer?: rendererConfig;
   interpreter?: interpreterConfig;
-  
+
   artifacts?: artifactsConfig;
-  repository?: repositoryConfig;  
+  repository?: repositoryConfig;
   translator?: translatorConfig;
 }
 
 interface modelConfig {
   id: string;
-  name: string;
 
-  model?: string;
+  name: string;
   description?: string;
 
-  mcp: string[];
+  tools?: {
+    enabled: string[];
+    disabled: string[];
+  };
+
   prompts?: string[];
+}
+
+interface toolConfig {
+  id: string;
+  
+  url: string;
+
+  name: string;
+  description: string;
 }
 
 interface ttsConfig {
@@ -52,11 +66,15 @@ interface ttsConfig {
 }
 
 interface sttConfig {
-   enabled: boolean;
+  enabled: boolean;
 }
 
 interface workflowConfig {
-   enabled: boolean;
+  enabled: boolean;
+}
+
+interface recorderConfig {
+  enabled: boolean;
 }
 
 interface voiceConfig {
@@ -67,17 +85,24 @@ interface visionConfig {
   enabled: boolean;
 }
 
-interface imageConfig {
+interface rendererConfig {
   enabled: boolean;
+  
   model?: string
+  elicitation?: boolean;
 }
 
 interface bridgeConfig {
+  enabled: boolean;
+
   url: string;
 }
 
 interface internetConfig {
   enabled: boolean;
+
+  researcher?: boolean;
+  elicitation?: boolean;
 }
 
 interface interpreterConfig {
@@ -102,7 +127,7 @@ interface translatorConfig {
 
   model?: string
   files: string[];
-  
+
   languages: string[];
 }
 
@@ -112,26 +137,27 @@ interface Config {
 
   client: Client;
 
-  models: Model[];
+  mcps: MCP[];
+  models: Model[];  
 
   tts: boolean;
   stt: boolean;
-  
+
   workflow: boolean;
-  
+  recorder: boolean;
+
   voice: boolean;
   vision: boolean;
 
-  image: imageConfig;
-  
-  bridge: Bridge;
-
+  bridge: bridgeConfig;
   internet: internetConfig;
+
+  renderer: rendererConfig;
   interpreter: interpreterConfig;
-  
+
   artifacts: artifactsConfig;
-  repository: repositoryConfig;  
-  translator: translatorConfig; 
+  repository: repositoryConfig;
+  translator: translatorConfig;
 
   backgrounds: backgroundPackConfig;
 }
@@ -146,19 +172,27 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       throw new Error(`failed to load config.json: ${resp.statusText}`);
     }
 
-    const cfg : config = await resp.json();
-
-    const bridgeUrl = cfg.bridge?.url ?? ""
+    const cfg: config = await resp.json();
 
     const client = new Client();
-    const bridge = Bridge.create(bridgeUrl);
 
     config = {
-      title : cfg.title,
+      title: cfg.title,
       disclaimer: cfg.disclaimer,
-      
+
       client: client,
 
+      mcps: cfg.tools?.map((mcp) => {
+        return {
+          id: mcp.id,
+
+          name: mcp.name,
+          description: mcp.description,
+
+          url: mcp.url ?? new URL(`/api/v1/mcp/${mcp.id}`, window.location.origin).toString(),
+        };
+      }) ?? [],
+      
       models: cfg.models?.map((model) => {
         return {
           id: model.id,
@@ -168,25 +202,29 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
           prompts: model.prompts,
 
-          mcpServer: model.mcp && model.mcp.length > 0 ? new URL(`/api/v1/mcp/${model.mcp[0]}`, window.location.origin).toString() : undefined,
+          tools: model.tools,
         };
       }) ?? [],
-
+      
       tts: cfg.tts?.enabled ?? false,
       stt: cfg.stt?.enabled ?? false,
-      
+
       workflow: cfg.workflow?.enabled ?? false,
-      
+      recorder: cfg.recorder?.enabled ?? false,
+
       voice: cfg.voice?.enabled ?? false,
       vision: cfg.vision?.enabled ?? false,
       
-      image: cfg.image ?? {
+      bridge: cfg.bridge ?? {
         enabled: false,
+        url: ""
       },
-      
-      bridge: bridge,
 
       internet: cfg.internet ?? {
+        enabled: false,
+      },
+
+      renderer: cfg.renderer ?? {
         enabled: false,
       },
 
@@ -201,7 +239,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       artifacts: cfg.artifacts ?? {
         enabled: false
       },
-      
+
       translator: cfg.translator ?? {
         enabled: true,
 
@@ -213,7 +251,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
           // ".pptx",
           // ".xlsx",
         ],
-        
+
         languages: [
           "en",
           "de",

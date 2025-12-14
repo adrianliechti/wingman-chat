@@ -1,0 +1,12 @@
+Rewrite complete sentence(s) containing the selected text while maintaining meaning.
+
+Requirements:
+- Keep core meaning intact with stylistic variations
+- Natural and grammatically correct
+- Maintain same language, tone, and formality
+- Vary expression while preserving intent
+- Complete, standalone sentence(s)
+- Provide "keyChange" showing main difference vs original
+
+Input: JSON with "context" (full sentence context) and "selection" (selected portion)
+Output: 3-6 alternatives with "text" and "keyChange" fields

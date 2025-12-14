@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react';
-import { Code, Eye } from 'lucide-react';
-import { Button } from '@headlessui/react';
+import { useMemo } from 'react';
 
 interface CsvEditorProps {
   content: string;
+  viewMode?: 'table' | 'code';
+  onViewModeChange?: (mode: 'table' | 'code') => void;
 }
 
 // Utility function to detect separator (comma, semicolon, or tab)
@@ -82,28 +82,15 @@ const parseCSV = (csv: string): string[][] => {
   return result;
 };
 
-export function CsvEditor({ content }: CsvEditorProps) {
-  const [viewMode, setViewMode] = useState<'table' | 'code'>('table');
-
+export function CsvEditor({ content, viewMode = 'table' }: CsvEditorProps) {
   const parsedData = useMemo(() => parseCSV(content), [content]);
 
   const headers = parsedData.length > 0 ? parsedData[0] : [];
   const rows = parsedData.slice(1);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden relative">
-      {/* Subtle View Mode Toggle - Top Right */}
-      <div className="absolute top-2 right-2 z-10">
-        <Button
-          onClick={() => setViewMode(viewMode === 'table' ? 'code' : 'table')}
-          className="p-1.5 rounded-md transition-colors bg-white/80 dark:bg-neutral-700/80 backdrop-blur-sm border border-neutral-200/50 dark:border-neutral-500/50 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100/80 dark:hover:bg-neutral-600/80"
-          title={viewMode === 'table' ? 'Switch to code view' : 'Switch to table view'}
-        >
-          {viewMode === 'table' ? <Code size={16} /> : <Eye size={16} />}
-        </Button>
-      </div>
-
-      <div className="flex-1 overflow-auto">
+    <div className="h-full flex flex-col overflow-hidden relative">
+      <div className="flex-1 overflow-auto min-h-0">
         {viewMode === 'code' ? (
           <div className="p-4">
             <pre className="text-gray-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto font-mono">
@@ -114,7 +101,7 @@ export function CsvEditor({ content }: CsvEditorProps) {
           <div className="overflow-x-auto">
             {parsedData.length > 0 ? (
               <table className="min-w-full divide-y divide-gray-200 dark:divide-neutral-700">
-                <thead className="bg-gray-50 dark:bg-neutral-800">
+                <thead>
                   <tr>
                     {headers.map((header, index) => (
                       <th
@@ -126,9 +113,9 @@ export function CsvEditor({ content }: CsvEditorProps) {
                     ))}
                   </tr>
                 </thead>
-                <tbody className="bg-white dark:bg-neutral-900 divide-y divide-gray-200 dark:divide-neutral-700">
+                <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
                   {rows.map((row, rowIndex) => (
-                    <tr key={rowIndex} className="hover:bg-gray-50 dark:hover:bg-neutral-800">
+                    <tr key={rowIndex}>
                       {row.map((cell, cellIndex) => (
                         <td
                           key={cellIndex}

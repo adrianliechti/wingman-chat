@@ -11,7 +11,6 @@ const CHATS_KEY = 'chats';
 async function storeChats(chats: Chat[]): Promise<void> {
   try {
     await setValue(CHATS_KEY, chats);
-    //console.log('chats saved to IndexedDB');
   } catch (error) {
     console.error('error saving chats to IndexedDB', error);
     throw error;

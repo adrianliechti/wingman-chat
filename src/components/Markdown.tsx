@@ -1,10 +1,15 @@
 import { memo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
+import type { PluggableList } from 'unified';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import remarkGemoji from 'remark-gemoji';
+import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
+import rehypeKatex from 'rehype-katex';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 import { MermaidRenderer } from './MermaidRenderer';
 import { CodeRenderer } from './CodeRenderer';
 import { HtmlRenderer } from './HtmlRenderer';
@@ -170,7 +175,12 @@ const components: Partial<Components> = {
     code({ children, className, ...rest }) {
         const match = /language-(\w+)/.exec(className || "");
         
-        if (!match) {
+        // If no match but children contains newlines, it's likely a code block without language
+        const text = String(children).replace(/\n$/, "");
+        const isMultiLine = text.includes('\n');
+        
+        // Inline code (no language specified and single line)
+        if (!match && !isMultiLine) {
             return (
                 <code
                     {...rest}
@@ -180,12 +190,52 @@ const components: Partial<Components> = {
             );
         }
 
-        const language = match[1].toLowerCase();
-        
-        const text = String(children).replace(/\n$/, "");
-
-        if (language === "markdown" || language === "md") {
+        // Code block without language - treat as markdown
+        if (!match && isMultiLine) {
             return <Markdown>{text}</Markdown>;
+        }
+
+        // If no match, it's not a language-specific block, so we can't proceed with language checks.
+        // This case should ideally not be hit if the above logic is correct, but as a safeguard:
+        if (!match) {
+            return <CodeRenderer code={text} language="text" />;
+        }
+
+        const language = match[1].toLowerCase();
+
+        if (language === "latex" || language === "tex" || language === "math" || language === "katex") {
+            // Extract filename if present (e.g., % filepath: navier-stokes.tex)
+            const filename = extractFilename(text);
+            
+            try {
+                // Render LaTeX using KaTeX in display mode
+                const html = katex.renderToString(text, {
+                    displayMode: true,
+                    throwOnError: false,
+                    strict: 'ignore',
+                    errorColor: 'transparent',
+                    trust: true,
+                    fleqn: false,
+                });
+                
+                return (
+                    <div className="my-4">
+                        {filename && (
+                            <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-2 font-mono">
+                                {filename}
+                            </div>
+                        )}
+                        <div 
+                            className="overflow-x-auto"
+                            dangerouslySetInnerHTML={{ __html: html }}
+                        />
+                    </div>
+                );
+            } catch (error) {
+                // If KaTeX fails, fall back to code renderer
+                console.warn('KaTeX rendering failed:', error);
+                return <CodeRenderer code={text} language="latex" name={filename} />;
+            }
         }
 
         if (language === "mermaid" || language === "mmd") {
@@ -204,16 +254,56 @@ const components: Partial<Components> = {
             return <CsvRenderer csv={text} language={language} />;
         }
 
+        // Default to markdown for common "plain text" languages
+        if (language === "markdown" || language === "md" || language === "undefined" || language === "text" || language === "plain") {
+            return <Markdown>{text}</Markdown>;
+        }
+
+        // Extract filename from code if present
+        const filename = extractFilename(text);
+
         // Use CodeRenderer for all other code blocks
-        return <CodeRenderer code={text} language={language} />;
+        return <CodeRenderer code={text} language={language} name={filename} />;
     },
 };
 
-const remarkPlugins = [remarkGfm, remarkBreaks, remarkGemoji];
-const rehypePlugins = [rehypeRaw, rehypeSanitize];
+const remarkPlugins: PluggableList = [remarkGfm, remarkBreaks, remarkGemoji, remarkMath];
+const rehypePlugins: PluggableList = [
+    rehypeRaw,
+    rehypeSanitize,
+    [
+        rehypeKatex,
+        {
+            strict: 'ignore',
+            throwOnError: false,
+            errorColor: 'transparent',
+        },
+    ],
+];
 
 const NonMemoizedMarkdown = ({ children }: { children: string }) => {
     if (!children) return null;
+    
+    // Preprocess markdown to fix common formatting issues
+    let processedContent = children;
+    
+    // Convert LaTeX-style display math \[...\] to $$...$$
+    // Only match actual LaTeX delimiters (backslash-bracket), not regular brackets
+    processedContent = processedContent.replace(/\\\[([^\]]+?)\\\]/g, (_match, content) => {
+        return `$$${content}$$`;
+    });
+    
+    // Convert LaTeX-style inline math \(...\) to $...$
+    // Only match actual LaTeX delimiters (backslash-paren), not regular parens
+    processedContent = processedContent.replace(/\\\(([^)]+?)\\\)/g, (_match, content) => {
+        return `$${content}$`;
+    });
+    
+    // Ensure blank line before code blocks that come after headings
+    processedContent = processedContent.replace(/^(#{1,6}\s+.+)\n```/gm, '$1\n\n```');
+    
+    // Ensure blank line after code blocks before headings
+    processedContent = processedContent.replace(/```\n(#{1,6}\s+)/gm, '```\n\n$1');
     
     return (
         <ReactMarkdown 
@@ -222,7 +312,7 @@ const NonMemoizedMarkdown = ({ children }: { children: string }) => {
             rehypePlugins={rehypePlugins}
             remarkRehypeOptions={{ allowDangerousHtml: true }}
         >
-            {children}
+            {processedContent}
         </ReactMarkdown>
     );
 };
@@ -231,3 +321,31 @@ export const Markdown = memo(
     NonMemoizedMarkdown,
     (prevProps, nextProps) => prevProps.children === nextProps.children,
 );
+
+const extractFilename = (code: string): string | undefined => {
+    const lines = code.split('\n');
+    if (lines.length === 0) return undefined;
+    
+    const firstLine = lines[0].trim();
+    
+    // Pattern to match various comment styles with filepath
+    const patterns = [
+        /^\/\/\s*filepath:\s*(.+)$/i,           // // filepath: main.go
+        /^\/\/\s*file:\s*(.+)$/i,               // // file: main.go
+        /^#\s*filepath:\s*(.+)$/i,              // # filepath: main.py
+        /^#\s*file:\s*(.+)$/i,                  // # file: main.py
+        /^<!--\s*filepath:\s*(.+?)\s*-->$/i,    // <!-- filepath: index.html -->
+        /^<!--\s*file:\s*(.+?)\s*-->$/i,        // <!-- file: index.html -->
+        /^\/\*\s*filepath:\s*(.+?)\s*\*\/$/i,   // /* filepath: styles.css */
+        /^\/\*\s*file:\s*(.+?)\s*\*\/$/i,       // /* file: styles.css */
+    ];
+    
+    for (const pattern of patterns) {
+        const match = firstLine.match(pattern);
+        if (match) {
+            return match[1].trim();
+        }
+    }
+    
+    return undefined;
+};

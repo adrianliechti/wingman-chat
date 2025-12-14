@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { X, Code, File, FolderTree } from 'lucide-react';
-import { Button } from '@headlessui/react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { File, Code, Eye, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { useArtifacts } from '../hooks/useArtifacts';
 import { HtmlEditor } from './HtmlEditor';
 import { SvgEditor } from './SvgEditor';
@@ -15,65 +14,43 @@ import { FileIcon } from './FileIcon';
 import { getFileName } from '../lib/utils';
 
 export function ArtifactsDrawer() {
-  const { 
+  const {
     fs,
-    openFiles, 
-    activeFile, 
-    openFile, 
-    closeFile,
-    setShowArtifactsDrawer,
+    activeFile,
+    openFile,
+    version,
+    showFileBrowser,
+    toggleFileBrowser,
   } = useArtifacts();
 
-  const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Listen for file updates to refresh the editor content
+  // Get files - memoized to prevent unnecessary recalculation
+  // version is required to trigger updates when filesystem changes (fs instance is stable)
+  const files = useMemo(() => {
+    return fs ? fs.listFiles().sort((a, b) => a.path.localeCompare(b.path)) : [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fs, version]);
+
+  // Automatically open the file if there's only one file
+  // and show the browser if there are multiple files
   useEffect(() => {
-    if (!fs) return;
+    if (activeFile) return;
 
-    const unsubscribeUpdated = fs.subscribe('fileUpdated', (updatedPath: string) => {
-      // If the updated file is currently open, close and reopen it to refresh content
-      if (activeFile === updatedPath) {
-        closeFile(updatedPath);
-        // Reopen after a brief delay to ensure clean state
-        setTimeout(() => {
-          openFile(updatedPath);
-        }, 10);
-      }
-    });
-
-    return () => {
-      unsubscribeUpdated();
-    };
-  }, [fs, activeFile, closeFile, openFile]);
-
-  // Get all files sorted by path
-  const files = fs ? fs.listFiles().sort((a, b) => a.path.localeCompare(b.path)) : [];
-
-  // Auto-open file browser if no active file but files are available
-  useEffect(() => {
-    if (!activeFile && files.length > 0 && !showFileBrowser) {
-      setShowFileBrowser(true);
+    if (files.length === 1) {
+      openFile(files[0].path);
+    } else if (files.length > 1 && !showFileBrowser) {
+      toggleFileBrowser();
     }
-  }, [activeFile, files.length, showFileBrowser]);
-
-  const selectFile = (path: string) => {
-    if (activeFile === path) {
-      return;
-    }
-    openFile(path);
-  };
-
-  const handleOpenFileFromBrowser = (path: string) => {
-    openFile(path);
-  };
+  }, [files, activeFile, openFile, showFileBrowser, toggleFileBrowser]);
 
   // Drag and drop handlers
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    
+
     // Clear any pending timeout
     if (dragTimeoutRef.current) {
       clearTimeout(dragTimeoutRef.current);
@@ -81,18 +58,18 @@ export function ArtifactsDrawer() {
     }
 
     const files = Array.from(e.dataTransfer.files);
-    
+
     for (const file of files) {
       try {
         const path = `/${file.name}`;
-        
+
         // Read the file content as text
         const content = await file.text();
-        
+
         // Create the file with string content
         if (fs) {
           fs.createFile(path, content, file.type);
-          
+
           // Open the file in a tab
           openFile(path);
         }
@@ -104,16 +81,16 @@ export function ArtifactsDrawer() {
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    
+
     if (!isDragOver) {
       setIsDragOver(true);
     }
-    
+
     // Clear any existing timeout and set a new one
     if (dragTimeoutRef.current) {
       clearTimeout(dragTimeoutRef.current);
     }
-    
+
     // Reset drag state after a short delay if no more drag events
     dragTimeoutRef.current = setTimeout(() => {
       setIsDragOver(false);
@@ -134,24 +111,16 @@ export function ArtifactsDrawer() {
   const renderEditor = () => {
     if (!activeFile) {
       return (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+        <div className="h-full flex flex-col items-center justify-center p-8 text-center">
           <Code size={64} className="text-neutral-300 dark:text-neutral-600 mb-6" />
           <h3 className="text-xl font-medium text-neutral-900 dark:text-neutral-100 mb-2">
-            No File Selected
+            Empty
           </h3>
           <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
-            {files.length === 0 
-              ? "Files created by the AI will appear here" 
-              : "Select a file from the tabs above or use the file browser"}
+            {files.length === 0
+              ? "Files created by the AI will appear here"
+              : "Click a filename to select a file"}
           </p>
-          {files.length > 0 && (
-            <Button
-              onClick={() => setShowFileBrowser(true)}
-              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-900 dark:bg-neutral-700 dark:hover:bg-neutral-600 text-white rounded-lg transition-colors text-sm"
-            >
-              Browse Files
-            </Button>
-          )}
         </div>
       );
     }
@@ -161,39 +130,49 @@ export function ArtifactsDrawer() {
       return null;
     }
 
-    switch (artifactKind(activeFile)) {
+    const kind = artifactKind(activeFile);
+
+    switch (kind) {
       case 'html':
-        return <HtmlEditor content={file.content} />;
+        return <HtmlEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'svg':
-        return <SvgEditor content={file.content} />;
+        return <SvgEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'csv':
-        return <CsvEditor content={file.content} />;
+        return <CsvEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode === 'preview' ? 'table' : 'code'} onViewModeChange={(mode) => setViewMode(mode === 'table' ? 'preview' : 'code')} />;
       case 'mermaid':
-        return <MermaidEditor content={file.content} />;
+        return <MermaidEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'markdown':
-        return <MarkdownEditor content={file.content} />;
+        return <MarkdownEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'code':
         return (
-          <CodeEditor 
-            content={file.content} 
-            language={artifactLanguage(file.path)} 
+          <CodeEditor
+            key={`${activeFile}-${version}`}
+            content={file.content}
+            language={artifactLanguage(file.path)}
           />
         );
       case 'text':
       default:
-        return <TextEditor content={file.content} />;
+        return <TextEditor key={`${activeFile}-${version}`} content={file.content} />;
     }
   };
 
+  // Check if current file supports preview mode
+  const supportsPreview = () => {
+    if (!activeFile) return false;
+    const kind = artifactKind(activeFile);
+    return ['html', 'svg', 'csv', 'mermaid', 'markdown'].includes(kind);
+  };
+
   return (
-    <div 
-      className="h-full flex flex-col rounded-xl overflow-hidden animate-in fade-in duration-200 relative bg-white dark:bg-neutral-900"
+    <div
+      className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md pt-2 md:pt-0"
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
       {/* Drag overlay */}
       {isDragOver && (
-        <div className="absolute inset-0 bg-blue-500/10 border-2 border-dashed border-blue-500 rounded-xl flex items-center justify-center z-50 backdrop-blur-sm">
+        <div className="absolute inset-0 bg-blue-500/10 border-2 border-dashed border-blue-500 flex items-center justify-center z-50 backdrop-blur-sm">
           <div className="text-center">
             <File size={48} className="text-blue-500 mx-auto mb-3" />
             <p className="text-lg font-medium text-blue-700 dark:text-blue-300 mb-1">
@@ -205,96 +184,73 @@ export function ArtifactsDrawer() {
           </div>
         </div>
       )}
-      
-      {/* Tab Bar with File Browser Button - Fixed at top */}
-      <div className="shrink-0 border-b border-neutral-200 dark:border-neutral-600 relative h-9 flex">
-        {/* File Browser Button - Expands to match browser width */}
-        <Button
-          onClick={() => setShowFileBrowser(!showFileBrowser)}
-          className={`flex items-center px-2.5 h-full text-xs shrink-0 border-r border-neutral-200 dark:border-neutral-600 transition-all duration-300 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/30 ${
-            showFileBrowser
-              ? 'w-64 justify-start gap-1.5'
-              : 'w-auto justify-center'
-          }`}
-          title="Browse files"
-        >
-          <FolderTree size={14} className="shrink-0" />
-          {showFileBrowser && (
-            <span className="whitespace-nowrap">
-              Files
-            </span>
-          )}
-        </Button>
 
-        {/* Scrollable Tabs Container */}
-        <div className="flex-1 relative overflow-hidden">
-          {/* Open File Tabs */}
-          <div className="flex overflow-x-auto h-full hide-scrollbar" style={{ minWidth: '100%' }}>
-            {openFiles.map((path) => {
-              const file = fs?.getFile(path);
-              if (!file) return null;
-              
-              const filename = getFileName(path);
-              const isActive = activeFile === path;
+      {/* Main Content Area with Right Sidebar and Bottom Bar */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Main editor and bottom bar container */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Editor area */}
+          <div className="flex-1 overflow-hidden">
+            {renderEditor()}
+          </div>
 
-              return (
-                <Button
-                  key={path}
-                  onClick={() => selectFile(path)}
-                  className={`flex items-center gap-1.5 px-3 h-full text-xs border-r border-neutral-200 dark:border-neutral-600 min-w-0 shrink-0 whitespace-nowrap ${
-                    isActive
-                      ? 'text-neutral-900 dark:text-neutral-100 border-t-2 border-t-blue-500'
-                      : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/30'
-                  } transition-colors`}
-                  style={{ minWidth: 'max-content' }}
-                >
-                  <FileIcon name={path} />
-                  <span className="truncate max-w-[120px]" title={filename}>
-                    {filename}
+          {/* Bottom Bar with File Title and Actions */}
+          <div className="shrink-0 h-14 flex border-t border-black/10 dark:border-white/10">
+            {/* File title */}
+            <div className="flex-1 flex items-center min-w-0 px-3">
+              {activeFile && (
+                <>
+                  <FileIcon name={activeFile} />
+                  <span className="text-sm font-medium truncate flex-1 text-left ml-1.5 text-neutral-700 dark:text-neutral-300" title={getFileName(activeFile)}>
+                    {getFileName(activeFile)}
                   </span>
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeFile(path);
-                    }}
-                    className="p-0.5 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded transition-colors ml-0.5 opacity-70 hover:opacity-100 cursor-pointer"
-                  >
-                    <X size={12} />
-                  </div>
-                </Button>
-              );
-            })}
+                </>
+              )}
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-1 px-2">
+              {/* View mode toggle - only show for files that support preview */}
+              {supportsPreview() && (
+                <button
+                  type="button"
+                  onClick={() => setViewMode(viewMode === 'preview' ? 'code' : 'preview')}
+                  className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  title={viewMode === 'preview' ? 'Switch to code' : 'Switch to preview'}
+                >
+                  {viewMode === 'preview' ? <Code size={16} /> : <Eye size={16} />}
+                </button>
+              )}
+
+              {/* File browser toggle */}
+              {files.length > 0 && (
+                <button
+                  type="button"
+                  onClick={toggleFileBrowser}
+                  className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  title={showFileBrowser ? 'Close file browser' : 'Open file browser'}
+                >
+                  {showFileBrowser ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Close Drawer Button */}
-        <Button
-          onClick={() => setShowArtifactsDrawer(false)}
-          className="flex items-center justify-center px-2.5 h-full text-xs shrink-0 border-l border-neutral-200 dark:border-neutral-600 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/30 transition-colors"
-          title="Close artifacts"
-        >
-          <X size={14} />
-        </Button>
-      </div>
-
-      {/* Content Area with Sidebar */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Side Panel - File Browser */}
-        <div className={`transition-all duration-300 ease-out ${
-          showFileBrowser ? 'w-64' : 'w-0'
-        } shrink-0 overflow-hidden ${showFileBrowser ? 'border-r border-neutral-200 dark:border-neutral-600' : ''}`}>
-          {showFileBrowser && fs && (
-            <ArtifactsBrowser
-              fs={fs}
-              openTabs={openFiles}
-              onFileClick={handleOpenFileFromBrowser}
-            />
+        {/* Right Side Panel - File Browser (full height) */}
+        <div className={`transition-all duration-500 ease-in-out relative ${showFileBrowser ? 'w-64 opacity-100' : 'w-0 opacity-0'
+          } shrink-0 overflow-hidden`}>
+          <div className="absolute inset-y-0 left-0 w-px bg-black/10 dark:bg-white/10"></div>
+          {fs && (
+            <div className={`h-full transition-opacity duration-500 ${showFileBrowser ? 'opacity-100' : 'opacity-0'}`}>
+              <ArtifactsBrowser
+                key={version}
+                fs={fs}
+                openTabs={activeFile ? [activeFile] : []}
+                onFileClick={openFile}
+              />
+            </div>
           )}
-        </div>
-        
-        {/* Main Content Area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {renderEditor()}
         </div>
       </div>
     </div>

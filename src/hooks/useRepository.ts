@@ -3,7 +3,6 @@ import pLimit from 'p-limit';
 import { Client } from '../lib/client';
 import { VectorDB } from '../lib/vectordb';
 import type { Document } from '../lib/vectordb';
-import type { Tool } from '../types/chat';
 import type { RepositoryFile } from '../types/repository';
 import { useRepositories } from './useRepositories';
 import { getConfig } from '../config';
@@ -20,8 +19,6 @@ export interface RepositoryHook {
   addFile: (file: File) => Promise<void>;
   removeFile: (fileId: string) => void;
   queryChunks: (query: string, topK?: number) => Promise<FileChunk[]>;
-  queryTools: () => Tool[];
-  queryInstructions: () => string;
   useRAG: boolean;
   totalPages: number;
   totalCharacters: number;
@@ -291,140 +288,11 @@ export function useRepository(repositoryId: string, mode: 'auto' | 'rag' | 'cont
     }
   }, [vectorDB, repositoryId, repository?.embedder, files]);
 
-  const queryTools = useCallback((): Tool[] => {
-    if (files.length === 0) {
-      return [];
-    }
-
-    if (useRAG) {
-      // Large repository: use RAG with vector search
-      return [
-        {
-          name: 'query_knowledge_database',
-          description: 'Search and retrieve information from a knowledge database using natural language queries. Returns relevant documents, facts, or answers based on the search criteria.',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: `The search query or question to find relevant information in the knowledge database. Use natural language and be specific about what information you're looking for.`
-              }
-            },
-            required: ['query']
-          },
-          function: async (args: Record<string, unknown>): Promise<string> => {
-            const query = args.query as string;
-            console.log("[repository] Query", { query });
-
-            if (!query) {
-              console.log("[repository] Query failed - no query provided");
-              return JSON.stringify({ error: 'No query provided' });
-            }
-
-            try {
-              const results = await queryChunks(query, 5);
-              console.log("[repository] Query completed", { query, resultsCount: results.length });
-
-              if (results.length === 0) {
-                console.log("[repository] No relevant documents found", { query });
-                return JSON.stringify([]);
-              }
-
-              const jsonResults = results.map((result, index) => {
-                console.log("[repository] Processing result", { 
-                  index: index + 1, 
-                  fileName: result.file.name, 
-                  similarity: (result.similarity || 0).toFixed(3),
-                  textPreview: result.text.substring(0, 100) + "..."
-                });
-
-                return {
-                  file_name: result.file.name,
-                  file_chunk: result.text,
-                  similarity: result.similarity || 0
-                };
-              });
-
-              console.log("[repository] Returning results", { count: jsonResults.length });
-              return JSON.stringify(jsonResults);
-            } catch (error) {
-              console.error("[repository] Query failed", { query, error });
-              return JSON.stringify({ error: 'Failed to query repository' });
-            }
-          }
-        }
-      ];
-    } else {
-  // Small repository: no retrieval tool; content injected directly into system prompt
-  return [];
-    }
-  }, [queryChunks, files, useRAG]);
-
-  const queryInstructions = useCallback((): string => {
-    const instructions = [];
-
-    if (repository?.instructions?.trim()) {
-      instructions.push(`
-## Instructions
-
-\`\`\`\`text
-${repository.instructions.trim()}
-\`\`\`\`
-`.trim());
-    }
-
-    if (files.length > 0) {
-      if (useRAG) {
-        instructions.push(`
-## Personal RAG Knowledge Database
-
-You have access to a personal knowledge database containing the user's uploaded documents. This is a Retrieval-Augmented Generation (RAG) system that allows you to search and retrieve specific information from their files.
-
-### Best Practices:
-1. For *every* user query, you MUST first invoke the \`query_knowledge_database\` tool with a concise, natural-language query.
-2. Examine the tool's results.
-   - If you get ≥1 relevant documents or facts, answer the user *solely* using those results.
-   - Include source citations (e.g. doc IDs, relevance scores, or text snippets).
-3. Only if the tool returns no relevant information, you may answer from general knowledge—but still note "no document match; using fallback knowledge".
-4. If the tool call fails, report the failure and either retry or ask the user to clarify.
-5. Be concise, accurate, and transparent about sources.
-
-Use GitHub Flavored Markdown to format your responses including tables, code blocks, links, and lists.
-`.trim());
-      } else {
-        instructions.push(`
-## Personal Knowledge Base
-
-You have full access to the user's uploaded documents. Because the total size is below the RAG threshold, ALL file contents have been embedded directly below in this system prompt. No retrieval tool call is required.
-
-### Best Practices:
-1. Answer using ONLY the provided file contents below when possible; cite file names and (if helpful) short indicative snippets.
-2. If the answer cannot be found in these files, explicitly state that the repository lacks the required information before using general knowledge.
-3. Keep answers concise but complete. Prefer citing fewer, most relevant passages over many loosely related ones.
-4. When referencing code, quote only the necessary lines; avoid large irrelevant blocks.
-
-### Provided Files
-The following section lists each file wrapped in a fenced block. Treat this as authoritative context.
-`.trim());
-
-        // Include full content of every file (no truncation)
-        for (const file of files) {
-          if (!file.text || !file.text.trim()) continue;
-          instructions.push(`\n\n\`\`\`text ${file.name}\n${file.text}\n\`\`\``);
-        }
-      }
-    }
-
-    return instructions.join('\n\n');
-  }, [repository?.instructions, useRAG, files]);
-
   return {
     files,
     removeFile,
     addFile,
     queryChunks,
-    queryTools,
-    queryInstructions,
     useRAG,
     totalPages,
     totalCharacters,

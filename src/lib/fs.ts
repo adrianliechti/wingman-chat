@@ -17,7 +17,6 @@ type FileEventHandler<T extends FileEventType> = T extends 'fileCreated'
 // FileSystem extension methods
 export class FileSystemManager {
   private eventHandlers = new Map<FileEventType, Set<(...args: unknown[]) => void>>();
-  private cachedFileSystem: FileSystem = {}; // Local cache to avoid React state delays
 
   constructor(
     private getFilesystem: () => FileSystem,
@@ -38,13 +37,10 @@ export class FileSystemManager {
     if (getFilesystem && setFilesystem) {
       this.getFilesystem = getFilesystem;
       this.setFilesystem = setFilesystem;
-      // Initialize cache with current filesystem state
-      this.cachedFileSystem = getFilesystem();
     } else {
       // Clear handlers when no chat or artifacts disabled
       this.getFilesystem = () => ({});
       this.setFilesystem = () => {}; // No-op when disabled
-      this.cachedFileSystem = {};
     }
   }
 
@@ -80,8 +76,8 @@ export class FileSystemManager {
   }
 
   createFile(path: string, content: string, contentType?: string): void {
-    // Check if file already exists to determine the correct event type
-    const fileExists = path in this.cachedFileSystem;
+    const currentFs = this.getFilesystem();
+    const fileExists = path in currentFs;
     
     const file: File = {
       path,
@@ -89,13 +85,7 @@ export class FileSystemManager {
       contentType,
     };
 
-    // Update cache immediately to avoid React state delays
-    this.cachedFileSystem = {
-      ...this.cachedFileSystem,
-      [path]: file
-    };
-
-    // Persist to React state
+    // Update React state
     this.setFilesystem((fs: FileSystem) => ({
       ...fs,
       [path]: file
@@ -110,7 +100,8 @@ export class FileSystemManager {
   }
 
   updateFile(path: string, content: string, contentType?: string): boolean {
-    const existingFile = this.cachedFileSystem[path];
+    const currentFs = this.getFilesystem();
+    const existingFile = currentFs[path];
     if (!existingFile) return false;
 
     const updatedFile = {
@@ -119,63 +110,39 @@ export class FileSystemManager {
       contentType,
     };
 
-    // Update cache immediately
-    this.cachedFileSystem = {
-      ...this.cachedFileSystem,
-      [path]: updatedFile
-    };
-
-    // Persist to React state
+    // Update React state
     this.setFilesystem((fs: FileSystem) => ({
       ...fs,
       [path]: updatedFile
     }));
     
-    // Emit the event immediately since we have the updated file in cache
-    queueMicrotask(() => {
-      this.emit('fileUpdated', path);
-    });
+    this.emit('fileUpdated', path);
     return true;
   }
 
   deleteFile(path: string): boolean {
-    // Check if this is a direct file
-    const isFile = this.cachedFileSystem[path];
+    const currentFs = this.getFilesystem();
     
-    if (isFile) {
-      // Handle single file deletion - update cache immediately
-      const newCache = { ...this.cachedFileSystem };
-      delete newCache[path];
-      this.cachedFileSystem = newCache;
-
-      // Persist to React state
+    // Check if this is a direct file
+    if (currentFs[path]) {
+      // Handle single file deletion
       this.setFilesystem((fs: FileSystem) => {
         const newFs = { ...fs };
         delete newFs[path];
         return newFs;
       });
       
-      // Emit the event immediately since we updated the cache
-      queueMicrotask(() => {
-        this.emit('fileDeleted', path);
-      });
+      this.emit('fileDeleted', path);
       return true;
     }
 
     // Check if this is a folder (has files that start with path + '/')
-    const affectedFiles = this.listFiles().filter(file => 
+    const affectedFiles = Object.values(currentFs).filter(file => 
       file.path.startsWith(path + '/')
     );
 
     if (affectedFiles.length > 0) {
-      // Handle folder deletion - update cache immediately
-      const newCache = { ...this.cachedFileSystem };
-      for (const file of affectedFiles) {
-        delete newCache[file.path];
-      }
-      this.cachedFileSystem = newCache;
-
-      // Persist to React state
+      // Handle folder deletion
       this.setFilesystem((fs: FileSystem) => {
         const newFs = { ...fs };
         for (const file of affectedFiles) {
@@ -184,13 +151,10 @@ export class FileSystemManager {
         return newFs;
       });
       
-      // Emit the events immediately since we updated the cache
-      queueMicrotask(() => {
-        // Call the emit for each deleted file
-        for (const file of affectedFiles) {
-          this.emit('fileDeleted', file.path);
-        }
-      });
+      // Emit event for each deleted file
+      for (const file of affectedFiles) {
+        this.emit('fileDeleted', file.path);
+      }
       
       return true;
     }
@@ -263,31 +227,23 @@ export class FileSystemManager {
   }
 
   getFile(path: string): File | undefined {
-    return this.cachedFileSystem[path];
+    return this.getFilesystem()[path];
   }
 
   listFiles(): File[] {
-    return Object.values(this.cachedFileSystem);
+    return Object.values(this.getFilesystem());
   }
 
   fileExists(path: string): boolean {
-    return path in this.cachedFileSystem;
+    return path in this.getFilesystem();
   }
 
   getFileCount(): number {
-    return Object.keys(this.cachedFileSystem).length;
-  }
-
-  getCurrentFileSystem(): FileSystem {
-    return this.cachedFileSystem;
-  }
-
-  updateCache(newFs: FileSystem): void {
-    this.cachedFileSystem = newFs;
+    return Object.keys(this.getFilesystem()).length;
   }
 
   async downloadAsZip(filename?: string): Promise<void> {
-    return downloadFilesystemAsZip(this.cachedFileSystem, filename);
+    return downloadFilesystemAsZip(this.getFilesystem(), filename);
   }
 }
 

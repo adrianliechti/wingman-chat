@@ -7,16 +7,18 @@ export interface ArtifactsContextType {
   isEnabled: boolean;
   setEnabled: (enabled: boolean) => void;
   fs: FileSystemManager;
-  openFiles: string[];
   activeFile: string | null;
   showArtifactsDrawer: boolean;
+  showFileBrowser: boolean;
+  version: number;
   openFile: (path: string) => void;
   closeFile: (path: string) => void;
   setShowArtifactsDrawer: (show: boolean) => void;
   toggleArtifactsDrawer: () => void;
+  toggleFileBrowser: () => void;
   setFileSystemForChat: (
     getFileSystem: (() => FileSystem) | null,
-    setFileSystem: ((artifacts: FileSystem) => void) | null
+    setFileSystem: ((updater: (current: FileSystem) => FileSystem) => void) | null
   ) => void;
 }
 
