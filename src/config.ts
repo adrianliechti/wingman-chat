@@ -36,6 +36,7 @@ interface config {
   artifacts?: artifactsConfig;
   repository?: repositoryConfig;
   translator?: translatorConfig;
+  researcher?: researcherConfig;
 }
 
 interface modelConfig {
@@ -131,6 +132,10 @@ interface translatorConfig {
   languages: string[];
 }
 
+interface researcherConfig {
+  enabled: boolean;
+}
+
 interface Config {
   title: string;
   disclaimer: string;
@@ -158,6 +163,7 @@ interface Config {
   artifacts: artifactsConfig;
   repository: repositoryConfig;
   translator: translatorConfig;
+  researcher: researcherConfig;
 
   backgrounds: backgroundPackConfig;
 }
@@ -259,6 +265,10 @@ export const loadConfig = async (): Promise<Config | undefined> => {
           "it",
           "es",
         ],
+      },
+
+      researcher: cfg.researcher ?? {
+        enabled: false
       },
 
       backgrounds: cfg.backgrounds ?? {},
