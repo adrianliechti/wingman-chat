@@ -102,7 +102,6 @@ interface bridgeConfig {
 interface internetConfig {
   enabled: boolean;
 
-  researcher?: boolean;
   elicitation?: boolean;
 }
 
@@ -148,8 +147,8 @@ interface Config {
   tts: boolean;
   stt: boolean;
 
-  workflow: boolean;
-  recorder: boolean;
+  workflow: workflowConfig;
+  recorder: recorderConfig;
 
   voice: boolean;
   vision: boolean;
@@ -215,8 +214,12 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       tts: cfg.tts?.enabled ?? false,
       stt: cfg.stt?.enabled ?? false,
 
-      workflow: cfg.workflow?.enabled ?? false,
-      recorder: cfg.recorder?.enabled ?? false,
+      workflow: cfg.workflow ?? {
+        enabled: false
+      },
+      recorder: cfg.recorder ?? {
+        enabled: false
+      },
 
       voice: cfg.voice?.enabled ?? false,
       vision: cfg.vision?.enabled ?? false,
