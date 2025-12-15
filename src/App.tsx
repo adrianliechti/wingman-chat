@@ -26,7 +26,7 @@ import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
 import { ToolsProvider } from "./contexts/ToolsProvider";
 
-type Page = "chat" | "flow" | "translate" | "recorder" | "renderer" | "research";
+type Page = "chat" | "flow" | "translate" | "renderer" | "research" | "recorder";
 
 function AppContent() {
   const config = getConfig();
@@ -80,16 +80,16 @@ function AppContent() {
       switch (hash) {
         case '#chat':
           return 'chat';
+        case '#flow':
+          return config.workflow.enabled ? 'flow' : 'chat';
         case '#translate':
           return config.translator.enabled ? 'translate' : 'chat';
-        case '#flow':
-          return config.workflow ? 'flow' : 'chat';
-        case '#recorder':
-          return config.recorder ? 'recorder' : 'chat';
         case '#renderer':
           return config.renderer.enabled ? 'renderer' : 'chat';
         case '#research':
-          return config.researcher ? 'research' : 'chat';
+          return config.researcher.enabled ? 'research' : 'chat';
+        case '#recorder':
+          return config.recorder.enabled ? 'recorder' : 'chat';
         default:
           return 'chat';
       }
@@ -110,7 +110,7 @@ function AppContent() {
     // Listen for hash changes
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [config.workflow, config.translator.enabled, config.recorder, config.renderer.enabled, config.researcher]);
+  }, [config.workflow.enabled, config.translator.enabled, config.recorder.enabled, config.renderer.enabled, config.researcher.enabled]);
 
   // Auto-close sidebar on mobile screens and update sliders on resize
   useEffect(() => {
@@ -160,20 +160,20 @@ function AppContent() {
     { key: "translate" as const, label: "Translate", icon: <Languages size={20} /> },
   ].filter(page => {
     if (page.key === "chat") return true;
-    if (page.key === "flow") return config.workflow;
+    if (page.key === "flow") return config.workflow.enabled;
     if (page.key === "translate") return config.translator.enabled;
     return true;
   });
 
   // Secondary pages always in overflow menu
   const secondaryPages = [
+    { key: "renderer" as const, label: "Renderer", icon: <Image size={20} /> },
     { key: "research" as const, label: "Research", icon: <Globe size={20} /> },
     { key: "recorder" as const, label: "Recorder", icon: <Disc3 size={20} /> },
-    { key: "renderer" as const, label: "Renderer", icon: <Image size={20} /> },
   ].filter(page => {
-    if (page.key === "research") return config.researcher;
-    if (page.key === "recorder") return config.recorder;
     if (page.key === "renderer") return config.renderer.enabled;
+    if (page.key === "research") return config.researcher.enabled;
+    if (page.key === "recorder") return config.recorder.enabled;
     return true;
   });
 
@@ -423,9 +423,9 @@ function AppContent() {
             {currentPage === "chat" && <ChatPage />}
             {currentPage === "flow" && <WorkflowPage />}
             {currentPage === "translate" && <TranslatePage />}
+            {currentPage === "renderer" && <RendererPage />}
             {currentPage === "research" && <ResearchPage />}
             {currentPage === "recorder" && <RecorderPage />}
-            {currentPage === "renderer" && <RendererPage />}
           </div>
         </div>
       </div>

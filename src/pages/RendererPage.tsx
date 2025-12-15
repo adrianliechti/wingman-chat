@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { getConfig } from "../config";
 import { resizeImageBlob } from "../lib/utils";
-import { X, ImagePlus, Sparkles, Download, PlusIcon } from "lucide-react";
+import { X, ImagePlus, Sparkles, Download, PlusIcon, ArrowRight } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
+import { useLayout } from "../hooks/useLayout";
 import { useDropZone } from "../hooks/useDropZone";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import type { Model } from "../types/chat";
@@ -10,6 +11,7 @@ import type { Model } from "../types/chat";
 export function RendererPage() {
   const config = getConfig();
   const { setRightActions } = useNavigation();
+  const { layoutMode } = useLayout();
 
   const [prompt, setPrompt] = useState("");
   const [referenceImages, setReferenceImages] = useState<{ blob: Blob; preview: string }[]>([]);
@@ -233,7 +235,11 @@ export function RendererPage() {
           </div>
         )}
 
-        <div className="w-full h-full max-w-full mx-auto">
+        <div className={`w-full h-full ${
+          layoutMode === 'wide' 
+            ? 'max-w-full mx-auto' 
+            : 'max-w-[1200px] mx-auto'
+        }`}>
           <div className="relative h-full w-full overflow-hidden">
             {/* 50/50 split layout */}
             <div className="h-full flex flex-col md:flex-row min-h-0 transition-all duration-200">
@@ -245,11 +251,12 @@ export function RendererPage() {
                   onPaste={handlePaste}
                   onKeyDown={handleKeyDown}
                   placeholder="Describe the image you want to generate..."
-                  className="absolute inset-0 w-full h-full pl-4 pr-2 pt-4 md:pt-12 pb-2 bg-transparent border-none resize-none overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-none"
+                  className="absolute inset-0 w-full h-full pl-4 pr-2 pt-12 pb-32 bg-transparent border-none resize-none overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-none"
                 />
 
                 {/* Reference images at bottom */}
-                <div className="absolute bottom-2 left-3 right-3 z-10 flex flex-wrap gap-2">
+                <div className="absolute bottom-4 left-3 right-3 z-10 flex items-end justify-between gap-3">
+                  <div className="flex flex-wrap gap-2">
                   {referenceImages.map((img, index) => (
                     <div
                       key={index}
@@ -281,6 +288,7 @@ export function RendererPage() {
                       <ImagePlus size={18} />
                     </button>
                   )}
+                  </div>
                 </div>
 
                 <input
@@ -298,13 +306,25 @@ export function RendererPage() {
                 />
               </div>
 
-              {/* Vertical Divider */}
-              <div className="relative flex items-center justify-center py-2 md:py-0 md:w-4 shrink-0">
+              {/* Divider with Generate Button */}
+              <div className="relative flex items-center justify-center py-2 md:py-0 md:w-14 shrink-0">
                 <div className="absolute md:inset-y-0 md:w-px md:left-1/2 md:-translate-x-px inset-x-0 h-px md:h-auto bg-black/20 dark:bg-white/20"></div>
+                
+                {/* Generate button centered on divider - only show when input available and not generating */}
+                {(prompt.trim() || referenceImages.length > 0) && !isGenerating && (
+                  <button
+                    type="button"
+                    onClick={handleGenerate}
+                    className="relative z-20 size-11 rounded-full bg-white dark:bg-neutral-950 border border-black/20 dark:border-white/20 text-neutral-500 dark:text-neutral-400 transition-all duration-200 hover:border-black/40 dark:hover:border-white/40 hover:text-neutral-700 dark:hover:text-neutral-200 hover:scale-105 active:scale-95 flex items-center justify-center"
+                    title={`Generate (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enter)`}
+                  >
+                    <ArrowRight size={18} className="rotate-90 md:rotate-0" />
+                  </button>
+                )}
               </div>
 
               {/* Right: Output section */}
-              <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-y-auto p-3">
+              <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
                 {/* Model selector at top-left */}
                 {models.length > 0 && (
                   <div className="absolute top-2 left-3 z-10">
@@ -335,7 +355,8 @@ export function RendererPage() {
                   </div>
                 )}
                 
-                <div className="flex flex-wrap gap-3 content-start pt-10">
+                <div className="absolute inset-0 overflow-y-auto">
+                  <div className="flex flex-wrap gap-3 content-start p-4 pt-12">
                   {/* Generated images */}
                   {generatedImages.map((img, index) => (
                     <div
@@ -386,76 +407,53 @@ export function RendererPage() {
                     </div>
                   ))}
 
-                  {/* Placeholder with generate button */}
-                  <div className="relative w-40 h-40 rounded-xl overflow-hidden shadow-sm bg-neutral-100 dark:bg-neutral-900">
-                    {isGenerating ? (
-                      <>
-                        {/* Animated grid */}
-                        <svg 
-                          className="absolute inset-0 w-full h-full opacity-10 transition-opacity duration-300" 
-                          viewBox="0 0 100 100"
-                          preserveAspectRatio="none"
-                        >
-                          {Array.from({ length: gridSize }, (_, row) =>
-                            Array.from({ length: gridSize }, (_, col) => {
-                              const isEvenSquare = (row + col) % 2 === 0;
-                              const cellSize = 100 / gridSize;
-                              return (
-                                <rect
-                                  key={`${row}-${col}`}
-                                  x={col * cellSize}
-                                  y={row * cellSize}
-                                  width={cellSize}
-                                  height={cellSize}
-                                  className={isEvenSquare ? "fill-neutral-800 dark:fill-neutral-700" : "fill-neutral-900 dark:fill-neutral-800"}
-                                />
-                              );
-                            })
-                          ).flat()}
-                        </svg>
-                      </>
-                    ) : (
-                      <>
-                        {/* Static subtle pattern */}
-                        <svg 
-                          className="absolute inset-0 w-full h-full opacity-10" 
-                          viewBox="0 0 100 100"
-                          preserveAspectRatio="none"
-                        >
-                          {Array.from({ length: 3 }, (_, row) =>
-                            Array.from({ length: 3 }, (_, col) => {
-                              const isEvenSquare = (row + col) % 2 === 0;
-                              const cellSize = 100 / 3;
-                              return (
-                                <rect
-                                  key={`${row}-${col}`}
-                                  x={col * cellSize}
-                                  y={row * cellSize}
-                                  width={cellSize}
-                                  height={cellSize}
-                                  className={isEvenSquare ? "fill-neutral-800 dark:fill-neutral-700" : "fill-neutral-900 dark:fill-neutral-800"}
-                                />
-                              );
-                            })
-                          ).flat()}
-                        </svg>
-                        {/* Generate button */}
-                        <div className="absolute inset-0 flex items-center justify-center z-10">
-                          <button
-                            type="button"
-                            onClick={handleGenerate}
-                            disabled={!prompt.trim() && referenceImages.length === 0}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 bg-white/60 dark:bg-neutral-900/60 hover:bg-white/80 dark:hover:bg-neutral-900/80 backdrop-blur-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed border border-neutral-200/60 dark:border-neutral-700/60 rounded-lg"
-                            title="Generate Image"
-                          >
-                            <Sparkles size={14} />
-                            <span>Generate</span>
-                          </button>
-                        </div>
-                      </>
-                    )}
+                  {/* Generation placeholder */}
+                  {isGenerating && (
+                    <div className="relative w-40 h-40 rounded-xl overflow-hidden shadow-sm bg-neutral-100 dark:bg-neutral-900">
+                      {/* Animated grid */}
+                      <svg 
+                        className="absolute inset-0 w-full h-full opacity-10 transition-opacity duration-300" 
+                        viewBox="0 0 100 100"
+                        preserveAspectRatio="none"
+                      >
+                        {Array.from({ length: gridSize }, (_, row) =>
+                          Array.from({ length: gridSize }, (_, col) => {
+                            const isEvenSquare = (row + col) % 2 === 0;
+                            const cellSize = 100 / gridSize;
+                            return (
+                              <rect
+                                key={`${row}-${col}`}
+                                x={col * cellSize}
+                                y={row * cellSize}
+                                width={cellSize}
+                                height={cellSize}
+                                className={isEvenSquare ? "fill-neutral-800 dark:fill-neutral-700" : "fill-neutral-900 dark:fill-neutral-800"}
+                              />
+                            );
+                          })
+                        ).flat()}
+                      </svg>
+                    </div>
+                  )}
                   </div>
                 </div>
+
+                {/* Empty State */}
+                {generatedImages.length === 0 && !isGenerating && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
+                        <Sparkles size={28} className="text-neutral-400 dark:text-neutral-500" />
+                      </div>
+                      <p className="text-neutral-500 dark:text-neutral-400">
+                        Describe an image to generate
+                      </p>
+                      <p className="text-sm text-neutral-400 dark:text-neutral-500 mt-1">
+                        Results will appear here
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

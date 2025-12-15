@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { PlusIcon, Search, Loader2 } from "lucide-react";
+import { PlusIcon, Search, Loader2, ArrowRight } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import { useLayout } from "../hooks/useLayout";
 import { CopyButton } from "../components/CopyButton";
@@ -75,10 +75,15 @@ export function ResearchPage() {
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden relative">
-      <main className="w-full grow overflow-hidden flex pt-20 relative">
-        <div className="w-full h-full flex">
-          {/* 50/50 split layout */}
-          <div className="flex-1 flex flex-col md:flex-row min-h-0 transition-all duration-200 gap-0">
+      <main className="w-full grow overflow-hidden flex p-4 pt-20 relative">
+        <div className={`w-full h-full ${
+          layoutMode === 'wide' 
+            ? 'max-w-full mx-auto' 
+            : 'max-w-[1200px] mx-auto'
+        }`}>
+          <div className="relative h-full w-full overflow-hidden">
+            {/* 50/50 split layout */}
+            <div className="h-full flex flex-col md:flex-row min-h-0 transition-all duration-200">
             
             {/* Left: Input section */}
             <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
@@ -89,33 +94,29 @@ export function ResearchPage() {
                 onKeyDown={handleKeyDown}
                 placeholder="Enter your research instructions..."
                 disabled={isLoading}
-                className="absolute inset-0 w-full h-full pl-5 md:pl-6 pr-0 pt-4 pb-16 bg-transparent border-none resize-none overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-none disabled:opacity-50"
+                className="absolute inset-0 w-full h-full pl-4 pr-2 pt-12 pb-4 bg-transparent border-none resize-none overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-none disabled:opacity-50"
               />
+            </div>
 
-              {/* Research button at bottom */}
-              <div className="absolute bottom-3 left-3 right-3 z-10 flex items-center justify-between">
-                <span className="text-xs text-neutral-400 dark:text-neutral-500">
-                  {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} + Enter to research
-                </span>
+            {/* Divider with Research Button */}
+            <div className="relative flex items-center justify-center py-2 md:py-0 md:w-14 shrink-0">
+              <div className="absolute md:inset-y-0 md:w-px md:left-1/2 md:-translate-x-px inset-x-0 h-px md:h-auto bg-black/20 dark:bg-white/20"></div>
+              
+              {/* Research button centered on divider - only show when input available and not loading */}
+              {instruction.trim() && !isLoading && (
                 <button
                   type="button"
                   onClick={handleResearch}
-                  disabled={!instruction.trim() || isLoading}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 rounded-full text-sm font-medium transition-all hover:bg-neutral-900 dark:hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+                  className="relative z-20 size-11 rounded-full bg-white dark:bg-neutral-950 border border-black/20 dark:border-white/20 text-neutral-500 dark:text-neutral-400 transition-all duration-200 hover:border-black/40 dark:hover:border-white/40 hover:text-neutral-700 dark:hover:text-neutral-200 hover:scale-105 active:scale-95 flex items-center justify-center"
+                  title={`Research (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enter)`}
                 >
-                  <Search size={16} />
-                  <span>Research</span>
+                  <ArrowRight size={18} className="rotate-90 md:rotate-0" />
                 </button>
-              </div>
-            </div>
-
-            {/* Vertical Divider */}
-            <div className="relative flex items-center justify-center py-2 md:py-0 md:w-4 shrink-0">
-              <div className="absolute md:inset-y-0 md:w-px md:left-1/2 md:-translate-x-px inset-x-0 h-px md:h-auto bg-black/20 dark:bg-white/20"></div>
+              )}
             </div>
 
             {/* Right: Output section */}
-            <div className="flex-1 relative min-w-0 min-h-0">
+            <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
                 
                 {/* Loading Animation */}
                 {isLoading && (
@@ -176,8 +177,8 @@ export function ResearchPage() {
                     
                     {/* Scrollable markdown content */}
                     <div className="absolute inset-0 overflow-y-auto">
-                      <div className={`min-h-full px-4 md:px-6 pt-2 pb-4 ${layoutMode === "wide" ? "" : "max-w-5xl mx-auto w-full"}`}>
-                        <div className="-mr-2 md:-mr-3 pr-4 md:pr-6 pl-5 md:pl-6 prose prose-neutral dark:prose-invert max-w-none">
+                      <div className={`min-h-full pl-4 pr-2 pt-12 pb-4 ${layoutMode === "wide" ? "" : "max-w-5xl mx-auto w-full"}`}>
+                        <div className="prose prose-neutral dark:prose-invert max-w-none">
                           <Markdown>{result}</Markdown>
                         </div>
                       </div>
@@ -203,6 +204,7 @@ export function ResearchPage() {
               )}
             </div>
           </div>
+        </div>
         </div>
       </main>
     </div>

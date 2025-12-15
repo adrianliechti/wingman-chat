@@ -568,7 +568,7 @@ export function TranslatePage() {
                     {/* Interactive text area */}
                     <InteractiveText
                       text={currentText}
-                      placeholder="Translation will appear here..."
+                      placeholder=""
                       className="absolute inset-0 w-full h-full pl-4 pr-2 pt-12 pb-2 bg-transparent overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
                       onTextSelect={handleTextSelect}
                       previewText={previewText}
@@ -645,6 +645,23 @@ export function TranslatePage() {
                               </div>
                             </div>
                           )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Empty State */}
+                    {!currentText && !isLoading && !error && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="text-center">
+                          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
+                            <GlobeIcon size={28} className="text-neutral-400 dark:text-neutral-500" />
+                          </div>
+                          <p className="text-neutral-500 dark:text-neutral-400">
+                            Enter text to translate
+                          </p>
+                          <p className="text-sm text-neutral-400 dark:text-neutral-500 mt-1">
+                            Translation will appear here
+                          </p>
                         </div>
                       </div>
                     )}
