@@ -100,10 +100,12 @@ export class Client {
 
         case Role.Tool: {
           if (m.toolResult) {
+            const content = typeof m.toolResult.data === 'string' ? m.toolResult.data : JSON.stringify(m.toolResult.data)
+
             inputMessages2.push({
               type: "function_call_output",
               call_id: m.toolResult.id,
-              output: m.content,
+              output: content,
             });
           }
 
@@ -780,13 +782,12 @@ export class Client {
 
     return tools.map((tool) => ({
       type: 'function',
+
       name: tool.name,
       description: tool.description,
+      
       strict: false,
-      parameters: {
-        ...tool.parameters,
-        additionalProperties: false,
-      },
+      parameters: tool.parameters,
     }));
   }
 }

@@ -35,8 +35,9 @@ func main() {
 	vision := os.Getenv("VISION_ENABLED") == "true"
 
 	internet := os.Getenv("INTERNET_ENABLED") == "true"
-	internetResearcher := os.Getenv("INTERNET_RESEARCHER") == "true"
 	internetElicitation := os.Getenv("INTERNET_ELICITATION") == "true"
+
+	researcher := os.Getenv("RESEARCHER_ENABLED") == "true"
 
 	renderer := os.Getenv("RENDERER_ENABLED") == "true"
 	rendererModel := os.Getenv("RENDERER_MODEL")
@@ -95,12 +96,9 @@ func main() {
 		}
 
 		type internetType struct {
-			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-
-			Researcher  bool `json:"researcher,omitempty" yaml:"researcher,omitempty"`
+			Enabled     bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 			Elicitation bool `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
 		}
-
 		type rendererType struct {
 			Enabled     bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 			Model       string `json:"model,omitempty" yaml:"model,omitempty"`
@@ -133,6 +131,10 @@ func main() {
 		}
 
 		type recorderType struct {
+			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+		}
+
+		type researcherType struct {
 			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 		}
 
@@ -171,6 +173,7 @@ func main() {
 
 			Workflow   *workflowType   `json:"workflow,omitempty" yaml:"workflow,omitempty"`
 			Recorder   *recorderType   `json:"recorder,omitempty" yaml:"recorder,omitempty"`
+			Researcher *researcherType `json:"researcher,omitempty" yaml:"researcher,omitempty"`
 			Translator *translatorType `json:"translator,omitempty" yaml:"translator,omitempty"`
 
 			Backgrounds map[string][]backgroundType `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
@@ -226,7 +229,6 @@ func main() {
 			config.Internet = &internetType{
 				Enabled: true,
 
-				Researcher:  internetResearcher,
 				Elicitation: internetElicitation,
 			}
 		}
@@ -282,6 +284,12 @@ func main() {
 			}
 		}
 
+		if researcher {
+			config.Researcher = &researcherType{
+				Enabled: true,
+			}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(config)
 	})
@@ -300,12 +308,13 @@ func main() {
 					"src":     "/icon_light.png",
 					"sizes":   "512x512",
 					"type":    "image/png",
-					"purpose": "any maskable",
+					"purpose": "any",
 				},
 				{
-					"src":   "/icon_light.svg",
-					"sizes": "any",
-					"type":  "image/svg+xml",
+					"src":     "/icon_app.png",
+					"sizes":   "512x512",
+					"type":    "image/png",
+					"purpose": "maskable",
 				},
 			},
 		}

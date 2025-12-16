@@ -7,7 +7,7 @@ import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X } from "lucide-r
 import { useState } from 'react';
 
 import { Role } from "../types/chat";
-import type { Message, ElicitationResult } from "../types/chat";
+import type { Message, ElicitationResult, Content } from "../types/chat";
 import { getConfig } from "../config";
 import { useChat } from "../hooks/useChat";
 
@@ -182,13 +182,21 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
       ? getToolCallPreview(toolResult.name || '', toolResult.arguments) 
       : null;
 
-    const renderContent = (content: string, name?: string) => {
-      try {
-        const parsed = JSON.parse(content);
-        const formatted = JSON.stringify(parsed, null, 2);
+    const renderContent = (content: string | Content[], name?: string) => {
+      if (typeof content === 'string') {
+        // Try to parse as JSON
+        try {
+          const parsed = JSON.parse(content);
+          const formatted = JSON.stringify(parsed, null, 2);
+          return <CodeRenderer code={formatted} language="json" name={name} />;
+        } catch {
+          // Not JSON, render as text
+          return <CodeRenderer code={content} language="text" name={name} />;
+        }
+      } else {
+        // Content[] - stringify and render as JSON
+        const formatted = JSON.stringify(content, null, 2);
         return <CodeRenderer code={formatted} language="json" name={name} />;
-      } catch {
-        return <CodeRenderer code={content} language="text" name={name} />;
       }
     };
 
