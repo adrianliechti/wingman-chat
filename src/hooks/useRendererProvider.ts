@@ -4,7 +4,6 @@ import { getConfig } from "../config";
 import type { Tool, ToolContext, ToolProvider } from "../types/chat";
 import { AttachmentType } from "../types/chat";
 import { readAsDataURL } from "../lib/utils";
-import type { Resource } from "../lib/resource";
 import rendererInstructionsText from '../prompts/renderer.txt?raw';
 
 export function useRendererProvider(): ToolProvider | null {
@@ -59,24 +58,13 @@ export function useRendererProvider(): ToolProvider | null {
               []
             );
 
-            // Convert the image to a data URL for storage in attachments
-            const fullDataUrl = await readAsDataURL(imageBlob);
-            const imageDataUrl = fullDataUrl.split(',')[1];
+            const dataURL = await readAsDataURL(imageBlob);
 
-            const imageName = `${Date.now()}.png`;
-
-            // Return ResourceResult format
-            const resourceResult: Resource = {
-              type: "resource",
-              resource: {
-                uri: `file:///image/` + imageName,
-                name: imageName,
-                mimeType: imageBlob.type,
-                blob: imageDataUrl
-              }
-            };
-
-            return JSON.stringify(resourceResult);
+            return [{
+              type: "image" as const,
+              data: dataURL,
+              mimeType: imageBlob.type
+            }];
           } catch (error) {
             return JSON.stringify({
               success: false,
@@ -146,24 +134,13 @@ export function useRendererProvider(): ToolProvider | null {
               images
             );
 
-            // Convert the image to a data URL for storage in attachments
-            const fullDataUrl = await readAsDataURL(imageBlob);
-            const imageDataUrl = fullDataUrl.split(',')[1];
+            const dataURL = await readAsDataURL(imageBlob);
 
-            const imageName = `${Date.now()}.png`;
-
-            // Return ResourceResult format
-            const resourceResult: Resource = {
-              type: "resource",
-              resource: {
-                uri: `file:///image/` + imageName,
-                name: imageName,
-                mimeType: imageBlob.type,
-                blob: imageDataUrl
-              }
-            };
-
-            return JSON.stringify(resourceResult);
+            return [{
+              type: "image" as const,
+              data: dataURL,
+              mimeType: imageBlob.type
+            }];
           } catch (error) {
             return JSON.stringify({
               success: false,

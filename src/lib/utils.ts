@@ -4,6 +4,8 @@ import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeStringify from 'rehype-stringify';
+import { AttachmentType } from '../types/chat';
+import type { Attachment, Content } from '../types/chat';
 
 export function lookupContentType(ext: string): string {
   const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
@@ -305,4 +307,38 @@ export function filenameFromUrl(src: string): string {
   }
   // For non-data URLs, don't attempt to infer; let the browser decide
   return '';
+}
+
+export function contentToAttachments(contents: string | Content[]): Attachment[] {
+  if (typeof contents === 'string') {
+    return [];
+  }
+
+  const attachments: Attachment[] = [];
+
+  for (const content of contents) {
+    switch (content.type) {
+      case 'image': {
+        const ext = mime.getExtension(content.mimeType) || 'png';
+        attachments.push({
+          type: AttachmentType.Image,
+          name: `image.${ext}`,
+          data: content.data,
+        });
+        break;
+      }
+      
+      case 'audio': {
+        const ext = mime.getExtension(content.mimeType) || 'mp3';
+        attachments.push({
+          type: AttachmentType.File,
+          name: `audio.${ext}`,
+          data: content.data,
+        });
+        break;
+      }
+    }
+  }
+
+  return attachments;
 }

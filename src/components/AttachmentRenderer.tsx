@@ -58,7 +58,7 @@ function ImageAttachment({ attachment, className }: {
   className?: string;
 }) {
   const mimeType = detectMimeType(attachment.data, attachment.name);
-  const imageDataUrl = createDataUrl(attachment.data, mimeType);
+  const dataUrl = createDataUrl(attachment.data, mimeType);
 
   const handleDownload = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -69,7 +69,7 @@ function ImageAttachment({ attachment, className }: {
   return (
     <div className="relative group/image inline-block">
       <img
-        src={imageDataUrl}
+        src={dataUrl}
         alt={attachment.name}
         className={className || "max-w-full h-auto rounded-md"}
         draggable={false}
