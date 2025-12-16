@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus as PlusIcon, Package, PackageOpen, Info, ArrowDown, BookOpenText, BookText } from "lucide-react";
+import { Plus as PlusIcon, Package, PackageOpen, Info, ArrowDown, BookOpenText, BookText, Rocket } from "lucide-react";
 import DOMPurify from "dompurify";
 import { getConfig } from "../config";
 import { useAutoScroll } from "../hooks/useAutoScroll";
@@ -14,8 +14,10 @@ import { ChatSidebar } from "../components/ChatSidebar";
 import { BackgroundImage } from "../components/BackgroundImage";
 import { useRepositories } from "../hooks/useRepositories";
 import { useArtifacts } from "../hooks/useArtifacts";
+import { useApp } from "../hooks/useApp";
 import { RepositoryDrawer } from "../components/RepositoryDrawer";
 import { ArtifactsDrawer } from "../components/ArtifactsDrawer";
+import { AppDrawer } from "../components/AppDrawer";
 
 export function ChatPage() {
   const {
@@ -29,6 +31,7 @@ export function ChatPage() {
   const { layoutMode } = useLayout();
   const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
   const { isAvailable: repositoryAvailable, toggleRepositoryDrawer, showRepositoryDrawer } = useRepositories();
+  const { showAppDrawer, toggleAppDrawer, hasAppContent } = useApp();
   
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
@@ -36,8 +39,10 @@ export function ChatPage() {
   // Repository drawer state
   const [isRepositoryDrawerAnimating, setIsRepositoryDrawerAnimating] = useState(false);
   const [isArtifactsDrawerAnimating, setIsArtifactsDrawerAnimating] = useState(false);
+  const [isAppDrawerAnimating, setIsAppDrawerAnimating] = useState(false);
   const [shouldRenderRepositoryDrawer, setShouldRenderRepositoryDrawer] = useState(false);
   const [shouldRenderArtifactsDrawer, setShouldRenderArtifactsDrawer] = useState(false);
+  const [shouldRenderAppDrawer, setShouldRenderAppDrawer] = useState(false);
   
   // Track if we're on mobile for drawer positioning
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
@@ -66,6 +71,16 @@ export function ChatPage() {
   useEffect(() => {
     setRightActions(
       <div className="flex items-center gap-2">
+        {hasAppContent && (
+          <button
+            type="button"
+            className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+            onClick={toggleAppDrawer}
+            title={showAppDrawer ? 'Close app' : 'Open app'}
+          >
+            <Rocket size={20} />
+          </button>
+        )}
         {repositoryAvailable && (
           <button
             type="button"
@@ -100,7 +115,7 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, createChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, repositoryAvailable, showRepositoryDrawer, toggleRepositoryDrawer]);
+  }, [setRightActions, createChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, repositoryAvailable, showRepositoryDrawer, toggleRepositoryDrawer, hasAppContent, showAppDrawer, toggleAppDrawer]);
 
   // Handle repository drawer animation
   useEffect(() => {
@@ -145,6 +160,28 @@ export function ChatPage() {
       return () => clearTimeout(timer);
     }
   }, [showArtifactsDrawer]);
+
+  // Handle app drawer animation
+  useEffect(() => {
+    if (showAppDrawer) {
+      // Small delay to ensure the element is in the DOM before animating
+      queueMicrotask(() => {
+        setShouldRenderAppDrawer(true);
+      });
+      setTimeout(() => {
+        setIsAppDrawerAnimating(true);
+      }, 10);
+    } else {
+      queueMicrotask(() => {
+        setIsAppDrawerAnimating(false);
+      });
+      // Remove from DOM after animation completes
+      const timer = setTimeout(() => {
+        setShouldRenderAppDrawer(false);
+      }, 300); // Match the transition duration
+      return () => clearTimeout(timer);
+    }
+  }, [showAppDrawer]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {
@@ -220,8 +257,9 @@ export function ChatPage() {
       
       {/* Main content area */}
       <div className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-300 ${
+        showAppDrawer ? 'md:mr-[calc(50vw+0.75rem)]' :
         showArtifactsDrawer ? 'md:mr-[calc(50vw+0.75rem)]' : 
-        showRepositoryDrawer ? 'md:mr-[calc(20rem+0.75rem)]' : ''
+        showRepositoryDrawer ? 'md:mr-83' : ''
       }`}>
         <main className="flex-1 flex flex-col overflow-hidden relative">
           {messages.length === 0 ? (
@@ -289,8 +327,9 @@ export function ChatPage() {
           {/* Jump to latest button - positioned relative to chat area */}
           {messages.length > 0 && !isAutoScrollEnabled && (
             <div className={`fixed flex justify-center pointer-events-none z-10 transition-all duration-300 ease-out ${
+              showAppDrawer ? 'left-0 right-[calc(50vw+0.75rem)]' :
               showArtifactsDrawer ? 'left-0 right-[calc(50vw+0.75rem)]' :
-              showRepositoryDrawer ? 'left-0 right-[calc(20rem+0.75rem)]' : 'left-0 right-0'
+              showRepositoryDrawer ? 'left-0 right-83' : 'left-0 right-0'
             }`} style={{ bottom: `${chatInputHeight + 16}px` }}>
               <button
                 type="button"
@@ -308,10 +347,11 @@ export function ChatPage() {
         <footer className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-500 ease-in-out ${
             messages.length === 0 ? 'md:bottom-1/3 md:transform md:translate-y-1/2' : ''
           } ${
-            showSidebar && chats.length > 0 ? 'md:left-[calc(14rem+0.75rem)]' : ''
+            showSidebar && chats.length > 0 ? 'md:left-59' : ''
           } ${
+            showAppDrawer ? 'right-0 md:right-[calc(50vw+0.75rem)]' :
             showArtifactsDrawer ? 'right-0 md:right-[calc(50vw+0.75rem)]' :
-            showRepositoryDrawer ? 'right-0 md:right-[calc(20rem+0.75rem)]' : 'right-0'
+            showRepositoryDrawer ? 'right-0 md:right-83' : 'right-0'
           }`}>
             <div className="relative pointer-events-auto md:max-w-4xl mx-auto">
               <ChatInput />
@@ -361,6 +401,27 @@ export function ChatPage() {
           <RepositoryDrawer />
         </div>
       )}
+
+      {/* App drawer - right side - for MCP tool UIs */}
+      {/* Always render so iframe is available, but hide when not active */}
+      <div 
+        className={`w-full transition-all duration-300 ease-out transform ${
+          shouldRenderAppDrawer && isAppDrawerAnimating 
+            ? 'translate-x-0 opacity-100' 
+            : 'translate-x-full opacity-0 pointer-events-none'
+        } ${ 
+          // On mobile: full width overlay from right edge, on desktop: positioned with right edge and 50% width
+          'fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-[50vw] max-w-none z-30'
+        }`}
+        style={{ 
+          top: isMobile ? '48px' : undefined,
+          bottom: isMobile ? `${chatInputHeight - 16}px` : undefined
+        }}
+      >
+        <div className="h-full md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm overflow-hidden">
+          <AppDrawer />
+        </div>
+      </div>
     </div>
   );
 }

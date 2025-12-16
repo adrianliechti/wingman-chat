@@ -22,6 +22,7 @@ import { SettingsButton } from "./components/SettingsButton";
 import { SettingsModal } from "./components/SettingsModal";
 import { RepositoryProvider } from "./contexts/RepositoryProvider";
 import { ArtifactsProvider } from "./contexts/ArtifactsProvider";
+import { AppProvider } from "./contexts/AppProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
 import { ToolsProvider } from "./contexts/ToolsProvider";
@@ -442,6 +443,7 @@ const providers = [
   SidebarProvider,
   NavigationProvider,
   ArtifactsProvider,
+  AppProvider,
   RepositoryProvider,
   ScreenCaptureProvider,
   ToolsProvider,
