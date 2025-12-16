@@ -6,7 +6,6 @@ import { PdfRenderer } from "./PdfRenderer";
 import { Markdown } from "./Markdown";
 import { MermaidRenderer } from "./MermaidRenderer";
 import { CsvRenderer } from "./CsvRenderer";
-import { UIResourceRenderer } from '@mcp-ui/client';
 import { HtmlRenderer } from "./HtmlRenderer";
 import mime from 'mime';
 
@@ -140,49 +139,6 @@ function FileAttachment({ attachment, className }: { attachment: Attachment; cla
   )
 }
 
-function UIAttachment({ attachment }: { attachment: Attachment }) {
-  let mimeType: string;
-
-  let text: string | undefined;
-  let blob: string | undefined;
-
-  if (attachment.type === AttachmentType.File) {
-    const match = attachment.data.match(/^data:([^;]+)/);
-    mimeType = match ? match[1] : detectMimeType(attachment.data, attachment.name);
-    blob = attachment.data.split(',')[1];
-  } else {
-    mimeType = 'text/html';
-    text = attachment.data;
-  }
-
-  const resource = {
-    uri: attachment.name,
-    mimeType: mimeType,
-    ...(text && { text }),
-    ...(blob && { blob }),
-    _meta: attachment.meta
-  };
-
-
-  return (
-    <UIResourceRenderer
-      resource={resource}
-      onUIAction={async (result) => {
-        switch (result.type) {
-          case 'link':
-            window.open(result.payload.url, '_blank');
-            break;
-        }
-
-        return { status: 'handled' };
-      }}
-      htmlProps={{
-        autoResizeIframe: true
-      }}
-    />
-  );
-}
-
 function HtmlAttachment({ attachment }: { attachment: Attachment }) {
   let html = attachment.data;
 
@@ -265,13 +221,6 @@ export function AttachmentRenderer({ attachment, className }: {
   className?: string;
 }) {
   const mimeType = detectMimeType(attachment.data, attachment.name);
-
-  if (attachment.name.startsWith('ui://') && 
-      (mimeType === 'text/html' || 
-       mimeType === 'text/uri-list' || 
-       mimeType === 'application/vnd.mcp-ui.remote-dom')) {
-    return <UIAttachment attachment={attachment} />;
-  }
 
   if (mimeType.startsWith('image/')) {
     return <ImageAttachment attachment={attachment} className={className} />;
