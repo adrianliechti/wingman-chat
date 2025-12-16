@@ -58,11 +58,12 @@ export function useRendererProvider(): ToolProvider | null {
               []
             );
 
-            const dataURL = await readAsDataURL(imageBlob);
+            const dataUrl = await readAsDataURL(imageBlob);
+            const data = dataUrl.split(',')[1];
 
             return [{
               type: "image" as const,
-              data: dataURL,
+              data: data,
               mimeType: imageBlob.type
             }];
           } catch (error) {
@@ -134,11 +135,12 @@ export function useRendererProvider(): ToolProvider | null {
               images
             );
 
-            const dataURL = await readAsDataURL(imageBlob);
+            const dataUrl = await readAsDataURL(imageBlob);
+            const data = dataUrl.split(',')[1];
 
             return [{
               type: "image" as const,
-              data: dataURL,
+              data: data,
               mimeType: imageBlob.type
             }];
           } catch (error) {
