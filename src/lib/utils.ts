@@ -286,7 +286,9 @@ export function downloadFromUrl(url: string, filename: string = ''): void {
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {
-  return downloadFromUrl(URL.createObjectURL(blob), filename);
+  const url = URL.createObjectURL(blob);
+  downloadFromUrl(url, filename);
+  URL.revokeObjectURL(url);
 }
 
 export function filenameFromUrl(src: string): string {
