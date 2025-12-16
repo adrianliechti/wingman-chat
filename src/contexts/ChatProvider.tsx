@@ -9,9 +9,9 @@ import { useChatContext } from "../hooks/useChatContext";
 import { useArtifacts } from "../hooks/useArtifacts";
 import { useToolsContext } from "../hooks/useToolsContext";
 import { getConfig } from "../config";
-import { parseResource } from "../lib/resource";
 import { ChatContext } from './ChatContext';
 import type { ChatContextType } from './ChatContext';
+import { contentToAttachments } from "../lib/utils";
 
 interface ChatProviderProps {
   children: React.ReactNode;
@@ -33,7 +33,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const model = chat?.model ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat', model);
   const { providers, getProviderState, setProviderEnabled } = useToolsContext();
-  
+
   // Calculate tool providers connection state
   const isInitializing = useMemo(() => {
     const hasProviders = providers.length > 0;
@@ -46,7 +46,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
     return false; // All providers are ready
   }, [providers, getProviderState]);
-  
+
   const messages = useMemo(() => {
     const baseMessages = chat?.messages ?? [];
 
@@ -68,13 +68,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Create focused methods for filesystem access
     const getFileSystem = () => chat.artifacts || {};
     const setFileSystem = (updater: (current: FileSystem) => FileSystem) => {
-      updateChat(chat.id, (current) => ({ 
-        artifacts: updater(current.artifacts || {}) 
+      updateChat(chat.id, (current) => ({
+        artifacts: updater(current.artifacts || {})
       }));
     };
 
     setFileSystemForChat(getFileSystem, setFileSystem);
-    
+
     // Open artifacts drawer if the chat has files
     if (chat.artifacts && Object.keys(chat.artifacts).length > 0) {
       setShowArtifactsDrawer(true);
@@ -137,10 +137,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const addMessage = useCallback(
     (message: Message) => {
       const { id } = getOrCreateChat();
-      
+
       // Use the updater pattern to get fresh messages from the chat
-      updateChat(id, (currentChat) => ({ 
-        messages: [...(currentChat.messages || []), message] 
+      updateChat(id, (currentChat) => ({
+        messages: [...(currentChat.messages || []), message]
       }));
     },
     [getOrCreateChat, updateChat]
@@ -190,7 +190,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               setStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: snapshot } });
             }
           );
-          
+
           // Add the assistant message to conversation
           conversation = [...conversation, {
             role: Role.Assistant,
@@ -206,7 +206,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
           // Check if there are tool calls to handle
           const toolCalls = assistantMessage.toolCalls;
-          
+
           if (!toolCalls || toolCalls.length === 0) {
             // No tool calls, we're done
             break;
@@ -239,34 +239,24 @@ export function ChatProvider({ children }: ChatProviderProps) {
             try {
               const args = JSON.parse(toolCall.arguments || "{}");
               const toolContext = createToolContext(toolCall);
-              let content = await tool.function(args, toolContext);
-              
+
+              const result = await tool.function(args, toolContext);
+
               // Clear pending elicitation after tool completes
               setPendingElicitation(null);
 
-              const data = content;
-              const attachments = parseResource(data);
+              const attachments = contentToAttachments(result);
 
-              if (attachments) {
-                content = JSON.stringify({
-                  successful: true
-                });
-              }
-
-              if (!content) {
-                content = 'No result returned';
-              }
-              
               // Add tool result to conversation
               conversation = [...conversation, {
                 role: Role.Tool,
-                content: content,
+                content: '',
                 attachments,
                 toolResult: {
                   id: toolCall.id,
                   name: toolCall.name,
                   arguments: toolCall.arguments,
-                  data: data,
+                  data: result,
                 },
               }];
             }
@@ -323,7 +313,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         let errorMessage = 'An unexpected error occurred while generating the response.';
 
         const errorString = error?.toString() || '';
-        
+
         if (errorString.includes('500')) {
           errorCode = 'SERVER_ERROR';
           errorMessage = 'The server encountered an internal error. Please try again in a moment.';
@@ -344,8 +334,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
           errorMessage = 'Network connection failed. Please check your internet connection and try again.';
         }
 
-        conversation = [...conversation, { 
-          role: Role.Assistant, 
+        conversation = [...conversation, {
+          role: Role.Assistant,
           content: '',
           error: {
             code: errorCode,

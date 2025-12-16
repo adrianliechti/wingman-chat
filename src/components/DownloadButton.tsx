@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Download as DownloadIcon, Check as CheckIcon } from "lucide-react";
+import { downloadBlob } from '../lib/utils';
 
 type DownloadButtonProps = {
   url: string;
@@ -14,14 +15,7 @@ export const DownloadButton = ({ url, filename, className }: DownloadButtonProps
         try {
             const response = await fetch(url);
             const blob = await response.blob();
-            const downloadUrl = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = downloadUrl;
-            link.download = filename || 'download';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(downloadUrl);
+            downloadBlob(blob, filename || 'download');
             
             setDownloaded(true);
             setTimeout(() => setDownloaded(false), 2000);

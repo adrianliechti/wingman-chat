@@ -128,9 +128,10 @@ export class Client {
         case Role.Tool: {
           // Handle tool messages if they exist in input
           if (m.toolResult) {
+            const content = typeof m.toolResult.data === 'string' ? m.toolResult.data : JSON.stringify(m.toolResult.data)
             messages.push({
               role: "tool",
-              content: m.content,
+              content: content,
               tool_call_id: m.toolResult.id,
             });
           }

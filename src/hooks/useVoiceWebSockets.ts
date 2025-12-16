@@ -240,7 +240,7 @@ export function useVoiceWebSockets(
                 try {
                   const args = JSON.parse(msg.item.arguments);
                   const result = await tool.function(args);
-                  output = result;
+                  output = typeof result === 'string' ? result : JSON.stringify(result);
                   console.log('Function result:', result);
                 } catch (error) {
                   console.error('Error executing tool:', error);

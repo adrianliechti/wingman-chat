@@ -29,19 +29,19 @@ export type MCP = {
 };
 
 export enum ProviderState {
-  Disconnected = 'disconnected',
-  Initializing = 'initializing',
-  Connected = 'connected',
-  Failed = 'failed',
+    Disconnected = 'disconnected',
+    Initializing = 'initializing',
+    Connected = 'connected',
+    Failed = 'failed',
 }
 
 export interface ToolProvider {
-  readonly id: string;
-  readonly name: string;
-  readonly description?: string;
-  readonly icon?: ToolIcon;
-  readonly instructions?: string;
-  readonly tools: Tool[];
+    readonly id: string;
+    readonly name: string;
+    readonly description?: string;
+    readonly icon?: ToolIcon;
+    readonly instructions?: string;
+    readonly tools: Tool[];
 }
 
 export type Tool = {
@@ -50,7 +50,7 @@ export type Tool = {
 
     parameters: Record<string, unknown>;
 
-    function: (args: Record<string, unknown>, context?: ToolContext) => Promise<string>;
+    function: (args: Record<string, unknown>, context?: ToolContext) => Promise<string | Content[]>;
 }
 
 export type Elicitation = {
@@ -86,8 +86,30 @@ export type ToolResult = {
     name: string; // from tool call
     arguments: string; // from tool call
 
-    data: string;
+    data: string | Content[];
 };
+
+export type Content = TextContent | ImageContent | AudioContent;
+
+export type TextContent = {
+    type: "text";
+    
+    text: string;
+}
+
+export type ImageContent = {
+    type: "image";
+
+    data: string;
+    mimeType: string;
+}
+
+export type AudioContent = {
+    type: "audio";
+
+    data: string;
+    mimeType: string;
+}
 
 export type Message = {
     role: 'user' | 'assistant' | 'tool';

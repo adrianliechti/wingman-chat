@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ContentBlock } from "@modelcontextprotocol/sdk/types.js";
-import type { Tool, ToolProvider } from '../types/chat';
+import type { Content, Tool, ToolProvider } from '../types/chat';
 import { Rocket } from "lucide-react";
 
 export class MCPClient implements ToolProvider {
@@ -130,11 +130,7 @@ export class MCPClient implements ToolProvider {
               arguments: args
             });
             
-            if (result && result.content) {
-              return processContent(result.content as ContentBlock[]);
-            }
-            
-            return "no result";
+            return processContent(result?.content as ContentBlock[])
           } catch (error) {
             console.error(`Error calling MCP tool ${tool.name}:`, error);
             throw error;
@@ -179,21 +175,43 @@ export class MCPClient implements ToolProvider {
   }
 }
 
-function processContent(content: ContentBlock[]): string {
-  if (!content || content.length === 0) {
+function processContent(input: ContentBlock[]): string | Content[] {
+  if (!input || input.length === 0) {
     return "no content";
   }
 
-  if (content.every(item => item.type === "text")) {
-    return content
-      .map(item => item.text)
-      .filter(text => text.trim() !== "")
-      .join("\n\n");
+  if (input.length === 1 && input[0].type === "text") {
+    return input[0].text || "";
   }
 
-  if (content.length === 1) {
-    return JSON.stringify(content[0]);
+  const result: Content[] = input
+    .map(block => {
+      switch (block.type) {
+        case "text":
+          return {
+            type: "text" as const,
+            text: block.text || ""
+          };
+        
+        case "image":
+          return {
+            type: "image" as const,
+            data: block.data || "",
+            mimeType: block.mimeType || "image/png"
+          };
+        
+        default:
+          return null;
+      }
+    })
+    .filter((c): c is NonNullable<typeof c> => c !== null);
+
+  if (result.length === 0) {
+    if (input.length === 1) {
+      return JSON.stringify(input[0]);
+    }
+    return JSON.stringify(input);
   }
 
-  return JSON.stringify(content);
+  return result;
 }
