@@ -322,20 +322,22 @@ export function contentToAttachments(contents: string | Content[]): Attachment[]
     switch (content.type) {
       case 'image': {
         const ext = mime.getExtension(content.mimeType) || 'png';
+        const mimeType = content.mimeType || 'image/png';
         attachments.push({
           type: AttachmentType.Image,
           name: `image.${ext}`,
-          data: content.data,
+          data: `data:${mimeType};base64,${content.data}`,
         });
         break;
       }
       
       case 'audio': {
         const ext = mime.getExtension(content.mimeType) || 'mp3';
+        const mimeType = content.mimeType || 'audio/mpeg';
         attachments.push({
           type: AttachmentType.File,
           name: `audio.${ext}`,
-          data: content.data,
+          data: `data:${mimeType};base64,${content.data}`,
         });
         break;
       }

@@ -71,6 +71,7 @@ export type PendingElicitation = {
 export interface ToolContext {
     attachments?(): Attachment[];
     elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
+    render?(): Promise<HTMLIFrameElement>;
 }
 
 export type ToolCall = {

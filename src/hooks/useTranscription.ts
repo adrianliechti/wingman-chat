@@ -1,5 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { getConfig } from '../config';
+import { AudioRecorder } from '../lib/AudioRecorder';
+import { pcm16ToWav, mergePcm16Chunks } from '../lib/audio';
 
 export interface UseTranscriptionReturn {
   canTranscribe: boolean;
@@ -10,22 +12,15 @@ export interface UseTranscriptionReturn {
 
 export function useTranscription(): UseTranscriptionReturn {
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const audioRecorderRef = useRef<AudioRecorder | null>(null);
+  const pcmChunksRef = useRef<Int16Array[]>([]);
 
   // Check if transcription is available
   const config = getConfig();
   const canTranscribe = config.stt && 
     typeof navigator !== 'undefined' && 
     navigator.mediaDevices && 
-    typeof navigator.mediaDevices.getUserMedia === 'function' &&
-    typeof MediaRecorder !== 'undefined' &&
-    MediaRecorder.isTypeSupported('audio/webm');
-
-  // Use WebM audio format
-  const getAudioFormat = (): { mimeType: string; audioBitsPerSecond: number } => {
-    return { mimeType: 'audio/webm', audioBitsPerSecond: 64000 };
-  };
+    typeof navigator.mediaDevices.getUserMedia === 'function';
 
   const startTranscription = useCallback(async () => {
     if (!canTranscribe) {
@@ -33,26 +28,17 @@ export function useTranscription(): UseTranscriptionReturn {
     }
     
     try {
-      // Request microphone permission
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
       // Clear previous audio chunks
-      audioChunksRef.current = [];
+      pcmChunksRef.current = [];
       
-      // Create MediaRecorder with WebM audio format
-      const audioOptions = getAudioFormat();
-      const mediaRecorder = new MediaRecorder(stream, audioOptions);
-      mediaRecorderRef.current = mediaRecorder;
+      // Create and start AudioRecorder
+      const recorder = new AudioRecorder({ sampleRate: 24000 });
+      await recorder.begin();
+      await recorder.record((chunk) => {
+        pcmChunksRef.current.push(new Int16Array(chunk.mono));
+      });
       
-      // Collect audio data
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-      
-      // Start recording
-      mediaRecorder.start();
+      audioRecorderRef.current = recorder;
       setIsTranscribing(true);
       
     } catch (err) {
@@ -61,45 +47,38 @@ export function useTranscription(): UseTranscriptionReturn {
   }, [canTranscribe]);
 
   const stopTranscription = useCallback(async (): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const mediaRecorder = mediaRecorderRef.current;
+    const recorder = audioRecorderRef.current;
+    
+    if (!recorder) {
+      throw new Error('No active recording to stop');
+    }
+    
+    try {
+      // Stop recording
+      await recorder.end();
+      audioRecorderRef.current = null;
+      setIsTranscribing(false);
       
-      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-        reject(new Error('No active recording to stop'));
-        return;
+      // Convert PCM chunks to WAV
+      const chunks = pcmChunksRef.current;
+      if (chunks.length === 0) {
+        throw new Error('No audio recorded');
       }
       
-      mediaRecorder.onstop = async () => {
-        try {
-          setIsTranscribing(false);
-          
-          // Stop all tracks to release microphone
-          const stream = mediaRecorder.stream;
-          stream.getTracks().forEach(track => track.stop());
-          
-          // Create audio blob from recorded chunks with matching MIME type
-          const mimeType = mediaRecorder.mimeType || 'audio/webm';
-          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-          
-          if (audioBlob.size === 0) {
-            reject(new Error('No audio recorded'));
-            return;
-          }
-          
-          // Send to transcription API
-          const config = getConfig();
-          const transcribedText = await config.client.transcribe("", audioBlob);
-          
-          resolve(transcribedText);
-          
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : 'Failed to transcribe audio';
-          reject(new Error(errorMessage));
-        }
-      };
+      const merged = mergePcm16Chunks(chunks);
+      const audioBlob = pcm16ToWav(merged, 24000);
+      pcmChunksRef.current = [];
       
-      mediaRecorder.stop();
-    });
+      // Send to transcription API
+      const config = getConfig();
+      const transcribedText = await config.client.transcribe("", audioBlob);
+      
+      return transcribedText;
+      
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to transcribe audio';
+      throw new Error(errorMessage);
+    }
   }, []);
 
   return {
