@@ -2,12 +2,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { getConfig } from "../config";
 import { CopyButton } from "../components/CopyButton";
 import { Loader2, XIcon } from "lucide-react";
-
-// Segment type for multi-segment audio
-interface AudioSegment {
-  blob: Blob;
-  duration: number;
-}
+import { AudioRecorder, type AudioChunk } from "../lib/AudioRecorder";
+import { AudioPlayer } from "../lib/AudioPlayer";
+import { pcm16ToWav, mergePcm16Chunks, pcm16Duration, audioBufferToWav } from "../lib/audio";
 
 export function RecorderPage() {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -19,19 +16,16 @@ export function RecorderPage() {
   const seekDirectionRef = useRef<"forward" | "backward" | null>(null);
   
   // Audio refs
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordedChunksRef = useRef<Blob[]>([]);
-  const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const audioRecorderRef = useRef<AudioRecorder | null>(null);
+  const pcmChunksRef = useRef<Int16Array[]>([]);
+  const audioPlayerRef = useRef<AudioPlayer | null>(null);
   const recordingStartTimeRef = useRef<number>(0);
   const isStoppingRecordingRef = useRef(false);
   
-  // Segment-based audio storage
-  const segmentsRef = useRef<AudioSegment[]>([]);
+  // Recording state
   const recordingStartPositionRef = useRef<number>(0);
   const isPlayingRef = useRef(false); // Ref to check playing state in async callbacks
   const lastPositionRef = useRef<number>(0); // Track last position for smooth disc rotation
-  const playbackBlobRef = useRef<{ blob: Blob; url: string } | null>(null); // Merged blob for playback
   
   // Keep duration in a ref to avoid stale closures in callbacks
   const durationRef = useRef(0);
@@ -84,8 +78,8 @@ export function RecorderPage() {
     lastAngleRef.current = getAngleFromCenter(clientX, clientY);
     
     // Pause playback while scrubbing
-    if (isPlaying && audioElementRef.current) {
-      audioElementRef.current.pause();
+    if (isPlaying && audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
     }
   }, [getAngleFromCenter, isPlaying]);
 
@@ -117,9 +111,9 @@ export function RecorderPage() {
   // Handle disc mouse/touch end
   const handleDiscEnd = useCallback(() => {
     // If we were playing before scrubbing, resume playback at new position
-    if (isPlaying && audioElementRef.current && segmentsRef.current.length > 0) {
-      audioElementRef.current.currentTime = position;
-      audioElementRef.current.play();
+    if (isPlaying && audioPlayerRef.current) {
+      audioPlayerRef.current.seek(position);
+      audioPlayerRef.current.play();
     }
     setIsDraggingDisc(false);
     lastAngleRef.current = null;
@@ -160,20 +154,11 @@ export function RecorderPage() {
     };
   }, [isDraggingDisc, handleDiscMove, handleDiscEnd]);
 
-  // Initialize audio element for playback (only once)
+  // Initialize AudioPlayer for playback (only once)
   useEffect(() => {
-    const audio = new Audio();
-    audio.addEventListener('ended', () => {
-      isPlayingRef.current = false;
-      setIsPlaying(false);
-      // Set position to end
-      setPosition(durationRef.current);
-      lastPositionRef.current = durationRef.current;
-    });
-    audio.addEventListener('timeupdate', () => {
-      if (audioElementRef.current && isPlayingRef.current) {
-        const currentTime = audioElementRef.current.currentTime;
-        if (Number.isFinite(currentTime)) {
+    const player = new AudioPlayer({
+      onTimeUpdate: (currentTime) => {
+        if (isPlayingRef.current) {
           // Update disc rotation based on position change
           const delta = currentTime - lastPositionRef.current;
           if (Math.abs(delta) < 1) { // Only smooth updates, not jumps
@@ -182,13 +167,19 @@ export function RecorderPage() {
           lastPositionRef.current = currentTime;
           setPosition(currentTime);
         }
-      }
+      },
+      onEnded: () => {
+        isPlayingRef.current = false;
+        setIsPlaying(false);
+        // Set position to end
+        setPosition(durationRef.current);
+        lastPositionRef.current = durationRef.current;
+      },
     });
-    audioElementRef.current = audio;
+    audioPlayerRef.current = player;
     
     return () => {
-      audio.pause();
-      audio.src = '';
+      player.dispose();
     };
   }, []);
 
@@ -225,118 +216,7 @@ export function RecorderPage() {
     };
   }, [isRecording]);
 
-  // Calculate total duration from all segments
-  const calculateTotalDuration = useCallback(() => {
-    let total = 0;
-    for (const segment of segmentsRef.current) {
-      total += segment.duration;
-    }
-    return total;
-  }, []);
 
-  // Build merged audio blob from all segments for playback
-  const buildPlaybackBlob = useCallback(async (): Promise<{ blob: Blob; url: string } | null> => {
-    if (segmentsRef.current.length === 0) return null;
-    
-    // Revoke old URL if exists
-    if (playbackBlobRef.current?.url) {
-      URL.revokeObjectURL(playbackBlobRef.current.url);
-    }
-    
-    // If only one segment, use it directly
-    if (segmentsRef.current.length === 1) {
-      const url = URL.createObjectURL(segmentsRef.current[0].blob);
-      playbackBlobRef.current = { blob: segmentsRef.current[0].blob, url };
-      return playbackBlobRef.current;
-    }
-    
-    // For multiple segments, decode and merge into WAV
-    const audioContext = new AudioContext();
-    const audioBuffers: AudioBuffer[] = [];
-    
-    for (const segment of segmentsRef.current) {
-      const arrayBuffer = await segment.blob.arrayBuffer();
-      const decoded = await audioContext.decodeAudioData(arrayBuffer);
-      audioBuffers.push(decoded);
-    }
-    
-    // Calculate total length
-    let totalLength = 0;
-    const sampleRate = audioBuffers[0].sampleRate;
-    for (const buf of audioBuffers) {
-      totalLength += buf.length;
-    }
-    
-    // Create merged buffer
-    const mergedBuffer = audioContext.createBuffer(1, totalLength, sampleRate);
-    const mergedData = mergedBuffer.getChannelData(0);
-    let offset = 0;
-    
-    for (const buf of audioBuffers) {
-      const sourceData = buf.getChannelData(0);
-      for (let i = 0; i < buf.length; i++) {
-        mergedData[offset + i] = sourceData[i];
-      }
-      offset += buf.length;
-    }
-    
-    // Encode to WAV
-    const wavBlob = audioBufferToWav(mergedBuffer);
-    const url = URL.createObjectURL(wavBlob);
-    
-    await audioContext.close();
-    
-    playbackBlobRef.current = { blob: wavBlob, url };
-    return playbackBlobRef.current;
-  }, []);
-
-  // Helper to convert AudioBuffer to WAV blob
-  const audioBufferToWav = (buffer: AudioBuffer): Blob => {
-    const numChannels = 1;
-    const sampleRate = buffer.sampleRate;
-    const format = 1; // PCM
-    const bitDepth = 16;
-    
-    const data = buffer.getChannelData(0);
-    const dataLength = data.length * (bitDepth / 8);
-    const headerLength = 44;
-    const totalLength = headerLength + dataLength;
-    
-    const arrayBuffer = new ArrayBuffer(totalLength);
-    const view = new DataView(arrayBuffer);
-    
-    // WAV header
-    const writeString = (viewOffset: number, str: string) => {
-      for (let i = 0; i < str.length; i++) {
-        view.setUint8(viewOffset + i, str.charCodeAt(i));
-      }
-    };
-    
-    writeString(0, 'RIFF');
-    view.setUint32(4, totalLength - 8, true);
-    writeString(8, 'WAVE');
-    writeString(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, format, true);
-    view.setUint16(22, numChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * numChannels * (bitDepth / 8), true);
-    view.setUint16(32, numChannels * (bitDepth / 8), true);
-    view.setUint16(34, bitDepth, true);
-    writeString(36, 'data');
-    view.setUint32(40, dataLength, true);
-    
-    // Write audio data
-    let writeOffset = 44;
-    for (let i = 0; i < data.length; i++) {
-      const sample = Math.max(-1, Math.min(1, data[i]));
-      const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-      view.setInt16(writeOffset, intSample, true);
-      writeOffset += 2;
-    }
-    
-    return new Blob([arrayBuffer], { type: 'audio/wav' });
-  };
 
   // Seeking effect for fast forward/rewind
   useEffect(() => {
@@ -366,40 +246,19 @@ export function RecorderPage() {
 
   const handlePlayClick = async () => {
     if (isRecording) return;
-    if (segmentsRef.current.length === 0 || !audioElementRef.current) {
-      return;
-    }
+    const player = audioPlayerRef.current;
+    if (!player || player.getTotalDuration() === 0) return;
     
     if (isPlaying) {
-      audioElementRef.current.pause();
+      player.pause();
       isPlayingRef.current = false;
       setIsPlaying(false);
     } else {
-      // Build merged playback blob if needed
-      const playbackData = await buildPlaybackBlob();
-      if (!playbackData) return;
-      
-      const audio = audioElementRef.current;
-      
-      // Set source if different
-      if (audio.src !== playbackData.url) {
-        audio.src = playbackData.url;
-        // Wait for audio to be ready
-        await new Promise<void>((resolve) => {
-          const onCanPlay = () => {
-            audio.removeEventListener('canplay', onCanPlay);
-            resolve();
-          };
-          audio.addEventListener('canplay', onCanPlay);
-          if (audio.readyState >= 3) {
-            audio.removeEventListener('canplay', onCanPlay);
-            resolve();
-          }
-        });
-      }
+      // Build merged playback if needed
+      await player.buildPlayback();
       
       // Start from beginning if at or near end
-      const totalDuration = calculateTotalDuration();
+      const totalDuration = player.getTotalDuration();
       let startPosition = position;
       
       if (totalDuration > 0 && position >= totalDuration - 0.1) {
@@ -408,14 +267,14 @@ export function RecorderPage() {
         setPosition(0);
       }
       
-      audio.currentTime = startPosition;
+      player.seek(startPosition);
       lastPositionRef.current = startPosition;
       
       isPlayingRef.current = true;
       setIsPlaying(true);
       
       try {
-        await audio.play();
+        await player.play();
       } catch (e) {
         console.error('Play failed:', e);
         isPlayingRef.current = false;
@@ -426,60 +285,34 @@ export function RecorderPage() {
 
   const handleRecordClick = async () => {
     if (isPlaying) return;
+    const player = audioPlayerRef.current;
     
     if (isRecording) {
       // Stop recording
       isStoppingRecordingRef.current = true;
       
-      // Stop the MediaRecorder - this triggers the final 'dataavailable' event
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
+      // Stop the AudioRecorder
+      if (audioRecorderRef.current) {
+        await audioRecorderRef.current.end();
+        audioRecorderRef.current = null;
       }
       
-      // Wait a bit for the final data to be collected
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Stop the media stream
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-        mediaStreamRef.current = null;
-      }
-      
-      // Process recorded chunks into a new segment
-      const chunks = recordedChunksRef.current;
-      if (chunks.length > 0) {
-        const recordedBlob = new Blob(chunks, { type: chunks[0].type });
+      // Process recorded PCM chunks into a new segment
+      const chunks = pcmChunksRef.current;
+      if (chunks.length > 0 && player) {
+        const sampleRate = 24000;
+        const merged = mergePcm16Chunks(chunks);
+        const recordedBlob = pcm16ToWav(merged, sampleRate);
+        const recordedDuration = pcm16Duration(merged.length, sampleRate);
         
-        // Get duration of the recorded blob
-        const tempAudio = new Audio();
-        const tempUrl = URL.createObjectURL(recordedBlob);
-        tempAudio.src = tempUrl;
-        
-        await new Promise<void>((resolve) => {
-          tempAudio.onloadedmetadata = () => resolve();
-          tempAudio.onerror = () => resolve();
-        });
-        
-        const recordedDuration = tempAudio.duration || 0;
-        URL.revokeObjectURL(tempUrl);
-        
-        // Always append new recording at the end
-        segmentsRef.current.push({
-          blob: recordedBlob,
-          duration: recordedDuration,
-        });
+        // Add segment to AudioPlayer
+        player.addSegment({ blob: recordedBlob, duration: recordedDuration });
         
         // Clear recorded chunks
-        recordedChunksRef.current = [];
-        
-        // Invalidate playback blob (will be rebuilt on next play)
-        if (playbackBlobRef.current?.url) {
-          URL.revokeObjectURL(playbackBlobRef.current.url);
-          playbackBlobRef.current = null;
-        }
+        pcmChunksRef.current = [];
         
         // Update duration
-        setDuration(calculateTotalDuration());
+        setDuration(player.getTotalDuration());
       }
       
       // Set isRecording false to stop the timer
@@ -487,50 +320,24 @@ export function RecorderPage() {
       isStoppingRecordingRef.current = false;
     } else {
       // Start new recording - always appends at the end
-      recordedChunksRef.current = [];
+      pcmChunksRef.current = [];
       
       // Set recording start position to end of all existing segments
-      const existingDuration = calculateTotalDuration();
+      const existingDuration = player?.getTotalDuration() ?? 0;
       recordingStartPositionRef.current = existingDuration;
       setPosition(existingDuration);
       
       try {
-        // Get microphone access
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false
-          } 
+        // Create and initialize AudioRecorder
+        const recorder = new AudioRecorder({ sampleRate: 24000 });
+        await recorder.begin();
+        
+        // Start recording with chunk callback
+        await recorder.record((chunk: AudioChunk) => {
+          pcmChunksRef.current.push(new Int16Array(chunk.mono));
         });
-        mediaStreamRef.current = stream;
         
-        // Use MediaRecorder for reliable audio capture
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
-          ? 'audio/webm;codecs=opus'
-          : MediaRecorder.isTypeSupported('audio/webm')
-            ? 'audio/webm'
-            : 'audio/mp4';
-        
-        const mediaRecorder = new MediaRecorder(stream, { 
-          mimeType,
-          audioBitsPerSecond: 128000
-        });
-        mediaRecorderRef.current = mediaRecorder;
-        
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
-            recordedChunksRef.current.push(e.data);
-          }
-        };
-        
-        mediaRecorder.onerror = (e) => {
-          console.error('MediaRecorder error:', e);
-        };
-        
-        // Start recording
-        mediaRecorder.start(100);
-        
+        audioRecorderRef.current = recorder;
         recordingStartTimeRef.current = Date.now();
         setIsRecording(true);
       } catch (error) {
@@ -545,8 +352,9 @@ export function RecorderPage() {
       await handleRecordClick();
       return;
     }
-    if (isPlaying && audioElementRef.current) {
-      audioElementRef.current.pause();
+    if (isPlaying && audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      isPlayingRef.current = false;
       setIsPlaying(false);
       return;
     }
@@ -574,21 +382,22 @@ export function RecorderPage() {
 
   // Handle dropped audio file - adds as segment at current position
   const handleAudioFile = useCallback(async (file: File) => {
+    const player = audioPlayerRef.current;
+    if (!player) return;
+    
     // Stop any current playback or recording
     if (isRecording) {
-      // Stop the MediaRecorder
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
+      // Stop the AudioRecorder
+      if (audioRecorderRef.current) {
+        await audioRecorderRef.current.end();
+        audioRecorderRef.current = null;
       }
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-        mediaStreamRef.current = null;
-      }
-      recordedChunksRef.current = [];
+      pcmChunksRef.current = [];
       setIsRecording(false);
     }
-    if (isPlaying && audioElementRef.current) {
-      audioElementRef.current.pause();
+    if (isPlaying) {
+      player.pause();
+      isPlayingRef.current = false;
       setIsPlaying(false);
     }
 
@@ -606,26 +415,17 @@ export function RecorderPage() {
       const fileDuration = audio.duration;
       URL.revokeObjectURL(tempUrl);
       
-      // Always append file at the end
-      segmentsRef.current.push({
-        blob: file,
-        duration: fileDuration,
-      });
-      
-      // Invalidate playback blob (will be rebuilt on next play)
-      if (playbackBlobRef.current?.url) {
-        URL.revokeObjectURL(playbackBlobRef.current.url);
-        playbackBlobRef.current = null;
-      }
+      // Add segment to AudioPlayer
+      player.addSegment({ blob: file, duration: fileDuration });
       
       // Update duration and move position to end
-      const totalDuration = calculateTotalDuration();
+      const totalDuration = player.getTotalDuration();
       setDuration(totalDuration);
       setPosition(totalDuration);
     } catch (error) {
       console.error('Error processing audio file:', error);
     }
-  }, [isRecording, isPlaying, calculateTotalDuration]);
+  }, [isRecording, isPlaying]);
 
   // Drag and drop handlers
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -654,7 +454,6 @@ export function RecorderPage() {
   }, []);
 
   // Extract audio from blob and convert to WAV for transcription (handles video files too)
-  // Uses OfflineAudioContext for instant processing (not real-time)
   const extractAudio = useCallback(async (blob: Blob): Promise<Blob> => {
     // Common formats that transcription APIs accept directly
     const directFormats = [
@@ -670,20 +469,19 @@ export function RecorderPage() {
     }
     
     // For video files or unsupported formats, extract and convert to WAV
-    // Decode the audio/video to get audio data
     const arrayBuffer = await blob.arrayBuffer();
     const audioContext = new AudioContext();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
     await audioContext.close();
     
-    // Convert AudioBuffer to WAV blob (instant, no real-time playback needed)
-    const wavBlob = audioBufferToWav(audioBuffer);
-    return wavBlob;
+    return audioBufferToWav(audioBuffer);
   }, []);
 
   // Handle transcription request - transcribe each segment and merge results
   const handleTranscribe = useCallback(async () => {
-    if (segmentsRef.current.length === 0 || isTranscribing) return;
+    const player = audioPlayerRef.current;
+    const segments = player?.getSegments() ?? [];
+    if (segments.length === 0 || isTranscribing) return;
     
     setIsTranscribing(true);
     setTranscriptionText(null);
@@ -693,7 +491,7 @@ export function RecorderPage() {
       const transcriptions: string[] = [];
       
       // Transcribe each segment (extract/convert audio first)
-      for (const segment of segmentsRef.current) {
+      for (const segment of segments) {
         const audioBlob = await extractAudio(segment.blob);
         const text = await config.client.transcribe("", audioBlob);
         if (text && text.trim()) {
@@ -714,20 +512,23 @@ export function RecorderPage() {
 
   // Handle download request - merge all segments and download as audio file
   const handleDownload = useCallback(async () => {
-    if (segmentsRef.current.length === 0) return;
+    const player = audioPlayerRef.current;
+    if (!player || player.getTotalDuration() === 0) return;
     
-    // Build merged playback blob
-    const playbackData = await buildPlaybackBlob();
-    if (!playbackData) return;
+    // Get merged blob from AudioPlayer
+    const blob = await player.getMergedBlob();
+    if (!blob) return;
     
     // Create download link
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = playbackData.url;
+    a.href = url;
     a.download = `recording-${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.wav`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-  }, [buildPlaybackBlob]);
+    URL.revokeObjectURL(url);
+  }, []);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
@@ -752,7 +553,7 @@ export function RecorderPage() {
     <div className="h-full w-full flex flex-col overflow-hidden relative">
       <main className="flex-1 flex flex-col overflow-hidden relative">
         <div className="w-full grow overflow-y-auto overflow-x-hidden flex p-4 pt-20">
-          <div className="w-full h-full max-w-[1400px] mx-auto">
+          <div className="w-full h-full max-w-350 mx-auto">
             <div className="relative h-full w-full md:overflow-hidden">
               <div className="h-full flex flex-col md:flex-row md:min-h-0">
                 {/* Recorder section */}

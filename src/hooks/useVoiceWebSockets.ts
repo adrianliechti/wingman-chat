@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { AudioStreamPlayer } from '../lib/AudioStreamPlayer';
 import { AudioRecorder } from '../lib/AudioRecorder';
+import { float32ToPcm16 } from '../lib/audio';
 import { AttachmentType } from '../types/chat';
 import type { Message, Tool } from '../types/chat';
 
@@ -369,21 +370,10 @@ export function useVoiceWebSockets(
 
 
   // Convert Float32Array of audio data to base64-encoded PCM16
-  const floatTo16BitPCM = (float32Array: Float32Array) => {
-    const buffer = new ArrayBuffer(float32Array.length * 2);
-    const view = new DataView(buffer);
-    let offset = 0;
-    for (let i = 0; i < float32Array.length; i++, offset += 2) {
-      const s = Math.max(-1, Math.min(1, float32Array[i]));
-      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-    }
-    return buffer;
-  };
-
   const base64EncodeAudio = (float32Array: Float32Array) => {
-    const arrayBuffer = floatTo16BitPCM(float32Array);
+    const pcm16 = float32ToPcm16(float32Array);
     let binary = '';
-    const bytes = new Uint8Array(arrayBuffer);
+    const bytes = new Uint8Array(pcm16.buffer);
     const chunkSize = 0x8000; // 32KB chunk size
     for (let i = 0; i < bytes.length; i += chunkSize) {
       const chunk = bytes.subarray(i, i + chunkSize);
