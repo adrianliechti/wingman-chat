@@ -1,5 +1,6 @@
-import { useRef } from 'react';
-import { WavStreamPlayer, WavRecorder } from 'wavtools';
+import { useRef, useEffect } from 'react';
+import { AudioStreamPlayer } from '../lib/AudioStreamPlayer';
+import { AudioRecorder } from '../lib/AudioRecorder';
 import { AttachmentType } from '../types/chat';
 import type { Message, Tool } from '../types/chat';
 
@@ -8,12 +9,22 @@ export function useVoiceWebSockets(
   onAssistant: (text: string) => void
 ) {
   const wsRef = useRef<WebSocket | null>(null);
-  const wavPlayerRef = useRef<WavStreamPlayer | null>(null);
-  const wavRecorderRef = useRef<WavRecorder | null>(null);
+  const wavPlayerRef = useRef<AudioStreamPlayer | null>(null);
+  const wavRecorderRef = useRef<AudioRecorder | null>(null);
   // current track ID for audio playback; bump after interrupt to allow restart
   const trackIdRef = useRef<string>(crypto.randomUUID());
 
   const isActiveRef = useRef(false);
+  
+  // Use refs to always have the latest callbacks
+  const onUserRef = useRef(onUser);
+  const onAssistantRef = useRef(onAssistant);
+  
+  // Keep refs updated with latest callbacks
+  useEffect(() => {
+    onUserRef.current = onUser;
+    onAssistantRef.current = onAssistant;
+  }, [onUser, onAssistant]);
 
   const start = async (
     realtimeModel: string = "gpt-realtime",
@@ -26,13 +37,13 @@ export function useVoiceWebSockets(
     isActiveRef.current = true;
 
     try {
-      // Initialize WavStreamPlayer for audio playback
-      const player = new WavStreamPlayer({ sampleRate: 24000 });
+      // Initialize AudioStreamPlayer for audio playback
+      const player = new AudioStreamPlayer({ sampleRate: 24000 });
       await player.connect();
       wavPlayerRef.current = player;
 
-      // Initialize WavRecorder for audio input
-      const recorder = new WavRecorder({ sampleRate: 24000 });
+      // Initialize AudioRecorder for audio input
+      const recorder = new AudioRecorder({ sampleRate: 24000 });
       await recorder.begin();
       wavRecorderRef.current = recorder;
 
@@ -62,11 +73,9 @@ export function useVoiceWebSockets(
                   type: 'audio/pcm',
                   rate: 24000,
                 },
-
-                noise_reduction: {
-                  type: 'near_field'
+                transcription: {
+                  model: transcribeModel,
                 },
-
                 turn_detection: {
                   type: 'server_vad',
                   create_response: true,
@@ -74,20 +83,14 @@ export function useVoiceWebSockets(
                   silence_duration_ms: 700,
                   threshold: 0.7,
                 },
-
-                transcription: {
-                  model: transcribeModel,
-                }
               },
-
               output: {
                 format: {
                   type: 'audio/pcm',
                   rate: 24000,
                 },
-
                 voice: 'alloy',
-              }
+              },
             },
 
             ...(tools && tools.length > 0 && {
@@ -210,7 +213,7 @@ export function useVoiceWebSockets(
             console.log('Transcription completed:', msg.transcript);
 
             if (msg.transcript?.trim()) {
-              onUser(msg.transcript);
+              onUserRef.current(msg.transcript);
             }
             break;
 
@@ -280,7 +283,7 @@ export function useVoiceWebSockets(
             console.log('Response complete:', msg.response);
 
             if (msg.response?.output?.[0]?.content?.[0]?.transcript) {
-              onAssistant(msg.response.output[0].content[0].transcript);
+              onAssistantRef.current(msg.response.output[0].content[0].transcript);
             }
             break;
 

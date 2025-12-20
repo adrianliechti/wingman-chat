@@ -37,7 +37,6 @@
     "remark-math": "^6.0.0",
     "remark-stringify": "^11.0.0",
     "shiki": "^3.20.0",
-    "wavtools": "^0.1.5",
     "zod": "^4.2.1"
   },
   "devDependencies": {
