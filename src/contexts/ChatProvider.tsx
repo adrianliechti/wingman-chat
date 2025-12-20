@@ -7,6 +7,7 @@ import { useModels } from "../hooks/useModels";
 import { useChats } from "../hooks/useChats";
 import { useChatContext } from "../hooks/useChatContext";
 import { useArtifacts } from "../hooks/useArtifacts";
+import { useApp } from "../hooks/useApp";
 import { useToolsContext } from "../hooks/useToolsContext";
 import { getConfig } from "../config";
 import { ChatContext } from './ChatContext';
@@ -24,6 +25,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { isAvailable: artifactsEnabled, setFileSystemForChat, setShowArtifactsDrawer } = useArtifacts();
+  const { getIframe, showDrawer } = useApp();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
@@ -168,6 +170,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
               resolve,
             });
           });
+        },
+        render: async (): Promise<HTMLIFrameElement> => {
+          console.log('[Render] Getting iframe for tool call:', currentToolCall.id, currentToolCall.name);
+          
+          // Get the persistent iframe from the drawer
+          const iframe = getIframe();
+          
+          if (!iframe) {
+            throw new Error('App drawer iframe not available. Make sure the drawer is mounted.');
+          }
+          
+          // Show the drawer when rendering
+          showDrawer();
+          
+          return iframe;
         }
       });
 
@@ -348,7 +365,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Ensure streaming buffer is cleared on errors
         setStreamingMessage(null);
       }
-    }, [getOrCreateChat, chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions]);
+    }, [getOrCreateChat, chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, getIframe, showDrawer]);
 
   const resolveElicitation = useCallback((result: ElicitationResult) => {
     if (pendingElicitation) {

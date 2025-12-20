@@ -22,6 +22,7 @@ import { SettingsButton } from "./components/SettingsButton";
 import { SettingsModal } from "./components/SettingsModal";
 import { RepositoryProvider } from "./contexts/RepositoryProvider";
 import { ArtifactsProvider } from "./contexts/ArtifactsProvider";
+import { AppProvider } from "./contexts/AppProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
 import { ToolsProvider } from "./contexts/ToolsProvider";
@@ -218,9 +219,9 @@ function AppContent() {
       )}
 
       {/* Main app content */}
-      <div className={`flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out ${showSidebar && sidebarContent ? 'md:ml-[calc(14rem+0.75rem)]' : 'ml-0'}`}>
+      <div className={`flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out ${showSidebar && sidebarContent ? 'md:ml-59' : 'ml-0'}`}>
         {/* Fixed navigation bar with glass effect */}
-        <nav className={`fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 nav-header transition-all duration-500 ease-in-out ${showSidebar && sidebarContent ? 'md:left-[calc(14rem+0.75rem)]' : ''}`}>
+        <nav className={`fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 nav-header transition-all duration-500 ease-in-out ${showSidebar && sidebarContent ? 'md:left-59' : ''}`}>
           <div className="flex items-center justify-between">
             {/* Left section */}
             <div className="flex items-center gap-1 flex-1">
@@ -442,6 +443,7 @@ const providers = [
   SidebarProvider,
   NavigationProvider,
   ArtifactsProvider,
+  AppProvider,
   RepositoryProvider,
   ScreenCaptureProvider,
   ToolsProvider,
