@@ -46,6 +46,18 @@ export function readAsDataURL(blob: Blob): Promise<string> {
   });
 }
 
+export function decodeDataURL(dataURL: string): Blob {
+  const [header, base64] = dataURL.split(',');
+  const mimeType = header.match(/:(.*?);/)?.[1] || 'application/octet-stream';
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  return new Blob([byteArray], { type: mimeType });
+}
+
 export async function resizeImageBlob(
   blob: Blob,
   maxWidth: number,

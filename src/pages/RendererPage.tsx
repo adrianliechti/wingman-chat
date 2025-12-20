@@ -1,10 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { getConfig } from "../config";
-import { resizeImageBlob } from "../lib/utils";
+import { resizeImageBlob, readAsDataURL, decodeDataURL } from "../lib/utils";
 import { X, ImagePlus, Sparkles, Download, PlusIcon, ArrowRight } from "lucide-react";
 import { useNavigation } from "../hooks/useNavigation";
 import { useLayout } from "../hooks/useLayout";
 import { useDropZone } from "../hooks/useDropZone";
+import { useImages } from "../hooks/useImages";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import type { Model } from "../types/chat";
 
@@ -12,10 +13,10 @@ export function RendererPage() {
   const config = getConfig();
   const { setRightActions } = useNavigation();
   const { layoutMode } = useLayout();
+  const { images, createImage, deleteImage } = useImages();
 
   const [prompt, setPrompt] = useState("");
   const [referenceImages, setReferenceImages] = useState<{ blob: Blob; preview: string }[]>([]);
-  const [generatedImages, setGeneratedImages] = useState<{ blob: Blob; url: string }[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [gridSize, setGridSize] = useState(3);
   
@@ -50,9 +51,7 @@ export function RendererPage() {
     setPrompt("");
     referenceImages.forEach(img => URL.revokeObjectURL(img.preview));
     setReferenceImages([]);
-    generatedImages.forEach(img => URL.revokeObjectURL(img.url));
-    setGeneratedImages([]);
-  }, [referenceImages, generatedImages]);
+  }, [referenceImages]);
 
   // Set up navigation actions
   useEffect(() => {
@@ -106,27 +105,19 @@ export function RendererPage() {
     });
   }, []);
 
-  const removeGeneratedImage = useCallback((index: number) => {
-    setGeneratedImages(prev => {
-      const newImages = [...prev];
-      URL.revokeObjectURL(newImages[index].url);
-      newImages.splice(index, 1);
-      return newImages;
-    });
-  }, []);
-
-  const addAsReference = useCallback(async (index: number) => {
+  const addAsReference = useCallback(async (id: string) => {
     if (referenceImages.length >= 4) {
       return;
     }
 
-    const generatedImage = generatedImages[index];
+    const generatedImage = images.find(img => img.id === id);
     if (!generatedImage) {
       return;
     }
 
     try {
-      const resizedBlob = await resizeImageBlob(generatedImage.blob, 1024, 1024);
+      const blob = decodeDataURL(generatedImage.data);
+      const resizedBlob = await resizeImageBlob(blob, 1024, 1024);
       const preview = URL.createObjectURL(resizedBlob);
       
       setReferenceImages(prev => {
@@ -139,7 +130,7 @@ export function RendererPage() {
     } catch (err) {
       console.error("Failed to use image as reference:", err);
     }
-  }, [generatedImages, referenceImages.length]);
+  }, [images, referenceImages.length]);
 
   const handleDropFiles = useCallback((files: File[]) => {
     const imageFiles = files.filter(f => f.type.startsWith("image/"));
@@ -168,8 +159,15 @@ export function RendererPage() {
       
       const resultBlob = await config.client.generateImage(model, prompt, images.length > 0 ? images : undefined);
       
-      const url = URL.createObjectURL(resultBlob);
-      setGeneratedImages(prev => [...prev, { blob: resultBlob, url }]);
+      // Convert to data URL for persistence and display
+      const dataUrl = await readAsDataURL(resultBlob);
+      
+      // Add to persisted images via hook
+      createImage({
+        prompt: prompt,
+        model: model,
+        data: dataUrl,
+      });
     } catch (err) {
       console.error("Image generation failed:", err);
     } finally {
@@ -238,7 +236,7 @@ export function RendererPage() {
         <div className={`w-full h-full ${
           layoutMode === 'wide' 
             ? 'max-w-full mx-auto' 
-            : 'max-w-[1200px] mx-auto'
+            : 'max-w-300 mx-auto'
         }`}>
           <div className="relative h-full w-full overflow-hidden">
             {/* 50/50 split layout */}
@@ -358,15 +356,16 @@ export function RendererPage() {
                 <div className="absolute inset-0 overflow-y-auto">
                   <div className="flex flex-wrap gap-3 content-start p-4 pt-12">
                   {/* Generated images */}
-                  {generatedImages.map((img, index) => (
+                  {images.map((img) => (
                     <div
-                      key={index}
+                      key={img.id}
                       className="relative w-40 h-40 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm flex items-center justify-center group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all cursor-pointer"
-                      onClick={() => handleDownload(img.url)}
+                      onClick={() => handleDownload(img.data)}
+                      title={img.prompt || undefined}
                     >
                       <img
-                        src={img.url}
-                        alt={`Generated ${index + 1}`}
+                        src={img.data}
+                        alt={img.prompt || 'Generated image'}
                         className="size-full object-cover rounded-xl"
                       />
                       <button
@@ -374,7 +373,7 @@ export function RendererPage() {
                         className="absolute -top-1 -right-1 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm shadow-sm"
                         onClick={(e) => {
                           e.stopPropagation();
-                          removeGeneratedImage(index);
+                          deleteImage(img.id);
                         }}
                       >
                         <X size={10} />
@@ -384,7 +383,7 @@ export function RendererPage() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            addAsReference(index);
+                            addAsReference(img.id);
                           }}
                           disabled={referenceImages.length >= 4}
                           className="p-1.5 bg-white/90 dark:bg-neutral-900/90 text-neutral-800 dark:text-neutral-200 rounded-lg hover:bg-white dark:hover:bg-neutral-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -396,7 +395,7 @@ export function RendererPage() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDownload(img.url);
+                            handleDownload(img.data);
                           }}
                           className="p-1.5 bg-white/90 dark:bg-neutral-900/90 text-neutral-800 dark:text-neutral-200 rounded-lg hover:bg-white dark:hover:bg-neutral-800 transition-all"
                           title="Download"
@@ -439,7 +438,7 @@ export function RendererPage() {
                 </div>
 
                 {/* Empty State */}
-                {generatedImages.length === 0 && !isGenerating && (
+                {images.length === 0 && !isGenerating && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="text-center">
                       <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
