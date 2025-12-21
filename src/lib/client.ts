@@ -54,6 +54,8 @@ export class Client {
     tools: Tool[],
     handler?: (delta: string, snapshot: string) => void
   ): Promise<Message> {
+    input = this.sanitizeMessages(input);
+
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
 
     if (instructions) {
@@ -62,7 +64,7 @@ export class Client {
         content: [{ type: "text", text: instructions }],
       });
     }
-
+    
     for (const m of input) {
       const content: OpenAI.Chat.ChatCompletionContentPart[] = [];
 
@@ -833,5 +835,26 @@ export class Client {
         parameters: tool.parameters,
       },
     }));
+  }
+
+  private sanitizeMessages(messages: Message[]): Message[] {
+    const toolResultIds = new Set(messages.map(m => m.toolResult?.id).filter(Boolean));
+    const validToolCallIds = new Set(
+      messages
+        .filter(m => m.toolCalls?.every(tc => toolResultIds.has(tc.id)))
+        .flatMap(m => m.toolCalls?.map(tc => tc.id) ?? [])
+    );
+
+    return messages.filter((m) => {
+      if (m.toolCalls?.length) {
+        return m.toolCalls.every(tc => validToolCallIds.has(tc.id));
+      }
+
+      if (m.toolResult?.id) {
+        return validToolCallIds.has(m.toolResult.id);
+      }
+      
+      return !!m.content?.trim();
+    });
   }
 }
