@@ -3,8 +3,6 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Chat } from '../types/chat';
 import { setValue, getValue } from '../lib/db';
 
-const SAVE_DELAY = 2000;
-
 const CHATS_KEY = 'chats';
 
 // Chat-specific database operations
@@ -34,12 +32,14 @@ async function loadChats(): Promise<Chat[]> {
 
 export function useChats() {
   const [chats, setChats] = useState<Chat[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   // Load chats on mount
   useEffect(() => {
     async function load() {
       const items = await loadChats();
       setChats(items);
+      setIsLoaded(true);
     }
 
     load();
@@ -76,15 +76,11 @@ export function useChats() {
     setChats((prev) => prev.filter((chat) => chat.id !== chatId));
   }, []);
 
-  // Persist chats to storage with debounce when chats change
+  // Persist chats to storage when chats change (skip initial empty state)
   useEffect(() => {
-    const handler = window.setTimeout(() => {
-      storeChats(chats);
-    }, SAVE_DELAY);
-    return () => {
-      window.clearTimeout(handler);
-    };
-  }, [chats]);
+    if (!isLoaded) return;
+    storeChats(chats);
+  }, [chats, isLoaded]);
 
   return { chats, createChat, updateChat, deleteChat };
 }

@@ -8,6 +8,7 @@ import type { Tool, ToolCall } from "../types/chat";
 import type { Message, Model, ModelType } from "../types/chat";
 import type { SearchResult } from "../types/search";
 import { modelType, modelName } from "./models";
+import { simplifyMarkdown } from "./utils";
 
 import instructionsConvertCsv from "../prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "../prompts/convert-md.txt?raw";
@@ -54,8 +55,10 @@ export class Client {
     tools: Tool[],
     handler?: (delta: string, snapshot: string) => void
   ): Promise<Message> {
-    const inputMessages2: OpenAI.Responses.ResponseInputItem[] = [];
+    input = this.sanitizeMessages(input);
 
+    const items: OpenAI.Responses.ResponseInputItem[] = [];
+    
     for (const m of input) {
       switch (m.role) {
         case Role.User: {
@@ -89,7 +92,7 @@ export class Client {
             }
           }
 
-          inputMessages2.push({
+          items.push({
             type: "message",
             role: "user",
             content: content,
@@ -102,7 +105,7 @@ export class Client {
           if (m.toolResult) {
             const content = typeof m.toolResult.data === 'string' ? m.toolResult.data : JSON.stringify(m.toolResult.data)
 
-            inputMessages2.push({
+            items.push({
               type: "function_call_output",
               call_id: m.toolResult.id,
               output: content,
@@ -115,7 +118,7 @@ export class Client {
         case Role.Assistant: {
           if (m.toolCalls && m.toolCalls.length > 0) {
             for (const tc of m.toolCalls) {
-              inputMessages2.push({
+              items.push({
                 type: "function_call",
                 call_id: tc.id,
                 name: tc.name,
@@ -123,7 +126,7 @@ export class Client {
               });
             }
           } else {
-            inputMessages2.push({
+            items.push({
               type: "message",
               role: "assistant",
               content: m.content,
@@ -139,7 +142,7 @@ export class Client {
       .stream({
         model: model,
         tools: this.toTools(tools),
-        input: inputMessages2,
+        input: items,
         instructions: instructions,
       });
 
@@ -687,9 +690,10 @@ export class Client {
     return result.text || '';
   }
 
-  async search(query: string, options?: { domains?: string[] }): Promise<SearchResult[]> {
+  async search(query: string, options?: { domains?: string[]; limit?: number }): Promise<SearchResult[]> {
     const data = new FormData();
     data.append('query', query);
+    data.append('limit', String(options?.limit ?? 10));
 
     if (options?.domains) {
       for (const domain of options.domains) {
@@ -712,11 +716,23 @@ export class Client {
       return [];
     }
 
-    return results.map((result: SearchResult) => ({
-      title: result.title || undefined,
-      source: result.source || undefined,
-      content: result.content,
-    }));
+    return results.map((result: SearchResult) => {
+      let content = result.content || '';
+
+      // Simplify markdown content before truncating
+      content = simplifyMarkdown(content);
+
+      if (content.length > 10000) {
+        content = content.slice(0, 10000) + '... [truncated]';
+      }
+
+      return {
+        source: result.source,
+        title: result.title,
+        content: content,
+        metadata: result.metadata,
+      };
+    });
   }
 
   async research(instructions: string): Promise<string> {
@@ -789,5 +805,26 @@ export class Client {
       strict: false,
       parameters: tool.parameters,
     }));
+  }
+
+  private sanitizeMessages(messages: Message[]): Message[] {
+    const toolResultIds = new Set(messages.map(m => m.toolResult?.id).filter(Boolean));
+    const validToolCallIds = new Set(
+      messages
+        .filter(m => m.toolCalls?.every(tc => toolResultIds.has(tc.id)))
+        .flatMap(m => m.toolCalls?.map(tc => tc.id) ?? [])
+    );
+
+    return messages.filter((m) => {
+      if (m.toolCalls?.length) {
+        return m.toolCalls.every(tc => validToolCallIds.has(tc.id));
+      }
+
+      if (m.toolResult?.id) {
+        return validToolCallIds.has(m.toolResult.id);
+      }
+      
+      return !!m.content?.trim();
+    });
   }
 }

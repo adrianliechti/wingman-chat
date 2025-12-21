@@ -119,8 +119,7 @@ export default defineConfig({
             'zod',
             'p-limit',
             'mime',
-            'jszip',
-            'wavtools'
+            'jszip'
           ]
         }
       }
