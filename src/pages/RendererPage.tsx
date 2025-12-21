@@ -243,6 +243,36 @@ export function RendererPage() {
             <div className="h-full flex flex-col md:flex-row min-h-0 transition-all duration-200">
               {/* Left: Input section */}
               <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
+                {/* Model selector at top-left */}
+                {models.length > 0 && (
+                  <div className="absolute top-2 left-3 z-10">
+                    <Menu>
+                      <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
+                        <Sparkles size={14} />
+                        <span>{selectedModel?.name || 'Select Model'}</span>
+                      </MenuButton>
+                      <MenuItems
+                        modal={false}
+                        transition
+                        anchor="bottom start"
+                        className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
+                      >
+                        {models.map((model) => (
+                          <MenuItem key={model.id}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedModel(model)}
+                              className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
+                            >
+                              {model.name}
+                            </button>
+                          </MenuItem>
+                        ))}
+                      </MenuItems>
+                    </Menu>
+                  </div>
+                )}
+
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
@@ -323,36 +353,6 @@ export function RendererPage() {
 
               {/* Right: Output section */}
               <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
-                {/* Model selector at top-left */}
-                {models.length > 0 && (
-                  <div className="absolute top-2 left-3 z-10">
-                    <Menu>
-                      <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
-                        <Sparkles size={14} />
-                        <span>{selectedModel?.name || 'Select Model'}</span>
-                      </MenuButton>
-                      <MenuItems
-                        modal={false}
-                        transition
-                        anchor="bottom start"
-                        className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
-                      >
-                        {models.map((model) => (
-                          <MenuItem key={model.id}>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedModel(model)}
-                              className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
-                            >
-                              {model.name}
-                            </button>
-                          </MenuItem>
-                        ))}
-                      </MenuItems>
-                    </Menu>
-                  </div>
-                )}
-                
                 <div className="absolute inset-0 overflow-y-auto">
                   <div className="flex flex-wrap gap-3 content-start p-4 pt-12">
                   {/* Generated images */}
