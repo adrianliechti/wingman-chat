@@ -23,12 +23,15 @@ async function loadImages(): Promise<Image[]> {
       return [];
     }
     
-    // Parse dates from stored data
-    return images.map(img => ({
-      ...img,
-      created: img.created ? new Date(img.created) : null,
-      updated: img.updated ? new Date(img.updated) : null,
-    }));
+    // Parse dates from stored data and sort by created date (newest first)
+    // If dates are missing, treat them as very old so they fall to the end.
+    return images
+      .map(img => ({
+        ...img,
+        created: img.created ? new Date(img.created) : new Date(0),
+        updated: img.updated ? new Date(img.updated) : new Date(0),
+      }))
+      .sort((a, b) => (b.created?.getTime() || 0) - (a.created?.getTime() || 0));
   } catch (error) {
     console.error('error loading images from IndexedDB', error);
     return [];
@@ -58,7 +61,8 @@ export function useImages() {
       updated: new Date(),
     };
 
-    setImages((prev) => [...prev, newImage]);
+    // Keep newest images first.
+    setImages((prev) => [newImage, ...prev]);
     
     return newImage;
   }, []);
