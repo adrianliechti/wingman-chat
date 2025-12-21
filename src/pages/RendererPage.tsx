@@ -25,26 +25,34 @@ export function RendererPage() {
   const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
 
   const styleInstructions: Record<string, string> = {
-    'Japanese Manga': 'in Japanese manga style with bold ink outlines, screentone shading, dramatic expressions, speed lines, and high contrast black and white aesthetic',
+    // Photography styles
+    'Leica': 'classic Leica rangefinder photograph with Summilux lens rendering, smooth creamy bokeh with gentle out-of-focus transitions, distinctive 3D pop and subject separation, beautiful highlight rolloff with subtle glow, natural micro-contrast and tack-sharp focus plane, authentic color rendering without oversaturation, shallow depth of field, 35mm or 50mm focal length perspective, natural available light, documentary street photography aesthetic',
+    'Polaroid': 'instant Polaroid photograph aesthetic with characteristic white frame border, slightly washed-out colors, soft focus, light leaks, vintage color shift, nostalgic amateur snapshot quality, square format composition',
+    'B&W Studio': 'professional black and white studio portrait photography, dramatic lighting with soft shadows, high contrast, clean backdrop, sharp focus, elegant and timeless aesthetic, Ansel Adams inspired tonal range',
+    'Professional': 'professional corporate photography in modern office environment, clean and polished look, natural window lighting, shallow depth of field, business casual aesthetic, LinkedIn profile quality',
+    
+    // Artistic styles
+    'Isometric': 'in isometric pixel art style with 30-degree angles, no perspective distortion, clean geometric shapes, and video game diorama aesthetic',
     'Anime': 'in anime style with large expressive eyes, vibrant colors, clean cel-shading, soft gradients, and characteristic Japanese animation aesthetics',
-    'Leica Look': 'late 1990s documentary street photography shot on 35mm color film, Leica M-style rangefinder camera with a 35mm lens, Kodak Portra 400 color palette for daylight or Cinestill 800T tungsten tones for night scenes, natural available light, soft contrast, muted realistic colors, embedded film grain, slight edge softness, observational candid framing, no HDR, no modern digital sharpness, no cinematic lighting',
-    'Plushy': 'as a cute plush toy with soft fabric texture, rounded forms, button eyes, stitching details, and huggable kawaii aesthetic',
     'Watercolor': 'in watercolor painting style with soft wet-on-wet blending, visible brushstrokes, paper texture, flowing pigments, and delicate transparent washes',
     'Oil Painting': 'as a classical oil painting with rich impasto texture, visible brushwork, deep saturated colors, and old master lighting techniques',
-    'Pixel Art': 'in retro pixel art style with limited color palette, crisp pixels, no anti-aliasing, 16-bit video game aesthetic',
-    'Cyberpunk': 'in cyberpunk style with neon lights, rain-slicked streets, holographic displays, high-tech low-life aesthetic, and dramatic purple and cyan color grading',
-    'Vintage Film': 'with vintage film photography aesthetic, warm color cast, light leaks, film grain, faded blacks, and nostalgic 1970s Kodachrome look',
-    'Pop Art': 'in pop art style with bold primary colors, Ben-Day dots, thick black outlines, comic book aesthetics inspired by Roy Lichtenstein and Andy Warhol',
-    'Minimalist': 'in minimalist style with clean lines, limited color palette, negative space, geometric simplicity, and essential forms only',
-    'Surrealist': 'in surrealist style with dreamlike impossible scenes, melting forms, unexpected juxtapositions, and Salvador Dalí inspired imagery',
-    'Art Nouveau': 'in Art Nouveau style with flowing organic curves, decorative floral patterns, elegant typography, and Alphonse Mucha inspired ornamental borders',
-    'Gothic': 'in dark gothic style with dramatic shadows, ornate architecture, moody atmosphere, ravens, and Victorian horror aesthetic',
-    'Steampunk': 'in steampunk style with brass gears, copper pipes, Victorian machinery, clockwork mechanisms, and industrial revolution meets fantasy aesthetic',
-    'Vaporwave': 'in vaporwave aesthetic with pink and cyan gradients, Greek statues, retro computer graphics, palm trees, and 80s/90s nostalgia',
-    'Low Poly': 'in low poly 3D style with flat shaded triangular faces, geometric simplification, vibrant gradients, and modern digital art aesthetic',
-    'Isometric': 'in isometric pixel art style with 30-degree angles, no perspective distortion, clean geometric shapes, and video game diorama aesthetic',
     'Sketch': 'as a pencil sketch with cross-hatching, visible construction lines, paper texture, and loose artistic hand-drawn quality',
-    'Neon Glow': 'with glowing neon lights, vibrant luminescent colors against dark background, light bloom effects, and electric nightlife aesthetic'
+    'Pop Art': 'in pop art style with bold primary colors, Ben-Day dots, thick black outlines, comic book aesthetics inspired by Roy Lichtenstein and Andy Warhol',
+    
+    // Commercial & Entertainment
+    'Movie Poster': 'cinematic movie poster design with dramatic lighting, bold typography space, high contrast, epic composition, Hollywood blockbuster aesthetic, theatrical one-sheet style',
+    'Chibi Crochet': 'as an adorable chibi-style crocheted amigurumi doll, handmade yarn texture, big cute head with small body proportions, kawaii button eyes, visible crochet stitches, soft pastel colors, handcrafted plushie aesthetic',
+    'Plushy': 'as a cute plush toy with soft fabric texture, rounded forms, button eyes, stitching details, and huggable kawaii aesthetic',
+    
+    // Digital & Tech styles
+    'Pixel Art': 'in retro pixel art style with limited color palette, crisp pixels, no anti-aliasing, 16-bit video game aesthetic',
+    'Low Poly': 'in low poly 3D style with flat shaded triangular faces, geometric simplification, vibrant gradients, and modern digital art aesthetic',
+    'Object Extract': 'clean product photography style with pure white background, isolated subject with precise edge extraction, professional e-commerce aesthetic, no shadows, transparent background ready',
+    
+    // Aesthetic movements
+    'Cyberpunk': 'in cyberpunk style with neon lights, rain-slicked streets, holographic displays, high-tech low-life aesthetic, and dramatic purple and cyan color grading',
+    'Vaporwave': 'in vaporwave aesthetic with pink and cyan gradients, Greek statues, retro computer graphics, palm trees, and 80s/90s nostalgia',
+    'Steampunk': 'in steampunk style with brass gears, copper pipes, Victorian machinery, clockwork mechanisms, and industrial revolution meets fantasy aesthetic'
   };
 
   const availableStyles = Object.keys(styleInstructions);
@@ -274,21 +282,25 @@ export function RendererPage() {
             <div className="h-full flex flex-col md:flex-row min-h-0 transition-all duration-200">
               {/* Left: Input section */}
               <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-                {/* Model selector at top */}
-                {models.length > 0 && (
-                  <div className="shrink-0 px-3 pt-2">
-                    <Menu>
-                      <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
-                        <Sparkles size={14} />
-                        <span>{selectedModel?.name || 'Select Model'}</span>
-                      </MenuButton>
-                      <MenuItems
-                        modal={false}
-                        transition
-                        anchor="bottom start"
-                        className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
-                      >
-                        {models.map((model) => (
+                {/* Model selector at top - always rendered to avoid flickering */}
+                <div className="shrink-0 px-3 pt-2">
+                  <Menu>
+                    <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
+                      <Sparkles size={14} />
+                      <span>{selectedModel?.name || 'Image Model'}</span>
+                    </MenuButton>
+                    <MenuItems
+                      modal={false}
+                      transition
+                      anchor="bottom start"
+                      className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
+                    >
+                      {models.length === 0 ? (
+                        <div className="px-4 py-2 text-neutral-500 dark:text-neutral-400 text-sm">
+                          Loading models...
+                        </div>
+                      ) : (
+                        models.map((model) => (
                           <MenuItem key={model.id}>
                             <button
                               type="button"
@@ -298,11 +310,11 @@ export function RendererPage() {
                               {model.name}
                             </button>
                           </MenuItem>
-                        ))}
-                      </MenuItems>
-                    </Menu>
-                  </div>
-                )}
+                        ))
+                      )}
+                    </MenuItems>
+                  </Menu>
+                </div>
 
                 {/* Scrollable content area */}
                 <div className="flex-1 overflow-y-auto min-h-0 flex flex-col px-4 pt-2 pb-3">
