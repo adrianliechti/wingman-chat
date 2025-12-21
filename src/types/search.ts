@@ -1,5 +1,6 @@
 export interface SearchResult {
-  title?: string;
   source?: string;
+  title?: string;
   content: string;
+  metadata?: Record<string, string>;
 }

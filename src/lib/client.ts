@@ -8,6 +8,7 @@ import type { Tool } from "../types/chat";
 import type { Message, Model, ModelType } from "../types/chat";
 import type { SearchResult } from "../types/search";
 import { modelType, modelName } from "./models";
+import { simplifyMarkdown } from "./utils";
 
 import instructionsConvertCsv from "../prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "../prompts/convert-md.txt?raw";
@@ -732,9 +733,10 @@ export class Client {
     return result.text || '';
   }
 
-  async search(query: string, options?: { domains?: string[] }): Promise<SearchResult[]> {
+  async search(query: string, options?: { domains?: string[]; limit?: number }): Promise<SearchResult[]> {
     const data = new FormData();
     data.append('query', query);
+    data.append('limit', String(options?.limit ?? 10));
 
     if (options?.domains) {
       for (const domain of options.domains) {
@@ -757,11 +759,23 @@ export class Client {
       return [];
     }
 
-    return results.map((result: SearchResult) => ({
-      title: result.title || undefined,
-      source: result.source || undefined,
-      content: result.content,
-    }));
+    return results.map((result: SearchResult) => {
+      let content = result.content || '';
+
+      // Simplify markdown content before truncating
+      content = simplifyMarkdown(content);
+
+      if (content.length > 10000) {
+        content = content.slice(0, 10000) + '... [truncated]';
+      }
+
+      return {
+        source: result.source,
+        title: result.title,
+        content: content,
+        metadata: result.metadata,
+      };
+    });
   }
 
   async research(instructions: string): Promise<string> {

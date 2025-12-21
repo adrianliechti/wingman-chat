@@ -358,3 +358,41 @@ export function contentToAttachments(contents: string | Content[]): Attachment[]
 
   return attachments;
 }
+
+export function simplifyMarkdown(content: string): string {
+  // Remove markdown images: ![alt](url) or ![alt][ref]
+  content = content.replace(/!\[[^\]]*\]\([^)]+\)/g, '');
+  content = content.replace(/!\[[^\]]*\]\[[^\]]*\]/g, '');
+
+  // Remove HTML img tags
+  content = content.replace(/<img[^>]*>/gi, '');
+
+  // Remove data URLs (base64 embedded content)
+  content = content.replace(/data:[a-zA-Z0-9]+\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g, '[data-url]');
+
+  // Remove other embedded data URLs (non-base64)
+  content = content.replace(/data:[a-zA-Z0-9]+\/[a-zA-Z0-9.+-]+,[^\s)"']+/g, '[data-url]');
+
+  // Remove SVG content (often very long)
+  content = content.replace(/<svg[\s\S]*?<\/svg>/gi, '[svg]');
+
+  // Remove style blocks
+  content = content.replace(/<style[\s\S]*?<\/style>/gi, '');
+
+  // Remove script blocks
+  content = content.replace(/<script[\s\S]*?<\/script>/gi, '');
+
+  // Remove HTML comments
+  content = content.replace(/<!--[\s\S]*?-->/g, '');
+
+  // Remove long hex color codes or hashes (more than 32 chars)
+  content = content.replace(/[a-f0-9]{32,}/gi, '[hash]');
+
+  // Collapse multiple consecutive blank lines into one
+  content = content.replace(/\n{3,}/g, '\n\n');
+
+  // Trim whitespace
+  content = content.trim();
+
+  return content;
+}
