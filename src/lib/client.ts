@@ -58,7 +58,7 @@ export class Client {
     input = this.sanitizeMessages(input);
 
     const items: OpenAI.Responses.ResponseInputItem[] = [];
-    
+
     for (const m of input) {
       switch (m.role) {
         case Role.User: {
@@ -103,7 +103,7 @@ export class Client {
 
         case Role.Tool: {
           if (m.toolResult) {
-            const content = typeof m.toolResult.data === 'string' ? m.toolResult.data : JSON.stringify(m.toolResult.data)
+            const content = typeof m.toolResult.data === 'string' ? m.toolResult.data : JSON.stringify(m.toolResult.data);
 
             items.push({
               type: "function_call_output",
@@ -164,9 +164,6 @@ export class Client {
         content: "",
       };
     }
-
-    console.log("response:", response);
-    console.log("response text:", response.output_text);
 
     // Extract message and tool calls from response
     let content = "";
@@ -801,7 +798,7 @@ export class Client {
 
       name: tool.name,
       description: tool.description,
-      
+
       strict: false,
       parameters: tool.parameters,
     }));
@@ -823,7 +820,7 @@ export class Client {
       if (m.toolResult?.id) {
         return validToolCallIds.has(m.toolResult.id);
       }
-      
+
       return !!m.content?.trim();
     });
   }
