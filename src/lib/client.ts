@@ -1,10 +1,10 @@
 import { z } from "zod/v3";
 import OpenAI from "openai";
-import { zodResponseFormat } from "openai/helpers/zod";
+import { zodTextFormat } from "openai/helpers/zod";
 import mime from "mime";
 
 import { Role, AttachmentType } from "../types/chat";
-import type { Tool } from "../types/chat";
+import type { Tool, ToolCall } from "../types/chat";
 import type { Message, Model, ModelType } from "../types/chat";
 import type { SearchResult } from "../types/search";
 import { modelType, modelName } from "./models";
@@ -57,132 +57,142 @@ export class Client {
   ): Promise<Message> {
     input = this.sanitizeMessages(input);
 
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+    const items: OpenAI.Responses.ResponseInputItem[] = [];
 
-    if (instructions) {
-      messages.push({
-        role: "system",
-        content: [{ type: "text", text: instructions }],
-      });
-    }
-    
     for (const m of input) {
-      const content: OpenAI.Chat.ChatCompletionContentPart[] = [];
-
-      if (m.content) {
-        content.push({ type: "text", text: m.content });
-      }
-
-      for (const a of m.attachments ?? []) {
-        if (a.type === AttachmentType.Text) {
-          content.push({
-            type: "text",
-            text: "````text\n// " + a.name + "\n" + a.data + "\n````",
-          });
-        }
-
-        if (a.type === AttachmentType.File) {
-          content.push({
-            type: "file",
-            file: { file_data: a.data },
-          });
-        }
-
-        if (a.type === AttachmentType.Image) {
-          content.push({
-            type: "image_url",
-            image_url: { url: a.data },
-          });
-        }
-      }
-
       switch (m.role) {
         case Role.User: {
-          messages.push({
-            role: Role.User,
-            content: content,
-          });
-          break;
-        }
+          const content: OpenAI.Responses.ResponseInputContent[] = [];
 
-        case Role.Assistant: {
-          const assistantMessage: OpenAI.Chat.ChatCompletionMessageParam = {
-            role: Role.Assistant,
-            content: content.filter((c) => c.type === "text"),
-          };
-
-          // Add tool calls if they exist
-          if (m.toolCalls && m.toolCalls.length > 0) {
-            assistantMessage.tool_calls = m.toolCalls.map(tc => ({
-              id: tc.id,
-              type: 'function',
-
-              function: {
-                name: tc.name,
-                arguments: tc.arguments,
-              },
-            }));
+          if (m.content) {
+            content.push({ type: "input_text", text: m.content });
           }
 
-          messages.push(assistantMessage);
+          for (const a of m.attachments ?? []) {
+            if (a.type === AttachmentType.Text) {
+              content.push({
+                type: "input_text",
+                text: "````text\n// " + a.name + "\n" + a.data + "\n````",
+              });
+            }
+
+            if (a.type === AttachmentType.File) {
+              content.push({
+                type: "input_file",
+                file_data: a.data,
+              });
+            }
+
+            if (a.type === AttachmentType.Image) {
+              content.push({
+                type: "input_image",
+                image_url: a.data,
+                detail: "auto",
+              });
+            }
+          }
+
+          items.push({
+            type: "message",
+            role: "user",
+            content: content,
+          });
+
           break;
         }
 
         case Role.Tool: {
-          // Handle tool messages if they exist in input
           if (m.toolResult) {
-            const content = typeof m.toolResult.data === 'string' ? m.toolResult.data : JSON.stringify(m.toolResult.data)
-            messages.push({
-              role: "tool",
-              content: content,
-              tool_call_id: m.toolResult.id,
+            const content = typeof m.toolResult.data === 'string' ? m.toolResult.data : JSON.stringify(m.toolResult.data);
+
+            items.push({
+              type: "function_call_output",
+              call_id: m.toolResult.id,
+              output: content,
             });
           }
+
+          break;
+        }
+
+        case Role.Assistant: {
+          if (m.toolCalls && m.toolCalls.length > 0) {
+            for (const tc of m.toolCalls) {
+              items.push({
+                type: "function_call",
+                call_id: tc.id,
+                name: tc.name,
+                arguments: tc.arguments,
+              });
+            }
+          } else {
+            items.push({
+              type: "message",
+              role: "assistant",
+              content: m.content,
+            });
+          }
+
           break;
         }
       }
     }
 
-    const stream = this.oai.chat.completions.stream({
-      model: model,
-
-      stream: true,
-      stream_options: { include_usage: true },
-
-      tools: this.toTools(tools),
-
-      messages: messages,
-    });
+    const runner = this.oai.responses
+      .stream({
+        model: model,
+        tools: this.toTools(tools),
+        input: items,
+        instructions: instructions,
+      });
 
     if (handler) {
-      stream.on("content", handler);
+      let snapshot = "";
+
+      runner.on('response.output_text.delta', (event) => {
+        const delta = event.delta;
+        snapshot += delta;
+        handler(delta, snapshot);
+      });
     }
 
-    const completion = await stream.finalChatCompletion();
-    const message = completion.choices[0].message;
+    const response = await runner.finalResponse();
 
-    // Check if the response was refused by the model
-    if (message.refusal) {
+    if (!response.output) {
       return {
         role: Role.Assistant,
         content: "",
-
-        error: {
-          code: "CONTENT_REFUSAL",
-          message: message.refusal
-        }
       };
+    }
+
+    // Extract message and tool calls from response
+    let content = "";
+    const toolCalls: Array<ToolCall> = [];
+
+    for (const item of response.output) {
+      if (item.type === "message") {
+        if (item.content) {
+          for (const part of item.content) {
+            if (part.type === "output_text") {
+              content = part.text;
+            }
+          }
+        }
+      } else if (item.type === "function_call") {
+        if (item.call_id) {
+          toolCalls.push({
+            id: item.call_id,
+            name: item.name,
+            arguments: item.arguments,
+          });
+        }
+      }
     }
 
     return {
       role: Role.Assistant,
-      content: message.content ?? "",
-
-      toolCalls: message.tool_calls?.filter(tc => tc.type === 'function').map(tc => ({
-        id: tc.id,
-        name: tc.function.name,
-        arguments: tc.function.arguments,
-      })),
+      content: content,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     };
   }
 
@@ -196,24 +206,16 @@ export class Client {
       .map((m) => ({ role: m.role, content: m.content }));
 
     try {
-      const completion = await this.oai.chat.completions.parse({
+      const response = await this.oai.responses.parse({
         model: model,
-
-        messages: [
-          {
-            role: "system",
-            content: instructionsSummarizeTitle,
-          },
-          {
-            role: "user",
-            content: JSON.stringify(history),
-          },
-        ],
-
-        response_format: zodResponseFormat(Schema, "summarize_title"),
+        instructions: instructionsSummarizeTitle,
+        input: JSON.stringify(history),
+        text: {
+          format: zodTextFormat(Schema, "summarize_title"),
+        },
       });
 
-      const result = completion.choices[0].message.parsed;
+      const result = response.output_parsed;
       return result?.title ?? null;
     } catch (error) {
       console.error("Error generating title:", error);
@@ -229,24 +231,16 @@ export class Client {
     }).strict();
 
     try {
-      const completion = await this.oai.chat.completions.parse({
+      const response = await this.oai.responses.parse({
         model: model,
-
-        messages: [
-          {
-            role: "system",
-            content: instructionsRelatedPrompts,
-          },
-          {
-            role: "user",
-            content: prompt || "No input",
-          },
-        ],
-
-        response_format: zodResponseFormat(Schema, "list_prompts"),
+        instructions: instructionsRelatedPrompts,
+        input: prompt || "No input",
+        text: {
+          format: zodTextFormat(Schema, "list_prompts"),
+        },
       });
 
-      const list = completion.choices[0].message.parsed;
+      const list = response.output_parsed;
       return list?.prompts.map((p) => p.prompt) ?? [];
     } catch (error) {
       console.error("Error generating related prompts:", error);
@@ -264,24 +258,16 @@ export class Client {
     }
 
     try {
-      const completion = await this.oai.chat.completions.parse({
+      const response = await this.oai.responses.parse({
         model: model,
-
-        messages: [
-          {
-            role: "system",
-            content: "Extract a valid URL from the given text. If the text contains a URL, extract it. If no valid URL is found, return null.",
-          },
-          {
-            role: "user",
-            content: text,
-          },
-        ],
-
-        response_format: zodResponseFormat(Schema, "extract_url"),
+        instructions: "Extract a valid URL from the given text. If the text contains a URL, extract it. If no valid URL is found, return null.",
+        input: text,
+        text: {
+          format: zodTextFormat(Schema, "extract_url"),
+        },
       });
 
-      const result = completion.choices[0].message.parsed;
+      const result = response.output_parsed;
       return result?.url ?? null;
     } catch (error) {
       console.error("Error extracting URL:", error);
@@ -299,24 +285,16 @@ export class Client {
     }
 
     try {
-      const completion = await this.oai.chat.completions.parse({
+      const response = await this.oai.responses.parse({
         model: model,
-
-        messages: [
-          {
-            role: "system",
-            content: instructionsConvertCsv,
-          },
-          {
-            role: "user",
-            content: text,
-          },
-        ],
-
-        response_format: zodResponseFormat(Schema, "convert_csv"),
+        instructions: instructionsConvertCsv,
+        input: text,
+        text: {
+          format: zodTextFormat(Schema, "convert_csv"),
+        },
       });
 
-      const result = completion.choices[0].message.parsed;
+      const result = response.output_parsed;
       return result?.csvData ?? "";
     } catch (error) {
       console.error("Error converting to CSV:", error);
@@ -334,24 +312,16 @@ export class Client {
     }
 
     try {
-      const completion = await this.oai.chat.completions.parse({
+      const response = await this.oai.responses.parse({
         model: model,
-
-        messages: [
-          {
-            role: "system",
-            content: instructionsConvertMd,
-          },
-          {
-            role: "user",
-            content: text,
-          },
-        ],
-
-        response_format: zodResponseFormat(Schema, "convert_md"),
+        instructions: instructionsConvertMd,
+        input: text,
+        text: {
+          format: zodTextFormat(Schema, "convert_md"),
+        },
       });
 
-      const result = completion.choices[0].message.parsed;
+      const result = response.output_parsed;
       return result?.mdData ?? "";
     } catch (error) {
       console.error("Error converting to Markdown:", error);
@@ -409,27 +379,19 @@ export class Client {
     const selectedText = text.substring(selectionStart, selectionEnd);
 
     try {
-      const completion = await this.oai.chat.completions.parse({
+      const response = await this.oai.responses.parse({
         model: model,
-
-        messages: [
-          {
-            role: "system",
-            content: instructionsRewriteSelection,
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              context: contextToRewrite,
-              selection: selectedText
-            }),
-          },
-        ],
-
-        response_format: zodResponseFormat(Schema, "rewrite_selection"),
+        instructions: instructionsRewriteSelection,
+        input: JSON.stringify({
+          context: contextToRewrite,
+          selection: selectedText
+        }),
+        text: {
+          format: zodTextFormat(Schema, "rewrite_selection"),
+        },
       });
 
-      const result = completion.choices[0].message.parsed;
+      const result = response.output_parsed;
       return {
         alternatives: result?.alternatives.map(a => a.text) ?? [],
         contextToReplace: contextToRewrite,
@@ -619,26 +581,18 @@ export class Client {
       : 'Maintain the original language of the text.';
 
     try {
-      const completion = await this.oai.chat.completions.parse({
+      const response = await this.oai.responses.parse({
         model: model,
-
-        messages: [
-          {
-            role: "system",
-            content: instructionsRewriteText
-              .replace('{languageInstruction}', languageInstruction)
-              .replace('{finalInstructions}', finalInstructions)
-          },
-          {
-            role: "user",
-            content: text,
-          },
-        ],
-
-        response_format: zodResponseFormat(Schema, "rewrite_text"),
+        instructions: instructionsRewriteText
+          .replace('{languageInstruction}', languageInstruction)
+          .replace('{finalInstructions}', finalInstructions),
+        input: text,
+        text: {
+          format: zodTextFormat(Schema, "rewrite_text"),
+        },
       });
 
-      const result = completion.choices[0].message.parsed;
+      const result = response.output_parsed;
       let rewrittenText = result?.rewrittenText ?? text;
 
       // Replace German ß with ss automatically
@@ -834,20 +788,19 @@ export class Client {
     }
   }
 
-  private toTools(tools: Tool[]): OpenAI.Chat.Completions.ChatCompletionTool[] | undefined {
+  private toTools(tools: Tool[]): OpenAI.Responses.Tool[] | undefined {
     if (!tools || tools.length === 0) {
       return undefined;
     }
 
     return tools.map((tool) => ({
       type: 'function',
-      function: {
-        name: tool.name,
-        description: tool.description,
 
-        strict: false,
-        parameters: tool.parameters,
-      },
+      name: tool.name,
+      description: tool.description,
+
+      strict: false,
+      parameters: tool.parameters,
     }));
   }
 
@@ -867,7 +820,7 @@ export class Client {
       if (m.toolResult?.id) {
         return validToolCallIds.has(m.toolResult.id);
       }
-      
+
       return !!m.content?.trim();
     });
   }

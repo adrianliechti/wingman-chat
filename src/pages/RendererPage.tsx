@@ -282,21 +282,25 @@ export function RendererPage() {
             <div className="h-full flex flex-col md:flex-row min-h-0 transition-all duration-200">
               {/* Left: Input section */}
               <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-                {/* Model selector at top */}
-                {models.length > 0 && (
-                  <div className="shrink-0 px-3 pt-2">
-                    <Menu>
-                      <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
-                        <Sparkles size={14} />
-                        <span>{selectedModel?.name || 'Select Model'}</span>
-                      </MenuButton>
-                      <MenuItems
-                        modal={false}
-                        transition
-                        anchor="bottom start"
-                        className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
-                      >
-                        {models.map((model) => (
+                {/* Model selector at top - always rendered to avoid flickering */}
+                <div className="shrink-0 px-3 pt-2">
+                  <Menu>
+                    <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
+                      <Sparkles size={14} />
+                      <span>{selectedModel?.name || 'Image Model'}</span>
+                    </MenuButton>
+                    <MenuItems
+                      modal={false}
+                      transition
+                      anchor="bottom start"
+                      className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
+                    >
+                      {models.length === 0 ? (
+                        <div className="px-4 py-2 text-neutral-500 dark:text-neutral-400 text-sm">
+                          Loading models...
+                        </div>
+                      ) : (
+                        models.map((model) => (
                           <MenuItem key={model.id}>
                             <button
                               type="button"
@@ -306,11 +310,11 @@ export function RendererPage() {
                               {model.name}
                             </button>
                           </MenuItem>
-                        ))}
-                      </MenuItems>
-                    </Menu>
-                  </div>
-                )}
+                        ))
+                      )}
+                    </MenuItems>
+                  </Menu>
+                </div>
 
                 {/* Scrollable content area */}
                 <div className="flex-1 overflow-y-auto min-h-0 flex flex-col px-4 pt-2 pb-3">
