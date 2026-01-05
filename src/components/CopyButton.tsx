@@ -9,9 +9,15 @@ type CopyButtonProps = CopyOptions & {
 export const CopyButton = ({ text, markdown, html, className }: CopyButtonProps) => {
     const [copied, setCopied] = useState(false);
 
-    const handleCopy = async () => {
+    const handleCopy = async (event: React.MouseEvent<HTMLButtonElement>) => {
         try {
-            await copyToClipboard({ text, markdown, html });
+            if (event.altKey) {
+                // Copy the best available content as plain text
+                const content = markdown || html || text || '';
+                await navigator.clipboard.writeText(content);
+            } else {
+                await copyToClipboard({ text, markdown, html });
+            }
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         } catch (error) {
@@ -25,7 +31,7 @@ export const CopyButton = ({ text, markdown, html, className }: CopyButtonProps)
         <button
             onClick={handleCopy}
             className={buttonClasses}
-            title="Copy message to clipboard"
+            title="Copy message to clipboard (Alt+click for raw markdown)"
             type="button"
         >
             {copied ? (

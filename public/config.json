@@ -1,2 +1,96 @@
 {
+    "vision": {
+        "enabled": true
+    },
+
+    "stt": {
+        "enabled": true
+    },
+
+    "tts": {
+        "enabled": true
+    },
+
+    "voice": {
+        "enabled": true
+    },
+
+    "artifacts": {
+        "enabled": true
+    },
+
+    "repository": {
+        "enabled": true
+    },
+
+    "renderer": {
+        "enabled": true
+    },
+
+    "internet": {
+        "enabled": true,
+        "elicitation": true
+    },
+
+    "interpreter": {
+        "enabled": true
+    },
+
+    "workflow": {
+        "enabled": true
+    },
+
+    "recorder": {
+        "enabled": true
+    },
+
+    "bridge": {
+        "url": "http://localhost:4200"
+    },
+
+    "models1": [
+        {
+            "id": "gpt-5.1",
+
+            "name": "GPT-5.1",
+            "description": "Default Model"
+        }
+    ],
+
+    "tools1": [
+        {
+            "id": "context7",
+
+            "url": "https://mcp.context7.com/mcp",
+
+            "name": "Context7",
+            "description": "Provides access to Context7 knowledge base."
+        },
+        {
+            "id": "atlassian",
+
+            "url": "https://mcp.atlassian.com/v1/sse",
+
+            "name": "Atlassian",
+            "description": "Jira and Confluence"
+        }
+    ],
+
+    "translator": {
+        "enabled": true,
+
+        "files": [
+            ".pdf"
+        ],
+
+        "languages": [
+            "en",
+            "es",
+            "fr",
+            "de",
+            "zh",
+            "ja",
+            "ru"
+        ]
+    }
 }
