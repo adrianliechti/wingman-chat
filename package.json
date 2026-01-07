@@ -12,7 +12,7 @@
   "dependencies": {
     "@headlessui/react": "^2.2.9",
     "@modelcontextprotocol/ext-apps": "^0.2.2",
-    "@modelcontextprotocol/sdk": "^1.25.1",
+    "@modelcontextprotocol/sdk": "^1.25.2",
     "@tailwindcss/vite": "^4.1.18",
     "@xyflow/react": "^12.10.0",
     "dompurify": "^3.3.1",
