@@ -9,6 +9,7 @@ import { CsvEditor } from './CsvEditor';
 import { MermaidEditor } from './MermaidEditor';
 import { MarkdownEditor } from './MarkdownEditor';
 import { PythonEditor } from './PythonEditor';
+import { JsEditor } from './JsEditor';
 import { ArtifactsBrowser } from './ArtifactsBrowser';
 import { artifactKind, artifactLanguage } from '../lib/artifacts';
 import { FileIcon } from './FileIcon';
@@ -155,6 +156,9 @@ export function ArtifactsDrawer() {
         const lang = artifactLanguage(file.path);
         if (lang === 'py') {
           return <PythonEditor key={`${activeFile}-${version}`} content={file.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
+        }
+        if (lang === 'js') {
+          return <JsEditor key={`${activeFile}-${version}`} content={file.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
         }
         return (
           <CodeEditor
