@@ -1,16 +1,35 @@
-import { useState, useCallback } from 'react';
-import { Play, Loader2, X } from 'lucide-react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { CodeEditor } from './CodeEditor';
 import { executeCode } from '../lib/interpreter';
+import { useArtifacts } from '../hooks/useArtifacts';
 
 interface PythonEditorProps {
   content: string;
+  onRunReady?: (handler: (() => Promise<void>) | null) => void;
+  onRunningChange?: (isRunning: boolean) => void;
 }
 
-export function PythonEditor({ content }: PythonEditorProps) {
+export function PythonEditor({ content, onRunReady, onRunningChange }: PythonEditorProps) {
+  const { fs, version } = useArtifacts();
   const [isRunning, setIsRunning] = useState(false);
   const [output, setOutput] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Notify parent of running state changes
+  useEffect(() => {
+    onRunningChange?.(isRunning);
+  }, [isRunning, onRunningChange]);
+
+  // Build files map from artifacts filesystem
+  const files = useMemo(() => {
+    const result: Record<string, { content: string; contentType?: string }> = {};
+    for (const file of fs.listFiles()) {
+      result[file.path] = { content: file.content, contentType: file.contentType };
+    }
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fs, version]);
 
   const handleRun = useCallback(async () => {
     setIsRunning(true);
@@ -18,8 +37,8 @@ export function PythonEditor({ content }: PythonEditorProps) {
     setError(null);
 
     try {
-      const result = await executeCode({ code: content });
-      
+      const result = await executeCode({ code: content, files });
+
       if (result.success) {
         setOutput(result.output);
       } else {
@@ -30,7 +49,13 @@ export function PythonEditor({ content }: PythonEditorProps) {
     } finally {
       setIsRunning(false);
     }
-  }, [content]);
+  }, [content, files]);
+
+  // Register run handler with parent on mount, unregister on unmount
+  useEffect(() => {
+    onRunReady?.(handleRun);
+    return () => onRunReady?.(null);
+  }, [handleRun, onRunReady]);
 
   const handleClear = useCallback(() => {
     setOutput(null);
@@ -70,27 +95,6 @@ export function PythonEditor({ content }: PythonEditorProps) {
           </div>
         </div>
       )}
-
-      {/* Run Button - Fixed at bottom */}
-      <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
-        <button
-          onClick={handleRun}
-          disabled={isRunning}
-          className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white text-sm font-medium transition-colors"
-        >
-          {isRunning ? (
-            <>
-              <Loader2 size={16} className="animate-spin" />
-              Running...
-            </>
-          ) : (
-            <>
-              <Play size={16} />
-              Run
-            </>
-          )}
-        </button>
-      </div>
     </div>
   );
 }

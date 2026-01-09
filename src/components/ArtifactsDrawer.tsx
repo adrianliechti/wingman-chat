@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { File, Code, Eye, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { File, Code, Eye, PanelRightOpen, PanelRightClose, Play, Loader2 } from 'lucide-react';
 import { useArtifacts } from '../hooks/useArtifacts';
 import { HtmlEditor } from './HtmlEditor';
 import { SvgEditor } from './SvgEditor';
@@ -26,7 +26,14 @@ export function ArtifactsDrawer() {
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
+  const [isRunning, setIsRunning] = useState(false);
+  const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Callback for editors to register their run handler
+  const onRunReady = useCallback((handler: (() => Promise<void>) | null) => {
+    setRunHandler(() => handler);
+  }, []);
 
   // Get files - memoized to prevent unnecessary recalculation
   // version is required to trigger updates when filesystem changes (fs instance is stable)
@@ -146,8 +153,8 @@ export function ArtifactsDrawer() {
         return <MarkdownEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'code': {
         const lang = artifactLanguage(file.path);
-        if (lang === 'python') {
-          return <PythonEditor key={`${activeFile}-${version}`} content={file.content} />;
+        if (lang === 'py') {
+          return <PythonEditor key={`${activeFile}-${version}`} content={file.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
         }
         return (
           <CodeEditor
@@ -168,6 +175,13 @@ export function ArtifactsDrawer() {
     if (!activeFile) return false;
     const kind = artifactKind(activeFile);
     return ['html', 'svg', 'csv', 'mermaid', 'markdown'].includes(kind);
+  };
+
+  // Handle run button click
+  const handleRun = async () => {
+    if (runHandler) {
+      await runHandler();
+    }
   };
 
   return (
@@ -216,6 +230,19 @@ export function ArtifactsDrawer() {
 
             {/* Action buttons */}
             <div className="flex items-center gap-1 px-2">
+              {/* Run button - only show when editor has a run handler */}
+              {runHandler && (
+                <button
+                  type="button"
+                  onClick={handleRun}
+                  disabled={isRunning}
+                  className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 disabled:opacity-50"
+                  title={isRunning ? 'Running...' : 'Run'}
+                >
+                  {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+                </button>
+              )}
+
               {/* View mode toggle - only show for files that support preview */}
               {supportsPreview() && (
                 <button
