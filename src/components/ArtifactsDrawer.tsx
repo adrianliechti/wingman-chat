@@ -271,7 +271,7 @@ export function ArtifactsDrawer() {
         </div>
 
         {/* Right Side Panel - File Browser (full height) */}
-        <div className={`transition-all duration-500 ease-in-out relative ${showFileBrowser ? 'w-64 opacity-100' : 'w-0 opacity-0'
+        <div className={`transition-all duration-500 ease-in-out relative ${showFileBrowser ? 'w-48 opacity-100' : 'w-0 opacity-0'
           } shrink-0 overflow-hidden`}>
           <div className="absolute inset-y-0 left-0 w-px bg-black/10 dark:bg-white/10"></div>
           {fs && (
@@ -281,6 +281,18 @@ export function ArtifactsDrawer() {
                 fs={fs}
                 openTabs={activeFile ? [activeFile] : []}
                 onFileClick={openFile}
+                onUpload={async (fileList) => {
+                  for (const file of Array.from(fileList)) {
+                    try {
+                      const path = `/${file.name}`;
+                      const content = await file.text();
+                      fs.createFile(path, content, file.type);
+                      openFile(path);
+                    } catch (error) {
+                      console.error(`Error uploading file ${file.name}:`, error);
+                    }
+                  }
+                }}
               />
             </div>
           )}
