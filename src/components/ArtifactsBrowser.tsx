@@ -96,7 +96,7 @@ function FileTreeNode({
       <>
         <div
           className="flex items-center gap-2 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0"
-          style={{ marginLeft: `${level * 12}px` }}
+          style={{ marginLeft: `${level * 10}px` }}
           onClick={() => onToggleFolder(node.path)}
         >
           <div className="flex items-center gap-1 min-w-0">
@@ -142,7 +142,7 @@ function FileTreeNode({
       type="button"
       onClick={() => onFileClick(node.path)}
       className="flex items-center gap-1 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left min-w-0"
-      style={{ marginLeft: `${level * 12 + 18}px` }}
+      style={{ marginLeft: `${level * 10 + 14}px` }}
     >
       <FileIcon name={node.path} />
       <span 
@@ -243,7 +243,7 @@ export function ArtifactsBrowser({
       {/* File list - grows to fill space */}
       <div className="flex-1 overflow-auto min-h-0">
         {files.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-8 text-center">
+          <div className="flex flex-col items-center justify-center p-4 text-center">
             <File size={32} className="text-neutral-300 dark:text-neutral-600 mb-3" />
             <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
               No files created yet
