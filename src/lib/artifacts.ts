@@ -1,6 +1,9 @@
 // Artifact kind type
 export type ArtifactKind = 'text' | 'code' | 'svg' | 'html' | 'csv' | 'mermaid' | 'markdown';
 
+// Re-export HTML transformation utilities
+export { transformHtmlForPreview, type TransformResult } from './artifactsHtml';
+
 // Helper function to get the language/extension from a file path
 export function artifactLanguage(path: string): string {
   const ext = path.split('.').pop()?.toLowerCase() || '';

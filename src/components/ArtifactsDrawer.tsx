@@ -8,6 +8,7 @@ import { CodeEditor } from './CodeEditor';
 import { CsvEditor } from './CsvEditor';
 import { MermaidEditor } from './MermaidEditor';
 import { MarkdownEditor } from './MarkdownEditor';
+import { PythonEditor } from './PythonEditor';
 import { ArtifactsBrowser } from './ArtifactsBrowser';
 import { artifactKind, artifactLanguage } from '../lib/artifacts';
 import { FileIcon } from './FileIcon';
@@ -143,14 +144,19 @@ export function ArtifactsDrawer() {
         return <MermaidEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'markdown':
         return <MarkdownEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
-      case 'code':
+      case 'code': {
+        const lang = artifactLanguage(file.path);
+        if (lang === 'python') {
+          return <PythonEditor key={`${activeFile}-${version}`} content={file.content} />;
+        }
         return (
           <CodeEditor
             key={`${activeFile}-${version}`}
             content={file.content}
-            language={artifactLanguage(file.path)}
+            language={lang}
           />
         );
+      }
       case 'text':
       default:
         return <TextEditor key={`${activeFile}-${version}`} content={file.content} />;

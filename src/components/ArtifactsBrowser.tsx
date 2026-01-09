@@ -267,9 +267,9 @@ export function ArtifactsBrowser({
         )}
       </div>
       
-      {/* Download Button - fixed at bottom */}
+      {/* Download Button - fixed at bottom, aligned with bottom bar */}
       {files.length > 0 && (
-        <div className="shrink-0 h-9 flex items-center px-2 border-t border-black/5 dark:border-white/5">
+        <div className="shrink-0 h-14 flex items-center px-2 border-t border-black/10 dark:border-white/10">
           <button
             type="button"
             onClick={async () => {
