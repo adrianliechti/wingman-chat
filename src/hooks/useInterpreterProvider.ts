@@ -68,8 +68,8 @@ export function useInterpreterProvider(): ToolProvider | null {
 
     return {
       id: 'interpreter',
-      name: 'Interpreter',
-      description: 'Use Python engine',
+      name: 'Code Runner',
+      description: 'Run Python code',
       icon: SquareChevronRight,
       instructions: interpreterInstructionsText,
       tools: interpreterTools(),

@@ -3,20 +3,18 @@
 ### `web_search`
 Fast real-time search for current events, fact-checking, and finding URLs.
 - Use specific keywords without filler words
-
-### `web_research`
-Deep research with automatic query expansion for complex topics requiring comprehensive, multi-source analysis.
-- Keep queries atomic and focused on specific information needs
+- Avoid search operators like `site:` — use the `domains` parameter instead
 
 ### `web_scraper`
-Extract full content from a specific URL for detailed analysis.
+Extract full text content from a specific URL for detailed analysis.
+- Use when you need the complete content of a page found via search
+- Useful for reading articles, documentation, or any webpage in full
 
 ### Usage Guidelines
 
 | Need | Tool |
 |------|------|
-| Quick facts, recent events, URLs | `web_search` |
-| Complex topics, synthesis | `web_research` |
-| Specific URL content | `web_scraper` |
+| Quick facts, recent events, finding URLs | `web_search` |
+| Full content from a known URL | `web_scraper` |
 
-Use tools iteratively: search → identify sources → scrape for details → refine and repeat until complete.
+Use tools iteratively: search → identify promising sources → scrape for full details → refine search if needed.

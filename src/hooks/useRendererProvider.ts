@@ -161,7 +161,7 @@ export function useRendererProvider(): ToolProvider | null {
 
     return {
       id: "renderer",
-      name: "Renderer",
+      name: "Image Editor",
       description: "Create and edit images",
       icon: Image,
       instructions: rendererInstructionsText,

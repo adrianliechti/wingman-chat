@@ -39,6 +39,9 @@ func main() {
 	vision := os.Getenv("VISION_ENABLED") == "true"
 
 	internet := os.Getenv("INTERNET_ENABLED") == "true"
+	internetScraper := os.Getenv("INTERNET_SCRAPER")
+	internetSearcher := os.Getenv("INTERNET_SEARCHER")
+	internetResearcher := os.Getenv("INTERNET_RESEARCHER")
 	internetElicitation := os.Getenv("INTERNET_ELICITATION") == "true"
 
 	researcher := os.Getenv("RESEARCHER_ENABLED") == "true"
@@ -116,7 +119,10 @@ func main() {
 		}
 
 		type internetType struct {
-			Elicitation bool `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
+			Searcher    string `json:"searcher,omitempty" yaml:"searcher,omitempty"`
+			Scraper     string `json:"scraper,omitempty" yaml:"scraper,omitempty"`
+			Researcher  string `json:"researcher,omitempty" yaml:"researcher,omitempty"`
+			Elicitation bool   `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
 		}
 
 		type rendererType struct {
@@ -285,6 +291,18 @@ func main() {
 		if internet {
 			if config.Internet == nil {
 				config.Internet = &internetType{}
+			}
+
+			if internetScraper != "" {
+				config.Internet.Scraper = internetScraper
+			}
+
+			if internetSearcher != "" {
+				config.Internet.Searcher = internetSearcher
+			}
+
+			if internetResearcher != "" {
+				config.Internet.Researcher = internetResearcher
 			}
 
 			if internetElicitation {

@@ -56,7 +56,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
   const handleExecute = async () => {
     const query = data.query?.trim() || '';
     const instructions = data.instructions?.trim() || '';
-    
+
     await executeAsync(async () => {
       try {
         if (mode === 'fetch') {
@@ -70,7 +70,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
               try {
                 // Use structured output to extract URL from the input
                 const extractedUrl = await client.extractUrl('', item.text);
-                
+
                 if (!extractedUrl || !extractedUrl.startsWith('http')) {
                   results.push({
                     title: 'Invalid URL',
@@ -79,7 +79,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
                   continue;
                 }
 
-                const content = await client.fetchText(extractedUrl);
+                const content = await client.scrape(config.internet?.scraper || '', extractedUrl);
                 results.push({
                   title: extractedUrl,
                   source: extractedUrl,
@@ -100,7 +100,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
             }
 
             try {
-              const content = await client.fetchText(query);
+              const content = await client.scrape(config.internet?.scraper || '', query);
               results.push({
                 title: query,
                 source: query,
@@ -116,10 +116,10 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
           }
 
           updateNode(id, {
-            data: { 
-              ...data, 
+            data: {
+              ...data,
               output: results.length > 0 ? createSearchData(results) : undefined,
-              error: undefined 
+              error: undefined
             }
           });
 
@@ -133,7 +133,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
               const item = connectedItems[i];
               try {
                 let researchQuery: string;
-                
+
                 if (instructions) {
                   // Use LLM to create research query from input + instructions
                   const response = await client.complete(
@@ -151,7 +151,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
                   researchQuery = item.text;
                 }
 
-                const result = await client.research(researchQuery);
+                const result = await client.research(config.researcher?.model || '', researchQuery);
                 results.push({
                   title: `Research ${i + 1}`,
                   content: result || 'No research results found',
@@ -171,7 +171,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
             }
 
             try {
-              const result = await client.research(instructions);
+              const result = await client.research(config.internet?.researcher || '', instructions);
               results.push({
                 title: 'Research',
                 content: result || 'No research results found',
@@ -185,10 +185,10 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
           }
 
           updateNode(id, {
-            data: { 
-              ...data, 
+            data: {
+              ...data,
               output: results.length > 0 ? createSearchData(results) : undefined,
-              error: undefined 
+              error: undefined
             }
           });
 
@@ -199,12 +199,12 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
           if (hasConnections) {
             // With input: always use LLM to form optimized query from inputs
             const inputText = getText();
-            
+
             try {
               const systemPrompt = instructions
                 ? 'Generate a concise and effective search query based on the user instructions and the provided context. Return only the search query, nothing else.'
                 : 'Generate a concise and effective search query based on the provided context. Return only the search query, nothing else.';
-              
+
               const userContent = instructions
                 ? `Instructions: ${instructions}\n\nContext:\n${inputText}\n\nGenerate the search query:`
                 : `Context:\n${inputText}\n\nGenerate the search query:`;
@@ -234,13 +234,13 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
           }
 
           // Perform the search
-          const results = await client.search(searchQuery);
-          
+          const results = await client.search(config.internet?.searcher || '', searchQuery);
+
           updateNode(id, {
-            data: { 
-              ...data, 
+            data: {
+              ...data,
               output: results.length > 0 ? createSearchData(results) : undefined,
-              error: undefined 
+              error: undefined
             }
           });
         }
@@ -254,9 +254,9 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
   };
 
   // Determine if we can execute based on mode and connection state
-  const canExecute = hasConnections 
+  const canExecute = hasConnections
     ? true  // With connections, always allow (LLM will extract/combine)
-    : mode === 'fetch' 
+    : mode === 'fetch'
       ? !!data.query?.trim()  // Fetch without input needs URL
       : mode === 'research'
         ? !!data.instructions?.trim()  // Research without input needs instructions
@@ -339,7 +339,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
           - Website (no input): show URL field
           - Website (with input): hide field (URLs extracted from input via LLM)
         */}
-        
+
         {/* Search mode: query field when no input, instructions when has input */}
         {mode === 'search' && !hasConnections && (
           <div className="shrink-0">
@@ -354,7 +354,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
             />
           </div>
         )}
-        
+
         {mode === 'search' && hasConnections && (
           <div className="shrink-0">
             <textarea
@@ -377,8 +377,8 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
               onChange={(e) => updateNode(id, { data: { ...data, instructions: e.target.value } })}
               onPointerDown={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
-              placeholder={hasConnections 
-                ? "Instructions (combined with each input via LLM)..." 
+              placeholder={hasConnections
+                ? "Instructions (combined with each input via LLM)..."
                 : "Enter research topic..."
               }
               rows={2}
@@ -429,11 +429,10 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
                   <button
                     key={idx}
                     onClick={() => setActiveTab(idx)}
-                    className={`w-6 h-6 text-xs rounded transition-colors nodrag ${
-                      idx === activeTab
+                    className={`w-6 h-6 text-xs rounded transition-colors nodrag ${idx === activeTab
                         ? 'bg-blue-500 text-white'
                         : 'bg-gray-300/50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400 hover:bg-gray-400/50 dark:hover:bg-gray-600/50'
-                    }`}
+                      }`}
                   >
                     {idx + 1}
                   </button>

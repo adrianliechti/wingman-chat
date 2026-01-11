@@ -91,7 +91,7 @@ interface visionConfig {
 }
 
 interface rendererConfig {
-  model?: string
+  model?: string;
   elicitation?: boolean;
 }
 
@@ -100,6 +100,9 @@ interface bridgeConfig {
 }
 
 interface internetConfig {
+  scraper?: string;
+  searcher?: string;
+  researcher?: string;
   elicitation?: boolean;
 }
 
@@ -120,7 +123,7 @@ interface repositoryConfig {
 type artifactsConfig = object;
 
 interface translatorConfig {
-  model?: string
+  model?: string;
   files: string[];
 
   languages: string[];
@@ -185,29 +188,36 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       client: client,
 
-      mcps: cfg.tools?.map((mcp) => {
-        return {
-          id: mcp.id,
+      mcps:
+        cfg.tools?.map((mcp) => {
+          return {
+            id: mcp.id,
 
-          name: mcp.name,
-          description: mcp.description,
+            name: mcp.name,
+            description: mcp.description,
 
-          url: mcp.url ?? new URL(`/api/v1/mcp/${mcp.id}`, window.location.origin).toString(),
-        };
-      }) ?? [],
+            url:
+              mcp.url ??
+              new URL(
+                `/api/v1/mcp/${mcp.id}`,
+                window.location.origin,
+              ).toString(),
+          };
+        }) ?? [],
 
-      models: cfg.models?.map((model) => {
-        return {
-          id: model.id,
+      models:
+        cfg.models?.map((model) => {
+          return {
+            id: model.id,
 
-          name: model.name,
-          description: model.description,
+            name: model.name,
+            description: model.description,
 
-          prompts: model.prompts,
+            prompts: model.prompts,
 
-          tools: model.tools,
-        };
-      }) ?? [],
+            tools: model.tools,
+          };
+        }) ?? [],
 
       tts: cfg.tts ?? null,
       stt: cfg.stt ?? null,
@@ -217,14 +227,16 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       voice: cfg.voice ?? null,
 
-      vision: cfg.vision ? {
-        files: cfg.vision.files ?? [
-          "image/jpeg",
-          "image/png",
-          "image/gif",
-          "image/webp",
-        ],
-      } : null,
+      vision: cfg.vision
+        ? {
+            files: cfg.vision.files ?? [
+              "image/jpeg",
+              "image/png",
+              "image/gif",
+              "image/webp",
+            ],
+          }
+        : null,
 
       text: {
         files: cfg.text?.files ?? [
@@ -256,17 +268,19 @@ export const loadConfig = async (): Promise<Config | undefined> => {
         ],
       },
 
-      extractor: cfg.extractor ? {
-        files: cfg.extractor.files ?? [
-          "application/pdf",
-          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          
-          ".msg",
-          ".eml",
-        ],
-      } : null,
+      extractor: cfg.extractor
+        ? {
+            files: cfg.extractor.files ?? [
+              "application/pdf",
+              "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+
+              ".msg",
+              ".eml",
+            ],
+          }
+        : null,
 
       bridge: cfg.bridge ?? null,
       internet: cfg.internet ?? null,
@@ -275,16 +289,24 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       repository: cfg.repository ?? null,
       artifacts: cfg.artifacts ?? null,
 
-      translator: cfg.translator ? {
-        model: cfg.translator.model,
-        files: cfg.translator.files ?? [],
-        languages: cfg.translator.languages ?? ["en", "de", "fr", "it", "es"],
-      } : null,
+      translator: cfg.translator
+        ? {
+            model: cfg.translator.model,
+            files: cfg.translator.files ?? [],
+            languages: cfg.translator.languages ?? [
+              "en",
+              "de",
+              "fr",
+              "it",
+              "es",
+            ],
+          }
+        : null,
 
       researcher: cfg.researcher ?? null,
 
       backgrounds: cfg.backgrounds ?? {},
-    }
+    };
 
     if (config.repository && !config.repository.context_pages) {
       config.repository.context_pages = 150;

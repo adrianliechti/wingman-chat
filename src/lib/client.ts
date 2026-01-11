@@ -424,8 +424,13 @@ export class Client {
     return resp.text();
   }
 
-  async fetchText(url: string): Promise<string> {
+  async scrape(model:string, url: string): Promise<string> {
     const data = new FormData();
+    
+    if (model) {
+      data.append('model', model);
+    }
+
     data.append("url", url);
     data.append("format", "text");
 
@@ -687,8 +692,13 @@ export class Client {
     return result.text || '';
   }
 
-  async search(query: string, options?: { domains?: string[]; limit?: number }): Promise<SearchResult[]> {
+  async search(model: string, query: string, options?: { domains?: string[]; limit?: number }): Promise<SearchResult[]> {
     const data = new FormData();
+
+    if (model) {
+      data.append('model', model);
+    }
+
     data.append('query', query);
     data.append('limit', String(options?.limit ?? 10));
 
@@ -732,8 +742,13 @@ export class Client {
     });
   }
 
-  async research(instructions: string): Promise<string> {
+  async research(model: string, instructions: string): Promise<string> {
     const data = new FormData();
+
+    if (model) {
+      data.append('model', model);
+    }
+
     data.append('instructions', instructions);
 
     const response = await fetch(new URL(`/api/v1/research`, window.location.origin), {
