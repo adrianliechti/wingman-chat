@@ -16,7 +16,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const config = getConfig();
   const [isAvailable] = useState(() => {
     try {
-      return config.voice;
+      return !!config.voice;
     } catch (error) {
       console.warn('Failed to get voice config:', error);
       return false;
@@ -97,7 +97,9 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   const startVoice = useCallback(async () => {
     try {
-      await start(undefined, undefined, chatInstructions(), messages, await chatTools());
+      const realtimeModel = config.voice?.model;
+      const transcribeModel = config.voice?.transcriber ?? config.stt?.model;
+      await start(realtimeModel, transcribeModel, chatInstructions(), messages, await chatTools());
       setIsListening(true);
     } catch (error) {
       console.error('Failed to start voice mode:', error);
@@ -109,7 +111,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         alert('Failed to start voice mode. Please check your microphone permissions and try again.');
       }
     }
-  }, [chatInstructions, chatTools, start, messages]);
+  }, [chatInstructions, chatTools, start, messages, config.voice?.model, config.voice?.transcriber, config.stt?.model]);
 
   const value: VoiceContextType = {
     isAvailable,

@@ -249,8 +249,8 @@ export function ChatPage() {
       
       {/* Main content area */}
       <div className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-300 ${
-        showAppDrawer ? 'md:mr-[calc(50vw+0.75rem)]' :
-        showArtifactsDrawer ? 'md:mr-[calc(50vw+0.75rem)]' : 
+        showAppDrawer ? 'md:mr-[calc(66vw+0.75rem)]' :
+        showArtifactsDrawer ? 'md:mr-[calc(66vw+0.75rem)]' : 
         showRepositoryDrawer ? 'md:mr-83' : ''
       }`}>
         <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -299,8 +299,8 @@ export function ChatPage() {
           {/* Jump to latest button - positioned relative to chat area */}
           {messages.length > 0 && !isAutoScrollEnabled && (
             <div className={`fixed flex justify-center pointer-events-none z-10 transition-all duration-300 ease-out ${
-              showAppDrawer ? 'left-0 right-[calc(50vw+0.75rem)]' :
-              showArtifactsDrawer ? 'left-0 right-[calc(50vw+0.75rem)]' :
+              showAppDrawer ? 'left-0 right-[calc(66vw+0.75rem)]' :
+              showArtifactsDrawer ? 'left-0 right-[calc(66vw+0.75rem)]' :
               showRepositoryDrawer ? 'left-0 right-83' : 'left-0 right-0'
             }`} style={{ bottom: `${chatInputHeight + 16}px` }}>
               <button
@@ -321,8 +321,8 @@ export function ChatPage() {
           } ${
             showSidebar && chats.length > 0 ? 'md:left-59' : ''
           } ${
-            showAppDrawer ? 'right-0 md:right-[calc(50vw+0.75rem)]' :
-            showArtifactsDrawer ? 'right-0 md:right-[calc(50vw+0.75rem)]' :
+            showAppDrawer ? 'right-0 md:right-[calc(66vw+0.75rem)]' :
+            showArtifactsDrawer ? 'right-0 md:right-[calc(66vw+0.75rem)]' :
             showRepositoryDrawer ? 'right-0 md:right-83' : 'right-0'
           }`}>
             <div className="relative pointer-events-auto md:max-w-4xl mx-auto">
@@ -340,8 +340,8 @@ export function ChatPage() {
               ? 'translate-x-0 opacity-100' 
               : 'translate-x-full opacity-0'
           } ${ 
-            // On mobile: full width overlay from right edge, on desktop: positioned with right edge and 60% width
-            'fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-[50vw] max-w-none'
+            // On mobile: full width overlay from right edge, on desktop: positioned with right edge and 66% width
+            'fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-[66vw] max-w-none'
           } ${shouldRenderRepositoryDrawer ? 'z-20' : 'z-25'}`}
           style={{ 
             top: isMobile ? '48px' : undefined,

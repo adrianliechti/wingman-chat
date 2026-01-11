@@ -59,6 +59,7 @@ export const TranslateContext = createContext<TranslateContextType | undefined>(
 export const supportedLanguages = (): Language[] => {
   try {
     const config = getConfig();
+    if (!config.translator) return [];
     const displayNames = new Intl.DisplayNames(['en'], { type: 'language' });
     
     return config.translator.languages.map(code => ({
@@ -74,6 +75,7 @@ export const supportedLanguages = (): Language[] => {
 export const supportedFiles = (): SupportedFile[] => {
   try {
     const config = getConfig();
+    if (!config.translator) return [];
     const fileExtensions = config.translator.files || [];
     return fileExtensions.map(ext => ({
       ext,

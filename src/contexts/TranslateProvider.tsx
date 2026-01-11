@@ -102,7 +102,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
       if (typeof result === 'string') {
         // Apply tone/style rewriting if either is not empty
         if (toneValue || styleValue) {
-          const rewrittenResult = await client.rewriteText(config.translator.model || '', result, langToUse, toneValue, styleValue);
+          const rewrittenResult = await client.rewriteText(config.translator?.model || '', result, langToUse, toneValue, styleValue);
           setTranslatedText(rewrittenResult);
         } else {
           setTranslatedText(result);
@@ -116,7 +116,7 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [client, selectedFile, tone, style, config.translator.model, targetLang, sourceText]);
+  }, [client, selectedFile, tone, style, config.translator?.model, targetLang, sourceText]);
 
   const handleReset = useCallback(() => {
     setSourceText("");

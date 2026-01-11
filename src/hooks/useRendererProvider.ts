@@ -11,12 +11,12 @@ export function useRendererProvider(): ToolProvider | null {
   
   const isAvailable = useMemo(() => {
     try {
-      return config.renderer.enabled;
+      return !!config.renderer;
     } catch (error) {
       console.warn('Failed to get image generation config:', error);
       return false;
     }
-  }, [config.renderer.enabled]);
+  }, [config.renderer]);
 
   const client = config.client;
 
@@ -38,7 +38,7 @@ export function useRendererProvider(): ToolProvider | null {
         function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const { prompt } = args;
 
-          if (config.renderer.elicitation && context?.elicit) {
+          if (config.renderer?.elicitation && context?.elicit) {
             const result = await context.elicit({
               message: `Generate an image: ${prompt}`
             });
@@ -90,7 +90,7 @@ export function useRendererProvider(): ToolProvider | null {
         function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const { prompt } = args;
 
-          if (config.renderer.elicitation && context?.elicit) {
+          if (config.renderer?.elicitation && context?.elicit) {
             const result = await context.elicit({
               message: `Edit the attached image(s): ${prompt}`
             });
@@ -152,7 +152,7 @@ export function useRendererProvider(): ToolProvider | null {
         }
       }
     ];
-  }, [client, config.renderer.elicitation, config.renderer?.model]);
+  }, [client, config.renderer?.elicitation, config.renderer?.model]);
 
   const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {

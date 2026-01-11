@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { File, Folder, FolderOpen, ChevronRight, ChevronDown, Download } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { File, Folder, FolderOpen, ChevronRight, ChevronDown, Download, Upload } from 'lucide-react';
 import { FileIcon } from './FileIcon';
 import { FileSystemManager } from '../lib/fs';
 
@@ -96,7 +96,7 @@ function FileTreeNode({
       <>
         <div
           className="flex items-center gap-2 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0"
-          style={{ marginLeft: `${level * 12}px` }}
+          style={{ marginLeft: `${level * 10}px` }}
           onClick={() => onToggleFolder(node.path)}
         >
           <div className="flex items-center gap-1 min-w-0">
@@ -142,7 +142,7 @@ function FileTreeNode({
       type="button"
       onClick={() => onFileClick(node.path)}
       className="flex items-center gap-1 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left min-w-0"
-      style={{ marginLeft: `${level * 12 + 18}px` }}
+      style={{ marginLeft: `${level * 10 + 14}px` }}
     >
       <FileIcon name={node.path} />
       <span 
@@ -164,15 +164,18 @@ interface ArtifactsBrowserProps {
   openTabs: string[];
   onFileClick: (path: string) => void;
   onDownloadAsZip?: () => Promise<void>;
+  onUpload?: (files: FileList) => void;
 }
 
 export function ArtifactsBrowser({
   fs,
   openTabs,
   onFileClick,
-  onDownloadAsZip
+  onDownloadAsZip,
+  onUpload
 }: ArtifactsBrowserProps) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Subscribe to filesystem events to handle UI state updates
   useEffect(() => {
@@ -236,11 +239,11 @@ export function ArtifactsBrowser({
   };
 
   return (
-    <div className="w-64 h-full flex flex-col">
+    <div className="w-full h-full flex flex-col">
       {/* File list - grows to fill space */}
       <div className="flex-1 overflow-auto min-h-0">
         {files.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-8 text-center">
+          <div className="flex flex-col items-center justify-center p-4 text-center">
             <File size={32} className="text-neutral-300 dark:text-neutral-600 mb-3" />
             <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
               No files created yet
@@ -267,26 +270,47 @@ export function ArtifactsBrowser({
         )}
       </div>
       
-      {/* Download Button - fixed at bottom */}
+      {/* Upload/Download Buttons - fixed at bottom, aligned with bottom bar */}
       {files.length > 0 && (
-        <div className="shrink-0 h-9 flex items-center px-2 border-t border-black/5 dark:border-white/5">
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                await handleDownloadAsZip();
-              } catch (error) {
-                console.error('Failed to download files:', error);
-                alert('Failed to download files. Please try again.');
+        <>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files && onUpload) {
+                onUpload(e.target.files);
+                e.target.value = ''; // Reset to allow re-uploading same file
               }
             }}
-            className="w-full flex items-center justify-center gap-1.5 p-2 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors text-xs"
-            title={`Download all files as zip (${files.length} file${files.length !== 1 ? 's' : ''})`}
-          >
-            <Download size={12} />
-            <span>Download</span>
-          </button>
-        </div>
+          />
+          <div className="shrink-0 h-14 flex items-center justify-center border-t border-black/10 dark:border-white/10 gap-2">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
+              title="Upload files"
+            >
+              <Upload size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await handleDownloadAsZip();
+                } catch (error) {
+                  console.error('Failed to download files:', error);
+                  alert('Failed to download files. Please try again.');
+                }
+              }}
+              className="p-2 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
+              title={`Download all files as zip (${files.length} file${files.length !== 1 ? 's' : ''})`}
+            >
+              <Download size={16} />
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

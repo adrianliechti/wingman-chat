@@ -22,7 +22,7 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
   // This combines browser capability check with config.vision setting
   const isAvailable = useMemo(() => {
     const config = getConfig();
-    return config.vision && supportsScreenCapture();
+    return !!config.vision && supportsScreenCapture();
   }, []);
 
   // Helper to clean up resources

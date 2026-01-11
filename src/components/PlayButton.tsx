@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Play, Square, Loader2 } from 'lucide-react';
-import { Client } from '../lib/client';
+import { getConfig } from '../config';
 
 type PlayButtonProps = {
   text: string;
@@ -21,8 +21,9 @@ export function PlayButton({ text, voice, className }: PlayButtonProps) {
     setIsPlaying(true);
 
     try {
-      const client = new Client();
-      await client.speakText(voice || "", text);
+      const config = getConfig();
+      const model = config.tts?.model ?? "";
+      await config.client.speakText(model, text, voice);
     } catch (error) {
       console.error('Failed to play text:', error);
     } finally {

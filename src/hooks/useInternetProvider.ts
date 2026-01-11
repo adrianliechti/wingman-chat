@@ -9,12 +9,12 @@ export function useInternetProvider(): ToolProvider | null {
 
   const isAvailable = useMemo(() => {
     try {
-      return config.internet.enabled;
+      return !!config.internet;
     } catch (error) {
       console.warn('Failed to get search config:', error);
       return false;
     }
-  }, [config.internet.enabled]);
+  }, [config.internet]);
 
   const client = config.client;
 
@@ -43,7 +43,7 @@ export function useInternetProvider(): ToolProvider | null {
         function: async (args: Record<string, unknown>, context) => {
           const { query, domains } = args;
 
-          if (config.internet.elicitation && context?.elicit) {
+          if (config.internet?.elicitation && context?.elicit) {
             const result = await context.elicit({
               message: `Search the web for ${query}`
             });
@@ -84,7 +84,7 @@ export function useInternetProvider(): ToolProvider | null {
         function: async (args: Record<string, unknown>, context) => {
           const { url } = args;
 
-          if (config.internet.elicitation && context?.elicit) {
+          if (config.internet?.elicitation && context?.elicit) {
             const result = await context.elicit({
               message: `Scrape content from ${url}`
             });
@@ -110,7 +110,7 @@ export function useInternetProvider(): ToolProvider | null {
     ];
 
     return tools;
-  }, [client, config.internet.elicitation]);
+  }, [client, config.internet?.elicitation]);
 
   const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {

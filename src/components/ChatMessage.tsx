@@ -171,7 +171,7 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
   const isToolResult = message.role === Role.Tool;
   
   const config = getConfig();
-  const enableTTS = config.tts;
+  const enableTTS = !!config.tts;
 
   // Handle tool messages
   if (isToolResult) {

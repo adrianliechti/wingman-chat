@@ -17,7 +17,7 @@ export function useTranscription(): UseTranscriptionReturn {
 
   // Check if transcription is available
   const config = getConfig();
-  const canTranscribe = config.stt && 
+  const canTranscribe = !!config.stt && 
     typeof navigator !== 'undefined' && 
     navigator.mediaDevices && 
     typeof navigator.mediaDevices.getUserMedia === 'function';
@@ -69,9 +69,10 @@ export function useTranscription(): UseTranscriptionReturn {
       const audioBlob = pcm16ToWav(merged, 24000);
       pcmChunksRef.current = [];
       
-      // Send to transcription API
+      // Send to transcription API with model from config
       const config = getConfig();
-      const transcribedText = await config.client.transcribe("", audioBlob);
+      const model = config.stt?.model ?? "";
+      const transcribedText = await config.client.transcribe(model, audioBlob);
       
       return transcribedText;
       

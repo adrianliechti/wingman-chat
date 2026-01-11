@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { File, Code, Eye, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { File, Code, Eye, PanelRightOpen, PanelRightClose, Play, Loader2 } from 'lucide-react';
 import { useArtifacts } from '../hooks/useArtifacts';
 import { HtmlEditor } from './HtmlEditor';
 import { SvgEditor } from './SvgEditor';
@@ -8,6 +8,8 @@ import { CodeEditor } from './CodeEditor';
 import { CsvEditor } from './CsvEditor';
 import { MermaidEditor } from './MermaidEditor';
 import { MarkdownEditor } from './MarkdownEditor';
+import { PythonEditor } from './PythonEditor';
+import { JsEditor } from './JsEditor';
 import { ArtifactsBrowser } from './ArtifactsBrowser';
 import { artifactKind, artifactLanguage } from '../lib/artifacts';
 import { FileIcon } from './FileIcon';
@@ -25,7 +27,14 @@ export function ArtifactsDrawer() {
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
+  const [isRunning, setIsRunning] = useState(false);
+  const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Callback for editors to register their run handler
+  const onRunReady = useCallback((handler: (() => Promise<void>) | null) => {
+    setRunHandler(() => handler);
+  }, []);
 
   // Get files - memoized to prevent unnecessary recalculation
   // version is required to trigger updates when filesystem changes (fs instance is stable)
@@ -143,14 +152,22 @@ export function ArtifactsDrawer() {
         return <MermaidEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'markdown':
         return <MarkdownEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
-      case 'code':
+      case 'code': {
+        const lang = artifactLanguage(file.path);
+        if (lang === 'py') {
+          return <PythonEditor key={`${activeFile}-${version}`} content={file.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
+        }
+        if (lang === 'js') {
+          return <JsEditor key={`${activeFile}-${version}`} content={file.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
+        }
         return (
           <CodeEditor
             key={`${activeFile}-${version}`}
             content={file.content}
-            language={artifactLanguage(file.path)}
+            language={lang}
           />
         );
+      }
       case 'text':
       default:
         return <TextEditor key={`${activeFile}-${version}`} content={file.content} />;
@@ -162,6 +179,13 @@ export function ArtifactsDrawer() {
     if (!activeFile) return false;
     const kind = artifactKind(activeFile);
     return ['html', 'svg', 'csv', 'mermaid', 'markdown'].includes(kind);
+  };
+
+  // Handle run button click
+  const handleRun = async () => {
+    if (runHandler) {
+      await runHandler();
+    }
   };
 
   return (
@@ -210,6 +234,19 @@ export function ArtifactsDrawer() {
 
             {/* Action buttons */}
             <div className="flex items-center gap-1 px-2">
+              {/* Run button - only show when editor has a run handler */}
+              {runHandler && (
+                <button
+                  type="button"
+                  onClick={handleRun}
+                  disabled={isRunning}
+                  className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 disabled:opacity-50"
+                  title={isRunning ? 'Running...' : 'Run'}
+                >
+                  {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+                </button>
+              )}
+
               {/* View mode toggle - only show for files that support preview */}
               {supportsPreview() && (
                 <button
@@ -238,7 +275,7 @@ export function ArtifactsDrawer() {
         </div>
 
         {/* Right Side Panel - File Browser (full height) */}
-        <div className={`transition-all duration-500 ease-in-out relative ${showFileBrowser ? 'w-64 opacity-100' : 'w-0 opacity-0'
+        <div className={`transition-all duration-500 ease-in-out relative ${showFileBrowser ? 'w-48 opacity-100' : 'w-0 opacity-0'
           } shrink-0 overflow-hidden`}>
           <div className="absolute inset-y-0 left-0 w-px bg-black/10 dark:bg-white/10"></div>
           {fs && (
@@ -248,6 +285,18 @@ export function ArtifactsDrawer() {
                 fs={fs}
                 openTabs={activeFile ? [activeFile] : []}
                 onFileClick={openFile}
+                onUpload={async (fileList) => {
+                  for (const file of Array.from(fileList)) {
+                    try {
+                      const path = `/${file.name}`;
+                      const content = await file.text();
+                      fs.createFile(path, content, file.type);
+                      openFile(path);
+                    } catch (error) {
+                      console.error(`Error uploading file ${file.name}:`, error);
+                    }
+                  }
+                }}
               />
             </div>
           )}

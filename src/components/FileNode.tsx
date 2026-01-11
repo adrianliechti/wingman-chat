@@ -6,7 +6,6 @@ import { createData, getDataText } from '../types/workflow';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
-import { supportedTypes } from '../lib/utils';
 import { WorkflowNode } from './WorkflowNode';
 
 // FileNode data interface
@@ -91,7 +90,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
       <input
         ref={fileInputRef}
         type="file"
-        accept={supportedTypes.join(",")}
+        accept={[...(config.text?.files ?? []), ...(config.vision?.files ?? []), ...(config.extractor?.files ?? [])].join(",")}
         onChange={handleFileUpload}
         className="hidden"
         disabled={isProcessing}

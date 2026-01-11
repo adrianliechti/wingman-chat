@@ -3,6 +3,7 @@ import { loadPyodide as loadPyodideRuntime, version as pyodideVersion, type Pyod
 export interface CodeExecutionRequest {
   code: string;
   packages?: string[];
+  files?: Record<string, { content: string; contentType?: string }>;
 }
 
 export interface CodeExecutionResult {
@@ -47,10 +48,48 @@ async function loadPyodide(): Promise<PyodideInterface> {
 }
 
 export async function executeCode(request: CodeExecutionRequest): Promise<CodeExecutionResult> {
-  const { code, packages = [] } = request;
+  const { code, packages = [], files = {} } = request;
 
   try {
     const pyodide = await loadPyodide();
+
+    // Sync artifact files to Pyodide's virtual filesystem
+    // Write to /home/pyodide which is the default working directory
+    const baseDir = '/home/pyodide';
+    for (const [path, file] of Object.entries(files)) {
+      // Normalize path - remove leading slash if present, then prepend base dir
+      const relativePath = path.startsWith('/') ? path.slice(1) : path;
+      const fsPath = `${baseDir}/${relativePath}`;
+      
+      // Ensure parent directories exist
+      const dir = fsPath.substring(0, fsPath.lastIndexOf('/'));
+      if (dir) {
+        try {
+          pyodide.FS.mkdirTree(dir);
+        } catch {
+          // Directory may already exist
+        }
+      }
+      
+      // Write file - detect binary content types
+      const isBinary = file.contentType?.startsWith('image/') ||
+                       file.contentType?.startsWith('audio/') ||
+                       file.contentType?.startsWith('video/') ||
+                       file.contentType === 'application/octet-stream';
+      
+      if (isBinary) {
+        // Convert base64 to Uint8Array for binary files
+        const binaryString = atob(file.content);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        pyodide.FS.writeFile(fsPath, bytes);
+      } else {
+        // Write text content directly (Pyodide FS handles string encoding)
+        pyodide.FS.writeFile(fsPath, file.content);
+      }
+    }
 
     if (packages.length > 0) {
       try {

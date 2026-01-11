@@ -19,7 +19,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
   const [isAvailable] = useState(() => {
     try {
       const config = getConfig();
-      return config.repository.enabled;
+      return !!config.repository;
     } catch (error) {
       console.warn('Failed to get repository config:', error);
       return false;
@@ -96,7 +96,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       id: crypto.randomUUID(),
       name,
 
-      embedder: config.repository.embedder || '',
+      embedder: config.repository?.embedder || '',
       
       instructions,
       createdAt: new Date(),

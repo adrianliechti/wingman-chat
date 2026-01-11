@@ -10,12 +10,12 @@ export function useInterpreterProvider(): ToolProvider | null {
   
   const isAvailable = useMemo(() => {
     try {
-      return config.interpreter.enabled;
+      return !!config.interpreter;
     } catch (error) {
       console.warn('Failed to get interpreter config:', error);
       return false;
     }
-  }, [config.interpreter.enabled]);
+  }, [config.interpreter]);
 
   const interpreterTools = useCallback((): Tool[] => {
     return [

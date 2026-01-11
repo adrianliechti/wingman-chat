@@ -92,14 +92,14 @@ export function WorkflowPalette() {
           icon={<FileText size={20} />}
           createNode={createFileNode}
         />
-        {config.internet?.enabled && (
+        {config.internet && (
           <WorkflowPaletteItem
             label="Search"
             icon={<Globe size={20} />}
             createNode={createSearchNode}
           />
         )}
-        {config.repository?.enabled && (
+        {config.repository && (
           <WorkflowPaletteItem
             label="Repository"
             icon={<Database size={20} />}
@@ -114,14 +114,14 @@ export function WorkflowPalette() {
           icon={<Sparkles size={20} />}
           createNode={createPromptNode}
         />
-        {config.interpreter?.enabled && (
+        {config.interpreter && (
           <WorkflowPaletteItem
             label="Code"
             icon={<Code2 size={20} />}
             createNode={createCodeNode}
           />
         )}
-        {config.translator?.enabled && (
+        {config.translator && (
           <WorkflowPaletteItem
             label="Translate"
             icon={<Languages size={20} />}
@@ -143,7 +143,7 @@ export function WorkflowPalette() {
             createNode={createAudioNode}
           />
         )}
-        {config.renderer?.enabled && (
+        {config.renderer && (
           <WorkflowPaletteItem
             label="Image"
             icon={<Image size={20} />}

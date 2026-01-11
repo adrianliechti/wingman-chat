@@ -48,7 +48,7 @@ export function RewritePopover({
       setIsLoading(true);
       try {
         const result = await config.client.rewriteSelection(
-          config.translator.model || '',
+          config.translator?.model || '',
           fullText,
           selectionStart,
           selectionEnd
@@ -70,7 +70,7 @@ export function RewritePopover({
     };
 
     loadAlternatives();
-  }, [selectedText, fullText, selectionStart, selectionEnd, config.client, config.translator.model, hasLoaded]);
+  }, [selectedText, fullText, selectionStart, selectionEnd, config.client, config.translator?.model, hasLoaded]);
 
   // Handle escape key and click outside
   useEffect(() => {
