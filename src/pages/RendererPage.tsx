@@ -188,7 +188,7 @@ export function RendererPage() {
     }, 2000);
 
     try {
-      const model = selectedModel?.id || config.renderer.model || "";
+      const model = selectedModel?.id || config.renderer?.model || "";
       const images = referenceImages.map(img => img.blob);
       
       // Build the full prompt with style if selected

@@ -86,7 +86,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     { id: 'general', label: 'General', icon: Settings },
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'chats', label: 'Chats', icon: MessageSquare },
-    ...(getConfig().repository.enabled ? [{ id: 'repositories', label: 'Repositories', icon: Package }] : []),
+    ...(getConfig().repository ? [{ id: 'repositories', label: 'Repositories', icon: Package }] : []),
   ];
 
   // Load storage info when modal opens

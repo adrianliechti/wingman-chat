@@ -17,7 +17,7 @@ export function useTranscription(): UseTranscriptionReturn {
 
   // Check if transcription is available
   const config = getConfig();
-  const canTranscribe = config.stt && 
+  const canTranscribe = !!config.stt && 
     typeof navigator !== 'undefined' && 
     navigator.mediaDevices && 
     typeof navigator.mediaDevices.getUserMedia === 'function';

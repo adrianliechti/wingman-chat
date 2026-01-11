@@ -126,50 +126,6 @@ export function getFileExt(path: string): string {
   return parts.length > 1 ? "." + parts.pop() || "" : "";
 }
 
-export const textTypes = [
-  "text/csv",
-  "text/markdown",
-  "text/plain",
-  "application/json",
-  "application/sql",
-  "application/toml",
-  "application/x-yaml",
-  "application/xml",
-  "text/css",
-  "text/html",
-  "text/xml",
-  "text/yaml",
-  ".c",
-  ".cpp",
-  ".cs",
-  ".go",
-  ".html",
-  ".java",
-  ".js",
-  ".kt",
-  ".py",
-  ".rs",
-  ".ts",
-];
-
-export const imageTypes = [
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-];
-
-export const documentTypes = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".msg",
-  ".eml",
-];
-
-export const supportedTypes = [...textTypes, ...imageTypes, ...documentTypes];
-
 export function isAudioUrl(url: string): boolean {
   const audioExtensions = ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac'];
   

@@ -15,10 +15,6 @@ import {
   readAsDataURL,
   readAsText,
   resizeImageBlob,
-  supportedTypes,
-  textTypes,
-  imageTypes,
-  documentTypes,
 } from "../lib/utils";
 import { getConfig } from "../config";
 import { useChat } from "../hooks/useChat";
@@ -190,6 +186,10 @@ export function ChatInput() {
     // Set all extracting states at once
     setExtractingAttachments(prev => new Set([...prev, ...fileIds]));
 
+    const textFiles = config.text?.files ?? [];
+    const visionFiles = config.vision?.files ?? [];
+    const extractorFiles = config.extractor?.files ?? [];
+
     const processedAttachments = await Promise.allSettled(
       files.map(async (file, index) => {
         const fileId = fileIds[index];
@@ -197,14 +197,14 @@ export function ChatInput() {
           let attachment: Attachment | null = null;
           const fileType = file.type || getFileExt(file.name);
 
-          if (textTypes.includes(fileType)) {
+          if (textFiles.includes(fileType)) {
             const text = await readAsText(file);
             attachment = { type: AttachmentType.Text, name: file.name, data: text };
-          } else if (imageTypes.includes(fileType)) {
+          } else if (visionFiles.includes(fileType)) {
             const blob = await resizeImageBlob(file, 1920, 1920);
             const url = await readAsDataURL(blob);
             attachment = { type: AttachmentType.Image, name: file.name, data: url };
-          } else if (documentTypes.includes(fileType)) {
+          } else if (extractorFiles.includes(fileType)) {
             const text = await client.extractText(file);
             attachment = { type: AttachmentType.Text, name: file.name, data: text };
           }
@@ -226,7 +226,7 @@ export function ChatInput() {
 
     setAttachments(prev => [...prev, ...validAttachments]);
     setExtractingAttachments(new Set()); // Clear all at once
-  }, [client]);
+  }, [client, config.text?.files, config.vision?.files, config.extractor?.files]);
 
   const isDragging = useDropZone(containerRef, handleFiles);
 
@@ -459,7 +459,7 @@ export function ChatInput() {
         <input
           type="file"
           multiple
-          accept={supportedTypes.join(",")}
+          accept={[...(config.text?.files ?? []), ...(config.vision?.files ?? []), ...(config.extractor?.files ?? [])].join(",")}
           ref={fileInputRef}
           className="hidden"
           onChange={handleFileChange}

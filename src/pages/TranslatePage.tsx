@@ -32,7 +32,7 @@ export function TranslatePage() {
   const [promptError, setPromptError] = useState<string | null>(null);
   
   const config = getConfig();
-  const enableTTS = config.tts;
+  const enableTTS = !!config.tts;
   
   // Use translate context
   const {
@@ -179,7 +179,7 @@ export function TranslatePage() {
 
     try {
       const result = await config.client.rewriteText(
-        config.translator.model || '',
+        config.translator?.model || '',
         currentText,
         selectedLanguage.code,
         undefined, // tone

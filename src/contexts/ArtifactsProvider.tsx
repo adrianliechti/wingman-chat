@@ -16,7 +16,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   const config = getConfig();
   const [isAvailable] = useState(() => {
     try {
-      return config.artifacts.enabled;
+      return !!config.artifacts;
     } catch (error) {
       console.warn('Failed to get artifacts config:', error);
       return false;

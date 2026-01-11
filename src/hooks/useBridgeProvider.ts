@@ -14,7 +14,7 @@ export function useBridgeProvider(): ToolProvider | null {
   const clientRef = useRef<MCPClient | null>(null);
   
   useEffect(() => {
-    if (!config.bridge?.enabled) {
+    if (!config.bridge) {
       return;
     }
 
@@ -65,8 +65,8 @@ export function useBridgeProvider(): ToolProvider | null {
       clientRef.current?.disconnect();
       clientRef.current = null;
     };
-  }, [config.bridge?.enabled, config.bridge?.url]);
+  }, [config.bridge, config.bridge?.url]);
 
   // Return null if bridge is disabled, otherwise return the connected bridge
-  return config.bridge?.enabled ? bridge : null;
+  return config.bridge ? bridge : null;
 }

@@ -64,6 +64,8 @@ func main() {
 		type toolType struct {
 			ID string `json:"id,omitempty" yaml:"id,omitempty"`
 
+			URL string `json:"url,omitempty" yaml:"url,omitempty"`
+
 			Name        string `json:"name,omitempty" yaml:"name,omitempty"`
 			Description string `json:"description,omitempty" yaml:"description,omitempty"`
 		}
@@ -79,67 +81,55 @@ func main() {
 			Prompts []string `json:"prompts,omitempty" yaml:"prompts,omitempty"`
 		}
 
-		type ttsType struct {
-			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-		}
+		type ttsType struct{}
 
-		type sttType struct {
-			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-		}
+		type sttType struct{}
 
-		type voiceType struct {
-			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-		}
+		type voiceType struct{}
 
 		type visionType struct {
-			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+			Files []string `json:"files,omitempty" yaml:"files,omitempty"`
+		}
+
+		type textType struct {
+			Files []string `json:"files,omitempty" yaml:"files,omitempty"`
+		}
+
+		type extractorType struct {
+			Files []string `json:"files,omitempty" yaml:"files,omitempty"`
 		}
 
 		type internetType struct {
-			Enabled     bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 			Elicitation bool `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
 		}
+
 		type rendererType struct {
-			Enabled     bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 			Model       string `json:"model,omitempty" yaml:"model,omitempty"`
 			Elicitation bool   `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
 		}
 
-		type interpreterType struct {
-			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-		}
+		type interpreterType struct{}
 
 		type bridgeType struct {
-			Enabled bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-			URL     string `json:"url,omitempty" yaml:"url,omitempty"`
+			URL string `json:"url,omitempty" yaml:"url,omitempty"`
 		}
 
-		type artifactsType struct {
-			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-		}
+		type artifactsType struct{}
 
 		type repositoryType struct {
-			Enabled   bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 			Embedder  string `json:"embedder,omitempty" yaml:"embedder,omitempty"`
 			Extractor string `json:"extractor,omitempty" yaml:"extractor,omitempty"`
 
 			ContextPages *int `json:"context_pages,omitempty" yaml:"context_pages,omitempty"`
 		}
 
-		type workflowType struct {
-			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-		}
+		type workflowType struct{}
 
-		type recorderType struct {
-			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-		}
+		type recorderType struct{}
 
-		type researcherType struct {
-			Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-		}
+		type researcherType struct{}
 
 		type translatorType struct {
-			Enabled   bool     `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 			Model     string   `json:"model,omitempty" yaml:"model,omitempty"`
 			Files     []string `json:"files,omitempty" yaml:"files,omitempty"`
 			Languages []string `json:"languages,omitempty" yaml:"languages,omitempty"`
@@ -159,8 +149,10 @@ func main() {
 			TTS *ttsType `json:"tts,omitempty" yaml:"tts,omitempty"`
 			STT *sttType `json:"stt,omitempty" yaml:"stt,omitempty"`
 
-			Voice  *voiceType  `json:"voice,omitempty" yaml:"voice,omitempty"`
-			Vision *visionType `json:"vision,omitempty" yaml:"vision,omitempty"`
+			Voice     *voiceType     `json:"voice,omitempty" yaml:"voice,omitempty"`
+			Vision    *visionType    `json:"vision,omitempty" yaml:"vision,omitempty"`
+			Text      *textType      `json:"text,omitempty" yaml:"text,omitempty"`
+			Extractor *extractorType `json:"extractor,omitempty" yaml:"extractor,omitempty"`
 
 			Internet    *internetType    `json:"internet,omitempty" yaml:"internet,omitempty"`
 			Renderer    *rendererType    `json:"renderer,omitempty" yaml:"renderer,omitempty"`
@@ -193,78 +185,112 @@ func main() {
 		}
 
 		if data, err := os.ReadFile("translator.yaml"); err == nil {
-			yaml.Unmarshal(data, &config.Translator)
-			config.Translator.Enabled = true
+			config.Translator = &translatorType{}
+			yaml.Unmarshal(data, config.Translator)
+		}
+
+		if data, err := os.ReadFile("vision.yaml"); err == nil {
+			config.Vision = &visionType{}
+			yaml.Unmarshal(data, config.Vision)
+		}
+
+		if data, err := os.ReadFile("text.yaml"); err == nil {
+			config.Text = &textType{}
+			yaml.Unmarshal(data, config.Text)
+		}
+
+		if data, err := os.ReadFile("extractor.yaml"); err == nil {
+			config.Extractor = &extractorType{}
+			yaml.Unmarshal(data, config.Extractor)
+		}
+
+		if data, err := os.ReadFile("internet.yaml"); err == nil {
+			config.Internet = &internetType{}
+			yaml.Unmarshal(data, config.Internet)
+		}
+
+		if data, err := os.ReadFile("renderer.yaml"); err == nil {
+			config.Renderer = &rendererType{}
+			yaml.Unmarshal(data, config.Renderer)
+		}
+
+		if data, err := os.ReadFile("repository.yaml"); err == nil {
+			config.Repository = &repositoryType{}
+			yaml.Unmarshal(data, config.Repository)
 		}
 
 		if data, err := os.ReadFile("backgrounds.yaml"); err == nil {
 			yaml.Unmarshal(data, &config.Backgrounds)
 		}
 
-		if tts {
-			config.TTS = &ttsType{
-				Enabled: true,
-			}
+		// Environment variables can override/enable configs
+		// Presence of the config object means enabled
+
+		if tts && config.TTS == nil {
+			config.TTS = &ttsType{}
 		}
 
-		if stt {
-			config.STT = &sttType{
-				Enabled: true,
-			}
+		if stt && config.STT == nil {
+			config.STT = &sttType{}
 		}
 
-		if voice {
-			config.Voice = &voiceType{
-				Enabled: true,
-			}
+		if voice && config.Voice == nil {
+			config.Voice = &voiceType{}
 		}
 
-		if vision {
-			config.Vision = &visionType{
-				Enabled: true,
-			}
+		if vision && config.Vision == nil {
+			config.Vision = &visionType{}
 		}
 
 		if internet {
-			config.Internet = &internetType{
-				Enabled: true,
+			if config.Internet == nil {
+				config.Internet = &internetType{}
+			}
 
-				Elicitation: internetElicitation,
+			if internetElicitation {
+				config.Internet.Elicitation = true
 			}
 		}
 
 		if renderer {
-			config.Renderer = &rendererType{
-				Enabled:     true,
-				Model:       rendererModel,
-				Elicitation: rendererElicitation,
+			if config.Renderer == nil {
+				config.Renderer = &rendererType{}
+			}
+
+			if rendererModel != "" {
+				config.Renderer.Model = rendererModel
+			}
+
+			if rendererElicitation {
+				config.Renderer.Elicitation = true
 			}
 		}
 
 		if interpreter {
-			config.Interpreter = &interpreterType{
-				Enabled: true,
-			}
+			config.Interpreter = &interpreterType{}
 		}
 
 		if bridgeURL != "" {
 			config.Bridge = &bridgeType{
-				Enabled: true,
-				URL:     bridgeURL,
+				URL: bridgeURL,
 			}
 		}
 
 		if artifacts {
-			config.Artifacts = &artifactsType{
-				Enabled: true,
-			}
+			config.Artifacts = &artifactsType{}
 		}
 
 		if repository {
-			config.Repository = &repositoryType{
-				Enabled:   true,
-				Embedder:  repositoryEmbedder,
-				Extractor: repositoryExtractor,
+			if config.Repository == nil {
+				config.Repository = &repositoryType{}
+			}
+
+			if repositoryEmbedder != "" {
+				config.Repository.Embedder = repositoryEmbedder
+			}
+
+			if repositoryExtractor != "" {
+				config.Repository.Extractor = repositoryExtractor
 			}
 
 			if n, err := strconv.Atoi(repositoryContextPages); err == nil && n > 0 {
@@ -273,21 +299,15 @@ func main() {
 		}
 
 		if workflow {
-			config.Workflow = &workflowType{
-				Enabled: true,
-			}
+			config.Workflow = &workflowType{}
 		}
 
 		if recorder {
-			config.Recorder = &recorderType{
-				Enabled: true,
-			}
+			config.Recorder = &recorderType{}
 		}
 
 		if researcher {
-			config.Researcher = &researcherType{
-				Enabled: true,
-			}
+			config.Researcher = &researcherType{}
 		}
 
 		w.Header().Set("Content-Type", "application/json")

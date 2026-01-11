@@ -82,15 +82,15 @@ function AppContent() {
         case '#chat':
           return 'chat';
         case '#flow':
-          return config.workflow.enabled ? 'flow' : 'chat';
+          return config.workflow ? 'flow' : 'chat';
         case '#translate':
-          return config.translator.enabled ? 'translate' : 'chat';
+          return config.translator ? 'translate' : 'chat';
         case '#renderer':
-          return config.renderer.enabled ? 'renderer' : 'chat';
+          return config.renderer ? 'renderer' : 'chat';
         case '#research':
-          return config.researcher.enabled ? 'research' : 'chat';
+          return config.researcher ? 'research' : 'chat';
         case '#recorder':
-          return config.recorder.enabled ? 'recorder' : 'chat';
+          return config.recorder ? 'recorder' : 'chat';
         default:
           return 'chat';
       }
@@ -111,7 +111,7 @@ function AppContent() {
     // Listen for hash changes
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [config.workflow.enabled, config.translator.enabled, config.recorder.enabled, config.renderer.enabled, config.researcher.enabled]);
+  }, [config.workflow, config.translator, config.recorder, config.renderer, config.researcher]);
 
   // Auto-close sidebar on mobile screens and update sliders on resize
   useEffect(() => {
@@ -161,8 +161,8 @@ function AppContent() {
     { key: "translate" as const, label: "Translate", icon: <Languages size={20} /> },
   ].filter(page => {
     if (page.key === "chat") return true;
-    if (page.key === "flow") return config.workflow.enabled;
-    if (page.key === "translate") return config.translator.enabled;
+    if (page.key === "flow") return !!config.workflow;
+    if (page.key === "translate") return !!config.translator;
     return true;
   });
 
@@ -172,9 +172,9 @@ function AppContent() {
     { key: "research" as const, label: "Research", icon: <Globe size={20} /> },
     { key: "recorder" as const, label: "Recorder", icon: <Disc3 size={20} /> },
   ].filter(page => {
-    if (page.key === "renderer") return config.renderer.enabled;
-    if (page.key === "research") return config.researcher.enabled;
-    if (page.key === "recorder") return config.recorder.enabled;
+    if (page.key === "renderer") return !!config.renderer;
+    if (page.key === "research") return !!config.researcher;
+    if (page.key === "recorder") return !!config.recorder;
     return true;
   });
 

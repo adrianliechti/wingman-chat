@@ -16,7 +16,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const config = getConfig();
   const [isAvailable] = useState(() => {
     try {
-      return config.voice;
+      return !!config.voice;
     } catch (error) {
       console.warn('Failed to get voice config:', error);
       return false;
