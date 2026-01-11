@@ -69,9 +69,10 @@ export function useTranscription(): UseTranscriptionReturn {
       const audioBlob = pcm16ToWav(merged, 24000);
       pcmChunksRef.current = [];
       
-      // Send to transcription API
+      // Send to transcription API with model from config
       const config = getConfig();
-      const transcribedText = await config.client.transcribe("", audioBlob);
+      const model = config.stt?.model ?? "";
+      const transcribedText = await config.client.transcribe(model, audioBlob);
       
       return transcribedText;
       

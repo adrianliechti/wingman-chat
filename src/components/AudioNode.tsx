@@ -41,7 +41,8 @@ export const AudioNode = memo(({ id, data, selected }: NodeProps<AudioNodeType>)
         }
         
         // Generate audio from the input text
-        const audioBlob = await client.generateAudio('', inputContent);
+        const model = config.tts?.model ?? "";
+        const audioBlob = await client.generateAudio(model, inputContent);
         
         // Create a URL for the audio blob
         const audioUrl = URL.createObjectURL(audioBlob);

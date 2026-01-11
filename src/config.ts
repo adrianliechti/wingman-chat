@@ -65,15 +65,22 @@ interface toolConfig {
   description: string;
 }
 
-type ttsConfig = object;
+interface ttsConfig {
+  model?: string;
+}
 
-type sttConfig = object;
+interface sttConfig {
+  model?: string;
+}
 
 type workflowConfig = object;
 
 type recorderConfig = object;
 
-type voiceConfig = object;
+interface voiceConfig {
+  model?: string;
+  transcriber?: string;
+}
 
 interface textConfig {
   files: string[];
@@ -99,6 +106,7 @@ interface internetConfig {
 type interpreterConfig = object;
 
 interface extractorConfig {
+  model?: string;
   files: string[];
 }
 
@@ -118,7 +126,9 @@ interface translatorConfig {
   languages: string[];
 }
 
-type researcherConfig = object;
+interface researcherConfig {
+  model?: string;
+}
 
 interface Config {
   title: string;

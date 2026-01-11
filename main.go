@@ -29,19 +29,27 @@ func main() {
 	bridgeURL := os.Getenv("BRIDGE_URL")
 
 	tts := os.Getenv("TTS_ENABLED") == "true"
+	ttsModel := os.Getenv("TTS_MODEL")
 	stt := os.Getenv("STT_ENABLED") == "true"
+	sttModel := os.Getenv("STT_MODEL")
 
 	voice := os.Getenv("VOICE_ENABLED") == "true"
+	voiceModel := os.Getenv("VOICE_MODEL")
+	voiceTranscriber := os.Getenv("VOICE_TRANSCRIBER")
 	vision := os.Getenv("VISION_ENABLED") == "true"
 
 	internet := os.Getenv("INTERNET_ENABLED") == "true"
 	internetElicitation := os.Getenv("INTERNET_ELICITATION") == "true"
 
 	researcher := os.Getenv("RESEARCHER_ENABLED") == "true"
+	researcherModel := os.Getenv("RESEARCHER_MODEL")
 
 	renderer := os.Getenv("RENDERER_ENABLED") == "true"
 	rendererModel := os.Getenv("RENDERER_MODEL")
 	rendererElicitation := os.Getenv("RENDERER_ELICITATION") == "true"
+
+	extractor := os.Getenv("EXTRACTOR_ENABLED") == "true"
+	extractorModel := os.Getenv("EXTRACTOR_MODEL")
 
 	interpreter := os.Getenv("INTERPRETER_ENABLED") == "true"
 
@@ -81,11 +89,18 @@ func main() {
 			Prompts []string `json:"prompts,omitempty" yaml:"prompts,omitempty"`
 		}
 
-		type ttsType struct{}
+		type ttsType struct {
+			Model string `json:"model,omitempty" yaml:"model,omitempty"`
+		}
 
-		type sttType struct{}
+		type sttType struct {
+			Model string `json:"model,omitempty" yaml:"model,omitempty"`
+		}
 
-		type voiceType struct{}
+		type voiceType struct {
+			Model       string `json:"model,omitempty" yaml:"model,omitempty"`
+			Transcriber string `json:"transcriber,omitempty" yaml:"transcriber,omitempty"`
+		}
 
 		type visionType struct {
 			Files []string `json:"files,omitempty" yaml:"files,omitempty"`
@@ -96,6 +111,7 @@ func main() {
 		}
 
 		type extractorType struct {
+			Model string   `json:"model,omitempty" yaml:"model,omitempty"`
 			Files []string `json:"files,omitempty" yaml:"files,omitempty"`
 		}
 
@@ -127,7 +143,9 @@ func main() {
 
 		type recorderType struct{}
 
-		type researcherType struct{}
+		type researcherType struct {
+			Model string `json:"model,omitempty" yaml:"model,omitempty"`
+		}
 
 		type translatorType struct {
 			Model     string   `json:"model,omitempty" yaml:"model,omitempty"`
@@ -226,16 +244,38 @@ func main() {
 		// Environment variables can override/enable configs
 		// Presence of the config object means enabled
 
-		if tts && config.TTS == nil {
-			config.TTS = &ttsType{}
+		if tts {
+			if config.TTS == nil {
+				config.TTS = &ttsType{}
+			}
+
+			if ttsModel != "" {
+				config.TTS.Model = ttsModel
+			}
 		}
 
-		if stt && config.STT == nil {
-			config.STT = &sttType{}
+		if stt {
+			if config.STT == nil {
+				config.STT = &sttType{}
+			}
+
+			if sttModel != "" {
+				config.STT.Model = sttModel
+			}
 		}
 
-		if voice && config.Voice == nil {
-			config.Voice = &voiceType{}
+		if voice {
+			if config.Voice == nil {
+				config.Voice = &voiceType{}
+			}
+
+			if voiceModel != "" {
+				config.Voice.Model = voiceModel
+			}
+
+			if voiceTranscriber != "" {
+				config.Voice.Transcriber = voiceTranscriber
+			}
 		}
 
 		if vision && config.Vision == nil {
@@ -307,7 +347,23 @@ func main() {
 		}
 
 		if researcher {
-			config.Researcher = &researcherType{}
+			if config.Researcher == nil {
+				config.Researcher = &researcherType{}
+			}
+
+			if researcherModel != "" {
+				config.Researcher.Model = researcherModel
+			}
+		}
+
+		if extractor {
+			if config.Extractor == nil {
+				config.Extractor = &extractorType{}
+			}
+
+			if extractorModel != "" {
+				config.Extractor.Model = extractorModel
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
