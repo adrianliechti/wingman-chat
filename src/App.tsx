@@ -358,7 +358,7 @@ function AppContent() {
             <div className="flex items-center gap-2 justify-end flex-1">
               {/* Hide settings button on mobile - it's in the menu */}
               <div className="hidden md:block">
-                <SettingsButton />
+                <SettingsButton onClick={() => setSettingsOpen(true)} />
               </div>
               {rightActions}
             </div>
@@ -414,7 +414,7 @@ function AppContent() {
           />
         )}
         
-        {/* Settings Modal for mobile menu */}
+        {/* Settings Modal */}
         <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
         
         {/* Content area - no padding so it can scroll under the nav */}

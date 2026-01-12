@@ -1,5 +1,5 @@
-import { Fragment, useState, useEffect } from 'react';
-import { X, Settings, MessageSquare, Trash2, ChevronsUpDown, Check, User, Package, Download, Upload } from 'lucide-react';
+import { useState, useEffect, Fragment } from 'react';
+import { Settings, MessageSquare, User, Package, Download, Upload, Trash2, ChevronsUpDown, Check, X } from 'lucide-react';
 import { Dialog, Transition, Listbox } from '@headlessui/react';
 import { useSettings } from '../hooks/useSettings';
 import { useChat } from '../hooks/useChat';
@@ -23,25 +23,25 @@ const themeOptions: { value: Theme; label: string }[] = [
   { value: 'dark', label: 'Dark' },
 ];
 
-const layoutOptions: { value: LayoutMode; label: string }[] = [
-  { value: 'normal', label: 'Normal' },
-  { value: 'wide', label: 'Wide' },
+const layoutOptions: { value: LayoutMode; label: string; description?: string }[] = [
+  { value: 'normal', label: 'Normal', description: 'Centered chat with comfortable reading width' },
+  { value: 'wide', label: 'Wide', description: 'Full-width chat for more content visibility' },
 ];
 
 // A generic, reusable Select component using Headless UI Listbox
-function Select<T extends string | null>({ label, value, onChange, options, helpText, containerClassName }: { label?: string, value: T, onChange: (value: T) => void, options: { value: T, label: string }[], helpText?: string, containerClassName?: string }) {
+function Select<T extends string | null>({ label, value, onChange, options }: { label?: string, value: T, onChange: (value: T) => void, options: { value: T, label: string }[] }) {
   return (
-    <div className={containerClassName}>
-      {label && <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">{label}</label>}
+    <div className="grid grid-cols-[7rem_1fr] gap-4 items-center">
+      {label && <label className="text-sm text-right text-neutral-600 dark:text-neutral-400">{label}</label>}
       <Listbox value={value} onChange={onChange}>
-        <Listbox.Button className="relative w-full rounded-lg bg-white dark:bg-neutral-800/60 py-2 pl-3 pr-10 text-left border border-neutral-300 dark:border-neutral-700 focus-visible:ring-2 focus-visible:ring-blue-500 data-[headlessui-state=open]:ring-2 data-[headlessui-state=open]:ring-blue-500">
-          <span className="block truncate">{options.find(o => o.value === value)?.label ?? 'None'}</span>
+        <Listbox.Button className="relative w-full rounded-lg bg-white dark:bg-neutral-800 py-2 pl-3 pr-10 text-left border border-neutral-300 dark:border-neutral-700 focus-visible:ring-2 focus-visible:ring-blue-500 data-[headlessui-state=open]:ring-2 data-[headlessui-state=open]:ring-blue-500">
+          <span className="block truncate text-sm">{options.find(o => o.value === value)?.label ?? 'None'}</span>
           <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-            <ChevronsUpDown className="h-5 w-5 text-neutral-400" aria-hidden="true" />
+            <ChevronsUpDown className="h-4 w-4 text-neutral-400" aria-hidden="true" />
           </span>
         </Listbox.Button>
         <Transition as={Fragment} leave="transition ease-in duration-100" leaveFrom="opacity-100" leaveTo="opacity-0">
-          <Listbox.Options modal={false} anchor="bottom" className="mt-1 w-(--button-width) max-h-60 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100/80 dark:bg-neutral-800/80 p-1 backdrop-blur-xl sm:text-sm z-10 transition duration-100 ease-in data-leave:data-closed:opacity-0">
+          <Listbox.Options modal={false} anchor="bottom" className="mt-1 w-(--button-width) max-h-60 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100/90 dark:bg-neutral-800/90 p-1 backdrop-blur-xl sm:text-sm z-50 transition duration-100 ease-in data-leave:data-closed:opacity-0">
             {options.map((option) => (
               <Listbox.Option
                 key={String(option.value)}
@@ -57,8 +57,34 @@ function Select<T extends string | null>({ label, value, onChange, options, help
           </Listbox.Options>
         </Transition>
       </Listbox>
-      {helpText && <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">{helpText}</p>}
     </div>
+  );
+}
+
+// Tab button component for Apple-style navigation
+interface TabButtonProps {
+  label: string;
+  icon: React.ReactNode;
+  isActive: boolean;
+  onClick: () => void;
+}
+
+function TabButton({ label, icon, isActive, onClick }: TabButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex flex-col items-center gap-1 px-4 py-2 rounded-lg transition-all duration-150 w-20 ${
+        isActive 
+          ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' 
+          : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+      }`}
+      aria-selected={isActive}
+      role="tab"
+    >
+      <span className={isActive ? 'text-blue-600 dark:text-blue-400' : ''}>{icon}</span>
+      <span className="text-xs font-medium">{label}</span>
+    </button>
   );
 }
 
@@ -70,7 +96,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   } = useSettings();
   const { chats, createChat, updateChat, deleteChat } = useChat();
   const { repositories, createRepository, updateRepository, deleteRepository, upsertFile } = useRepositories();
-  const [activeSection, setActiveSection] = useState('general');
+  
+  const [activeTab, setActiveTab] = useState('general');
+  
   const [storageInfo, setStorageInfo] = useState<{
     totalSize: number;
     entries: Array<{ key: string; size: number }>;
@@ -83,18 +111,19 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     error: null,
   });
 
-  // Create sections array dynamically based on config
-  const sections = [
-    { id: 'general', label: 'General', icon: Settings },
-    { id: 'profile', label: 'Profile', icon: User },
-    { id: 'chats', label: 'Chats', icon: MessageSquare },
-    ...(getConfig().repository ? [{ id: 'repositories', label: 'Repositories', icon: Package }] : []),
+  // Build tabs array dynamically
+  const tabs = [
+    { id: 'general', label: 'General', icon: <Settings size={22} /> },
+    { id: 'profile', label: 'Profile', icon: <User size={22} /> },
+    { id: 'chats', label: 'Chats', icon: <MessageSquare size={22} /> },
+    ...(getConfig().repository ? [{ id: 'repositories', label: 'Repositories', icon: <Package size={22} /> }] : []),
   ];
 
   // Load storage info when modal opens
   useEffect(() => {
     if (isOpen) {
       loadStorageInfo();
+      setActiveTab('general'); // Reset to first tab on open
     }
   }, [isOpen]);
 
@@ -120,7 +149,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const deleteChats = () => {
     if (window.confirm(`Are you sure you want to delete all ${chats.length} chat${chats.length === 1 ? '' : 's'}? This action cannot be undone.`)) {
       chats.forEach(chat => deleteChat(chat.id));
-      // Recalculate storage after deletion
       setTimeout(() => loadStorageInfo(), 750);
     }
   };
@@ -128,7 +156,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const deleteRepositories = () => {
     if (window.confirm(`Are you sure you want to delete all ${repositories.length} repositor${repositories.length === 1 ? 'y' : 'ies'}? This action cannot be undone and will remove all files in these repositories.`)) {
       repositories.forEach(repo => deleteRepository(repo.id));
-      // Recalculate storage after deletion
       setTimeout(() => loadStorageInfo(), 750);
     }
   };
@@ -144,49 +171,39 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       if (!file) return;
 
       try {
-        // Read JSON file
         const jsonData = await file.text();
         const importData = JSON.parse(jsonData);
         
-        // Validate import data structure
         if (!importData.repositories || !Array.isArray(importData.repositories)) {
           alert('Invalid import file: Expected repositories array not found.');
           return;
         }
 
-        // Confirm import
         const importCount = importData.repositories.length;
         if (!window.confirm(`Import ${importCount} repositor${importCount === 1 ? 'y' : 'ies'}? This will add to your existing repositories.`)) {
           return;
         }
 
-        // Import repositories by creating them one by one
         let importedCount = 0;
         
         for (const repoData of importData.repositories) {
           try {
-            // Create a new repository and update it with imported data
             const newRepo = createRepository(repoData.name || 'Imported Repository', repoData.instructions);
             updateRepository(newRepo.id, {
               ...repoData,
-              id: newRepo.id, // Keep the new ID to avoid conflicts
-              // Convert date strings back to Date objects if needed
+              id: newRepo.id,
               createdAt: repoData.createdAt ? new Date(repoData.createdAt) : new Date(),
               updatedAt: repoData.updatedAt ? new Date(repoData.updatedAt) : new Date(),
             });
             
-            // Import files if they exist
             if (repoData.files && Array.isArray(repoData.files)) {
               for (const fileData of repoData.files) {
                 try {
-                  // Create repository file with converted dates
                   const repoFile: RepositoryFile = {
                     ...fileData,
                     id: fileData.id || crypto.randomUUID(),
                     uploadedAt: fileData.uploadedAt ? new Date(fileData.uploadedAt) : new Date(),
                   };
-                  
-                  // Add file to repository
                   upsertFile(newRepo.id, repoFile);
                 } catch (error) {
                   console.error('Failed to import file:', fileData, error);
@@ -201,8 +218,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         }
 
         alert(`Successfully imported ${importedCount} repositor${importedCount === 1 ? 'y' : 'ies'}.`);
-        
-        // Recalculate storage after import
         setTimeout(() => loadStorageInfo(), 750);
         
       } catch (error) {
@@ -216,13 +231,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const exportRepositories = async () => {
     try {
-      // Create export data
       const exportData = {
         exportDate: new Date().toISOString(),
         version: '2.0',
         repositories: repositories.map(repo => ({
           ...repo,
-          // Safely convert dates to ISO strings for JSON serialization
           createdAt: repo.createdAt ? (repo.createdAt instanceof Date ? repo.createdAt.toISOString() : repo.createdAt) : null,
           updatedAt: repo.updatedAt ? (repo.updatedAt instanceof Date ? repo.updatedAt.toISOString() : repo.updatedAt) : null,
           files: repo.files?.map(file => ({
@@ -232,7 +245,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         }))
       };
       
-      // Create and download JSON file
       const jsonBlob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
       const filename = `wingman-repositories-${new Date().toISOString().split('T')[0]}.json`;
       downloadBlob(jsonBlob, filename);
@@ -253,33 +265,27 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       if (!file) return;
 
       try {
-        // Read JSON file
         const jsonData = await file.text();
         const importData = JSON.parse(jsonData);
         
-        // Validate import data structure
         if (!importData.chats || !Array.isArray(importData.chats)) {
           alert('Invalid import file: Expected chats array not found.');
           return;
         }
 
-        // Confirm import
         const importCount = importData.chats.length;
         if (!window.confirm(`Import ${importCount} chat${importCount === 1 ? '' : 's'}? This will add to your existing chats.`)) {
           return;
         }
 
-        // Import chats by creating them one by one
         let importedCount = 0;
         
         for (const chatData of importData.chats) {
           try {
-            // Create a new chat and update it with imported data
             const newChat = createChat();
             updateChat(newChat.id, () => ({
               ...chatData,
-              id: newChat.id, // Keep the new ID to avoid conflicts
-              // Convert date strings back to Date objects if needed
+              id: newChat.id,
               created: chatData.created ? new Date(chatData.created) : new Date(),
               updated: chatData.updated ? new Date(chatData.updated) : new Date(),
             }));
@@ -291,8 +297,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         }
 
         alert(`Successfully imported ${importedCount} chat${importedCount === 1 ? '' : 's'}.`);
-        
-        // Recalculate storage after import
         setTimeout(() => loadStorageInfo(), 750);
         
       } catch (error) {
@@ -306,19 +310,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const exportChats = async () => {
     try {
-      // Create export data
       const exportData = {
         exportDate: new Date().toISOString(),
         version: '2.0',
         chats: chats.map(chat => ({
           ...chat,
-          // Safely convert dates to ISO strings for JSON serialization
           created: chat.created ? (chat.created instanceof Date ? chat.created.toISOString() : chat.created) : null,
           updated: chat.updated ? (chat.updated instanceof Date ? chat.updated.toISOString() : chat.updated) : null,
         }))
       };
       
-      // Create and download JSON file
       const jsonBlob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
       const filename = `wingman-chats-${new Date().toISOString().split('T')[0]}.json`;
       downloadBlob(jsonBlob, filename);
@@ -329,232 +330,259 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   };
 
   const backgroundOptions = [{ value: null, label: 'None' }, ...backgroundPacks.map((p: BackgroundPack) => ({ value: p.name, label: p.name }))];
-  const sectionOptions = sections.map(s => ({ value: s.id, label: s.label }));
 
-  const renderSectionContent = () => {
-    switch (activeSection) {
+  const renderTabContent = () => {
+    switch (activeTab) {
       case 'general':
         return (
-          <div className="space-y-6">
-            <Select label="Theme" value={theme} onChange={setTheme} options={themeOptions} helpText="System will follow your device's theme setting." />
-            {backgroundPacks.length > 0 && <Select label="Background" value={backgroundSetting} onChange={setBackground} options={backgroundOptions} helpText="Choose a background image pack." />}
-            <Select label="Layout" value={layoutMode} onChange={setLayoutMode} options={layoutOptions} helpText="Choose between normal or wide layout for larger screens." />
+          <div className="space-y-4">
+            <Select label="Theme" value={theme} onChange={setTheme} options={themeOptions} />
+            {backgroundPacks.length > 0 && <Select label="Background" value={backgroundSetting} onChange={setBackground} options={backgroundOptions} />}
+            <Select label="Layout" value={layoutMode} onChange={setLayoutMode} options={layoutOptions} />
+            {layoutOptions.find(l => l.value === layoutMode)?.description && (
+              <div className="grid grid-cols-[7rem_1fr] gap-4 items-center">
+                <span />
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 -mt-2">
+                  {layoutOptions.find(l => l.value === layoutMode)?.description}
+                </p>
+              </div>
+            )}
           </div>
         );
-      case 'profile': {
+      
+      case 'profile':
         return (
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">Name</label>
+            <div className="grid grid-cols-[7rem_1fr] gap-4 items-center">
+              <label className="text-sm text-right text-neutral-600 dark:text-neutral-400">Name</label>
               <input
                 type="text"
                 value={profile.name || ''}
                 onChange={(e) => updateProfile({ name: e.target.value })}
-                className="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-neutral-800/60 border border-neutral-300 dark:border-neutral-700 focus:ring-2 focus:ring-blue-500 text-neutral-900 dark:text-neutral-100"
+                className="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100"
                 placeholder="Your nickname or name"
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">Role</label>
+            <div className="grid grid-cols-[7rem_1fr] gap-4 items-center">
+              <label className="text-sm text-right text-neutral-600 dark:text-neutral-400">Role</label>
               <input
                 type="text"
                 value={profile.role || ''}
                 onChange={(e) => updateProfile({ role: e.target.value })}
-                className="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-neutral-800/60 border border-neutral-300 dark:border-neutral-700 focus:ring-2 focus:ring-blue-500 text-neutral-900 dark:text-neutral-100"
-                placeholder="e.g., Software Developer, Student, Designer"
+                className="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100"
+                placeholder="e.g., Software Developer, Student"
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">Profile</label>
+            <div className="grid grid-cols-[7rem_1fr] gap-4 items-start">
+              <label className="text-sm text-right text-neutral-600 dark:text-neutral-400 pt-2">About</label>
               <textarea
                 value={profile.profile || ''}
                 onChange={(e) => updateProfile({ profile: e.target.value })}
-                className="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-neutral-800/60 border border-neutral-300 dark:border-neutral-700 focus:ring-2 focus:ring-blue-500 text-neutral-900 dark:text-neutral-100 resize-none"
-                rows={2}
-                placeholder="Brief description about yourself, your interests, or context..."
+                className="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none"
+                rows={5}
+                placeholder="Brief description about yourself..."
               />
             </div>
           </div>
         );
-      }
+      
       case 'chats':
         return (
-          <div className="space-y-6">
-            {/* Persona Selection */}
-            <div>
+          <div className="flex flex-col h-full">
+            <div className="space-y-4">
+              {/* Persona Selection */}
               <Select
                 label="Personality"
                 value={(profile.persona || 'default') as PersonaKey}
                 onChange={(value) => updateProfile({ persona: value })}
                 options={personaOptions}
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
-                {personaOptions.find(p => p.value === (profile.persona || 'default'))?.description || "Choose a personality to customize the AI's communication style."}
-              </p>
+              {personaOptions.find(p => p.value === (profile.persona || 'default'))?.description && (
+                <div className="grid grid-cols-[7rem_1fr] gap-4 items-center">
+                  <span />
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 -mt-2">
+                    {personaOptions.find(p => p.value === (profile.persona || 'default'))?.description}
+                  </p>
+                </div>
+              )}
             </div>
 
-            {/* Storage Usage Information */}
-            <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4 space-y-4">
-              <div>
-                <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-1">Storage Usage</h3>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  {storageInfo.isLoading ? (
-                    'Calculating storage usage...'
-                  ) : storageInfo.error ? (
-                    `Error: ${storageInfo.error}`
-                  ) : (
-                    `Local database: ${formatBytes(storageInfo.entries.find(e => e.key.includes('chat'))?.size || 0)}`
-                  )}
-                </p>
-              </div>
-            </div>
+            {/* Danger Zone */}
+            <div className="mt-auto pt-4">
+              <div className="-mx-6 px-6 border-t border-neutral-200 dark:border-neutral-800 pt-3">
+                <div className="grid grid-cols-[7rem_1fr] gap-4 items-center">
+                  <label className="text-sm text-right text-neutral-600 dark:text-neutral-400">Chat History</label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-neutral-500 dark:text-neutral-400">
+                      {chats.length} chat{chats.length === 1 ? '' : 's'} • {storageInfo.isLoading ? '...' : formatBytes(storageInfo.entries.find(e => e.key.includes('chat'))?.size || 0)}
+                    </span>
+                  </div>
+                </div>
+              
+                <div className="grid grid-cols-[7rem_1fr] gap-4 items-center mt-3">
+                <span />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={importChats}
+                    className="inline-flex items-center justify-center gap-1.5 min-w-20 px-2.5 py-1.5 text-xs rounded-md border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    <Upload size={12} />
+                    Import
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exportChats}
+                    disabled={chats.length === 0}
+                    className="inline-flex items-center justify-center gap-1.5 min-w-20 px-2.5 py-1.5 text-xs rounded-md border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Download size={12} />
+                    Export
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deleteChats}
+                    disabled={chats.length === 0}
+                    className="inline-flex items-center justify-center gap-1.5 min-w-20 px-2.5 py-1.5 text-xs rounded-md border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 size={12} />
+                    Delete All
+                  </button>
+                </div>
+                </div>
 
-            {/* Chat Management */}
-            <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4 space-y-4">
-              <div>
-                <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-1">Chat Management</h3>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">You have {chats.length} chat{chats.length === 1 ? '' : 's'} saved locally.</p>
-              </div>
-              <div className="flex flex-col gap-1">
-                <button
-                  type="button"
-                  onClick={importChats}
-                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
-                >
-                  <Upload size={16} />
-                  Import Chats
-                </button>
-                <button
-                  type="button"
-                  onClick={exportChats}
-                  disabled={chats.length === 0}
-                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 disabled:text-neutral-400 dark:disabled:text-neutral-600"
-                >
-                  <Download size={16} />
-                  Export Chats
-                </button>
-                <button
-                  type="button"
-                  onClick={deleteChats}
-                  disabled={chats.length === 0}
-                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:text-neutral-400 dark:disabled:text-neutral-600"
-                >
-                  <Trash2 size={16} />
-                  Delete All
-                </button>
+                <div className="grid grid-cols-[7rem_1fr] gap-4 items-center mt-2">
+                  <span />
+                  <p className="text-xs text-neutral-400 dark:text-neutral-500">Stored locally in your browser</p>
+                </div>
               </div>
             </div>
           </div>
         );
+      
       case 'repositories':
         return (
-          <div className="space-y-6">
-            {/* Storage Usage Information */}
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-1">Storage Usage</h3>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  {storageInfo.isLoading ? (
-                    'Calculating storage usage...'
-                  ) : storageInfo.error ? (
-                    `Error: ${storageInfo.error}`
-                  ) : (
-                    `Local database: ${formatBytes(storageInfo.entries.find(e => e.key.includes('repo'))?.size || 0)}`
-                  )}
-                </p>
-              </div>
-            </div>
+          <div className="flex flex-col h-full">
+            <div className="flex-1" />
 
-            {/* Repository Management */}
-            <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4 space-y-4">
-              <div>
-                <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-1">Repository Management</h3>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">You have {repositories.length} repositor{repositories.length === 1 ? 'y' : 'ies'} saved locally.</p>
-              </div>
-              <div className="flex flex-col gap-1">
-                <button
-                  type="button"
-                  onClick={importRepositories}
-                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
-                >
-                  <Upload size={16} />
-                  Import Repositories
-                </button>
-                <button
-                  type="button"
-                  onClick={exportRepositories}
-                  disabled={repositories.length === 0}
-                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 disabled:text-neutral-400 dark:disabled:text-neutral-600"
-                >
-                  <Download size={16} />
-                  Export Repositories
-                </button>
-                <button
-                  type="button"
-                  onClick={deleteRepositories}
-                  disabled={repositories.length === 0}
-                  className="flex items-center gap-3 px-0 py-2 text-sm transition-colors text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:text-neutral-400 dark:disabled:text-neutral-600"
-                >
-                  <Trash2 size={16} />
-                  Delete All
-                </button>
+            {/* Danger Zone */}
+            <div className="mt-auto pt-4">
+              <div className="-mx-6 px-6 border-t border-neutral-200 dark:border-neutral-800 pt-3">
+                <div className="grid grid-cols-[7rem_1fr] gap-4 items-center">
+                  <label className="text-sm text-right text-neutral-600 dark:text-neutral-400">Repositories</label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-neutral-500 dark:text-neutral-400">
+                      {repositories.length} repositor{repositories.length === 1 ? 'y' : 'ies'} • {storageInfo.isLoading ? '...' : formatBytes(storageInfo.entries.find(e => e.key.includes('repo'))?.size || 0)}
+                    </span>
+                  </div>
+                </div>
+              
+                <div className="grid grid-cols-[7rem_1fr] gap-4 items-center mt-3">
+                <span />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={importRepositories}
+                    className="inline-flex items-center justify-center gap-1.5 min-w-20 px-2.5 py-1.5 text-xs rounded-md border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    <Upload size={12} />
+                    Import
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exportRepositories}
+                    disabled={repositories.length === 0}
+                    className="inline-flex items-center justify-center gap-1.5 min-w-20 px-2.5 py-1.5 text-xs rounded-md border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Download size={12} />
+                    Export
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deleteRepositories}
+                    disabled={repositories.length === 0}
+                    className="inline-flex items-center justify-center gap-1.5 min-w-20 px-2.5 py-1.5 text-xs rounded-md border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 size={12} />
+                    Delete All
+                  </button>
+                </div>
+                </div>
+
+                <div className="grid grid-cols-[7rem_1fr] gap-4 items-center mt-2">
+                  <span />
+                  <p className="text-xs text-neutral-400 dark:text-neutral-500">Stored locally in your browser</p>
+                </div>
               </div>
             </div>
           </div>
         );
-      default: return null;
+      
+      default:
+        return null;
     }
   };
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
-        <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
-          <div className="fixed inset-0 bg-black/30 dark:bg-black/50" />
+        {/* Backdrop */}
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-200"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-150"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
         </Transition.Child>
 
+        {/* Modal container */}
         <div className="fixed inset-0 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4 text-center">
-            <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
-              <Dialog.Panel className="w-full max-w-2xl h-128 sm:h-144 transform overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 text-left align-middle shadow-xl transition-all flex flex-col">
-                <div className="flex items-center justify-between p-4 border-b border-neutral-200 dark:border-neutral-700 shrink-0">
-                  <Dialog.Title as="h3" className="hidden sm:block text-lg font-medium leading-6 text-neutral-900 dark:text-neutral-100">Settings</Dialog.Title>
-                  <div className="sm:hidden flex-1 pr-4">
-                    <Select 
-                      value={activeSection} 
-                      onChange={v => setActiveSection(v as string)} 
-                      options={sectionOptions} 
-                    />
-                  </div>
-                  <button type="button" onClick={onClose} className="p-1 rounded-full text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
-                    <X size={20} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-200"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-150"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className="w-full max-w-lg h-96 transform overflow-hidden rounded-2xl bg-neutral-50 dark:bg-neutral-900 shadow-2xl transition-all flex flex-col">
+                {/* Tab navigation - Apple style */}
+                <div className="px-4 pt-4 pb-3 shrink-0 relative">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="absolute right-3 top-3 p-1.5 rounded-full text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
+                    aria-label="Close"
+                  >
+                    <X size={16} />
                   </button>
+                  <div className="flex justify-center gap-1" role="tablist">
+                    {tabs.map((tab) => (
+                      <TabButton
+                        key={tab.id}
+                        label={tab.label}
+                        icon={tab.icon}
+                        isActive={activeTab === tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                      />
+                    ))}
+                  </div>
                 </div>
 
-                <div className="flex flex-1 min-h-0">
-                  <nav className="hidden sm:block w-48 border-r border-neutral-200 dark:border-neutral-800 p-1 shrink-0">
-                    <div className="space-y-1">
-                      {sections.map((section) => (
-                        <button
-                          type="button"
-                          key={section.id}
-                          onClick={() => setActiveSection(section.id)}
-                          className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors rounded-md text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80 data-[active=true]:text-neutral-900 dark:data-[active=true]:text-neutral-100 data-[active=true]:bg-neutral-200 dark:data-[active=true]:bg-neutral-700/80"
-                          data-active={activeSection === section.id}
-                        >
-                          <section.icon size={16} />
-                          {section.label}
-                        </button>
-                      ))}
-                    </div>
-                  </nav>
-                  <div className="flex-1 p-6 overflow-y-auto min-h-0">
-                    <div className="min-h-full">
-                      {renderSectionContent()}
-                    </div>
-                  </div>
+                {/* Divider */}
+                <div className="border-t border-neutral-200 dark:border-neutral-800" />
+
+                {/* Content area */}
+                <div className="px-6 py-5 flex-1 overflow-y-auto">
+                  {renderTabContent()}
                 </div>
               </Dialog.Panel>
             </Transition.Child>
