@@ -9,6 +9,8 @@ import { formatBytes, downloadBlob } from '../lib/utils';
 import { getConfig } from '../config';
 import type { Theme, LayoutMode, BackgroundPack } from '../types/settings';
 import type { RepositoryFile } from '../types/repository';
+import { personaOptions } from '../lib/personas';
+import type { PersonaKey } from '../lib/personas';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -340,19 +342,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           </div>
         );
       case 'profile': {
-        const availableTraits = [
-          'chatty', 'concise', 'friendly', 'professional', 'creative', 
-          'analytical', 'patient', 'encouraging', 'direct', 'detailed'
-        ];
-        
-        const toggleTrait = (trait: string) => {
-          const currentTraits = profile.traits || [];
-          const newTraits = currentTraits.includes(trait)
-            ? currentTraits.filter((t: string) => t !== trait)
-            : [...currentTraits, trait];
-          updateProfile({ traits: newTraits });
-        };
-
         return (
           <div className="space-y-4">
             <div>
@@ -378,30 +367,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">Traits</label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {availableTraits.map((trait) => {
-                  const isSelected = (profile.traits || []).includes(trait);
-                  return (
-                    <button
-                      type="button"
-                      key={trait}
-                      onClick={() => toggleTrait(trait)}
-                      className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                        isSelected
-                          ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-600'
-                          : 'bg-neutral-50 dark:bg-neutral-800/40 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-700/60'
-                      }`}
-                    >
-                      {isSelected ? `− ${trait}` : `+ ${trait}`}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">Click to add/remove traits for the AI's personality.</p>
-            </div>
-
-            <div>
               <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">Profile</label>
               <textarea
                 value={profile.profile || ''}
@@ -417,8 +382,21 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       case 'chats':
         return (
           <div className="space-y-6">
+            {/* Persona Selection */}
+            <div>
+              <Select
+                label="Personality"
+                value={(profile.persona || 'default') as PersonaKey}
+                onChange={(value) => updateProfile({ persona: value })}
+                options={personaOptions}
+              />
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
+                {personaOptions.find(p => p.value === (profile.persona || 'default'))?.description || "Choose a personality to customize the AI's communication style."}
+              </p>
+            </div>
+
             {/* Storage Usage Information */}
-            <div className="space-y-4">
+            <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4 space-y-4">
               <div>
                 <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-1">Storage Usage</h3>
                 <p className="text-xs text-neutral-500 dark:text-neutral-400">
