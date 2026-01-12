@@ -248,7 +248,7 @@ export function ChatPage() {
       <BackgroundImage opacity={messages.length === 0 ? 80 : 0} />
       
       {/* Main content area */}
-      <div className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-300 ${
+      <div className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-500 ease-in-out ${
         showAppDrawer ? 'md:mr-[calc(66vw+0.75rem)]' :
         showArtifactsDrawer ? 'md:mr-[calc(66vw+0.75rem)]' : 
         showRepositoryDrawer ? 'md:mr-83' : ''
@@ -317,9 +317,9 @@ export function ChatPage() {
 
         {/* Chat Input */}
         <footer className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-500 ease-in-out ${
-            messages.length === 0 ? 'md:bottom-1/3 md:transform md:translate-y-1/2' : ''
+            messages.length === 0 && !showArtifactsDrawer && !showAppDrawer ? 'md:bottom-1/3 md:transform md:translate-y-1/2' : ''
           } ${
-            showSidebar && chats.length > 0 ? 'md:left-59' : ''
+            showSidebar && chats.length > 0 && !showArtifactsDrawer && !showRepositoryDrawer && !showAppDrawer ? 'md:left-59' : ''
           } ${
             showAppDrawer ? 'right-0 md:right-[calc(66vw+0.75rem)]' :
             showArtifactsDrawer ? 'right-0 md:right-[calc(66vw+0.75rem)]' :

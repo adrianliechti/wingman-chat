@@ -30,6 +30,7 @@ export function ArtifactsDrawer() {
   const [isRunning, setIsRunning] = useState(false);
   const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasAutoShownBrowserRef = useRef(false);
 
   // Callback for editors to register their run handler
   const onRunReady = useCallback((handler: (() => Promise<void>) | null) => {
@@ -44,13 +45,17 @@ export function ArtifactsDrawer() {
   }, [fs, version]);
 
   // Automatically open the file if there's only one file
-  // and show the browser if there are multiple files
+  // and show the browser if there are files but none selected
   useEffect(() => {
-    if (activeFile) return;
+    if (activeFile) {
+      hasAutoShownBrowserRef.current = false; // Reset when a file is selected
+      return;
+    }
 
     if (files.length === 1) {
       openFile(files[0].path);
-    } else if (files.length > 1 && !showFileBrowser) {
+    } else if (files.length > 0 && !showFileBrowser && !hasAutoShownBrowserRef.current) {
+      hasAutoShownBrowserRef.current = true;
       toggleFileBrowser();
     }
   }, [files, activeFile, openFile, showFileBrowser, toggleFileBrowser]);

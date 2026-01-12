@@ -357,12 +357,12 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
     
     return (
       <div
-        className={`flex chat-bubble ${isUser ? "justify-end" : "justify-start"} mb-4 ${!isUser && isResponding && props.isLast ? '' : 'group'}`}
+        className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4 ${!isUser && isResponding && props.isLast ? '' : 'group'} text-neutral-900 dark:text-neutral-200`}
       >
         <div
           className={`${
             isUser 
-              ? "rounded-lg py-3 px-3 chat-bubble-user" 
+              ? "rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200" 
               : "flex-1 py-3"
           } wrap-break-words overflow-x-auto`}
         >
@@ -429,8 +429,8 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
           )}
           
           {!isUser && (
-            <div className={`flex justify-between items-center mt-2 ${
-              props.isLast && !isResponding ? 'chat-message-actions opacity-100!' : 'chat-message-actions opacity-0'
+            <div className={`flex justify-between items-center mt-2 transition-opacity duration-200 ${
+              props.isLast && !isResponding ? 'opacity-100!' : 'opacity-0 group-hover:opacity-100'
             }`}>
               <div className="flex items-center gap-2">
                 <CopyButton markdown={message.content || ''} className="h-4 w-4" />

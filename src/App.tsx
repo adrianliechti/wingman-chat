@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { MessageCircle, Languages, PanelLeftOpen, Workflow, Disc3, ChevronDown, Settings, Image, MoreHorizontal, Globe } from "lucide-react";
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { Menu, MenuButton, MenuItem, MenuItems, Transition } from "@headlessui/react";
 import { ChatPage } from "./pages/ChatPage";
 import { TranslatePage } from "./pages/TranslatePage";
 import { WorkflowPage } from "./pages/WorkflowPage";
@@ -19,13 +19,16 @@ import { ChatProvider } from "./contexts/ChatProvider";
 import { TranslateProvider } from "./contexts/TranslateProvider";
 import { VoiceProvider } from "./contexts/VoiceProvider";
 import { SettingsButton } from "./components/SettingsButton";
-import { SettingsModal } from "./components/SettingsModal";
+import { SettingsDrawer } from "./components/SettingsDrawer";
 import { RepositoryProvider } from "./contexts/RepositoryProvider";
 import { ArtifactsProvider } from "./contexts/ArtifactsProvider";
 import { AppProvider } from "./contexts/AppProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
 import { ToolsProvider } from "./contexts/ToolsProvider";
+import { useArtifacts } from "./hooks/useArtifacts";
+import { useRepositories } from "./hooks/useRepositories";
+import { useApp } from "./hooks/useApp";
 
 type Page = "chat" | "flow" | "translate" | "renderer" | "research" | "recorder";
 
@@ -34,6 +37,25 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>("chat");
   const { showSidebar, setShowSidebar, toggleSidebar, sidebarContent } = useSidebar();
   const { leftActions, rightActions } = useNavigation();
+  const { showArtifactsDrawer } = useArtifacts();
+  const { showRepositoryDrawer } = useRepositories();
+  const { showAppDrawer } = useApp();
+  
+  // Detect if any panel is open - sidebar becomes overlay when panels are open
+  const hasPanelOpen = showArtifactsDrawer || showRepositoryDrawer || showAppDrawer;
+  
+  // Track previous panel state to detect when panels open
+  const hadPanelOpenRef = useRef(hasPanelOpen);
+  
+  // Auto-close sidebar when a panel opens (desktop only) - only on transition from closed to open
+  useEffect(() => {
+    const panelJustOpened = hasPanelOpen && !hadPanelOpenRef.current;
+    hadPanelOpenRef.current = hasPanelOpen;
+    
+    if (panelJustOpened && showSidebar && window.innerWidth >= 768) {
+      setShowSidebar(false);
+    }
+  }, [hasPanelOpen, showSidebar, setShowSidebar]);
   
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -201,7 +223,23 @@ function AppContent() {
         </div>
       )}
 
-      {/* Generic sidebar that pushes content */}
+      {/* Backdrop for overlay sidebar when panels are open */}
+      <Transition
+        show={!!(sidebarContent && hasPanelOpen && showSidebar)}
+        enter="ease-out duration-300"
+        enterFrom="opacity-0"
+        enterTo="opacity-100"
+        leave="ease-in duration-200"
+        leaveFrom="opacity-100"
+        leaveTo="opacity-0"
+      >
+        <div 
+          className="fixed inset-0 z-40 bg-black/40 dark:bg-black/60 hidden md:block"
+          onClick={() => setShowSidebar(false)}
+        />
+      </Transition>
+
+      {/* Generic sidebar - pushes content normally, becomes overlay when panels are open */}
       {sidebarContent && (
         <aside
           className={`
@@ -218,10 +256,13 @@ function AppContent() {
         </aside>
       )}
 
+      {/* Settings Drawer - must be outside the z-10 content wrapper */}
+      <SettingsDrawer isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
       {/* Main app content */}
-      <div className={`flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out ${showSidebar && sidebarContent ? 'md:ml-59' : 'ml-0'}`}>
+      <div className={`flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? 'md:ml-59' : 'ml-0'}`}>
         {/* Fixed navigation bar with glass effect */}
-        <nav className={`fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 nav-header transition-all duration-500 ease-in-out ${showSidebar && sidebarContent ? 'md:left-59' : ''}`}>
+        <nav className={`fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 shadow-sm transition-all duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? 'md:left-59' : ''}`}>
           <div className="flex items-center justify-between">
             {/* Left section */}
             <div className="flex items-center gap-1 flex-1">
@@ -230,7 +271,7 @@ function AppContent() {
                 {sidebarContent && (
                   <button
                     type="button"
-                    className={`p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-300 ease-in-out hidden md:flex ${showSidebar ? 'opacity-0 pointer-events-none' : 'opacity-100 delay-300'}`}
+                    className={`p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-500 ease-in-out hidden md:flex ${showSidebar ? 'opacity-0 pointer-events-none' : 'opacity-100 delay-500'}`}
                     onClick={toggleSidebar}
                     aria-label="Open sidebar"
                   >
@@ -413,9 +454,6 @@ function AppContent() {
             onClick={() => setMobileMenuOpen(false)}
           />
         )}
-        
-        {/* Settings Modal */}
-        <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
         
         {/* Content area - no padding so it can scroll under the nav */}
         <div className="flex-1 overflow-hidden flex">
