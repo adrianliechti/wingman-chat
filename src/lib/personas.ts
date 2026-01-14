@@ -6,8 +6,9 @@ import personaFriendly from '../prompts/persona_friendly.txt?raw';
 import personaNerdy from '../prompts/persona_nerdy.txt?raw';
 import personaProfessional from '../prompts/persona_professional.txt?raw';
 import personaQuirky from '../prompts/persona_quirky.txt?raw';
+import personaTeacher from '../prompts/persona_teacher.txt?raw';
 
-export type PersonaKey = 'default' | 'candid' | 'cynical' | 'efficient' | 'friendly' | 'nerdy' | 'professional' | 'quirky';
+export type PersonaKey = 'default' | 'candid' | 'cynical' | 'efficient' | 'friendly' | 'nerdy' | 'professional' | 'quirky' | 'teacher';
 
 export const personas: Record<PersonaKey, string> = {
   default: personaDefault,
@@ -18,6 +19,7 @@ export const personas: Record<PersonaKey, string> = {
   nerdy: personaNerdy,
   professional: personaProfessional,
   quirky: personaQuirky,
+  teacher: personaTeacher,
 };
 
 export const personaOptions: { value: PersonaKey; label: string; description?: string }[] = [
@@ -29,6 +31,7 @@ export const personaOptions: { value: PersonaKey; label: string; description?: s
   { value: 'nerdy', label: 'Nerdy', description: 'Enthusiastic mentor passionate about knowledge and critical thinking' },
   { value: 'professional', label: 'Professional', description: 'Contemplative and precise, favors clarity and depth over flair' },
   { value: 'quirky', label: 'Quirky', description: 'Playful and imaginative, uses humor and creative literary devices' },
+  { value: 'teacher', label: 'Teacher', description: 'Patient and encouraging, breaks down concepts with clear examples' },
 ];
 
 export function getPersonaContent(key: PersonaKey | undefined): string {
