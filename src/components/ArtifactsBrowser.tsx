@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { File, Folder, FolderOpen, ChevronRight, ChevronDown, Download, Upload } from 'lucide-react';
+import { Folder, FolderOpen, ChevronRight, ChevronDown, Download, Upload } from 'lucide-react';
 import { FileIcon } from './FileIcon';
 import { FileSystemManager } from '../lib/fs';
 
@@ -242,17 +242,7 @@ export function ArtifactsBrowser({
     <div className="w-full h-full flex flex-col">
       {/* File list - grows to fill space */}
       <div className="flex-1 overflow-auto min-h-0">
-        {files.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-4 text-center">
-            <File size={32} className="text-neutral-300 dark:text-neutral-600 mb-3" />
-            <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
-              No files created yet
-            </p>
-            <p className="text-xs text-neutral-500 dark:text-neutral-500">
-              Files created by AI or dropped here will appear in this browser
-            </p>
-          </div>
-        ) : (
+        {files.length > 0 && (
           <div className="p-2 min-w-full">
             {/* Render file tree with folders */}
             {fileTree.map((node) => (
