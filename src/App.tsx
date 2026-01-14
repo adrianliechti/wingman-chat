@@ -21,6 +21,7 @@ import { VoiceProvider } from "./contexts/VoiceProvider";
 import { SettingsButton } from "./components/SettingsButton";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { RepositoryProvider } from "./contexts/RepositoryProvider";
+import { SkillsProvider } from "./contexts/SkillsProvider";
 import { ArtifactsProvider } from "./contexts/ArtifactsProvider";
 import { AppProvider } from "./contexts/AppProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
@@ -478,6 +479,7 @@ const providers = [
   LayoutProvider,
   BackgroundProvider,
   ProfileProvider,
+  SkillsProvider,
   SidebarProvider,
   NavigationProvider,
   ArtifactsProvider,

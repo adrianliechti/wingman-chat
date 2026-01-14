@@ -2,6 +2,7 @@ import { useLayout } from './useLayout';
 import { useTheme } from './useTheme';
 import { useBackground } from './useBackground';
 import { useProfile } from './useProfile';
+import { useSkills } from './useSkills';
 
 export const useSettings = () => {
   // Use existing context hooks
@@ -9,6 +10,7 @@ export const useSettings = () => {
   const themeContext = useTheme();
   const backgroundContext = useBackground();
   const profileContext = useProfile();
+  const skillsContext = useSkills();
   
   return {
     // Layout settings
@@ -26,5 +28,13 @@ export const useSettings = () => {
     profile: profileContext.settings,
     updateProfile: profileContext.updateSettings,
     generateInstructions: profileContext.generateInstructions,
+    // Skills settings
+    skills: skillsContext.skills,
+    addSkill: skillsContext.addSkill,
+    updateSkill: skillsContext.updateSkill,
+    removeSkill: skillsContext.removeSkill,
+    getSkill: skillsContext.getSkill,
+    toggleSkill: skillsContext.toggleSkill,
+    getEnabledSkills: skillsContext.getEnabledSkills,
   };
 };
