@@ -445,7 +445,7 @@ export function ChatInput() {
     <form onSubmit={handleSubmit}>
       <div
         ref={containerRef}
-        className={`chat-input-container ${isDragging
+        className={`[contain:layout_style] [will-change:height] ${isDragging
           ? 'border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl'
           : `border-0 md:border-2 border-t-2 border-solid ${messages.length === 0
             ? 'border-neutral-200/50'
@@ -656,7 +656,7 @@ export function ChatInput() {
 
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2 md:gap-1">
             {/* Hide all buttons except stop button when in realtime mode */}
             {!isRealtimeSelected && (
               <>
@@ -677,7 +677,7 @@ export function ChatInput() {
                   <button
                     key={provider.id}
                     type="button"
-                    className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${
+                    className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${
                       providerEnabled
                         ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg'
                         : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
@@ -724,7 +724,7 @@ export function ChatInput() {
               // Menu for more than 2 providers
               <Menu>
                 <MenuButton
-                  className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                  className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                   title="Features"
                 >
                   <Sliders size={16} />
@@ -805,7 +805,7 @@ export function ChatInput() {
             {!isRealtimeSelected && isScreenCaptureAvailable && (
               <button
                 type="button"
-                className={`p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isContinuousCaptureActive
+                className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isContinuousCaptureActive
                   ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg'
                   : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
                   }`}
@@ -824,7 +824,7 @@ export function ChatInput() {
             {!isRealtimeSelected && (
               <button
                 type="button"
-                className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                 onClick={handleAttachmentClick}
               >
                 <Paperclip size={16} />
@@ -837,7 +837,7 @@ export function ChatInput() {
             {isRealtimeSelected ? (
               <button
                 type="button"
-                className="p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
                 onClick={() => {
                   // Stop voice mode by selecting the first regular model
                   if (models.length > 0) {
@@ -851,7 +851,7 @@ export function ChatInput() {
             ) : isResponding ? (
               <button
                 type="button"
-                className="p-1.5 text-neutral-600 dark:text-neutral-400"
+                className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
                 disabled
                 title="Generating response..."
               >
@@ -859,7 +859,7 @@ export function ChatInput() {
               </button>
             ) : content.trim() ? (
               <button
-                className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                 type="submit"
               >
                 <Send size={16} />
@@ -868,7 +868,7 @@ export function ChatInput() {
               transcribingContent ? (
                 <button
                   type="button"
-                  className="p-1.5 text-neutral-600 dark:text-neutral-400"
+                  className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
                   disabled
                   title="Processing audio..."
                 >
@@ -877,7 +877,7 @@ export function ChatInput() {
               ) : (
                 <button
                   type="button"
-                  className={`p-1.5 transition-colors ${
+                  className={`p-2.5 md:p-1.5 transition-colors ${
                     isTranscribing
                       ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200'
                       : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
@@ -891,7 +891,7 @@ export function ChatInput() {
               )
             ) : (
               <button
-                className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                 type="submit"
                 disabled={isResponding}
               >

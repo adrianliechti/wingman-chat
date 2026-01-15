@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Plus, Folder, FileText, X, ChevronDown, Check, Edit, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Folder, FileText, X, ChevronDown, Check, Edit, Trash2, Loader2, BookOpen, Target, RefreshCw, Upload, PenLine, MessageSquare } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { useRepositories } from '../hooks/useRepositories';
@@ -305,16 +305,30 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
       {/* Hint section when empty */}
       {(!repository.instructions && files.length === 0) && (
         <div className="flex-1 flex items-center justify-center px-3 py-3">
-          <div className="text-center max-w-sm">
-            <div className="text-neutral-400 dark:text-neutral-500 mb-2">
+          <div className="text-center max-w-xs">
+            <div className="text-neutral-400 dark:text-neutral-500 mb-3">
               <FileText size={32} className="mx-auto" />
             </div>
             <h4 className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-              Add content
+              Build your knowledge base
             </h4>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
-              Give instructions and add knowledge as context
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed mb-4">
+              Upload PDFs, documents, or text files to give the AI context about your project or topic.
             </p>
+            <div className="text-xs text-neutral-400 dark:text-neutral-500 space-y-1.5 inline-flex flex-col items-start">
+              <div className="flex items-center gap-2">
+                <Upload size={12} className="shrink-0" />
+                <span>Drag & drop files here</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <PenLine size={12} className="shrink-0" />
+                <span>Add custom instructions</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <MessageSquare size={12} className="shrink-0" />
+                <span>AI uses this as context</span>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -661,14 +675,30 @@ export function RepositoryDrawer() {
         <div className="flex flex-col items-center justify-center h-full p-6 text-center">
           <Folder size={48} className="text-neutral-300 dark:text-neutral-600 mb-4" />
           <h3 className="text-lg font-medium text-neutral-900 dark:text-neutral-100 mb-2">
-            No Repository Selected
+            {repositories.length === 0 ? "Create a Repository" : "No Repository Selected"}
           </h3>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-6">
+          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4 max-w-xs">
             {repositories.length === 0 
-              ? "Create your first repository to organize documents and instructions"
-              : "Select a repository from the dropdown above to view and manage its files"
+              ? "Repositories let you organize documents and instructions that the AI can reference during conversations."
+              : "Select a repository from the dropdown above to view and manage its files."
             }
           </p>
+          {repositories.length === 0 && (
+            <div className="text-xs text-neutral-500 dark:text-neutral-500 space-y-2">
+              <div className="flex items-center gap-2">
+                <BookOpen size={12} className="shrink-0" />
+                <span>Upload reference documents</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Target size={12} className="shrink-0" />
+                <span>Add custom AI instructions</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <RefreshCw size={12} className="shrink-0" />
+                <span>Reuse across conversations</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

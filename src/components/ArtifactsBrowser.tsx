@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { File, Folder, FolderOpen, ChevronRight, ChevronDown, Download, Upload } from 'lucide-react';
+import { Folder, FolderOpen, ChevronRight, ChevronDown, Download, Upload, MoreVertical, Trash, Edit2 } from 'lucide-react';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import { FileIcon } from './FileIcon';
 import { FileSystemManager } from '../lib/fs';
 
@@ -79,6 +80,8 @@ interface FileTreeNodeProps {
   onFileClick: (path: string) => void;
   expandedFolders: Set<string>;
   onToggleFolder: (path: string) => void;
+  onDeleteFile: (path: string) => void;
+  onRenameFile: (path: string) => void;
 }
 
 function FileTreeNode({ 
@@ -87,7 +90,9 @@ function FileTreeNode({
   openTabs, 
   onFileClick, 
   expandedFolders, 
-  onToggleFolder
+  onToggleFolder,
+  onDeleteFile,
+  onRenameFile
 }: FileTreeNodeProps) {
   const isExpanded = expandedFolders.has(node.path);
 
@@ -126,6 +131,8 @@ function FileTreeNode({
                 onFileClick={onFileClick}
                 expandedFolders={expandedFolders}
                 onToggleFolder={onToggleFolder}
+                onDeleteFile={onDeleteFile}
+                onRenameFile={onRenameFile}
               />
             ))}
           </>
@@ -138,24 +145,63 @@ function FileTreeNode({
   const isTabOpen = openTabs.includes(node.path);
 
   return (
-    <button
-      type="button"
-      onClick={() => onFileClick(node.path)}
-      className="flex items-center gap-1 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left min-w-0"
+    <div
+      className="flex items-center gap-1 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors min-w-0 group relative"
       style={{ marginLeft: `${level * 10 + 14}px` }}
     >
-      <FileIcon name={node.path} />
-      <span 
-        className={`text-sm truncate ${
-          isTabOpen 
-            ? 'font-medium text-neutral-900 dark:text-neutral-100' 
-            : 'text-neutral-700 dark:text-neutral-300'
-        }`}
-        title={node.name}
+      <button
+        type="button"
+        onClick={() => onFileClick(node.path)}
+        className="flex items-center gap-1 flex-1 min-w-0 text-left"
       >
-        {node.name}
-      </span>
-    </button>
+        <FileIcon name={node.path} />
+        <span 
+          className={`text-sm truncate ${
+            isTabOpen 
+              ? 'font-medium text-neutral-900 dark:text-neutral-100' 
+              : 'text-neutral-700 dark:text-neutral-300'
+          }`}
+          title={node.name}
+        >
+          {node.name}
+        </span>
+      </button>
+      <Menu>
+        <MenuButton
+          className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0.5 rounded hover:bg-white/30 dark:hover:bg-black/20"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MoreVertical size={14} />
+        </MenuButton>
+        <MenuItems
+          modal={false}
+          transition
+          anchor="bottom end"
+          className="w-32 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
+        >
+          <MenuItem>
+            <button
+              type="button"
+              onClick={() => onRenameFile(node.path)}
+              className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+            >
+              <Edit2 size={14} />
+              Rename
+            </button>
+          </MenuItem>
+          <MenuItem>
+            <button
+              type="button"
+              onClick={() => onDeleteFile(node.path)}
+              className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+            >
+              <Trash size={14} />
+              Delete
+            </button>
+          </MenuItem>
+        </MenuItems>
+      </Menu>
+    </div>
   );
 }
 
@@ -175,6 +221,8 @@ export function ArtifactsBrowser({
   onUpload
 }: ArtifactsBrowserProps) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Subscribe to filesystem events to handle UI state updates
@@ -238,21 +286,46 @@ export function ArtifactsBrowser({
     setExpandedFolders(newExpanded);
   };
 
+  const handleDeleteFile = (path: string) => {
+    if (confirm(`Are you sure you want to delete "${path}"?`)) {
+      fs.deleteFile(path);
+    }
+  };
+
+  const handleRenameFile = (path: string) => {
+    const fileName = path.split('/').pop() || '';
+    setRenamingPath(path);
+    setRenameValue(fileName);
+  };
+
+  const handleRenameSubmit = () => {
+    if (!renamingPath || !renameValue.trim()) return;
+    
+    const pathParts = renamingPath.split('/');
+    pathParts[pathParts.length - 1] = renameValue.trim();
+    const newPath = pathParts.join('/');
+    
+    if (newPath !== renamingPath) {
+      const success = fs.renameFile(renamingPath, newPath);
+      if (!success) {
+        alert('Failed to rename file. A file with that name may already exist.');
+      }
+    }
+    
+    setRenamingPath(null);
+    setRenameValue('');
+  };
+
+  const handleRenameCancel = () => {
+    setRenamingPath(null);
+    setRenameValue('');
+  };
+
   return (
     <div className="w-full h-full flex flex-col">
       {/* File list - grows to fill space */}
       <div className="flex-1 overflow-auto min-h-0">
-        {files.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-4 text-center">
-            <File size={32} className="text-neutral-300 dark:text-neutral-600 mb-3" />
-            <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
-              No files created yet
-            </p>
-            <p className="text-xs text-neutral-500 dark:text-neutral-500">
-              Files created by AI or dropped here will appear in this browser
-            </p>
-          </div>
-        ) : (
+        {files.length > 0 && (
           <div className="p-2 min-w-full">
             {/* Render file tree with folders */}
             {fileTree.map((node) => (
@@ -264,6 +337,8 @@ export function ArtifactsBrowser({
                 onFileClick={onFileClick}
                 expandedFolders={expandedFolders}
                 onToggleFolder={handleToggleFolder}
+                onDeleteFile={handleDeleteFile}
+                onRenameFile={handleRenameFile}
               />
             ))}
           </div>
@@ -311,6 +386,45 @@ export function ArtifactsBrowser({
             </button>
           </div>
         </>
+      )}
+
+      {/* Rename Dialog */}
+      {renamingPath && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={handleRenameCancel}>
+          <div className="bg-white dark:bg-neutral-900 rounded-lg shadow-xl p-4 w-80 max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-3">Rename File</h3>
+            <input
+              type="text"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleRenameSubmit();
+                } else if (e.key === 'Escape') {
+                  handleRenameCancel();
+                }
+              }}
+              className="w-full px-3 py-2 bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded border border-neutral-300 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
+            />
+            <div className="flex gap-2 mt-4 justify-end">
+              <button
+                type="button"
+                onClick={handleRenameCancel}
+                className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRenameSubmit}
+                className="px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
+              >
+                Rename
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

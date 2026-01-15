@@ -112,50 +112,9 @@ button[data-headlessui-state]:disabled,
   cursor: not-allowed;
 }
 
-.nav-header {
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.1);
-}
-
-.dark .nav-header {
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
-}
-
 .max-content-width {
   max-width: 900px;
   margin: 0 auto;
-}
-
-.sidebar-item-base {
-  @apply py-1.5 pl-2.5 pr-0.5 hover:text-neutral-600 dark:hover:text-neutral-300 rounded cursor-pointer transition-all duration-200;
-}
-
-.sidebar-item-selected {
-  @apply py-1.5 px-2 text-neutral-900 dark:text-neutral-100 focus:outline-none;
-}
-
-.chat-bubble {
-  @apply text-neutral-900 dark:text-neutral-200
-}
-
-.chat-bubble-user {
-  @apply bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200;
-}
-
-.chat-message-actions {
-  @apply transition-opacity duration-200;
-}
-
-.group:hover .chat-message-actions {
-  @apply opacity-100;
-}
-
-.chat-input-container {
-  contain: layout style;
-  will-change: height;
-}
-
-.chat-input-attachment {
-  @apply p-2 text-white dark:text-neutral-200 hover:text-gray-300 bg-neutral-800 dark:bg-neutral-700 rounded cursor-default;
 }
 
 .typewriter-text {
@@ -169,14 +128,6 @@ button[data-headlessui-state]:disabled,
 .typewriter-text::after {
   content: '';
 }
-@keyframes blink {
-  0%, 50% {
-    opacity: 1;
-  }
-  51%, 100% {
-    opacity: 0;
-  }
-}
 
 @keyframes typing {
   from { 
@@ -184,14 +135,5 @@ button[data-headlessui-state]:disabled,
   }
   to { 
     width: 100%;
-  }
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
   }
 }

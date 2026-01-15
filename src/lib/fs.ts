@@ -17,6 +17,7 @@ type FileEventHandler<T extends FileEventType> = T extends 'fileCreated'
 // FileSystem extension methods
 export class FileSystemManager {
   private eventHandlers = new Map<FileEventType, Set<(...args: unknown[]) => void>>();
+  private _isReady = false;
 
   constructor(
     private getFilesystem: () => FileSystem,
@@ -29,6 +30,11 @@ export class FileSystemManager {
     this.eventHandlers.set('fileUpdated', new Set());
   }
 
+  // Check if filesystem handlers are properly set up
+  get isReady(): boolean {
+    return this._isReady;
+  }
+
   // Update the filesystem getter and setter functions
   updateHandlers(
     getFilesystem: (() => FileSystem) | null,
@@ -37,10 +43,12 @@ export class FileSystemManager {
     if (getFilesystem && setFilesystem) {
       this.getFilesystem = getFilesystem;
       this.setFilesystem = setFilesystem;
+      this._isReady = true;
     } else {
       // Clear handlers when no chat or artifacts disabled
       this.getFilesystem = () => ({});
       this.setFilesystem = () => {}; // No-op when disabled
+      this._isReady = false;
     }
   }
 

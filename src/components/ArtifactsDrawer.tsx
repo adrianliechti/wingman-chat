@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { File, Code, Eye, PanelRightOpen, PanelRightClose, Play, Loader2 } from 'lucide-react';
 import { useArtifacts } from '../hooks/useArtifacts';
+import { useChat } from '../hooks/useChat';
 import { HtmlEditor } from './HtmlEditor';
 import { SvgEditor } from './SvgEditor';
 import { TextEditor } from './TextEditor';
@@ -11,7 +12,7 @@ import { MarkdownEditor } from './MarkdownEditor';
 import { PythonEditor } from './PythonEditor';
 import { JsEditor } from './JsEditor';
 import { ArtifactsBrowser } from './ArtifactsBrowser';
-import { artifactKind, artifactLanguage } from '../lib/artifacts';
+import { artifactKind, artifactLanguage, processUploadedFile } from '../lib/artifacts';
 import { FileIcon } from './FileIcon';
 import { getFileName } from '../lib/utils';
 
@@ -24,12 +25,14 @@ export function ArtifactsDrawer() {
     showFileBrowser,
     toggleFileBrowser,
   } = useArtifacts();
+  const { chat, createChat } = useChat();
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
   const [isRunning, setIsRunning] = useState(false);
   const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasAutoShownBrowserRef = useRef(false);
 
   // Callback for editors to register their run handler
   const onRunReady = useCallback((handler: (() => Promise<void>) | null) => {
@@ -44,13 +47,17 @@ export function ArtifactsDrawer() {
   }, [fs, version]);
 
   // Automatically open the file if there's only one file
-  // and show the browser if there are multiple files
+  // and show the browser if there are files but none selected
   useEffect(() => {
-    if (activeFile) return;
+    if (activeFile) {
+      hasAutoShownBrowserRef.current = false; // Reset when a file is selected
+      return;
+    }
 
     if (files.length === 1) {
       openFile(files[0].path);
-    } else if (files.length > 1 && !showFileBrowser) {
+    } else if (files.length > 0 && !showFileBrowser && !hasAutoShownBrowserRef.current) {
+      hasAutoShownBrowserRef.current = true;
       toggleFileBrowser();
     }
   }, [files, activeFile, openFile, showFileBrowser, toggleFileBrowser]);
@@ -60,27 +67,42 @@ export function ArtifactsDrawer() {
     e.preventDefault();
     setIsDragOver(false);
 
-    // Clear any pending timeout
     if (dragTimeoutRef.current) {
       clearTimeout(dragTimeoutRef.current);
       dragTimeoutRef.current = null;
     }
 
-    const files = Array.from(e.dataTransfer.files);
+    // IMPORTANT: Capture files immediately before any async work!
+    // The browser clears e.dataTransfer after the sync part of the handler completes
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    if (droppedFiles.length === 0) {
+      return;
+    }
 
-    for (const file of files) {
+    // Create a chat if one doesn't exist (filesystem needs a chat to store files)
+    if (!chat) {
+      createChat();
+    }
+
+    // Wait for filesystem to be ready (handlers set up after chat creation)
+    if (fs && !fs.isReady) {
+      let attempts = 0;
+      while (!fs.isReady && attempts < 10) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        attempts++;
+      }
+    }
+
+    for (const file of droppedFiles) {
       try {
-        const path = `/${file.name}`;
+        // Process file (converts XLSX to CSV automatically)
+        const processedFiles = await processUploadedFile(file);
 
-        // Read the file content as text
-        const content = await file.text();
-
-        // Create the file with string content
-        if (fs) {
-          fs.createFile(path, content, file.type);
-
-          // Open the file in a tab
-          openFile(path);
+        for (const processed of processedFiles) {
+          if (fs?.isReady) {
+            fs.createFile(processed.path, processed.content, processed.contentType);
+            openFile(processed.path);
+          }
         }
       } catch (error) {
         console.error(`Error processing file ${file.name}:`, error);
@@ -122,14 +144,20 @@ export function ArtifactsDrawer() {
       return (
         <div className="h-full flex flex-col items-center justify-center p-8 text-center">
           <Code size={64} className="text-neutral-300 dark:text-neutral-600 mb-6" />
-          <h3 className="text-xl font-medium text-neutral-900 dark:text-neutral-100 mb-2">
-            Empty
+          <h3 className="text-xl font-medium text-neutral-900 dark:text-neutral-100 mb-3">
+            {files.length === 0 ? "No Artifacts Yet" : "Select a File"}
           </h3>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4 max-w-sm">
             {files.length === 0
-              ? "Files created by the AI will appear here"
-              : "Click a filename to select a file"}
+              ? "Ask the AI to create code, documents, or other files — they'll appear here for you to view, edit, and download."
+              : "Click a filename in the sidebar to open and edit it."}
           </p>
+          {files.length === 0 && (
+            <div className="text-xs text-neutral-500 dark:text-neutral-500 inline-flex flex-col items-start space-y-1">
+              <p className="italic">"Create a Python script that..."</p>
+              <p className="italic">"Write an HTML page for..."</p>
+            </div>
+          )}
         </div>
       );
     }
@@ -288,10 +316,13 @@ export function ArtifactsDrawer() {
                 onUpload={async (fileList) => {
                   for (const file of Array.from(fileList)) {
                     try {
-                      const path = `/${file.name}`;
-                      const content = await file.text();
-                      fs.createFile(path, content, file.type);
-                      openFile(path);
+                      // Process file (converts XLSX to CSV automatically)
+                      const processedFiles = await processUploadedFile(file);
+
+                      for (const processed of processedFiles) {
+                        fs.createFile(processed.path, processed.content, processed.contentType);
+                        openFile(processed.path);
+                      }
                     } catch (error) {
                       console.error(`Error uploading file ${file.name}:`, error);
                     }

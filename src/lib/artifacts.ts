@@ -1,8 +1,95 @@
+import { xlsxToCsv } from './xlsx';
+
 // Artifact kind type
 export type ArtifactKind = 'text' | 'code' | 'svg' | 'html' | 'csv' | 'mermaid' | 'markdown';
 
 // Re-export HTML transformation utilities
 export { transformHtmlForPreview, type TransformResult } from './artifactsHtml';
+
+// Result type for processed files
+export interface ProcessedFile {
+  path: string;
+  content: string;
+  contentType: string;
+}
+
+// Extract text/markdown from a file using the extract API
+async function extractMarkdown(file: File): Promise<string> {
+  const data = new FormData();
+  data.append('file', file);
+  data.append('format', 'text');
+
+  const resp = await fetch(new URL('/api/v1/extract', window.location.origin), {
+    method: 'POST',
+    body: data,
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Extract request failed with status ${resp.status}`);
+  }
+
+  return resp.text();
+}
+
+// Process an uploaded file, converting XLSX to CSV and DOCX to Markdown when detected
+export async function processUploadedFile(file: File): Promise<ProcessedFile[]> {
+  const fileName = file.name.toLowerCase();
+
+  // Handle XLSX files -> convert to CSV
+  const isXlsx = fileName.endsWith('.xlsx') ||
+    file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+  if (isXlsx) {
+    try {
+      const results = await xlsxToCsv(file);
+      const baseName = file.name.replace(/\.xlsx$/i, '');
+
+      return results.map((result) => {
+        // For single sheet, use simple filename; for multiple sheets, include sheet name
+        const csvPath = results.length === 1
+          ? `/${baseName}.csv`
+          : `/${baseName}_${result.sheetName}.csv`;
+
+        return {
+          path: csvPath,
+          content: result.csv,
+          contentType: 'text/csv'
+        };
+      });
+    } catch (error) {
+      console.error(`Error converting XLSX file ${file.name}:`, error);
+      // Fall through to default text handling on error
+    }
+  }
+
+  // Handle DOCX files -> extract to Markdown
+  const isDocx = fileName.endsWith('.docx') ||
+    file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+  if (isDocx) {
+    try {
+      const markdown = await extractMarkdown(file);
+      const baseName = file.name.replace(/\.docx$/i, '');
+
+      return [{
+        path: `/${baseName}.md`,
+        content: markdown,
+        contentType: 'text/markdown'
+      }];
+    } catch (error) {
+      console.error(`Error extracting DOCX file ${file.name}:`, error);
+      // Fall through to default text handling on error
+    }
+  }
+
+  // Default: read as text
+  const content = await file.text();
+  return [{
+    path: `/${file.name}`,
+    content,
+    contentType: file.type || 'text/plain'
+  }];
+}
 
 // Helper function to get the language/extension from a file path
 export function artifactLanguage(path: string): string {
