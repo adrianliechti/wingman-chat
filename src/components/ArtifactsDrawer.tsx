@@ -72,20 +72,34 @@ export function ArtifactsDrawer() {
       dragTimeoutRef.current = null;
     }
 
-    // Create a chat if one doesn't exist (filesystem needs a chat to store files)
-    // The delay allows React to complete the state update cycle
-    if (!chat) {
-      createChat();
-      await new Promise(resolve => setTimeout(resolve, 50));
+    // IMPORTANT: Capture files immediately before any async work!
+    // The browser clears e.dataTransfer after the sync part of the handler completes
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    if (droppedFiles.length === 0) {
+      return;
     }
 
-    for (const file of Array.from(e.dataTransfer.files)) {
+    // Create a chat if one doesn't exist (filesystem needs a chat to store files)
+    if (!chat) {
+      createChat();
+    }
+
+    // Wait for filesystem to be ready (handlers set up after chat creation)
+    if (fs && !fs.isReady) {
+      let attempts = 0;
+      while (!fs.isReady && attempts < 10) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        attempts++;
+      }
+    }
+
+    for (const file of droppedFiles) {
       try {
         // Process file (converts XLSX to CSV automatically)
         const processedFiles = await processUploadedFile(file);
 
         for (const processed of processedFiles) {
-          if (fs) {
+          if (fs?.isReady) {
             fs.createFile(processed.path, processed.content, processed.contentType);
             openFile(processed.path);
           }
