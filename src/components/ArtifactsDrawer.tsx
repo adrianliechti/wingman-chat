@@ -11,7 +11,7 @@ import { MarkdownEditor } from './MarkdownEditor';
 import { PythonEditor } from './PythonEditor';
 import { JsEditor } from './JsEditor';
 import { ArtifactsBrowser } from './ArtifactsBrowser';
-import { artifactKind, artifactLanguage } from '../lib/artifacts';
+import { artifactKind, artifactLanguage, processUploadedFile } from '../lib/artifacts';
 import { FileIcon } from './FileIcon';
 import { getFileName } from '../lib/utils';
 
@@ -70,17 +70,14 @@ export function ArtifactsDrawer() {
 
     for (const file of files) {
       try {
-        const path = `/${file.name}`;
+        // Process file (converts XLSX to CSV automatically)
+        const processedFiles = await processUploadedFile(file);
 
-        // Read the file content as text
-        const content = await file.text();
-
-        // Create the file with string content
-        if (fs) {
-          fs.createFile(path, content, file.type);
-
-          // Open the file in a tab
-          openFile(path);
+        for (const processed of processedFiles) {
+          if (fs) {
+            fs.createFile(processed.path, processed.content, processed.contentType);
+            openFile(processed.path);
+          }
         }
       } catch (error) {
         console.error(`Error processing file ${file.name}:`, error);
@@ -288,10 +285,13 @@ export function ArtifactsDrawer() {
                 onUpload={async (fileList) => {
                   for (const file of Array.from(fileList)) {
                     try {
-                      const path = `/${file.name}`;
-                      const content = await file.text();
-                      fs.createFile(path, content, file.type);
-                      openFile(path);
+                      // Process file (converts XLSX to CSV automatically)
+                      const processedFiles = await processUploadedFile(file);
+
+                      for (const processed of processedFiles) {
+                        fs.createFile(processed.path, processed.content, processed.contentType);
+                        openFile(processed.path);
+                      }
                     } catch (error) {
                       console.error(`Error uploading file ${file.name}:`, error);
                     }
