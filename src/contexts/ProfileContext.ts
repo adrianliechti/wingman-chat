@@ -3,7 +3,7 @@ import { createContext } from 'react';
 export interface ProfileSettings {
   name?: string;
   role?: string;
-  traits?: string[];
+  persona?: string;
   profile?: string;
 }
 

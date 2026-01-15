@@ -230,12 +230,14 @@ export function ChatSidebar() {
                       setShowSidebar(false);
                     }
                   }}
-                  className={`flex items-center sidebar-item-base cursor-pointer relative shrink-0 group ${
-                    chatItem.id === chat?.id ? "sidebar-item-selected" : ""
+                  className={`flex items-center cursor-pointer relative shrink-0 group rounded transition-all duration-200 ${
+                    chatItem.id === chat?.id 
+                      ? "py-2 md:py-1.5 px-2.5 md:px-2 text-neutral-900 dark:text-neutral-100 focus:outline-none" 
+                      : "py-2 md:py-1.5 pl-2.5 md:pl-2.5 pr-1 md:pr-0.5 hover:text-neutral-600 dark:hover:text-neutral-300"
                   }`}
                 >
                   <div
-                    className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-neutral-800 dark:text-neutral-200 pr-4"
+                    className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-base md:text-sm text-neutral-800 dark:text-neutral-200 pr-4"
                     title={chatItem.title ?? "Untitled"}
                   >
                     {chatItem.title ?? "Untitled"}

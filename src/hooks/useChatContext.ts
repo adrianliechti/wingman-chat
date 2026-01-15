@@ -5,6 +5,7 @@ import { useProfile } from "./useProfile";
 import { useToolsContext } from "./useToolsContext";
 import { useArtifactsProvider } from "./useArtifactsProvider";
 import { useRepositoryProvider } from "./useRepositoryProvider";
+import { useSkillsProvider } from "./useSkillsProvider";
 import { useArtifacts } from "./useArtifacts";
 import { useRepositories } from "./useRepositories";
 import defaultInstructions from "../prompts/default.txt?raw";
@@ -18,11 +19,12 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
   const { generateInstructions } = useProfile();
   const { providers, getProviderState } = useToolsContext();
   
-  // Conditionally include artifacts and repository providers
+  // Conditionally include artifacts, repository, and skills providers
   const { fs, showArtifactsDrawer } = useArtifacts();
   const { currentRepository } = useRepositories();
   const artifactsProvider = useArtifactsProvider();
   const repositoryProvider = useRepositoryProvider(currentRepository?.id || '', 'auto');
+  const skillsProvider = useSkillsProvider();
 
   const context = useMemo<ChatContext>(() => {
     const getFilteredProviders = () => {
@@ -38,6 +40,11 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
       // Add repository provider if current repository is set
       if (repositoryProvider && currentRepository) {
         filteredProviders = [...filteredProviders, repositoryProvider];
+      }
+      
+      // Add skills provider if it has enabled skills
+      if (skillsProvider) {
+        filteredProviders = [...filteredProviders, skillsProvider];
       }
       
       // Further filter based on model configuration
@@ -103,7 +110,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
         return instructionsList.join('\n\n');
       }
     };
-  }, [mode, model, generateInstructions, providers, getProviderState, fs, showArtifactsDrawer, artifactsProvider, repositoryProvider, currentRepository]);
+  }, [mode, model, generateInstructions, providers, getProviderState, fs, showArtifactsDrawer, artifactsProvider, repositoryProvider, currentRepository, skillsProvider]);
 
   return context;
 }

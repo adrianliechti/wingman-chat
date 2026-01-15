@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import { ProfileContext } from './ProfileContext';
 import type { ProfileSettings } from './ProfileContext';
 import { setValue, getValue, deleteValue } from '../lib/db';
+import { getPersonaContent } from '../lib/personas';
+import type { PersonaKey } from '../lib/personas';
 
 interface ProfileProviderProps {
   children: ReactNode;
@@ -93,19 +95,26 @@ export function ProfileProvider({ children }: ProfileProviderProps) {
   };
 
   const generateInstructions = (): string => {
-    const parts: string[] = [];
+    const sections: string[] = [];
     
-    // Add basic info
-    if (settings.name) parts.push(`- **Name**: ${settings.name.trim()}`);
-    if (settings.role) parts.push(`- **Role**: ${settings.role.trim()}`);
-    if (settings.profile) parts.push(`- **About**: ${settings.profile.trim()}`);
+    // Add persona/personality first
+    const personaContent = getPersonaContent(settings.persona as PersonaKey);
     
-    // Add traits
-    if (settings.traits?.length) {
-      parts.push(`\n### Communication Style\n\nPlease be ${settings.traits.join(', ')} when responding to the user.`);
+    if (personaContent) {
+      sections.push(personaContent);
     }
     
-    return parts.length ? `## User Profile\n\n${parts.join('\n')}` : '';
+    // Add user profile
+    const profileParts: string[] = [];
+    if (settings.name) profileParts.push(`- **Name**: ${settings.name.trim()}`);
+    if (settings.role) profileParts.push(`- **Role**: ${settings.role.trim()}`);
+    if (settings.profile) profileParts.push(`- **About**: ${settings.profile.trim()}`);
+    
+    if (profileParts.length > 0) {
+      sections.push(`## User Profile\n\n${profileParts.join('\n')}`);
+    }
+    
+    return sections.join('\n\n');
   };
 
   return (
