@@ -1,3 +1,5 @@
+import { docxToMarkdown } from './docx';
+import { pptxToMarkdown } from './pptx';
 import { xlsxToCsv } from './xlsx';
 
 // Artifact kind type
@@ -11,24 +13,6 @@ export interface ProcessedFile {
   path: string;
   content: string;
   contentType: string;
-}
-
-// Extract text/markdown from a file using the extract API
-async function extractMarkdown(file: File): Promise<string> {
-  const data = new FormData();
-  data.append('file', file);
-  data.append('format', 'text');
-
-  const resp = await fetch(new URL('/api/v1/extract', window.location.origin), {
-    method: 'POST',
-    body: data,
-  });
-
-  if (!resp.ok) {
-    throw new Error(`Extract request failed with status ${resp.status}`);
-  }
-
-  return resp.text();
 }
 
 // Process an uploaded file, converting XLSX to CSV and DOCX to Markdown when detected
@@ -68,7 +52,7 @@ export async function processUploadedFile(file: File): Promise<ProcessedFile[]> 
 
   if (isDocx) {
     try {
-      const markdown = await extractMarkdown(file);
+      const markdown = await docxToMarkdown(file);
       const baseName = file.name.replace(/\.docx$/i, '');
 
       return [{
@@ -77,7 +61,27 @@ export async function processUploadedFile(file: File): Promise<ProcessedFile[]> 
         contentType: 'text/markdown'
       }];
     } catch (error) {
-      console.error(`Error extracting DOCX file ${file.name}:`, error);
+      console.error(`Error converting DOCX file ${file.name}:`, error);
+      // Fall through to default text handling on error
+    }
+  }
+
+  // Handle PPTX files -> extract to Markdown
+  const isPptx = fileName.endsWith('.pptx') ||
+    file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+  if (isPptx) {
+    try {
+      const markdown = await pptxToMarkdown(file);
+      const baseName = file.name.replace(/\.pptx$/i, '');
+
+      return [{
+        path: `/${baseName}.md`,
+        content: markdown,
+        contentType: 'text/markdown'
+      }];
+    } catch (error) {
+      console.error(`Error converting PPTX file ${file.name}:`, error);
       // Fall through to default text handling on error
     }
   }
