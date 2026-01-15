@@ -68,11 +68,33 @@ export function useSkillsProvider(): ToolProvider | null {
   </skill>`
     ).join('\n');
 
-    return `<available_skills>
-${skillsXml}
-</available_skills>
+    return `## Skills
 
-When you need to perform a task that matches one of the available skills, use the read_skill tool to get the full instructions for that skill before proceeding.`;
+Skills are specialized prompts that provide detailed instructions for specific tasks. They expand your capabilities with domain expertise.
+
+### How It Works
+
+1. **Check available skills**: Review the skills listed below when users request a task
+2. **Read skill instructions**: Use the \`read_skill\` tool to get detailed guidance
+3. **Follow the instructions**: The skill provides step-by-step directions for the task
+4. **Execute in conversation**: Complete the task directly in the main conversation
+
+### When to Use Skills
+
+- When a user's request matches an available skill's description
+- When you need specialized guidance for a particular task
+- When detailed, domain-specific instructions would improve your response
+
+### Core Rules
+
+1. **Only use listed skills**: Only use skills from \`<available_skills>\` below
+2. **Read before executing**: Always use \`read_skill\` to get full instructions first
+3. **Match by description**: Use skill descriptions to determine relevance
+4. **Seamless execution**: Apply skill instructions naturally in your response
+
+<available_skills>
+${skillsXml}
+</available_skills>`;
   }, [getEnabledSkills]);
 
   const provider = useMemo<ToolProvider | null>(() => {
