@@ -149,10 +149,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
 
   const sendMessage = useCallback(
-    async (message: Message) => {
+    async (message: Message, historyOverride?: Message[]) => {
       const { id, chat: chatObj } = getOrCreateChat();
 
-      const history = chats.find(c => c.id === id)?.messages || [];
+      const history = historyOverride ?? (chats.find(c => c.id === id)?.messages || []);
       let conversation = [...history, message];
 
       updateChat(id, () => ({ messages: conversation }));
@@ -366,6 +366,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setStreamingMessage(null);
       }
     }, [getOrCreateChat, chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, getIframe, showDrawer]);
+
+
 
   const resolveElicitation = useCallback((result: ElicitationResult) => {
     if (pendingElicitation) {

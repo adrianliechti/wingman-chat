@@ -287,7 +287,7 @@ export function ChatPage() {
                 <Disclaimer />
                 
                 {messages.map((message, idx) => (
-                  <ChatMessage key={idx} message={message} isLast={idx === messages.length - 1} isResponding={isResponding} />
+                  <ChatMessage key={idx} index={idx} message={message} isLast={idx === messages.length - 1} isResponding={isResponding} />
                 ))}
                 
                 {/* sentinel for scrollIntoView */}

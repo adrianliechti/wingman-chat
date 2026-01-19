@@ -393,7 +393,7 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
           } else {
             errors.push(`${file.name}: ${result.errors.map(e => e.message).join(', ')}`);
           }
-        } catch (error) {
+        } catch {
           errors.push(`${file.name}: Failed to read file`);
         }
       }

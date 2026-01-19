@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { Chat, Message, Model, Tool, PendingElicitation, ElicitationResult } from "../types/chat";
+import type { Chat, Message, Model, PendingElicitation, ElicitationResult } from "../types/chat";
 
 export interface ChatContextType {
   // Models
@@ -20,7 +20,7 @@ export interface ChatContextType {
   updateChat: (chatId: string, updater: (chat: Chat) => Partial<Chat>) => void;
 
   addMessage: (message: Message) => void;
-  sendMessage: (message: Message, tools?: Tool[]) => Promise<void>;
+  sendMessage: (message: Message, historyOverride?: Message[]) => Promise<void>;
 
   // Tool providers state (from global ToolsContext)
   isInitializing: boolean | null; // null = no providers, true = initializing, false = all ready

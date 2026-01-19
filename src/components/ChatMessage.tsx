@@ -3,8 +3,8 @@ import { CopyButton } from './CopyButton';
 import { PlayButton } from './PlayButton';
 import { SingleAttachmentDisplay, MultipleAttachmentsDisplay } from './AttachmentRenderer';
 import { CodeRenderer } from './CodeRenderer';
-import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X } from "lucide-react";
-import { useState } from 'react';
+import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil } from "lucide-react";
+import { useState, useRef, useEffect } from 'react';
 
 import { Role } from "../types/chat";
 import type { Message, ElicitationResult, Content } from "../types/chat";
@@ -77,7 +77,10 @@ function extractCodeFromArguments(arguments_: string): { code: string; packages?
 }
 
 type ChatMessageProps = {
+  index: number;
+
   message: Message;
+  
   isLast?: boolean;
   isResponding?: boolean;
 };
@@ -160,9 +163,12 @@ function ElicitationPrompt({ toolName, message, onResolve }: ElicitationPromptPr
   );
 }
 
-export function ChatMessage({ message, isResponding, ...props }: ChatMessageProps) {
+export function ChatMessage({ message, index, isResponding, ...props }: ChatMessageProps) {
   const [toolResultExpanded, setToolResultExpanded] = useState(false);
-  const { pendingElicitation, resolveElicitation } = useChat();
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(message.content || '');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { pendingElicitation, resolveElicitation, sendMessage, chat } = useChat();
   
   const isUser = message.role === Role.User;
   const isAssistant = message.role === Role.Assistant;
@@ -172,6 +178,54 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
   
   const config = getConfig();
   const enableTTS = !!config.tts;
+
+  // Auto-resize textarea and focus when entering edit mode
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [isEditing]);
+
+  // Auto-resize textarea on content change
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [editContent]);
+
+  const handleStartEdit = () => {
+    if (isResponding) return;
+    setEditContent(message.content || '');
+    setIsEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditContent(message.content || '');
+  };
+
+  const handleConfirmEdit = async () => {
+    if (editContent.trim() === '' || !chat) return;
+    setIsEditing(false);
+    
+    // Truncate history and send edited message
+    const truncatedHistory = chat.messages.slice(0, index);
+    const editedMessage = { ...message, content: editContent };
+    await sendMessage(editedMessage, truncatedHistory);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleConfirmEdit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handleCancelEdit();
+    }
+  };
 
   // Handle tool messages
   if (isToolResult) {
@@ -359,6 +413,18 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
       <div
         className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4 ${!isUser && isResponding && props.isLast ? '' : 'group'} text-neutral-900 dark:text-neutral-200`}
       >
+        {/* Edit button for user messages - positioned to the left of the bubble */}
+        {isUser && !isEditing && !isResponding && (
+          <button
+            onClick={handleStartEdit}
+            className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors opacity-0 group-hover:opacity-100 p-1 mr-1 self-center"
+            title="Edit message"
+            type="button"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        )}
+        
         <div
           className={`${
             isUser 
@@ -367,7 +433,38 @@ export function ChatMessage({ message, isResponding, ...props }: ChatMessageProp
           } wrap-break-words overflow-x-auto`}
         >
           {isUser ? (
-            <pre className="whitespace-pre-wrap font-sans">{message.content}</pre>
+            isEditing ? (
+              <div className="flex flex-col gap-2">
+                <textarea
+                  ref={textareaRef}
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  className="w-full min-w-50 bg-transparent border-none outline-none resize-none font-sans text-neutral-900 dark:text-neutral-200"
+                  rows={1}
+                />
+                <div className="flex items-center gap-1 justify-end">
+                  <button
+                    onClick={handleCancelEdit}
+                    className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors p-1"
+                    title="Cancel (Esc)"
+                    type="button"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={handleConfirmEdit}
+                    className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors p-1"
+                    title="Save (Enter)"
+                    type="button"
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <pre className="whitespace-pre-wrap font-sans">{message.content}</pre>
+            )
           ) : (
             message.content && <Markdown>{message.content}</Markdown>
           )}
