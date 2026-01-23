@@ -40,6 +40,8 @@ interface config {
   repository?: repositoryConfig;
   translator?: translatorConfig;
   researcher?: researcherConfig;
+
+  chat?: chatConfig;
 }
 
 interface modelConfig {
@@ -92,6 +94,7 @@ interface visionConfig {
 
 interface rendererConfig {
   model?: string;
+  disclaimer?: string;
   elicitation?: boolean;
 }
 
@@ -133,6 +136,10 @@ interface researcherConfig {
   model?: string;
 }
 
+interface chatConfig {
+  retentionDays?: number;
+}
+
 interface Config {
   title: string;
   disclaimer: string;
@@ -164,6 +171,8 @@ interface Config {
   repository: repositoryConfig | null;
   translator: translatorConfig | null;
   researcher: researcherConfig | null;
+
+  chat: chatConfig | null;
 
   backgrounds: backgroundPackConfig;
 }
@@ -304,6 +313,8 @@ export const loadConfig = async (): Promise<Config | undefined> => {
         : null,
 
       researcher: cfg.researcher ?? null,
+
+      chat: cfg.chat ?? null,
 
       backgrounds: cfg.backgrounds ?? {},
     };

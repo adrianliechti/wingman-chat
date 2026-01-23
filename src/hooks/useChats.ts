@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 
 import type { Chat } from '../types/chat';
 import { setValue, getValue } from '../lib/db';
+import { getConfig } from '../config';
 
 const CHATS_KEY = 'chats';
 
@@ -30,6 +31,29 @@ async function loadChats(): Promise<Chat[]> {
   }
 }
 
+// Apply retention policy to chats, removing those older than retentionDays based on updated timestamp
+function applyRetentionPolicy(chats: Chat[], retentionDays: number): Chat[] {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - retentionDays);
+
+  const filtered = chats.filter((chat) => {
+    // Keep chats without an updated timestamp (safe default)
+    if (!chat.updated) {
+      return true;
+    }
+
+    const updatedDate = new Date(chat.updated);
+    return updatedDate >= cutoff;
+  });
+
+  const deletedCount = chats.length - filtered.length;
+  if (deletedCount > 0) {
+    console.log(`chat retention: deleted ${deletedCount} chat(s) older than ${retentionDays} days`);
+  }
+
+  return filtered;
+}
+
 export function useChats() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -37,7 +61,23 @@ export function useChats() {
   // Load chats on mount
   useEffect(() => {
     async function load() {
-      const items = await loadChats();
+      let items = await loadChats();
+
+      // Apply retention policy if configured
+      const config = getConfig();
+      const retentionDays = config.chat?.retentionDays;
+
+      if (retentionDays && retentionDays > 0) {
+        const filteredItems = applyRetentionPolicy(items, retentionDays);
+
+        // Persist filtered chats if any were removed
+        if (filteredItems.length < items.length) {
+          await storeChats(filteredItems);
+        }
+
+        items = filteredItems;
+      }
+
       setChats(items);
       setIsLoaded(true);
     }

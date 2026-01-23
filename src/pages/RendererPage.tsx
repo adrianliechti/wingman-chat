@@ -1,13 +1,41 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { getConfig } from "../config";
 import { resizeImageBlob, readAsDataURL, decodeDataURL } from "../lib/utils";
-import { X, ImagePlus, Sparkles, Download, PlusIcon, ArrowRight } from "lucide-react";
+import { X, ImagePlus, Sparkles, Download, PlusIcon, ArrowRight, Info } from "lucide-react";
+import DOMPurify from "dompurify";
 import { useNavigation } from "../hooks/useNavigation";
 import { useLayout } from "../hooks/useLayout";
 import { useDropZone } from "../hooks/useDropZone";
 import { useImages } from "../hooks/useImages";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import type { Model } from "../types/chat";
+
+// Memoized disclaimer component to avoid re-computing on every render
+const Disclaimer = () => {
+  const disclaimer = useMemo(() => {
+    try {
+      const config = getConfig();
+      const sanitized = DOMPurify.sanitize(config.renderer?.disclaimer || "");
+      return sanitized?.trim() || null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  if (!disclaimer) return null;
+
+  return (
+    <div className="mb-6 mx-auto max-w-2xl">
+      <div className="flex items-start justify-center gap-2 px-4 py-3">
+        <Info size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+        <p
+          className="text-xs text-neutral-600 dark:text-neutral-400 text-left"
+          dangerouslySetInnerHTML={{ __html: disclaimer }}
+        />
+      </div>
+    </div>
+  );
+};
 
 export function RendererPage() {
   const config = getConfig();
@@ -277,9 +305,11 @@ export function RendererPage() {
             ? 'max-w-full mx-auto' 
             : 'max-w-300 mx-auto'
         }`}>
-          <div className="relative h-full w-full overflow-hidden">
+          <div className="relative h-full w-full overflow-hidden flex flex-col">
+            <Disclaimer />
+            
             {/* 50/50 split layout */}
-            <div className="h-full flex flex-col md:flex-row min-h-0 transition-all duration-200">
+            <div className="flex-1 flex flex-col md:flex-row min-h-0 transition-all duration-200">
               {/* Left: Input section */}
               <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
                 {/* Model selector at top - always rendered to avoid flickering */}

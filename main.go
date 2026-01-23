@@ -49,6 +49,7 @@ func main() {
 
 	renderer := os.Getenv("RENDERER_ENABLED") == "true"
 	rendererModel := os.Getenv("RENDERER_MODEL")
+	rendererDisclaimer := os.Getenv("RENDERER_DISCLAIMER")
 	rendererElicitation := os.Getenv("RENDERER_ELICITATION") == "true"
 
 	extractor := os.Getenv("EXTRACTOR_ENABLED") == "true"
@@ -65,6 +66,8 @@ func main() {
 
 	workflow := os.Getenv("WORKFLOW_ENABLED") == "true"
 	recorder := os.Getenv("RECORDER_ENABLED") == "true"
+
+	chatRetentionDays := os.Getenv("CHAT_RETENTION_DAYS")
 
 	mux := http.NewServeMux()
 	dist := os.DirFS("dist")
@@ -127,6 +130,7 @@ func main() {
 
 		type rendererType struct {
 			Model       string `json:"model,omitempty" yaml:"model,omitempty"`
+			Disclaimer  string `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
 			Elicitation bool   `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
 		}
 
@@ -151,6 +155,10 @@ func main() {
 
 		type researcherType struct {
 			Model string `json:"model,omitempty" yaml:"model,omitempty"`
+		}
+
+		type chatType struct {
+			RetentionDays *int `json:"retentionDays,omitempty" yaml:"retentionDays,omitempty"`
 		}
 
 		type translatorType struct {
@@ -191,6 +199,8 @@ func main() {
 			Recorder   *recorderType   `json:"recorder,omitempty" yaml:"recorder,omitempty"`
 			Researcher *researcherType `json:"researcher,omitempty" yaml:"researcher,omitempty"`
 			Translator *translatorType `json:"translator,omitempty" yaml:"translator,omitempty"`
+
+			Chat *chatType `json:"chat,omitempty" yaml:"chat,omitempty"`
 
 			Backgrounds map[string][]backgroundType `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
 		}
@@ -319,6 +329,10 @@ func main() {
 				config.Renderer.Model = rendererModel
 			}
 
+			if rendererDisclaimer != "" {
+				config.Renderer.Disclaimer = rendererDisclaimer
+			}
+
 			if rendererElicitation {
 				config.Renderer.Elicitation = true
 			}
@@ -381,6 +395,14 @@ func main() {
 
 			if extractorModel != "" {
 				config.Extractor.Model = extractorModel
+			}
+		}
+
+		if chatRetentionDays != "" {
+			if n, err := strconv.Atoi(chatRetentionDays); err == nil && n > 0 {
+				config.Chat = &chatType{
+					RetentionDays: &n,
+				}
 			}
 		}
 
