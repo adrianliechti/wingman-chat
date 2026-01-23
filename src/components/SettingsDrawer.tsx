@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from 'react';
-import { Settings, MessageSquare, User, Package, Download, Upload, Trash2, ChevronsUpDown, Check, X, ChevronRight, Sparkles, Pencil, ToggleLeft, ToggleRight, Plus } from 'lucide-react';
+import { Settings, MessageSquare, User, Package, Download, Upload, Trash2, ChevronsUpDown, Check, X, ChevronRight, Sparkles, Pencil, ToggleLeft, ToggleRight, Plus, Code } from 'lucide-react';
 import { Transition, Listbox } from '@headlessui/react';
 import { useSettings } from '../hooks/useSettings';
 import { useChat } from '../hooks/useChat';
@@ -12,8 +12,10 @@ import type { RepositoryFile } from '../types/repository';
 import { personaOptions } from '../lib/personas';
 import type { PersonaKey } from '../lib/personas';
 import { SkillEditor } from './SkillEditor';
+import { BridgeEditor } from './BridgeEditor';
 import { parseSkillFile, downloadSkill, downloadSkillsAsZip } from '../lib/skillParser';
 import type { Skill } from '../lib/skillParser';
+import type { BridgeServer } from '../contexts/BridgeContext';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -114,7 +116,8 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
     theme, setTheme, layoutMode, setLayoutMode,
     backgroundPacks, backgroundSetting, setBackground,
     profile, updateProfile,
-    skills, addSkill, updateSkill, removeSkill, toggleSkill
+    skills, addSkill, updateSkill, removeSkill, toggleSkill,
+    servers, addServer, updateServer, removeServer, toggleServer
   } = useSettings();
   const { chats, createChat, updateChat, deleteChat } = useChat();
   const { repositories, createRepository, updateRepository, deleteRepository, upsertFile } = useRepositories();
@@ -122,6 +125,10 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
   // Skill editor state
   const [skillEditorOpen, setSkillEditorOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
+  
+  // Bridge editor state
+  const [bridgeEditorOpen, setBridgeEditorOpen] = useState(false);
+  const [editingBridge, setEditingBridge] = useState<BridgeServer | null>(null);
   
   const [storageInfo, setStorageInfo] = useState<{
     totalSize: number;
@@ -417,6 +424,31 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
     }
   };
 
+  // Bridge functions
+  const handleEditBridge = (bridge: BridgeServer) => {
+    setEditingBridge(bridge);
+    setBridgeEditorOpen(true);
+  };
+
+  const handleNewBridge = () => {
+    setEditingBridge(null);
+    setBridgeEditorOpen(true);
+  };
+
+  const handleSaveBridge = (bridgeData: Omit<BridgeServer, 'id'>) => {
+    if (editingBridge) {
+      updateServer(editingBridge.id, bridgeData);
+    } else {
+      addServer(bridgeData);
+    }
+  };
+
+  const handleDeleteBridge = (bridge: BridgeServer) => {
+    if (window.confirm(`Are you sure you want to delete the bridge "${bridge.name}"?`)) {
+      removeServer(bridge.id);
+    }
+  };
+
   const backgroundOptions = [{ value: null, label: 'None' }, ...backgroundPacks.map((p: BackgroundPack) => ({ value: p.name, label: p.name }))];
 
   // Reset sections when drawer opens
@@ -437,6 +469,12 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
       onClose={() => setSkillEditorOpen(false)}
       onSave={handleSaveSkill}
       skill={editingSkill}
+    />
+    <BridgeEditor
+      isOpen={bridgeEditorOpen}
+      onClose={() => setBridgeEditorOpen(false)}
+      onSave={handleSaveBridge}
+      bridge={editingBridge}
     />
     <Transition show={isOpen} as={Fragment}>
       <div className="fixed inset-0 z-70">
@@ -768,6 +806,90 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
 
                 <p className="text-xs text-neutral-400 dark:text-neutral-500">
                   Skills extend the assistant's capabilities with specialized instructions.
+                </p>
+              </div>
+            </AccordionSection>
+
+            {/* Developer Mode Section */}
+            <AccordionSection
+              title="Developer"
+              icon={<Code size={20} />}
+              isOpen={openSection === 'developer'}
+              onClick={() => toggleSection('developer')}
+            >
+              <div className="space-y-3">
+                {/* Servers list */}
+                {servers.length > 0 && (
+                  <div className="space-y-2">
+                    {servers.map((server) => (
+                      <div
+                        key={server.id}
+                        className="flex items-center gap-3 p-3 rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-200/50 dark:border-neutral-700/50"
+                      >
+                        {/* Toggle */}
+                        <button
+                          type="button"
+                          onClick={() => toggleServer(server.id)}
+                          className={`shrink-0 ${server.enabled ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-400 dark:text-neutral-500'}`}
+                          title={server.enabled ? 'Disable server' : 'Enable server'}
+                        >
+                          {server.enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                        </button>
+
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm text-neutral-900 dark:text-neutral-100 truncate">
+                            {server.name}
+                          </div>
+                          <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                            {server.url}
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleEditBridge(server)}
+                            className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors"
+                            title="Edit server"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteBridge(server)}
+                            className="p-1.5 rounded-lg text-neutral-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                            title="Delete server"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {servers.length === 0 && (
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center py-4">
+                    No servers configured. Add a server to connect to external MCP servers.
+                  </p>
+                )}
+
+                {/* Action buttons */}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleNewBridge}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
+                  >
+                    <Plus size={14} />
+                    Add Server
+                  </button>
+                </div>
+
+                <p className="text-xs text-neutral-400 dark:text-neutral-500">
+                  Servers connect to external MCP endpoints for additional tools and capabilities.
                 </p>
               </div>
             </AccordionSection>

@@ -27,6 +27,7 @@ import { AppProvider } from "./contexts/AppProvider";
 import { ProfileProvider } from "./contexts/ProfileProvider";
 import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
 import { ToolsProvider } from "./contexts/ToolsProvider";
+import { BridgeProvider } from "./contexts/BridgeProvider";
 import { useArtifacts } from "./hooks/useArtifacts";
 import { useRepositories } from "./hooks/useRepositories";
 import { useApp } from "./hooks/useApp";
@@ -486,6 +487,7 @@ const providers = [
   AppProvider,
   RepositoryProvider,
   ScreenCaptureProvider,
+  BridgeProvider,
   ToolsProvider,
   ChatProvider,
   VoiceProvider,

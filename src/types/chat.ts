@@ -26,6 +26,8 @@ export type MCP = {
     description: string;
 
     url: string;
+
+    headers?: Record<string, string>;
 };
 
 export enum ProviderState {

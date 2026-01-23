@@ -16,32 +16,38 @@ interface ToolsProviderProps {
 
 export function ToolsProvider({ children }: ToolsProviderProps) {
   const config = getConfig();
-  const mcps = useMemo(() => config.mcps || [], [config.mcps]);
+  const configMcps = useMemo(() => config.mcps || [], [config.mcps]);
   
   // State management for all providers
   const [providerStates, setProviderStates] = useState<Map<string, ProviderState>>(new Map());
   
-  // Create MCP clients
-  const [mcpClients] = useState<MCPClient[]>(() => 
-    mcps.map(mcp => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description))
+  // Create MCP clients from config
+  const [configMcpClients] = useState<MCPClient[]>(() => 
+    configMcps.map(mcp => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers))
   );
-  const clientsRef = useRef<MCPClient[]>(mcpClients);
+  const configClientsRef = useRef<MCPClient[]>(configMcpClients);
 
-  const bridgeProvider = useBridgeProvider();
+  // Get bridge providers (user-configured MCP servers)
+  const bridgeProviders = useBridgeProvider();
+  
   const internetProvider = useInternetProvider();
   const interpreterProvider = useInterpreterProvider();
   const rendererProvider = useRendererProvider();
 
-  // Cleanup on unmount
+  // Cleanup config MCP clients on unmount
   useEffect(() => {
-    const clients = clientsRef.current;
+    const clients = configClientsRef.current;
     return () => {
-      // Disconnect all clients on unmount
       clients.forEach(client => {
         client.disconnect().catch(console.error);
       });
     };
   }, []);
+
+  // Combine all MCP clients
+  const allMcpClients = useMemo(() => {
+    return [...configMcpClients, ...bridgeProviders];
+  }, [configMcpClients, bridgeProviders]);
 
   // Build all providers with UI metadata
   const providers = useMemo<ToolProvider[]>(() => {
@@ -60,13 +66,8 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
       list.push(interpreterProvider);
     }
     
-    // Add MCP clients (they are already ToolProviders)
-    list.push(...mcpClients);
-    
-    // Add bridge provider if available
-    if (bridgeProvider) {
-      list.push(bridgeProvider);
-    }
+    // Add all MCP clients (config + user bridges)
+    list.push(...allMcpClients);
     
     // Note: artifacts and repository providers are added conditionally in useChatContext
     
@@ -75,8 +76,7 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     internetProvider,
     rendererProvider,
     interpreterProvider,
-    mcpClients,
-    bridgeProvider,
+    allMcpClients,
   ]);
 
   // Helper functions for state management
@@ -85,10 +85,10 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
   }, [providerStates]);
 
   const setProviderEnabled = useCallback(async (id: string, enabled: boolean) => {
-    // Find the provider
-    const mcpClient = mcpClients.find(c => c.id === id);
+    // Find the provider - check if it's an MCPClient
+    const mcpClient = allMcpClients.find(c => c.id === id);
     
-    if (mcpClient) {
+    if (mcpClient && mcpClient instanceof MCPClient) {
       // For MCP clients, connect/disconnect
       if (enabled) {
         // Set initializing state before connecting
@@ -115,7 +115,7 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
         setProviderStates(prev => new Map(prev).set(id, ProviderState.Disconnected));
       }
     }
-  }, [mcpClients]);
+  }, [allMcpClients]);
 
   const value: ToolsContextValue = {
     providers,

@@ -14,6 +14,8 @@ export class MCPClient implements ToolProvider {
   
   readonly icon = Rocket;
 
+  readonly headers?: Record<string, string>;
+
   private client: Client | null = null;
   
   private pingInterval: ReturnType<typeof setInterval> | undefined;
@@ -27,13 +29,15 @@ export class MCPClient implements ToolProvider {
     id: string, 
     url: string, 
     name: string, 
-    description: string
+    description: string,
+    headers?: Record<string, string>
   ) {
     this.id = id;
     this.url = url;
     
     this.name = name;
     this.description = description;
+    this.headers = headers;
   }
   
   async connect(): Promise<void> {
@@ -47,7 +51,8 @@ export class MCPClient implements ToolProvider {
         initialReconnectionDelay: 1000,
         reconnectionDelayGrowFactor: 1.5,
         maxRetries: -1,
-      }
+      },
+      requestInit: this.headers ? { headers: this.headers } : undefined,
     };
 
     const url = new URL(this.url);
