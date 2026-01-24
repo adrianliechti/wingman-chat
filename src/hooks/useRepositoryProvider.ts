@@ -33,18 +33,18 @@ export function useRepositoryProvider(repositoryId: string, mode: 'auto' | 'rag'
             },
             required: ['query']
           },
-          function: async (args: Record<string, unknown>): Promise<string> => {
+          function: async (args: Record<string, unknown>) => {
             const query = args.query as string;
 
             if (!query) {
-              return JSON.stringify({ error: 'No query provided' });
+              return [{ type: 'text' as const, text: JSON.stringify({ error: 'No query provided' }) }];
             }
 
             try {
               const results = await queryChunks(query, 5);
 
               if (results.length === 0) {
-                return JSON.stringify([]);
+                return [{ type: 'text' as const, text: JSON.stringify([]) }];
               }
 
               const jsonResults = results.map((result) => {
@@ -55,9 +55,9 @@ export function useRepositoryProvider(repositoryId: string, mode: 'auto' | 'rag'
                 };
               });
 
-              return JSON.stringify(jsonResults);
+              return [{ type: 'text' as const, text: JSON.stringify(jsonResults) }];
             } catch {
-              return JSON.stringify({ error: 'Failed to query repository' });
+              return [{ type: 'text' as const, text: JSON.stringify({ error: 'Failed to query repository' }) }];
             }
           }
         }

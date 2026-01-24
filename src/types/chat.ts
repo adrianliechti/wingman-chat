@@ -39,10 +39,13 @@ export enum ProviderState {
 
 export interface ToolProvider {
     readonly id: string;
+
     readonly name: string;
-    readonly description?: string;
     readonly icon?: ToolIcon;
+    readonly description?: string;
+
     readonly instructions?: string;
+    
     readonly tools: Tool[];
 }
 
@@ -52,7 +55,7 @@ export type Tool = {
 
     parameters: Record<string, unknown>;
 
-    function: (args: Record<string, unknown>, context?: ToolContext) => Promise<string | Content[]>;
+    function: (args: Record<string, unknown>, context?: ToolContext) => Promise<(TextContent | ImageContent | AudioContent | FileContent)[]>;
 }
 
 export type Elicitation = {
@@ -71,28 +74,34 @@ export type PendingElicitation = {
 };
 
 export interface ToolContext {
-    attachments?(): Attachment[];
+    content?(): Content[];
     elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
     render?(): Promise<HTMLIFrameElement>;
 }
 
-export type ToolCall = {
-    id: string;
+// Content parts for messages - order matters
+export type ReasoningContent = {
+    type: 'reasoning';
+    text: string;
+};
 
+export type ToolCallContent = {
+    type: 'tool_call';
+    id: string;
     name: string;
     arguments: string;
 };
 
-export type ToolResult = {
+export type ToolResultContent = {
+    type: 'tool_result';
     id: string;
-
-    name: string; // from tool call
-    arguments: string; // from tool call
-
-    data: string | Content[];
+    name: string;
+    arguments: string;
+    result: (TextContent | ImageContent | AudioContent | FileContent)[];
 };
 
-export type Content = TextContent | ImageContent | AudioContent;
+// Content is the union of all content types used in messages
+export type Content = TextContent | ImageContent | AudioContent | FileContent | ReasoningContent | ToolCallContent | ToolResultContent;
 
 export type TextContent = {
     type: "text";
@@ -103,31 +112,31 @@ export type TextContent = {
 export type ImageContent = {
     type: "image";
 
-    data: string;
-    mimeType: string;
+    name?: string;
+    data: string;  // Full data URL (data:mime;base64,...)
 }
 
 export type AudioContent = {
     type: "audio";
 
-    data: string;
-    mimeType: string;
+    name?: string;
+    data: string;  // Full data URL (data:mime;base64,...)
+}
+
+export type FileContent = {
+    type: "file";
+
+    name: string;
+    data: string;  // Full data URL (data:mime;base64,...)
 }
 
 export type Message = {
-    role: 'user' | 'assistant' | 'tool';
+    role: 'user' | 'assistant';
 
-    content: string;
-
-    /** Reasoning/thinking tokens from the model (shown in collapsible UI) */
-    reasoning?: string;
-
-    attachments?: Attachment[];
+    /** Ordered content parts (text, reasoning, tool_call, tool_result, images, files) */
+    content: Content[];
 
     error?: MessageError | null;
-
-    toolCalls?: ToolCall[];
-    toolResult?: ToolResult;
 };
 
 export type MessageError = {
@@ -138,21 +147,6 @@ export type MessageError = {
 export enum Role {
     User = "user",
     Assistant = "assistant",
-    Tool = "tool",
-}
-
-export type Attachment = {
-    type: AttachmentType;
-    name: string;
-
-    data: string;
-    meta?: Record<string, unknown>;
-};
-
-export enum AttachmentType {
-    Text = "text",
-    File = "file_data",
-    Image = "image_data",
 }
 
 export type Chat = {
@@ -166,3 +160,11 @@ export type Chat = {
     messages: Array<Message>;
     artifacts?: { [path: string]: File };
 };
+
+// Helper function to extract text from content parts
+export function getTextFromContent(content: Content[]): string {
+    return content
+        .filter((p): p is TextContent => p.type === 'text')
+        .map(p => p.text)
+        .join('');
+}

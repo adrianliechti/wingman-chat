@@ -2,8 +2,9 @@ import { useRef, useEffect } from 'react';
 import { AudioStreamPlayer } from '../lib/AudioStreamPlayer';
 import { AudioRecorder } from '../lib/AudioRecorder';
 import { float32ToPcm16 } from '../lib/audio';
-import { AttachmentType } from '../types/chat';
-import type { Message, Tool } from '../types/chat';
+import { serializeToolResultForApi } from '../lib/utils';
+import { getTextFromContent } from '../types/chat';
+import type { Message, Tool, TextContent, ImageContent, AudioContent, FileContent } from '../types/chat';
 
 export function useVoiceWebSockets(
   onUser: (text: string) => void,
@@ -117,24 +118,15 @@ export function useVoiceWebSockets(
             }> = [];
 
             // Add main message content
-            if (message.content) {
+            const messageText = getTextFromContent(message.content);
+            if (messageText) {
               content.push({
                 type: message.role === 'user' ? 'input_text' : 'text',
-                text: message.content
+                text: messageText
               });
             }
 
-            // Add text attachments
-            if (message.attachments) {
-              message.attachments
-                .filter(a => a.type === AttachmentType.Text)
-                .forEach(attachment => {
-                  content.push({
-                    type: message.role === 'user' ? 'input_text' : 'text',
-                    text: `// ${attachment.name}\n${attachment.data}`
-                  });
-                });
-            }
+            // Note: Images and files in content are not sent over voice WebSocket
 
             const conversationItem = {
               type: 'conversation.item.create',
@@ -244,7 +236,10 @@ export function useVoiceWebSockets(
                 try {
                   const args = JSON.parse(msg.item.arguments);
                   const result = await tool.function(args);
-                  output = typeof result === 'string' ? result : JSON.stringify(result);
+                  // Serialize result, stripping binary data from images/audio/files
+                  output = typeof result === 'string' 
+                    ? result 
+                    : serializeToolResultForApi(result as (TextContent | ImageContent | AudioContent | FileContent)[]);
                   console.log('Function result:', result);
                 } catch (error) {
                   console.error('Error executing tool:', error);

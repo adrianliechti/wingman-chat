@@ -3,12 +3,12 @@ import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import mime from "mime";
 
-import { Role, AttachmentType } from "../types/chat";
-import type { Tool, ToolCall } from "../types/chat";
+import { Role } from "../types/chat";
+import type { Tool, Content, ImageContent, FileContent, ToolResultContent } from "../types/chat";
 import type { Message, Model, ModelType } from "../types/chat";
 import type { SearchResult } from "../types/search";
 import { modelType, modelName } from "./models";
-import { simplifyMarkdown } from "./utils";
+import { simplifyMarkdown, serializeToolResultForApi } from "./utils";
 
 import instructionsConvertCsv from "../prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "../prompts/convert-md.txt?raw";
@@ -53,7 +53,7 @@ export class Client {
     instructions: string,
     input: Message[],
     tools: Tool[],
-    handler?: (delta: string, snapshot: string, reasoningDelta?: string, reasoningSnapshot?: string) => void
+    handler?: (content: Content[]) => void
   ): Promise<Message> {
     input = this.sanitizeMessages(input);
 
@@ -64,51 +64,46 @@ export class Client {
         case Role.User: {
           const content: OpenAI.Responses.ResponseInputContent[] = [];
 
-          if (m.content) {
-            content.push({ type: "input_text", text: m.content });
-          }
-
-          for (const a of m.attachments ?? []) {
-            if (a.type === AttachmentType.Text) {
-              content.push({
-                type: "input_text",
-                text: "````text\n// " + a.name + "\n" + a.data + "\n````",
-              });
-            }
-
-            if (a.type === AttachmentType.File) {
-              content.push({
-                type: "input_file",
-                file_data: a.data,
-              });
-            }
-
-            if (a.type === AttachmentType.Image) {
+          // Process all content parts
+          for (const part of m.content) {
+            if (part.type === 'text') {
+              content.push({ type: "input_text", text: part.text });
+            } else if (part.type === 'image') {
+              const imgPart = part as ImageContent;
+              // data is already a full data URL
               content.push({
                 type: "input_image",
-                image_url: a.data,
+                image_url: imgPart.data,
                 detail: "auto",
               });
+            } else if (part.type === 'file') {
+              const filePart = part as FileContent;
+              // data is already a full data URL
+              content.push({
+                type: "input_file",
+                file_data: filePart.data,
+              });
+            } else if (part.type === 'tool_result') {
+              // Tool results in user messages go as function_call_output
+              // Binary data (images, audio, files) is stripped and replaced with descriptions
+              // since the model cannot process base64 data in text output
+              const tr = part as ToolResultContent;
+              const output = serializeToolResultForApi(tr.result);
+              items.push({
+                type: "function_call_output",
+                call_id: tr.id,
+                output: output,
+              });
             }
+            // Skip reasoning, tool_call in user messages
           }
 
-          items.push({
-            type: "message",
-            role: "user",
-            content: content,
-          });
-
-          break;
-        }
-
-        case Role.Tool: {
-          if (m.toolResult) {
-            const content = typeof m.toolResult.data === 'string' ? m.toolResult.data : JSON.stringify(m.toolResult.data);
-
+          // Only add user message if there's content (not just tool results)
+          if (content.length > 0) {
             items.push({
-              type: "function_call_output",
-              call_id: m.toolResult.id,
-              output: content,
+              type: "message",
+              role: "user",
+              content: content,
             });
           }
 
@@ -116,8 +111,11 @@ export class Client {
         }
 
         case Role.Assistant: {
-          if (m.toolCalls && m.toolCalls.length > 0) {
-            for (const tc of m.toolCalls) {
+          // Find tool_call parts
+          const toolCalls = m.content.filter(p => p.type === 'tool_call');
+          
+          if (toolCalls.length > 0) {
+            for (const tc of toolCalls) {
               items.push({
                 type: "function_call",
                 call_id: tc.id,
@@ -126,10 +124,13 @@ export class Client {
               });
             }
           } else {
+            // Find text parts and combine them
+            const textParts = m.content.filter(p => p.type === 'text');
+            const textContent = textParts.map(p => p.text).join('');
             items.push({
               type: "message",
               role: "assistant",
-              content: m.content,
+              content: textContent,
             });
           }
 
@@ -138,10 +139,25 @@ export class Client {
       }
     }
 
-    // Track streaming content and tool calls
-    let streamedContent = "";
-    let streamedReasoning = "";
-    const toolCalls: Array<ToolCall> = [];
+    // Track streaming content parts
+    const contentParts: Content[] = [];
+    let currentType: 'reasoning' | 'text' | null = null;
+
+    // Helper to append to current part or create new one
+    const appendContent = (type: 'reasoning' | 'text', delta: string) => {
+      if (currentType === type && contentParts.length > 0) {
+        // Append to current part
+        const lastPart = contentParts[contentParts.length - 1];
+        if (lastPart.type === type) {
+          lastPart.text += delta;
+        }
+      } else {
+        // Start new part
+        contentParts.push({ type, text: delta });
+        currentType = type;
+      }
+      handler?.([...contentParts]);
+    };
 
     const runner = this.oai.responses
       .stream({
@@ -155,20 +171,24 @@ export class Client {
         } as { effort: "low" | "medium" | "high"; summary: "auto" | "concise" | "detailed" },
       })
       .on('response.reasoning_summary_text.delta', (event) => {
-        streamedReasoning += event.delta;
-        handler?.('', streamedContent, event.delta, streamedReasoning);
+        appendContent('reasoning', event.delta);
+      })
+      .on('response.reasoning_text.delta', (event) => {
+        appendContent('reasoning', event.delta);
       })
       .on('response.output_text.delta', (event) => {
-        streamedContent += event.delta;
-        handler?.(event.delta, streamedContent, undefined, streamedReasoning || undefined);
+        appendContent('text', event.delta);
       })
       .on('response.output_item.done', (event) => {
-        if (event.item.type === 'function_call' && event.item.call_id) {
-          toolCalls.push({
+        if (event.item.type === 'function_call') {
+          contentParts.push({
+            type: 'tool_call',
             id: event.item.call_id,
-            name: event.item.name || '',
-            arguments: event.item.arguments || '',
+            name: event.item.name,
+            arguments: event.item.arguments,
           });
+          currentType = null;
+          handler?.([...contentParts]);
         }
       });
 
@@ -176,9 +196,7 @@ export class Client {
 
     return {
       role: Role.Assistant,
-      content: streamedContent,
-      reasoning: streamedReasoning || undefined,
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      content: contentParts,
     };
   }
 
@@ -806,28 +824,47 @@ export class Client {
   }
 
   private sanitizeMessages(messages: Message[]): Message[] {
-    const toolResultIds = new Set(messages.map(m => m.toolResult?.id).filter(Boolean));
+    // Extract tool result IDs from all messages
+    const toolResultIds = new Set(
+      messages.flatMap(m => 
+        m.content
+          .filter((p): p is ToolResultContent => p.type === 'tool_result')
+          .map(p => p.id)
+      )
+    );
+    
+    // Find tool calls that have matching results
     const validToolCallIds = new Set(
-      messages
-        .filter(m => m.toolCalls?.every(tc => toolResultIds.has(tc.id)))
-        .flatMap(m => m.toolCalls?.map(tc => tc.id) ?? [])
+      messages.flatMap(m =>
+        m.content
+          .filter((p): p is import('../types/chat').ToolCallContent => 
+            p.type === 'tool_call' && toolResultIds.has(p.id)
+          )
+          .map(p => p.id)
+      )
     );
 
     return messages.filter((m) => {
-      if (m.toolCalls?.length) {
-        return m.toolCalls.every(tc => validToolCallIds.has(tc.id));
+      const toolCalls = m.content.filter((p): p is import('../types/chat').ToolCallContent => p.type === 'tool_call');
+      const toolResults = m.content.filter((p): p is ToolResultContent => p.type === 'tool_result');
+      
+      // If message has tool calls, all must have valid results
+      if (toolCalls.length > 0) {
+        return toolCalls.every(tc => validToolCallIds.has(tc.id));
       }
 
-      if (m.toolResult?.id) {
-        return validToolCallIds.has(m.toolResult.id);
+      // If message has tool results, all must match valid tool calls
+      if (toolResults.length > 0) {
+        return toolResults.every(tr => validToolCallIds.has(tr.id));
       }
 
-      // Keep Tool role messages (they may have empty content but valid toolResult)
-      if (m.role === Role.Tool) {
-        return true;
-      }
-
-      return !!m.content?.trim();
+      // Keep messages with meaningful content (text, images, files)
+      const hasContent = m.content.some(p => 
+        (p.type === 'text' && p.text.trim()) || 
+        p.type === 'image' || 
+        p.type === 'file'
+      );
+      return hasContent;
     });
   }
 }

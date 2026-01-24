@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { Role } from "../types/chat";
-import type { Message, ToolProvider, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation } from '../types/chat';
+import type { Message, ToolProvider, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation, Content } from '../types/chat';
 import { ProviderState } from '../types/chat';
 import type { FileSystem } from "../types/file";
 import { useModels } from "../hooks/useModels";
@@ -12,7 +12,6 @@ import { useToolsContext } from "../hooks/useToolsContext";
 import { getConfig } from "../config";
 import { ChatContext } from './ChatContext';
 import type { ChatContextType } from './ChatContext';
-import { contentToAttachments } from "../lib/utils";
 
 interface ChatProviderProps {
   children: React.ReactNode;
@@ -158,9 +157,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
 
-      // Create tool context with current message attachments and elicitation support
+      // Create tool context with current message content and elicitation support
       const createToolContext = (currentToolCall: { id: string; name: string }): ToolContext => ({
-        attachments: () => message.attachments || [],
+        content: () => message.content.filter(p => 
+          p.type === 'text' || p.type === 'image' || p.type === 'file'
+        ) as Content[],
         elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
           return new Promise((resolve) => {
             setPendingElicitation({
@@ -196,32 +197,26 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Main completion loop to handle tool calls
         while (true) {
           // Track streaming content in-memory to avoid writing the full conversation on every token
-          setStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: '', reasoning: '' } });
+          setStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: [] } });
 
           const assistantMessage = await client.complete(
             model!.id,
             instructions,
             conversation,
             tools,
-            (_, snapshot, _reasoningDelta, reasoningSnapshot) => {
+            (contentParts) => {
               setStreamingMessage({ 
                 chatId: id, 
                 message: { 
                   role: Role.Assistant, 
-                  content: snapshot,
-                  reasoning: reasoningSnapshot
+                  content: contentParts
                 } 
               });
             }
           );
 
           // Add the assistant message to conversation
-          conversation = [...conversation, {
-            role: Role.Assistant,
-            content: assistantMessage.content ?? "",
-            reasoning: assistantMessage.reasoning,
-            toolCalls: assistantMessage.toolCalls,
-          }];
+          conversation = [...conversation, assistantMessage];
 
           // Commit the completed message once per turn
           updateChat(id, () => ({ messages: conversation }));
@@ -230,31 +225,33 @@ export function ChatProvider({ children }: ChatProviderProps) {
           setStreamingMessage(null);
 
           // Check if there are tool calls to handle
-          const toolCalls = assistantMessage.toolCalls;
+          const toolCalls = assistantMessage.content.filter(p => p.type === 'tool_call');
 
-          if (!toolCalls || toolCalls.length === 0) {
+          if (toolCalls.length === 0) {
             // No tool calls, we're done
             break;
           }
 
           // Handle each tool call
           for (const toolCall of toolCalls) {
+            if (toolCall.type !== 'tool_call') continue;
+            
             const tool = tools.find((t) => t.name === toolCall.name);
 
             if (!tool) {
-              // Tool not found - add error message
+              // Tool not found - add error message as user message with tool result
               conversation = [...conversation, {
-                role: Role.Tool,
-                content: '',
-                error: {
-                  code: 'TOOL_NOT_FOUND',
-                  message: `Tool "${toolCall.name}" is not available or not executable.`
-                },
-                toolResult: {
+                role: Role.User,
+                content: [{
+                  type: 'tool_result',
                   id: toolCall.id,
                   name: toolCall.name,
                   arguments: toolCall.arguments,
-                  data: `Error: Tool "${toolCall.name}" not found or not executable.`
+                  result: [{ type: 'text', text: `Error: Tool "${toolCall.name}" not found or not executable.` }]
+                }],
+                error: {
+                  code: 'TOOL_NOT_FOUND',
+                  message: `Tool "${toolCall.name}" is not available or not executable.`
                 },
               }];
 
@@ -270,37 +267,34 @@ export function ChatProvider({ children }: ChatProviderProps) {
               // Clear pending elicitation after tool completes
               setPendingElicitation(null);
 
-              const attachments = contentToAttachments(result);
-
-              // Add tool result to conversation
+              // Add tool result to conversation as user message
               conversation = [...conversation, {
-                role: Role.Tool,
-                content: '',
-                attachments,
-                toolResult: {
+                role: Role.User,
+                content: [{
+                  type: 'tool_result',
                   id: toolCall.id,
                   name: toolCall.name,
                   arguments: toolCall.arguments,
-                  data: result,
-                },
+                  result: result,
+                }],
               }];
             }
             catch (error) {
               console.error("Tool failed", error);
 
-              // Add tool error to conversation
+              // Add tool error to conversation as user message
               conversation = [...conversation, {
-                role: Role.Tool,
-                content: '',
-                error: {
-                  code: 'TOOL_EXECUTION_ERROR',
-                  message: 'The tool could not complete the requested action. Please try again or use a different approach.'
-                },
-                toolResult: {
+                role: Role.User,
+                content: [{
+                  type: 'tool_result',
                   id: toolCall.id,
                   name: toolCall.name,
                   arguments: toolCall.arguments,
-                  data: "error: tool execution failed."
+                  result: [{ type: 'text', text: 'error: tool execution failed.' }]
+                }],
+                error: {
+                  code: 'TOOL_EXECUTION_ERROR',
+                  message: 'The tool could not complete the requested action. Please try again or use a different approach.'
                 },
               }];
             }
@@ -361,7 +355,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         conversation = [...conversation, {
           role: Role.Assistant,
-          content: '',
+          content: [],
           error: {
             code: errorCode,
             message: errorMessage

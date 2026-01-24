@@ -53,7 +53,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     console.log('User transcript:', { original: text, processed: content });
 
     if (content.trim()) {
-      addMessage({ role: Role.User, content });
+      addMessage({ role: Role.User, content: [{ type: 'text', text: content }] });
     }
   }, [addMessage]);
 
@@ -84,7 +84,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     console.log('Assistant transcript:', { original: text, processed: content });
 
     if (content.trim()) {
-      addMessage({ role: Role.Assistant, content });
+      addMessage({ role: Role.Assistant, content: [{ type: 'text', text: content }] });
     }
   }, [addMessage]);
 

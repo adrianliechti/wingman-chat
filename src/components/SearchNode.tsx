@@ -8,7 +8,7 @@ import type { SearchResult } from '../types/search';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
-import { Role } from '../types/chat';
+import { Role, getTextFromContent } from '../types/chat';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
@@ -141,11 +141,11 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
                     'Create a detailed research query that combines the user instructions with the provided context. Return only the research query, nothing else.',
                     [{
                       role: Role.User,
-                      content: `Instructions: ${instructions}\n\nContext to research:\n${item.text}\n\nGenerate the research query:`,
+                      content: [{ type: 'text', text: `Instructions: ${instructions}\n\nContext to research:\n${item.text}\n\nGenerate the research query:` }],
                     }],
                     []
                   );
-                  researchQuery = response.content.trim();
+                  researchQuery = getTextFromContent(response.content).trim();
                 } else {
                   // No instructions, use input directly
                   researchQuery = item.text;
@@ -214,11 +214,11 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
                 systemPrompt,
                 [{
                   role: Role.User,
-                  content: userContent,
+                  content: [{ type: 'text', text: userContent }],
                 }],
                 []
               );
-              searchQuery = response.content.trim();
+              searchQuery = getTextFromContent(response.content).trim();
             } catch (error) {
               console.error('Error generating search query:', error);
               // Fallback: combine instructions with input or just use input

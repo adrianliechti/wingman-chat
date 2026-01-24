@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport as ClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult, ContentBlock as MCPContentBlock, ResourceContents as MCPResourceContents, Tool as MCPTool } from "@modelcontextprotocol/sdk/types.js";
 import { AppBridge, PostMessageTransport } from "@modelcontextprotocol/ext-apps/app-bridge";
-import type { Content, Tool, ToolContext, ToolProvider } from '../types/chat';
+import type { Tool, ToolContext, ToolProvider, TextContent, ImageContent, AudioContent, FileContent } from '../types/chat';
 import { Rocket } from "lucide-react";
 
 export class MCPClient implements ToolProvider {
@@ -149,7 +149,7 @@ export class MCPClient implements ToolProvider {
           
           if (resource && context?.render) {
             await this.renderToolUI(tool.name, resource, normalizedResult, context);
-            return "The tool result has been rendered in an interactive UI component and is now visible to the user.";
+            return [{ type: 'text' as const, text: "The tool result has been rendered in an interactive UI component and is now visible to the user." }];
           }
           
           return processContent(normalizedResult.content as MCPContentBlock[]);
@@ -270,28 +270,28 @@ export class MCPClient implements ToolProvider {
   }
 }
 
-function processContent(input: MCPContentBlock[]): string | Content[] {
+type ToolResultContent = TextContent | ImageContent | AudioContent | FileContent;
+
+function processContent(input: MCPContentBlock[]): ToolResultContent[] {
   if (!input?.length) {
-    return "no content";
+    return [{ type: 'text' as const, text: 'no content' }];
   }
 
-  if (input.length === 1 && input[0].type === "text") {
-    return input[0].text || "";
-  }
-
-  const result: Content[] = input
-    .map(block => {
+  const result = input
+    .map((block): ToolResultContent | null => {
       if (block.type === "text") {
         return { type: "text" as const, text: block.text || "" };
       }
 
       if (block.type === "image") {
-        return { type: "image" as const, data: block.data || "", mimeType: block.mimeType || "image/png" };
+        const mimeType = block.mimeType || "image/png";
+        const data = `data:${mimeType};base64,${block.data || ""}`;
+        return { type: "image" as const, data };
       }
 
       return null;
     })
-    .filter(c => c !== null);
+    .filter((c): c is ToolResultContent => c !== null);
 
-  return result.length ? result : JSON.stringify(input.length === 1 ? input[0] : input);
+  return result.length ? result : [{ type: 'text' as const, text: JSON.stringify(input.length === 1 ? input[0] : input) }];
 }

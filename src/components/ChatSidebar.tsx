@@ -3,6 +3,7 @@ import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { useMemo, useCallback, useState } from "react";
 import { useChat } from "../hooks/useChat";
 import { useSidebar } from "../hooks/useSidebar";
+import { getTextFromContent } from "../types/chat";
 
 export function ChatSidebar() {
   const { chats, chat, selectChat, deleteChat, createChat, updateChat } = useChat();
@@ -32,7 +33,7 @@ export function ChatSidebar() {
       
       // Search in message content
       return chatItem.messages.some((message) => 
-        message.content?.toLowerCase().includes(query)
+        getTextFromContent(message.content).toLowerCase().includes(query)
       );
     });
   }, [sortedChats, searchQuery]);

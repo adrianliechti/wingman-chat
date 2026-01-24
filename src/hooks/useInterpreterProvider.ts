@@ -49,12 +49,12 @@ export function useInterpreterProvider(): ToolProvider | null {
             });
             
             if (!result.success) {
-              return `Error executing code: ${result.error || 'Unknown error'}`;
+              return [{ type: 'text' as const, text: `Error executing code: ${result.error || 'Unknown error'}` }];
             }
 
-            return result.output;
+            return [{ type: 'text' as const, text: result.output }];
           } catch (error) {
-            return `Code execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+            return [{ type: 'text' as const, text: `Code execution failed: ${error instanceof Error ? error.message : 'Unknown error'}` }];
           }
         }
       }
