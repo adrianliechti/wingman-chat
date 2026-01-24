@@ -82,7 +82,10 @@ export interface ToolContext {
 // Content parts for messages - order matters
 export type ReasoningContent = {
     type: 'reasoning';
+    id: string;
     text: string;
+    summary?: string;
+    signature?: string;  // Encrypted reasoning content for multi-turn conversations
 };
 
 export type ToolCallContent = {

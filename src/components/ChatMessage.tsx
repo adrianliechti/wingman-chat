@@ -172,12 +172,18 @@ type ReasoningDisplayProps = {
 function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
   // Start expanded when streaming, collapsed when viewing completed message
   const [isExpanded, setIsExpanded] = useState(isStreaming ?? false);
+  const wasStreaming = useRef(isStreaming);
 
-  // Collapse the thinking block when streaming finishes
+  // Expand when streaming starts, collapse when streaming ends
   useEffect(() => {
-    if (!isStreaming && isExpanded) {
+    if (isStreaming && !wasStreaming.current) {
+      // Streaming just started - expand
+      setIsExpanded(true);
+    } else if (!isStreaming && wasStreaming.current) {
+      // Streaming just ended - collapse
       setIsExpanded(false);
     }
+    wasStreaming.current = isStreaming;
   }, [isStreaming]);
 
   // Show component if we have reasoning content OR if we're streaming (thinking in progress)
@@ -232,6 +238,10 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
   // Check for images and files in content
   const mediaParts = message.content.filter(p => p.type === 'image' || p.type === 'file' || p.type === 'audio') as Content[];
   const hasMedia = mediaParts.length > 0;
+  
+  // Reasoning is actively streaming only if we're responding and no text/tool content has arrived yet
+  // Once tool calls or text appear, reasoning is "done" (collapsed but still visible)
+  const isReasoningActive = props.isLast && isResponding && !hasTextContent && !hasToolCalls;
   
   const config = getConfig();
   const enableTTS = !!config.tts;
@@ -411,19 +421,37 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
 
   // Handle assistant messages with no text content (loading states)
   if (isAssistant && !hasTextContent && !message.error) {
-    // Skip rendering old tool call messages that aren't the last one
-    if (hasToolCalls && !props.isLast) {
-      return null;
+    // Check if there's reasoning content (text or summary)
+    const reasoningParts = message.content.filter(p => p.type === 'reasoning');
+    const hasReasoning = reasoningParts.length > 0 && reasoningParts.some(p => p.text || p.summary);
+    
+    // For old messages (not last), only show if there's reasoning to display
+    if (!props.isLast) {
+      if (!hasReasoning) {
+        return null;
+      }
+      // Show just the reasoning block for completed messages with reasoning
+      return (
+        <div className="flex justify-start mb-2">
+          <div className="flex-1 py-1 max-w-full">
+            {reasoningParts.map((part, index) => (
+              part.type === 'reasoning' && (
+                <ReasoningDisplay 
+                  key={index}
+                  reasoning={part.text || part.summary || ''} 
+                  isStreaming={false}
+                />
+              )
+            ))}
+          </div>
+        </div>
+      );
     }
     
     // Check if there's a pending elicitation for any of the tool calls
     const hasPendingElicitation = hasToolCalls && toolCallParts.some(
       toolCall => toolCall.type === 'tool_call' && pendingElicitation && pendingElicitation.toolCallId === toolCall.id
     );
-    
-    // Check if there's reasoning content
-    const reasoningParts = message.content.filter(p => p.type === 'reasoning');
-    const hasReasoning = reasoningParts.length > 0 && reasoningParts.some(p => p.text);
     
     // Show loading indicators for the last message when actively responding, 
     // has pending elicitation, or has reasoning content to display
@@ -436,6 +464,16 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
       return (
         <div className="flex justify-start mb-2">
           <div className="flex-1 py-1 max-w-full">
+            {/* Show reasoning above tool calls */}
+            {hasReasoning && reasoningParts.map((part, index) => (
+              part.type === 'reasoning' && (
+                <ReasoningDisplay 
+                  key={index}
+                  reasoning={part.text || part.summary || ''} 
+                  isStreaming={isReasoningActive}
+                />
+              )
+            ))}
             <div className="space-y-1">
               {toolCallParts.map((part, index) => {
                 if (part.type !== 'tool_call') return null;
@@ -489,8 +527,8 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
               part.type === 'reasoning' && (
                 <ReasoningDisplay 
                   key={index}
-                  reasoning={part.text} 
-                  isStreaming={props.isLast && isResponding}
+                  reasoning={part.text || part.summary || ''} 
+                  isStreaming={isReasoningActive}
                 />
               )
             ))
@@ -579,8 +617,8 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                   return (
                     <ReasoningDisplay 
                       key={index}
-                      reasoning={part.text} 
-                      isStreaming={props.isLast && isResponding}
+                      reasoning={part.text || part.summary || ''} 
+                      isStreaming={isReasoningActive}
                     />
                   );
                 }

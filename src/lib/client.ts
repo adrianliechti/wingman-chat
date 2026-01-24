@@ -4,7 +4,7 @@ import { zodTextFormat } from "openai/helpers/zod";
 import mime from "mime";
 
 import { Role } from "../types/chat";
-import type { Tool, Content, ImageContent, FileContent, ToolResultContent } from "../types/chat";
+import type { Tool, Content, ImageContent, FileContent, ToolResultContent, ReasoningContent } from "../types/chat";
 import type { Message, Model, ModelType } from "../types/chat";
 import type { SearchResult } from "../types/search";
 import { modelType, modelName } from "./models";
@@ -111,6 +111,27 @@ export class Client {
         }
 
         case Role.Assistant: {
+          // Find reasoning parts with signatures and add them first
+          const reasoningParts = m.content.filter((p): p is ReasoningContent => p.type === 'reasoning' && !!p.signature);
+          for (const rp of reasoningParts) {
+            const reasoningItem: Record<string, unknown> = {
+              id: rp.id,
+              type: "reasoning",
+              
+              encrypted_content: rp.signature,
+            };
+
+            if (rp.summary) {
+              reasoningItem.summary = [{ type: "summary_text", text: rp.summary }];
+            }
+            
+            if (rp.text) {
+              reasoningItem.content = [{ type: "reasoning_text", text: rp.text }];
+            }
+            
+            items.push(reasoningItem as unknown as OpenAI.Responses.ResponseInputItem);
+          }
+
           // Find tool_call parts
           const toolCalls = m.content.filter(p => p.type === 'tool_call');
           
@@ -143,19 +164,34 @@ export class Client {
     const contentParts: Content[] = [];
     let currentType: 'reasoning' | 'text' | null = null;
 
-    // Helper to append to current part or create new one
-    const appendContent = (type: 'reasoning' | 'text', delta: string) => {
-      if (currentType === type && contentParts.length > 0) {
-        // Append to current part
+    // Helper to append text content
+    const appendText = (delta: string) => {
+      if (currentType === 'text' && contentParts.length > 0) {
         const lastPart = contentParts[contentParts.length - 1];
-        if (lastPart.type === type) {
+        if (lastPart.type === 'text') {
           lastPart.text += delta;
         }
       } else {
-        // Start new part
-        contentParts.push({ type, text: delta });
-        currentType = type;
+        contentParts.push({ type: 'text', text: delta });
+        currentType = 'text';
       }
+      handler?.([...contentParts]);
+    };
+
+    // Helper to append reasoning content (text or summary)
+    const appendReasoning = (id: string, delta: string, summary?: string) => {
+      let reasoningPart = contentParts.find((p): p is ReasoningContent => p.type === 'reasoning');
+      if (!reasoningPart) {
+        reasoningPart = { type: 'reasoning', id, text: '' };
+        contentParts.unshift(reasoningPart); // Reasoning goes first
+      }
+      if (summary) {
+        reasoningPart.summary = (reasoningPart.summary || '') + summary;
+      }
+      if (delta) {
+        reasoningPart.text += delta;
+      }
+      currentType = 'reasoning';
       handler?.([...contentParts]);
     };
 
@@ -171,13 +207,13 @@ export class Client {
         } as { effort: "low" | "medium" | "high"; summary: "auto" | "concise" | "detailed" },
       })
       .on('response.reasoning_summary_text.delta', (event) => {
-        appendContent('reasoning', event.delta);
+        appendReasoning(event.item_id, '', event.delta);
       })
       .on('response.reasoning_text.delta', (event) => {
-        appendContent('reasoning', event.delta);
+        appendReasoning(event.item_id, event.delta);
       })
       .on('response.output_text.delta', (event) => {
-        appendContent('text', event.delta);
+        appendText(event.delta);
       })
       .on('response.output_item.done', (event) => {
         if (event.item.type === 'function_call') {
@@ -189,6 +225,17 @@ export class Client {
           });
           currentType = null;
           handler?.([...contentParts]);
+        } else if (event.item.type === 'reasoning') {
+          // Capture encrypted_content signature for multi-turn conversations
+          const encryptedContent = (event.item as { encrypted_content?: string }).encrypted_content;
+          if (encryptedContent) {
+            // Find the reasoning part and add the signature
+            const reasoningPart = contentParts.find(p => p.type === 'reasoning');
+            if (reasoningPart && reasoningPart.type === 'reasoning') {
+              reasoningPart.signature = encryptedContent;
+              handler?.([...contentParts]);
+            }
+          }
         }
       });
 
