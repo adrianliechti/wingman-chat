@@ -119,6 +119,9 @@ export type Message = {
 
     content: string;
 
+    /** Reasoning/thinking tokens from the model (shown in collapsible UI) */
+    reasoning?: string;
+
     attachments?: Attachment[];
 
     error?: MessageError | null;

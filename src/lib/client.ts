@@ -53,7 +53,7 @@ export class Client {
     instructions: string,
     input: Message[],
     tools: Tool[],
-    handler?: (delta: string, snapshot: string) => void
+    handler?: (delta: string, snapshot: string, reasoningDelta?: string, reasoningSnapshot?: string) => void
   ): Promise<Message> {
     input = this.sanitizeMessages(input);
 
@@ -138,60 +138,46 @@ export class Client {
       }
     }
 
+    // Track streaming content and tool calls
+    let streamedContent = "";
+    let streamedReasoning = "";
+    const toolCalls: Array<ToolCall> = [];
+
     const runner = this.oai.responses
       .stream({
         model: model,
         tools: this.toTools(tools),
         input: items,
         instructions: instructions,
-      });
-
-    if (handler) {
-      let snapshot = "";
-
-      runner.on('response.output_text.delta', (event) => {
-        const delta = event.delta;
-        snapshot += delta;
-        handler(delta, snapshot);
-      });
-    }
-
-    const response = await runner.finalResponse();
-
-    if (!response.output) {
-      return {
-        role: Role.Assistant,
-        content: "",
-      };
-    }
-
-    // Extract message and tool calls from response
-    let content = "";
-    const toolCalls: Array<ToolCall> = [];
-
-    for (const item of response.output) {
-      if (item.type === "message") {
-        if (item.content) {
-          for (const part of item.content) {
-            if (part.type === "output_text") {
-              content = part.text;
-            }
-          }
-        }
-      } else if (item.type === "function_call") {
-        if (item.call_id) {
+        reasoning: {
+          effort: "medium",
+          summary: "auto",
+        } as { effort: "low" | "medium" | "high"; summary: "auto" | "concise" | "detailed" },
+      })
+      .on('response.reasoning_summary_text.delta', (event) => {
+        streamedReasoning += event.delta;
+        handler?.('', streamedContent, event.delta, streamedReasoning);
+      })
+      .on('response.output_text.delta', (event) => {
+        streamedContent += event.delta;
+        handler?.(event.delta, streamedContent, undefined, streamedReasoning || undefined);
+      })
+      .on('response.output_item.done', (event) => {
+        if (event.item.type === 'function_call' && event.item.call_id) {
           toolCalls.push({
-            id: item.call_id,
-            name: item.name,
-            arguments: item.arguments,
+            id: event.item.call_id,
+            name: event.item.name || '',
+            arguments: event.item.arguments || '',
           });
         }
-      }
-    }
+      });
+
+    await runner.finalResponse();
 
     return {
       role: Role.Assistant,
-      content: content,
+      content: streamedContent,
+      reasoning: streamedReasoning || undefined,
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     };
   }
@@ -834,6 +820,11 @@ export class Client {
 
       if (m.toolResult?.id) {
         return validToolCallIds.has(m.toolResult.id);
+      }
+
+      // Keep Tool role messages (they may have empty content but valid toolResult)
+      if (m.role === Role.Tool) {
+        return true;
       }
 
       return !!m.content?.trim();

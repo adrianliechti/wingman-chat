@@ -3,7 +3,7 @@ import { CopyButton } from './CopyButton';
 import { PlayButton } from './PlayButton';
 import { SingleAttachmentDisplay, MultipleAttachmentsDisplay } from './AttachmentRenderer';
 import { CodeRenderer } from './CodeRenderer';
-import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil } from "lucide-react";
+import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil, ChevronRight } from "lucide-react";
 import { useState, useRef, useEffect } from 'react';
 
 import { Role } from "../types/chat";
@@ -159,6 +159,41 @@ function ElicitationPrompt({ toolName, message, onResolve }: ElicitationPromptPr
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Reasoning/Thinking display component - shows model's thinking process in collapsible UI
+type ReasoningDisplayProps = {
+  reasoning: string;
+  isStreaming?: boolean;
+};
+
+function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
+  // Start expanded when streaming, collapsed when viewing completed message
+  const [isExpanded, setIsExpanded] = useState(isStreaming ?? false);
+
+  // Show component if we have reasoning content OR if we're streaming (thinking in progress)
+  if (!reasoning && !isStreaming) return null;
+
+  return (
+    <div className="mb-3">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
+      >
+        <ChevronRight className={`w-3 h-3 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
+        <span className="font-medium">Thinking</span>
+        {isStreaming && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
+      </button>
+      
+      {isExpanded && (
+        <div className="mt-2 pl-5 border-l-2 border-neutral-200 dark:border-neutral-700">
+          <div className="text-sm text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap">
+            {reasoning}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -390,13 +425,21 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
     return (
       <div className="flex justify-start mb-4">
         <div className="flex-1 py-3">
-          <div className="space-y-2">
-            <div className="flex space-x-1">
-              <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-              <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-              <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+          {/* Show reasoning while thinking, even before content arrives */}
+          {message.reasoning ? (
+            <ReasoningDisplay 
+              reasoning={message.reasoning} 
+              isStreaming={true}
+            />
+          ) : (
+            <div className="space-y-2">
+              <div className="flex space-x-1">
+                <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     );
@@ -466,7 +509,16 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
               <pre className="whitespace-pre-wrap font-sans">{message.content}</pre>
             )
           ) : (
-            message.content && <Markdown>{message.content}</Markdown>
+            <>
+              {/* Show reasoning/thinking tokens if available */}
+              {(message.reasoning || (props.isLast && isResponding)) && (
+                <ReasoningDisplay 
+                  reasoning={message.reasoning || ''} 
+                  isStreaming={props.isLast && isResponding && !message.content}
+                />
+              )}
+              {message.content && <Markdown>{message.content}</Markdown>}
+            </>
           )}
 
           {/* Show tool call indicators for assistant messages with tool calls */}

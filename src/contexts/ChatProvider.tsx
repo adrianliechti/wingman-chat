@@ -196,15 +196,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Main completion loop to handle tool calls
         while (true) {
           // Track streaming content in-memory to avoid writing the full conversation on every token
-          setStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: '' } });
+          setStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: '', reasoning: '' } });
 
           const assistantMessage = await client.complete(
             model!.id,
             instructions,
             conversation,
             tools,
-            (_, snapshot) => {
-              setStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: snapshot } });
+            (_, snapshot, _reasoningDelta, reasoningSnapshot) => {
+              setStreamingMessage({ 
+                chatId: id, 
+                message: { 
+                  role: Role.Assistant, 
+                  content: snapshot,
+                  reasoning: reasoningSnapshot
+                } 
+              });
             }
           );
 
@@ -212,6 +219,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           conversation = [...conversation, {
             role: Role.Assistant,
             content: assistantMessage.content ?? "",
+            reasoning: assistantMessage.reasoning,
             toolCalls: assistantMessage.toolCalls,
           }];
 
