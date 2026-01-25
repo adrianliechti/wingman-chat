@@ -201,10 +201,6 @@ export class Client {
         tools: this.toTools(tools),
         input: items,
         instructions: instructions,
-        reasoning: {
-          effort: "medium",
-          summary: "auto",
-        } as { effort: "low" | "medium" | "high"; summary: "auto" | "concise" | "detailed" },
       })
       .on('response.reasoning_summary_text.delta', (event) => {
         appendReasoning(event.item_id, '', event.delta);
