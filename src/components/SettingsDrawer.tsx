@@ -16,6 +16,7 @@ import { BridgeEditor } from './BridgeEditor';
 import { parseSkillFile, downloadSkill, downloadSkillsAsZip } from '../lib/skillParser';
 import type { Skill } from '../lib/skillParser';
 import type { BridgeServer } from '../contexts/BridgeContext';
+import { migrateChat } from '../lib/chatMigration';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -304,13 +305,15 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
         
         for (const chatData of importData.chats) {
           try {
+            // Migrate chat to current schema (handles old message formats)
+            const migratedChat = migrateChat(chatData);
             const newChat = createChat();
             updateChat(newChat.id, () => ({
-              ...chatData,
+              ...migratedChat,
               id: newChat.id,
               created: chatData.created ? new Date(chatData.created) : new Date(),
               updated: chatData.updated ? new Date(chatData.updated) : new Date(),
-            }));
+            }), { preserveDates: true });
 
             importedCount++;
           } catch (error) {
