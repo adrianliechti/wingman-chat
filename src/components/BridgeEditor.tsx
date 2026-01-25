@@ -211,8 +211,7 @@ export function BridgeEditor({ isOpen, onClose, onSave, bridge }: BridgeEditorPr
                         Add Header
                       </button>
                     </div>
-                    
-                    {headers.length > 0 ? (
+                    {headers.length > 0 && (
                       <div className="space-y-2">
                         {headers.map((header) => (
                           <div key={header.id} className="flex items-center gap-2">
@@ -240,10 +239,6 @@ export function BridgeEditor({ isOpen, onClose, onSave, bridge }: BridgeEditorPr
                           </div>
                         ))}
                       </div>
-                    ) : (
-                      <p className="text-sm text-neutral-500 dark:text-neutral-400 py-2">
-                        No headers configured. Add headers for authentication or custom requests.
-                      </p>
                     )}
                     <p className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">
                       Optional HTTP headers to include with requests (e.g., Authorization)

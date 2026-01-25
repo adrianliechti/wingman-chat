@@ -5,9 +5,13 @@ import "./index.css";
 import App from "./App.tsx";
 
 import { loadConfig } from "./config.ts";
+import { runMigration } from "./lib/migration.ts";
 
 const bootstrap = async () => {
   try {
+    // Run migration from IndexedDB to OPFS (if needed)
+    await runMigration();
+    
     const config = await loadConfig();
 
     if (config?.title) {
