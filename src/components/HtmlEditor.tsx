@@ -1,17 +1,47 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { CodeEditor } from './CodeEditor';
 import { useArtifacts } from '../hooks/useArtifacts';
 import { transformHtmlForPreview } from '../lib/artifacts';
+import type { File } from '../types/file';
 
 // Component to display HTML content in iframe with virtual filesystem support
 function HtmlPreview({ content }: { content: string }) {
-  const { fs } = useArtifacts();
+  const { fs, version } = useArtifacts();
+  const [files, setFiles] = useState<Record<string, File>>({});
 
-  // Get all files from the filesystem
-  const files = useMemo(() => fs.listFiles().reduce((acc, file) => {
-    acc[file.path] = file;
-    return acc;
-  }, {} as Record<string, { path: string; content: string; contentType?: string }>), [fs]);
+  // Load files asynchronously
+  useEffect(() => {
+    let cancelled = false;
+    
+    async function loadFiles() {
+      if (!fs) {
+        setFiles({});
+        return;
+      }
+      
+      try {
+        const fileList = await fs.listFiles();
+        if (!cancelled) {
+          const fileMap = fileList.reduce((acc, file) => {
+            acc[file.path] = file;
+            return acc;
+          }, {} as Record<string, File>);
+          setFiles(fileMap);
+        }
+      } catch (error) {
+        console.error('Error loading files:', error);
+        if (!cancelled) {
+          setFiles({});
+        }
+      }
+    }
+    
+    loadFiles();
+    
+    return () => {
+      cancelled = true;
+    };
+  }, [fs, version]);
 
   // Transform HTML content with data URLs for artifact references
   // Data URLs don't need cleanup (unlike blob URLs)

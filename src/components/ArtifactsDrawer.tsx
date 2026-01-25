@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { File, Code, Eye, PanelRightOpen, PanelRightClose, Play, Loader2 } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { File as FileIcon2, Code, Eye, PanelRightOpen, PanelRightClose, Play, Loader2 } from 'lucide-react';
 import { useArtifacts } from '../hooks/useArtifacts';
 import { useChat } from '../hooks/useChat';
 import { HtmlEditor } from './HtmlEditor';
@@ -15,6 +15,7 @@ import { ArtifactsBrowser } from './ArtifactsBrowser';
 import { artifactKind, artifactLanguage, processUploadedFile } from '../lib/artifacts';
 import { FileIcon } from './FileIcon';
 import { getFileName } from '../lib/utils';
+import type { File } from '../types/file';
 
 export function ArtifactsDrawer() {
   const {
@@ -33,18 +34,77 @@ export function ArtifactsDrawer() {
   const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasAutoShownBrowserRef = useRef(false);
+  
+  // State for files list (loaded from async fs.listFiles)
+  const [files, setFiles] = useState<File[]>([]);
+  
+  // State for active file content (loaded from async fs.getFile)
+  const [activeFileData, setActiveFileData] = useState<File | null>(null);
 
   // Callback for editors to register their run handler
   const onRunReady = useCallback((handler: (() => Promise<void>) | null) => {
     setRunHandler(() => handler);
   }, []);
 
-  // Get files - memoized to prevent unnecessary recalculation
-  // version is required to trigger updates when filesystem changes (fs instance is stable)
-  const files = useMemo(() => {
-    return fs ? fs.listFiles().sort((a, b) => a.path.localeCompare(b.path)) : [];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Load files list when fs or version changes
+  useEffect(() => {
+    let cancelled = false;
+    
+    async function loadFiles() {
+      if (!fs) {
+        setFiles([]);
+        return;
+      }
+      
+      try {
+        const fileList = await fs.listFiles();
+        if (!cancelled) {
+          setFiles(fileList.sort((a, b) => a.path.localeCompare(b.path)));
+        }
+      } catch (error) {
+        console.error('Error loading files:', error);
+        if (!cancelled) {
+          setFiles([]);
+        }
+      }
+    }
+    
+    loadFiles();
+    
+    return () => {
+      cancelled = true;
+    };
   }, [fs, version]);
+  
+  // Load active file content when activeFile changes
+  useEffect(() => {
+    let cancelled = false;
+    
+    async function loadActiveFile() {
+      if (!fs || !activeFile) {
+        setActiveFileData(null);
+        return;
+      }
+      
+      try {
+        const file = await fs.getFile(activeFile);
+        if (!cancelled) {
+          setActiveFileData(file ?? null);
+        }
+      } catch (error) {
+        console.error('Error loading active file:', error);
+        if (!cancelled) {
+          setActiveFileData(null);
+        }
+      }
+    }
+    
+    loadActiveFile();
+    
+    return () => {
+      cancelled = true;
+    };
+  }, [fs, activeFile, version]);
 
   // Automatically open the file if there's only one file
   // and show the browser if there are files but none selected
@@ -100,7 +160,7 @@ export function ArtifactsDrawer() {
 
         for (const processed of processedFiles) {
           if (fs?.isReady) {
-            fs.createFile(processed.path, processed.content, processed.contentType);
+            await fs.createFile(processed.path, processed.content, processed.contentType);
             openFile(processed.path);
           }
         }
@@ -162,8 +222,7 @@ export function ArtifactsDrawer() {
       );
     }
 
-    const file = fs?.getFile(activeFile);
-    if (!file) {
+    if (!activeFileData) {
       return null;
     }
 
@@ -171,34 +230,34 @@ export function ArtifactsDrawer() {
 
     switch (kind) {
       case 'html':
-        return <HtmlEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return <HtmlEditor key={`${activeFile}-${version}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'svg':
-        return <SvgEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return <SvgEditor key={`${activeFile}-${version}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'csv':
-        return <CsvEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode === 'preview' ? 'table' : 'code'} onViewModeChange={(mode) => setViewMode(mode === 'table' ? 'preview' : 'code')} />;
+        return <CsvEditor key={`${activeFile}-${version}`} content={activeFileData.content} viewMode={viewMode === 'preview' ? 'table' : 'code'} onViewModeChange={(mode) => setViewMode(mode === 'table' ? 'preview' : 'code')} />;
       case 'mermaid':
-        return <MermaidEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return <MermaidEditor key={`${activeFile}-${version}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'markdown':
-        return <MarkdownEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return <MarkdownEditor key={`${activeFile}-${version}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'code': {
-        const lang = artifactLanguage(file.path);
+        const lang = artifactLanguage(activeFileData.path);
         if (lang === 'py') {
-          return <PythonEditor key={`${activeFile}-${version}`} content={file.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
+          return <PythonEditor key={`${activeFile}-${version}`} content={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
         }
         if (lang === 'js') {
-          return <JsEditor key={`${activeFile}-${version}`} content={file.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
+          return <JsEditor key={`${activeFile}-${version}`} content={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
         }
         return (
           <CodeEditor
             key={`${activeFile}-${version}`}
-            content={file.content}
+            content={activeFileData.content}
             language={lang}
           />
         );
       }
       case 'text':
       default:
-        return <TextEditor key={`${activeFile}-${version}`} content={file.content} />;
+        return <TextEditor key={`${activeFile}-${version}`} content={activeFileData.content} />;
     }
   };
 
@@ -226,7 +285,7 @@ export function ArtifactsDrawer() {
       {isDragOver && (
         <div className="absolute inset-0 bg-blue-500/10 border-2 border-dashed border-blue-500 flex items-center justify-center z-50 backdrop-blur-sm">
           <div className="text-center">
-            <File size={48} className="text-blue-500 mx-auto mb-3" />
+            <FileIcon2 size={48} className="text-blue-500 mx-auto mb-3" />
             <p className="text-lg font-medium text-blue-700 dark:text-blue-300 mb-1">
               Drop files here
             </p>
@@ -320,7 +379,7 @@ export function ArtifactsDrawer() {
                       const processedFiles = await processUploadedFile(file);
 
                       for (const processed of processedFiles) {
-                        fs.createFile(processed.path, processed.content, processed.contentType);
+                        await fs.createFile(processed.path, processed.content, processed.contentType);
                         openFile(processed.path);
                       }
                     } catch (error) {

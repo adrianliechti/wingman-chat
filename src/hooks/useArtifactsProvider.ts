@@ -38,7 +38,7 @@ export function useArtifactsProvider(): ToolProvider | null {
             if (!fs) {
               return [{ type: 'text' as const, text: JSON.stringify({ error: 'File system not available' }) }];
             }
-            fs.createFile(path, content);
+            await fs.createFile(path, content);
             return [{ type: 'text' as const, text: JSON.stringify({
               success: true,
               message: `File created: ${path}`,
@@ -70,7 +70,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           }
 
           try {
-            const allFiles = fs.listFiles();
+            const allFiles = await fs.listFiles();
             const filteredFiles = !path || path === '/'
               ? allFiles
               : allFiles.filter(file => file.path.startsWith(path));
@@ -115,15 +115,16 @@ export function useArtifactsProvider(): ToolProvider | null {
             return [{ type: 'text' as const, text: JSON.stringify({ error: 'File system not available' }) }];
           }
 
-          const file = fs.getFile(path);
-          const isFolder = fs.listFiles().some(f => f.path.startsWith(path + '/'));
+          const file = await fs.getFile(path);
+          const allFiles = await fs.listFiles();
+          const isFolder = allFiles.some(f => f.path.startsWith(path + '/'));
 
           if (!file && !isFolder) {
             return [{ type: 'text' as const, text: JSON.stringify({ error: `File or folder not found: ${path}` }) }];
           }
 
           try {
-            const success = fs.deleteFile(path);
+            const success = await fs.deleteFile(path);
             if (success) {
               const itemType = file ? 'file' : 'folder';
               return [{ type: 'text' as const, text: JSON.stringify({
@@ -168,18 +169,18 @@ export function useArtifactsProvider(): ToolProvider | null {
             return [{ type: 'text' as const, text: JSON.stringify({ error: 'File system not available' }) }];
           }
 
-          const sourceFile = fs.getFile(fromPath);
+          const sourceFile = await fs.getFile(fromPath);
           if (!sourceFile) {
             return [{ type: 'text' as const, text: JSON.stringify({ error: `Source file not found: ${fromPath}` }) }];
           }
 
-          const destFile = fs.getFile(toPath);
+          const destFile = await fs.getFile(toPath);
           if (destFile) {
             return [{ type: 'text' as const, text: JSON.stringify({ error: `Destination file already exists: ${toPath}` }) }];
           }
 
           try {
-            const success = fs.renameFile(fromPath, toPath);
+            const success = await fs.renameFile(fromPath, toPath);
 
             if (!success) {
               return [{ type: 'text' as const, text: JSON.stringify({
@@ -222,7 +223,7 @@ export function useArtifactsProvider(): ToolProvider | null {
             return [{ type: 'text' as const, text: JSON.stringify({ error: 'File system not available' }) }];
           }
 
-          const file = fs.getFile(path);
+          const file = await fs.getFile(path);
 
           if (!file) {
             return [{ type: 'text' as const, text: JSON.stringify({ error: `File not found: ${path}` }) }];
@@ -297,7 +298,7 @@ export function useArtifactsProvider(): ToolProvider | null {
                 currentFile: null
               }) }];
             }
-            const file = fs.getFile(activeFile);
+            const file = await fs.getFile(activeFile);
 
             if (!file) {
               return [{ type: 'text' as const, text: JSON.stringify({

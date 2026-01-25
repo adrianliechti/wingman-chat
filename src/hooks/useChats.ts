@@ -18,11 +18,6 @@ async function storeChat(chat: Chat): Promise<void> {
     // Write chat.json to /chats/{id}/chat.json
     await opfs.writeJson(`${COLLECTION}/${chat.id}/chat.json`, stored);
     
-    // Save artifacts separately to /chats/{id}/artifacts/
-    if (chat.artifacts && Object.keys(chat.artifacts).length > 0) {
-      await opfs.saveArtifacts(chat.id, chat.artifacts);
-    }
-    
     // Update index
     await opfs.upsertIndexEntry(COLLECTION, {
       id: chat.id,
@@ -55,12 +50,6 @@ async function loadChat(id: string): Promise<Chat | undefined> {
     
     // Rehydrate blobs (handles both chat-scoped and legacy central blobs)
     const chat = await opfs.rehydrateChatBlobs(stored);
-    
-    // Load artifacts from /chats/{id}/artifacts/
-    const artifacts = await opfs.loadArtifacts(id);
-    if (Object.keys(artifacts).length > 0) {
-      chat.artifacts = artifacts;
-    }
     
     return chat;
   } catch (error) {
@@ -211,7 +200,6 @@ export function useChats() {
       updated: new Date(),
       model: null,
       messages: [],
-      artifacts: {},
     };
 
     setChats((prev) => [chat, ...prev]);

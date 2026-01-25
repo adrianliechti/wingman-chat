@@ -1,5 +1,3 @@
-import type { File } from "./file";
-
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
 
 export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "synthesizer" | "transcriber";
@@ -161,7 +159,6 @@ export type Chat = {
 
     model: Model | null;
     messages: Array<Message>;
-    artifacts?: { [path: string]: File };
 };
 
 // Helper function to extract text from content parts

@@ -114,7 +114,10 @@ async function deleteOldDatabase(): Promise<void> {
 async function migrateChats(): Promise<void> {
   console.log('[Migration] Migrating chats...');
   
-  const oldChats = await readOldValue<Chat[]>('chats');
+  // Old chats may have an artifacts property that's no longer in the current Chat type
+  type OldChat = Chat & { artifacts?: Record<string, { path: string; content: string; contentType?: string }> };
+  
+  const oldChats = await readOldValue<OldChat[]>('chats');
   if (!oldChats || !Array.isArray(oldChats)) {
     console.log('[Migration] No chats to migrate');
     return;

@@ -1,6 +1,5 @@
 import { createContext } from 'react';
 import { FileSystemManager } from '../lib/fs';
-import type { FileSystem } from '../types/file';
 
 export interface ArtifactsContextType {
   isAvailable: boolean;
@@ -16,10 +15,7 @@ export interface ArtifactsContextType {
   setShowArtifactsDrawer: (show: boolean) => void;
   toggleArtifactsDrawer: () => void;
   toggleFileBrowser: () => void;
-  setFileSystemForChat: (
-    getFileSystem: (() => FileSystem) | null,
-    setFileSystem: ((updater: (current: FileSystem) => FileSystem) => void) | null
-  ) => void;
+  setChatId: (chatId: string | null) => void;
 }
 
 export const ArtifactsContext = createContext<ArtifactsContextType | null>(null);

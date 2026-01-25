@@ -20,7 +20,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
   const { providers, getProviderState } = useToolsContext();
   
   // Conditionally include artifacts, repository, and skills providers
-  const { fs, showArtifactsDrawer } = useArtifacts();
+  const { isEnabled: artifactsEnabled, showArtifactsDrawer } = useArtifacts();
   const { currentRepository } = useRepositories();
   const artifactsProvider = useArtifactsProvider();
   const repositoryProvider = useRepositoryProvider(currentRepository?.id || '', 'auto');
@@ -31,9 +31,8 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
       // Start with base providers
       let filteredProviders = providers.filter((p: ToolProvider) => getProviderState(p.id) === ProviderState.Connected);
       
-      // Add artifacts provider if conditions are met (files exist OR drawer is visible)
-      const hasFiles = fs.listFiles().length > 0;
-      if (artifactsProvider && (hasFiles || showArtifactsDrawer)) {
+      // Add artifacts provider if conditions are met (enabled OR drawer is visible)
+      if (artifactsProvider && (artifactsEnabled || showArtifactsDrawer)) {
         filteredProviders = [...filteredProviders, artifactsProvider];
       }
       
@@ -110,7 +109,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
         return instructionsList.join('\n\n');
       }
     };
-  }, [mode, model, generateInstructions, providers, getProviderState, fs, showArtifactsDrawer, artifactsProvider, repositoryProvider, currentRepository, skillsProvider]);
+  }, [mode, model, generateInstructions, providers, getProviderState, artifactsEnabled, showArtifactsDrawer, artifactsProvider, repositoryProvider, currentRepository, skillsProvider]);
 
   return context;
 }

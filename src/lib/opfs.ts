@@ -702,7 +702,6 @@ export interface StoredChat {
   updated: string | null;
   model: Chat['model'];
   messages: StoredMessage[];
-  // Note: artifacts are no longer stored in chat.json, they're in /chats/{id}/artifacts/
 }
 
 /**
@@ -868,9 +867,6 @@ export function collectChatBlobIds(chat: StoredChat): string[] {
   }
   return ids;
 }
-
-// Note: deleteChatBlobs is no longer needed - blobs are co-located in the chat folder
-// and are automatically deleted when the chat folder is deleted via deleteDirectory()
 
 // ============================================================================
 // Skills Storage (agentskills.io compatible SKILL.md format)

@@ -3,6 +3,7 @@ import { Folder, FolderOpen, ChevronRight, ChevronDown, Download, Upload, MoreVe
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import { FileIcon } from './FileIcon';
 import { FileSystemManager } from '../lib/fs';
+import type { File } from '../types/file';
 
 // Helper function to build folder tree structure
 interface FileNode {
@@ -223,10 +224,46 @@ export function ArtifactsBrowser({
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load files asynchronously
+  useEffect(() => {
+    let cancelled = false;
+    
+    async function loadFiles() {
+      try {
+        const fileList = await fs.listFiles();
+        if (!cancelled) {
+          setFiles(fileList);
+        }
+      } catch (error) {
+        console.error('Error loading files:', error);
+        if (!cancelled) {
+          setFiles([]);
+        }
+      }
+    }
+    
+    loadFiles();
+    
+    return () => {
+      cancelled = true;
+    };
+  }, [fs]);
 
   // Subscribe to filesystem events to handle UI state updates
   useEffect(() => {
+    // Reload files when filesystem events occur
+    const reloadFiles = async () => {
+      try {
+        const fileList = await fs.listFiles();
+        setFiles(fileList);
+      } catch (error) {
+        console.error('Error reloading files:', error);
+      }
+    };
+
     const unsubscribeCreated = fs.subscribe('fileCreated', (path: string) => {
       // Auto-expand parent folders when new files are created
       const pathParts = path.split('/').filter(part => part.length > 0);
@@ -242,6 +279,7 @@ export function ArtifactsBrowser({
         
         return newExpanded;
       });
+      reloadFiles();
     });
 
     const unsubscribeDeleted = fs.subscribe('fileDeleted', (path: string) => {
@@ -260,21 +298,29 @@ export function ArtifactsBrowser({
         
         return newExpanded;
       });
+      reloadFiles();
+    });
+    
+    const unsubscribeRenamed = fs.subscribe('fileRenamed', () => {
+      reloadFiles();
+    });
+    
+    const unsubscribeUpdated = fs.subscribe('fileUpdated', () => {
+      reloadFiles();
     });
 
     return () => {
       unsubscribeCreated();
       unsubscribeDeleted();
+      unsubscribeRenamed();
+      unsubscribeUpdated();
     };
   }, [fs]);
 
   const handleDownloadAsZip = onDownloadAsZip || (() => fs.downloadAsZip());
 
-  // Get all files from the filesystem
-  const files = fs.listFiles().map(file => ({ path: file.path, content: file.content }));
-
-  // Build the file tree
-  const fileTree = buildFileTree(files);
+  // Build the file tree from files state
+  const fileTree = buildFileTree(files.map(file => ({ path: file.path, content: file.content })));
 
   const handleToggleFolder = (path: string) => {
     const newExpanded = new Set(expandedFolders);
@@ -286,9 +332,9 @@ export function ArtifactsBrowser({
     setExpandedFolders(newExpanded);
   };
 
-  const handleDeleteFile = (path: string) => {
+  const handleDeleteFile = async (path: string) => {
     if (confirm(`Are you sure you want to delete "${path}"?`)) {
-      fs.deleteFile(path);
+      await fs.deleteFile(path);
     }
   };
 
@@ -298,7 +344,7 @@ export function ArtifactsBrowser({
     setRenameValue(fileName);
   };
 
-  const handleRenameSubmit = () => {
+  const handleRenameSubmit = async () => {
     if (!renamingPath || !renameValue.trim()) return;
     
     const pathParts = renamingPath.split('/');
@@ -306,7 +352,7 @@ export function ArtifactsBrowser({
     const newPath = pathParts.join('/');
     
     if (newPath !== renamingPath) {
-      const success = fs.renameFile(renamingPath, newPath);
+      const success = await fs.renameFile(renamingPath, newPath);
       if (!success) {
         alert('Failed to rename file. A file with that name may already exist.');
       }
