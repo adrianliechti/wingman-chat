@@ -22,7 +22,6 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     }
   });
   const [isEnabled, setIsEnabled] = useState(false);
-  const [version, setVersion] = useState(0);
 
   // Create singleton FileSystemManager instance
   const [fs] = useState(() => new FileSystemManager());
@@ -53,33 +52,24 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
         setActiveFile(null);
       }
     }
-
-    setVersion(v => v + 1);
   }, [fs, activeFile]);
 
-  // Subscribe to filesystem events
+  // Subscribe to filesystem events for UI state changes
   useEffect(() => {
     const unsubscribeCreated = fs.subscribe('fileCreated', (path: string) => {
       setActiveFile(path);
       setShowArtifactsDrawer(true);
       // Auto-enable artifacts when a file is created
       setIsEnabled(true);
-      setVersion(v => v + 1);
     });
 
     const unsubscribeDeleted = fs.subscribe('fileDeleted', (path: string) => {
       // Clear active file if it was the deleted one
       setActiveFile(currentActive => currentActive === path ? null : currentActive);
-      setVersion(v => v + 1);
     });
 
     const unsubscribeRenamed = fs.subscribe('fileRenamed', (oldPath: string, newPath: string) => {
       setActiveFile(prev => prev === oldPath ? newPath : prev);
-      setVersion(v => v + 1);
-    });
-
-    const unsubscribeUpdated = fs.subscribe('fileUpdated', () => {
-      setVersion(v => v + 1);
     });
 
     // Cleanup function
@@ -87,20 +77,12 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
       unsubscribeCreated();
       unsubscribeDeleted();
       unsubscribeRenamed();
-      unsubscribeUpdated();
     };
   }, [fs]);
 
   const openFile = useCallback((path: string) => {
     setActiveFile(path);
   }, []);
-
-  const closeFile = useCallback((path: string) => {
-    // If closing the active file, clear it
-    if (path === activeFile) {
-      setActiveFile(null);
-    }
-  }, [activeFile]);
 
   const toggleArtifactsDrawer = useCallback(() => {
     setShowArtifactsDrawer(prev => !prev);
@@ -129,9 +111,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     activeFile,
     showArtifactsDrawer,
     showFileBrowser,
-    version,
     openFile,
-    closeFile,
     setShowArtifactsDrawer,
     toggleArtifactsDrawer,
     toggleFileBrowser,

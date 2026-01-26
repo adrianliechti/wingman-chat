@@ -22,7 +22,6 @@ export function ArtifactsDrawer() {
     fs,
     activeFile,
     openFile,
-    version,
     showFileBrowser,
     toggleFileBrowser,
   } = useArtifacts();
@@ -40,17 +39,21 @@ export function ArtifactsDrawer() {
   
   // State for active file content (loaded from async fs.getFile)
   const [activeFileData, setActiveFileData] = useState<File | null>(null);
+  
+  // Local version counter for forcing editor remounts when file content changes
+  const [editorVersion, setEditorVersion] = useState(0);
 
   // Callback for editors to register their run handler
   const onRunReady = useCallback((handler: (() => Promise<void>) | null) => {
     setRunHandler(() => handler);
   }, []);
 
-  // Load files list when fs or version changes
+  // Subscribe to filesystem events and load data
   useEffect(() => {
     let cancelled = false;
-    
-    async function loadFiles() {
+
+    // Helper to load files list
+    const loadFiles = async () => {
       if (!fs) {
         setFiles([]);
         return;
@@ -67,22 +70,14 @@ export function ArtifactsDrawer() {
           setFiles([]);
         }
       }
-    }
-    
-    loadFiles();
-    
-    return () => {
-      cancelled = true;
     };
-  }, [fs, version]);
-  
-  // Load active file content when activeFile changes
-  useEffect(() => {
-    let cancelled = false;
-    
-    async function loadActiveFile() {
+
+    // Helper to load active file content
+    const loadActiveFile = async () => {
       if (!fs || !activeFile) {
-        setActiveFileData(null);
+        if (!cancelled) {
+          setActiveFileData(null);
+        }
         return;
       }
       
@@ -97,14 +92,32 @@ export function ArtifactsDrawer() {
           setActiveFileData(null);
         }
       }
-    }
-    
+    };
+
+    // Load initial data
+    loadFiles();
     loadActiveFile();
-    
+
+    // Subscribe to events for subsequent updates
+    const handleFileChange = () => {
+      loadFiles();
+      loadActiveFile();
+      setEditorVersion(v => v + 1);
+    };
+
+    const unsubscribeCreated = fs.subscribe('fileCreated', handleFileChange);
+    const unsubscribeDeleted = fs.subscribe('fileDeleted', handleFileChange);
+    const unsubscribeRenamed = fs.subscribe('fileRenamed', handleFileChange);
+    const unsubscribeUpdated = fs.subscribe('fileUpdated', handleFileChange);
+
     return () => {
       cancelled = true;
+      unsubscribeCreated();
+      unsubscribeDeleted();
+      unsubscribeRenamed();
+      unsubscribeUpdated();
     };
-  }, [fs, activeFile, version]);
+  }, [fs, activeFile]);
 
   // Automatically open the file if there's only one file
   // and show the browser if there are files but none selected
@@ -230,26 +243,26 @@ export function ArtifactsDrawer() {
 
     switch (kind) {
       case 'html':
-        return <HtmlEditor key={`${activeFile}-${version}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return <HtmlEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'svg':
-        return <SvgEditor key={`${activeFile}-${version}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return <SvgEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'csv':
-        return <CsvEditor key={`${activeFile}-${version}`} content={activeFileData.content} viewMode={viewMode === 'preview' ? 'table' : 'code'} onViewModeChange={(mode) => setViewMode(mode === 'table' ? 'preview' : 'code')} />;
+        return <CsvEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode === 'preview' ? 'table' : 'code'} onViewModeChange={(mode) => setViewMode(mode === 'table' ? 'preview' : 'code')} />;
       case 'mermaid':
-        return <MermaidEditor key={`${activeFile}-${version}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return <MermaidEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'markdown':
-        return <MarkdownEditor key={`${activeFile}-${version}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return <MarkdownEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'code': {
         const lang = artifactLanguage(activeFileData.path);
         if (lang === 'py') {
-          return <PythonEditor key={`${activeFile}-${version}`} content={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
+          return <PythonEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
         }
         if (lang === 'js') {
-          return <JsEditor key={`${activeFile}-${version}`} content={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
+          return <JsEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
         }
         return (
           <CodeEditor
-            key={`${activeFile}-${version}`}
+            key={`${activeFile}-${editorVersion}`}
             content={activeFileData.content}
             language={lang}
           />
@@ -257,7 +270,7 @@ export function ArtifactsDrawer() {
       }
       case 'text':
       default:
-        return <TextEditor key={`${activeFile}-${version}`} content={activeFileData.content} />;
+        return <TextEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} />;
     }
   };
 
@@ -368,7 +381,6 @@ export function ArtifactsDrawer() {
           {fs && (
             <div className={`h-full transition-opacity duration-500 ${showFileBrowser ? 'opacity-100' : 'opacity-0'}`}>
               <ArtifactsBrowser
-                key={version}
                 fs={fs}
                 openTabs={activeFile ? [activeFile] : []}
                 onFileClick={openFile}

@@ -9,9 +9,7 @@ export interface ArtifactsContextType {
   activeFile: string | null;
   showArtifactsDrawer: boolean;
   showFileBrowser: boolean;
-  version: number;
   openFile: (path: string) => void;
-  closeFile: (path: string) => void;
   setShowArtifactsDrawer: (show: boolean) => void;
   toggleArtifactsDrawer: () => void;
   toggleFileBrowser: () => void;
