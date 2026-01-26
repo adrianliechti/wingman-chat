@@ -3,6 +3,7 @@ import { Folder, FolderOpen, ChevronRight, ChevronDown, Download, Upload, MoreVe
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import { FileIcon } from './FileIcon';
 import { FileSystemManager } from '../lib/fs';
+import type { File } from '../types/file';
 
 // Helper function to build folder tree structure
 interface FileNode {
@@ -207,17 +208,17 @@ function FileTreeNode({
 
 interface ArtifactsBrowserProps {
   fs: FileSystemManager;
+  files: File[];
   openTabs: string[];
   onFileClick: (path: string) => void;
-  onDownloadAsZip?: () => Promise<void>;
   onUpload?: (files: FileList) => void;
 }
 
 export function ArtifactsBrowser({
   fs,
+  files,
   openTabs,
   onFileClick,
-  onDownloadAsZip,
   onUpload
 }: ArtifactsBrowserProps) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -225,7 +226,7 @@ export function ArtifactsBrowser({
   const [renameValue, setRenameValue] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Subscribe to filesystem events to handle UI state updates
+  // Subscribe to filesystem events for folder expansion/collapse UI
   useEffect(() => {
     const unsubscribeCreated = fs.subscribe('fileCreated', (path: string) => {
       // Auto-expand parent folders when new files are created
@@ -268,13 +269,8 @@ export function ArtifactsBrowser({
     };
   }, [fs]);
 
-  const handleDownloadAsZip = onDownloadAsZip || (() => fs.downloadAsZip());
-
-  // Get all files from the filesystem
-  const files = fs.listFiles().map(file => ({ path: file.path, content: file.content }));
-
-  // Build the file tree
-  const fileTree = buildFileTree(files);
+  // Build the file tree from files state
+  const fileTree = buildFileTree(files.map(file => ({ path: file.path, content: file.content })));
 
   const handleToggleFolder = (path: string) => {
     const newExpanded = new Set(expandedFolders);
@@ -286,9 +282,9 @@ export function ArtifactsBrowser({
     setExpandedFolders(newExpanded);
   };
 
-  const handleDeleteFile = (path: string) => {
+  const handleDeleteFile = async (path: string) => {
     if (confirm(`Are you sure you want to delete "${path}"?`)) {
-      fs.deleteFile(path);
+      await fs.deleteFile(path);
     }
   };
 
@@ -298,7 +294,7 @@ export function ArtifactsBrowser({
     setRenameValue(fileName);
   };
 
-  const handleRenameSubmit = () => {
+  const handleRenameSubmit = async () => {
     if (!renamingPath || !renameValue.trim()) return;
     
     const pathParts = renamingPath.split('/');
@@ -306,7 +302,7 @@ export function ArtifactsBrowser({
     const newPath = pathParts.join('/');
     
     if (newPath !== renamingPath) {
-      const success = fs.renameFile(renamingPath, newPath);
+      const success = await fs.renameFile(renamingPath, newPath);
       if (!success) {
         alert('Failed to rename file. A file with that name may already exist.');
       }
@@ -373,7 +369,7 @@ export function ArtifactsBrowser({
               type="button"
               onClick={async () => {
                 try {
-                  await handleDownloadAsZip();
+                  await fs.downloadAsZip();
                 } catch (error) {
                   console.error('Failed to download files:', error);
                   alert('Failed to download files. Please try again.');

@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { downloadBlob } from './utils';
-import type { FileSystem, File } from '../types/file';
+import * as opfs from './opfs';
+import type { File } from '../types/file';
 
 type FileEventType = 'fileCreated' | 'fileDeleted' | 'fileRenamed' | 'fileUpdated';
 
@@ -14,15 +15,17 @@ type FileEventHandler<T extends FileEventType> = T extends 'fileCreated'
   ? (path: string) => void
   : never;
 
-// FileSystem extension methods
+/**
+ * FileSystemManager - OPFS-backed file system for artifacts
+ * 
+ * All operations go directly to OPFS. Events are emitted synchronously
+ * after OPFS operations complete to notify UI of changes.
+ */
 export class FileSystemManager {
   private eventHandlers = new Map<FileEventType, Set<(...args: unknown[]) => void>>();
-  private _isReady = false;
+  private _chatId: string | null = null;
 
-  constructor(
-    private getFilesystem: () => FileSystem,
-    private setFilesystem: (fs: (current: FileSystem) => FileSystem) => void
-  ) {
+  constructor() {
     // Initialize event handler sets
     this.eventHandlers.set('fileCreated', new Set());
     this.eventHandlers.set('fileDeleted', new Set());
@@ -30,26 +33,19 @@ export class FileSystemManager {
     this.eventHandlers.set('fileUpdated', new Set());
   }
 
-  // Check if filesystem handlers are properly set up
-  get isReady(): boolean {
-    return this._isReady;
+  // Get the current chat ID
+  get chatId(): string | null {
+    return this._chatId;
   }
 
-  // Update the filesystem getter and setter functions
-  updateHandlers(
-    getFilesystem: (() => FileSystem) | null,
-    setFilesystem: ((fs: (current: FileSystem) => FileSystem) => void) | null
-  ): void {
-    if (getFilesystem && setFilesystem) {
-      this.getFilesystem = getFilesystem;
-      this.setFilesystem = setFilesystem;
-      this._isReady = true;
-    } else {
-      // Clear handlers when no chat or artifacts disabled
-      this.getFilesystem = () => ({});
-      this.setFilesystem = () => {}; // No-op when disabled
-      this._isReady = false;
-    }
+  // Check if filesystem is ready (has a chat ID set)
+  get isReady(): boolean {
+    return this._chatId !== null;
+  }
+
+  // Set the current chat ID (called when switching chats)
+  setChatId(chatId: string | null): void {
+    this._chatId = chatId;
   }
 
   // Event subscription methods
@@ -83,180 +79,195 @@ export class FileSystemManager {
     }
   }
 
-  createFile(path: string, content: string, contentType?: string): void {
-    const currentFs = this.getFilesystem();
-    const fileExists = path in currentFs;
-    
-    const file: File = {
-      path,
-      content,
-      contentType,
-    };
+  /**
+   * Create a new file or update an existing file.
+   * Writes directly to OPFS, then emits event.
+   */
+  async createFile(path: string, content: string, contentType?: string): Promise<void> {
+    if (!this._chatId) {
+      throw new Error('No chat ID set - cannot create file');
+    }
 
-    // Update React state
-    this.setFilesystem((fs: FileSystem) => ({
-      ...fs,
-      [path]: file
-    }));
-    
-    // Emit the appropriate event based on whether the file existed
-    if (fileExists) {
+    // Check if file exists to determine event type
+    const existingFile = await opfs.readArtifact(this._chatId, path);
+    const isUpdate = existingFile !== undefined;
+
+    // Write to OPFS
+    await opfs.writeArtifact(this._chatId, path, content, contentType);
+
+    // Emit event synchronously after write completes
+    if (isUpdate) {
       this.emit('fileUpdated', path);
     } else {
       this.emit('fileCreated', path);
     }
   }
 
-  updateFile(path: string, content: string, contentType?: string): boolean {
-    const currentFs = this.getFilesystem();
-    const existingFile = currentFs[path];
-    if (!existingFile) return false;
+  /**
+   * Delete a file or folder. Returns true if something was deleted.
+   */
+  async deleteFile(path: string): Promise<boolean> {
+    if (!this._chatId) {
+      return false;
+    }
 
-    const updatedFile = {
-      ...existingFile,
-      content,
-      contentType,
-    };
-
-    // Update React state
-    this.setFilesystem((fs: FileSystem) => ({
-      ...fs,
-      [path]: updatedFile
-    }));
-    
-    this.emit('fileUpdated', path);
-    return true;
-  }
-
-  deleteFile(path: string): boolean {
-    const currentFs = this.getFilesystem();
-    
-    // Check if this is a direct file
-    if (currentFs[path]) {
-      // Handle single file deletion
-      this.setFilesystem((fs: FileSystem) => {
-        const newFs = { ...fs };
-        delete newFs[path];
-        return newFs;
-      });
-      
+    // Check if this is a file
+    const file = await opfs.readArtifact(this._chatId, path);
+    if (file) {
+      await opfs.deleteArtifact(this._chatId, path);
       this.emit('fileDeleted', path);
       return true;
     }
 
     // Check if this is a folder (has files that start with path + '/')
-    const affectedFiles = Object.values(currentFs).filter(file => 
-      file.path.startsWith(path + '/')
-    );
+    const allFiles = await opfs.listArtifacts(this._chatId);
+    const affectedFiles = allFiles.filter(f => f.startsWith(path + '/'));
 
     if (affectedFiles.length > 0) {
-      // Handle folder deletion
-      this.setFilesystem((fs: FileSystem) => {
-        const newFs = { ...fs };
-        for (const file of affectedFiles) {
-          delete newFs[file.path];
-        }
-        return newFs;
-      });
+      // Delete the folder and all contents
+      await opfs.deleteArtifactFolder(this._chatId, path);
       
       // Emit event for each deleted file
-      for (const file of affectedFiles) {
-        this.emit('fileDeleted', file.path);
+      for (const filePath of affectedFiles) {
+        this.emit('fileDeleted', filePath);
       }
-      
       return true;
     }
 
-    // Path doesn't exist as file or folder
     return false;
   }
 
-  renameFile(oldPath: string, newPath: string): boolean {
-    const filesystem = this.getFilesystem();
-    // Check if the old path exists (either as a file or folder)
-    const isFile = filesystem[oldPath];
-    const isFolder = this.listFiles().some(file => file.path.startsWith(oldPath + '/'));
-    
-    if (!isFile && !isFolder) {
-      return false; // Path doesn't exist
+  /**
+   * Rename/move a file or folder. Returns true on success.
+   */
+  async renameFile(oldPath: string, newPath: string): Promise<boolean> {
+    if (!this._chatId) {
+      return false;
     }
 
-    if (filesystem[newPath]) {
-      return false; // New path already exists
-    }
+    // Check if source is a file
+    const file = await opfs.readArtifact(this._chatId, oldPath);
+    if (file) {
+      // Check if destination already exists
+      const destFile = await opfs.readArtifact(this._chatId, newPath);
+      if (destFile) {
+        return false;
+      }
 
-    if (isFile) {
-      // Handle file rename
-      const file = filesystem[oldPath];
-      this.setFilesystem((fs: FileSystem) => {
-        const newFs = { ...fs };
-        newFs[newPath] = {
-          ...file,
-          path: newPath,
-        };
-        delete newFs[oldPath];
-        return newFs;
-      });
-      
+      // Copy content to new location and delete old
+      await opfs.writeArtifact(this._chatId, newPath, file.content, file.contentType);
+      await opfs.deleteArtifact(this._chatId, oldPath);
       this.emit('fileRenamed', oldPath, newPath);
       return true;
-    } else if (isFolder) {
-      // Handle folder rename - rename all files within the folder
-      const affectedFiles = this.listFiles().filter(file => 
-        file.path.startsWith(oldPath + '/')
-      );
+    }
 
-      this.setFilesystem((fs: FileSystem) => {
-        const newFs = { ...fs };
-        for (const file of affectedFiles) {
-          const relativePath = file.path.substring(oldPath.length);
-          const newFilePath = newPath + relativePath;
-          
-          newFs[newFilePath] = {
-            ...file,
-            path: newFilePath,
-          };
-          delete newFs[file.path];
-        }
-        return newFs;
-      });
-      
-      // Call the emit for each renamed file
-      for (const file of affectedFiles) {
-        const relativePath = file.path.substring(oldPath.length);
+    // Check if source is a folder
+    const allFiles = await opfs.listArtifacts(this._chatId);
+    const affectedFiles = allFiles.filter(f => f.startsWith(oldPath + '/'));
+
+    if (affectedFiles.length > 0) {
+      // Rename all files in the folder
+      for (const filePath of affectedFiles) {
+        const relativePath = filePath.substring(oldPath.length);
         const newFilePath = newPath + relativePath;
-        this.emit('fileRenamed', file.path, newFilePath);
+        
+        const fileData = await opfs.readArtifact(this._chatId, filePath);
+        if (fileData) {
+          await opfs.writeArtifact(this._chatId, newFilePath, fileData.content, fileData.contentType);
+          await opfs.deleteArtifact(this._chatId, filePath);
+          this.emit('fileRenamed', filePath, newFilePath);
+        }
       }
-      
       return true;
     }
 
     return false;
   }
 
-  getFile(path: string): File | undefined {
-    return this.getFilesystem()[path];
+  /**
+   * Get a file by path. Returns undefined if not found.
+   */
+  async getFile(path: string): Promise<File | undefined> {
+    if (!this._chatId) {
+      return undefined;
+    }
+
+    const data = await opfs.readArtifact(this._chatId, path);
+    if (!data) {
+      return undefined;
+    }
+
+    return {
+      path,
+      content: data.content,
+      contentType: data.contentType,
+    };
   }
 
-  listFiles(): File[] {
-    return Object.values(this.getFilesystem());
+  /**
+   * List all files in the filesystem.
+   */
+  async listFiles(): Promise<File[]> {
+    if (!this._chatId) {
+      return [];
+    }
+
+    const paths = await opfs.listArtifacts(this._chatId);
+    const files: File[] = [];
+
+    for (const path of paths) {
+      const data = await opfs.readArtifact(this._chatId, path);
+      if (data) {
+        files.push({
+          path,
+          content: data.content,
+          contentType: data.contentType,
+        });
+      }
+    }
+
+    return files;
   }
 
-  fileExists(path: string): boolean {
-    return path in this.getFilesystem();
+  /**
+   * Check if a file exists at the given path.
+   */
+  async fileExists(path: string): Promise<boolean> {
+    if (!this._chatId) {
+      return false;
+    }
+
+    const data = await opfs.readArtifact(this._chatId, path);
+    return data !== undefined;
   }
 
-  getFileCount(): number {
-    return Object.keys(this.getFilesystem()).length;
+  /**
+   * Get the number of files in the filesystem.
+   */
+  async getFileCount(): Promise<number> {
+    if (!this._chatId) {
+      return 0;
+    }
+
+    const paths = await opfs.listArtifacts(this._chatId);
+    return paths.length;
   }
 
+  /**
+   * Download all files as a zip archive.
+   */
   async downloadAsZip(filename?: string): Promise<void> {
-    return downloadFilesystemAsZip(this.getFilesystem(), filename);
+    const files = await this.listFiles();
+    const filesystem: Record<string, File> = {};
+    for (const file of files) {
+      filesystem[file.path] = file;
+    }
+    return downloadFilesystemAsZip(filesystem, filename);
   }
 }
 
 export async function downloadFilesystemAsZip(
-  filesystem: FileSystem, 
+  filesystem: Record<string, File>, 
   filename: string = 'filesystem.zip'
 ): Promise<void> {
   if (Object.keys(filesystem).length === 0) {

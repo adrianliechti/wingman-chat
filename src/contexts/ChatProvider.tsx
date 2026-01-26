@@ -2,7 +2,6 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { Role } from "../types/chat";
 import type { Message, ToolProvider, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation, Content } from '../types/chat';
 import { ProviderState } from '../types/chat';
-import type { FileSystem } from "../types/file";
 import { useModels } from "../hooks/useModels";
 import { useChats } from "../hooks/useChats";
 import { useChatContext } from "../hooks/useChatContext";
@@ -23,7 +22,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
-  const { isAvailable: artifactsEnabled, setFileSystemForChat, setShowArtifactsDrawer } = useArtifacts();
+  const { isAvailable: artifactsEnabled, setChatId: setArtifactsChatId } = useArtifacts();
   const { getIframe, showDrawer } = useApp();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
@@ -59,28 +58,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return baseMessages;
   }, [chat?.messages, chat?.id, streamingMessage]);
 
-  // Set up the filesystem for the current chat
+  // Set up the artifacts filesystem for the current chat
   useEffect(() => {
-    if (!chat?.id || !artifactsEnabled) {
-      setFileSystemForChat(null, null);
+    if (!artifactsEnabled) {
+      setArtifactsChatId(null);
       return;
     }
 
-    // Create focused methods for filesystem access
-    const getFileSystem = () => chat.artifacts || {};
-    const setFileSystem = (updater: (current: FileSystem) => FileSystem) => {
-      updateChat(chat.id, (current) => ({
-        artifacts: updater(current.artifacts || {})
-      }));
-    };
-
-    setFileSystemForChat(getFileSystem, setFileSystem);
-
-    // Open artifacts drawer if the chat has files
-    if (chat.artifacts && Object.keys(chat.artifacts).length > 0) {
-      setShowArtifactsDrawer(true);
-    }
-  }, [chat?.id, chat?.artifacts, artifactsEnabled, setFileSystemForChat, updateChat, setShowArtifactsDrawer]);
+    setArtifactsChatId(chat?.id ?? null);
+  }, [chat?.id, artifactsEnabled, setArtifactsChatId]);
 
   const createChat = useCallback(() => {
     const newChat = createChatHook();
@@ -212,6 +198,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   content: contentParts
                 } 
               });
+            },
+            {
+              effort: model?.effort,
+              summary: model?.summary,
+              verbosity: model?.verbosity,
             }
           );
 

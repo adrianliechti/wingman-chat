@@ -90,6 +90,10 @@ func main() {
 			Name        string `json:"name,omitempty" yaml:"name,omitempty"`
 			Description string `json:"description,omitempty" yaml:"description,omitempty"`
 
+			Effort    string `json:"effort,omitempty" yaml:"effort,omitempty"`
+			Summary   string `json:"summary,omitempty" yaml:"summary,omitempty"`
+			Verbosity string `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
+
 			MCP []string `json:"mcp,omitempty" yaml:"mcp,omitempty"`
 
 			Prompts []string `json:"prompts,omitempty" yaml:"prompts,omitempty"`

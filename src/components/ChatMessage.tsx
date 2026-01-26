@@ -172,19 +172,16 @@ type ReasoningDisplayProps = {
 function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
   // Start expanded when streaming, collapsed when viewing completed message
   const [isExpanded, setIsExpanded] = useState(isStreaming ?? false);
-  const wasStreaming = useRef(isStreaming);
+  // Track the previous streaming state to detect transitions
+  const [prevIsStreaming, setPrevIsStreaming] = useState(isStreaming);
 
-  // Expand when streaming starts, collapse when streaming ends
-  useEffect(() => {
-    if (isStreaming && !wasStreaming.current) {
-      // Streaming just started - expand
-      setIsExpanded(true);
-    } else if (!isStreaming && wasStreaming.current) {
-      // Streaming just ended - collapse
-      setIsExpanded(false);
-    }
-    wasStreaming.current = isStreaming;
-  }, [isStreaming]);
+  // Adjust state during render when isStreaming prop changes
+  // This is React's recommended pattern for updating state based on props
+  if (isStreaming !== prevIsStreaming) {
+    setPrevIsStreaming(isStreaming);
+    // Expand when streaming starts, collapse when it ends
+    setIsExpanded(!!isStreaming);
+  }
 
   // Show component if we have reasoning content OR if we're streaming (thinking in progress)
   if (!reasoning && !isStreaming) return null;
