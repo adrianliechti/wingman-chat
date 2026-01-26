@@ -67,9 +67,10 @@ export function TranslatePage() {
   const lastSelectionRef = useRef<string>('');
 
   // Sync currentText when translatedText changes from API response
-  useEffect(() => {
+  // Using "adjust state during render" pattern
+  if (currentText !== translatedText && translatedText !== '') {
     setCurrentText(translatedText);
-  }, [translatedText]);
+  }
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
