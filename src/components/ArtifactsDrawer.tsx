@@ -22,8 +22,6 @@ export function ArtifactsDrawer() {
     fs,
     activeFile,
     openFile,
-    showFileBrowser,
-    toggleFileBrowser,
   } = useArtifacts();
   const { chat, createChat } = useChat();
 
@@ -31,6 +29,7 @@ export function ArtifactsDrawer() {
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
   const [isRunning, setIsRunning] = useState(false);
   const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasAutoShownBrowserRef = useRef(false);
   
@@ -42,6 +41,11 @@ export function ArtifactsDrawer() {
   
   // Local version counter for forcing editor remounts when file content changes
   const [editorVersion, setEditorVersion] = useState(0);
+  
+  // Toggle file browser visibility
+  const toggleFileBrowser = useCallback(() => {
+    setShowFileBrowser(prev => !prev);
+  }, []);
 
   // Callback for editors to register their run handler
   const onRunReady = useCallback((handler: (() => Promise<void>) | null) => {
@@ -382,6 +386,7 @@ export function ArtifactsDrawer() {
             <div className={`h-full transition-opacity duration-500 ${showFileBrowser ? 'opacity-100' : 'opacity-0'}`}>
               <ArtifactsBrowser
                 fs={fs}
+                files={files}
                 openTabs={activeFile ? [activeFile] : []}
                 onFileClick={openFile}
                 onUpload={async (fileList) => {

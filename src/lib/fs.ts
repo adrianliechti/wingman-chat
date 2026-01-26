@@ -104,24 +104,6 @@ export class FileSystemManager {
   }
 
   /**
-   * Update an existing file. Returns false if file doesn't exist.
-   */
-  async updateFile(path: string, content: string, contentType?: string): Promise<boolean> {
-    if (!this._chatId) {
-      return false;
-    }
-
-    const existingFile = await opfs.readArtifact(this._chatId, path);
-    if (!existingFile) {
-      return false;
-    }
-
-    await opfs.writeArtifact(this._chatId, path, content, contentType);
-    this.emit('fileUpdated', path);
-    return true;
-  }
-
-  /**
    * Delete a file or folder. Returns true if something was deleted.
    */
   async deleteFile(path: string): Promise<boolean> {

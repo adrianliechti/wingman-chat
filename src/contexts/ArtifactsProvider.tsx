@@ -11,7 +11,6 @@ interface ArtifactsProviderProps {
 export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [showArtifactsDrawer, setShowArtifactsDrawer] = useState(false);
-  const [showFileBrowser, setShowFileBrowser] = useState(false);
   const config = getConfig();
   const [isAvailable] = useState(() => {
     try {
@@ -88,33 +87,15 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     setShowArtifactsDrawer(prev => !prev);
   }, []);
 
-  const toggleFileBrowser = useCallback(() => {
-    setShowFileBrowser(prev => !prev);
-  }, []);
-
-  const setEnabled = useCallback(async (enabled: boolean) => {
-    // Prevent disabling if files exist
-    if (!enabled) {
-      const fileCount = await fs.getFileCount();
-      if (fileCount > 0) {
-        return;
-      }
-    }
-    setIsEnabled(enabled);
-  }, [fs]);
-
   const value = {
     isAvailable,
     isEnabled,
-    setEnabled,
     fs,
     activeFile,
     showArtifactsDrawer,
-    showFileBrowser,
     openFile,
     setShowArtifactsDrawer,
     toggleArtifactsDrawer,
-    toggleFileBrowser,
     setChatId,
   };
 

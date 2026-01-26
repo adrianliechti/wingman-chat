@@ -208,62 +208,26 @@ function FileTreeNode({
 
 interface ArtifactsBrowserProps {
   fs: FileSystemManager;
+  files: File[];
   openTabs: string[];
   onFileClick: (path: string) => void;
-  onDownloadAsZip?: () => Promise<void>;
   onUpload?: (files: FileList) => void;
 }
 
 export function ArtifactsBrowser({
   fs,
+  files,
   openTabs,
   onFileClick,
-  onDownloadAsZip,
   onUpload
 }: ArtifactsBrowserProps) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const [files, setFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load files asynchronously
+  // Subscribe to filesystem events for folder expansion/collapse UI
   useEffect(() => {
-    let cancelled = false;
-    
-    async function loadFiles() {
-      try {
-        const fileList = await fs.listFiles();
-        if (!cancelled) {
-          setFiles(fileList);
-        }
-      } catch (error) {
-        console.error('Error loading files:', error);
-        if (!cancelled) {
-          setFiles([]);
-        }
-      }
-    }
-    
-    loadFiles();
-    
-    return () => {
-      cancelled = true;
-    };
-  }, [fs]);
-
-  // Subscribe to filesystem events to handle UI state updates
-  useEffect(() => {
-    // Reload files when filesystem events occur
-    const reloadFiles = async () => {
-      try {
-        const fileList = await fs.listFiles();
-        setFiles(fileList);
-      } catch (error) {
-        console.error('Error reloading files:', error);
-      }
-    };
-
     const unsubscribeCreated = fs.subscribe('fileCreated', (path: string) => {
       // Auto-expand parent folders when new files are created
       const pathParts = path.split('/').filter(part => part.length > 0);
@@ -279,7 +243,6 @@ export function ArtifactsBrowser({
         
         return newExpanded;
       });
-      reloadFiles();
     });
 
     const unsubscribeDeleted = fs.subscribe('fileDeleted', (path: string) => {
@@ -298,26 +261,13 @@ export function ArtifactsBrowser({
         
         return newExpanded;
       });
-      reloadFiles();
-    });
-    
-    const unsubscribeRenamed = fs.subscribe('fileRenamed', () => {
-      reloadFiles();
-    });
-    
-    const unsubscribeUpdated = fs.subscribe('fileUpdated', () => {
-      reloadFiles();
     });
 
     return () => {
       unsubscribeCreated();
       unsubscribeDeleted();
-      unsubscribeRenamed();
-      unsubscribeUpdated();
     };
   }, [fs]);
-
-  const handleDownloadAsZip = onDownloadAsZip || (() => fs.downloadAsZip());
 
   // Build the file tree from files state
   const fileTree = buildFileTree(files.map(file => ({ path: file.path, content: file.content })));
@@ -419,7 +369,7 @@ export function ArtifactsBrowser({
               type="button"
               onClick={async () => {
                 try {
-                  await handleDownloadAsZip();
+                  await fs.downloadAsZip();
                 } catch (error) {
                   console.error('Failed to download files:', error);
                   alert('Failed to download files. Please try again.');
