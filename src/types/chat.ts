@@ -9,6 +9,10 @@ export type Model = {
     type?: ModelType;
     description?: string;
 
+    effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
+    summary?: 'auto' | 'concise' | 'detailed';
+    verbosity?: 'low' | 'medium' | 'high';
+
     tools?: {
         enabled: string[];
         disabled: string[];

@@ -53,7 +53,12 @@ export class Client {
     instructions: string,
     input: Message[],
     tools: Tool[],
-    handler?: (content: Content[]) => void
+    handler?: (content: Content[]) => void,
+    options?: {
+      effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
+      summary?: 'auto' | 'concise' | 'detailed';
+      verbosity?: 'low' | 'medium' | 'high';
+    }
   ): Promise<Message> {
     input = this.sanitizeMessages(input);
 
@@ -201,6 +206,16 @@ export class Client {
         tools: this.toTools(tools),
         input: items,
         instructions: instructions,
+        ...(options?.effort ? {
+          include: ['reasoning.encrypted_content'],
+          reasoning: {
+            effort: options.effort,
+            summary: options.summary ?? 'auto',
+          }
+        } : {}),
+        ...(options?.verbosity ? {
+          text: { verbosity: options.verbosity }
+        } : {}),
       })
       .on('response.reasoning_summary_text.delta', (event) => {
         appendReasoning(event.item_id, '', event.delta);

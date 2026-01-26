@@ -50,6 +50,10 @@ interface modelConfig {
   name: string;
   description?: string;
 
+  effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
+  summary?: 'auto' | 'concise' | 'detailed';
+  verbosity?: 'low' | 'medium' | 'high';
+
   tools?: {
     enabled: string[];
     disabled: string[];
@@ -221,6 +225,10 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
             name: model.name,
             description: model.description,
+
+            effort: model.effort,
+            summary: model.summary,
+            verbosity: model.verbosity,
 
             prompts: model.prompts,
 

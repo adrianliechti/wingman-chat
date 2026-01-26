@@ -198,6 +198,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   content: contentParts
                 } 
               });
+            },
+            {
+              effort: model?.effort,
+              summary: model?.summary,
+              verbosity: model?.verbosity,
             }
           );
 
