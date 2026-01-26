@@ -112,7 +112,9 @@ export function useChats() {
   
   // Keep a ref to the current chats for use in async callbacks
   const chatsRef = useRef<Chat[]>(chats);
-  chatsRef.current = chats;
+  useEffect(() => {
+    chatsRef.current = chats;
+  }, [chats]);
 
   // Load all chats on mount (needed for sidebar display)
   useEffect(() => {

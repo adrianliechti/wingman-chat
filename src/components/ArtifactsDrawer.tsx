@@ -31,7 +31,7 @@ export function ArtifactsDrawer() {
   const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasAutoShownBrowserRef = useRef(false);
+  const [hasAutoShownBrowser, setHasAutoShownBrowser] = useState(false);
   
   // State for files list (loaded from async fs.listFiles)
   const [files, setFiles] = useState<File[]>([]);
@@ -123,21 +123,32 @@ export function ArtifactsDrawer() {
     };
   }, [fs, activeFile]);
 
-  // Automatically open the file if there's only one file
-  // and show the browser if there are files but none selected
-  useEffect(() => {
-    if (activeFile) {
-      hasAutoShownBrowserRef.current = false; // Reset when a file is selected
-      return;
-    }
+  // Track previous values for "adjust state during render" pattern
+  const [prevFiles, setPrevFiles] = useState(files);
+  const [prevActiveFile, setPrevActiveFile] = useState(activeFile);
 
-    if (files.length === 1) {
-      openFile(files[0].path);
-    } else if (files.length > 0 && !showFileBrowser && !hasAutoShownBrowserRef.current) {
-      hasAutoShownBrowserRef.current = true;
-      toggleFileBrowser();
+  // Adjust state during render when files or activeFile changes
+  // This is React's recommended pattern for updating state based on props/state changes
+  if (files !== prevFiles || activeFile !== prevActiveFile) {
+    setPrevFiles(files);
+    setPrevActiveFile(activeFile);
+    
+    if (activeFile) {
+      setHasAutoShownBrowser(false); // Reset when a file is selected
+    } else if (files.length === 1) {
+      // Will trigger openFile in effect below (can't call during render as it's async)
+    } else if (files.length > 0 && !showFileBrowser && !hasAutoShownBrowser) {
+      setHasAutoShownBrowser(true);
+      setShowFileBrowser(true);
     }
-  }, [files, activeFile, openFile, showFileBrowser, toggleFileBrowser]);
+  }
+
+  // Handle auto-opening single file (needs effect since openFile is async)
+  useEffect(() => {
+    if (!activeFile && files.length === 1) {
+      openFile(files[0].path);
+    }
+  }, [files, activeFile, openFile]);
 
   // Drag and drop handlers
   const handleDrop = async (e: React.DragEvent) => {
