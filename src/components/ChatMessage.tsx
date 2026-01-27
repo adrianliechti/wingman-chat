@@ -1,5 +1,6 @@
 import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
+import { ConvertButton } from './ConvertButton';
 import { PlayButton } from './PlayButton';
 import { RenderContents } from './ContentRenderer';
 import { CodeRenderer } from './CodeRenderer';
@@ -660,6 +661,7 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
             }`}>
               <div className="flex items-center gap-2">
                 <CopyButton markdown={textContent} className="h-4 w-4" />
+                <ConvertButton markdown={textContent} className="h-4 w-4" />
                 {enableTTS && <PlayButton text={textContent} className="h-4 w-4" />}
               </div>
             </div>
