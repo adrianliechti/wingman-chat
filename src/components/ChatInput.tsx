@@ -485,11 +485,13 @@ export function ChatInput() {
         )}
 
         {/* Attachments display */}
-        <ChatInputAttachments
-          attachments={attachments}
-          extractingAttachments={extractingAttachments}
-          onRemove={handleRemoveAttachment}
-        />
+        <div className="p-3">
+          <ChatInputAttachments
+            attachments={attachments}
+            extractingAttachments={extractingAttachments}
+            onRemove={handleRemoveAttachment}
+          />
+        </div>
 
         {/* Prompt suggestions */}
         <ChatInputSuggestions

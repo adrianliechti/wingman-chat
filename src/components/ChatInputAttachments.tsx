@@ -43,7 +43,7 @@ export const ChatInputAttachments = memo(({
   }
 
   return (
-    <div className="flex flex-wrap gap-3 p-3">
+    <div className="flex flex-wrap gap-3">
       {/* Loading attachments */}
       {Array.from(extractingAttachments).map((fileId) => (
         <div

@@ -4,11 +4,12 @@ import { ConvertButton } from './ConvertButton';
 import { PlayButton } from './PlayButton';
 import { RenderContents } from './ContentRenderer';
 import { CodeRenderer } from './CodeRenderer';
+import { ChatInputAttachments } from './ChatInputAttachments';
 import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil, ChevronRight } from "lucide-react";
 import { useState, useRef, useEffect } from 'react';
 
 import { Role, getTextFromContent } from "../types/chat";
-import type { Message, ElicitationResult, Content, ToolResultContent } from "../types/chat";
+import type { Message, ElicitationResult, Content, ToolResultContent, ImageContent, AudioContent, FileContent } from "../types/chat";
 import { getConfig } from "../config";
 import { useChat } from "../hooks/useChat";
 
@@ -218,6 +219,12 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
     .map(p => p.text)
     .join('');
   const [editContent, setEditContent] = useState(textContent);
+  // Get media content (images, audio, files) for editing
+  const mediaContent = message.content.filter(
+    (p): p is ImageContent | AudioContent | FileContent => 
+      p.type === 'image' || p.type === 'audio' || p.type === 'file'
+  );
+  const [editMediaContent, setEditMediaContent] = useState<(ImageContent | AudioContent | FileContent)[]>(mediaContent);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { pendingElicitation, resolveElicitation, sendMessage, chat } = useChat();
   
@@ -264,21 +271,33 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
   const handleStartEdit = () => {
     if (isResponding) return;
     setEditContent(getTextFromContent(message.content));
+    setEditMediaContent(mediaContent);
     setIsEditing(true);
   };
 
   const handleCancelEdit = () => {
     setIsEditing(false);
     setEditContent(getTextFromContent(message.content));
+    setEditMediaContent(mediaContent);
+  };
+
+  const handleRemoveMedia = (indexToRemove: number) => {
+    setEditMediaContent(prev => prev.filter((_, i) => i !== indexToRemove));
   };
 
   const handleConfirmEdit = async () => {
-    if (editContent.trim() === '' || !chat) return;
+    // Allow edit if there's text content OR media content
+    if ((editContent.trim() === '' && editMediaContent.length === 0) || !chat) return;
     setIsEditing(false);
     
-    // Truncate history and send edited message
+    // Truncate history and send edited message, preserving media content
     const truncatedHistory = chat.messages.slice(0, index);
-    const editedMessage = { ...message, content: [{ type: 'text' as const, text: editContent }] };
+    const newContent: Content[] = [];
+    if (editContent.trim()) {
+      newContent.push({ type: 'text' as const, text: editContent });
+    }
+    newContent.push(...editMediaContent);
+    const editedMessage = { ...message, content: newContent };
     await sendMessage(editedMessage, truncatedHistory);
   };
 
@@ -585,6 +604,14 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                   className="w-full min-w-50 bg-transparent border-none outline-none resize-none font-sans text-neutral-900 dark:text-neutral-200"
                   rows={1}
                 />
+                {/* Show media attachments with ability to remove */}
+                {editMediaContent.length > 0 && (
+                  <ChatInputAttachments
+                    attachments={editMediaContent}
+                    extractingAttachments={new Set()}
+                    onRemove={handleRemoveMedia}
+                  />
+                )}
                 <div className="flex items-center gap-1 justify-end">
                   <button
                     onClick={handleCancelEdit}
@@ -648,8 +675,8 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
             </>
           )}
 
-          {/* Render images, audio, and files from content */}
-          {hasMedia && (
+          {/* Render images, audio, and files from content (hide during edit since ChatInputAttachments shows them) */}
+          {hasMedia && !isEditing && (
             <div className="pt-2">
               <RenderContents contents={mediaParts} />
             </div>
