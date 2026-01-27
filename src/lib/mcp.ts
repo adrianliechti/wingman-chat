@@ -209,7 +209,13 @@ export class MCPClient implements ToolProvider {
     const uriToTools = new Map<string, string[]>();
     
     for (const tool of tools) {
-      const resourceUri = tool._meta?.['ui/resourceUri'] as string | undefined;
+      let resourceUri: string | undefined = undefined;
+
+      if (tool._meta?.ui && typeof tool._meta.ui === 'object' && 'resourceUri' in tool._meta.ui) {
+        resourceUri = (tool._meta.ui as Record<string, unknown>).resourceUri as string | undefined;
+      } else if (tool._meta && typeof tool._meta === 'object' && 'ui/resourceUri' in tool._meta) {
+        resourceUri = (tool._meta['ui/resourceUri'] as string) || undefined;
+      }
 
       if (resourceUri) {
         const toolNames = uriToTools.get(resourceUri) || [];
