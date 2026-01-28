@@ -58,12 +58,20 @@ export function usePersistedState<T>(
   const pendingSaveRef = useRef(false);
   const isLoadedRef = useRef(false);
   
+  // Store callbacks in refs to avoid re-triggering effects
+  const onLoadRef = useRef(onLoad);
+  const onSaveRef = useRef(onSave);
+  const migrateRef = useRef(migrate);
+  onLoadRef.current = onLoad;
+  onSaveRef.current = onSave;
+  migrateRef.current = migrate;
+  
   // Save function using refs
   const save = useCallback(async () => {
     if (!isLoadedRef.current) return;
     
     try {
-      const dataToSave = onSave ? onSave(valueRef.current) : valueRef.current;
+      const dataToSave = onSaveRef.current ? onSaveRef.current(valueRef.current) : valueRef.current;
       
       if (dataToSave === undefined) {
         await opfs.deleteFile(key);
@@ -74,7 +82,7 @@ export function usePersistedState<T>(
     } catch (error) {
       console.warn(`Failed to save ${key}:`, error);
     }
-  }, [key, onSave]);
+  }, [key]);
   
   // Load from OPFS on mount
   useEffect(() => {
@@ -85,10 +93,10 @@ export function usePersistedState<T>(
         let data: T | undefined = await opfs.readJson<T>(key);
         
         // Try migration if no data found
-        if (data === undefined && migrate) {
-          data = migrate();
+        if (data === undefined && migrateRef.current) {
+          data = migrateRef.current();
           if (data !== undefined) {
-            const toSave = onSave ? onSave(data) : data;
+            const toSave = onSaveRef.current ? onSaveRef.current(data) : data;
             if (toSave !== undefined) {
               await opfs.writeJson(key, toSave);
             }
@@ -96,7 +104,7 @@ export function usePersistedState<T>(
         }
         
         if (!cancelled && data !== undefined) {
-          const processed = onLoad ? onLoad(data) : data;
+          const processed = onLoadRef.current ? onLoadRef.current(data) : data;
           setValueInternal(processed);
         }
       } catch (error) {
@@ -114,7 +122,7 @@ export function usePersistedState<T>(
     return () => {
       cancelled = true;
     };
-  }, [key, migrate, onLoad, onSave]);
+  }, [key]);
   
   // Debounced save effect
   useEffect(() => {
@@ -139,13 +147,13 @@ export function usePersistedState<T>(
         clearTimeout(saveTimeoutRef.current);
       }
       if (pendingSaveRef.current && isLoadedRef.current) {
-        const dataToSave = onSave ? onSave(valueRef.current) : valueRef.current;
+        const dataToSave = onSaveRef.current ? onSaveRef.current(valueRef.current) : valueRef.current;
         if (dataToSave !== undefined) {
           opfs.writeJson(key, dataToSave).catch(console.warn);
         }
       }
     };
-  }, [key, onSave]);
+  }, [key]);
   
   const flush = useCallback(async () => {
     if (saveTimeoutRef.current) {
