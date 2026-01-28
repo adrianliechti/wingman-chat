@@ -4,8 +4,49 @@ import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeStringify from 'rehype-stringify';
-import { AttachmentType } from '../types/chat';
-import type { Attachment, Content } from '../types/chat';
+import type { TextContent, ImageContent, AudioContent, FileContent } from '../types/chat';
+
+// Parse a data URL to extract mimeType and base64 data
+export function parseDataUrl(dataUrl: string): { mimeType: string; data: string } | null {
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (match) {
+    return { mimeType: match[1], data: match[2] };
+  }
+  return null;
+}
+
+/**
+ * Serialize tool result content for API transmission.
+ * Strips binary data (images, audio, files) and replaces with text descriptions
+ * to avoid sending large base64 data URLs to the model which it cannot process.
+ */
+export function serializeToolResultForApi(result: (TextContent | ImageContent | AudioContent | FileContent)[]): string {
+  const serialized = result.map(item => {
+    if (item.type === 'text') {
+      return item;
+    }
+    if (item.type === 'image') {
+      return { 
+        type: 'text', 
+        text: `[Image${item.name ? `: ${item.name}` : ''} - displayed to user]` 
+      };
+    }
+    if (item.type === 'audio') {
+      return { 
+        type: 'text', 
+        text: `[Audio${item.name ? `: ${item.name}` : ''} - displayed to user]` 
+      };
+    }
+    if (item.type === 'file') {
+      return { 
+        type: 'text', 
+        text: `[File: ${item.name} - displayed to user]` 
+      };
+    }
+    return item;
+  });
+  return JSON.stringify(serialized);
+}
 
 export function lookupContentType(ext: string): string {
   const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
@@ -277,42 +318,6 @@ export function filenameFromUrl(src: string): string {
   }
   // For non-data URLs, don't attempt to infer; let the browser decide
   return '';
-}
-
-export function contentToAttachments(contents: string | Content[]): Attachment[] {
-  if (typeof contents === 'string') {
-    return [];
-  }
-
-  const attachments: Attachment[] = [];
-
-  for (const content of contents) {
-    switch (content.type) {
-      case 'image': {
-        const ext = mime.getExtension(content.mimeType) || 'png';
-        const mimeType = content.mimeType || 'image/png';
-        attachments.push({
-          type: AttachmentType.Image,
-          name: `image.${ext}`,
-          data: `data:${mimeType};base64,${content.data}`,
-        });
-        break;
-      }
-      
-      case 'audio': {
-        const ext = mime.getExtension(content.mimeType) || 'mp3';
-        const mimeType = content.mimeType || 'audio/mpeg';
-        attachments.push({
-          type: AttachmentType.File,
-          name: `audio.${ext}`,
-          data: `data:${mimeType};base64,${content.data}`,
-        });
-        break;
-      }
-    }
-  }
-
-  return attachments;
 }
 
 export function simplifyMarkdown(content: string): string {

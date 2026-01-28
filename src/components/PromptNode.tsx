@@ -8,7 +8,7 @@ import type { Model } from '../types/chat';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { getConfig } from '../config';
-import { Role } from '../types/chat';
+import { Role, getTextFromContent } from '../types/chat';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
@@ -75,11 +75,12 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
                 'Provide only the final answer. Do not include any preamble, explanation, or chain of thinking.',
                 [{
                   role: Role.User,
-                  content: messageContent,
+                  content: [{ type: 'text', text: messageContent }],
                 }],
                 [],
-                (_delta, snapshot) => {
+                (contentParts) => {
                   // Update data in real-time with current results + streaming item
+                  const snapshot = getTextFromContent(contentParts);
                   const currentResults = [...results, { value: snapshot, text: snapshot }];
                   updateNode(id, {
                     data: { ...data, output: { items: currentResults }, error: undefined }
@@ -87,9 +88,10 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
                 }
               );
 
+              const responseText = getTextFromContent(response.content);
               results.push({
-                value: response.content,
-                text: response.content,
+                value: responseText,
+                text: responseText,
               });
 
               // Update with completed result
@@ -124,18 +126,20 @@ export const PromptNode = memo(({ id, data, selected }: NodeProps<PromptNodeType
             'Provide only the final answer. Do not include any preamble, explanation, or chain of thinking.',
             [{
               role: Role.User,
-              content: messageContent,
+              content: [{ type: 'text', text: messageContent }],
             }],
             [],
-            (_delta, snapshot) => {
+            (contentParts) => {
+              const snapshot = getTextFromContent(contentParts);
               updateNode(id, {
                 data: { ...data, output: { items: [{ value: snapshot, text: snapshot }] }, error: undefined }
               });
             }
           );
 
+          const responseText = getTextFromContent(response.content);
           updateNode(id, {
-            data: { ...data, output: { items: [{ value: response.content, text: response.content }] }, error: undefined }
+            data: { ...data, output: { items: [{ value: responseText, text: responseText }] }, error: undefined }
           });
         }
       } catch (error) {

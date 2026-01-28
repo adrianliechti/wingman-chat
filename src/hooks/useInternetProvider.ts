@@ -47,7 +47,7 @@ export function useInternetProvider(): ToolProvider | null {
             });
 
             if (result.action !== "accept") {
-              return "Research cancelled by user.";
+              return [{ type: 'text' as const, text: "Research cancelled by user." }];
             }
           }
 
@@ -55,12 +55,12 @@ export function useInternetProvider(): ToolProvider | null {
             const content = await client.research(internet?.researcher || '', instructions as string);
 
             if (!content.trim()) {
-              return "No research results could be generated for the given instructions.";
+              return [{ type: 'text' as const, text: "No research results could be generated for the given instructions." }];
             }
 
-            return content;
+            return [{ type: 'text' as const, text: content }];
           } catch (error) {
-            return `Web research failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+            return [{ type: 'text' as const, text: `Web research failed: ${error instanceof Error ? error.message : 'Unknown error'}` }];
           }
         }
       });
@@ -96,7 +96,7 @@ export function useInternetProvider(): ToolProvider | null {
               });
 
               if (result.action !== "accept") {
-                return "Search cancelled by user.";
+                return [{ type: 'text' as const, text: "Search cancelled by user." }];
               }
             }
 
@@ -106,12 +106,12 @@ export function useInternetProvider(): ToolProvider | null {
               });
 
               if (results.length === 0) {
-                return "No search results found for the given query.";
+                return [{ type: 'text' as const, text: "No search results found for the given query." }];
               }
 
-              return JSON.stringify(results, null, 2);
+              return [{ type: 'text' as const, text: JSON.stringify(results, null, 2) }];
             } catch (error) {
-              return `Web search failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+              return [{ type: 'text' as const, text: `Web search failed: ${error instanceof Error ? error.message : 'Unknown error'}` }];
             }
           }
         });
@@ -140,7 +140,7 @@ export function useInternetProvider(): ToolProvider | null {
               });
 
               if (result.action !== "accept") {
-                return "Scraping cancelled by user.";
+                return [{ type: 'text' as const, text: "Scraping cancelled by user." }];
               }
             }
 
@@ -148,12 +148,12 @@ export function useInternetProvider(): ToolProvider | null {
               const content = await client.scrape(internet?.scraper || '', url as string);
 
               if (!content.trim()) {
-                return "No text content could be extracted from the provided URL.";
+                return [{ type: 'text' as const, text: "No text content could be extracted from the provided URL." }];
               }
 
-              return content;
+              return [{ type: 'text' as const, text: content }];
             } catch (error) {
-              return `Web scraping failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+              return [{ type: 'text' as const, text: `Web scraping failed: ${error instanceof Error ? error.message : 'Unknown error'}` }];
             }
           }
         });

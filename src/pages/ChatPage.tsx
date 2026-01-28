@@ -315,19 +315,6 @@ export function ChatPage() {
           )}
         </main>
 
-        {/* Disclaimer at bottom - only on welcome page */}
-        {messages.length === 0 && (
-          <div className={`fixed bottom-0 left-0 right-0 z-10 pointer-events-none transition-all duration-500 ease-in-out ${
-              showSidebar && chats.length > 0 && !showArtifactsDrawer && !showRepositoryDrawer && !showAppDrawer ? 'md:left-59' : ''
-            } ${
-              showAppDrawer ? 'md:right-[calc(66vw+0.75rem)]' :
-              showArtifactsDrawer ? 'md:right-[calc(66vw+0.75rem)]' :
-              showRepositoryDrawer ? 'md:right-83' : ''
-            }`} style={{ bottom: `${chatInputHeight}px` }}>
-            <Disclaimer />
-          </div>
-        )}
-
         {/* Chat Input */}
         <footer className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-500 ease-in-out ${
             messages.length === 0 && !showArtifactsDrawer && !showAppDrawer ? 'md:bottom-1/3 md:transform md:translate-y-1/2' : ''

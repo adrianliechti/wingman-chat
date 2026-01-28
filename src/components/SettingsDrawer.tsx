@@ -4,18 +4,20 @@ import { Transition, Listbox } from '@headlessui/react';
 import { useSettings } from '../hooks/useSettings';
 import { useChat } from '../hooks/useChat';
 import { useRepositories } from '../hooks/useRepositories';
-import { getStorageUsage } from '../lib/db';
-import { formatBytes, downloadBlob } from '../lib/utils';
+import { getStorageUsage, downloadFolderAsZip, importFolderFromZip, clearAll } from '../lib/opfs';
+import * as opfs from '../lib/opfs';
+import { formatBytes } from '../lib/utils';
 import { getConfig } from '../config';
 import type { Theme, LayoutMode, BackgroundPack } from '../types/settings';
-import type { RepositoryFile } from '../types/repository';
 import { personaOptions } from '../lib/personas';
 import type { PersonaKey } from '../lib/personas';
 import { SkillEditor } from './SkillEditor';
 import { BridgeEditor } from './BridgeEditor';
-import { parseSkillFile, downloadSkill, downloadSkillsAsZip } from '../lib/skillParser';
+import { parseSkillFile, downloadSkill } from '../lib/skillParser';
 import type { Skill } from '../lib/skillParser';
 import type { BridgeServer } from '../contexts/BridgeContext';
+import { migrateChat, migrateRepository } from '../lib/v1Migration';
+import JSZip from 'jszip';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -119,7 +121,7 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
     skills, addSkill, updateSkill, removeSkill, toggleSkill,
     servers, addServer, updateServer, removeServer, toggleServer
   } = useSettings();
-  const { chats, createChat, updateChat, deleteChat } = useChat();
+  const { chats, deleteChat } = useChat();
   const { repositories, createRepository, updateRepository, deleteRepository, upsertFile } = useRepositories();
   
   // Skill editor state
@@ -132,7 +134,7 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
   
   const [storageInfo, setStorageInfo] = useState<{
     totalSize: number;
-    entries: Array<{ key: string; size: number }>;
+    entries: Array<{ path: string; size: number }>;
     isLoading: boolean;
     error: string | null;
   }>({
@@ -182,69 +184,109 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
     }
   };
 
+  const deleteAllData = async () => {
+    if (!window.confirm('Are you sure you want to delete ALL data? This includes chats, repositories, images, skills, and settings. This action cannot be undone.')) {
+      return;
+    }
+    
+    if (!window.confirm('This is your FINAL warning. All your data will be permanently deleted. Continue?')) {
+      return;
+    }
+
+    try {
+      await clearAll();
+      alert('All data deleted. The page will now reload.');
+      window.location.reload();
+    } catch (error) {
+      console.error('Delete all failed:', error);
+      alert('Failed to delete all data. Please try again.');
+    }
+  };
+
   const importRepositories = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json';
+    input.accept = '.zip,.json';
     input.multiple = false;
     
     input.onchange = async (event) => {
       const file = (event.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
-      try {
-        const jsonData = await file.text();
-        const importData = JSON.parse(jsonData);
-        
-        if (!importData.repositories || !Array.isArray(importData.repositories)) {
-          alert('Invalid import file: Expected repositories array not found.');
+      const isZip = file.name.endsWith('.zip');
+      
+      if (isZip) {
+        // ZIP import - direct folder import
+        if (!window.confirm('Import repositories from ZIP? This will merge with your existing repositories.')) {
           return;
         }
 
-        const importCount = importData.repositories.length;
-        if (!window.confirm(`Import ${importCount} repositor${importCount === 1 ? 'y' : 'ies'}? This will add to your existing repositories.`)) {
-          return;
+        try {
+          await importFolderFromZip('repositories', file);
+          alert('Repositories imported successfully! Please refresh the page to see the changes.');
+          window.location.reload();
+        } catch (error) {
+          console.error('Failed to import repositories:', error);
+          alert('Failed to import repositories. Please check the file and try again.');
         }
+      } else {
+        // JSON import - legacy format migration
+        try {
+          const jsonData = await file.text();
+          const importData = JSON.parse(jsonData);
+          
+          if (!importData.repositories || !Array.isArray(importData.repositories)) {
+            alert('Invalid import file: Expected repositories array not found.');
+            return;
+          }
 
-        let importedCount = 0;
-        
-        for (const repoData of importData.repositories) {
-          try {
-            const newRepo = createRepository(repoData.name || 'Imported Repository', repoData.instructions);
-            updateRepository(newRepo.id, {
-              ...repoData,
-              id: newRepo.id,
-              createdAt: repoData.createdAt ? new Date(repoData.createdAt) : new Date(),
-              updatedAt: repoData.updatedAt ? new Date(repoData.updatedAt) : new Date(),
-            });
-            
-            if (repoData.files && Array.isArray(repoData.files)) {
-              for (const fileData of repoData.files) {
-                try {
-                  const repoFile: RepositoryFile = {
-                    ...fileData,
-                    id: fileData.id || crypto.randomUUID(),
-                    uploadedAt: fileData.uploadedAt ? new Date(fileData.uploadedAt) : new Date(),
-                  };
-                  upsertFile(newRepo.id, repoFile);
-                } catch (error) {
-                  console.error('Failed to import file:', fileData, error);
+          const importCount = importData.repositories.length;
+          if (!window.confirm(`Import ${importCount} repositor${importCount === 1 ? 'y' : 'ies'} from legacy format? This will add to your existing repositories.`)) {
+            return;
+          }
+
+          let importedCount = 0;
+          
+          for (const repoData of importData.repositories) {
+            try {
+              // Migrate from old format (handles date conversion, missing fields, etc.)
+              const migratedRepo = migrateRepository(repoData);
+              
+              const newRepo = await createRepository(migratedRepo.name, migratedRepo.instructions);
+              updateRepository(newRepo.id, {
+                embedder: migratedRepo.embedder,
+                name: migratedRepo.name,
+                instructions: migratedRepo.instructions,
+                updatedAt: migratedRepo.updatedAt,
+              });
+              
+              // Import files with their text and vectors preserved
+              if (migratedRepo.files && Array.isArray(migratedRepo.files)) {
+                for (const fileData of migratedRepo.files) {
+                  try {
+                    upsertFile(newRepo.id, {
+                      ...fileData,
+                      id: crypto.randomUUID(), // Generate new file ID
+                    });
+                  } catch (error) {
+                    console.error('Failed to import file:', fileData, error);
+                  }
                 }
               }
+              
+              importedCount++;
+            } catch (error) {
+              console.error('Failed to import repository:', repoData, error);
             }
-            
-            importedCount++;
-          } catch (error) {
-            console.error('Failed to import repository:', repoData, error);
           }
-        }
 
-        alert(`Successfully imported ${importedCount} repositor${importedCount === 1 ? 'y' : 'ies'}.`);
-        setTimeout(() => loadStorageInfo(), 750);
-        
-      } catch (error) {
-        console.error('Failed to import repositories:', error);
-        alert('Failed to import repositories. Please check the file format and try again.');
+          alert(`Successfully imported ${importedCount} repositor${importedCount === 1 ? 'y' : 'ies'}.`);
+          setTimeout(() => loadStorageInfo(), 750);
+          
+        } catch (error) {
+          console.error('Failed to import repositories:', error);
+          alert('Failed to import repositories. Please check the file format and try again.');
+        }
       }
     };
 
@@ -253,23 +295,8 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
 
   const exportRepositories = async () => {
     try {
-      const exportData = {
-        exportDate: new Date().toISOString(),
-        version: '2.0',
-        repositories: repositories.map(repo => ({
-          ...repo,
-          createdAt: repo.createdAt ? (repo.createdAt instanceof Date ? repo.createdAt.toISOString() : repo.createdAt) : null,
-          updatedAt: repo.updatedAt ? (repo.updatedAt instanceof Date ? repo.updatedAt.toISOString() : repo.updatedAt) : null,
-          files: repo.files?.map(file => ({
-            ...file,
-            uploadedAt: file.uploadedAt ? (file.uploadedAt instanceof Date ? file.uploadedAt.toISOString() : file.uploadedAt) : null,
-          })) || []
-        }))
-      };
-      
-      const jsonBlob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const filename = `wingman-repositories-${new Date().toISOString().split('T')[0]}.json`;
-      downloadBlob(jsonBlob, filename);
+      const filename = `wingman-repositories-${new Date().toISOString().split('T')[0]}.zip`;
+      await downloadFolderAsZip('repositories', filename);
     } catch (error) {
       console.error('Export failed:', error);
       alert('Failed to export repositories. Please try again.');
@@ -279,51 +306,88 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
   const importChats = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json';
+    input.accept = '.zip,.json';
     input.multiple = false;
     
     input.onchange = async (event) => {
       const file = (event.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
-      try {
-        const jsonData = await file.text();
-        const importData = JSON.parse(jsonData);
-        
-        if (!importData.chats || !Array.isArray(importData.chats)) {
-          alert('Invalid import file: Expected chats array not found.');
+      const isZip = file.name.endsWith('.zip');
+      
+      if (isZip) {
+        // ZIP import - direct folder import
+        if (!window.confirm('Import chats from ZIP? This will merge with your existing chats.')) {
           return;
         }
 
-        const importCount = importData.chats.length;
-        if (!window.confirm(`Import ${importCount} chat${importCount === 1 ? '' : 's'}? This will add to your existing chats.`)) {
-          return;
+        try {
+          await importFolderFromZip('chats', file);
+          alert('Chats imported successfully! Please refresh the page to see the changes.');
+          window.location.reload();
+        } catch (error) {
+          console.error('Failed to import chats:', error);
+          alert('Failed to import chats. Please check the file and try again.');
         }
-
-        let importedCount = 0;
-        
-        for (const chatData of importData.chats) {
-          try {
-            const newChat = createChat();
-            updateChat(newChat.id, () => ({
-              ...chatData,
-              id: newChat.id,
-              created: chatData.created ? new Date(chatData.created) : new Date(),
-              updated: chatData.updated ? new Date(chatData.updated) : new Date(),
-            }));
-
-            importedCount++;
-          } catch (error) {
-            console.error('Failed to import chat:', chatData, error);
+      } else {
+        // JSON import - legacy format migration
+        try {
+          const jsonData = await file.text();
+          const importData = JSON.parse(jsonData);
+          
+          if (!importData.chats || !Array.isArray(importData.chats)) {
+            alert('Invalid import file: Expected chats array not found.');
+            return;
           }
-        }
 
-        alert(`Successfully imported ${importedCount} chat${importedCount === 1 ? '' : 's'}.`);
-        setTimeout(() => loadStorageInfo(), 750);
-        
-      } catch (error) {
-        console.error('Failed to import chats:', error);
-        alert('Failed to import chats. Please check the file format and try again.');
+          const importCount = importData.chats.length;
+          if (!window.confirm(`Import ${importCount} chat${importCount === 1 ? '' : 's'} from legacy format? This will add to your existing chats.`)) {
+            return;
+          }
+
+          let importedCount = 0;
+          
+          for (const chatData of importData.chats) {
+            try {
+              // Migrate chat to current schema (handles old message formats and date conversion)
+              const migratedChat = migrateChat(chatData);
+              
+              // Generate new ID for the imported chat
+              const newChatId = crypto.randomUUID();
+              
+              // Store directly using opfs for migrated chats
+              // Use migrated dates (already converted to Date objects by migrateChat)
+              const stored = await opfs.extractChatBlobs({
+                ...migratedChat,
+                id: newChatId,
+              });
+              
+              await opfs.writeJson(`chats/${stored.id}/chat.json`, stored);
+              
+              // Save artifacts if present
+              if (chatData.artifacts && typeof chatData.artifacts === 'object') {
+                await opfs.saveArtifacts(newChatId, chatData.artifacts);
+              }
+              
+              await opfs.upsertIndexEntry('chats', {
+                id: stored.id,
+                title: stored.title,
+                updated: stored.updated || new Date().toISOString(),
+              });
+
+              importedCount++;
+            } catch (error) {
+              console.error('Failed to import chat:', chatData, error);
+            }
+          }
+
+          alert(`Successfully imported ${importedCount} chat${importedCount === 1 ? '' : 's'}. Please refresh the page to see the changes.`);
+          window.location.reload();
+          
+        } catch (error) {
+          console.error('Failed to import chats:', error);
+          alert('Failed to import chats. Please check the file format and try again.');
+        }
       }
     };
 
@@ -332,19 +396,8 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
 
   const exportChats = async () => {
     try {
-      const exportData = {
-        exportDate: new Date().toISOString(),
-        version: '2.0',
-        chats: chats.map(chat => ({
-          ...chat,
-          created: chat.created ? (chat.created instanceof Date ? chat.created.toISOString() : chat.created) : null,
-          updated: chat.updated ? (chat.updated instanceof Date ? chat.updated.toISOString() : chat.updated) : null,
-        }))
-      };
-      
-      const jsonBlob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const filename = `wingman-chats-${new Date().toISOString().split('T')[0]}.json`;
-      downloadBlob(jsonBlob, filename);
+      const filename = `wingman-chats-${new Date().toISOString().split('T')[0]}.zip`;
+      await downloadFolderAsZip('chats', filename);
     } catch (error) {
       console.error('Failed to export chats:', error);
       alert('Failed to export chats. Please try again.');
@@ -379,7 +432,7 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
   const importSkills = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.md';
+    input.accept = '.zip,.md';
     input.multiple = true;
     
     input.onchange = async (event) => {
@@ -391,14 +444,39 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
 
       for (const file of Array.from(files)) {
         try {
-          const content = await file.text();
-          const result = parseSkillFile(content);
-          
-          if (result.success) {
-            addSkill({ ...result.skill, enabled: true });
-            importedCount++;
+          if (file.name.endsWith('.zip')) {
+            // ZIP import - folder structure or multiple .md files
+            const zip = await JSZip.loadAsync(file);
+            
+            for (const [filename, zipEntry] of Object.entries(zip.files)) {
+              if (zipEntry.dir) continue;
+              if (!filename.endsWith('.md')) continue;
+              
+              try {
+                const content = await zipEntry.async('string');
+                const result = parseSkillFile(content);
+                
+                if (result.success) {
+                  addSkill({ ...result.skill, enabled: true });
+                  importedCount++;
+                } else {
+                  errors.push(`${filename}: ${result.errors.map(e => e.message).join(', ')}`);
+                }
+              } catch {
+                errors.push(`${filename}: Failed to parse`);
+              }
+            }
           } else {
-            errors.push(`${file.name}: ${result.errors.map(e => e.message).join(', ')}`);
+            // Single .md file import
+            const content = await file.text();
+            const result = parseSkillFile(content);
+            
+            if (result.success) {
+              addSkill({ ...result.skill, enabled: true });
+              importedCount++;
+            } else {
+              errors.push(`${file.name}: ${result.errors.map(e => e.message).join(', ')}`);
+            }
           }
         } catch {
           errors.push(`${file.name}: Failed to read file`);
@@ -417,7 +495,8 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
 
   const exportAllSkills = async () => {
     try {
-      await downloadSkillsAsZip(skills, `wingman-skills-${new Date().toISOString().split('T')[0]}.zip`);
+      const filename = `wingman-skills-${new Date().toISOString().split('T')[0]}.zip`;
+      await downloadFolderAsZip('skills', filename);
     } catch (error) {
       console.error('Failed to export skills:', error);
       alert('Failed to export skills. Please try again.');
@@ -614,7 +693,7 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Storage</span>
                   <span className="text-sm text-neutral-500 dark:text-neutral-400">
-                    {chats.length} chat{chats.length === 1 ? '' : 's'} • {storageInfo.isLoading ? '...' : formatBytes(storageInfo.entries.find(e => e.key.includes('chat'))?.size || 0)}
+                    {chats.length} chat{chats.length === 1 ? '' : 's'} • {storageInfo.isLoading ? '...' : formatBytes(storageInfo.entries.filter(e => e.path.startsWith('chats/')).reduce((sum, e) => sum + e.size, 0))}
                   </span>
                 </div>
 
@@ -663,7 +742,7 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Storage</span>
                     <span className="text-sm text-neutral-500 dark:text-neutral-400">
-                      {repositories.length} repositor{repositories.length === 1 ? 'y' : 'ies'} • {storageInfo.isLoading ? '...' : formatBytes(storageInfo.entries.find(e => e.key.includes('repo'))?.size || 0)}
+                      {repositories.length} repositor{repositories.length === 1 ? 'y' : 'ies'} • {storageInfo.isLoading ? '...' : formatBytes(storageInfo.entries.filter(e => e.path.startsWith('repositories/')).reduce((sum, e) => sum + e.size, 0))}
                     </span>
                   </div>
 
@@ -870,12 +949,6 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
                   </div>
                 )}
 
-                {servers.length === 0 && (
-                  <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center py-4">
-                    No servers configured. Add a server to connect to external MCP servers.
-                  </p>
-                )}
-
                 {/* Action buttons */}
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -891,6 +964,17 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
                 <p className="text-xs text-neutral-400 dark:text-neutral-500">
                   Servers connect to external MCP endpoints for additional tools and capabilities.
                 </p>
+
+                <div className="pt-3 border-t border-neutral-200/50 dark:border-neutral-700/50">
+                  <button
+                    type="button"
+                    onClick={deleteAllData}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-red-300 dark:border-red-600/50 text-red-600 dark:text-red-400 hover:bg-red-50/50 dark:hover:bg-red-900/20 transition-colors"
+                  >
+                    <Trash2 size={14} />
+                    Delete All Data
+                  </button>
+                </div>
               </div>
             </AccordionSection>
           </div>

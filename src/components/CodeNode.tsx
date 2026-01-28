@@ -9,7 +9,7 @@ import { useWorkflow } from '../hooks/useWorkflow';
 import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { executeCode } from '../lib/interpreter';
 import { getConfig } from '../config';
-import { Role } from '../types/chat';
+import { Role, getTextFromContent } from '../types/chat';
 import { WorkflowNode } from './WorkflowNode';
 import { CopyButton } from './CopyButton';
 
@@ -92,7 +92,7 @@ export const CodeNode = memo(({ id, data, selected }: NodeProps<CodeNodeType>) =
           function: async (args: Record<string, unknown>) => {
             generatedCode = args.code as string;
             packages = (args.packages as string[]) || [];
-            return "Code will be executed";
+            return [{ type: 'text' as const, text: "Code will be executed" }];
           }
         }];
 
@@ -110,17 +110,20 @@ IMPORTANT:
 - All output must be text-based and printed to stdout`,
           [{
             role: Role.User,
-            content: messageContent,
+            content: [{ type: 'text', text: messageContent }],
           }],
           tools
         );
 
         // Check if tool was called
-        if (response.toolCalls && response.toolCalls.length > 0) {
-          const toolCall = response.toolCalls[0];
-          const args = JSON.parse(toolCall.arguments);
-          generatedCode = args.code;
-          packages = args.packages || [];
+        const toolCalls = response.content.filter(p => p.type === 'tool_call');
+        if (toolCalls.length > 0) {
+          const toolCall = toolCalls[0];
+          if (toolCall.type === 'tool_call') {
+            const args = JSON.parse(toolCall.arguments);
+            generatedCode = args.code;
+            packages = args.packages || [];
+          }
 
           // Update node to show generated code and processing status
           updateNode(id, {
@@ -184,10 +187,11 @@ ${generatedCode}`;
           }
         } else {
           // If no tool was called, use the response content as error
+          const responseText = getTextFromContent(response.content);
           updateNode(id, {
             data: { 
               ...data, 
-              error: 'Failed to generate code: ' + (response.content || 'No code generated')
+              error: 'Failed to generate code: ' + (responseText || 'No code generated')
             }
           });
         }

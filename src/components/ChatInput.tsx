@@ -8,8 +8,8 @@ import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSuggestions } from "./ChatInputSuggestions";
 import { VoiceWaves } from "./VoiceWaves";
 
-import { AttachmentType, Role, ProviderState } from "../types/chat";
-import type { Attachment, Message, ToolProvider } from "../types/chat";
+import { Role, ProviderState } from "../types/chat";
+import type { Message, ToolProvider, Content, ImageContent, TextContent } from "../types/chat";
 import {
   getFileExt,
   readAsDataURL,
@@ -52,7 +52,7 @@ export function ChatInput() {
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
 
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachments, setAttachments] = useState<Content[]>([]);
   const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
 
   // Prompt suggestions state
@@ -190,41 +190,41 @@ export function ChatInput() {
     const visionFiles = config.vision?.files ?? [];
     const extractorFiles = config.extractor?.files ?? [];
 
-    const processedAttachments = await Promise.allSettled(
+    const processedContents = await Promise.allSettled(
       files.map(async (file, index) => {
         const fileId = fileIds[index];
         try {
-          let attachment: Attachment | null = null;
+          let content: Content | null = null;
           const fileType = file.type || getFileExt(file.name);
 
           if (textFiles.includes(fileType)) {
             const text = await readAsText(file);
-            attachment = { type: AttachmentType.Text, name: file.name, data: text };
+            content = { type: 'text', text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
           } else if (visionFiles.includes(fileType)) {
             const blob = await resizeImageBlob(file, 1920, 1920);
-            const url = await readAsDataURL(blob);
-            attachment = { type: AttachmentType.Image, name: file.name, data: url };
+            const dataUrl = await readAsDataURL(blob);
+            content = { type: 'image', name: file.name, data: dataUrl } as ImageContent;
           } else if (extractorFiles.includes(fileType)) {
             const text = await client.extractText(file);
-            attachment = { type: AttachmentType.Text, name: file.name, data: text };
+            content = { type: 'text', text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
           }
 
-          return { fileId, attachment };
+          return { fileId, content };
         } catch (error) {
           console.error(`Error processing file ${file.name}:`, error);
-          return { fileId, attachment: null };
+          return { fileId, content: null };
         }
       })
     );
 
     // Batch state updates
-    const validAttachments = processedAttachments
-      .filter((result): result is PromiseFulfilledResult<{ fileId: string; attachment: Attachment }> =>
-        result.status === 'fulfilled' && result.value.attachment !== null
+    const validContents = processedContents
+      .filter((result): result is PromiseFulfilledResult<{ fileId: string; content: TextContent | ImageContent }> =>
+        result.status === 'fulfilled' && result.value.content !== null
       )
-      .map(result => result.value.attachment);
+      .map(result => result.value.content);
 
-    setAttachments(prev => [...prev, ...validAttachments]);
+    setAttachments(prev => [...prev, ...validContents]);
     setExtractingAttachments(new Set()); // Clear all at once
   }, [client, config.text?.files, config.vision?.files, config.extractor?.files]);
 
@@ -275,10 +275,13 @@ export function ChatInput() {
   // Handle selecting a prompt suggestion
   const handlePromptSelect = (suggestion: string) => {
     // Create and send message immediately
+    const messageContent: Content[] = [
+      { type: 'text', text: suggestion },
+      ...attachments
+    ];
     const message: Message = {
       role: Role.User,
-      content: suggestion,
-      attachments: attachments,
+      content: messageContent,
     };
 
     sendMessage(message);
@@ -328,31 +331,35 @@ export function ChatInput() {
     }
 
     if (content.trim()) {
-      let finalAttachments = [...attachments];
+      let finalAttachments: Content[] = [...attachments];
 
       // If continuous capture is active, automatically capture current screen
       if (isContinuousCaptureActive) {
         try {
           const blob = await captureFrame();
           if (blob) {
-            const data = await readAsDataURL(blob);
-            const screenAttachment = {
-              type: AttachmentType.Image,
+            const dataUrl = await readAsDataURL(blob);
+            const screenContent: ImageContent = {
+              type: 'image',
               name: `screen-capture-${Date.now()}.png`,
-              data: data,
+              data: dataUrl,
             };
             // Add screen capture as the first attachment
-            finalAttachments = [screenAttachment, ...finalAttachments];
+            finalAttachments = [screenContent, ...finalAttachments];
           }
         } catch (error) {
           console.error("Error capturing screen during message send:", error);
         }
       }
 
+      const messageContent: Content[] = [
+        { type: 'text', text: content },
+        ...finalAttachments
+      ];
+
       const message: Message = {
         role: Role.User,
-        content: content,
-        attachments: finalAttachments,
+        content: messageContent,
       };
 
       sendMessage(message);
@@ -478,11 +485,13 @@ export function ChatInput() {
         )}
 
         {/* Attachments display */}
-        <ChatInputAttachments
-          attachments={attachments}
-          extractingAttachments={extractingAttachments}
-          onRemove={handleRemoveAttachment}
-        />
+        <div className="p-3">
+          <ChatInputAttachments
+            attachments={attachments}
+            extractingAttachments={extractingAttachments}
+            onRemove={handleRemoveAttachment}
+          />
+        </div>
 
         {/* Prompt suggestions */}
         <ChatInputSuggestions

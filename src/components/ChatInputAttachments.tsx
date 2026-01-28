@@ -1,26 +1,36 @@
 import { memo } from "react";
 import { Image, File, FileText, Loader2, X } from "lucide-react";
 
-import { AttachmentType } from "../types/chat";
-import type { Attachment } from "../types/chat";
+import type { Content } from "../types/chat";
 
 interface ChatInputAttachmentsProps {
-  attachments: Attachment[];
+  attachments: Content[];
   extractingAttachments: Set<string>;
   onRemove: (index: number) => void;
 }
 
-const getAttachmentIcon = (attachment: Attachment) => {
-  switch (attachment.type) {
-    case AttachmentType.Image:
+const getContentIcon = (content: Content) => {
+  switch (content.type) {
+    case 'image':
       return <Image size={24} />;
-    case AttachmentType.Text:
+    case 'text':
       return <FileText size={24} />;
-    case AttachmentType.File:
+    case 'file':
+      return <File size={24} />;
+    case 'audio':
       return <File size={24} />;
     default:
       return <File size={24} />;
   }
+};
+
+// Helper to get display name from content
+const getContentName = (content: Content): string => {
+  if (content.type === 'file') return content.name;
+  if (content.type === 'image' && content.name) return content.name;
+  if (content.type === 'audio' && content.name) return content.name;
+  if (content.type === 'text') return 'Text content';
+  return content.type;
 };
 
 export const ChatInputAttachments = memo(({ 
@@ -33,7 +43,7 @@ export const ChatInputAttachments = memo(({
   }
 
   return (
-    <div className="flex flex-wrap gap-3 p-3">
+    <div className="flex flex-wrap gap-3">
       {/* Loading attachments */}
       {Array.from(extractingAttachments).map((fileId) => (
         <div
@@ -46,21 +56,21 @@ export const ChatInputAttachments = memo(({
       ))}
 
       {/* Processed attachments */}
-      {attachments.map((attachment, index) => (
+      {attachments.map((content, index) => (
         <div
           key={index}
           className="relative size-14 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm flex items-center justify-center group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all"
-          title={attachment.name}
+          title={getContentName(content)}
         >
-          {attachment.type === AttachmentType.Image ? (
+          {content.type === 'image' ? (
             <img
-              src={attachment.data}
-              alt={attachment.name}
+              src={content.data}
+              alt={content.name || 'image'}
               className="size-full object-cover rounded-xl"
             />
           ) : (
             <div className="text-neutral-600 dark:text-neutral-300">
-              {getAttachmentIcon(attachment)}
+              {getContentIcon(content)}
             </div>
           )}
           <button

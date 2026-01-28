@@ -230,7 +230,7 @@ export function RendererPage() {
       const dataUrl = await readAsDataURL(resultBlob);
       
       // Add to persisted images via hook
-      createImage({
+      await createImage({
         prompt: fullPrompt,
         model: model,
         data: dataUrl,

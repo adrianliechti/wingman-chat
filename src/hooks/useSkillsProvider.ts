@@ -28,28 +28,28 @@ export function useSkillsProvider(): ToolProvider | null {
           },
           required: ['name']
         },
-        function: async (args: Record<string, unknown>): Promise<string> => {
+        function: async (args: Record<string, unknown>) => {
           const skillName = args.name as string;
 
           if (!skillName) {
-            return JSON.stringify({ error: 'No skill name provided' });
+            return [{ type: 'text' as const, text: JSON.stringify({ error: 'No skill name provided' }) }];
           }
 
           const skill = getSkill(skillName);
 
           if (!skill) {
-            return JSON.stringify({ error: `Skill "${skillName}" not found` });
+            return [{ type: 'text' as const, text: JSON.stringify({ error: `Skill "${skillName}" not found` }) }];
           }
 
           if (!skill.enabled) {
-            return JSON.stringify({ error: `Skill "${skillName}" is disabled` });
+            return [{ type: 'text' as const, text: JSON.stringify({ error: `Skill "${skillName}" is disabled` }) }];
           }
 
-          return JSON.stringify({
+          return [{ type: 'text' as const, text: JSON.stringify({
             name: skill.name,
             description: skill.description,
             instructions: skill.content
-          });
+          }) }];
         }
       }
     ];

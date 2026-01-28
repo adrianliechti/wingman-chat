@@ -1,13 +1,15 @@
 import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
+import { ConvertButton } from './ConvertButton';
 import { PlayButton } from './PlayButton';
-import { SingleAttachmentDisplay, MultipleAttachmentsDisplay } from './AttachmentRenderer';
+import { RenderContents } from './ContentRenderer';
 import { CodeRenderer } from './CodeRenderer';
-import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil } from "lucide-react";
+import { ChatInputAttachments } from './ChatInputAttachments';
+import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil, ChevronRight } from "lucide-react";
 import { useState, useRef, useEffect } from 'react';
 
-import { Role } from "../types/chat";
-import type { Message, ElicitationResult, Content } from "../types/chat";
+import { Role, getTextFromContent } from "../types/chat";
+import type { Message, ElicitationResult, Content, ToolResultContent, ImageContent, AudioContent, FileContent } from "../types/chat";
 import { getConfig } from "../config";
 import { useChat } from "../hooks/useChat";
 
@@ -163,18 +165,88 @@ function ElicitationPrompt({ toolName, message, onResolve }: ElicitationPromptPr
   );
 }
 
+// Reasoning/Thinking display component - shows model's thinking process in collapsible UI
+type ReasoningDisplayProps = {
+  reasoning: string;
+  isStreaming?: boolean;
+};
+
+function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
+  // Start expanded when streaming, collapsed when viewing completed message
+  const [isExpanded, setIsExpanded] = useState(isStreaming ?? false);
+  // Track the previous streaming state to detect transitions
+  const [prevIsStreaming, setPrevIsStreaming] = useState(isStreaming);
+
+  // Adjust state during render when isStreaming prop changes
+  // This is React's recommended pattern for updating state based on props
+  if (isStreaming !== prevIsStreaming) {
+    setPrevIsStreaming(isStreaming);
+    // Expand when streaming starts, collapse when it ends
+    setIsExpanded(!!isStreaming);
+  }
+
+  // Show component if we have reasoning content OR if we're streaming (thinking in progress)
+  if (!reasoning && !isStreaming) return null;
+
+  return (
+    <div className="mb-3">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
+      >
+        <ChevronRight className={`w-3 h-3 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
+        <span className="font-medium">Thinking</span>
+        {isStreaming && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
+      </button>
+      
+      {isExpanded && (
+        <div className="mt-2 pl-5 border-l-2 border-neutral-200 dark:border-neutral-700">
+          <div className="text-sm text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap">
+            {reasoning}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ChatMessage({ message, index, isResponding, ...props }: ChatMessageProps) {
   const [toolResultExpanded, setToolResultExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState(message.content || '');
+  // Get text content for editing
+  const textContent = message.content
+    .filter(p => p.type === 'text')
+    .map(p => p.text)
+    .join('');
+  const [editContent, setEditContent] = useState(textContent);
+  // Get media content (images, audio, files) for editing
+  const mediaContent = message.content.filter(
+    (p): p is ImageContent | AudioContent | FileContent => 
+      p.type === 'image' || p.type === 'audio' || p.type === 'file'
+  );
+  const [editMediaContent, setEditMediaContent] = useState<(ImageContent | AudioContent | FileContent)[]>(mediaContent);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { pendingElicitation, resolveElicitation, sendMessage, chat } = useChat();
   
   const isUser = message.role === Role.User;
   const isAssistant = message.role === Role.Assistant;
   
-  const hasToolCalls = message.role === Role.Assistant && message.toolCalls && message.toolCalls.length > 0;
-  const isToolResult = message.role === Role.Tool;
+  // Check for tool calls/results in content parts
+  const toolCallParts = message.content.filter(p => p.type === 'tool_call');
+  const toolResultParts = message.content.filter(p => p.type === 'tool_result') as ToolResultContent[];
+  const hasToolCalls = isAssistant && toolCallParts.length > 0;
+  const hasToolResults = toolResultParts.length > 0;
+  
+  // Check if message has any text content
+  const hasTextContent = message.content.some(p => p.type === 'text' && p.text);
+  
+  // Check for images and files in content
+  const mediaParts = message.content.filter(p => p.type === 'image' || p.type === 'file' || p.type === 'audio') as Content[];
+  const hasMedia = mediaParts.length > 0;
+  
+  // Reasoning is actively streaming only if we're responding and no text/tool content has arrived yet
+  // Once tool calls or text appear, reasoning is "done" (collapsed but still visible)
+  const isReasoningActive = props.isLast && isResponding && !hasTextContent && !hasToolCalls;
   
   const config = getConfig();
   const enableTTS = !!config.tts;
@@ -198,22 +270,34 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
 
   const handleStartEdit = () => {
     if (isResponding) return;
-    setEditContent(message.content || '');
+    setEditContent(getTextFromContent(message.content));
+    setEditMediaContent(mediaContent);
     setIsEditing(true);
   };
 
   const handleCancelEdit = () => {
     setIsEditing(false);
-    setEditContent(message.content || '');
+    setEditContent(getTextFromContent(message.content));
+    setEditMediaContent(mediaContent);
+  };
+
+  const handleRemoveMedia = (indexToRemove: number) => {
+    setEditMediaContent(prev => prev.filter((_, i) => i !== indexToRemove));
   };
 
   const handleConfirmEdit = async () => {
-    if (editContent.trim() === '' || !chat) return;
+    // Allow edit if there's text content OR media content
+    if ((editContent.trim() === '' && editMediaContent.length === 0) || !chat) return;
     setIsEditing(false);
     
-    // Truncate history and send edited message
+    // Truncate history and send edited message, preserving media content
     const truncatedHistory = chat.messages.slice(0, index);
-    const editedMessage = { ...message, content: editContent };
+    const newContent: Content[] = [];
+    if (editContent.trim()) {
+      newContent.push({ type: 'text' as const, text: editContent });
+    }
+    newContent.push(...editMediaContent);
+    const editedMessage = { ...message, content: newContent };
     await sendMessage(editedMessage, truncatedHistory);
   };
 
@@ -227,35 +311,64 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
     }
   };
 
-  // Handle tool messages
-  if (isToolResult) {
-    const toolResult = message.toolResult;
+  // Handle user messages that only contain tool results (no user text)
+  if (isUser && hasToolResults && !hasTextContent && !hasMedia) {
+    const toolResult = toolResultParts[0]; // Usually just one
     const isToolError = !!message.error;
     const codeData = toolResult?.arguments ? extractCodeFromArguments(toolResult.arguments) : null;
     const queryPreview = !codeData && toolResult?.arguments 
       ? getToolCallPreview(toolResult.name || '', toolResult.arguments) 
       : null;
 
-    const renderContent = (content: string | Content[], name?: string) => {
-      if (typeof content === 'string') {
+    // Helper to replace long data URLs with placeholder for display
+    const sanitizeForDisplay = (obj: unknown): unknown => {
+      if (typeof obj === 'string') {
+        // Replace data URLs with placeholder
+        if (obj.startsWith('data:')) {
+          const match = obj.match(/^data:([^;,]+)/);
+          const mimeType = match ? match[1] : 'unknown';
+          return `[${mimeType} data]`;
+        }
+        return obj;
+      }
+      if (Array.isArray(obj)) {
+        return obj.map(sanitizeForDisplay);
+      }
+      if (obj && typeof obj === 'object') {
+        const result: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(obj)) {
+          result[key] = sanitizeForDisplay(value);
+        }
+        return result;
+      }
+      return obj;
+    };
+
+    const renderContent = (content: Content[], name?: string) => {
+      // Check if all content is text
+      const allText = content.every(c => c.type === 'text');
+      if (allText && content.length === 1 && content[0].type === 'text') {
+        const text = content[0].text;
         // Try to parse as JSON
         try {
-          const parsed = JSON.parse(content);
-          const formatted = JSON.stringify(parsed, null, 2);
+          const parsed = JSON.parse(text);
+          const sanitized = sanitizeForDisplay(parsed);
+          const formatted = JSON.stringify(sanitized, null, 2);
           return <CodeRenderer code={formatted} language="json" name={name} />;
         } catch {
           // Not JSON, render as text
-          return <CodeRenderer code={content} language="text" name={name} />;
+          return <CodeRenderer code={text} language="text" name={name} />;
         }
       } else {
-        // Content[] - stringify and render as JSON
-        const formatted = JSON.stringify(content, null, 2);
+        // Content[] with mixed types - sanitize and stringify for display
+        const sanitized = sanitizeForDisplay(content);
+        const formatted = JSON.stringify(sanitized, null, 2);
         return <CodeRenderer code={formatted} language="json" name={name} />;
       }
     };
 
     const getPreviewText = () => {
-      if (codeData) return codeData.code.split('\n')[0];
+      if (codeData) return codeData.code.split('\\n')[0];
       if (queryPreview) return queryPreview;
       return null;
     };
@@ -269,6 +382,7 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
               className="w-full flex items-center text-left transition-colors"
             >
               <div className="flex items-center gap-2 flex-1 min-w-0">
+                <ChevronRight className={`w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 transition-transform ${toolResultExpanded ? 'rotate-90' : ''}`} />
                 {isToolError ? (
                   <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 shrink-0" />
                 ) : (
@@ -290,13 +404,13 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
             </button>
 
             {toolResultExpanded && (
-              <div className="ml-5">
+              <div className="ml-5 mt-2">
                 {codeData ? (
                   <CodeRenderer code={codeData.code} language="python" />
                 ) : (
-                  toolResult?.arguments && renderContent(toolResult.arguments, 'Arguments')
+                  toolResult?.arguments && renderContent([{ type: 'text', text: toolResult.arguments }], 'Arguments')
                 )}
-                {(message.error || message.content || toolResult?.data) && (
+                {(message.error || toolResult?.result) && (
                   message.error ? (
                     <CodeRenderer 
                       code={message.error.message}
@@ -304,41 +418,61 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                       name="Error"
                     />
                   ) : (
-                    renderContent(message.content || toolResult?.data || '', 'Result')
+                    renderContent(toolResult?.result || [], 'Result')
                   )
                 )}
               </div>
             )}
+
+            {/* Always render media content (images, audio, files) from tool results */}
+            {toolResult?.result && toolResult.result.some(c => c.type === 'image' || c.type === 'audio' || c.type === 'file') && (
+              <div className="ml-5 mt-2">
+                <RenderContents contents={toolResult.result} />
+              </div>
+            )}
           </div>
-          
-          {message.attachments && message.attachments.length > 0 && (
-            <div className="mt-2">
-              {message.attachments.length === 1 ? (
-                <SingleAttachmentDisplay attachment={message.attachments[0]} />
-              ) : (
-                <MultipleAttachmentsDisplay attachments={message.attachments} />
-              )}
-            </div>
-          )}
         </div>
       </div>
     );
   }
 
-  // Handle assistant messages with no content (loading states)
-  if (isAssistant && !message.content && !message.error) {
-    // Skip rendering old tool call messages that aren't the last one
-    if (hasToolCalls && !props.isLast) {
-      return null;
+  // Handle assistant messages with no text content (loading states)
+  if (isAssistant && !hasTextContent && !message.error) {
+    // Check if there's reasoning content (text or summary)
+    const reasoningParts = message.content.filter(p => p.type === 'reasoning');
+    const hasReasoning = reasoningParts.length > 0 && reasoningParts.some(p => p.text || p.summary);
+    
+    // For old messages (not last), only show if there's reasoning to display
+    if (!props.isLast) {
+      if (!hasReasoning) {
+        return null;
+      }
+      // Show just the reasoning block for completed messages with reasoning
+      return (
+        <div className="flex justify-start mb-2">
+          <div className="flex-1 py-1 max-w-full">
+            {reasoningParts.map((part, index) => (
+              part.type === 'reasoning' && (
+                <ReasoningDisplay 
+                  key={index}
+                  reasoning={part.text || part.summary || ''} 
+                  isStreaming={false}
+                />
+              )
+            ))}
+          </div>
+        </div>
+      );
     }
     
     // Check if there's a pending elicitation for any of the tool calls
-    const hasPendingElicitation = hasToolCalls && message.toolCalls?.some(
-      toolCall => pendingElicitation && pendingElicitation.toolCallId === toolCall.id
+    const hasPendingElicitation = hasToolCalls && toolCallParts.some(
+      toolCall => toolCall.type === 'tool_call' && pendingElicitation && pendingElicitation.toolCallId === toolCall.id
     );
     
-    // Show loading indicators for the last message when actively responding OR when there's a pending elicitation
-    if (!props.isLast || (!isResponding && !hasPendingElicitation)) {
+    // Show loading indicators for the last message when actively responding, 
+    // has pending elicitation, or has reasoning content to display
+    if (!props.isLast || (!isResponding && !hasPendingElicitation && !hasReasoning)) {
       return null;
     }
     
@@ -347,8 +481,20 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
       return (
         <div className="flex justify-start mb-2">
           <div className="flex-1 py-1 max-w-full">
+            {/* Show reasoning above tool calls */}
+            {hasReasoning && reasoningParts.map((part, index) => (
+              part.type === 'reasoning' && (
+                <ReasoningDisplay 
+                  key={index}
+                  reasoning={part.text || part.summary || ''} 
+                  isStreaming={isReasoningActive}
+                />
+              )
+            ))}
             <div className="space-y-1">
-              {message.toolCalls?.map((toolCall, index) => {
+              {toolCallParts.map((part, index) => {
+                if (part.type !== 'tool_call') return null;
+                const toolCall = part;
                 const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
                 const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === toolCall.id;
                 
@@ -356,7 +502,7 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                 if (isPendingElicitation) {
                   return (
                     <ElicitationPrompt
-                      key={toolCall.id || index}
+                      key={`${toolCall.id || 'tool'}-${index}`}
                       toolName={pendingElicitation.toolName}
                       message={pendingElicitation.elicitation.message}
                       onResolve={resolveElicitation}
@@ -365,7 +511,7 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                 }
                 
                 return (
-                  <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
+                  <div key={`${toolCall.id || 'tool'}-${index}`} className="rounded-lg overflow-hidden max-w-full">
                     <div className="flex items-center gap-2 min-w-0">
                       <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
                       <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
@@ -386,24 +532,39 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
       );
     }
     
-    // Show loading animation for regular assistant responses
+    // Show loading animation or reasoning for regular assistant responses
+    // (reasoningParts and hasReasoning already defined above)
+    
     return (
       <div className="flex justify-start mb-4">
         <div className="flex-1 py-3">
-          <div className="space-y-2">
-            <div className="flex space-x-1">
-              <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-              <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-              <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+          {/* Show reasoning while thinking, even before content arrives */}
+          {hasReasoning ? (
+            reasoningParts.map((part, index) => (
+              part.type === 'reasoning' && (
+                <ReasoningDisplay 
+                  key={index}
+                  reasoning={part.text || part.summary || ''} 
+                  isStreaming={isReasoningActive}
+                />
+              )
+            ))
+          ) : (
+            <div className="space-y-2">
+              <div className="flex space-x-1">
+                <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     );
   }
 
   // Handle user and assistant messages with content
-  if (isUser || (isAssistant && (message.content || message.error))) {
+  if (isUser || (isAssistant && (hasTextContent || message.content.length > 0 || message.error))) {
     // Check if this is an error message (using the error field)
     if (isAssistant && message.error) {
       return <ErrorMessage title={message.error.code || 'Error'} message={message.error.message} />;
@@ -443,6 +604,14 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                   className="w-full min-w-50 bg-transparent border-none outline-none resize-none font-sans text-neutral-900 dark:text-neutral-200"
                   rows={1}
                 />
+                {/* Show media attachments with ability to remove */}
+                {editMediaContent.length > 0 && (
+                  <ChatInputAttachments
+                    attachments={editMediaContent}
+                    extractingAttachments={new Set()}
+                    onRemove={handleRemoveMedia}
+                  />
+                )}
                 <div className="flex items-center gap-1 justify-end">
                   <button
                     onClick={handleCancelEdit}
@@ -463,65 +632,53 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                 </div>
               </div>
             ) : (
-              <pre className="whitespace-pre-wrap font-sans">{message.content}</pre>
+              <pre className="whitespace-pre-wrap font-sans">{textContent}</pre>
             )
           ) : (
-            message.content && <Markdown>{message.content}</Markdown>
-          )}
-
-          {/* Show tool call indicators for assistant messages with tool calls */}
-          {!isUser && hasToolCalls && props.isLast && (
-            <div className="mt-3 space-y-1">
-              {message.toolCalls?.map((toolCall, index) => {
-                const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
-                const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === toolCall.id;
-                
-                // Show elicitation prompt if this tool call has a pending elicitation
-                if (isPendingElicitation) {
+            <>
+              {/* Render content parts in order */}
+              {message.content.map((part, index) => {
+                if (part.type === 'reasoning') {
                   return (
-                    <ElicitationPrompt
-                      key={toolCall.id || index}
-                      toolName={pendingElicitation.toolName}
-                      message={pendingElicitation.elicitation.message}
-                      onResolve={resolveElicitation}
+                    <ReasoningDisplay 
+                      key={index}
+                      reasoning={part.text || part.summary || ''} 
+                      isStreaming={isReasoningActive}
                     />
                   );
                 }
-                
-                // Only show loading indicator if actively responding
-                if (!isResponding) {
-                  return null;
+                if (part.type === 'text') {
+                  return <Markdown key={index}>{part.text}</Markdown>;
                 }
-                
-                return (
-                  <div key={toolCall.id || index} className="rounded-lg overflow-hidden max-w-full">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
-                      <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
-                        {getToolDisplayName(toolCall.name)}
-                      </span>
-                      {preview && (
-                        <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
-                          {preview}
+                if (part.type === 'tool_call') {
+                  // Tool calls shown inline only when streaming
+                  if (!props.isLast || !isResponding) return null;
+                  const preview = getToolCallPreview(part.name, part.arguments);
+                  return (
+                    <div key={index} className="my-2 rounded-lg overflow-hidden max-w-full">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
+                        <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
+                          {getToolDisplayName(part.name)}
                         </span>
-                      )}
+                        {preview && (
+                          <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
+                            {preview}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
+                  );
+                }
+                return null;
               })}
-            </div>
+            </>
           )}
 
-          {message.attachments && message.attachments.length > 0 && (
+          {/* Render images, audio, and files from content (hide during edit since ChatInputAttachments shows them) */}
+          {hasMedia && !isEditing && (
             <div className="pt-2">
-              {/* For user messages: always use multiple display; assistant follows single vs multiple */}
-              {isUser ? (
-                <MultipleAttachmentsDisplay attachments={message.attachments} />
-              ) : message.attachments.length === 1 ? (
-                <SingleAttachmentDisplay attachment={message.attachments[0]} />
-              ) : (
-                <MultipleAttachmentsDisplay attachments={message.attachments} />
-              )}
+              <RenderContents contents={mediaParts} />
             </div>
           )}
           
@@ -530,8 +687,9 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
               props.isLast && !isResponding ? 'opacity-100!' : 'opacity-0 group-hover:opacity-100'
             }`}>
               <div className="flex items-center gap-2">
-                <CopyButton markdown={message.content || ''} className="h-4 w-4" />
-                {enableTTS && <PlayButton text={message.content} className="h-4 w-4" />}
+                <CopyButton markdown={textContent} className="h-4 w-4" />
+                <ConvertButton markdown={textContent} className="h-4 w-4" />
+                {enableTTS && <PlayButton text={textContent} className="h-4 w-4" />}
               </div>
             </div>
           )}

@@ -14,12 +14,12 @@ export interface ChatContextType {
   isResponding: boolean;
 
   // Chat actions
-  createChat: () => Chat;
+  createChat: () => Promise<Chat>;
   selectChat: (chatId: string) => void;
   deleteChat: (chatId: string) => void;
-  updateChat: (chatId: string, updater: (chat: Chat) => Partial<Chat>) => void;
+  updateChat: (chatId: string, updater: (chat: Chat) => Partial<Chat>, options?: { preserveDates?: boolean }) => void;
 
-  addMessage: (message: Message) => void;
+  addMessage: (message: Message) => Promise<void>;
   sendMessage: (message: Message, historyOverride?: Message[]) => Promise<void>;
 
   // Tool providers state (from global ToolsContext)

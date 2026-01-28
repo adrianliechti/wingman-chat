@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
 import { getConfig } from "../config";
 import { downloadFromUrl } from "../lib/utils";
@@ -26,9 +26,10 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
   const [lastTranslatedText, setLastTranslatedText] = useState(""); // Track what was last translated
   const [error, setError] = useState<string | null>(null);
   
-  // Refs to track previous tone/style for detecting changes
-  const prevToneRef = useRef(tone);
-  const prevStyleRef = useRef(style);
+  // Track previous tone/style for detecting changes (using state for adjust-during-render pattern)
+  const [prevTone, setPrevTone] = useState(tone);
+  const [prevStyle, setPrevStyle] = useState(style);
+  const [shouldRetranslate, setShouldRetranslate] = useState(false);
 
   // Derived state
   const selectedLanguage = supportedLanguages().find(l => l.code === targetLang);
@@ -159,20 +160,24 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
     return () => clearTimeout(timer);
   }, [sourceText, targetLang, performTranslate, selectedFile, lastTranslatedText, tone, style]);
 
-  // Re-translate when tone or style changes (if there's already translated text)
+  // Detect tone/style changes during render and schedule re-translation
+  // Using "adjust state during render" pattern
+  if (tone !== prevTone || style !== prevStyle) {
+    setPrevTone(tone);
+    setPrevStyle(style);
+    // Schedule re-translation if we have translated text
+    if (lastTranslatedText && !selectedFile && !isLoading) {
+      setShouldRetranslate(true);
+    }
+  }
+
+  // Handle the re-translation in a separate effect (triggered by state flag)
   useEffect(() => {
-    const toneChanged = prevToneRef.current !== tone;
-    const styleChanged = prevStyleRef.current !== style;
-    
-    // Update refs
-    prevToneRef.current = tone;
-    prevStyleRef.current = style;
-    
-    // Only trigger if tone or style actually changed and we have translated text
-    if ((toneChanged || styleChanged) && lastTranslatedText && !selectedFile && !isLoading) {
+    if (shouldRetranslate) {
+      setShouldRetranslate(false);
       performTranslate(targetLang, sourceText, tone, style);
     }
-  }, [tone, style, targetLang, sourceText, selectedFile, lastTranslatedText, isLoading, performTranslate]);
+  }, [shouldRetranslate, performTranslate, targetLang, sourceText, tone, style]);
 
   const selectFile = useCallback((file: File) => {
     setSelectedFile(file);

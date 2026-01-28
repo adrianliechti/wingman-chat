@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { ProfileContext } from './ProfileContext';
 import type { ProfileSettings } from './ProfileContext';
-import { setValue, getValue, deleteValue } from '../lib/db';
+import { usePersistedState } from '../hooks/usePersistedState';
 import { getPersonaContent } from '../lib/personas';
 import type { PersonaKey } from '../lib/personas';
 
@@ -11,7 +10,7 @@ interface ProfileProviderProps {
 }
 
 // Helper function to filter out empty/null values from profile settings
-const filterEmptySettings = (settings: ProfileSettings): ProfileSettings => {
+const filterEmptySettings = (settings: ProfileSettings): ProfileSettings | undefined => {
   const filtered: Record<string, unknown> = {};
   
   Object.keys(settings).forEach(key => {
@@ -26,69 +25,36 @@ const filterEmptySettings = (settings: ProfileSettings): ProfileSettings => {
     }
   });
   
-  return filtered as ProfileSettings;
+  // Return undefined if empty (will delete file)
+  return Object.keys(filtered).length > 0 ? filtered as ProfileSettings : undefined;
 };
 
 export function ProfileProvider({ children }: ProfileProviderProps) {
-  const [settings, setSettings] = useState<ProfileSettings>({});
-
-  // Load settings from database on mount
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const saved = await getValue<ProfileSettings>('profile');
-        if (saved) {
-          setSettings(prev => ({ ...prev, ...saved }));
-        } else {
-          // Migration: Check if there are settings in localStorage
-          const legacySettings = localStorage.getItem('profile-settings');
-          if (legacySettings) {
-            try {
-              const parsed = JSON.parse(legacySettings);
-              // Remove the instructions field if it exists (from old format)
-              if ('instructions' in parsed) {
-                delete parsed.instructions;
-              }
-              const cleanedSettings = filterEmptySettings(parsed);
-              if (Object.keys(cleanedSettings).length > 0) {
-                setSettings(prev => ({ ...prev, ...cleanedSettings }));
-                // Save migrated settings to database
-                await setValue('profile', cleanedSettings);
-              }
-              // Remove the old localStorage entry
-              localStorage.removeItem('profile-settings');
-            } catch (error) {
-              console.warn('Failed to migrate legacy profile settings:', error);
-            }
+  const { value: settings, setValue: setSettings, isLoaded } = usePersistedState<ProfileSettings>({
+    key: 'profile.json',
+    defaultValue: {},
+    debounceMs: 300,
+    
+    migrate: () => {
+      const legacySettings = localStorage.getItem('profile-settings');
+      if (legacySettings) {
+        try {
+          const parsed = JSON.parse(legacySettings);
+          if ('instructions' in parsed) {
+            delete parsed.instructions;
           }
+          localStorage.removeItem('profile-settings');
+          return filterEmptySettings(parsed) || {};
+        } catch {
+          return undefined;
         }
-      } catch (error) {
-        console.warn('Failed to load profile settings:', error);
       }
-    };
+      return undefined;
+    },
     
-    loadSettings();
-  }, []);
-
-  // Save settings to database when they change
-  useEffect(() => {
-    const saveSettings = async () => {
-      try {
-        const filteredSettings = filterEmptySettings(settings);
-        // Only save if there are non-empty settings
-        if (Object.keys(filteredSettings).length > 0) {
-          await setValue('profile', filteredSettings);
-        } else {
-          // If all settings are empty, remove the profile from storage
-          await deleteValue('profile');
-        }
-      } catch (error) {
-        console.warn('Failed to save profile settings:', error);
-      }
-    };
-    
-    saveSettings();
-  }, [settings]);
+    onLoad: (data) => filterEmptySettings(data) || {},
+    onSave: (data) => filterEmptySettings(data),
+  });
 
   const updateSettings = (updates: Partial<ProfileSettings>) => {
     setSettings(prev => ({ ...prev, ...updates }));
@@ -118,7 +84,7 @@ export function ProfileProvider({ children }: ProfileProviderProps) {
   };
 
   return (
-    <ProfileContext.Provider value={{ settings, updateSettings, generateInstructions }}>
+    <ProfileContext.Provider value={{ settings, updateSettings, generateInstructions, isLoaded }}>
       {children}
     </ProfileContext.Provider>
   );

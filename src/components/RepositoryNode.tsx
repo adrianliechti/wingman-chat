@@ -9,7 +9,7 @@ import { useWorkflowNode } from '../hooks/useWorkflowNode';
 import { useRepositories } from '../hooks/useRepositories';
 import { useRepository } from '../hooks/useRepository';
 import { getConfig } from '../config';
-import { Role } from '../types/chat';
+import { Role, getTextFromContent } from '../types/chat';
 import { WorkflowNode } from './WorkflowNode';
 import { Markdown } from './Markdown';
 import { CopyButton } from './CopyButton';
@@ -64,11 +64,11 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
                   'Generate a concise and effective search query for a document repository based on the provided context. Return only the search query, nothing else.',
                   [{
                     role: Role.User,
-                    content: `Context:\n${item.text}\n\nGenerate the search query:`,
+                    content: [{ type: 'text', text: `Context:\n${item.text}\n\nGenerate the search query:` }],
                   }],
                   []
                 );
-                searchQuery = response.content.trim();
+                searchQuery = getTextFromContent(response.content).trim();
               } catch {
                 searchQuery = item.text;
               }
@@ -94,12 +94,12 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
                   systemPrompt,
                   [{
                     role: Role.User,
-                    content: `User Query:\n${item.text}\n\nRelevant Documents:\n${chunksContext}\n\nProvide a synthesized response:`,
+                    content: [{ type: 'text', text: `User Query:\n${item.text}\n\nRelevant Documents:\n${chunksContext}\n\nProvide a synthesized response:` }],
                   }],
                   []
                 );
 
-                results.push({ text: synthesisResponse.content.trim() });
+                results.push({ text: getTextFromContent(synthesisResponse.content).trim() });
               }
             } catch (error) {
               results.push({

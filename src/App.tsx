@@ -46,18 +46,18 @@ function AppContent() {
   // Detect if any panel is open - sidebar becomes overlay when panels are open
   const hasPanelOpen = showArtifactsDrawer || showRepositoryDrawer || showAppDrawer;
   
-  // Track previous panel state to detect when panels open
-  const hadPanelOpenRef = useRef(hasPanelOpen);
+  // Track previous panel state to detect when panels open (using state for adjust-during-render pattern)
+  const [prevHasPanelOpen, setPrevHasPanelOpen] = useState(hasPanelOpen);
   
   // Auto-close sidebar when a panel opens (desktop only) - only on transition from closed to open
-  useEffect(() => {
-    const panelJustOpened = hasPanelOpen && !hadPanelOpenRef.current;
-    hadPanelOpenRef.current = hasPanelOpen;
-    
-    if (panelJustOpened && showSidebar && window.innerWidth >= 768) {
+  // Using "adjust state during render" pattern to detect transitions
+  if (hasPanelOpen !== prevHasPanelOpen) {
+    setPrevHasPanelOpen(hasPanelOpen);
+    // Check if panel just opened
+    if (hasPanelOpen && !prevHasPanelOpen && showSidebar && window.innerWidth >= 768) {
       setShowSidebar(false);
     }
-  }, [hasPanelOpen, showSidebar, setShowSidebar]);
+  }
   
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

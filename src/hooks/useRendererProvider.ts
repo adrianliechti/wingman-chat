@@ -1,8 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { Image } from 'lucide-react';
 import { getConfig } from "../config";
-import type { Tool, ToolContext, ToolProvider } from "../types/chat";
-import { AttachmentType } from "../types/chat";
+import type { Tool, ToolContext, ToolProvider, ImageContent } from "../types/chat";
 import { readAsDataURL } from "../lib/utils";
 import rendererInstructionsText from '../prompts/renderer.txt?raw';
 
@@ -44,10 +43,13 @@ export function useRendererProvider(): ToolProvider | null {
             });
 
             if (result.action !== "accept") {
-              return JSON.stringify({
-                success: false,
-                error: "Image creation cancelled by user."
-              });
+              return [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                  success: false,
+                  error: "Image creation cancelled by user."
+                })
+              }];
             }
           }
 
@@ -59,18 +61,19 @@ export function useRendererProvider(): ToolProvider | null {
             );
 
             const dataUrl = await readAsDataURL(imageBlob);
-            const data = dataUrl.split(',')[1];
 
             return [{
               type: "image" as const,
-              data: data,
-              mimeType: imageBlob.type
+              data: dataUrl,
             }];
           } catch (error) {
-            return JSON.stringify({
-              success: false,
-              error: `Image creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-            });
+            return [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                success: false,
+                error: `Image creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+              })
+            }];
           }
         }
       },
@@ -96,36 +99,42 @@ export function useRendererProvider(): ToolProvider | null {
             });
 
             if (result.action !== "accept") {
-              return JSON.stringify({
-                success: false,
-                error: "Image editing cancelled by user."
-              });
+              return [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                  success: false,
+                  error: "Image editing cancelled by user."
+                })
+              }];
             }
           }
 
           const images: Blob[] = [];
 
-          // Extract image attachments from context
-          if (context?.attachments) {
-            const attachments = context.attachments();
-            const imageAttachments = attachments.filter(att => att.type === AttachmentType.Image);
+          // Extract image content from context
+          if (context?.content) {
+            const contents = context.content();
+            const imageContents = contents.filter((c): c is ImageContent => c.type === 'image');
             
-            for (const imageAttachment of imageAttachments) {
+            for (const imageContent of imageContents) {
               try {
-                const response = await fetch(imageAttachment.data);
+                const response = await fetch(imageContent.data);
                 const blob = await response.blob();
                 images.push(blob);
               } catch {
-                // Failed to convert attachment
+                // Failed to convert content
               }
             }
           }
 
           if (images.length === 0) {
-            return JSON.stringify({
-              success: false,
-              error: 'No image attachments found. Please attach an image to edit.'
-            });
+            return [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                success: false,
+                error: 'No image attachments found. Please attach an image to edit.'
+              })
+            }];
           }
 
           try {
@@ -136,18 +145,19 @@ export function useRendererProvider(): ToolProvider | null {
             );
 
             const dataUrl = await readAsDataURL(imageBlob);
-            const data = dataUrl.split(',')[1];
 
             return [{
               type: "image" as const,
-              data: data,
-              mimeType: imageBlob.type
+              data: dataUrl,
             }];
           } catch (error) {
-            return JSON.stringify({
-              success: false,
-              error: `Image editing failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-            });
+            return [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                success: false,
+                error: `Image editing failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+              })
+            }];
           }
         }
       }

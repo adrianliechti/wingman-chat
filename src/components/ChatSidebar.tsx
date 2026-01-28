@@ -3,6 +3,7 @@ import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { useMemo, useCallback, useState } from "react";
 import { useChat } from "../hooks/useChat";
 import { useSidebar } from "../hooks/useSidebar";
+import { getTextFromContent } from "../types/chat";
 
 export function ChatSidebar() {
   const { chats, chat, selectChat, deleteChat, createChat, updateChat } = useChat();
@@ -32,7 +33,7 @@ export function ChatSidebar() {
       
       // Search in message content
       return chatItem.messages.some((message) => 
-        message.content?.toLowerCase().includes(query)
+        getTextFromContent(message.content).toLowerCase().includes(query)
       );
     });
   }, [sortedChats, searchQuery]);
@@ -109,8 +110,8 @@ export function ChatSidebar() {
   }, [filteredChats, getDateCategory]);
 
   // Function to fork a chat (create a new chat with copied messages)
-  const forkChat = useCallback((chatToFork: typeof chats[0]) => {
-    const newChat = createChat();
+  const forkChat = useCallback(async (chatToFork: typeof chats[0]) => {
+    const newChat = await createChat();
     
     // Copy all the properties from the original chat
     updateChat(newChat.id, () => ({

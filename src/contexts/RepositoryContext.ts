@@ -5,7 +5,7 @@ export type RepositoryContextType = {
   isAvailable: boolean;
   repositories: Repository[];
   currentRepository: Repository | null;
-  createRepository: (name: string, instructions?: string) => Repository;
+  createRepository: (name: string, instructions?: string) => Promise<Repository>;
   updateRepository: (id: string, updates: Partial<Omit<Repository, 'id' | 'createdAt'>>) => void;
   deleteRepository: (id: string) => Promise<void>;
   setCurrentRepository: (repository: Repository | null) => void;

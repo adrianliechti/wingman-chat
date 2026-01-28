@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { File, Code, Eye, PanelRightOpen, PanelRightClose, Play, Loader2 } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { File as FileIcon2, Code, Eye, PanelRightOpen, PanelRightClose, Play, Loader2 } from 'lucide-react';
 import { useArtifacts } from '../hooks/useArtifacts';
 import { useChat } from '../hooks/useChat';
 import { HtmlEditor } from './HtmlEditor';
@@ -15,15 +15,13 @@ import { ArtifactsBrowser } from './ArtifactsBrowser';
 import { artifactKind, artifactLanguage, processUploadedFile } from '../lib/artifacts';
 import { FileIcon } from './FileIcon';
 import { getFileName } from '../lib/utils';
+import type { File } from '../types/file';
 
 export function ArtifactsDrawer() {
   const {
     fs,
     activeFile,
     openFile,
-    version,
-    showFileBrowser,
-    toggleFileBrowser,
   } = useArtifacts();
   const { chat, createChat } = useChat();
 
@@ -31,36 +29,126 @@ export function ArtifactsDrawer() {
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
   const [isRunning, setIsRunning] = useState(false);
   const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasAutoShownBrowserRef = useRef(false);
+  const [hasAutoShownBrowser, setHasAutoShownBrowser] = useState(false);
+  
+  // State for files list (loaded from async fs.listFiles)
+  const [files, setFiles] = useState<File[]>([]);
+  
+  // State for active file content (loaded from async fs.getFile)
+  const [activeFileData, setActiveFileData] = useState<File | null>(null);
+  
+  // Local version counter for forcing editor remounts when file content changes
+  const [editorVersion, setEditorVersion] = useState(0);
+  
+  // Toggle file browser visibility
+  const toggleFileBrowser = useCallback(() => {
+    setShowFileBrowser(prev => !prev);
+  }, []);
 
   // Callback for editors to register their run handler
   const onRunReady = useCallback((handler: (() => Promise<void>) | null) => {
     setRunHandler(() => handler);
   }, []);
 
-  // Get files - memoized to prevent unnecessary recalculation
-  // version is required to trigger updates when filesystem changes (fs instance is stable)
-  const files = useMemo(() => {
-    return fs ? fs.listFiles().sort((a, b) => a.path.localeCompare(b.path)) : [];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fs, version]);
-
-  // Automatically open the file if there's only one file
-  // and show the browser if there are files but none selected
+  // Subscribe to filesystem events and load data
   useEffect(() => {
-    if (activeFile) {
-      hasAutoShownBrowserRef.current = false; // Reset when a file is selected
-      return;
-    }
+    let cancelled = false;
 
-    if (files.length === 1) {
-      openFile(files[0].path);
-    } else if (files.length > 0 && !showFileBrowser && !hasAutoShownBrowserRef.current) {
-      hasAutoShownBrowserRef.current = true;
-      toggleFileBrowser();
+    // Helper to load files list
+    const loadFiles = async () => {
+      if (!fs) {
+        setFiles([]);
+        return;
+      }
+      
+      try {
+        const fileList = await fs.listFiles();
+        if (!cancelled) {
+          setFiles(fileList.sort((a, b) => a.path.localeCompare(b.path)));
+        }
+      } catch (error) {
+        console.error('Error loading files:', error);
+        if (!cancelled) {
+          setFiles([]);
+        }
+      }
+    };
+
+    // Helper to load active file content
+    const loadActiveFile = async () => {
+      if (!fs || !activeFile) {
+        if (!cancelled) {
+          setActiveFileData(null);
+        }
+        return;
+      }
+      
+      try {
+        const file = await fs.getFile(activeFile);
+        if (!cancelled) {
+          setActiveFileData(file ?? null);
+        }
+      } catch (error) {
+        console.error('Error loading active file:', error);
+        if (!cancelled) {
+          setActiveFileData(null);
+        }
+      }
+    };
+
+    // Load initial data
+    loadFiles();
+    loadActiveFile();
+
+    // Subscribe to events for subsequent updates
+    const handleFileChange = () => {
+      loadFiles();
+      loadActiveFile();
+      setEditorVersion(v => v + 1);
+    };
+
+    const unsubscribeCreated = fs.subscribe('fileCreated', handleFileChange);
+    const unsubscribeDeleted = fs.subscribe('fileDeleted', handleFileChange);
+    const unsubscribeRenamed = fs.subscribe('fileRenamed', handleFileChange);
+    const unsubscribeUpdated = fs.subscribe('fileUpdated', handleFileChange);
+
+    return () => {
+      cancelled = true;
+      unsubscribeCreated();
+      unsubscribeDeleted();
+      unsubscribeRenamed();
+      unsubscribeUpdated();
+    };
+  }, [fs, activeFile]);
+
+  // Track previous values for "adjust state during render" pattern
+  const [prevFiles, setPrevFiles] = useState(files);
+  const [prevActiveFile, setPrevActiveFile] = useState(activeFile);
+
+  // Adjust state during render when files or activeFile changes
+  // This is React's recommended pattern for updating state based on props/state changes
+  if (files !== prevFiles || activeFile !== prevActiveFile) {
+    setPrevFiles(files);
+    setPrevActiveFile(activeFile);
+    
+    if (activeFile) {
+      setHasAutoShownBrowser(false); // Reset when a file is selected
+    } else if (files.length === 1) {
+      // Will trigger openFile in effect below (can't call during render as it's async)
+    } else if (files.length > 0 && !showFileBrowser && !hasAutoShownBrowser) {
+      setHasAutoShownBrowser(true);
+      setShowFileBrowser(true);
     }
-  }, [files, activeFile, openFile, showFileBrowser, toggleFileBrowser]);
+  }
+
+  // Handle auto-opening single file (needs effect since openFile is async)
+  useEffect(() => {
+    if (!activeFile && files.length === 1) {
+      openFile(files[0].path);
+    }
+  }, [files, activeFile, openFile]);
 
   // Drag and drop handlers
   const handleDrop = async (e: React.DragEvent) => {
@@ -81,7 +169,7 @@ export function ArtifactsDrawer() {
 
     // Create a chat if one doesn't exist (filesystem needs a chat to store files)
     if (!chat) {
-      createChat();
+      await createChat();
     }
 
     // Wait for filesystem to be ready (handlers set up after chat creation)
@@ -100,7 +188,7 @@ export function ArtifactsDrawer() {
 
         for (const processed of processedFiles) {
           if (fs?.isReady) {
-            fs.createFile(processed.path, processed.content, processed.contentType);
+            await fs.createFile(processed.path, processed.content, processed.contentType);
             openFile(processed.path);
           }
         }
@@ -162,8 +250,7 @@ export function ArtifactsDrawer() {
       );
     }
 
-    const file = fs?.getFile(activeFile);
-    if (!file) {
+    if (!activeFileData) {
       return null;
     }
 
@@ -171,34 +258,34 @@ export function ArtifactsDrawer() {
 
     switch (kind) {
       case 'html':
-        return <HtmlEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return <HtmlEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'svg':
-        return <SvgEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return <SvgEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'csv':
-        return <CsvEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode === 'preview' ? 'table' : 'code'} onViewModeChange={(mode) => setViewMode(mode === 'table' ? 'preview' : 'code')} />;
+        return <CsvEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode === 'preview' ? 'table' : 'code'} onViewModeChange={(mode) => setViewMode(mode === 'table' ? 'preview' : 'code')} />;
       case 'mermaid':
-        return <MermaidEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return <MermaidEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'markdown':
-        return <MarkdownEditor key={`${activeFile}-${version}`} content={file.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return <MarkdownEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'code': {
-        const lang = artifactLanguage(file.path);
+        const lang = artifactLanguage(activeFileData.path);
         if (lang === 'py') {
-          return <PythonEditor key={`${activeFile}-${version}`} content={file.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
+          return <PythonEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
         }
         if (lang === 'js') {
-          return <JsEditor key={`${activeFile}-${version}`} content={file.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
+          return <JsEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
         }
         return (
           <CodeEditor
-            key={`${activeFile}-${version}`}
-            content={file.content}
+            key={`${activeFile}-${editorVersion}`}
+            content={activeFileData.content}
             language={lang}
           />
         );
       }
       case 'text':
       default:
-        return <TextEditor key={`${activeFile}-${version}`} content={file.content} />;
+        return <TextEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} />;
     }
   };
 
@@ -226,7 +313,7 @@ export function ArtifactsDrawer() {
       {isDragOver && (
         <div className="absolute inset-0 bg-blue-500/10 border-2 border-dashed border-blue-500 flex items-center justify-center z-50 backdrop-blur-sm">
           <div className="text-center">
-            <File size={48} className="text-blue-500 mx-auto mb-3" />
+            <FileIcon2 size={48} className="text-blue-500 mx-auto mb-3" />
             <p className="text-lg font-medium text-blue-700 dark:text-blue-300 mb-1">
               Drop files here
             </p>
@@ -309,8 +396,8 @@ export function ArtifactsDrawer() {
           {fs && (
             <div className={`h-full transition-opacity duration-500 ${showFileBrowser ? 'opacity-100' : 'opacity-0'}`}>
               <ArtifactsBrowser
-                key={version}
                 fs={fs}
+                files={files}
                 openTabs={activeFile ? [activeFile] : []}
                 onFileClick={openFile}
                 onUpload={async (fileList) => {
@@ -320,7 +407,7 @@ export function ArtifactsDrawer() {
                       const processedFiles = await processUploadedFile(file);
 
                       for (const processed of processedFiles) {
-                        fs.createFile(processed.path, processed.content, processed.contentType);
+                        await fs.createFile(processed.path, processed.content, processed.contentType);
                         openFile(processed.path);
                       }
                     } catch (error) {
