@@ -254,17 +254,21 @@ export function useChats() {
 
   // Cleanup on unmount - flush pending saves
   useEffect(() => {
+    const pending = pendingSaves;
+    const chatsReference = chatsRef;
+    const timeout = saveTimeoutRef;
+    
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
+      if (timeout.current) {
+        clearTimeout(timeout.current);
       }
       
       // Flush any pending saves
-      const idsToSave = Array.from(pendingSaves.current);
-      pendingSaves.current.clear();
+      const idsToSave = Array.from(pending.current);
+      pending.current.clear();
       
       for (const id of idsToSave) {
-        const chat = chatsRef.current.find(c => c.id === id);
+        const chat = chatsReference.current.find(c => c.id === id);
         if (chat) {
           storeChat(chat).catch(console.warn);
         }

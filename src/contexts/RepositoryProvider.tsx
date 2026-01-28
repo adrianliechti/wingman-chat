@@ -321,17 +321,21 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
 
   // Cleanup on unmount - flush pending saves
   useEffect(() => {
+    const pending = pendingSaves;
+    const repos = repositoriesRef;
+    const timeout = saveTimeoutRef;
+    
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
+      if (timeout.current) {
+        clearTimeout(timeout.current);
       }
       
       // Flush any pending saves
-      const idsToSave = Array.from(pendingSaves.current);
-      pendingSaves.current.clear();
+      const idsToSave = Array.from(pending.current);
+      pending.current.clear();
       
       for (const id of idsToSave) {
-        const repo = repositoriesRef.current.find(r => r.id === id);
+        const repo = repos.current.find(r => r.id === id);
         if (repo) {
           storeRepository(repo).catch(console.warn);
         }

@@ -82,7 +82,7 @@ export function usePersistedState<T>(
     
     const load = async () => {
       try {
-        let data = await opfs.readJson<T>(key);
+        let data: T | undefined = await opfs.readJson<T>(key);
         
         // Try migration if no data found
         if (data === undefined && migrate) {
