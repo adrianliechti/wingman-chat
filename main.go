@@ -414,34 +414,34 @@ func main() {
 		json.NewEncoder(w).Encode(config)
 	})
 
-	mux.HandleFunc("GET /manifest.json", func(w http.ResponseWriter, r *http.Request) {
-		manifest := map[string]any{
-			"name":             title,
-			"short_name":       title,
-			"start_url":        "/",
-			"display":          "standalone",
-			"background_color": "#0a0a0a",
-			"theme_color":      "#0a0a0a",
-			"orientation":      "portrait",
-			"icons": []map[string]any{
-				{
-					"src":     "/icon_light.png",
-					"sizes":   "512x512",
-					"type":    "image/png",
-					"purpose": "any",
-				},
-				{
-					"src":     "/icon_app.png",
-					"sizes":   "512x512",
-					"type":    "image/png",
-					"purpose": "maskable",
-				},
-			},
-		}
+	// mux.HandleFunc("GET /manifest.json", func(w http.ResponseWriter, r *http.Request) {
+	// 	manifest := map[string]any{
+	// 		"name":             title,
+	// 		"short_name":       title,
+	// 		"start_url":        "/",
+	// 		"display":          "standalone",
+	// 		"background_color": "#0a0a0a",
+	// 		"theme_color":      "#0a0a0a",
+	// 		"orientation":      "portrait",
+	// 		"icons": []map[string]any{
+	// 			{
+	// 				"src":     "/icon_light.png",
+	// 				"sizes":   "512x512",
+	// 				"type":    "image/png",
+	// 				"purpose": "any",
+	// 			},
+	// 			{
+	// 				"src":     "/icon_app.png",
+	// 				"sizes":   "512x512",
+	// 				"type":    "image/png",
+	// 				"purpose": "maskable",
+	// 			},
+	// 		},
+	// 	}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(manifest)
-	})
+	// 	w.Header().Set("Content-Type", "application/json")
+	// 	json.NewEncoder(w).Encode(manifest)
+	// })
 
 	if realtimeURL != nil {
 		mux.Handle("/api/v1/realtime", http.StripPrefix("/api", &httputil.ReverseProxy{
