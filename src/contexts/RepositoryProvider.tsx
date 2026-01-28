@@ -244,6 +244,10 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
   const pendingSaves = useRef<Set<string>>(new Set());
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
+  // Keep a ref to current repositories to avoid stale closure in scheduleSave
+  const repositoriesRef = useRef<Repository[]>(repositories);
+  repositoriesRef.current = repositories;
+  
   // Check repository availability from config (computed once on mount)
   const [isAvailable] = useState(() => {
     try {
@@ -302,7 +306,8 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       pendingSaves.current.clear();
       
       for (const id of idsToSave) {
-        const repo = repositories.find(r => r.id === id);
+        // Use ref to get current repositories to avoid stale closure
+        const repo = repositoriesRef.current.find(r => r.id === id);
         if (repo) {
           try {
             await storeRepository(repo);
@@ -312,13 +317,24 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
         }
       }
     }, 100);
-  }, [repositories]);
+  }, []); // No dependencies needed - uses ref for current state
 
-  // Cleanup on unmount
+  // Cleanup on unmount - flush pending saves
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
+      }
+      
+      // Flush any pending saves
+      const idsToSave = Array.from(pendingSaves.current);
+      pendingSaves.current.clear();
+      
+      for (const id of idsToSave) {
+        const repo = repositoriesRef.current.find(r => r.id === id);
+        if (repo) {
+          storeRepository(repo).catch(console.warn);
+        }
       }
     };
   }, []);
@@ -334,7 +350,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     }
   }, [currentRepository, isLoaded]);
 
-  const createRepository = useCallback((name: string, instructions?: string): Repository => {
+  const createRepository = useCallback(async (name: string, instructions?: string): Promise<Repository> => {
     const config = getConfig();
 
     const newRepository: Repository = {
@@ -351,10 +367,12 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     setRepositories(prev => [...prev, newRepository]);
     setCurrentRepository(newRepository);
     
-    // Save to OPFS
-    storeRepository(newRepository).catch(error => {
+    // Save to OPFS - await to ensure persistence before returning
+    try {
+      await storeRepository(newRepository);
+    } catch (error) {
       console.error('Error saving new repository:', error);
-    });
+    }
     
     return newRepository;
   }, []);
@@ -388,9 +406,11 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     }
     
     // Remove from OPFS
-    removeRepository(id).catch(error => {
+    try {
+      await removeRepository(id);
+    } catch (error) {
       console.error(`Error deleting repository ${id}:`, error);
-    });
+    }
   }, [currentRepository]);
 
   // Add or update a file in a repository

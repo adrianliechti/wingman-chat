@@ -169,7 +169,7 @@ export function ArtifactsDrawer() {
 
     // Create a chat if one doesn't exist (filesystem needs a chat to store files)
     if (!chat) {
-      createChat();
+      await createChat();
     }
 
     // Wait for filesystem to be ready (handlers set up after chat creation)

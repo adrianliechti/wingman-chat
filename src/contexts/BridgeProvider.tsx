@@ -1,60 +1,24 @@
-import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { BridgeContext } from './BridgeContext';
 import type { BridgeServer } from './BridgeContext';
-import * as opfs from '../lib/opfs';
+import { usePersistedState } from '../hooks/usePersistedState';
 
 interface BridgeProviderProps {
   children: ReactNode;
 }
 
-const STORAGE_FILE = 'bridge.json';
-
 export function BridgeProvider({ children }: BridgeProviderProps) {
-  const [servers, setServers] = useState<BridgeServer[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  // Load servers from OPFS on mount
-  useEffect(() => {
-    const loadServers = async () => {
-      try {
-        const saved = await opfs.readJson<BridgeServer[]>(STORAGE_FILE);
-        if (saved && Array.isArray(saved)) {
-          setServers(saved);
-        }
-      } catch (error) {
-        console.warn('Failed to load bridge servers:', error);
-      } finally {
-        setIsLoaded(true);
-      }
-    };
-    
-    loadServers();
-  }, []);
-
-  // Save servers to OPFS when they change (after initial load)
-  useEffect(() => {
-    if (!isLoaded) return;
-    
-    const saveServers = async () => {
-      try {
-        await opfs.writeJson(STORAGE_FILE, servers);
-      } catch (error) {
-        console.warn('Failed to save bridge servers:', error);
-      }
-    };
-    
-    saveServers();
-  }, [servers, isLoaded]);
+  const { value: servers, setValue: setServers, isLoaded } = usePersistedState<BridgeServer[]>({
+    key: 'bridge.json',
+    defaultValue: [],
+  });
 
   const addServer = (serverData: Omit<BridgeServer, 'id'>): BridgeServer => {
     const newServer: BridgeServer = {
       ...serverData,
       id: crypto.randomUUID(),
     };
-    
     setServers(prev => [...prev, newServer]);
-    
     return newServer;
   };
 
@@ -91,6 +55,7 @@ export function BridgeProvider({ children }: BridgeProviderProps) {
         removeServer,
         toggleServer,
         getEnabledServers,
+        isLoaded,
       }}
     >
       {children}

@@ -110,8 +110,8 @@ export function ChatSidebar() {
   }, [filteredChats, getDateCategory]);
 
   // Function to fork a chat (create a new chat with copied messages)
-  const forkChat = useCallback((chatToFork: typeof chats[0]) => {
-    const newChat = createChat();
+  const forkChat = useCallback(async (chatToFork: typeof chats[0]) => {
+    const newChat = await createChat();
     
     // Copy all the properties from the original chat
     updateChat(newChat.id, () => ({

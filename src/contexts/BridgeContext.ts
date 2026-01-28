@@ -16,6 +16,7 @@ export interface BridgeContextType {
   removeServer: (id: string) => void;
   toggleServer: (id: string) => void;
   getEnabledServers: () => BridgeServer[];
+  isLoaded: boolean;
 }
 
 export const BridgeContext = createContext<BridgeContextType | undefined>(undefined);

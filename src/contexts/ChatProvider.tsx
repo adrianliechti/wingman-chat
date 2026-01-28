@@ -68,8 +68,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setArtifactsChatId(chat?.id ?? null);
   }, [chat?.id, artifactsEnabled, setArtifactsChatId]);
 
-  const createChat = useCallback(() => {
-    const newChat = createChatHook();
+  const createChat = useCallback(async () => {
+    const newChat = await createChatHook();
     setChatId(newChat.id);
     // Disable all tools when creating a new chat to prevent accidental usage
     providers.forEach((p: ToolProvider) => setProviderEnabled(p.id, false));
@@ -100,7 +100,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, [chat, updateChat, setSelectedModel]);
 
-  const getOrCreateChat = useCallback(() => {
+  const getOrCreateChat = useCallback(async () => {
     if (!model) {
       throw new Error('no model selected');
     }
@@ -109,7 +109,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     let chatItem = id ? chats.find(c => c.id === id) || null : null;
 
     if (!chatItem) {
-      chatItem = createChatHook();
+      chatItem = await createChatHook();
       chatItem.model = model;
 
       setChatId(chatItem.id);
@@ -122,8 +122,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [model, createChatHook, updateChat, setChatId, chatId, chats]);
 
   const addMessage = useCallback(
-    (message: Message) => {
-      const { id } = getOrCreateChat();
+    async (message: Message) => {
+      const { id } = await getOrCreateChat();
 
       // Use the updater pattern to get fresh messages from the chat
       updateChat(id, (currentChat) => ({
@@ -135,7 +135,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const sendMessage = useCallback(
     async (message: Message, historyOverride?: Message[]) => {
-      const { id, chat: chatObj } = getOrCreateChat();
+      const { id, chat: chatObj } = await getOrCreateChat();
 
       const history = historyOverride ?? (chats.find(c => c.id === id)?.messages || []);
       let conversation = [...history, message];

@@ -105,6 +105,7 @@ function getExpiredChatIds(entries: opfs.IndexEntry[], retentionDays: number): s
 
 export function useChats() {
   const [chats, setChats] = useState<Chat[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
   
   // Track which chats have been modified and need saving
   const pendingSaves = useRef<Set<string>>(new Set());
@@ -161,6 +162,8 @@ export function useChats() {
         setChats(loadedChats);
       } catch (error) {
         console.error('Error loading chats:', error);
+      } finally {
+        setIsLoaded(true);
       }
     }
 
@@ -195,7 +198,7 @@ export function useChats() {
     }, 100);
   }, []);
 
-  const createChat = useCallback(() => {
+  const createChat = useCallback(async () => {
     const chat: Chat = {
       id: crypto.randomUUID(),
       created: new Date(),
@@ -206,10 +209,12 @@ export function useChats() {
 
     setChats((prev) => [chat, ...prev]);
     
-    // Save immediately for new chats
-    storeChat(chat).catch(error => {
+    // Await save to ensure persistence before returning
+    try {
+      await storeChat(chat);
+    } catch (error) {
       console.error('Error saving new chat:', error);
-    });
+    }
     
     return chat;
   }, []);
@@ -247,14 +252,25 @@ export function useChats() {
     });
   }, []);
 
-  // Cleanup on unmount
+  // Cleanup on unmount - flush pending saves
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
+      
+      // Flush any pending saves
+      const idsToSave = Array.from(pendingSaves.current);
+      pendingSaves.current.clear();
+      
+      for (const id of idsToSave) {
+        const chat = chatsRef.current.find(c => c.id === id);
+        if (chat) {
+          storeChat(chat).catch(console.warn);
+        }
+      }
     };
   }, []);
 
-  return { chats, createChat, updateChat, deleteChat };
+  return { chats, isLoaded, createChat, updateChat, deleteChat };
 }

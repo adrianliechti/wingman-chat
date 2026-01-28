@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 import type { Image } from '../types/renderer';
 import * as opfs from '../lib/opfs';
@@ -145,6 +145,13 @@ async function loadImageIndex(): Promise<opfs.IndexEntry[]> {
 
 export function useImages() {
   const [images, setImages] = useState<Image[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+  
+  // Keep a ref to current images for use in async callbacks
+  const imagesRef = useRef<Image[]>(images);
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
 
   // Load images on mount
   useEffect(() => {
@@ -170,13 +177,15 @@ export function useImages() {
         setImages(loadedImages);
       } catch (error) {
         console.error('Error loading images:', error);
+      } finally {
+        setIsLoaded(true);
       }
     }
 
     load();
   }, []);
 
-  const createImage = useCallback((image: Omit<Image, 'id' | 'created' | 'updated'>) => {
+  const createImage = useCallback(async (image: Omit<Image, 'id' | 'created' | 'updated'>) => {
     const newImage: Image = {
       ...image,
       id: crypto.randomUUID(),
@@ -187,10 +196,12 @@ export function useImages() {
     // Keep newest images first.
     setImages((prev) => [newImage, ...prev]);
     
-    // Save to OPFS
-    storeImage(newImage).catch(error => {
+    // Await save to ensure persistence before returning
+    try {
+      await storeImage(newImage);
+    } catch (error) {
       console.error('Error saving new image:', error);
-    });
+    }
     
     return newImage;
   }, []);
@@ -204,5 +215,5 @@ export function useImages() {
     });
   }, []);
 
-  return { images, createImage, deleteImage };
+  return { images, isLoaded, createImage, deleteImage };
 }

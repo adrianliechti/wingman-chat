@@ -252,7 +252,7 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
               // Migrate from old format (handles date conversion, missing fields, etc.)
               const migratedRepo = migrateRepository(repoData);
               
-              const newRepo = createRepository(migratedRepo.name, migratedRepo.instructions);
+              const newRepo = await createRepository(migratedRepo.name, migratedRepo.instructions);
               updateRepository(newRepo.id, {
                 embedder: migratedRepo.embedder,
                 name: migratedRepo.name,

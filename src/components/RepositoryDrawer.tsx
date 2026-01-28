@@ -387,8 +387,8 @@ export function RepositoryDrawer() {
     }
   }, [isDropdownOpen, inlineEditingId, isCreatingNew]);
 
-  const handleCreateRepository = (name: string) => {
-    createRepository(name);
+  const handleCreateRepository = async (name: string) => {
+    await createRepository(name);
     setIsCreatingNew(false);
     setEditingName('');
     setIsDropdownOpen(false);
