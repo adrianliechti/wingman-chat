@@ -248,20 +248,37 @@ export function markdownToText(markdown: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&');
 
-  // Simple markdown patterns to plain text
-  const text = markdown
+  // Extract code blocks and inline code first to protect them from transformations
+  const codeBlocks: string[] = [];
+  const inlineCodes: string[] = [];
+  const CODE_BLOCK_PLACEHOLDER = '\u0000CB\u0000';
+  const INLINE_CODE_PLACEHOLDER = '\u0000IC\u0000';
+
+  // Extract fenced code blocks first
+  let processed = markdown.replace(/```[\s\S]*?\n([\s\S]*?)```/g, (_, code) => {
+    codeBlocks.push(code.trim());
+    return CODE_BLOCK_PLACEHOLDER;
+  });
+
+  // Extract inline code
+  processed = processed.replace(/`([^`]+)`/g, (_, code) => {
+    inlineCodes.push(code);
+    return INLINE_CODE_PLACEHOLDER;
+  });
+
+  // Simple markdown patterns to plain text (now safe from code content)
+  const text = processed
     // Remove HTML tags
     .replace(/<[^>]*>/g, '')
     // Headers - just the text with double newline
     .replace(/^#{1,6}\s+(.+)$/gm, '$1\n')
-    // Bold/italic - keep text only
-    .replace(/(\*\*|__)(.*?)\1/g, '$2')
-    .replace(/(\*|_)(.*?)\1/g, '$2')
+    // Bold/italic - keep text only (using word boundaries to avoid breaking identifiers)
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/(?<!\w)\*(.+?)\*(?!\w)/g, '$1')
+    .replace(/(?<!\w)_(.+?)_(?!\w)/g, '$1')
     // Strikethrough
     .replace(/~~(.*?)~~/g, '$1')
-    // Code blocks - keep content with escaping
-    .replace(/```[\s\S]*?\n([\s\S]*?)```/g, (_, code) => escapeHtml(code.trim()) + '\n\n')
-    .replace(/`([^`]+)`/g, (_, code) => escapeHtml(code))
     // Links - keep text only
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/\[([^\]]+)\]\[[^\]]*\]/g, '$1')
@@ -277,6 +294,16 @@ export function markdownToText(markdown: string): string {
     // Tables - preserve structure roughly
     .replace(/\|/g, ' ')
     .replace(/^[\s]*:?-+:?[\s]*$/gm, '')
+    // Restore code blocks
+    .replace(new RegExp(CODE_BLOCK_PLACEHOLDER, 'g'), () => {
+      const code = codeBlocks.shift() || '';
+      return escapeHtml(code) + '\n\n';
+    })
+    // Restore inline code
+    .replace(new RegExp(INLINE_CODE_PLACEHOLDER, 'g'), () => {
+      const code = inlineCodes.shift() || '';
+      return escapeHtml(code);
+    })
     // Multiple blank lines to double newline
     .replace(/\n{3,}/g, '\n\n')
     // Trim
