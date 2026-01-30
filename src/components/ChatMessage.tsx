@@ -8,8 +8,8 @@ import { ChatInputAttachments } from './ChatInputAttachments';
 import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil, ChevronRight } from "lucide-react";
 import { useState, useRef, useEffect } from 'react';
 
-import { Role, getTextFromContent } from "../types/chat";
-import type { Message, ElicitationResult, Content, ToolResultContent, ImageContent, AudioContent, FileContent } from "../types/chat";
+import { Role } from "../types/chat";
+import type { Message, ElicitationResult, Content, ToolResultContent, ImageContent, AudioContent, FileContent, TextContent } from "../types/chat";
 import { getConfig } from "../config";
 import { useChat } from "../hooks/useChat";
 
@@ -213,12 +213,13 @@ function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
 export function ChatMessage({ message, index, isResponding, ...props }: ChatMessageProps) {
   const [toolResultExpanded, setToolResultExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  // Get text content for editing
-  const textContent = message.content
-    .filter(p => p.type === 'text')
-    .map(p => p.text)
-    .join('');
+  // Get first text content only (user's typed message)
+  const textContent = message.content.find(p => p.type === 'text')?.text ?? '';
   const [editContent, setEditContent] = useState(textContent);
+  // Get additional text parts (file attachments) - all text content after the first one
+  const textParts = message.content.filter((p): p is TextContent => p.type === 'text');
+  const additionalTextContent = textParts.slice(1);
+  const [editAdditionalTextContent, setEditAdditionalTextContent] = useState<TextContent[]>(additionalTextContent);
   // Get media content (images, audio, files) for editing
   const mediaContent = message.content.filter(
     (p): p is ImageContent | AudioContent | FileContent => 
@@ -270,15 +271,21 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
 
   const handleStartEdit = () => {
     if (isResponding) return;
-    setEditContent(getTextFromContent(message.content));
+    setEditContent(textContent);
+    setEditAdditionalTextContent(additionalTextContent);
     setEditMediaContent(mediaContent);
     setIsEditing(true);
   };
 
   const handleCancelEdit = () => {
     setIsEditing(false);
-    setEditContent(getTextFromContent(message.content));
+    setEditContent(textContent);
+    setEditAdditionalTextContent(additionalTextContent);
     setEditMediaContent(mediaContent);
+  };
+
+  const handleRemoveAdditionalText = (indexToRemove: number) => {
+    setEditAdditionalTextContent(prev => prev.filter((_, i) => i !== indexToRemove));
   };
 
   const handleRemoveMedia = (indexToRemove: number) => {
@@ -286,16 +293,17 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
   };
 
   const handleConfirmEdit = async () => {
-    // Allow edit if there's text content OR media content
-    if ((editContent.trim() === '' && editMediaContent.length === 0) || !chat) return;
+    // Allow edit if there's text content OR attachments
+    if ((editContent.trim() === '' && editAdditionalTextContent.length === 0 && editMediaContent.length === 0) || !chat) return;
     setIsEditing(false);
     
-    // Truncate history and send edited message, preserving media content
+    // Truncate history and send edited message, preserving additional text content (file attachments) and media
     const truncatedHistory = chat.messages.slice(0, index);
     const newContent: Content[] = [];
     if (editContent.trim()) {
       newContent.push({ type: 'text' as const, text: editContent });
     }
+    newContent.push(...editAdditionalTextContent);
     newContent.push(...editMediaContent);
     const editedMessage = { ...message, content: newContent };
     await sendMessage(editedMessage, truncatedHistory);
@@ -604,6 +612,14 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                   className="w-full min-w-50 bg-transparent border-none outline-none resize-none font-sans text-neutral-900 dark:text-neutral-200"
                   rows={1}
                 />
+                {/* Show additional text attachments (file attachments) with ability to remove */}
+                {editAdditionalTextContent.length > 0 && (
+                  <ChatInputAttachments
+                    attachments={editAdditionalTextContent}
+                    extractingAttachments={new Set()}
+                    onRemove={handleRemoveAdditionalText}
+                  />
+                )}
                 {/* Show media attachments with ability to remove */}
                 {editMediaContent.length > 0 && (
                   <ChatInputAttachments
@@ -632,7 +648,18 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                 </div>
               </div>
             ) : (
-              <pre className="whitespace-pre-wrap font-sans">{textContent}</pre>
+              <>
+                <pre className="whitespace-pre-wrap font-sans">{textContent}</pre>
+                {/* Show additional text content (file attachments) as attachment tiles */}
+                {additionalTextContent.length > 0 && (
+                  <div className="pt-2">
+                    <ChatInputAttachments
+                      attachments={additionalTextContent}
+                      extractingAttachments={new Set()}
+                    />
+                  </div>
+                )}
+              </>
             )
           ) : (
             <>

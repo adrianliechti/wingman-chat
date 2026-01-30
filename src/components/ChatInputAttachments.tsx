@@ -6,7 +6,7 @@ import type { Content } from "../types/chat";
 interface ChatInputAttachmentsProps {
   attachments: Content[];
   extractingAttachments: Set<string>;
-  onRemove: (index: number) => void;
+  onRemove?: (index: number) => void;
 }
 
 const getContentIcon = (content: Content) => {
@@ -73,13 +73,15 @@ export const ChatInputAttachments = memo(({
               {getContentIcon(content)}
             </div>
           )}
-          <button
-            type="button"
-            className="absolute top-0.5 right-0.5 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm shadow-sm"
-            onClick={() => onRemove(index)}
-          >
-            <X size={10} />
-          </button>
+          {onRemove && (
+            <button
+              type="button"
+              className="absolute top-0.5 right-0.5 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm shadow-sm"
+              onClick={() => onRemove(index)}
+            >
+              <X size={10} />
+            </button>
+          )}
         </div>
       ))}
     </div>
