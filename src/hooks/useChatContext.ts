@@ -23,7 +23,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
   const { isEnabled: artifactsEnabled, showArtifactsDrawer } = useArtifacts();
   const { currentRepository } = useRepositories();
   const artifactsProvider = useArtifactsProvider();
-  const repositoryProvider = useRepositoryProvider(currentRepository?.id || '', 'auto');
+  const repositoryProvider = useRepositoryProvider(currentRepository?.id || '');
   const skillsProvider = useSkillsProvider();
 
   const context = useMemo<ChatContext>(() => {

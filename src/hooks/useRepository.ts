@@ -5,7 +5,6 @@ import { VectorDB } from '../lib/vectordb';
 import type { Document } from '../lib/vectordb';
 import type { RepositoryFile } from '../types/repository';
 import { useRepositories } from './useRepositories';
-import { getConfig } from '../config';
 
 export interface FileChunk {
   file: RepositoryFile;
@@ -19,15 +18,12 @@ export interface RepositoryHook {
   addFile: (file: File) => Promise<void>;
   removeFile: (fileId: string) => void;
   queryChunks: (query: string, topK?: number) => Promise<FileChunk[]>;
-  useRAG: boolean;
-  totalPages: number;
-  totalCharacters: number;
 }
 
 // Shared client instance for all repositories
 const client = new Client();
 
-export function useRepository(repositoryId: string, mode: 'auto' | 'rag' | 'context' = 'auto'): RepositoryHook {
+export function useRepository(repositoryId: string): RepositoryHook {
   const { repositories, upsertFile, removeFile: removeFileFromRepo } = useRepositories();
   const [vectorDB, setVectorDB] = useState(() => new VectorDB());
   const currentRepositoryIdRef = useRef(repositoryId);
@@ -45,27 +41,6 @@ export function useRepository(repositoryId: string, mode: 'auto' | 'rag' | 'cont
   // Get files from the current repository
   const repository = repositories.find(r => r.id === repositoryId);
   const files = useMemo(() => repository?.files || [], [repository?.files]);
-
-  // Calculate total text length for mode selection
-  const totalCharacters = useMemo(() => {
-    return files.reduce((total, file) => {
-      return total + (file.text?.length || 0);
-    }, 0);
-  }, [files]);
-
-  // Calculate total pages (approximately 1800 characters per page)
-  const totalPages = useMemo(() => {
-    return totalCharacters / 1800;
-  }, [totalCharacters]);
-
-  // Determine if we should use RAG mode (true) or full content mode (false)
-  const useRAG = useMemo(() => {
-    if (mode === 'rag') return true;
-    if (mode === 'context') return false;
-    // auto mode: determine based on repository size
-    const config = getConfig();
-    return totalPages > (config.repository?.context_pages ?? 0);
-  }, [mode, totalPages]);
 
   // Handle repository changes and rebuild vector database
   useEffect(() => {
@@ -293,8 +268,5 @@ export function useRepository(repositoryId: string, mode: 'auto' | 'rag' | 'cont
     removeFile,
     addFile,
     queryChunks,
-    useRAG,
-    totalPages,
-    totalCharacters,
   };
 }
