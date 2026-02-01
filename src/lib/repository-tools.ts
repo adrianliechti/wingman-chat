@@ -12,7 +12,6 @@ import {
   matchGlob,
   grepText,
   truncateLine,
-  getExtension,
 } from './text-utils';
 
 /**
@@ -33,113 +32,77 @@ export type QueryChunksFunction = (query: string, topK?: number) => Promise<File
  * Options for creating repository tools.
  */
 export interface RepositoryToolsOptions {
-  /** Maximum number of files to return in ls/glob (default: unlimited) */
-  maxListFiles?: number;
-  /** Maximum number of grep matches per file (default: 50) */
+  /** Maximum grep matches per file (default: 20) */
   maxGrepMatches?: number;
-  /** Maximum lines to return in read (default: 500) */
+  /** Maximum lines to return in read (default: 200) */
   maxReadLines?: number;
-  /** Maximum characters to return in read (default: 50000) */
+  /** Maximum characters to return in read (default: 15000) */
   maxReadChars?: number;
-  /** Default number of context lines for grep (default: 2) */
+  /** Context lines for grep (default: 2) */
   defaultContextLines?: number;
-  /** Default number of results for semantic search (default: 10) */
+  /** Results for semantic search (default: 10) */
   defaultSearchResults?: number;
 }
 
 const DEFAULT_OPTIONS: Required<RepositoryToolsOptions> = {
-  maxListFiles: Number.POSITIVE_INFINITY,
-  maxGrepMatches: 50,
-  maxReadLines: 500,
-  maxReadChars: 50000,
+  maxGrepMatches: 20,
+  maxReadLines: 200,
+  maxReadChars: 15000,
   defaultContextLines: 2,
   defaultSearchResults: 10,
 };
 
+/** Maximum total grep matches across all files */
+const MAX_TOTAL_GREP_MATCHES = 100;
+
+/** Maximum characters per grep line */
+const MAX_GREP_LINE_CHARS = 200;
+
+/** Maximum characters per search result snippet */
+const MAX_SEARCH_SNIPPET_CHARS = 400;
+
 /**
- * Helper to create a text result response.
+ * Helper to create a plain text result response.
  */
-function textResult(data: unknown): TextContent[] {
-  return [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }];
+function textResult(text: string): TextContent[] {
+  return [{ type: 'text' as const, text }];
 }
 
 /**
- * Helper to create an error response.
+ * Helper to create an error response (keeps JSON for structured errors).
  */
 function errorResult(message: string): TextContent[] {
-  return textResult({ error: message });
+  return [{ type: 'text' as const, text: JSON.stringify({ error: message }) }];
 }
 
 /**
- * Get file info for listing.
+ * Format file info as a single line: "name (lines L, chars C)"
  */
-function getFileInfo(file: RepositoryFile): {
-  name: string;
-  status: string;
-  characters: number;
-  lines: number;
-  extension: string;
-} {
+function formatFileInfo(file: RepositoryFile): string {
   const text = file.text || '';
   const lines = text ? splitLines(text).length : 0;
-  
-  return {
-    name: file.name,
-    status: file.status,
-    characters: text.length,
-    lines,
-    extension: getExtension(file.name),
-  };
+  return `${file.name} (${lines}L, ${text.length}C)`;
 }
 
 /**
  * Create the ls (list files) tool.
  */
-function createLsTool(
-  files: RepositoryFile[],
-  options: Required<RepositoryToolsOptions>
-): Tool {
+function createLsTool(files: RepositoryFile[]): Tool {
   return {
     name: 'repository_ls',
-    description: `List files in the repository. Returns file names with metadata (status, size, line count). Use this first to discover what files are available before reading or searching them.`,
+    description: `List all files in the repository with line/character counts.`,
     parameters: {
       type: 'object',
-      properties: {
-        path: {
-          type: 'string',
-          description: 'Optional path prefix to filter files. If empty, lists all files.',
-        },
-      },
+      properties: {},
       required: [],
     },
-    function: async (args: Record<string, unknown>) => {
-      const pathPrefix = (args.path as string | undefined) || '';
+    function: async () => {
+      const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name));
       
-      // Filter files by path prefix
-      let matchedFiles = [...files];
+      const lines = sortedFiles.map(formatFileInfo);
+      const header = `# ${sortedFiles.length} files`;
       
-      if (pathPrefix) {
-        const normalizedPrefix = pathPrefix.toLowerCase();
-        matchedFiles = matchedFiles.filter(f => 
-          f.name.toLowerCase().startsWith(normalizedPrefix)
-        );
-      }
-      
-      // Sort by name
-      matchedFiles.sort((a, b) => a.name.localeCompare(b.name));
-      
-      // Check limit
-      const truncated = Number.isFinite(options.maxListFiles) && matchedFiles.length > options.maxListFiles;
-      const limitedFiles = truncated ? matchedFiles.slice(0, options.maxListFiles) : matchedFiles;
-      
-      const result = {
-        files: limitedFiles.map(getFileInfo),
-        total: matchedFiles.length,
-        truncated,
-        ...(truncated && { message: 'Results truncated. Narrow the path or configure maxListFiles for more.' }),
-      };
-      
-      return textResult(result);
+      return textResult([header, ...lines].join('\n'));
     },
   };
 }
@@ -147,24 +110,16 @@ function createLsTool(
 /**
  * Create the glob (pattern match files) tool.
  */
-function createGlobTool(
-  files: RepositoryFile[],
-  options: Required<RepositoryToolsOptions>
-): Tool {
+function createGlobTool(files: RepositoryFile[]): Tool {
   return {
     name: 'repository_glob',
-    description: `Find files matching a glob pattern. Supports *, **, ?, [abc], {a,b,c} patterns.
-Examples:
-- "*.ts" matches TypeScript files in root
-- "**/*.ts" matches all TypeScript files
-- "src/**/*.{ts,tsx}" matches TS/TSX files in src
-- "*.{js,jsx,ts,tsx}" matches JS/TS files`,
+    description: `Find files matching a glob pattern. Examples: "**/*.ts", "src/**/*.{ts,tsx}"`,
     parameters: {
       type: 'object',
       properties: {
         pattern: {
           type: 'string',
-          description: 'Glob pattern to match file names against.',
+          description: 'Glob pattern (supports *, **, ?, {a,b}).',
         },
       },
       required: ['pattern'],
@@ -176,25 +131,13 @@ Examples:
         return errorResult('Pattern is required');
       }
       
-      // Filter files that match the pattern
       const matchedFiles = files.filter(f => matchGlob(f.name, pattern));
-      
-      // Sort by name
       matchedFiles.sort((a, b) => a.name.localeCompare(b.name));
       
-      // Check limit
-      const truncated = Number.isFinite(options.maxListFiles) && matchedFiles.length > options.maxListFiles;
-      const limitedFiles = truncated ? matchedFiles.slice(0, options.maxListFiles) : matchedFiles;
+      const lines = matchedFiles.map(formatFileInfo);
+      const header = `# ${matchedFiles.length} files matching "${pattern}"`;
       
-      const result = {
-        pattern,
-        files: limitedFiles.map(getFileInfo),
-        total: matchedFiles.length,
-        truncated,
-        ...(truncated && { message: 'Results truncated. Refine the pattern or configure maxListFiles for more.' }),
-      };
-      
-      return textResult(result);
+      return textResult([header, ...lines].join('\n'));
     },
   };
 }
@@ -208,42 +151,25 @@ function createGrepTool(
 ): Tool {
   return {
     name: 'repository_grep',
-    description: `Search for a regex pattern across repository files. Returns matching lines with line numbers and context (context-only lines are marked with isContext=true).
-Use for:
-- Finding function/class/variable definitions
-- Locating specific code patterns
-- Searching for text across multiple files
-
-Examples:
-- "function\\s+\\w+" finds function declarations
-- "TODO|FIXME" finds todo comments
-- "import.*from" finds import statements`,
+    description: `Search for a regex pattern across files. Returns matching lines with context. Examples: "function\\s+\\w+", "TODO|FIXME"`,
     parameters: {
       type: 'object',
       properties: {
         pattern: {
           type: 'string',
-          description: 'Regex pattern to search for. Use standard JavaScript regex syntax.',
+          description: 'Regex pattern to search for.',
         },
         filePattern: {
           type: 'string',
-          description: 'Optional glob pattern to filter which files to search (e.g., "*.ts", "src/**/*.js").',
+          description: 'Glob to filter files (e.g., "*.ts").',
         },
         ignoreCase: {
           type: 'boolean',
-          description: 'Whether the search should be case-insensitive. Default: true.',
-        },
-        literal: {
-          type: 'boolean',
-          description: 'Treat the pattern as a literal string instead of regex. Default: false.',
+          description: 'Case-insensitive search. Default: true.',
         },
         contextLines: {
           type: 'number',
-          description: `Number of context lines to include before and after each match. Default: ${options.defaultContextLines}.`,
-        },
-        maxMatches: {
-          type: 'number',
-          description: `Maximum number of matches to return per file. Default: ${options.maxGrepMatches}.`,
+          description: 'Context lines before/after match. Default: 2.',
         },
       },
       required: ['pattern'],
@@ -252,9 +178,8 @@ Examples:
       const pattern = args.pattern as string;
       const filePattern = args.filePattern as string | undefined;
       const ignoreCase = (args.ignoreCase as boolean) ?? true;
-      const literal = (args.literal as boolean) ?? false;
       const contextLines = (args.contextLines as number) ?? options.defaultContextLines;
-      const maxMatches = Math.min((args.maxMatches as number) ?? options.maxGrepMatches, options.maxGrepMatches);
+      const maxMatches = options.maxGrepMatches;
       
       if (!pattern) {
         return errorResult('Pattern is required');
@@ -268,69 +193,42 @@ Examples:
         searchFiles = searchFiles.filter(f => matchGlob(f.name, filePattern));
       }
       
-      const results: Array<{
-        fileName: string;
-        matches: Array<{
-          lineNumber: number;
-          content: string;
-          highlights: Array<{ start: number; end: number; text: string }>;
-          isContext: boolean;
-        }>;
-        truncated: boolean;
-      }> = [];
-      
+      const outputLines: string[] = [];
       let totalMatches = 0;
-      const maxTotalMatches = options.maxGrepMatches * 5; // Total across all files
-      let linesTruncated = false;
+      let currentFile = '';
       
       for (const file of searchFiles) {
-        if (totalMatches >= maxTotalMatches) break;
+        if (totalMatches >= MAX_TOTAL_GREP_MATCHES) break;
         
         const text = file.text || '';
-        const { matches, truncated, matchCount } = grepText(text, pattern, {
+        const { matches } = grepText(text, pattern, {
           ignoreCase,
-          literal,
           maxMatches,
           contextLines,
         });
         
         if (matches.length > 0) {
-          results.push({
-            fileName: file.name,
-            matches: matches.map(m => ({
-              lineNumber: m.lineNumber,
-              content: truncateLine(m.content, 300),
-              highlights: m.matches,
-              isContext: m.isContext ?? false,
-            })),
-            truncated,
-          });
-          
-          totalMatches += matchCount;
-        }
-
-        if (!linesTruncated && matches.some(m => truncateLine(m.content, 300).length !== m.content.length)) {
-          linesTruncated = true;
+          for (const m of matches) {
+            if (totalMatches >= MAX_TOTAL_GREP_MATCHES) break;
+            // Format: filename:lineNum: content (or filename:lineNum- for context)
+            const prefix = m.isContext ? '-' : ':';
+            const line = truncateLine(m.content, MAX_GREP_LINE_CHARS);
+            // Only show filename on first match or when file changes
+            if (file.name !== currentFile) {
+              currentFile = file.name;
+              outputLines.push(`${file.name}:${m.lineNumber}${prefix}${line}`);
+            } else {
+              outputLines.push(`${m.lineNumber}${prefix}${line}`);
+            }
+            if (!m.isContext) totalMatches += 1;
+          }
         }
       }
 
-      const notices: string[] = [];
-      if (linesTruncated) {
-        notices.push('Some lines were truncated. Use repository_read to view full lines.');
-      }
-      if (totalMatches >= maxTotalMatches) {
-        notices.push('Match limit reached. Refine your pattern for more precise results.');
-      }
+      const truncated = totalMatches >= MAX_TOTAL_GREP_MATCHES;
+      const header = `# ${totalMatches} matches in ${searchFiles.length} files${truncated ? ' (limit reached)' : ''}`;
       
-      return textResult({
-        pattern,
-        filePattern: filePattern || null,
-        results,
-        totalMatches,
-        filesSearched: searchFiles.length,
-        truncated: totalMatches >= maxTotalMatches,
-        ...(notices.length > 0 && { message: notices.join(' ') }),
-      });
+      return textResult([header, ...outputLines].join('\n'));
     },
   };
 }
@@ -344,9 +242,7 @@ function createReadTool(
 ): Tool {
   return {
     name: 'repository_read',
-    description: `Read the content of a file from the repository. Returns the file content with line numbers.
-Use after discovering files with repository_ls or repository_glob.
-Supports reading specific line ranges for large files.`,
+    description: `Read file content with line numbers. Use startLine/endLine for large files.`,
     parameters: {
       type: 'object',
       properties: {
@@ -395,12 +291,7 @@ Supports reading specific line ranges for large files.`,
       
       const text = file.text || '';
       if (!text) {
-        return textResult({
-          fileName: file.name,
-          content: '',
-          totalLines: 0,
-          message: 'File has no text content.',
-        });
+        return textResult(`# ${file.name} (0 lines)\n[empty file]`);
       }
       
       const allLines = splitLines(text);
@@ -432,20 +323,10 @@ Supports reading specific line ranges for large files.`,
       );
 
       const hasMore = actualEndLine < totalLines;
+      const truncatedNotice = charTruncated ? ' [truncated]' : (hasMore ? ` [continues to line ${totalLines}]` : '');
+      const header = `# ${file.name} (lines ${safeStartLine}-${actualEndLine} of ${totalLines})${truncatedNotice}`;
       
-      const result = {
-        fileName: file.name,
-        startLine: safeStartLine,
-        endLine: actualEndLine,
-        totalLines,
-        content: formattedContent,
-        truncated: hasMore || charTruncated,
-        ...(hasMore && { nextStartLine: actualEndLine + 1 }),
-        ...(charTruncated && { message: 'Content truncated due to size limit.' }),
-        ...(hasMore && !charTruncated && { message: 'Content truncated by line limit. Use startLine/endLine to read the next segment.' }),
-      };
-      
-      return textResult(result);
+      return textResult(`${header}\n${formattedContent}`);
     },
   };
 }
@@ -459,14 +340,7 @@ function createSearchTool(
 ): Tool {
   return {
     name: 'repository_search',
-    description: `Semantic search across repository files using natural language. Returns relevant text chunks ranked by similarity.
-Use for:
-- Finding code related to a concept or feature
-- Discovering relevant documentation
-- Locating implementations when you don't know exact names
-- Broad exploration of unfamiliar codebases
-
-This uses embeddings for meaning-based search, not exact text matching. For exact pattern matching, use repository_grep instead.`,
+    description: `Semantic search using natural language. Returns code chunks ranked by similarity. Use grep for exact patterns.`,
     parameters: {
       type: 'object',
       properties: {
@@ -493,25 +367,18 @@ This uses embeddings for meaning-based search, not exact text matching. For exac
         const results = await queryChunks(query.trim(), limit);
         
         if (results.length === 0) {
-          return textResult({
-            query,
-            results: [],
-            message: 'No relevant results found.',
-          });
+          return textResult(`# No results for "${query}"`);
         }
         
-        const formattedResults = results.map((result, index) => ({
-          rank: index + 1,
-          fileName: result.file.name,
-          similarity: result.similarity !== undefined ? Math.round(result.similarity * 100) / 100 : null,
-          content: truncateLine(result.text, 1000),
-        }));
-        
-        return textResult({
-          query,
-          results: formattedResults,
-          totalResults: results.length,
+        // Format: [similarity] filename: snippet
+        const outputLines = results.map((result, index) => {
+          const sim = result.similarity !== undefined ? `[${(result.similarity * 100).toFixed(0)}%]` : `[${index + 1}]`;
+          const snippet = truncateLine(result.text, MAX_SEARCH_SNIPPET_CHARS).replace(/\n/g, ' ');
+          return `${sim} ${result.file.name}: ${snippet}`;
         });
+        
+        const header = `# ${results.length} results for "${query}"`;
+        return textResult([header, ...outputLines].join('\n'));
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         return errorResult(`Search failed: ${message}`);
@@ -536,8 +403,8 @@ export function createRepositoryTools(
   const opts = { ...DEFAULT_OPTIONS, ...options };
   
   return [
-    createLsTool(files, opts),
-    createGlobTool(files, opts),
+    createLsTool(files),
+    createGlobTool(files),
     createGrepTool(files, opts),
     createReadTool(files, opts),
     createSearchTool(queryChunks, opts),
