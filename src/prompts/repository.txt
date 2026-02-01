@@ -9,13 +9,13 @@ The repository contains text extracted from user-uploaded documents (PDFs, code 
 ### How to Use It
 
 1. **Explore first** — Use `repository_ls` to see what files are available before diving in
-2. **Search smart** — Use `repository_grep` for exact patterns (function names, specific text), use `repository_search` for concepts and meaning
-3. **Read selectively** — Read specific sections rather than entire large files when possible
+2. **Search smart** — Use `repository_grep` for exact patterns (supports `ignoreCase` and `literal`), use `repository_search` for concepts and meaning
+3. **Read selectively** — Read specific sections rather than entire large files when possible (use `startLine`/`endLine`, check `nextStartLine`)
 4. **Cite sources** — Reference file names when quoting or summarizing content
 
 ### When to Search
 
-- **grep** — You know the exact text, function name, variable, or pattern
+- **grep** — You know the exact text, function name, variable, or pattern (context-only lines are marked with `isContext`)
 - **search** — You're looking for a concept, feature, or topic and don't know exact wording
 - **glob** — You want to find files by extension or path pattern
 

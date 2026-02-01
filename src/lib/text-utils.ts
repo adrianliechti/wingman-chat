@@ -199,12 +199,16 @@ export function grepText(
   pattern: string,
   options: {
     caseSensitive?: boolean;
+    ignoreCase?: boolean;
+    literal?: boolean;
     maxMatches?: number;
     contextLines?: number;
   } = {}
 ): { matches: LineMatch[]; truncated: boolean; matchCount: number } {
   const {
     caseSensitive = false,
+    ignoreCase,
+    literal = false,
     maxMatches = 50,
     contextLines = 0,
   } = options;
@@ -218,12 +222,19 @@ export function grepText(
   // Create regex
   let regex: RegExp;
   try {
-    const flags = caseSensitive ? 'g' : 'gi';
-    regex = new RegExp(pattern, flags);
+    const effectiveCaseSensitive = ignoreCase === true ? false : caseSensitive;
+    const flags = effectiveCaseSensitive ? 'g' : 'gi';
+    if (literal) {
+      const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      regex = new RegExp(escaped, flags);
+    } else {
+      regex = new RegExp(pattern, flags);
+    }
   } catch {
     // Invalid regex, treat as literal
     const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const flags = caseSensitive ? 'g' : 'gi';
+    const effectiveCaseSensitive = ignoreCase === true ? false : caseSensitive;
+    const flags = effectiveCaseSensitive ? 'g' : 'gi';
     regex = new RegExp(escaped, flags);
   }
   

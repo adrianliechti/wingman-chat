@@ -3,7 +3,7 @@ import { useRepository } from './useRepository';
 import { useRepositories } from './useRepositories';
 import type { Tool, ToolProvider } from '../types/chat';
 import { markdownToText } from '../lib/utils';
-import { createRepositoryTools, getRepositoryToolsInstructions } from '../lib/repository-tools';
+import { createRepositoryTools } from '../lib/repository-tools';
 import repositoryInstructions from '../prompts/repository.txt?raw';
 import { Package } from 'lucide-react';
 
@@ -33,9 +33,6 @@ export function useRepositoryProvider(repositoryId: string): ToolProvider | null
 
 ${markdownToText(repository.instructions.trim())}`);
     }
-
-    // Add tool reference
-    instructions.push(getRepositoryToolsInstructions());
 
     return instructions.join('\n\n');
   }, [repository]);

@@ -33,7 +33,7 @@ export type QueryChunksFunction = (query: string, topK?: number) => Promise<File
  * Options for creating repository tools.
  */
 export interface RepositoryToolsOptions {
-  /** Maximum number of files to return in ls/glob (default: 100) */
+  /** Maximum number of files to return in ls/glob (default: unlimited) */
   maxListFiles?: number;
   /** Maximum number of grep matches per file (default: 50) */
   maxGrepMatches?: number;
@@ -48,7 +48,7 @@ export interface RepositoryToolsOptions {
 }
 
 const DEFAULT_OPTIONS: Required<RepositoryToolsOptions> = {
-  maxListFiles: 100,
+  maxListFiles: Number.POSITIVE_INFINITY,
   maxGrepMatches: 50,
   maxReadLines: 500,
   maxReadChars: 50000,
@@ -129,13 +129,14 @@ function createLsTool(
       matchedFiles.sort((a, b) => a.name.localeCompare(b.name));
       
       // Check limit
-      const truncated = matchedFiles.length > options.maxListFiles;
-      const limitedFiles = matchedFiles.slice(0, options.maxListFiles);
+      const truncated = Number.isFinite(options.maxListFiles) && matchedFiles.length > options.maxListFiles;
+      const limitedFiles = truncated ? matchedFiles.slice(0, options.maxListFiles) : matchedFiles;
       
       const result = {
         files: limitedFiles.map(getFileInfo),
         total: matchedFiles.length,
         truncated,
+        ...(truncated && { message: 'Results truncated. Narrow the path or configure maxListFiles for more.' }),
       };
       
       return textResult(result);
@@ -182,14 +183,15 @@ Examples:
       matchedFiles.sort((a, b) => a.name.localeCompare(b.name));
       
       // Check limit
-      const truncated = matchedFiles.length > options.maxListFiles;
-      const limitedFiles = matchedFiles.slice(0, options.maxListFiles);
+      const truncated = Number.isFinite(options.maxListFiles) && matchedFiles.length > options.maxListFiles;
+      const limitedFiles = truncated ? matchedFiles.slice(0, options.maxListFiles) : matchedFiles;
       
       const result = {
         pattern,
         files: limitedFiles.map(getFileInfo),
         total: matchedFiles.length,
         truncated,
+        ...(truncated && { message: 'Results truncated. Refine the pattern or configure maxListFiles for more.' }),
       };
       
       return textResult(result);
@@ -206,7 +208,7 @@ function createGrepTool(
 ): Tool {
   return {
     name: 'repository_grep',
-    description: `Search for a regex pattern across repository files. Returns matching lines with line numbers and context.
+    description: `Search for a regex pattern across repository files. Returns matching lines with line numbers and context (context-only lines are marked with isContext=true).
 Use for:
 - Finding function/class/variable definitions
 - Locating specific code patterns
@@ -227,9 +229,13 @@ Examples:
           type: 'string',
           description: 'Optional glob pattern to filter which files to search (e.g., "*.ts", "src/**/*.js").',
         },
-        caseSensitive: {
+        ignoreCase: {
           type: 'boolean',
-          description: 'Whether the search should be case-sensitive. Default: false.',
+          description: 'Whether the search should be case-insensitive. Default: true.',
+        },
+        literal: {
+          type: 'boolean',
+          description: 'Treat the pattern as a literal string instead of regex. Default: false.',
         },
         contextLines: {
           type: 'number',
@@ -245,7 +251,8 @@ Examples:
     function: async (args: Record<string, unknown>) => {
       const pattern = args.pattern as string;
       const filePattern = args.filePattern as string | undefined;
-      const caseSensitive = (args.caseSensitive as boolean) ?? false;
+      const ignoreCase = (args.ignoreCase as boolean) ?? true;
+      const literal = (args.literal as boolean) ?? false;
       const contextLines = (args.contextLines as number) ?? options.defaultContextLines;
       const maxMatches = Math.min((args.maxMatches as number) ?? options.maxGrepMatches, options.maxGrepMatches);
       
@@ -267,19 +274,22 @@ Examples:
           lineNumber: number;
           content: string;
           highlights: Array<{ start: number; end: number; text: string }>;
+          isContext: boolean;
         }>;
         truncated: boolean;
       }> = [];
       
       let totalMatches = 0;
       const maxTotalMatches = options.maxGrepMatches * 5; // Total across all files
+      let linesTruncated = false;
       
       for (const file of searchFiles) {
         if (totalMatches >= maxTotalMatches) break;
         
         const text = file.text || '';
         const { matches, truncated, matchCount } = grepText(text, pattern, {
-          caseSensitive,
+          ignoreCase,
+          literal,
           maxMatches,
           contextLines,
         });
@@ -298,6 +308,18 @@ Examples:
           
           totalMatches += matchCount;
         }
+
+        if (!linesTruncated && matches.some(m => truncateLine(m.content, 300).length !== m.content.length)) {
+          linesTruncated = true;
+        }
+      }
+
+      const notices: string[] = [];
+      if (linesTruncated) {
+        notices.push('Some lines were truncated. Use repository_read to view full lines.');
+      }
+      if (totalMatches >= maxTotalMatches) {
+        notices.push('Match limit reached. Refine your pattern for more precise results.');
       }
       
       return textResult({
@@ -307,6 +329,7 @@ Examples:
         totalMatches,
         filesSearched: searchFiles.length,
         truncated: totalMatches >= maxTotalMatches,
+        ...(notices.length > 0 && { message: notices.join(' ') }),
       });
     },
   };
@@ -382,14 +405,15 @@ Supports reading specific line ranges for large files.`,
       
       const allLines = splitLines(text);
       const totalLines = allLines.length;
+      const safeStartLine = Math.max(1, startLine);
       
       // Determine actual end line
       const actualEndLine = endLine !== undefined
         ? Math.min(endLine, totalLines)
-        : Math.min(startLine + options.maxReadLines - 1, totalLines);
+        : Math.min(safeStartLine + options.maxReadLines - 1, totalLines);
       
       // Get the requested lines
-      const requestedLines = getLineRange(allLines, startLine, actualEndLine);
+      const requestedLines = getLineRange(allLines, safeStartLine, actualEndLine);
       
       // Check character limit
       let content = requestedLines.join('\n');
@@ -404,17 +428,21 @@ Supports reading specific line ranges for large files.`,
       // Format with line numbers
       const formattedContent = formatLineOutput(
         charTruncated ? splitLines(content) : requestedLines, 
-        startLine
+        safeStartLine
       );
+
+      const hasMore = actualEndLine < totalLines;
       
       const result = {
         fileName: file.name,
-        startLine,
+        startLine: safeStartLine,
         endLine: actualEndLine,
         totalLines,
         content: formattedContent,
-        truncated: actualEndLine < totalLines || charTruncated,
+        truncated: hasMore || charTruncated,
+        ...(hasMore && { nextStartLine: actualEndLine + 1 }),
         ...(charTruncated && { message: 'Content truncated due to size limit.' }),
+        ...(hasMore && !charTruncated && { message: 'Content truncated by line limit. Use startLine/endLine to read the next segment.' }),
       };
       
       return textResult(result);
@@ -519,47 +547,4 @@ export function createRepositoryTools(
 /**
  * Get the instructions for repository tools.
  */
-export function getRepositoryToolsInstructions(): string {
-  return `## Repository File Tools
-
-You have access to tools for exploring and reading files from a document repository:
-
-### Available Tools
-
-1. **repository_ls** - List all files with metadata
-   - Use first to discover what files are available
-   - Shows file names, sizes, and line counts
-
-2. **repository_glob** - Find files by pattern
-   - Use glob patterns: *.ts, **/*.md, src/**/*.{js,ts}
-   - Great for finding files by extension or in specific directories
-
-3. **repository_grep** - Search file contents with regex
-   - Find specific patterns, function names, text
-   - Supports regex patterns and context lines
-   - Filter to specific file types with filePattern
-
-4. **repository_read** - Read file content
-   - Read entire files or specific line ranges
-   - Use after finding files with ls, glob, or grep
-
-5. **repository_search** - Semantic search
-   - Natural language search for concepts and features  
-   - Use when you don't know exact names or patterns
-   - Returns relevant chunks ranked by similarity
-
-### Recommended Workflow
-
-1. Start with \`repository_ls\` to see available files
-2. Use \`repository_glob\` to narrow down by file type
-3. Use \`repository_grep\` to find specific patterns
-4. Use \`repository_read\` to examine relevant files
-5. Use \`repository_search\` for concept-based exploration
-
-### Tips
-
-- For exact matches: use repository_grep
-- For concept/meaning: use repository_search
-- Read files in chunks for large files (use startLine/endLine)
-- Combine glob and grep to search specific file types`;
-}
+// Tool instructions are provided via prompts/repository.txt
