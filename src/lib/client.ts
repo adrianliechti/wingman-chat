@@ -116,26 +116,27 @@ export class Client {
         }
 
         case Role.Assistant: {
-          // Find reasoning parts with signatures and add them first
-          const reasoningParts = m.content.filter((p): p is ReasoningContent => p.type === 'reasoning' && !!p.signature);
-          for (const rp of reasoningParts) {
-            const reasoningItem: Record<string, unknown> = {
-              id: rp.id,
-              type: "reasoning",
-              
-              encrypted_content: rp.signature,
-            };
-
-            if (rp.summary) {
-              reasoningItem.summary = [{ type: "summary_text", text: rp.summary }];
-            }
-            
-            if (rp.text) {
-              reasoningItem.content = [{ type: "reasoning_text", text: rp.text }];
-            }
-            
-            items.push(reasoningItem as unknown as OpenAI.Responses.ResponseInputItem);
-          }
+          // TODO: Re-enable reasoning items once encrypted_content verification is fixed server-side
+          // Temporarily skip sending reasoning items back to API to avoid invalid_encrypted_content errors
+          // const reasoningParts = m.content.filter((p): p is ReasoningContent => p.type === 'reasoning' && !!p.signature);
+          // for (const rp of reasoningParts) {
+          //   const reasoningItem: Record<string, unknown> = {
+          //     id: rp.id,
+          //     type: "reasoning",
+          //     
+          //     encrypted_content: rp.signature,
+          //   };
+          //
+          //   if (rp.summary) {
+          //     reasoningItem.summary = [{ type: "summary_text", text: rp.summary }];
+          //   }
+          //   
+          //   if (rp.text) {
+          //     reasoningItem.content = [{ type: "reasoning_text", text: rp.text }];
+          //   }
+          //   
+          //   items.push(reasoningItem as unknown as OpenAI.Responses.ResponseInputItem);
+          // }
 
           // Find tool_call parts
           const toolCalls = m.content.filter(p => p.type === 'tool_call');
