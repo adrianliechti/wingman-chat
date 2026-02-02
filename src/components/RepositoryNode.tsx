@@ -34,7 +34,7 @@ export const RepositoryNode = memo(({ id, data, selected }: NodeProps<Repository
 
   // Get the current repository
   const currentRepository = repositories.find(r => r.id === data.repository);
-  const { queryChunks } = useRepository(data.repository || '', 'auto');
+  const { queryChunks } = useRepository(data.repository || '');
 
   const handleExecute = async () => {
     const query = data.query?.trim() || '';

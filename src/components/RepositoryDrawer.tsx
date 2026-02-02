@@ -11,7 +11,7 @@ interface RepositoryDetailsProps {
 }
 
 function RepositoryDetails({ repository }: RepositoryDetailsProps) {
-  const { files, addFile, removeFile, useRAG, totalPages } = useRepository(repository.id);
+  const { files, addFile, removeFile } = useRepository(repository.id);
   const { updateRepository } = useRepositories();
   const [isDragOver, setIsDragOver] = useState(false);
   const [isEditingInstructions, setIsEditingInstructions] = useState(false);
@@ -337,15 +337,7 @@ function RepositoryDetails({ repository }: RepositoryDetailsProps) {
       {files.length > 0 && (
         <div className="shrink-0 h-14 flex items-center justify-center px-3">
           <div className="text-xs text-neutral-500 dark:text-neutral-400">
-            {useRAG ? (
-              <span>
-                {Math.ceil(totalPages)} pages • Using RAG • Limitations may apply
-              </span>
-            ) : (
-              <span>
-                {Math.ceil(totalPages)} pages
-              </span>
-            )}
+            <span>{files.length} {files.length === 1 ? 'file' : 'files'}</span>
           </div>
         </div>
       )}
