@@ -267,7 +267,14 @@ const components: Partial<Components> = {
     },
 };
 
-const remarkPlugins: PluggableList = [remarkGfm, remarkBreaks, remarkGemoji, remarkMath];
+// Disable single $ math to avoid conflicts with currency ($100, R$50, etc.)
+// Use $$ for both inline and display math
+const remarkPlugins: PluggableList = [
+    remarkGfm, 
+    remarkBreaks, 
+    remarkGemoji, 
+    [remarkMath, { singleDollarTextMath: false }],
+];
 const rehypePlugins: PluggableList = [
     rehypeRaw,
     rehypeSanitize,
@@ -288,15 +295,13 @@ const NonMemoizedMarkdown = ({ children }: { children: string }) => {
     let processedContent = children;
     
     // Convert LaTeX-style display math \[...\] to $$...$$
-    // Only match actual LaTeX delimiters (backslash-bracket), not regular brackets
     processedContent = processedContent.replace(/\\\[([^\]]+?)\\\]/g, (_match, content) => {
         return `$$${content}$$`;
     });
     
-    // Convert LaTeX-style inline math \(...\) to $...$
-    // Only match actual LaTeX delimiters (backslash-paren), not regular parens
+    // Convert LaTeX-style inline math \(...\) to $$...$$ (since single $ is disabled)
     processedContent = processedContent.replace(/\\\(([^)]+?)\\\)/g, (_match, content) => {
-        return `$${content}$`;
+        return `$$${content}$$`;
     });
     
     // Ensure blank line before code blocks that come after headings

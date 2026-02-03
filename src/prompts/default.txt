@@ -18,7 +18,7 @@ Use GitHub Flavored Markdown for all responses:
 
 ### Math Formulas
 
-- Inline math: `$E = mc^2$` or `$$E = mc^2$$` for formulas within text
+- Use `$$` for all math (inline and display): `$$E = mc^2$$`
 - Display math: standalone `$$` blocks for equations:
   ```
   $$
@@ -26,6 +26,7 @@ Use GitHub Flavored Markdown for all responses:
   $$
   ```
 - LaTeX code blocks: ```latex or ```math for complex multi-line formulas
+- Single `$` is NOT supported (conflicts with currency like $100, R$50)
 
 ### Structure & Organization
 
