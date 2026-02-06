@@ -24,9 +24,9 @@ export type SkillParseResult =
   | { success: true; skill: ParsedSkill }
   | { success: false; errors: SkillValidationError[] };
 
-// Skill name validation regex: lowercase letters, numbers, hyphens only
+// Skill name validation regex: unicode lowercase alphanumeric and hyphens
 // No start/end hyphens, no consecutive hyphens
-const SKILL_NAME_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const SKILL_NAME_REGEX = /^[\p{Ll}\p{N}]+(-[\p{Ll}\p{N}]+)*$/u;
 
 /**
  * Validate a skill name against the agentskills.io specification
@@ -43,7 +43,7 @@ export function validateSkillName(name: string): { valid: boolean; error?: strin
   if (!SKILL_NAME_REGEX.test(name)) {
     return { 
       valid: false, 
-      error: 'Name must contain only lowercase letters, numbers, and hyphens. Cannot start or end with a hyphen or have consecutive hyphens.' 
+      error: 'Name must contain only lowercase alphanumeric characters and hyphens. Cannot start or end with a hyphen or have consecutive hyphens.' 
     };
   }
   

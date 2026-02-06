@@ -34,8 +34,9 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
   }
 
   // Derive name error from current name value
+  // Skip showing error while user is still typing after a hyphen
   const nameError = useMemo(() => {
-    if (!name) return null;
+    if (!name || name.endsWith('-')) return null;
     const validation = validateSkillName(name);
     return validation.valid ? null : validation.error || null;
   }, [name]);
@@ -125,7 +126,7 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                       <p className="mt-1 text-xs text-red-500">{nameError}</p>
                     )}
                     <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                      Lowercase letters, numbers, and hyphens only. Cannot start or end with a hyphen.
+                      Lowercase alphanumeric characters and hyphens only. No leading/trailing or consecutive hyphens.
                     </p>
                   </div>
 
