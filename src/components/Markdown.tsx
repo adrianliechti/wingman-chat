@@ -1,12 +1,10 @@
-import { memo } from 'react';
+import { memo, useDeferredValue } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import type { PluggableList } from 'unified';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import remarkGemoji from 'remark-gemoji';
 import remarkMath from 'remark-math';
-import rehypeRaw from 'rehype-raw';
-import rehypeSanitize from 'rehype-sanitize';
 import rehypeKatex from 'rehype-katex';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -190,9 +188,9 @@ const components: Partial<Components> = {
             );
         }
 
-        // Code block without language - treat as markdown
+        // Code block without language - render as plain text
         if (!match && isMultiLine) {
-            return <Markdown>{text}</Markdown>;
+            return <CodeRenderer code={text} language="text" />;
         }
 
         // If no match, it's not a language-specific block, so we can't proceed with language checks.
@@ -254,8 +252,13 @@ const components: Partial<Components> = {
             return <CsvRenderer csv={text} language={language} />;
         }
 
-        // Default to markdown for common "plain text" languages
-        if (language === "markdown" || language === "md" || language === "undefined" || language === "text" || language === "plain") {
+        // Plain text languages - render as text code block
+        if (language === "undefined" || language === "text" || language === "plain") {
+            return <CodeRenderer code={text} language="text" />;
+        }
+
+        // Markdown code blocks - render content as markdown
+        if (language === "markdown" || language === "md") {
             return <Markdown>{text}</Markdown>;
         }
 
@@ -276,8 +279,6 @@ const remarkPlugins: PluggableList = [
     [remarkMath, { singleDollarTextMath: false }],
 ];
 const rehypePlugins: PluggableList = [
-    rehypeRaw,
-    rehypeSanitize,
     [
         rehypeKatex,
         {
@@ -289,10 +290,13 @@ const rehypePlugins: PluggableList = [
 ];
 
 const NonMemoizedMarkdown = ({ children }: { children: string }) => {
-    if (!children) return null;
+    // Let React deprioritize re-parses during rapid streaming updates
+    const deferredChildren = useDeferredValue(children);
+    
+    if (!deferredChildren) return null;
     
     // Preprocess markdown to fix common formatting issues
-    let processedContent = children;
+    let processedContent = deferredChildren;
     
     // Convert LaTeX-style display math \[...\] to $$...$$
     processedContent = processedContent.replace(/\\\[([\s\S]+?)\\\]/g, (_match, content) => {
@@ -315,7 +319,6 @@ const NonMemoizedMarkdown = ({ children }: { children: string }) => {
             remarkPlugins={remarkPlugins} 
             components={components}
             rehypePlugins={rehypePlugins}
-            remarkRehypeOptions={{ allowDangerousHtml: true }}
         >
             {processedContent}
         </ReactMarkdown>

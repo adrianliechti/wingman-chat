@@ -1,7 +1,9 @@
-import { memo, useState, useEffect } from 'react';
+import { memo, useState, useEffect, useRef } from 'react';
 import { codeToHtml } from 'shiki';
 import { CopyButton } from './CopyButton';
 import { useTheme } from '../hooks/useTheme';
+
+const HIGHLIGHT_DEBOUNCE_MS = 150;
 
 interface CodeRendererProps {
   code: string;
@@ -12,47 +14,51 @@ interface CodeRendererProps {
 const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
   const { isDark } = useTheme();
   const [html, setHtml] = useState<string>('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    let isCancelled = false;
+    // Clear any pending debounced highlight
+    clearTimeout(debounceRef.current);
 
-    const highlightCode = async () => {
-      if (!code) {
-        if (!isCancelled) {
-          setHtml('');
-        }
-        return;
-      }
+    if (!code) {
+      setHtml('');
+      return;
+    }
 
-      try {
-        const langId = language.toLowerCase();
-        
-        if (isCancelled) return;
+    // Debounce Shiki calls — during streaming, code changes on every token
+    debounceRef.current = setTimeout(() => {
+      let isCancelled = false;
 
-        const highlighted = await codeToHtml(code, {
-          lang: langId,
-          theme: isDark ? 'one-dark-pro' : 'one-light',
-          colorReplacements: {
-            '#fafafa': 'transparent', // one-light background
-            '#282c34': 'transparent', // one-dark-pro background
+      const highlightCode = async () => {
+        try {
+          const langId = language.toLowerCase();
+          const highlighted = await codeToHtml(code, {
+            lang: langId,
+            theme: isDark ? 'one-dark-pro' : 'one-light',
+            colorReplacements: {
+              '#fafafa': 'transparent',
+              '#282c34': 'transparent',
+            }
+          });
+          if (!isCancelled) {
+            setHtml(highlighted);
           }
-        });
-        
-        if (!isCancelled) {
-          setHtml(highlighted);
+        } catch (error) {
+          console.error('Failed to highlight code:', error);
+          if (!isCancelled) {
+            setHtml('');
+          }
         }
-      } catch (error) {
-        console.error('Failed to highlight code:', error);
-        if (!isCancelled) {
-          setHtml('');
-        }
-      }
-    };
+      };
 
-    highlightCode();
+      highlightCode();
+
+      // Cleanup for this specific timeout's async call
+      return () => { isCancelled = true; };
+    }, HIGHLIGHT_DEBOUNCE_MS);
 
     return () => {
-      isCancelled = true;
+      clearTimeout(debounceRef.current);
     };
   }, [code, language, isDark]);
 
