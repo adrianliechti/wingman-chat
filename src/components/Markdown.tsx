@@ -295,12 +295,12 @@ const NonMemoizedMarkdown = ({ children }: { children: string }) => {
     let processedContent = children;
     
     // Convert LaTeX-style display math \[...\] to $$...$$
-    processedContent = processedContent.replace(/\\\[([^\]]+?)\\\]/g, (_match, content) => {
+    processedContent = processedContent.replace(/\\\[([\s\S]+?)\\\]/g, (_match, content) => {
         return `$$${content}$$`;
     });
     
     // Convert LaTeX-style inline math \(...\) to $$...$$ (since single $ is disabled)
-    processedContent = processedContent.replace(/\\\(([^)]+?)\\\)/g, (_match, content) => {
+    processedContent = processedContent.replace(/\\\(([\s\S]+?)\\\)/g, (_match, content) => {
         return `$$${content}$$`;
     });
     

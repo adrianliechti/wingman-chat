@@ -18,8 +18,8 @@ Use GitHub Flavored Markdown for all responses:
 
 ### Math Formulas
 
-- Use `$$` for all math (inline and display): `$$E = mc^2$$`
-- Display math: standalone `$$` blocks for equations:
+- Use `$$` for display (block-level) math only — inline math is NOT supported
+- Always place `$$` math on its own line, never mid-sentence:
   ```
   $$
   \int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}
@@ -27,6 +27,7 @@ Use GitHub Flavored Markdown for all responses:
   ```
 - LaTeX code blocks: ```latex or ```math for complex multi-line formulas
 - Single `$` is NOT supported (conflicts with currency like $100, R$50)
+- For simple expressions in running text, use plain text or code spans instead of math
 
 ### Structure & Organization
 
