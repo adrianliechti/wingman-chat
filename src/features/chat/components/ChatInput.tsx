@@ -1,0 +1,915 @@
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import type { ChangeEvent, FormEvent } from "react";
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
+
+import { Send, Paperclip, ScreenShare, X, Sparkles, Loader2, Lightbulb, Mic, Square, Package, Check, LoaderCircle, Rocket, Sliders, TriangleAlert } from "lucide-react";
+
+import { ChatInputAttachments } from "./ChatInputAttachments";
+import { ChatInputSuggestions } from "./ChatInputSuggestions";
+import { VoiceWaves } from "@/features/voice/components/VoiceWaves";
+
+import { Role, ProviderState } from "@/shared/types/chat";
+import type { Message, ToolProvider, Content, ImageContent, TextContent } from "@/shared/types/chat";
+import {
+  getFileExt,
+  readAsDataURL,
+  readAsText,
+  resizeImageBlob,
+} from "@/shared/lib/utils";
+import { getConfig } from "@/shared/config";
+import { useChat } from "@/features/chat/hooks/useChat";
+import { useRepositories } from "@/features/repository/hooks/useRepositories";
+import { useTranscription } from "@/features/voice/hooks/useTranscription";
+import { useVoice } from "@/features/voice/hooks/useVoice";
+import { useDropZone } from "@/shared/hooks/useDropZone";
+import { useSettings } from "@/features/settings/hooks/useSettings";
+import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
+import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+
+export function ChatInput() {
+  const config = getConfig();
+  const client = config.client;
+
+  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding } = useChat();
+  const { currentRepository, setCurrentRepository } = useRepositories();
+  const { profile } = useSettings();
+  const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
+  const { providers, getProviderState, setProviderEnabled } = useToolsContext();
+  const { isAvailable: voiceAvailable, isListening, startVoice, stopVoice } = useVoice();
+
+  // Track if realtime mode model is selected
+  const isRealtimeSelected = model?.id === 'realtime';
+
+  // Start/stop voice when realtime mode model is selected/deselected
+  useEffect(() => {
+    if (isRealtimeSelected && voiceAvailable && !isListening) {
+      startVoice();
+    } else if (!isRealtimeSelected && isListening) {
+      stopVoice();
+    }
+  }, [isRealtimeSelected, voiceAvailable, isListening, startVoice, stopVoice]);
+
+  const [content, setContent] = useState("");
+  const [transcribingContent, setTranscribingContent] = useState(false);
+
+  const [attachments, setAttachments] = useState<Content[]>([]);
+  const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
+
+  // Prompt suggestions state
+  const [showPromptSuggestions, setShowPromptSuggestions] = useState(false);
+  const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
+  const [loadingPrompts, setLoadingPrompts] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const contentEditableRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Generate static random placeholder text for new chats only
+  // Only recalculate when starting a new chat, not on every profile change
+  const isNewChat = messages.length === 0;
+  const randomPlaceholder = useMemo(() => {
+    const personalizedVariations = [
+      "Hi [Name], ready to get started?",
+      "Hello [Name], what's on your mind?",
+      "Welcome, [Name]! How can I help?",
+      "Hi [Name], what can I do for you?",
+      "[Name], how can I support you?"
+    ];
+
+    const genericVariations = [
+      "Ready to get started?",
+      "What's on your mind?",
+      "How can I help you today?",
+      "What can I do for you?",
+      "How can I support you?"
+    ];
+
+    const variations = profile?.name ? personalizedVariations : genericVariations;
+    const randomIndex = Math.floor(Math.random() * variations.length);
+
+    return profile?.name
+      ? variations[randomIndex].replace('[Name]', profile.name)
+      : variations[randomIndex];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNewChat ? profile?.name : null]);
+
+  const placeholderText = messages.length === 0 ? randomPlaceholder : "Ask anything";
+
+  // Show placeholder when input is empty (regardless of focus state)
+  const shouldShowPlaceholder = !content.trim();
+
+  // Transcription hook
+  const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription();
+
+  // Helper to check if a tool is enabled/disabled based on model config
+  const isToolEnabledByModel = useCallback((providerId: string) => {
+    if (!model?.tools) {
+      return null; // No restrictions
+    }
+
+    const enabledTools = model.tools.enabled || [];
+    const disabledTools = model.tools.disabled || [];
+
+    // If there are enabled tools specified, this tool must be in that list
+    if (enabledTools.length > 0) {
+      return enabledTools.includes(providerId);
+    }
+
+    // Otherwise, this tool must not be in the disabled list
+    return !disabledTools.includes(providerId);
+  }, [model?.tools]);
+
+  const isToolRequiredByModel = useCallback((providerId: string) => {
+    if (!model?.tools) {
+      return false; // Not required if no restrictions
+    }
+
+    const enabledTools = model.tools.enabled || [];
+
+    // Tool is required if it's in the enabled list
+    return enabledTools.includes(providerId);
+  }, [model?.tools]);
+
+  // Tool providers indicator logic
+  const toolIndicator = useMemo(() => {
+    // Check if any providers are connected
+    const hasConnectedProviders = providers.some(
+      (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Connected
+    );
+
+    // Check if any providers are initializing
+    const hasInitializingProviders = providers.some(
+      (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Initializing
+    );
+
+    if (hasInitializingProviders) {
+      // At least one provider initializing - show loading spinner
+      return <LoaderCircle size={14} className="animate-spin" />;
+    } else if (hasConnectedProviders) {
+      // At least one provider connected - show rocket
+      return <Rocket size={14} />;
+    } else {
+      // No providers connected - show sparkles
+      return <Sparkles size={14} />;
+    }
+  }, [providers, getProviderState]);
+
+  // Auto-connect required tools when model changes
+  useEffect(() => {
+    if (!model?.tools?.enabled || model.tools.enabled.length === 0) {
+      return;
+    }
+
+    const enableTools = async () => {
+      for (const providerId of model.tools!.enabled) {
+        const provider = providers.find((p: ToolProvider) => p.id === providerId);
+
+        if (provider) {
+          try {
+            await setProviderEnabled(provider.id, true);
+          } catch (error) {
+            console.error(`Failed to auto-connect required provider ${provider.name}:`, error);
+          }
+        }
+      }
+    };
+
+    enableTools();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model?.tools?.enabled, providers]);
+
+
+
+  const handleFiles = useCallback(async (files: File[]) => {
+    const fileIds = files.map((file, index) => `${file.name}-${index}`);
+
+    // Set all extracting states at once
+    setExtractingAttachments(prev => new Set([...prev, ...fileIds]));
+
+    const textFiles = config.text?.files ?? [];
+    const visionFiles = config.vision?.files ?? [];
+    const extractorFiles = config.extractor?.files ?? [];
+
+    const processedContents = await Promise.allSettled(
+      files.map(async (file, index) => {
+        const fileId = fileIds[index];
+        try {
+          let content: Content | null = null;
+          const fileType = file.type || getFileExt(file.name);
+
+          if (textFiles.includes(fileType)) {
+            const text = await readAsText(file);
+            content = { type: 'text', text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
+          } else if (visionFiles.includes(fileType)) {
+            const blob = await resizeImageBlob(file, 1920, 1920);
+            const dataUrl = await readAsDataURL(blob);
+            content = { type: 'image', name: file.name, data: dataUrl } as ImageContent;
+          } else if (extractorFiles.includes(fileType)) {
+            const text = await client.extractText(file);
+            content = { type: 'text', text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
+          }
+
+          return { fileId, content };
+        } catch (error) {
+          console.error(`Error processing file ${file.name}:`, error);
+          return { fileId, content: null };
+        }
+      })
+    );
+
+    // Batch state updates
+    const validContents = processedContents
+      .filter((result): result is PromiseFulfilledResult<{ fileId: string; content: TextContent | ImageContent }> =>
+        result.status === 'fulfilled' && result.value.content !== null
+      )
+      .map(result => result.value.content);
+
+    setAttachments(prev => [...prev, ...validContents]);
+    setExtractingAttachments(new Set()); // Clear all at once
+  }, [client, config.text?.files, config.vision?.files, config.extractor?.files]);
+
+  const isDragging = useDropZone(containerRef, handleFiles);
+
+  // Handle prompt suggestions click
+  const handlePromptSuggestionsClick = async () => {
+    if (!model) return;
+
+    if (showPromptSuggestions) {
+      setShowPromptSuggestions(false);
+      return;
+    }
+
+    setLoadingPrompts(true);
+    setShowPromptSuggestions(true);
+    setPromptSuggestions([]); // Clear old suggestions immediately
+
+    try {
+      let suggestions: string[];
+
+      if (messages.length === 0) {
+        // For new chats, use model prompts if available, otherwise get related prompts
+        if (model.prompts && model.prompts.length > 0) {
+          suggestions = model.prompts;
+        } else {
+          suggestions = await client.relatedPrompts(model.id, "");
+        }
+      } else {
+        // Get the last few messages for context
+        const contextMessages = messages.slice(-6);
+        const contextText = contextMessages
+          .map(msg => `${msg.role}: ${msg.content}`)
+          .join('\n');
+
+        suggestions = await client.relatedPrompts(model.id, contextText);
+      }
+
+      setPromptSuggestions(suggestions);
+    } catch (error) {
+      console.error("Error fetching prompt suggestions:", error);
+      setPromptSuggestions([]);
+    } finally {
+      setLoadingPrompts(false);
+    }
+  };
+
+  // Handle selecting a prompt suggestion
+  const handlePromptSelect = (suggestion: string) => {
+    // Create and send message immediately
+    const messageContent: Content[] = [
+      { type: 'text', text: suggestion },
+      ...attachments
+    ];
+    const message: Message = {
+      role: Role.User,
+      content: messageContent,
+    };
+
+    sendMessage(message);
+
+    // Clear attachments after sending
+    setAttachments([]);
+
+    // Hide prompt suggestions
+    setShowPromptSuggestions(false);
+  };
+
+  // Force layout recalculation on mount to fix initial sizing issues
+  useEffect(() => {
+    if (containerRef.current) {
+      // Force a repaint by reading offsetHeight
+      void containerRef.current.offsetHeight;
+    }
+    if (contentEditableRef.current) {
+      // Force a repaint for the content editable area
+      void contentEditableRef.current.offsetHeight;
+    }
+  }, []);
+
+  // Auto-focus on desktop devices only (not on touch devices like iPad)
+  useEffect(() => {
+    if (messages.length === 0) {
+      // Check if this is a touch device
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+      if (!isTouchDevice && contentEditableRef.current) {
+        // Small delay to ensure DOM is ready
+        const timer = setTimeout(() => {
+          contentEditableRef.current?.focus();
+        }, 100);
+
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [messages.length]);
+
+  const handleSubmit = useCallback(async (e: FormEvent) => {
+    e.preventDefault();
+
+    // Prevent submission while responding
+    if (isResponding) {
+      return;
+    }
+
+    if (content.trim()) {
+      let finalAttachments: Content[] = [...attachments];
+
+      // If continuous capture is active, automatically capture current screen
+      if (isContinuousCaptureActive) {
+        try {
+          const blob = await captureFrame();
+          if (blob) {
+            const dataUrl = await readAsDataURL(blob);
+            const screenContent: ImageContent = {
+              type: 'image',
+              name: `screen-capture-${Date.now()}.png`,
+              data: dataUrl,
+            };
+            // Add screen capture as the first attachment
+            finalAttachments = [screenContent, ...finalAttachments];
+          }
+        } catch (error) {
+          console.error("Error capturing screen during message send:", error);
+        }
+      }
+
+      const messageContent: Content[] = [
+        { type: 'text', text: content },
+        ...finalAttachments
+      ];
+
+      const message: Message = {
+        role: Role.User,
+        content: messageContent,
+      };
+
+      sendMessage(message);
+      setContent("");
+      setAttachments([]);
+
+      if (contentEditableRef.current) {
+        contentEditableRef.current.innerHTML = "";
+      }
+    }
+  }, [isResponding, content, attachments, isContinuousCaptureActive, captureFrame, sendMessage]);
+
+  const handleAttachmentClick = useCallback(() => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  }, []);
+
+  const handleContinuousCaptureToggle = useCallback(async () => {
+    try {
+      if (isContinuousCaptureActive) {
+        stopCapture();
+      } else {
+        await startCapture();
+      }
+    } catch (error) {
+      console.error("Error toggling continuous capture:", error);
+    }
+  }, [isContinuousCaptureActive, stopCapture, startCapture]);
+
+  const handleFileChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      handleFiles(Array.from(files));
+      e.target.value = "";
+    }
+  }, [handleFiles]);
+
+  const handleRemoveAttachment = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleContentChange = useCallback((e: React.FormEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement;
+    const input = target.innerText || target.textContent || '';
+    setContent(input);
+
+    if (input.trim() && showPromptSuggestions) {
+      setShowPromptSuggestions(false);
+    }
+  }, [showPromptSuggestions]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e as unknown as FormEvent);
+    }
+  }, [handleSubmit]);
+
+  // Handle transcription button click
+  const handleTranscriptionClick = useCallback(async () => {
+    if (isTranscribing) {
+      setTranscribingContent(true);
+      try {
+        const text = await stopTranscription();
+        if (text.trim()) {
+          setContent(text);
+
+          if (contentEditableRef.current) {
+            // Convert newlines to <br> tags for proper display in contentEditable
+            const htmlText = text.replace(/\n/g, '<br>');
+            contentEditableRef.current.innerHTML = htmlText;
+          }
+        }
+      } catch (error) {
+        console.error('Transcription failed:', error);
+      } finally {
+        setTranscribingContent(false);
+      }
+    } else {
+      try {
+        await startTranscription();
+      } catch (error) {
+        console.error('Failed to start transcription:', error);
+      }
+    }
+  }, [isTranscribing, stopTranscription, startTranscription]);
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <div
+        ref={containerRef}
+        className={`[contain:layout_style] [will-change:height] ${isDragging
+          ? 'border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl'
+          : `border-0 md:border-2 border-t-2 border-solid ${messages.length === 0
+            ? 'border-neutral-200/50'
+            : 'border-neutral-200'
+          } dark:border-neutral-900 ${messages.length === 0
+            ? 'bg-white/60 dark:bg-neutral-950/70'
+            : 'bg-white/30 dark:bg-neutral-950/50'
+          } rounded-t-2xl md:rounded-2xl`
+          } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 transition-all duration-200`}
+      >
+        <input
+          type="file"
+          multiple
+          accept={[...(config.text?.files ?? []), ...(config.vision?.files ?? []), ...(config.extractor?.files ?? [])].join(",")}
+          ref={fileInputRef}
+          className="hidden"
+          onChange={handleFileChange}
+        />
+
+        {/* Drop zone overlay */}
+        {isDragging && (
+          <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 rounded-t-2xl md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-sm">
+            <div className="text-slate-700 dark:text-slate-300 font-semibold text-lg text-center">
+              Drop files here
+            </div>
+            <div className="text-slate-600 dark:text-slate-400 text-sm mt-1 text-center">
+              Images, documents, and text files supported
+            </div>
+          </div>
+        )}
+
+        {/* Attachments display */}
+        <div className="p-3">
+          <ChatInputAttachments
+            attachments={attachments}
+            extractingAttachments={extractingAttachments}
+            onRemove={handleRemoveAttachment}
+          />
+        </div>
+
+        {/* Prompt suggestions */}
+        <ChatInputSuggestions
+          show={showPromptSuggestions}
+          loading={loadingPrompts}
+          suggestions={promptSuggestions}
+          onSelect={handlePromptSelect}
+        />
+
+        {/* Input area */}
+        <div className="relative flex-1">
+          {isListening ? (
+            <div className="p-3 md:p-4 flex items-center justify-center h-14">
+              <VoiceWaves />
+            </div>
+          ) : (
+            <>
+              <div
+                ref={contentEditableRef}
+                className="p-3 md:p-4 flex-1 max-h-[40vh] overflow-y-auto min-h-10 whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200"
+                style={{
+                  scrollbarWidth: "thin",
+                  minHeight: "2.5rem",
+                  height: "auto"
+                }}
+                role="textbox"
+                contentEditable
+                suppressContentEditableWarning={true}
+                onInput={handleContentChange}
+                onKeyDown={handleKeyDown}
+                onPaste={async (e) => {
+                  e.preventDefault();
+
+                  const text = e.clipboardData.getData('text/plain');
+
+                  const imageItems = Array.from(e.clipboardData.items)
+                    .filter(item => item.type.startsWith('image/'))
+                    .map(item => item.getAsFile())
+                    .filter(Boolean) as File[];
+
+                  if (text.trim()) {
+                    document.execCommand('insertText', false, text);
+                  }
+
+                  if (imageItems.length > 0) {
+                    await handleFiles(imageItems);
+                  }
+                }}
+              />
+
+              {/* CSS-animated placeholder */}
+              {shouldShowPlaceholder && (
+                <div
+                  className={`absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200 ${messages.length === 0 ? 'typewriter-text' : ''
+                    }`}
+                  style={messages.length === 0 ? {
+                    '--text-length': placeholderText.length,
+                    '--animation-duration': `${Math.max(1.5, placeholderText.length * 0.1)}s`
+                  } as React.CSSProperties & { '--text-length': number; '--animation-duration': string } : {}}
+                >
+                  {placeholderText}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Controls */}
+        <div className="flex items-center justify-between p-3 pt-0 pb-8 md:pb-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+              onClick={handlePromptSuggestionsClick}
+              title="Show prompt suggestions"
+            >
+              {loadingPrompts ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Lightbulb size={16} />
+              )}
+            </button>
+
+            {models.length > 0 && (
+              <Menu>
+                <MenuButton className="flex items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm">
+                  {toolIndicator}
+                  <span>
+                    {model?.name ?? model?.id ?? "Select Model"}
+                  </span>
+                </MenuButton>
+                <MenuItems
+                  modal={false}
+                  transition
+                  anchor="bottom start"
+                  className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10"
+                >
+                  {models.map((modelItem) => (
+                    <MenuItem key={modelItem.id}>
+                      <button
+                        type="button"
+                        onClick={() => onModelChange(modelItem)}
+                        title={modelItem.description}
+                        className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
+                      >
+                        <div className="flex items-center gap-2.5 w-full">
+                          <div className="shrink-0 w-3.5 flex justify-center">
+                            {model?.id === modelItem.id && (
+                              <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
+                            )}
+                          </div>
+                          <div className="flex flex-col items-start flex-1">
+                            <div className="font-semibold text-sm leading-tight">
+                              {modelItem.name ?? modelItem.id}
+                            </div>
+                            {modelItem.description && (
+                              <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-relaxed opacity-90">
+                                {modelItem.description}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    </MenuItem>
+                  ))}
+                  {voiceAvailable && (
+                    <MenuItem>
+                      <button
+                        type="button"
+                        onClick={() => onModelChange(isRealtimeSelected ? models[0] : { id: 'realtime', name: 'Voice Mode', description: 'Real-time voice conversation' })}
+                        className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
+                      >
+                        <div className="flex items-center gap-2.5 w-full">
+                          <div className="shrink-0 w-3.5 flex justify-center">
+                            {isRealtimeSelected && (
+                              <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
+                            )}
+                          </div>
+                          <div className="flex flex-col items-start flex-1">
+                            <div className="font-semibold text-sm leading-tight">
+                              Voice Mode
+                            </div>
+                            <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-relaxed opacity-90">
+                              Real-time voice conversation
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    </MenuItem>
+                  )}
+                </MenuItems>
+              </Menu>
+            )}
+
+            {currentRepository && (
+              <div className="hidden lg:flex group items-center gap-1 px-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm" title={currentRepository.name}>
+                <Package size={14} />
+                <span className="max-w-20 truncate">
+                  {currentRepository.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentRepository(null)}
+                  className="opacity-0 group-hover:opacity-100 hover:text-red-500 dark:hover:text-red-400 transition-all ml-1"
+                  title="Clear repository"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            )}
+
+          </div>
+
+          <div className="flex items-center gap-2 md:gap-1">
+            {/* Hide all buttons except stop button when in realtime mode */}
+            {!isRealtimeSelected && (
+              <>
+                {/* Features - Show inline buttons for 2 or fewer providers, otherwise show menu */}
+                {providers.length > 0 && providers.length <= 2 ? (
+              // Inline toggle buttons for 2 or fewer providers
+              providers.map((provider: ToolProvider) => {
+                const IconComponent = provider.icon || Sparkles;
+                const isEnabled = isToolEnabledByModel(provider.id);
+                const isRequired = isToolRequiredByModel(provider.id);
+                const canToggle = isEnabled !== false && !isRequired;
+                const state = getProviderState(provider.id);
+                const providerEnabled = state === ProviderState.Connected;
+                const providerInitializing = state === ProviderState.Initializing;
+                const providerFailed = state === ProviderState.Failed;
+
+                return (
+                  <button
+                    key={provider.id}
+                    type="button"
+                    className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${
+                      providerEnabled
+                        ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg'
+                        : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                    }`}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!canToggle || providerInitializing) return;
+                      try {
+                        await setProviderEnabled(provider.id, !providerEnabled);
+                      } catch (error) {
+                        console.error(`Failed to toggle provider ${provider.name}:`, error);
+                      }
+                    }}
+                    disabled={providerInitializing || !canToggle}
+                    title={
+                      isEnabled === false
+                        ? `${provider.name} - Disabled by model configuration`
+                        : isRequired
+                          ? `${provider.name} - Required by model configuration`
+                          : providerFailed
+                            ? `${provider.name} - Failed to connect (click to retry)`
+                            : providerEnabled
+                              ? `${provider.name} - Click to disable`
+                              : `${provider.name} - Click to enable`
+                    }
+                  >
+                    {providerInitializing ? (
+                      <LoaderCircle size={14} className="animate-spin" />
+                    ) : providerFailed ? (
+                      <TriangleAlert size={14} />
+                    ) : (
+                      <IconComponent size={14} />
+                    )}
+                    {providerEnabled && (
+                      <span className="hidden sm:inline">
+                        {provider.name}
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            ) : providers.length > 2 ? (
+              // Menu for more than 2 providers
+              <Menu>
+                <MenuButton
+                  className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                  title="Features"
+                >
+                  <Sliders size={16} />
+                </MenuButton>
+                <MenuItems
+                  modal={false}
+                  transition
+                  anchor="bottom end"
+                  className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto"
+                >
+                  {providers.map((provider: ToolProvider) => {
+                    const IconComponent = provider.icon || Sparkles;
+
+                    const isEnabled = isToolEnabledByModel(provider.id);
+                    const isRequired = isToolRequiredByModel(provider.id);
+                    const canToggle = isEnabled !== false && !isRequired;
+                    const state = getProviderState(provider.id);
+                    const providerEnabled = state === ProviderState.Connected;
+                    const providerInitializing = state === ProviderState.Initializing;
+                    const providerFailed = state === ProviderState.Failed;
+
+                    return (
+                      <MenuItem key={provider.id}>
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!canToggle) return;
+                            try {
+                              await setProviderEnabled(provider.id, !providerEnabled);
+                            } catch (error) {
+                              console.error(`Failed to toggle provider ${provider.name}:`, error);
+                            }
+                          }}
+                          disabled={providerInitializing || !canToggle}
+                          className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50`}
+                          title={
+                            isEnabled === false
+                              ? 'Disabled by model configuration'
+                              : isRequired
+                                ? 'Required by model configuration'
+                                : undefined
+                          }
+                        >
+                          <div className="flex items-center gap-3">
+                            <IconComponent size={16} />
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium text-sm">
+                                {provider.name}
+                                {isRequired && <span className="text-xs ml-1 text-neutral-500 dark:text-neutral-400">(required)</span>}
+                                {isEnabled === false && <span className="text-xs ml-1 text-neutral-500 dark:text-neutral-400">(disabled)</span>}
+                              </span>
+                              {provider.description && (
+                                <span className="text-xs text-neutral-600 dark:text-neutral-400">{provider.description}</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 pl-2">
+                            {providerInitializing ? (
+                              <LoaderCircle size={16} className="animate-spin text-neutral-600 dark:text-neutral-400" />
+                            ) : providerFailed ? (
+                              <TriangleAlert size={16} className="text-neutral-600 dark:text-neutral-400" strokeWidth={2.5} />
+                            ) : providerEnabled ? (
+                              <Check size={16} className="text-neutral-800 dark:text-neutral-200" strokeWidth={2.5} />
+                            ) : (
+                              <div className="w-4 h-4" />
+                            )}
+                          </div>
+                        </button>
+                      </MenuItem>
+                    );
+                  })}
+                </MenuItems>
+              </Menu>
+            ) : null}
+
+            {!isRealtimeSelected && isScreenCaptureAvailable && (
+              <button
+                type="button"
+                className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isContinuousCaptureActive
+                  ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg'
+                  : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                  }`}
+                onClick={handleContinuousCaptureToggle}
+                title={isContinuousCaptureActive ? 'Stop continuous screen capture' : 'Start continuous screen capture'}
+              >
+                <ScreenShare size={14} />
+                {isContinuousCaptureActive && (
+                  <span className="hidden sm:inline">
+                    Capturing
+                  </span>
+                )}
+              </button>
+            )}
+
+            {!isRealtimeSelected && (
+              <button
+                type="button"
+                className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                onClick={handleAttachmentClick}
+              >
+                <Paperclip size={16} />
+              </button>
+            )}
+              </>
+            )}
+
+            {/* Dynamic Send/Mic/Voice/Loading Button */}
+            {isRealtimeSelected ? (
+              <button
+                type="button"
+                className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                onClick={() => {
+                  // Stop voice mode by selecting the first regular model
+                  if (models.length > 0) {
+                    onModelChange(models[0]);
+                  }
+                }}
+                title="Stop voice mode"
+              >
+                <Square size={16} />
+              </button>
+            ) : isResponding ? (
+              <button
+                type="button"
+                className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
+                disabled
+                title="Generating response..."
+              >
+                <LoaderCircle size={16} className="animate-spin" />
+              </button>
+            ) : content.trim() ? (
+              <button
+                className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                type="submit"
+              >
+                <Send size={16} />
+              </button>
+            ) : canTranscribe ? (
+              transcribingContent ? (
+                <button
+                  type="button"
+                  className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
+                  disabled
+                  title="Processing audio..."
+                >
+                  <Loader2 size={16} className="animate-spin" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={`p-2.5 md:p-1.5 transition-colors ${
+                    isTranscribing
+                      ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200'
+                      : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                  }`}
+                  onClick={handleTranscriptionClick}
+                  title={isTranscribing ? 'Stop recording' : 'Start recording'}
+                  disabled={isResponding}
+                >
+                  {isTranscribing ? <Square size={16} /> : <Mic size={16} />}
+                </button>
+              )
+            ) : (
+              <button
+                className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                type="submit"
+                disabled={isResponding}
+              >
+                <Send size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </form>
+  );
+}

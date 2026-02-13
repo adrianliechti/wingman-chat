@@ -4,8 +4,8 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
 
-import { loadConfig } from "./config.ts";
-import { runMigration } from "./lib/migration.ts";
+import { loadConfig } from "./shared/config.ts";
+import { runMigration } from "./features/settings/lib/migration.ts";
 
 /**
  * Display a fatal error message to the user when the app fails to start.

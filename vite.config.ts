@@ -5,6 +5,8 @@ import { viteStaticCopy } from 'vite-plugin-static-copy';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const ReactCompilerConfig = {
   target: '19'
 };
@@ -31,6 +33,11 @@ function viteStaticCopyPyodide() {
 }
 // https://vite.dev/config/
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
+  },
   optimizeDeps: {
     exclude: ['pyodide']
   },
