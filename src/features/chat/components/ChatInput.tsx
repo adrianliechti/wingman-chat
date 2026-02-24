@@ -485,13 +485,15 @@ export function ChatInput() {
         )}
 
         {/* Attachments display */}
-        <div className="p-3">
-          <ChatInputAttachments
-            attachments={attachments}
-            extractingAttachments={extractingAttachments}
-            onRemove={handleRemoveAttachment}
-          />
-        </div>
+        {(attachments.length > 0 || extractingAttachments.size > 0) && (
+          <div className="p-3">
+            <ChatInputAttachments
+              attachments={attachments}
+              extractingAttachments={extractingAttachments}
+              onRemove={handleRemoveAttachment}
+            />
+          </div>
+        )}
 
         {/* Prompt suggestions */}
         <ChatInputSuggestions
@@ -577,9 +579,9 @@ export function ChatInput() {
 
             {models.length > 0 && (
               <Menu>
-                <MenuButton className="flex items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm">
-                  {toolIndicator}
-                  <span>
+                <MenuButton className="flex items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm max-w-48">
+                  <span className="shrink-0 w-3.5 flex justify-center">{toolIndicator}</span>
+                  <span className="truncate min-w-0">
                     {model?.name ?? model?.id ?? "Select Model"}
                   </span>
                 </MenuButton>
@@ -587,7 +589,7 @@ export function ChatInput() {
                   modal={false}
                   transition
                   anchor="bottom start"
-                  className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10"
+                  className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 whitespace-nowrap dark:ring-1 dark:ring-white/10"
                 >
                   {models.map((modelItem) => (
                     <MenuItem key={modelItem.id}>
@@ -603,12 +605,12 @@ export function ChatInput() {
                               <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
                             )}
                           </div>
-                          <div className="flex flex-col items-start flex-1">
-                            <div className="font-semibold text-sm leading-tight">
+                          <div className="flex flex-col items-start flex-1 min-w-0">
+                            <div className="font-semibold text-sm leading-tight whitespace-nowrap">
                               {modelItem.name ?? modelItem.id}
                             </div>
                             {modelItem.description && (
-                              <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-relaxed opacity-90">
+                              <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
                                 {modelItem.description}
                               </div>
                             )}
@@ -630,11 +632,11 @@ export function ChatInput() {
                               <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
                             )}
                           </div>
-                          <div className="flex flex-col items-start flex-1">
-                            <div className="font-semibold text-sm leading-tight">
+                          <div className="flex flex-col items-start flex-1 min-w-0">
+                            <div className="font-semibold text-sm leading-tight whitespace-nowrap">
                               Voice Mode
                             </div>
-                            <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-relaxed opacity-90">
+                            <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
                               Real-time voice conversation
                             </div>
                           </div>
