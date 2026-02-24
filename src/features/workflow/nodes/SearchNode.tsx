@@ -4,7 +4,7 @@ import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import type { Node, NodeProps } from '@xyflow/react';
 import type { BaseNodeData, Data } from '@/features/workflow/types/workflow';
 import { getDataText } from '@/features/workflow/types/workflow';
-import type { SearchResult } from '@/features/tools/types/search';
+import type { SearchResult } from '@/features/research/types/search';
 import { useWorkflow } from '@/features/workflow/hooks/useWorkflow';
 import { useWorkflowNode } from '@/features/workflow/hooks/useWorkflowNode';
 import { getConfig } from '@/shared/config';

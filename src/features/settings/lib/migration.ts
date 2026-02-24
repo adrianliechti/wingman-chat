@@ -12,7 +12,7 @@ import { migrateChat } from './v1Migration';
 import * as opfs from '@/shared/lib/opfs';
 import type { Chat } from '@/shared/types/chat';
 import type { Repository } from '@/features/repository/types/repository';
-import type { Image } from '@/features/tools/types/renderer';
+import type { Image } from '@/features/renderer/types/renderer';
 
 // Old IndexedDB constants
 const OLD_DB_NAME = 'wingman';
