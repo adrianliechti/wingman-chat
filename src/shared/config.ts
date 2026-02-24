@@ -22,7 +22,6 @@ interface config {
   stt?: sttConfig;
 
   workflow?: workflowConfig;
-  recorder?: recorderConfig;
 
   voice?: voiceConfig;
   vision?: visionConfig;
@@ -80,8 +79,6 @@ interface sttConfig {
 }
 
 type workflowConfig = object;
-
-type recorderConfig = object;
 
 interface voiceConfig {
   model?: string;
@@ -157,7 +154,6 @@ interface Config {
   stt: sttConfig | null;
 
   workflow: workflowConfig | null;
-  recorder: recorderConfig | null;
 
   voice: voiceConfig | null;
   vision: visionConfig | null;
@@ -240,7 +236,6 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       stt: cfg.stt ?? null,
 
       workflow: cfg.workflow ?? null,
-      recorder: cfg.recorder ?? null,
 
       voice: cfg.voice ?? null,
 

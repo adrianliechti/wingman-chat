@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Languages, PanelLeftOpen, Workflow, Disc3, ChevronDown, Settings, Image, MoreHorizontal, Globe } from "lucide-react";
+import { MessageCircle, Languages, PanelLeftOpen, Workflow, ChevronDown, Settings, Image, MoreHorizontal, Globe } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems, Transition } from "@headlessui/react";
 import { ChatPage } from "./features/chat/pages/ChatPage";
 import { TranslatePage } from "./features/translate/pages/TranslatePage";
 import { WorkflowPage } from "./features/workflow/pages/WorkflowPage";
-import { RecorderPage } from "./features/recorder/pages/RecorderPage";
 import { RendererPage } from "./features/renderer/pages/RendererPage";
 import { ResearchPage } from "./features/research/pages/ResearchPage";
 import { getConfig } from "./shared/config";
@@ -32,7 +31,7 @@ import { useArtifacts } from "./features/artifacts/hooks/useArtifacts";
 import { useRepositories } from "./features/repository/hooks/useRepositories";
 import { useApp } from "./shell/hooks/useApp";
 
-type Page = "chat" | "flow" | "translate" | "renderer" | "research" | "recorder";
+type Page = "chat" | "flow" | "translate" | "renderer" | "research";
 
 function AppContent() {
   const config = getConfig();
@@ -113,8 +112,6 @@ function AppContent() {
           return config.renderer ? 'renderer' : 'chat';
         case '#research':
           return config.researcher ? 'research' : 'chat';
-        case '#recorder':
-          return config.recorder ? 'recorder' : 'chat';
         default:
           return 'chat';
       }
@@ -135,7 +132,7 @@ function AppContent() {
     // Listen for hash changes
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [config.workflow, config.translator, config.recorder, config.renderer, config.researcher]);
+  }, [config.workflow, config.translator, config.renderer, config.researcher]);
 
   // Auto-close sidebar on mobile screens and update sliders on resize
   useEffect(() => {
@@ -194,11 +191,9 @@ function AppContent() {
   const secondaryPages = [
     { key: "renderer" as const, label: "Renderer", icon: <Image size={20} /> },
     { key: "research" as const, label: "Research", icon: <Globe size={20} /> },
-    { key: "recorder" as const, label: "Recorder", icon: <Disc3 size={20} /> },
   ].filter(page => {
     if (page.key === "renderer") return !!config.renderer;
     if (page.key === "research") return !!config.researcher;
-    if (page.key === "recorder") return !!config.recorder;
     return true;
   });
 
@@ -466,7 +461,6 @@ function AppContent() {
             {currentPage === "translate" && <TranslatePage />}
             {currentPage === "renderer" && <RendererPage />}
             {currentPage === "research" && <ResearchPage />}
-            {currentPage === "recorder" && <RecorderPage />}
           </div>
         </div>
       </div>

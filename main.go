@@ -65,7 +65,6 @@ func main() {
 	repositoryContextPages := os.Getenv("REPOSITORY_CONTEXT_PAGES")
 
 	workflow := os.Getenv("WORKFLOW_ENABLED") == "true"
-	recorder := os.Getenv("RECORDER_ENABLED") == "true"
 
 	chatRetentionDays := os.Getenv("CHAT_RETENTION_DAYS")
 
@@ -155,8 +154,6 @@ func main() {
 
 		type workflowType struct{}
 
-		type recorderType struct{}
-
 		type researcherType struct {
 			Model string `json:"model,omitempty" yaml:"model,omitempty"`
 		}
@@ -200,7 +197,6 @@ func main() {
 			Repository *repositoryType `json:"repository,omitempty" yaml:"repository,omitempty"`
 
 			Workflow   *workflowType   `json:"workflow,omitempty" yaml:"workflow,omitempty"`
-			Recorder   *recorderType   `json:"recorder,omitempty" yaml:"recorder,omitempty"`
 			Researcher *researcherType `json:"researcher,omitempty" yaml:"researcher,omitempty"`
 			Translator *translatorType `json:"translator,omitempty" yaml:"translator,omitempty"`
 
@@ -376,10 +372,6 @@ func main() {
 
 		if workflow {
 			config.Workflow = &workflowType{}
-		}
-
-		if recorder {
-			config.Recorder = &recorderType{}
 		}
 
 		if researcher {
