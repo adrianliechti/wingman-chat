@@ -872,21 +872,20 @@ export function collectChatBlobIds(chat: StoredChat): string[] {
 // Skills Storage (agentskills.io compatible SKILL.md format)
 // ============================================================================
 
-import type { Skill } from '@/features/settings/lib/skillParser';
-import { parseSkillFile } from '@/features/settings/lib/skillParser';
+import type { Skill } from '@/features/skills/lib/skillParser';
+import { parseSkillFile } from '@/features/skills/lib/skillParser';
 
 export interface StoredSkill {
   name: string;
   description: string;
   content: string;
-  enabled: boolean;
 }
 
 /**
  * Save a skill as SKILL.md in /skills/{name}/ folder.
  */
 export async function saveSkill(skill: Skill): Promise<void> {
-  const skillContent = serializeSkillWithEnabled(skill);
+  const skillContent = serializeSkillToMd(skill);
   await writeText(`skills/${skill.name}/SKILL.md`, skillContent);
   
   // Update index
@@ -906,7 +905,7 @@ export async function loadSkill(name: string): Promise<Skill | undefined> {
     return undefined;
   }
   
-  const result = parseSkillFileWithEnabled(content);
+  const result = parseSkillFile(content);
   if (!result.success) {
     console.warn(`Failed to parse skill ${name}:`, result.errors);
     return undefined;
@@ -964,52 +963,19 @@ export async function loadAllSkills(): Promise<Skill[]> {
 }
 
 /**
- * Serialize a skill to SKILL.md format with enabled flag in frontmatter.
+ * Serialize a skill to SKILL.md format.
  */
-function serializeSkillWithEnabled(skill: Skill): string {
+function serializeSkillToMd(skill: Skill): string {
   const lines = [
     '---',
     `name: ${skill.name}`,
     `description: ${skill.description}`,
-    `enabled: ${skill.enabled}`,
     '---',
     '',
     skill.content
   ];
   
   return lines.join('\n');
-}
-
-/**
- * Parse a SKILL.md file content with enabled flag.
- */
-function parseSkillFileWithEnabled(content: string): 
-  { success: true; skill: { name: string; description: string; content: string; enabled: boolean } } | 
-  { success: false; errors: Array<{ field: string; message: string }> } {
-  
-  const result = parseSkillFile(content);
-  if (!result.success) {
-    return result;
-  }
-  
-  // Extract enabled flag from frontmatter
-  const frontmatterMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
-  let enabled = true; // Default to enabled
-  
-  if (frontmatterMatch) {
-    const enabledMatch = frontmatterMatch[1].match(/^enabled:\s*(true|false)\s*$/m);
-    if (enabledMatch) {
-      enabled = enabledMatch[1] === 'true';
-    }
-  }
-  
-  return {
-    success: true,
-    skill: {
-      ...result.skill,
-      enabled,
-    },
-  };
 }
 
 // ============================================================================

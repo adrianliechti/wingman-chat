@@ -4,70 +4,64 @@ import { Client } from '@/shared/lib/client';
 import { VectorDB } from '@/features/repository/lib/vectordb';
 import type { Document } from '@/features/repository/lib/vectordb';
 import type { RepositoryFile } from '@/features/repository/types/repository';
-import { useRepositories } from './useRepositories';
+import { useAgents } from './useAgents';
 
 export interface FileChunk {
   file: RepositoryFile;
-
   text: string;
   similarity?: number;
 }
 
-export interface RepositoryHook {
+export interface AgentFilesHook {
   files: RepositoryFile[];
   addFile: (file: File) => Promise<void>;
   removeFile: (fileId: string) => void;
   queryChunks: (query: string, topK?: number) => Promise<FileChunk[]>;
 }
 
-// Shared client instance for all repositories
+// Shared client instance
 const client = new Client();
 
-export function useRepository(repositoryId: string): RepositoryHook {
-  const { repositories, upsertFile, removeFile: removeFileFromRepo } = useRepositories();
+export function useAgentFiles(agentId: string): AgentFilesHook {
+  const { agents, upsertFile, removeFile: removeFileFromAgent } = useAgents();
   const [vectorDB, setVectorDB] = useState(() => new VectorDB());
-  const currentRepositoryIdRef = useRef(repositoryId);
-  const repositoriesRef = useRef(repositories);
-
-  // Update refs whenever values change
-  useEffect(() => {
-    currentRepositoryIdRef.current = repositoryId;
-  }, [repositoryId]);
+  const currentAgentIdRef = useRef(agentId);
+  const agentsRef = useRef(agents);
 
   useEffect(() => {
-    repositoriesRef.current = repositories;
-  }, [repositories]);
+    currentAgentIdRef.current = agentId;
+  }, [agentId]);
 
-  // Get files from the current repository
-  const repository = repositories.find(r => r.id === repositoryId);
-  const files = useMemo(() => repository?.files || [], [repository?.files]);
+  useEffect(() => {
+    agentsRef.current = agents;
+  }, [agents]);
 
-  // Handle repository changes and rebuild vector database
+  const agent = agents.find(a => a.id === agentId);
+  const files = useMemo(() => agent?.files || [], [agent?.files]);
+
+  // Rebuild vector database when files change
   useEffect(() => {
     let isCancelled = false;
 
     const rebuildVectorDB = () => {
-      // Immediately clear current vector DB
       setVectorDB(new VectorDB());
 
       if (files.length > 0) {
-        // Rebuild vector database for this repository
         const newVectorDB = new VectorDB();
         files.forEach(file => {
           if (file.segments) {
             file.segments.forEach((segment, index) => {
               const chunkDoc: Document = {
-                id: `${repositoryId}:${file.id}:${index}`,
+                id: `${agentId}:${file.id}:${index}`,
                 text: segment.text,
                 source: file.name,
-                vector: segment.vector
+                vector: segment.vector,
               };
               newVectorDB.addDocument(chunkDoc);
             });
           }
         });
 
-        // Only update state if this effect hasn't been cancelled
         if (!isCancelled) {
           setVectorDB(newVectorDB);
         }
@@ -76,43 +70,35 @@ export function useRepository(repositoryId: string): RepositoryHook {
 
     rebuildVectorDB();
 
-    // Cleanup function to cancel this effect if repositoryId changes
     return () => {
       isCancelled = true;
     };
-  }, [repositoryId, files]);
+  }, [agentId, files]);
 
   const removeFile = useCallback((fileId: string) => {
-    // Remove documents from vector database for this file
-    const currentRepoId = currentRepositoryIdRef.current;
+    const currentId = currentAgentIdRef.current;
 
-    // Find the file being removed to get its segments count
     const fileToRemove = files.find(f => f.id === fileId);
     if (fileToRemove && fileToRemove.segments) {
-      // Remove all segments for this file from vector database
       for (let i = 0; i < fileToRemove.segments.length; i++) {
-        const documentId = `${currentRepoId}:${fileId}:${i}`;
+        const documentId = `${currentId}:${fileId}:${i}`;
         vectorDB.deleteDocument(documentId);
       }
     }
 
-    // Remove from repository
-    removeFileFromRepo(repositoryId, fileId);
-  }, [vectorDB, repositoryId, removeFileFromRepo, files]);
+    removeFileFromAgent(agentId, fileId);
+  }, [vectorDB, agentId, removeFileFromAgent, files]);
 
   const processFile = useCallback(async (file: File, fileId: string) => {
-    const currentRepoId = currentRepositoryIdRef.current;
+    const currentId = currentAgentIdRef.current;
 
-    // Extract text
     const text = await client.extractText(file);
-    // Check if repository changed or file was removed during processing
-    if (currentRepositoryIdRef.current !== currentRepoId) return;
+    if (currentAgentIdRef.current !== currentId) return;
 
-    // Check if file still exists in repository (might have been deleted)
-    const currentRepo = repositoriesRef.current.find(r => r.id === currentRepoId);
-    if (!currentRepo?.files?.find(f => f.id === fileId)) return;
+    const currentAgent = agentsRef.current.find(a => a.id === currentId);
+    if (!currentAgent?.files?.find(f => f.id === fileId)) return;
 
-    upsertFile(repositoryId, {
+    upsertFile(agentId, {
       id: fileId,
       name: file.name,
       status: 'processing',
@@ -121,16 +107,13 @@ export function useRepository(repositoryId: string): RepositoryHook {
       uploadedAt: new Date(),
     });
 
-    // Segment text
     const segments = await client.segmentText(file);
-    // Check if repository changed or file was removed during processing
-    if (currentRepositoryIdRef.current !== currentRepoId) return;
+    if (currentAgentIdRef.current !== currentId) return;
 
-    // Check if file still exists in repository (might have been deleted)
-    const currentRepo2 = repositoriesRef.current.find(r => r.id === currentRepoId);
-    if (!currentRepo2?.files?.find(f => f.id === fileId)) return;
+    const currentAgent2 = agentsRef.current.find(a => a.id === currentId);
+    if (!currentAgent2?.files?.find(f => f.id === fileId)) return;
 
-    upsertFile(repositoryId, {
+    upsertFile(agentId, {
       id: fileId,
       name: file.name,
       status: 'processing',
@@ -139,9 +122,8 @@ export function useRepository(repositoryId: string): RepositoryHook {
       uploadedAt: new Date(),
     });
 
-    // Embed segments with progress tracking
     const limit = pLimit(10);
-    const model = repository?.embedder ?? '';
+    const model = agent?.embedder ?? '';
 
     let completedCount = 0;
 
@@ -151,15 +133,13 @@ export function useRepository(repositoryId: string): RepositoryHook {
           const vector = await client.embedText(model, segment);
           completedCount++;
 
-          // Check if repository changed or file was removed during processing
-          if (currentRepositoryIdRef.current !== currentRepoId) return { text: segment, vector };
+          if (currentAgentIdRef.current !== currentId) return { text: segment, vector };
 
-          // Check if file still exists in repository (might have been deleted)
-          const currentRepo3 = repositoriesRef.current.find(r => r.id === currentRepoId);
-          if (!currentRepo3?.files?.find(f => f.id === fileId)) return { text: segment, vector };
+          const currentAgent3 = agentsRef.current.find(a => a.id === currentId);
+          if (!currentAgent3?.files?.find(f => f.id === fileId)) return { text: segment, vector };
 
           const progress = 20 + (completedCount / segments.length) * 80;
-          upsertFile(repositoryId, {
+          upsertFile(agentId, {
             id: fileId,
             name: file.name,
             status: 'processing',
@@ -173,26 +153,22 @@ export function useRepository(repositoryId: string): RepositoryHook {
       )
     );
 
-    // Final check before storing results
-    if (currentRepositoryIdRef.current !== currentRepoId) return;
+    if (currentAgentIdRef.current !== currentId) return;
 
-    // Check if file still exists in repository (might have been deleted)
-    const currentRepo4 = repositoriesRef.current.find(r => r.id === currentRepoId);
-    if (!currentRepo4?.files?.find(f => f.id === fileId)) return;
+    const currentAgent4 = agentsRef.current.find(a => a.id === currentId);
+    if (!currentAgent4?.files?.find(f => f.id === fileId)) return;
 
-    // Store in vector database
     chunks.forEach((chunk, index) => {
       const chunkDoc: Document = {
-        id: `${currentRepoId}:${fileId}:${index}`,
+        id: `${currentId}:${fileId}:${index}`,
         text: chunk.text,
         source: file.name,
-        vector: chunk.vector
+        vector: chunk.vector,
       };
       vectorDB.addDocument(chunkDoc);
     });
 
-    // Mark as completed
-    upsertFile(repositoryId, {
+    upsertFile(agentId, {
       id: fileId,
       name: file.name,
       status: 'completed',
@@ -201,14 +177,13 @@ export function useRepository(repositoryId: string): RepositoryHook {
       segments: chunks,
       uploadedAt: new Date(),
     });
-  }, [upsertFile, repositoryId, repository?.embedder, vectorDB]);
+  }, [upsertFile, agentId, agent?.embedder, vectorDB]);
 
   const addFile = useCallback(async (file: File) => {
     const fileId = crypto.randomUUID();
-    const currentRepoId = currentRepositoryIdRef.current;
+    const currentId = currentAgentIdRef.current;
 
-    // Add file to repository as processing
-    upsertFile(repositoryId, {
+    upsertFile(agentId, {
       id: fileId,
       name: file.name,
       status: 'processing',
@@ -219,9 +194,8 @@ export function useRepository(repositoryId: string): RepositoryHook {
     try {
       await processFile(file, fileId);
     } catch (error) {
-      // Only update error state if we're still on the same repository
-      if (currentRepositoryIdRef.current === currentRepoId) {
-        upsertFile(repositoryId, {
+      if (currentAgentIdRef.current === currentId) {
+        upsertFile(agentId, {
           id: fileId,
           name: file.name,
           status: 'error',
@@ -231,37 +205,35 @@ export function useRepository(repositoryId: string): RepositoryHook {
         });
       }
     }
-  }, [processFile, repositoryId, upsertFile]);
+  }, [processFile, agentId, upsertFile]);
 
   const queryChunks = useCallback(async (query: string, topK: number = 10): Promise<FileChunk[]> => {
     if (!query.trim()) return [];
 
     try {
-      const model = repository?.embedder ?? '';
+      const model = agent?.embedder ?? '';
       const vector = await client.embedText(model, query);
       const results = vectorDB.queryDocuments(vector, topK);
 
-      // Filter and convert results
       return results
-        .filter(result => result.document.id.startsWith(`${repositoryId}:`))
+        .filter(result => result.document.id.startsWith(`${agentId}:`))
         .map(result => {
           const parts = result.document.id.split(':');
-
           const fileId = parts[1];
           const file = files.find(f => f.id === fileId);
 
           return {
             file: file!,
             text: result.document.text,
-            similarity: result.similarity
+            similarity: result.similarity,
           };
         })
         .filter(chunk => chunk.file);
     } catch (error) {
-      console.error("[repository] Search failed", { query, repositoryId, error });
+      console.error('[agent] Search failed', { query, agentId, error });
       return [];
     }
-  }, [vectorDB, repositoryId, repository?.embedder, files]);
+  }, [vectorDB, agentId, agent?.embedder, files]);
 
   return {
     files,

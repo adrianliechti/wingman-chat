@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import type { Agent } from '@/features/agent/types/agent';
-import { useAgent } from './useAgent';
-import { useSkills } from '@/features/settings/hooks/useSkills';
+import { useAgentFiles } from './useAgentFiles';
+import { useSkills } from '@/features/skills/hooks/useSkills';
 import { MCPClient } from '@/features/settings/lib/mcp';
 import type { Tool, ToolProvider } from '@/shared/types/chat';
-import { markdownToText } from '@/shared/lib/utils';
+
 import { createRepositoryTools } from '@/features/repository/lib/repository-tools';
 import repositoryInstructions from '@/features/repository/prompts/repository.txt?raw';
-import skillsPrompt from '@/features/settings/prompts/skills.txt?raw';
+import skillsPrompt from '@/features/skills/prompts/skills.txt?raw';
 import { Package, Sparkles } from 'lucide-react';
 
 export interface AgentProviders {
@@ -28,7 +28,7 @@ export interface AgentProviders {
  */
 export function useAgentProviders(agent: Agent | null): AgentProviders {
   const agentId = agent?.id || '';
-  const { files, queryChunks } = useAgent(agentId);
+  const { files, queryChunks } = useAgentFiles(agentId);
   const { skills: allSkills, getSkill } = useSkills();
 
   // Track MCP clients for agent's bridge servers
@@ -79,28 +79,18 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     };
   }, []);
 
-  // --- Repository provider ---
+  // --- Repository provider (files only) ---
   const repositoryProvider = useMemo<ToolProvider | null>(() => {
-    if (!agent || !agent.repositoryEnabled) return null;
-    if (files.length === 0 && !agent.instructions?.trim()) return null;
+    if (!agent || files.length === 0) return null;
 
-    const tools: Tool[] = files.length > 0 ? createRepositoryTools(files, queryChunks) : [];
-
-    const instructions: string[] = [];
-    instructions.push(repositoryInstructions);
-    if (agent.instructions?.trim()) {
-      instructions.push(`## Custom Instructions\n\n${markdownToText(agent.instructions.trim())}`);
-    }
-
-    const instructionsText = instructions.join('\n\n');
-    if (tools.length === 0 && !instructionsText.trim()) return null;
+    const tools = createRepositoryTools(files, queryChunks);
 
     return {
       id: 'repository',
       name: 'Repository',
       description: 'File access tools for your repository',
       icon: Package,
-      instructions: instructionsText || undefined,
+      instructions: repositoryInstructions || undefined,
       tools,
     };
   }, [agent, files, queryChunks]);

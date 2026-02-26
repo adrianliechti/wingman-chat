@@ -155,27 +155,6 @@ export function SkillsProvider({ children }: SkillsProviderProps) {
     return skills.find(skill => skill.name === name);
   }, [skills]);
 
-  const toggleSkill = useCallback((id: string) => {
-    setSkills(prev => {
-      const skill = prev.find(s => s.id === id);
-      if (!skill) return prev;
-      
-      const updated = prev.map(s => 
-        s.id === id ? { ...s, enabled: !s.enabled } : s
-      );
-      
-      if (isLoaded) {
-        scheduleSave(skill.name);
-      }
-      
-      return updated;
-    });
-  }, [isLoaded, scheduleSave]);
-
-  const getEnabledSkills = useCallback((): Skill[] => {
-    return skills.filter(skill => skill.enabled);
-  }, [skills]);
-
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -193,8 +172,6 @@ export function SkillsProvider({ children }: SkillsProviderProps) {
         updateSkill,
         removeSkill,
         getSkill,
-        toggleSkill,
-        getEnabledSkills,
       }}
     >
       {children}

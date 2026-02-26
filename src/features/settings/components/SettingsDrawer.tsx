@@ -6,7 +6,6 @@ import { useChat } from '@/features/chat/hooks/useChat';
 import { getStorageUsage, downloadFolderAsZip, importFolderFromZip, clearAll } from '@/shared/lib/opfs';
 import * as opfs from '@/shared/lib/opfs';
 import { formatBytes } from '@/shared/lib/utils';
-import { getConfig } from '@/shared/config';
 import type { Theme, LayoutMode, BackgroundPack } from '@/shared/types/settings';
 import { personaOptions } from '@/features/settings/lib/personas';
 import type { PersonaKey } from '@/features/settings/lib/personas';

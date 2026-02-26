@@ -1,4 +1,4 @@
-import { Globe, Sparkles, FileText, FileType, Volume2, Image, StickyNote, Languages, Table, Database, Code2 } from 'lucide-react';
+import { Globe, Sparkles, FileText, FileType, Volume2, Image, StickyNote, Languages, Table, Code2 } from 'lucide-react';
 import { useWorkflow } from '@/features/workflow/hooks/useWorkflow';
 import type { Node } from '@xyflow/react';
 import { useState, useEffect, useRef } from 'react';
@@ -9,7 +9,6 @@ import { createTextNode } from '@/features/workflow/nodes/TextNode.factory';
 import { createFileNode } from '@/features/workflow/nodes/FileNode.factory';
 import { createCodeNode } from '@/features/workflow/nodes/CodeNode.factory';
 import { createTranslateNode } from '@/features/workflow/nodes/TranslateNode.factory';
-import { createRepositoryNode } from '@/features/workflow/nodes/RepositoryNode.factory';
 import { createMarkdownNode } from '@/features/workflow/nodes/MarkdownNode.factory';
 import { createAudioNode } from '@/features/workflow/nodes/AudioNode.factory';
 import { createImageNode } from '@/features/workflow/nodes/ImageNode.factory';
@@ -97,13 +96,6 @@ export function WorkflowPalette() {
             label="Search"
             icon={<Globe size={20} />}
             createNode={createSearchNode}
-          />
-        )}
-        {config.repository && (
-          <WorkflowPaletteItem
-            label="Repository"
-            icon={<Database size={20} />}
-            createNode={createRepositoryNode}
           />
         )}
       </div>

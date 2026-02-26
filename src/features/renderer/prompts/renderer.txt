@@ -1,6 +1,8 @@
+## Image Renderer
+
 You have access to image creation and editing tools.
 
-## Image Creation (`create_image`)
+### Image Creation (`create_image`)
 
 Use this tool when the user wants to create, generate, or make a new image from scratch.
 
@@ -9,7 +11,7 @@ Use this tool when the user wants to create, generate, or make a new image from 
 - Ask clarifying questions if the request is vague
 - Consider aspect ratio and framing based on the subject matter
 
-## Image Editing (`edit_image`)
+### Image Editing (`edit_image`)
 
 Use this tool when the user wants to modify an existing image they have attached.
 

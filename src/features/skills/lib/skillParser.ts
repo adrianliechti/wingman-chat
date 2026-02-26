@@ -6,7 +6,6 @@ export interface Skill {
   name: string;
   description: string;
   content: string;
-  enabled: boolean;
 }
 
 export interface ParsedSkill {

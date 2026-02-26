@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { Plus as PlusIcon, Bot, Info, ArrowDown, BookOpenText, BookText, Rocket } from "lucide-react";
+import { Plus as PlusIcon, Bot, BotMessageSquare, Info, ArrowDown, Package, PackageOpen, Rocket } from "lucide-react";
 import DOMPurify from "dompurify";
 import { getConfig } from "@/shared/config";
 import { useAutoScroll } from "@/shared/hooks/useAutoScroll";
@@ -138,14 +138,6 @@ export function ChatPage() {
             <Rocket size={20} />
           </button>
         )}
-        <button
-          type="button"
-          className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-          onClick={toggleAgentDrawer}
-          title={showAgentDrawer ? 'Close agent' : 'Open agent'}
-        >
-          <Bot size={20} />
-        </button>
         {artifactsAvailable && (
           <button
             type="button"
@@ -153,9 +145,17 @@ export function ChatPage() {
             onClick={toggleArtifactsDrawer}
             title={showArtifactsDrawer ? 'Close artifacts' : 'Open artifacts'}
           >
-            {showArtifactsDrawer ? <BookOpenText size={20} /> : <BookText size={20} />}
+            {showArtifactsDrawer ? <PackageOpen size={20} /> : <Package size={20} />}
           </button>
         )}
+        <button
+          type="button"
+          className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+          onClick={toggleAgentDrawer}
+          title={showAgentDrawer ? 'Close agent' : 'Open agent'}
+        >
+          {showAgentDrawer ? <BotMessageSquare size={20} /> : <Bot size={20} />}
+        </button>
         <button
           type="button"
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"

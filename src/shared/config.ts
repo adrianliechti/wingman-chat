@@ -28,7 +28,6 @@ interface config {
 
   text?: textConfig;
 
-  bridge?: bridgeConfig;
   internet?: internetConfig;
 
   renderer?: rendererConfig;
@@ -99,9 +98,6 @@ interface rendererConfig {
   elicitation?: boolean;
 }
 
-interface bridgeConfig {
-  url: string;
-}
 
 interface internetConfig {
   scraper?: string;
@@ -161,7 +157,6 @@ interface Config {
   text: textConfig | null;
   extractor: extractorConfig | null;
 
-  bridge: bridgeConfig | null;
   internet: internetConfig | null;
 
   renderer: rendererConfig | null;
@@ -294,7 +289,6 @@ export const loadConfig = async (): Promise<Config | undefined> => {
           }
         : null,
 
-      bridge: cfg.bridge ?? null,
       internet: cfg.internet ?? null,
       renderer: cfg.renderer ?? null,
       interpreter: cfg.interpreter ?? null,

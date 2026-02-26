@@ -9,8 +9,8 @@
 
 import type { Chat, Message, Content } from '@/shared/types/chat';
 import type { Repository, RepositoryFile } from '@/features/repository/types/repository';
-import type { Skill } from './skillParser';
-import { parseSkillFile } from './skillParser';
+import type { Skill } from '@/features/skills/lib/skillParser';
+import { parseSkillFile } from '@/features/skills/lib/skillParser';
 
 // ============================================================================
 // CHAT MIGRATION
@@ -294,7 +294,6 @@ export function migrateSkill(skill: any): Skill | null {
       name: skill.name,
       description: skill.description || '',
       content: skill.content || skill.instructions || '',
-      enabled: skill.enabled !== false,
     };
   }
   
@@ -305,7 +304,6 @@ export function migrateSkill(skill: any): Skill | null {
       return {
         ...result.skill,
         id: crypto.randomUUID(),
-        enabled: true,
       };
     }
   }

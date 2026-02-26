@@ -1,5 +1,5 @@
 import { useContext } from 'react';
-import { SkillsContext } from '@/features/settings/context/SkillsContext';
+import { SkillsContext } from '@/features/skills/context/SkillsContext';
 
 export function useSkills() {
   const context = useContext(SkillsContext);

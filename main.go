@@ -26,8 +26,6 @@ func main() {
 	platformURL := platformURL()
 	realtimeURL := realtimeURL()
 
-	bridgeURL := os.Getenv("BRIDGE_URL")
-
 	tts := os.Getenv("TTS_ENABLED") == "true"
 	ttsModel := os.Getenv("TTS_MODEL")
 	stt := os.Getenv("STT_ENABLED") == "true"
@@ -139,10 +137,6 @@ func main() {
 
 		type interpreterType struct{}
 
-		type bridgeType struct {
-			URL string `json:"url,omitempty" yaml:"url,omitempty"`
-		}
-
 		type artifactsType struct{}
 
 		type repositoryType struct {
@@ -190,8 +184,6 @@ func main() {
 			Internet    *internetType    `json:"internet,omitempty" yaml:"internet,omitempty"`
 			Renderer    *rendererType    `json:"renderer,omitempty" yaml:"renderer,omitempty"`
 			Interpreter *interpreterType `json:"interpreter,omitempty" yaml:"interpreter,omitempty"`
-
-			Bridge *bridgeType `json:"bridge,omitempty" yaml:"bridge,omitempty"`
 
 			Artifacts  *artifactsType  `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 			Repository *repositoryType `json:"repository,omitempty" yaml:"repository,omitempty"`
@@ -340,12 +332,6 @@ func main() {
 
 		if interpreter {
 			config.Interpreter = &interpreterType{}
-		}
-
-		if bridgeURL != "" {
-			config.Bridge = &bridgeType{
-				URL: bridgeURL,
-			}
 		}
 
 		if artifacts {

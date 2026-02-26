@@ -19,9 +19,8 @@ import { TranslateProvider } from "./features/translate/context/TranslateProvide
 import { VoiceProvider } from "./features/voice/context/VoiceProvider";
 import { SettingsButton } from "./features/settings/components/SettingsButton";
 import { SettingsDrawer } from "./features/settings/components/SettingsDrawer";
-import { RepositoryProvider } from "./features/repository/context/RepositoryProvider";
 import { AgentProvider } from "./features/agent/context/AgentProvider";
-import { SkillsProvider } from "./features/settings/context/SkillsProvider";
+import { SkillsProvider } from "./features/skills/context/SkillsProvider";
 import { ArtifactsProvider } from "./features/artifacts/context/ArtifactsProvider";
 import { AppProvider } from "./shell/context/AppProvider";
 import { ProfileProvider } from "./features/settings/context/ProfileProvider";
@@ -479,7 +478,6 @@ const providers = [
   NavigationProvider,
   ArtifactsProvider,
   AppProvider,
-  RepositoryProvider,
   AgentProvider,
   ScreenCaptureProvider,
   ToolsProvider,

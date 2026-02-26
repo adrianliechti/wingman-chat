@@ -215,11 +215,11 @@ async function migrateFromLegacy(): Promise<Agent[]> {
     const config = getConfig();
     const embedder = config.repository?.embedder || '';
     
-    // Collect existing enabled skill IDs
+    // Collect existing skill IDs
     let enabledSkillIds: string[] = [];
     try {
       const skills = await opfs.loadAllSkills();
-      enabledSkillIds = skills.filter(s => s.enabled).map(s => s.id);
+      enabledSkillIds = skills.map(s => s.id);
     } catch { /* no skills */ }
     
     // Collect existing bridge servers

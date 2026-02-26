@@ -46,7 +46,7 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     };
   }, []);
 
-  // The set of enabled built-in tool IDs from the current agent
+  // The set of enabled tool IDs from the current agent
   const enabledToolSet = useMemo(() => new Set(enabledToolIds), [enabledToolIds]);
 
   // Combine all MCP clients (config + agent bridge servers)
@@ -54,22 +54,14 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     return [...configMcpClients, ...agentMcpClients];
   }, [configMcpClients, agentMcpClients]);
 
-  // Build all providers: agent-controlled built-ins + config MCPs + agent providers (repo, skills, agent bridges)
+  // Build all providers: built-ins + config MCPs + agent providers (repo, skills, agent bridges)
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
     
-    // Add local providers only if enabled by the current agent
-    if (internetProvider && enabledToolSet.has('internet')) {
-      list.push(internetProvider);
-    }
-    
-    if (rendererProvider && enabledToolSet.has('renderer')) {
-      list.push(rendererProvider);
-    }
-    
-    if (interpreterProvider && enabledToolSet.has('interpreter')) {
-      list.push(interpreterProvider);
-    }
+    // Add local providers (always available if configured)
+    if (internetProvider) list.push(internetProvider);
+    if (rendererProvider) list.push(rendererProvider);
+    if (interpreterProvider) list.push(interpreterProvider);
     
     // Add config MCP clients (always available)
     list.push(...configMcpClients);
@@ -86,13 +78,56 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     interpreterProvider,
     configMcpClients,
     agentProviders,
-    enabledToolSet,
   ]);
 
   // Helper functions for state management
   const getProviderState = useCallback((id: string): ProviderState => {
     return providerStates.get(id) ?? ProviderState.Disconnected;
   }, [providerStates]);
+
+  const isProviderRequired = useCallback((id: string): boolean => {
+    return enabledToolSet.has(id);
+  }, [enabledToolSet]);
+
+  // Auto-connect agent-required providers (built-in tools selected in agent)
+  useEffect(() => {
+    if (enabledToolSet.size === 0) return;
+
+    const connectRequired = async () => {
+      for (const id of enabledToolSet) {
+        const state = providerStates.get(id);
+        if (!state || state === ProviderState.Disconnected) {
+          const provider = providers.find(p => p.id === id);
+          if (provider) {
+            try {
+              await setProviderEnabled(id, true);
+            } catch (error) {
+              console.error(`Failed to auto-connect agent-required provider ${id}:`, error);
+            }
+          }
+        }
+      }
+    };
+
+    connectRequired();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabledToolSet]);
+
+  // Agent local providers (repository, skills) are always-on — they are
+  // local functions, not network resources, so bypass connection state.
+  const agentLocalIds = useMemo(() => {
+    const mcpIds = new Set(agentMcpClients.map(c => c.id));
+    return agentProviders.filter(p => !mcpIds.has(p.id)).map(p => p.id);
+  }, [agentProviders, agentMcpClients]);
+
+  useEffect(() => {
+    if (agentLocalIds.length === 0) return;
+    setProviderStates(prev => {
+      const next = new Map(prev);
+      agentLocalIds.forEach(id => next.set(id, ProviderState.Connected));
+      return next;
+    });
+  }, [agentLocalIds]);
 
   const setProviderEnabled = useCallback(async (id: string, enabled: boolean) => {
     // Find the provider - check if it's an MCPClient
@@ -126,6 +161,7 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
   const value: ToolsContextValue = {
     providers,
     getProviderState,
+    isProviderRequired,
     setProviderEnabled,
   };
 

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
-import { Send, Paperclip, ScreenShare, X, Sparkles, Loader2, Lightbulb, Mic, Square, Bot, Check, LoaderCircle, Rocket, Sliders, TriangleAlert } from "lucide-react";
+import { Send, Paperclip, ScreenShare, Sparkles, Loader2, Lightbulb, Mic, Square, Bot, Check, LoaderCircle, Rocket, Sliders, TriangleAlert } from "lucide-react";
 
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSuggestions } from "./ChatInputSuggestions";
@@ -34,7 +34,7 @@ export function ChatInput() {
   const { currentAgent } = useAgents();
   const { profile } = useSettings();
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
-  const { providers, getProviderState, setProviderEnabled } = useToolsContext();
+  const { providers, getProviderState, isProviderRequired, setProviderEnabled } = useToolsContext();
   const { isAvailable: voiceAvailable, isListening, startVoice, stopVoice } = useVoice();
 
   // Track if realtime mode model is selected
@@ -130,15 +130,22 @@ export function ChatInput() {
     return enabledTools.includes(providerId);
   }, [model?.tools]);
 
+  // Providers visible in the UI (agent-internal providers are not user-controllable)
+  const hiddenProviderIds = useMemo(() => new Set(['skills', 'repository']), []);
+  const visibleProviders = useMemo(
+    () => providers.filter((p: ToolProvider) => !hiddenProviderIds.has(p.id)),
+    [providers, hiddenProviderIds]
+  );
+
   // Tool providers indicator logic
   const toolIndicator = useMemo(() => {
     // Check if any providers are connected
-    const hasConnectedProviders = providers.some(
+    const hasConnectedProviders = visibleProviders.some(
       (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Connected
     );
 
     // Check if any providers are initializing
-    const hasInitializingProviders = providers.some(
+    const hasInitializingProviders = visibleProviders.some(
       (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Initializing
     );
 
@@ -152,7 +159,7 @@ export function ChatInput() {
       // No providers connected - show sparkles
       return <Sparkles size={14} />;
     }
-  }, [providers, getProviderState]);
+  }, [visibleProviders, getProviderState]);
 
   // Auto-connect required tools when model changes
   useEffect(() => {
@@ -664,13 +671,14 @@ export function ChatInput() {
             {!isRealtimeSelected && (
               <>
                 {/* Features - Show inline buttons for 2 or fewer providers, otherwise show menu */}
-                {providers.length > 0 && providers.length <= 2 ? (
+                {visibleProviders.length > 0 && visibleProviders.length <= 2 ? (
               // Inline toggle buttons for 2 or fewer providers
-              providers.map((provider: ToolProvider) => {
+              visibleProviders.map((provider: ToolProvider) => {
                 const IconComponent = provider.icon || Sparkles;
                 const isEnabled = isToolEnabledByModel(provider.id);
                 const isRequired = isToolRequiredByModel(provider.id);
-                const canToggle = isEnabled !== false && !isRequired;
+                const isAgentRequired = isProviderRequired(provider.id);
+                const canToggle = isEnabled !== false && !isRequired && !isAgentRequired;
                 const state = getProviderState(provider.id);
                 const providerEnabled = state === ProviderState.Connected;
                 const providerInitializing = state === ProviderState.Initializing;
@@ -701,11 +709,13 @@ export function ChatInput() {
                         ? `${provider.name} - Disabled by model configuration`
                         : isRequired
                           ? `${provider.name} - Required by model configuration`
-                          : providerFailed
-                            ? `${provider.name} - Failed to connect (click to retry)`
-                            : providerEnabled
-                              ? `${provider.name} - Click to disable`
-                              : `${provider.name} - Click to enable`
+                          : isAgentRequired
+                            ? `${provider.name} - Required by agent`
+                            : providerFailed
+                              ? `${provider.name} - Failed to connect (click to retry)`
+                              : providerEnabled
+                                ? `${provider.name} - Click to disable`
+                                : `${provider.name} - Click to enable`
                     }
                   >
                     {providerInitializing ? (
@@ -723,7 +733,7 @@ export function ChatInput() {
                   </button>
                 );
               })
-            ) : providers.length > 2 ? (
+            ) : visibleProviders.length > 2 ? (
               // Menu for more than 2 providers
               <Menu>
                 <MenuButton
@@ -738,12 +748,13 @@ export function ChatInput() {
                   anchor="bottom end"
                   className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto"
                 >
-                  {providers.map((provider: ToolProvider) => {
+                  {visibleProviders.map((provider: ToolProvider) => {
                     const IconComponent = provider.icon || Sparkles;
 
                     const isEnabled = isToolEnabledByModel(provider.id);
                     const isRequired = isToolRequiredByModel(provider.id);
-                    const canToggle = isEnabled !== false && !isRequired;
+                    const isAgentRequired = isProviderRequired(provider.id);
+                    const canToggle = isEnabled !== false && !isRequired && !isAgentRequired;
                     const state = getProviderState(provider.id);
                     const providerEnabled = state === ProviderState.Connected;
                     const providerInitializing = state === ProviderState.Initializing;
@@ -768,8 +779,8 @@ export function ChatInput() {
                           title={
                             isEnabled === false
                               ? 'Disabled by model configuration'
-                              : isRequired
-                                ? 'Required by model configuration'
+                              : isRequired || isAgentRequired
+                                ? 'Required by agent'
                                 : undefined
                           }
                         >
@@ -778,7 +789,7 @@ export function ChatInput() {
                             <div className="flex flex-col items-start">
                               <span className="font-medium text-sm">
                                 {provider.name}
-                                {isRequired && <span className="text-xs ml-1 text-neutral-500 dark:text-neutral-400">(required)</span>}
+                                {(isRequired || isAgentRequired) && <span className="text-xs ml-1 text-neutral-500 dark:text-neutral-400">(required)</span>}
                                 {isEnabled === false && <span className="text-xs ml-1 text-neutral-500 dark:text-neutral-400">(disabled)</span>}
                               </span>
                               {provider.description && (

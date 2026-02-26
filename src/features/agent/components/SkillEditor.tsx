@@ -1,14 +1,14 @@
 import { useState, useMemo, Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { X, Sparkles, Loader2 } from 'lucide-react';
-import { validateSkillName } from '@/features/settings/lib/skillParser';
-import type { Skill } from '@/features/settings/lib/skillParser';
+import { validateSkillName } from '@/features/skills/lib/skillParser';
+import type { Skill } from '@/features/skills/lib/skillParser';
 import { getConfig } from '@/shared/config';
 
 interface SkillEditorProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (skill: Omit<Skill, 'id' | 'enabled'>) => void;
+  onSave: (skill: Omit<Skill, 'id'>) => void;
   skill?: Skill | null;
 }
 
@@ -81,7 +81,7 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
     }
   };
 
-  const canOptimize = description.trim().length > 0 && !isOptimizing;
+  const canOptimize = (description.trim().length > 0 || content.trim().length > 0) && !isOptimizing;
   const isValid = name && !nameError && description.trim();
 
   return (

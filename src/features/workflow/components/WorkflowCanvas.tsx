@@ -15,7 +15,6 @@ import { PromptNode } from '@/features/workflow/nodes/PromptNode';
 import { TranslateNode } from '@/features/workflow/nodes/TranslateNode';
 import { FileNode } from '@/features/workflow/nodes/FileNode';
 import { TextNode } from '@/features/workflow/nodes/TextNode';
-import { RepositoryNode } from '@/features/workflow/nodes/RepositoryNode';
 import { MarkdownNode } from '@/features/workflow/nodes/MarkdownNode';
 import { AudioNode } from '@/features/workflow/nodes/AudioNode';
 import { ImageNode } from '@/features/workflow/nodes/ImageNode';
@@ -29,7 +28,6 @@ const nodeTypes: NodeTypes = {
   translate: TranslateNode,
   file: FileNode,
   text: TextNode,
-  repository: RepositoryNode,
   markdown: MarkdownNode,
   audio: AudioNode,
   image: ImageNode,

@@ -17,7 +17,7 @@ import {
 /**
  * Result from semantic search (queryChunks).
  */
-export interface FileChunk {
+interface FileChunk {
   file: RepositoryFile;
   text: string;
   similarity?: number;
@@ -26,12 +26,12 @@ export interface FileChunk {
 /**
  * Query function type for semantic search.
  */
-export type QueryChunksFunction = (query: string, topK?: number) => Promise<FileChunk[]>;
+type QueryChunksFunction = (query: string, topK?: number) => Promise<FileChunk[]>;
 
 /**
  * Options for creating repository tools.
  */
-export interface RepositoryToolsOptions {
+interface RepositoryToolsOptions {
   /** Maximum grep matches per file (default: 20) */
   maxGrepMatches?: number;
   /** Maximum lines to return in read (default: 200) */

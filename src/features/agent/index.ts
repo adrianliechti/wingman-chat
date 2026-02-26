@@ -8,8 +8,8 @@ export { AgentProvider } from './context/AgentProvider';
 
 // Hooks
 export { useAgents } from './hooks/useAgents';
-export { useAgent } from './hooks/useAgent';
-export type { AgentHook, FileChunk } from './hooks/useAgent';
+export { useAgentFiles } from './hooks/useAgentFiles';
+export type { AgentFilesHook, FileChunk } from './hooks/useAgentFiles';
 export { useAgentProviders } from './hooks/useAgentProviders';
 export type { AgentProviders } from './hooks/useAgentProviders';
 
