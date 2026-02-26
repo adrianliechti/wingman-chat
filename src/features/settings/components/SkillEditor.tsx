@@ -1,8 +1,9 @@
 import { useState, useMemo, Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
-import { X } from 'lucide-react';
+import { X, Sparkles, Loader2 } from 'lucide-react';
 import { validateSkillName } from '@/features/settings/lib/skillParser';
 import type { Skill } from '@/features/settings/lib/skillParser';
+import { getConfig } from '@/shared/config';
 
 interface SkillEditorProps {
   isOpen: boolean;
@@ -16,6 +17,7 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
   const [hasOpened, setHasOpened] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
   // Track when dialog opens to reset form
   if (isOpen && !hasOpened) {
@@ -60,6 +62,26 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
     onClose();
   };
 
+  const handleOptimize = async () => {
+    if (isOptimizing) return;
+    setIsOptimizing(true);
+    try {
+      const config = getConfig();
+      const result = await config.client.optimizeSkill('', name, description, content);
+      if (!skill) {
+        // Only update name for new skills (name is locked when editing)
+        setName(result.name);
+      }
+      setDescription(result.description);
+      setContent(result.content);
+    } catch (error) {
+      console.error('Failed to optimize skill:', error);
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
+  const canOptimize = description.trim().length > 0 && !isOptimizing;
   const isValid = name && !nameError && description.trim();
 
   return (
@@ -166,22 +188,37 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/50">
+                <div className="flex items-center justify-between px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/50">
                   <button
                     type="button"
-                    onClick={onClose}
-                    className="px-4 py-2 text-sm font-medium rounded-lg text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                    onClick={handleOptimize}
+                    disabled={!canOptimize}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    Cancel
+                    {isOptimizing ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : (
+                      <Sparkles size={15} />
+                    )}
+                    {isOptimizing ? 'Optimizing...' : 'Optimize'}
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleSave}
-                    disabled={!isValid}
-                    className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {skill ? 'Save Changes' : 'Create Skill'}
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="px-4 py-2 text-sm font-medium rounded-lg text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSave}
+                      disabled={!isValid}
+                      className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {skill ? 'Save Changes' : 'Create Skill'}
+                    </button>
+                  </div>
                 </div>
               </Dialog.Panel>
             </Transition.Child>

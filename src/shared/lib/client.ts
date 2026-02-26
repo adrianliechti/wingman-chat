@@ -16,6 +16,7 @@ import instructionsRelatedPrompts from "@/features/chat/prompts/chat-suggestions
 import instructionsRewriteSelection from "@/features/chat/prompts/rewrite-selection.txt?raw";
 import instructionsRewriteText from "@/features/chat/prompts/rewrite-text.txt?raw";
 import instructionsSummarizeTitle from "@/features/chat/prompts/chat-title.txt?raw";
+import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
 
 export class Client {
   private oai: OpenAI;
@@ -925,5 +926,39 @@ export class Client {
       );
       return hasContent;
     });
+  }
+
+  async optimizeSkill(model: string, name: string, description: string, content: string): Promise<{ name: string; description: string; content: string }> {
+    const Schema = z.object({
+      name: z.string(),
+      description: z.string(),
+      content: z.string(),
+    }).strict();
+
+    const instructions = instructionsOptimizeSkill
+      .replace('{name}', name || '')
+      .replace('{description}', description || '')
+      .replace('{content}', content || '');
+
+    try {
+      const response = await this.oai.responses.parse({
+        model: model,
+        instructions: instructions,
+        input: `Optimize this skill: "${name}"`,
+        text: {
+          format: zodTextFormat(Schema, "optimize_skill"),
+        },
+      });
+
+      const result = response.output_parsed;
+      return {
+        name: result?.name ?? name,
+        description: result?.description ?? description,
+        content: result?.content ?? content,
+      };
+    } catch (error) {
+      console.error("Error optimizing skill:", error);
+      return { name, description, content };
+    }
   }
 }
