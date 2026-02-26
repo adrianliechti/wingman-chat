@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { getConfig } from "@/shared/config";
 import { MCPClient } from "@/features/settings/lib/mcp";
-import { useBridgeProvider } from "@/features/settings/hooks/useBridgeProvider";
+import { useAgents } from "@/features/agent/hooks/useAgents";
+import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import { useInterpreterProvider } from "@/features/tools/hooks/useInterpreterProvider";
 import { useRendererProvider } from "@/features/renderer/hooks/useRendererProvider";
@@ -27,8 +28,9 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
   );
   const configClientsRef = useRef<MCPClient[]>(configMcpClients);
 
-  // Get bridge providers (user-configured MCP servers)
-  const bridgeProviders = useBridgeProvider();
+  // Get current agent and its providers
+  const { currentAgent } = useAgents();
+  const { providers: agentProviders, enabledToolIds, mcpClients: agentMcpClients } = useAgentProviders(currentAgent);
   
   const internetProvider = useInternetProvider();
   const interpreterProvider = useInterpreterProvider();
@@ -44,39 +46,47 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     };
   }, []);
 
-  // Combine all MCP clients
-  const allMcpClients = useMemo(() => {
-    return [...configMcpClients, ...bridgeProviders];
-  }, [configMcpClients, bridgeProviders]);
+  // The set of enabled built-in tool IDs from the current agent
+  const enabledToolSet = useMemo(() => new Set(enabledToolIds), [enabledToolIds]);
 
-  // Build all providers with UI metadata
+  // Combine all MCP clients (config + agent bridge servers)
+  const allMcpClients = useMemo(() => {
+    return [...configMcpClients, ...agentMcpClients];
+  }, [configMcpClients, agentMcpClients]);
+
+  // Build all providers: agent-controlled built-ins + config MCPs + agent providers (repo, skills, agent bridges)
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
     
-    // Add local providers (only if available in config)
-    if (internetProvider) {
+    // Add local providers only if enabled by the current agent
+    if (internetProvider && enabledToolSet.has('internet')) {
       list.push(internetProvider);
     }
     
-    if (rendererProvider) {
+    if (rendererProvider && enabledToolSet.has('renderer')) {
       list.push(rendererProvider);
     }
     
-    if (interpreterProvider) {
+    if (interpreterProvider && enabledToolSet.has('interpreter')) {
       list.push(interpreterProvider);
     }
     
-    // Add all MCP clients (config + user bridges)
-    list.push(...allMcpClients);
+    // Add config MCP clients (always available)
+    list.push(...configMcpClients);
+
+    // Add agent-assembled providers (repository, skills, agent bridge MCPs)
+    list.push(...agentProviders);
     
-    // Note: artifacts and repository providers are added conditionally in useChatContext
+    // Note: artifacts provider is still added conditionally in useChatContext
     
     return list;
   }, [
     internetProvider,
     rendererProvider,
     interpreterProvider,
-    allMcpClients,
+    configMcpClients,
+    agentProviders,
+    enabledToolSet,
   ]);
 
   // Helper functions for state management
@@ -91,20 +101,16 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     if (mcpClient && mcpClient instanceof MCPClient) {
       // For MCP clients, connect/disconnect
       if (enabled) {
-        // Set initializing state before connecting
         setProviderStates(prev => new Map(prev).set(id, ProviderState.Initializing));
         try {
           await mcpClient.connect();
-          // Success: set connected
           setProviderStates(prev => new Map(prev).set(id, ProviderState.Connected));
         } catch (error) {
           console.error(`Failed to connect MCP client ${id}:`, error);
-          // Failure: set failed state
           setProviderStates(prev => new Map(prev).set(id, ProviderState.Failed));
         }
       } else {
         await mcpClient.disconnect();
-        // Set disconnected state
         setProviderStates(prev => new Map(prev).set(id, ProviderState.Disconnected));
       }
     } else {

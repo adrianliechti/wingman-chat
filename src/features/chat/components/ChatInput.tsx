@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
-import { Send, Paperclip, ScreenShare, X, Sparkles, Loader2, Lightbulb, Mic, Square, Package, Check, LoaderCircle, Rocket, Sliders, TriangleAlert } from "lucide-react";
+import { Send, Paperclip, ScreenShare, X, Sparkles, Loader2, Lightbulb, Mic, Square, Bot, Check, LoaderCircle, Rocket, Sliders, TriangleAlert } from "lucide-react";
 
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSuggestions } from "./ChatInputSuggestions";
@@ -18,7 +18,7 @@ import {
 } from "@/shared/lib/utils";
 import { getConfig } from "@/shared/config";
 import { useChat } from "@/features/chat/hooks/useChat";
-import { useRepositories } from "@/features/repository/hooks/useRepositories";
+import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useTranscription } from "@/features/voice/hooks/useTranscription";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { useDropZone } from "@/shared/hooks/useDropZone";
@@ -31,7 +31,7 @@ export function ChatInput() {
   const client = config.client;
 
   const { sendMessage, models, model, setModel: onModelChange, messages, isResponding } = useChat();
-  const { currentRepository, setCurrentRepository } = useRepositories();
+  const { currentAgent } = useAgents();
   const { profile } = useSettings();
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
   const { providers, getProviderState, setProviderEnabled } = useToolsContext();
@@ -648,20 +648,12 @@ export function ChatInput() {
               </Menu>
             )}
 
-            {currentRepository && (
-              <div className="hidden lg:flex group items-center gap-1 px-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm" title={currentRepository.name}>
-                <Package size={14} />
+            {currentAgent && (
+              <div className="hidden lg:flex group items-center gap-1 px-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm" title={currentAgent.name}>
+                <Bot size={14} />
                 <span className="max-w-20 truncate">
-                  {currentRepository.name}
+                  {currentAgent.name}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setCurrentRepository(null)}
-                  className="opacity-0 group-hover:opacity-100 hover:text-red-500 dark:hover:text-red-400 transition-all ml-1"
-                  title="Clear repository"
-                >
-                  <X size={10} />
-                </button>
               </div>
             )}
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { Plus as PlusIcon, Package, PackageOpen, Info, ArrowDown, BookOpenText, BookText, Rocket } from "lucide-react";
+import { Plus as PlusIcon, Bot, Info, ArrowDown, BookOpenText, BookText, Rocket } from "lucide-react";
 import DOMPurify from "dompurify";
 import { getConfig } from "@/shared/config";
 import { useAutoScroll } from "@/shared/hooks/useAutoScroll";
@@ -12,10 +12,10 @@ import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
 import { BackgroundImage } from "@/shell/components/BackgroundImage";
-import { useRepositories } from "@/features/repository/hooks/useRepositories";
+import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useApp } from "@/shell/hooks/useApp";
-import { RepositoryDrawer } from "@/features/repository/components/RepositoryDrawer";
+import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
 import { AppDrawer } from "@/shell/components/AppDrawer";
 
@@ -90,14 +90,14 @@ export function ChatPage() {
   
   const { layoutMode } = useLayout();
   const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
-  const { isAvailable: repositoryAvailable, toggleRepositoryDrawer, showRepositoryDrawer } = useRepositories();
+  const { showAgentDrawer, toggleAgentDrawer } = useAgents();
   const { showAppDrawer, toggleAppDrawer, hasAppContent } = useApp();
   
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
   
   // Drawer animation states using custom hook
-  const { isAnimating: isRepositoryDrawerAnimating, shouldRender: shouldRenderRepositoryDrawer } = useDrawerAnimation(showRepositoryDrawer);
+  const { isAnimating: isAgentDrawerAnimating, shouldRender: shouldRenderAgentDrawer } = useDrawerAnimation(showAgentDrawer);
   const { isAnimating: isArtifactsDrawerAnimating, shouldRender: shouldRenderArtifactsDrawer } = useDrawerAnimation(showArtifactsDrawer);
   const { isAnimating: isAppDrawerAnimating, shouldRender: shouldRenderAppDrawer } = useDrawerAnimation(showAppDrawer);
   
@@ -138,16 +138,14 @@ export function ChatPage() {
             <Rocket size={20} />
           </button>
         )}
-        {repositoryAvailable && (
-          <button
-            type="button"
-            className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-            onClick={toggleRepositoryDrawer}
-            title={showRepositoryDrawer ? 'Close repositories' : 'Open repositories'}
-          >
-            {showRepositoryDrawer ? <PackageOpen size={20} /> : <Package size={20} />}
-          </button>
-        )}
+        <button
+          type="button"
+          className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+          onClick={toggleAgentDrawer}
+          title={showAgentDrawer ? 'Close agent' : 'Open agent'}
+        >
+          <Bot size={20} />
+        </button>
         {artifactsAvailable && (
           <button
             type="button"
@@ -172,7 +170,7 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, createChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, repositoryAvailable, showRepositoryDrawer, toggleRepositoryDrawer, hasAppContent, showAppDrawer, toggleAppDrawer]);
+  }, [setRightActions, createChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, showAgentDrawer, toggleAgentDrawer, hasAppContent, showAppDrawer, toggleAppDrawer]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {
@@ -251,7 +249,7 @@ export function ChatPage() {
       <div className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-500 ease-in-out ${
         showAppDrawer ? 'md:mr-[calc(66vw+0.75rem)]' :
         showArtifactsDrawer ? 'md:mr-[calc(66vw+0.75rem)]' : 
-        showRepositoryDrawer ? 'md:mr-83' : ''
+        showAgentDrawer ? 'md:mr-83' : ''
       }`}>
         <main className="flex-1 flex flex-col overflow-hidden relative">
           {messages.length === 0 ? (
@@ -301,7 +299,7 @@ export function ChatPage() {
             <div className={`fixed flex justify-center pointer-events-none z-10 transition-all duration-300 ease-out ${
               showAppDrawer ? 'left-0 right-[calc(66vw+0.75rem)]' :
               showArtifactsDrawer ? 'left-0 right-[calc(66vw+0.75rem)]' :
-              showRepositoryDrawer ? 'left-0 right-83' : 'left-0 right-0'
+              showAgentDrawer ? 'left-0 right-83' : 'left-0 right-0'
             }`} style={{ bottom: `${chatInputHeight + 16}px` }}>
               <button
                 type="button"
@@ -317,13 +315,13 @@ export function ChatPage() {
 
         {/* Chat Input */}
         <footer className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-500 ease-in-out ${
-            messages.length === 0 && !showArtifactsDrawer && !showAppDrawer ? 'md:bottom-1/3 md:transform md:translate-y-1/2' : ''
+            messages.length === 0 && !showArtifactsDrawer && !showAppDrawer && !showAgentDrawer ? 'md:bottom-1/3 md:transform md:translate-y-1/2' : ''
           } ${
-            showSidebar && chats.length > 0 && !showArtifactsDrawer && !showRepositoryDrawer && !showAppDrawer ? 'md:left-59' : ''
+            showSidebar && chats.length > 0 && !showArtifactsDrawer && !showAgentDrawer && !showAppDrawer ? 'md:left-59' : ''
           } ${
             showAppDrawer ? 'right-0 md:right-[calc(66vw+0.75rem)]' :
             showArtifactsDrawer ? 'right-0 md:right-[calc(66vw+0.75rem)]' :
-            showRepositoryDrawer ? 'right-0 md:right-83' : 'right-0'
+            showAgentDrawer ? 'right-0 md:right-83' : 'right-0'
           }`}>
             <div className="relative pointer-events-auto md:max-w-4xl mx-auto">
               <ChatInput />
@@ -342,7 +340,7 @@ export function ChatPage() {
           } ${ 
             // On mobile: full width overlay from right edge, on desktop: positioned with right edge and 66% width
             'fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-[66vw] max-w-none'
-          } ${shouldRenderRepositoryDrawer ? 'z-20' : 'z-25'}`}
+          } ${shouldRenderAgentDrawer ? 'z-20' : 'z-25'}`}
           style={{ 
             top: isMobile ? '48px' : undefined,
             bottom: isMobile ? `${chatInputHeight - 16}px` : undefined
@@ -354,11 +352,11 @@ export function ChatPage() {
         </div>
       )}
 
-      {/* Repository drawer - right side - renders over artifacts when both are visible */}
-      {repositoryAvailable && shouldRenderRepositoryDrawer && (
+      {/* Agent drawer - right side - renders over artifacts when both are visible */}
+      {shouldRenderAgentDrawer && (
         <div 
           className={`w-full z-25 transition-all duration-150 ease-linear transform ${
-            isRepositoryDrawerAnimating 
+            isAgentDrawerAnimating 
               ? 'translate-x-0 opacity-100' 
               : 'translate-x-full opacity-0'
           } ${ 
@@ -370,7 +368,7 @@ export function ChatPage() {
             bottom: isMobile ? `${chatInputHeight - 16}px` : undefined
           }}
         >
-          <RepositoryDrawer />
+          <AgentDrawer />
         </div>
       )}
 

@@ -1,9 +1,8 @@
 import { useState, useEffect, Fragment } from 'react';
-import { Settings, MessageSquare, User, Package, Download, Upload, Trash2, ChevronsUpDown, Check, X, ChevronRight, Sparkles, Pencil, ToggleLeft, ToggleRight, Plus, Code } from 'lucide-react';
+import { Settings, MessageSquare, User, Download, Upload, Trash2, ChevronsUpDown, Check, X, ChevronRight } from 'lucide-react';
 import { Transition, Listbox } from '@headlessui/react';
 import { useSettings } from '@/features/settings/hooks/useSettings';
 import { useChat } from '@/features/chat/hooks/useChat';
-import { useRepositories } from '@/features/repository/hooks/useRepositories';
 import { getStorageUsage, downloadFolderAsZip, importFolderFromZip, clearAll } from '@/shared/lib/opfs';
 import * as opfs from '@/shared/lib/opfs';
 import { formatBytes } from '@/shared/lib/utils';
@@ -11,13 +10,7 @@ import { getConfig } from '@/shared/config';
 import type { Theme, LayoutMode, BackgroundPack } from '@/shared/types/settings';
 import { personaOptions } from '@/features/settings/lib/personas';
 import type { PersonaKey } from '@/features/settings/lib/personas';
-import { SkillEditor } from './SkillEditor';
-import { BridgeEditor } from './BridgeEditor';
-import { parseSkillFile, downloadSkill } from '@/features/settings/lib/skillParser';
-import type { Skill } from '@/features/settings/lib/skillParser';
-import type { BridgeServer } from '@/features/settings/context/BridgeContext';
-import { migrateChat, migrateRepository } from '@/features/settings/lib/v1Migration';
-import JSZip from 'jszip';
+import { migrateChat } from '@/features/settings/lib/v1Migration';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -118,20 +111,10 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
     theme, setTheme, layoutMode, setLayoutMode,
     backgroundPacks, backgroundSetting, setBackground,
     profile, updateProfile,
-    skills, addSkill, updateSkill, removeSkill, toggleSkill,
-    servers, addServer, updateServer, removeServer, toggleServer
   } = useSettings();
   const { chats, deleteChat } = useChat();
-  const { repositories, createRepository, updateRepository, deleteRepository, upsertFile } = useRepositories();
   
-  // Skill editor state
-  const [skillEditorOpen, setSkillEditorOpen] = useState(false);
-  const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
-  
-  // Bridge editor state
-  const [bridgeEditorOpen, setBridgeEditorOpen] = useState(false);
-  const [editingBridge, setEditingBridge] = useState<BridgeServer | null>(null);
-  
+
   const [storageInfo, setStorageInfo] = useState<{
     totalSize: number;
     entries: Array<{ path: string; size: number }>;
@@ -177,15 +160,8 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
     }
   };
 
-  const deleteRepositories = () => {
-    if (window.confirm(`Are you sure you want to delete all ${repositories.length} repositor${repositories.length === 1 ? 'y' : 'ies'}? This action cannot be undone and will remove all files in these repositories.`)) {
-      repositories.forEach(repo => deleteRepository(repo.id));
-      setTimeout(() => loadStorageInfo(), 750);
-    }
-  };
-
   const deleteAllData = async () => {
-    if (!window.confirm('Are you sure you want to delete ALL data? This includes chats, repositories, images, skills, and settings. This action cannot be undone.')) {
+    if (!window.confirm('Are you sure you want to delete ALL data? This includes chats, agents, images, skills, and settings. This action cannot be undone.')) {
       return;
     }
     
@@ -200,106 +176,6 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
     } catch (error) {
       console.error('Delete all failed:', error);
       alert('Failed to delete all data. Please try again.');
-    }
-  };
-
-  const importRepositories = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.zip,.json';
-    input.multiple = false;
-    
-    input.onchange = async (event) => {
-      const file = (event.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      const isZip = file.name.endsWith('.zip');
-      
-      if (isZip) {
-        // ZIP import - direct folder import
-        if (!window.confirm('Import repositories from ZIP? This will merge with your existing repositories.')) {
-          return;
-        }
-
-        try {
-          await importFolderFromZip('repositories', file);
-          alert('Repositories imported successfully! Please refresh the page to see the changes.');
-          window.location.reload();
-        } catch (error) {
-          console.error('Failed to import repositories:', error);
-          alert('Failed to import repositories. Please check the file and try again.');
-        }
-      } else {
-        // JSON import - legacy format migration
-        try {
-          const jsonData = await file.text();
-          const importData = JSON.parse(jsonData);
-          
-          if (!importData.repositories || !Array.isArray(importData.repositories)) {
-            alert('Invalid import file: Expected repositories array not found.');
-            return;
-          }
-
-          const importCount = importData.repositories.length;
-          if (!window.confirm(`Import ${importCount} repositor${importCount === 1 ? 'y' : 'ies'} from legacy format? This will add to your existing repositories.`)) {
-            return;
-          }
-
-          let importedCount = 0;
-          
-          for (const repoData of importData.repositories) {
-            try {
-              // Migrate from old format (handles date conversion, missing fields, etc.)
-              const migratedRepo = migrateRepository(repoData);
-              
-              const newRepo = await createRepository(migratedRepo.name, migratedRepo.instructions);
-              updateRepository(newRepo.id, {
-                embedder: migratedRepo.embedder,
-                name: migratedRepo.name,
-                instructions: migratedRepo.instructions,
-                updatedAt: migratedRepo.updatedAt,
-              });
-              
-              // Import files with their text and vectors preserved
-              if (migratedRepo.files && Array.isArray(migratedRepo.files)) {
-                for (const fileData of migratedRepo.files) {
-                  try {
-                    upsertFile(newRepo.id, {
-                      ...fileData,
-                      id: crypto.randomUUID(), // Generate new file ID
-                    });
-                  } catch (error) {
-                    console.error('Failed to import file:', fileData, error);
-                  }
-                }
-              }
-              
-              importedCount++;
-            } catch (error) {
-              console.error('Failed to import repository:', repoData, error);
-            }
-          }
-
-          alert(`Successfully imported ${importedCount} repositor${importedCount === 1 ? 'y' : 'ies'}.`);
-          setTimeout(() => loadStorageInfo(), 750);
-          
-        } catch (error) {
-          console.error('Failed to import repositories:', error);
-          alert('Failed to import repositories. Please check the file format and try again.');
-        }
-      }
-    };
-
-    input.click();
-  };
-
-  const exportRepositories = async () => {
-    try {
-      const filename = `wingman-repositories-${new Date().toISOString().split('T')[0]}.zip`;
-      await downloadFolderAsZip('repositories', filename);
-    } catch (error) {
-      console.error('Export failed:', error);
-      alert('Failed to export repositories. Please try again.');
     }
   };
 
@@ -404,130 +280,6 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
     }
   };
 
-  // Skills functions
-  const handleEditSkill = (skill: Skill) => {
-    setEditingSkill(skill);
-    setSkillEditorOpen(true);
-  };
-
-  const handleNewSkill = () => {
-    setEditingSkill(null);
-    setSkillEditorOpen(true);
-  };
-
-  const handleSaveSkill = (skillData: Omit<Skill, 'id' | 'enabled'>) => {
-    if (editingSkill) {
-      updateSkill(editingSkill.id, skillData);
-    } else {
-      addSkill({ ...skillData, enabled: true });
-    }
-  };
-
-  const handleDeleteSkill = (skill: Skill) => {
-    if (window.confirm(`Are you sure you want to delete the skill "${skill.name}"?`)) {
-      removeSkill(skill.id);
-    }
-  };
-
-  const importSkills = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.zip,.md';
-    input.multiple = true;
-    
-    input.onchange = async (event) => {
-      const files = (event.target as HTMLInputElement).files;
-      if (!files || files.length === 0) return;
-
-      let importedCount = 0;
-      const errors: string[] = [];
-
-      for (const file of Array.from(files)) {
-        try {
-          if (file.name.endsWith('.zip')) {
-            // ZIP import - folder structure or multiple .md files
-            const zip = await JSZip.loadAsync(file);
-            
-            for (const [filename, zipEntry] of Object.entries(zip.files)) {
-              if (zipEntry.dir) continue;
-              if (!filename.endsWith('.md')) continue;
-              
-              try {
-                const content = await zipEntry.async('string');
-                const result = parseSkillFile(content);
-                
-                if (result.success) {
-                  addSkill({ ...result.skill, enabled: true });
-                  importedCount++;
-                } else {
-                  errors.push(`${filename}: ${result.errors.map(e => e.message).join(', ')}`);
-                }
-              } catch {
-                errors.push(`${filename}: Failed to parse`);
-              }
-            }
-          } else {
-            // Single .md file import
-            const content = await file.text();
-            const result = parseSkillFile(content);
-            
-            if (result.success) {
-              addSkill({ ...result.skill, enabled: true });
-              importedCount++;
-            } else {
-              errors.push(`${file.name}: ${result.errors.map(e => e.message).join(', ')}`);
-            }
-          }
-        } catch {
-          errors.push(`${file.name}: Failed to read file`);
-        }
-      }
-
-      if (importedCount > 0) {
-        alert(`Successfully imported ${importedCount} skill${importedCount === 1 ? '' : 's'}.${errors.length > 0 ? `\n\nErrors:\n${errors.join('\n')}` : ''}`);
-      } else if (errors.length > 0) {
-        alert(`Failed to import skills:\n${errors.join('\n')}`);
-      }
-    };
-
-    input.click();
-  };
-
-  const exportAllSkills = async () => {
-    try {
-      const filename = `wingman-skills-${new Date().toISOString().split('T')[0]}.zip`;
-      await downloadFolderAsZip('skills', filename);
-    } catch (error) {
-      console.error('Failed to export skills:', error);
-      alert('Failed to export skills. Please try again.');
-    }
-  };
-
-  // Bridge functions
-  const handleEditBridge = (bridge: BridgeServer) => {
-    setEditingBridge(bridge);
-    setBridgeEditorOpen(true);
-  };
-
-  const handleNewBridge = () => {
-    setEditingBridge(null);
-    setBridgeEditorOpen(true);
-  };
-
-  const handleSaveBridge = (bridgeData: Omit<BridgeServer, 'id'>) => {
-    if (editingBridge) {
-      updateServer(editingBridge.id, bridgeData);
-    } else {
-      addServer(bridgeData);
-    }
-  };
-
-  const handleDeleteBridge = (bridge: BridgeServer) => {
-    if (window.confirm(`Are you sure you want to delete the bridge "${bridge.name}"?`)) {
-      removeServer(bridge.id);
-    }
-  };
-
   const backgroundOptions = [{ value: null, label: 'None' }, ...backgroundPacks.map((p: BackgroundPack) => ({ value: p.name, label: p.name }))];
 
   // Reset sections when drawer opens
@@ -543,18 +295,6 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
 
   return (
     <>
-    <SkillEditor
-      isOpen={skillEditorOpen}
-      onClose={() => setSkillEditorOpen(false)}
-      onSave={handleSaveSkill}
-      skill={editingSkill}
-    />
-    <BridgeEditor
-      isOpen={bridgeEditorOpen}
-      onClose={() => setBridgeEditorOpen(false)}
-      onSave={handleSaveBridge}
-      bridge={editingBridge}
-    />
     <Transition show={isOpen} as={Fragment}>
       <div className="fixed inset-0 z-70">
         {/* Backdrop */}
@@ -730,242 +470,15 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
               </div>
             </AccordionSection>
 
-            {/* Repositories Section - Conditional */}
-            {getConfig().repository && (
-              <AccordionSection
-                title="Repositories"
-                icon={<Package size={20} />}
-                isOpen={openSection === 'repositories'}
-                onClick={() => toggleSection('repositories')}
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Storage</span>
-                    <span className="text-sm text-neutral-500 dark:text-neutral-400">
-                      {repositories.length} repositor{repositories.length === 1 ? 'y' : 'ies'} • {storageInfo.isLoading ? '...' : formatBytes(storageInfo.entries.filter(e => e.path.startsWith('repositories/')).reduce((sum, e) => sum + e.size, 0))}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={importRepositories}
-                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
-                    >
-                      <Download size={14} />
-                      Import
-                    </button>
-                    <button
-                      type="button"
-                      onClick={exportRepositories}
-                      disabled={repositories.length === 0}
-                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
-                    >
-                      <Upload size={14} />
-                      Export
-                    </button>
-                    <button
-                      type="button"
-                      onClick={deleteRepositories}
-                      disabled={repositories.length === 0}
-                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50/50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
-                    >
-                      <Trash2 size={14} />
-                      Delete All
-                    </button>
-                  </div>
-
-                  <p className="text-xs text-neutral-400 dark:text-neutral-500">Stored locally in your browser</p>
-                </div>
-              </AccordionSection>
-            )}
-
-            {/* Skills Section */}
+            {/* Danger Zone */}
             <AccordionSection
-              title="Skills"
-              icon={<Sparkles size={20} />}
-              isOpen={openSection === 'skills'}
-              onClick={() => toggleSection('skills')}
+              title="Advanced"
+              icon={<Settings size={20} />}
+              isOpen={openSection === 'advanced'}
+              onClick={() => toggleSection('advanced')}
             >
               <div className="space-y-3">
-                {/* Skills list */}
-                {skills.length > 0 && (
-                  <div className="space-y-2">
-                    {skills.map((skill) => (
-                      <div
-                        key={skill.id}
-                        className="flex items-center gap-3 p-3 rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-200/50 dark:border-neutral-700/50"
-                      >
-                        {/* Toggle */}
-                        <button
-                          type="button"
-                          onClick={() => toggleSkill(skill.id)}
-                          className={`shrink-0 ${skill.enabled ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-400 dark:text-neutral-500'}`}
-                          title={skill.enabled ? 'Disable skill' : 'Enable skill'}
-                        >
-                          {skill.enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-                        </button>
-
-                        {/* Info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm text-neutral-900 dark:text-neutral-100 truncate">
-                            {skill.name}
-                          </div>
-                          <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
-                            {skill.description}
-                          </div>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleEditSkill(skill)}
-                            className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors"
-                            title="Edit skill"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => downloadSkill(skill)}
-                            className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors"
-                            title="Export skill"
-                          >
-                            <Download size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSkill(skill)}
-                            className="p-1.5 rounded-lg text-neutral-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-                            title="Delete skill"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {skills.length === 0 && (
-                  <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center py-4">
-                    No skills added yet. Add a skill to extend the assistant's capabilities.
-                  </p>
-                )}
-
-                {/* Action buttons */}
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={handleNewSkill}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
-                  >
-                    <Plus size={14} />
-                    Add Skill
-                  </button>
-                  <button
-                    type="button"
-                    onClick={importSkills}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
-                  >
-                    <Download size={14} />
-                    Import
-                  </button>
-                  <button
-                    type="button"
-                    onClick={exportAllSkills}
-                    disabled={skills.length === 0}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
-                  >
-                    <Upload size={14} />
-                    Export All
-                  </button>
-                </div>
-
-                <p className="text-xs text-neutral-400 dark:text-neutral-500">
-                  Skills extend the assistant's capabilities with specialized instructions.
-                </p>
-              </div>
-            </AccordionSection>
-
-            {/* Developer Mode Section */}
-            <AccordionSection
-              title="Developer"
-              icon={<Code size={20} />}
-              isOpen={openSection === 'developer'}
-              onClick={() => toggleSection('developer')}
-            >
-              <div className="space-y-3">
-                {/* Servers list */}
-                {servers.length > 0 && (
-                  <div className="space-y-2">
-                    {servers.map((server) => (
-                      <div
-                        key={server.id}
-                        className="flex items-center gap-3 p-3 rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-200/50 dark:border-neutral-700/50"
-                      >
-                        {/* Toggle */}
-                        <button
-                          type="button"
-                          onClick={() => toggleServer(server.id)}
-                          className={`shrink-0 ${server.enabled ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-400 dark:text-neutral-500'}`}
-                          title={server.enabled ? 'Disable server' : 'Enable server'}
-                        >
-                          {server.enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-                        </button>
-
-                        {/* Info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm text-neutral-900 dark:text-neutral-100 truncate">
-                            {server.name}
-                          </div>
-                          <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
-                            {server.url}
-                          </div>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleEditBridge(server)}
-                            className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors"
-                            title="Edit server"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteBridge(server)}
-                            className="p-1.5 rounded-lg text-neutral-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-                            title="Delete server"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Action buttons */}
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={handleNewBridge}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
-                  >
-                    <Plus size={14} />
-                    Add Server
-                  </button>
-                </div>
-
-                <p className="text-xs text-neutral-400 dark:text-neutral-500">
-                  Servers connect to external MCP endpoints for additional tools and capabilities.
-                </p>
-
-                <div className="pt-3 border-t border-neutral-200/50 dark:border-neutral-700/50">
+                <div className="pt-1">
                   <button
                     type="button"
                     onClick={deleteAllData}

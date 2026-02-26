@@ -1,0 +1,196 @@
+import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import type { Agent } from '@/features/agent/types/agent';
+import { useAgent } from './useAgent';
+import { useSkills } from '@/features/settings/hooks/useSkills';
+import { MCPClient } from '@/features/settings/lib/mcp';
+import type { Tool, ToolProvider } from '@/shared/types/chat';
+import { markdownToText } from '@/shared/lib/utils';
+import { createRepositoryTools } from '@/features/repository/lib/repository-tools';
+import repositoryInstructions from '@/features/repository/prompts/repository.txt?raw';
+import skillsPrompt from '@/features/settings/prompts/skills.txt?raw';
+import { Package, Sparkles } from 'lucide-react';
+
+export interface AgentProviders {
+  /** All tool providers assembled from this agent's config */
+  providers: ToolProvider[];
+  /** Built-in tool IDs this agent has enabled (e.g. "internet", "interpreter", "renderer") */
+  enabledToolIds: string[];
+  /** MCP clients owned by this agent (for lifecycle management) */
+  mcpClients: MCPClient[];
+}
+
+/**
+ * Given an Agent, assembles all its ToolProviders:
+ * - Repository provider (if repositoryEnabled and files exist)
+ * - Skills provider (filtered to agent.skills IDs from global library)
+ * - Bridge MCP clients (for agent.servers)
+ * Also returns the agent.tools list for ToolsProvider to know which built-in tools to activate.
+ */
+export function useAgentProviders(agent: Agent | null): AgentProviders {
+  const agentId = agent?.id || '';
+  const { files, queryChunks } = useAgent(agentId);
+  const { skills: allSkills, getSkill } = useSkills();
+
+  // Track MCP clients for agent's bridge servers
+  const [mcpClients, setMcpClients] = useState<MCPClient[]>([]);
+  const clientsRef = useRef<MCPClient[]>([]);
+
+  const enabledServers = useMemo(() => {
+    if (!agent) return [];
+    return agent.servers.filter(s => s.enabled);
+  }, [agent]);
+
+  // Create/update MCP clients when enabled servers change
+  useEffect(() => {
+    const currentIds = new Set(clientsRef.current.map(c => c.id));
+    const newIds = new Set(enabledServers.map(s => s.id));
+
+    const needsUpdate =
+      currentIds.size !== newIds.size ||
+      enabledServers.some(s => !currentIds.has(s.id)) ||
+      clientsRef.current.some(c => !newIds.has(c.id));
+
+    if (needsUpdate) {
+      // Disconnect removed clients
+      const removedClients = clientsRef.current.filter(c => !newIds.has(c.id));
+      removedClients.forEach(client => {
+        client.disconnect().catch(console.error);
+      });
+
+      // Create new clients array, reusing existing connected clients
+      const newClients = enabledServers.map(server => {
+        const existing = clientsRef.current.find(c => c.id === server.id);
+        if (existing) return existing;
+        return new MCPClient(server.id, server.url, server.name, server.description, server.headers);
+      });
+
+      clientsRef.current = newClients;
+      setMcpClients(newClients);
+    }
+  }, [enabledServers]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    const clients = clientsRef;
+    return () => {
+      clients.current.forEach(client => {
+        client.disconnect().catch(console.error);
+      });
+    };
+  }, []);
+
+  // --- Repository provider ---
+  const repositoryProvider = useMemo<ToolProvider | null>(() => {
+    if (!agent || !agent.repositoryEnabled) return null;
+    if (files.length === 0 && !agent.instructions?.trim()) return null;
+
+    const tools: Tool[] = files.length > 0 ? createRepositoryTools(files, queryChunks) : [];
+
+    const instructions: string[] = [];
+    instructions.push(repositoryInstructions);
+    if (agent.instructions?.trim()) {
+      instructions.push(`## Custom Instructions\n\n${markdownToText(agent.instructions.trim())}`);
+    }
+
+    const instructionsText = instructions.join('\n\n');
+    if (tools.length === 0 && !instructionsText.trim()) return null;
+
+    return {
+      id: 'repository',
+      name: 'Repository',
+      description: 'File access tools for your repository',
+      icon: Package,
+      instructions: instructionsText || undefined,
+      tools,
+    };
+  }, [agent, files, queryChunks]);
+
+  // --- Skills provider ---
+  const agentSkillIds = useMemo(() => new Set(agent?.skills || []), [agent?.skills]);
+
+  const enabledSkills = useMemo(() => {
+    if (!agent || agentSkillIds.size === 0) return [];
+    return allSkills.filter(s => agentSkillIds.has(s.id));
+  }, [agent, allSkills, agentSkillIds]);
+
+  const getSkillTools = useCallback((): Tool[] => {
+    if (enabledSkills.length === 0) return [];
+    return [
+      {
+        name: 'read_skill',
+        description: 'Read the full content and instructions of an available skill.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'The name of the skill to read.',
+            },
+          },
+          required: ['name'],
+        },
+        function: async (args: Record<string, unknown>) => {
+          const skillName = args.name as string;
+          if (!skillName) {
+            return [{ type: 'text' as const, text: JSON.stringify({ error: 'No skill name provided' }) }];
+          }
+          const skill = getSkill(skillName);
+          if (!skill) {
+            return [{ type: 'text' as const, text: JSON.stringify({ error: `Skill "${skillName}" not found` }) }];
+          }
+          if (!agentSkillIds.has(skill.id)) {
+            return [{ type: 'text' as const, text: JSON.stringify({ error: `Skill "${skillName}" is not enabled for this agent` }) }];
+          }
+          return [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              name: skill.name,
+              description: skill.description,
+              instructions: skill.content,
+            }),
+          }];
+        },
+      },
+    ];
+  }, [enabledSkills, getSkill, agentSkillIds]);
+
+  const skillsProvider = useMemo<ToolProvider | null>(() => {
+    if (enabledSkills.length === 0) return null;
+
+    const tools = getSkillTools();
+    const skillsXml = enabledSkills
+      .map(
+        skill =>
+          `  <skill>\n    <name>${skill.name}</name>\n    <description>${skill.description}</description>\n  </skill>`
+      )
+      .join('\n');
+
+    const instructions = skillsPrompt.replace('{skillsXml}', skillsXml);
+
+    return {
+      id: 'skills',
+      name: 'Skills',
+      description: 'Specialized agent skills',
+      icon: Sparkles,
+      instructions: instructions || undefined,
+      tools,
+    };
+  }, [enabledSkills, getSkillTools]);
+
+  // --- Combine all providers ---
+  const providers = useMemo<ToolProvider[]>(() => {
+    const list: ToolProvider[] = [];
+    if (repositoryProvider) list.push(repositoryProvider);
+    if (skillsProvider) list.push(skillsProvider);
+    list.push(...mcpClients);
+    return list;
+  }, [repositoryProvider, skillsProvider, mcpClients]);
+
+  const enabledToolIds = useMemo(() => agent?.tools || [], [agent?.tools]);
+
+  return {
+    providers,
+    enabledToolIds,
+    mcpClients,
+  };
+}

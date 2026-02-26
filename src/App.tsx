@@ -20,15 +20,15 @@ import { VoiceProvider } from "./features/voice/context/VoiceProvider";
 import { SettingsButton } from "./features/settings/components/SettingsButton";
 import { SettingsDrawer } from "./features/settings/components/SettingsDrawer";
 import { RepositoryProvider } from "./features/repository/context/RepositoryProvider";
+import { AgentProvider } from "./features/agent/context/AgentProvider";
 import { SkillsProvider } from "./features/settings/context/SkillsProvider";
 import { ArtifactsProvider } from "./features/artifacts/context/ArtifactsProvider";
 import { AppProvider } from "./shell/context/AppProvider";
 import { ProfileProvider } from "./features/settings/context/ProfileProvider";
 import { ScreenCaptureProvider } from "./features/chat/context/ScreenCaptureProvider";
 import { ToolsProvider } from "./features/tools/context/ToolsProvider";
-import { BridgeProvider } from "./features/settings/context/BridgeProvider";
 import { useArtifacts } from "./features/artifacts/hooks/useArtifacts";
-import { useRepositories } from "./features/repository/hooks/useRepositories";
+import { useAgents } from "./features/agent/hooks/useAgents";
 import { useApp } from "./shell/hooks/useApp";
 
 type Page = "chat" | "flow" | "translate" | "renderer" | "research";
@@ -39,11 +39,11 @@ function AppContent() {
   const { showSidebar, setShowSidebar, toggleSidebar, sidebarContent } = useSidebar();
   const { leftActions, rightActions } = useNavigation();
   const { showArtifactsDrawer } = useArtifacts();
-  const { showRepositoryDrawer } = useRepositories();
+  const { showAgentDrawer } = useAgents();
   const { showAppDrawer } = useApp();
   
   // Detect if any panel is open - sidebar becomes overlay when panels are open
-  const hasPanelOpen = showArtifactsDrawer || showRepositoryDrawer || showAppDrawer;
+  const hasPanelOpen = showArtifactsDrawer || showAgentDrawer || showAppDrawer;
   
   // Track previous panel state to detect when panels open (using state for adjust-during-render pattern)
   const [prevHasPanelOpen, setPrevHasPanelOpen] = useState(hasPanelOpen);
@@ -480,8 +480,8 @@ const providers = [
   ArtifactsProvider,
   AppProvider,
   RepositoryProvider,
+  AgentProvider,
   ScreenCaptureProvider,
-  BridgeProvider,
   ToolsProvider,
   ChatProvider,
   VoiceProvider,

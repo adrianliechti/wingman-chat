@@ -4,10 +4,8 @@ import { ProviderState } from "@/shared/types/chat";
 import { useProfile } from "@/features/settings/hooks/useProfile";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
-import { useRepositoryProvider } from "@/features/repository/hooks/useRepositoryProvider";
-import { useSkillsProvider } from "@/features/settings/hooks/useSkillsProvider";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { useRepositories } from "@/features/repository/hooks/useRepositories";
+import { useAgents } from "@/features/agent/hooks/useAgents";
 import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
 
 export interface ChatContext {
@@ -19,31 +17,21 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
   const { generateInstructions } = useProfile();
   const { providers, getProviderState } = useToolsContext();
   
-  // Conditionally include artifacts, repository, and skills providers
+  // Conditionally include artifacts provider
   const { isEnabled: artifactsEnabled, showArtifactsDrawer } = useArtifacts();
-  const { currentRepository } = useRepositories();
   const artifactsProvider = useArtifactsProvider();
-  const repositoryProvider = useRepositoryProvider(currentRepository?.id || '');
-  const skillsProvider = useSkillsProvider();
+  
+  // Get current agent for its instructions
+  const { currentAgent } = useAgents();
 
   const context = useMemo<ChatContext>(() => {
     const getFilteredProviders = () => {
-      // Start with base providers
+      // Start with base providers (includes agent repo, skills, bridges, and conditionally enabled built-in tools)
       let filteredProviders = providers.filter((p: ToolProvider) => getProviderState(p.id) === ProviderState.Connected);
       
       // Add artifacts provider if conditions are met (enabled OR drawer is visible)
       if (artifactsProvider && (artifactsEnabled || showArtifactsDrawer)) {
         filteredProviders = [...filteredProviders, artifactsProvider];
-      }
-      
-      // Add repository provider if current repository is set
-      if (repositoryProvider && currentRepository) {
-        filteredProviders = [...filteredProviders, repositoryProvider];
-      }
-      
-      // Add skills provider if it has enabled skills
-      if (skillsProvider) {
-        filteredProviders = [...filteredProviders, skillsProvider];
       }
       
       // Further filter based on model configuration
@@ -52,14 +40,11 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
         const disabledTools = new Set(model.tools.disabled || []);
         
         filteredProviders = filteredProviders.filter((provider: ToolProvider) => {
-          // Check provider ID against enabled/disabled lists
           const matchId = provider.id;
           
-          // If there are enabled tools specified, only include those
           if (enabledTools.size > 0) {
             return enabledTools.has(matchId);
           }
-          // Otherwise, exclude disabled tools
           return !disabledTools.has(matchId);
         });
       }
@@ -93,6 +78,11 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
           instructionsList.push(defaultInstructions);
         }
 
+        // Add agent-level instructions
+        if (currentAgent?.instructions?.trim()) {
+          instructionsList.push(currentAgent.instructions);
+        }
+
         if (mode === 'voice') {
           instructionsList.push('Respond concisely and naturally for voice interaction.');
         }
@@ -109,7 +99,7 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
         return instructionsList.join('\n\n');
       }
     };
-  }, [mode, model, generateInstructions, providers, getProviderState, artifactsEnabled, showArtifactsDrawer, artifactsProvider, repositoryProvider, currentRepository, skillsProvider]);
+  }, [mode, model, generateInstructions, providers, getProviderState, artifactsEnabled, showArtifactsDrawer, artifactsProvider, currentAgent]);
 
   return context;
 }
