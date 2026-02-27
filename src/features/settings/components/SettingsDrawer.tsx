@@ -293,24 +293,119 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
   const importAgents = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.zip';
+    input.accept = '.zip,.json';
     input.multiple = false;
 
     input.onchange = async (event) => {
       const file = (event.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
-      if (!window.confirm('Import agents from ZIP? This will merge with your existing agents and skills.')) {
-        return;
-      }
+      const isZip = file.name.endsWith('.zip');
 
-      try {
-        await importAgentsWithSkills(file);
-        alert('Agents imported successfully! Please refresh the page to see the changes.');
-        window.location.reload();
-      } catch (error) {
-        console.error('Failed to import agents:', error);
-        alert('Failed to import agents. Please check the file and try again.');
+      if (isZip) {
+        if (!window.confirm('Import agents from ZIP? This will merge with your existing agents and skills.')) {
+          return;
+        }
+
+        try {
+          await importAgentsWithSkills(file);
+          alert('Agents imported successfully! Please refresh the page to see the changes.');
+          window.location.reload();
+        } catch (error) {
+          console.error('Failed to import agents:', error);
+          alert('Failed to import agents. Please check the file and try again.');
+        }
+      } else {
+        // JSON import — legacy format with { repositories: [...] }
+        try {
+          const jsonData = await file.text();
+          const importData = JSON.parse(jsonData);
+
+          if (!importData.repositories || !Array.isArray(importData.repositories)) {
+            alert('Invalid import file: Expected repositories array not found.');
+            return;
+          }
+
+          const importCount = importData.repositories.length;
+          if (!window.confirm(`Import ${importCount} legacy repositor${importCount === 1 ? 'y' : 'ies'} as agents? This will add to your existing agents.`)) {
+            return;
+          }
+
+          let importedCount = 0;
+
+          for (const repoData of importData.repositories) {
+            try {
+              const agentId = crypto.randomUUID();
+              const name = repoData.name || 'Imported Repository';
+              const instructions = repoData.instructions;
+
+              // Generate AGENTS.md
+              const mdLines: string[] = ['---'];
+              mdLines.push(`name: ${name}`);
+              mdLines.push('---');
+              if (instructions) {
+                mdLines.push('');
+                mdLines.push(instructions);
+              }
+              await opfs.writeText(`agents/${agentId}/AGENTS.md`, mdLines.join('\n'));
+
+              // Store files if present (old JSON format embeds text/vectors inline)
+              if (repoData.files && Array.isArray(repoData.files)) {
+                for (const fileData of repoData.files) {
+                  const fileId = fileData.id || crypto.randomUUID();
+                  const filePath = `agents/${agentId}/files/${fileId}`;
+
+                  const meta = {
+                    id: fileId,
+                    name: fileData.name || 'Unknown File',
+                    status: fileData.status || 'completed',
+                    progress: typeof fileData.progress === 'number' ? fileData.progress : 100,
+                    error: fileData.error,
+                    uploadedAt: fileData.uploadedAt || new Date().toISOString(),
+
+                  };
+
+                  await opfs.writeJson(`${filePath}/metadata.json`, meta);
+
+                  if (fileData.text) {
+                    await opfs.writeText(`${filePath}/content.txt`, fileData.text);
+                  }
+
+                  if (fileData.segments && fileData.segments.length > 0) {
+                    const segmentTexts = fileData.segments.map((s: { text: string }) => s.text);
+                    await opfs.writeJson(`${filePath}/segments.json`, segmentTexts);
+
+                    const vectorDim = fileData.segments[0].vector.length;
+                    const totalFloats = 1 + fileData.segments.length * vectorDim;
+                    const buffer = new Float32Array(totalFloats);
+                    buffer[0] = vectorDim;
+                    let offset = 1;
+                    for (const segment of fileData.segments) {
+                      buffer.set(segment.vector, offset);
+                      offset += vectorDim;
+                    }
+                    const blob = new Blob([buffer.buffer], { type: 'application/octet-stream' });
+                    await opfs.writeBlob(`${filePath}/embeddings.bin`, blob);
+                  }
+                }
+              }
+
+              importedCount++;
+            } catch (error) {
+              console.error('Failed to import repository as agent:', repoData, error);
+            }
+          }
+
+          if (importedCount > 0) {
+            await opfs.rebuildFolderIndex('agents');
+          }
+
+          alert(`Successfully imported ${importedCount} repositor${importedCount === 1 ? 'y' : 'ies'} as agent${importedCount === 1 ? '' : 's'}. Please refresh to see changes.`);
+          window.location.reload();
+        } catch (error) {
+          console.error('Failed to import agents:', error);
+          alert('Failed to import. Please check the file format and try again.');
+        }
       }
     };
 

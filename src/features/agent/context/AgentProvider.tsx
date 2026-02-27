@@ -5,7 +5,6 @@ import type { RepositoryFile } from '@/features/repository/types/repository';
 import * as opfs from '@/shared/lib/opfs';
 import { AgentContext } from './AgentContext';
 import type { AgentContextType } from './AgentContext';
-import { getConfig } from '@/shared/config';
 
 const COLLECTION = 'agents';
 const AGENT_STORAGE_KEY = 'app_agent';
@@ -18,9 +17,6 @@ interface StoredFileMeta {
   progress: number;
   error?: string;
   uploadedAt: string;
-  hasText: boolean;
-  hasVectors: boolean;
-  segmentCount: number;
 }
 
 // Agent-specific OPFS operations using folder structure:
@@ -128,9 +124,6 @@ async function storeAgentFile(agentId: string, file: RepositoryFile): Promise<vo
     progress: file.progress,
     error: file.error,
     uploadedAt: file.uploadedAt instanceof Date ? file.uploadedAt.toISOString() : file.uploadedAt as unknown as string,
-    hasText: !!file.text,
-    hasVectors: !!(file.segments && file.segments.length > 0),
-    segmentCount: file.segments?.length || 0,
   };
   
   await opfs.writeJson(`${filePath}/metadata.json`, meta);
@@ -235,30 +228,27 @@ async function loadAgentFile(agentId: string, fileId: string): Promise<Repositor
   const meta = await opfs.readJson<StoredFileMeta>(`${filePath}/metadata.json`);
   if (!meta) return undefined;
   
-  let text: string | undefined;
-  if (meta.hasText) {
-    text = await opfs.readText(`${filePath}/content.txt`);
-  }
+  // Prefer actual content.txt presence over metadata flags, which can be stale
+  // in some migrated/imported data sets.
+  const text = await opfs.readText(`${filePath}/content.txt`);
   
   let segments: Array<{ text: string; vector: number[] }> | undefined;
-  if (meta.hasVectors && meta.segmentCount > 0) {
-    const segmentTexts = await opfs.readJson<string[]>(`${filePath}/segments.json`);
-    const vectorsBlob = await opfs.readBlob(`${filePath}/embeddings.bin`);
-    
-    if (segmentTexts && vectorsBlob) {
-      const buffer = await vectorsBlob.arrayBuffer();
-      const floats = new Float32Array(buffer);
-      const vectorDim = floats[0];
-      
-      segments = [];
-      for (let i = 0; i < meta.segmentCount; i++) {
-        const start = 1 + i * vectorDim;
-        const vector = Array.from(floats.slice(start, start + vectorDim));
-        segments.push({
-          text: segmentTexts[i] || '',
-          vector,
-        });
-      }
+  const segmentTexts = await opfs.readJson<string[]>(`${filePath}/segments.json`);
+  const vectorsBlob = await opfs.readBlob(`${filePath}/embeddings.bin`);
+
+  if (segmentTexts && vectorsBlob) {
+    const buffer = await vectorsBlob.arrayBuffer();
+    const floats = new Float32Array(buffer);
+    const vectorDim = floats[0];
+
+    segments = [];
+    for (let i = 0; i < segmentTexts.length; i++) {
+      const start = 1 + i * vectorDim;
+      const vector = Array.from(floats.slice(start, start + vectorDim));
+      segments.push({
+        text: segmentTexts[i] || '',
+        vector,
+      });
     }
   }
   
@@ -287,13 +277,17 @@ async function loadAgentIndex(): Promise<opfs.IndexEntry[]> {
   return opfs.readIndex(COLLECTION);
 }
 
+// Guard against double-migration (React StrictMode fires effects twice)
+let migrationRunning = false;
+
 // Migration: convert existing repositories + bridge servers + skills into agents
 async function migrateFromLegacy(): Promise<Agent[]> {
+  if (migrationRunning) return [];
+  migrationRunning = true;
+
   const migrated: Agent[] = [];
   
   try {
-    const config = getConfig();
-    
     // Collect existing skill names
     let enabledSkillNames: string[] = [];
     try {
@@ -312,9 +306,6 @@ async function migrateFromLegacy(): Promise<Agent[]> {
     
     // Determine default-on tool IDs from config
     const defaultTools: string[] = [];
-    if (config.internet) defaultTools.push('internet');
-    if (config.interpreter) defaultTools.push('interpreter');
-    if (config.renderer) defaultTools.push('renderer');
     
     // Load existing repositories
     const repoIndex = await opfs.readIndex('repositories');
@@ -324,57 +315,130 @@ async function migrateFromLegacy(): Promise<Agent[]> {
       
       for (const entry of repoIndex) {
         try {
-          // Read repo metadata
+          // Read repo metadata — try folder structure first, then flat file (IndexedDB migration format)
+          let repoName = entry.title || 'Untitled';
+          let repoInstructions: string | undefined;
+          const files: RepositoryFile[] = [];
+          const agentId = crypto.randomUUID();
+
           const repoMeta = await opfs.readJson<{
             id: string; name: string; embedder: string; instructions?: string;
             createdAt: string; updatedAt: string;
+            files?: Array<{
+              id: string; name: string; status: string; progress: number;
+              text?: string; segments?: Array<{ text: string; vector: number[] }>;
+              error?: string; uploadedAt: string;
+            }>;
           }>(`repositories/${entry.id}/repository.json`);
-          
-          if (!repoMeta) continue;
-          
-          const agentId = crypto.randomUUID();
-          
-          // Copy files from repository to agent
-          const fileIds = await opfs.listDirectories(`repositories/${entry.id}/files`);
-          const files: RepositoryFile[] = [];
-          
-          for (const fileId of fileIds) {
-            // Copy each file's folder contents
-            const srcBase = `repositories/${entry.id}/files/${fileId}`;
-            const dstBase = `${COLLECTION}/${agentId}/files/${fileId}`;
-            
-            const fileMeta = await opfs.readJson<StoredFileMeta>(`${srcBase}/metadata.json`);
-            if (fileMeta) {
-              await opfs.writeJson(`${dstBase}/metadata.json`, fileMeta);
-              
-              if (fileMeta.hasText) {
+
+          if (repoMeta) {
+            // Folder structure (old RepositoryProvider format)
+            repoName = repoMeta.name;
+            repoInstructions = repoMeta.instructions;
+
+            // Copy files from folder structure
+            const fileIds = await opfs.listDirectories(`repositories/${entry.id}/files`);
+            for (const fileId of fileIds) {
+              const srcBase = `repositories/${entry.id}/files/${fileId}`;
+              const dstBase = `${COLLECTION}/${agentId}/files/${fileId}`;
+
+              const fileMeta = await opfs.readJson<StoredFileMeta>(`${srcBase}/metadata.json`);
+              if (fileMeta) {
+                await opfs.writeJson(`${dstBase}/metadata.json`, fileMeta);
+
                 const text = await opfs.readText(`${srcBase}/content.txt`);
                 if (text) await opfs.writeText(`${dstBase}/content.txt`, text);
-              }
-              
-              if (fileMeta.hasVectors) {
+
                 const blob = await opfs.readBlob(`${srcBase}/embeddings.bin`);
                 if (blob) await opfs.writeBlob(`${dstBase}/embeddings.bin`, blob);
-                
+
                 const segTexts = await opfs.readJson<string[]>(`${srcBase}/segments.json`);
                 if (segTexts) await opfs.writeJson(`${dstBase}/segments.json`, segTexts);
+
+                files.push({
+                  id: fileMeta.id,
+                  name: fileMeta.name,
+                  status: fileMeta.status,
+                  progress: fileMeta.progress,
+                  error: fileMeta.error,
+                  uploadedAt: new Date(fileMeta.uploadedAt),
+                  text,
+                });
               }
-              
-              files.push({
-                id: fileMeta.id,
-                name: fileMeta.name,
-                status: fileMeta.status,
-                progress: fileMeta.progress,
-                error: fileMeta.error,
-                uploadedAt: new Date(fileMeta.uploadedAt),
-              });
+            }
+          } else {
+            // Flat file format (IndexedDB migration wrote repositories/{id}.json with embedded files)
+            const flatRepo = await opfs.readJson<{
+              id: string; name: string; embedder?: string; instructions?: string;
+              createdAt: string; updatedAt: string;
+              files?: Array<{
+                id: string; name: string; status: string; progress: number;
+                text?: string; segments?: Array<{ text: string; vector: number[] }>;
+                error?: string; uploadedAt: string | Date;
+              }>;
+            }>(`repositories/${entry.id}.json`);
+
+            if (!flatRepo) continue;
+
+            repoName = flatRepo.name;
+            repoInstructions = flatRepo.instructions;
+
+            // Extract embedded files into folder structure
+            if (flatRepo.files && Array.isArray(flatRepo.files)) {
+              for (const f of flatRepo.files) {
+                const fileId = f.id || crypto.randomUUID();
+                const dstBase = `${COLLECTION}/${agentId}/files/${fileId}`;
+
+                const meta: StoredFileMeta = {
+                  id: fileId,
+                  name: f.name || 'Unknown File',
+                  status: (f.status as StoredFileMeta['status']) || 'completed',
+                  progress: typeof f.progress === 'number' ? f.progress : 100,
+                  error: f.error,
+                  uploadedAt: typeof f.uploadedAt === 'string' ? f.uploadedAt : new Date(f.uploadedAt || Date.now()).toISOString(),
+                };
+
+                await opfs.writeJson(`${dstBase}/metadata.json`, meta);
+
+                if (f.text) {
+                  await opfs.writeText(`${dstBase}/content.txt`, f.text);
+                }
+
+                if (f.segments && f.segments.length > 0) {
+                  const segmentTexts = f.segments.map(s => s.text);
+                  await opfs.writeJson(`${dstBase}/segments.json`, segmentTexts);
+
+                  const vectorDim = f.segments[0].vector.length;
+                  const totalFloats = 1 + f.segments.length * vectorDim;
+                  const buffer = new Float32Array(totalFloats);
+                  buffer[0] = vectorDim;
+                  let offset = 1;
+                  for (const segment of f.segments) {
+                    buffer.set(segment.vector, offset);
+                    offset += vectorDim;
+                  }
+                  const blob = new Blob([buffer.buffer], { type: 'application/octet-stream' });
+                  await opfs.writeBlob(`${dstBase}/embeddings.bin`, blob);
+                }
+
+                files.push({
+                  id: fileId,
+                  name: meta.name,
+                  status: meta.status,
+                  progress: meta.progress,
+                  error: meta.error,
+                  uploadedAt: new Date(meta.uploadedAt),
+                  text: f.text,
+                  segments: f.segments,
+                });
+              }
             }
           }
           
           const agent: Agent = {
             id: agentId,
-            name: repoMeta.name,
-            instructions: repoMeta.instructions,
+            name: repoName,
+            instructions: repoInstructions,
             skills: firstAgent ? enabledSkillNames : [],
             servers: firstAgent ? bridgeServers : [],
             tools: defaultTools,
@@ -408,6 +472,7 @@ async function migrateFromLegacy(): Promise<Agent[]> {
     console.log(`[agent] Migration complete: ${migrated.length} agents created`);
   } catch (error) {
     console.error('[agent] Migration failed:', error);
+    migrationRunning = false;
   }
   
   return migrated;

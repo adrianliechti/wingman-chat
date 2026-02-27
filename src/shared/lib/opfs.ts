@@ -1209,12 +1209,24 @@ export async function exportAgentsWithSkills(filename: string): Promise<void> {
 
 /**
  * Import agents with their bundled skills from a ZIP.
- * Expects ZIP structure: agents/{uuid}/... with optional agents/{uuid}/skills/{name}/...
+ * Supports two formats:
+ * 1. New format: agents/{uuid}/AGENTS.md with optional agents/{uuid}/skills/{name}/...
+ * 2. Legacy repository format: {uuid}/repository.json with optional {uuid}/files/...
  * Agent data goes to /agents/{uuid}/, skills are upserted to /skills/{name}/.
  * Merges with existing data and rebuilds indices.
  */
 export async function importAgentsWithSkills(zipBlob: Blob): Promise<void> {
   const zip = await JSZip.loadAsync(zipBlob);
+
+  // Detect format: check if ZIP has agents/ prefix (new) or repository.json (legacy)
+  const paths = Object.keys(zip.files);
+  const isNewFormat = paths.some(p => p.startsWith('agents/'));
+  const isLegacyRepo = !isNewFormat && paths.some(p => p.match(/^[^/]+\/repository\.json$/));
+
+  if (isLegacyRepo) {
+    await importLegacyRepositoriesFromZip(zip);
+    return;
+  }
 
   let hasAgents = false;
   let hasSkills = false;
@@ -1258,6 +1270,67 @@ export async function importAgentsWithSkills(zipBlob: Blob): Promise<void> {
   // Rebuild indices for imported collections
   if (hasAgents) await rebuildFolderIndex('agents');
   if (hasSkills) await rebuildFolderIndex('skills');
+}
+
+/**
+ * Import legacy repository ZIP format and convert to agents.
+ * Legacy ZIPs have: {uuid}/repository.json, {uuid}/files/{fileId}/...
+ * Each repository is converted to an agent with AGENTS.md.
+ */
+async function importLegacyRepositoriesFromZip(zip: JSZip): Promise<void> {
+  // Discover all repository UUIDs from repository.json entries
+  const repoIds = new Set<string>();
+  for (const path of Object.keys(zip.files)) {
+    const match = path.match(/^([^/]+)\/repository\.json$/);
+    if (match) repoIds.add(match[1]);
+  }
+
+  if (repoIds.size === 0) return;
+
+  // Map old repo UUID → new agent UUID
+  const idMap = new Map<string, string>();
+  for (const oldId of repoIds) {
+    idMap.set(oldId, crypto.randomUUID());
+  }
+
+  for (const [oldId, newId] of idMap) {
+    // Read repository.json from ZIP
+    const repoEntry = zip.file(`${oldId}/repository.json`);
+    if (!repoEntry) continue;
+
+    const repoJson = JSON.parse(await repoEntry.async('text')) as {
+      id: string; name: string; embedder?: string; instructions?: string;
+      createdAt?: string; updatedAt?: string;
+    };
+
+    // Generate AGENTS.md from repository metadata
+    const mdLines: string[] = ['---'];
+    mdLines.push(`name: ${repoJson.name || 'Imported Repository'}`);
+    mdLines.push('---');
+    if (repoJson.instructions) {
+      mdLines.push('');
+      mdLines.push(repoJson.instructions);
+    }
+    const agentMd = mdLines.join('\n');
+    await writeText(`agents/${newId}/AGENTS.md`, agentMd);
+
+    // Copy files from old {oldId}/files/... to agents/{newId}/files/...
+    for (const [path, zipEntry] of Object.entries(zip.files)) {
+      if (!path.startsWith(`${oldId}/files/`)) continue;
+      const relPath = path.slice(`${oldId}/`.length); // files/{fileId}/...
+      const targetPath = `agents/${newId}/${relPath}`;
+
+      if (zipEntry.dir) {
+        await getDirectory(targetPath.replace(/\/$/, ''));
+      } else {
+        const content = await zipEntry.async('arraybuffer');
+        const blob = new Blob([content]);
+        await writeBlob(targetPath, blob);
+      }
+    }
+  }
+
+  await rebuildFolderIndex('agents');
 }
 
 // ============================================================================
