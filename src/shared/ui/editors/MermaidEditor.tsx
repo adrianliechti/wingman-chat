@@ -83,25 +83,24 @@ function MermaidPreview({ content }: { content: string }) {
 
   // Render mermaid chart
   useEffect(() => {
-    const renderMermaid = async () => {
-      if (!mermaidRef.current || !isLoaded || !content.trim()) return;
-      
-      try {
-        // Generate a new element ID to force re-render when theme changes
-        elementId.current = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-        
-        const { svg: renderedSvg } = await mermaidRef.current.render(elementId.current, content);
-        setSvg(renderedSvg);
-      } catch (error) {
-        console.error('Mermaid rendering error:', error);
-        setSvg('');
-      }
-    };
+    if (!mermaidRef.current || !isLoaded || !content.trim()) return;
+
+    let cancelled = false;
 
     // Debounce rendering to avoid excessive re-renders
-    const timeoutId = setTimeout(renderMermaid, 300);
-    
+    const timeoutId = setTimeout(async () => {
+      try {
+        elementId.current = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+        const { svg: renderedSvg } = await mermaidRef.current!.render(elementId.current, content);
+        if (!cancelled) setSvg(renderedSvg);
+      } catch (error) {
+        console.error('Mermaid rendering error:', error);
+        if (!cancelled) setSvg('');
+      }
+    }, 300);
+
     return () => {
+      cancelled = true;
       clearTimeout(timeoutId);
     };
   }, [content, isDark, isLoaded]);

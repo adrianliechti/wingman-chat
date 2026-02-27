@@ -140,41 +140,33 @@ const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererPr
   }, [isDark, isComplete]);
 
   useEffect(() => {
-    const renderMermaid = async () => {
-      if (!mermaidRef.current || !isComplete) return;
-      
-      if (!chart.trim()) {
-        setError('');
-        setSvg('');
-        return;
-      }
+    if (!mermaidRef.current || !isComplete) return;
 
-      try {
-        setError('');
-        
-        // Basic validation - check if it looks like mermaid syntax
-        const trimmedChart = chart.trim();
-        if (!trimmedChart || trimmedChart.length < 3) {
-          return;
-        }
-        
-        // Generate a new element ID to force re-render when theme changes
-        elementId.current = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-        
-        // Validate and render the chart
-        const { svg: renderedSvg } = await mermaidRef.current.render(elementId.current, chart);
-        setSvg(renderedSvg);
-      } catch {
-        // Silently handle errors - just show the code block
-        setError('silent');
-        setSvg('');
-      }
-    };
+    if (!chart.trim() || chart.trim().length < 3) {
+      setError('');
+      setSvg('');
+      return;
+    }
+
+    let cancelled = false;
 
     // Debounce rendering to avoid excessive re-renders during streaming
-    const timeoutId = setTimeout(renderMermaid, 300);
-    
+    const timeoutId = setTimeout(async () => {
+      try {
+        setError('');
+        elementId.current = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+        const { svg: renderedSvg } = await mermaidRef.current!.render(elementId.current, chart);
+        if (!cancelled) setSvg(renderedSvg);
+      } catch {
+        if (!cancelled) {
+          setError('silent');
+          setSvg('');
+        }
+      }
+    }, 300);
+
     return () => {
+      cancelled = true;
       clearTimeout(timeoutId);
     };
   }, [chart, isDark, isComplete]);

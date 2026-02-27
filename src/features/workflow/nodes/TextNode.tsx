@@ -7,6 +7,7 @@ import { useWorkflow } from '@/features/workflow/hooks/useWorkflow';
 import { WorkflowNode } from '@/features/workflow/components/WorkflowNode';
 
 // TextNode data interface
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface TextNodeData extends BaseNodeData {}
 
 // TextNode type

@@ -5,6 +5,15 @@ import { useTheme } from '@/shell/hooks/useTheme';
 
 const HIGHLIGHT_DEBOUNCE_MS = 150;
 
+const highlightedCodeStyle: React.CSSProperties = {
+  margin: 0,
+  padding: '1rem',
+  fontSize: '0.875rem',
+  lineHeight: '1.25rem',
+  fontFamily: 'Fira Code, Monaco, Cascadia Code, Roboto Mono, monospace',
+  background: 'transparent',
+};
+
 interface CodeRendererProps {
   code: string;
   language: string;
@@ -17,50 +26,37 @@ const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    // Clear any pending debounced highlight
     clearTimeout(debounceRef.current);
 
-    if (!code) {
-      setHtml('');
-      return;
-    }
+    if (!code) return;
+
+    let cancelled = false;
 
     // Debounce Shiki calls — during streaming, code changes on every token
-    debounceRef.current = setTimeout(() => {
-      let isCancelled = false;
-
-      const highlightCode = async () => {
-        try {
-          const langId = language.toLowerCase();
-          const highlighted = await codeToHtml(code, {
-            lang: langId,
-            theme: isDark ? 'one-dark-pro' : 'one-light',
-            colorReplacements: {
-              '#fafafa': 'transparent',
-              '#282c34': 'transparent',
-            }
-          });
-          if (!isCancelled) {
-            setHtml(highlighted);
-          }
-        } catch (error) {
-          console.error('Failed to highlight code:', error);
-          if (!isCancelled) {
-            setHtml('');
-          }
-        }
-      };
-
-      highlightCode();
-
-      // Cleanup for this specific timeout's async call
-      return () => { isCancelled = true; };
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const highlighted = await codeToHtml(code, {
+          lang: language.toLowerCase(),
+          theme: isDark ? 'one-dark-pro' : 'one-light',
+          colorReplacements: {
+            '#fafafa': 'transparent',
+            '#282c34': 'transparent',
+          },
+        });
+        if (!cancelled) setHtml(highlighted);
+      } catch (error) {
+        console.error('Failed to highlight code:', error);
+        if (!cancelled) setHtml('');
+      }
     }, HIGHLIGHT_DEBOUNCE_MS);
 
     return () => {
+      cancelled = true;
       clearTimeout(debounceRef.current);
     };
   }, [code, language, isDark]);
+
+  const effectiveHtml = code ? html : '';
 
   const renderCodeBlock = (content: React.ReactNode) => (
     <div className="relative my-4">
@@ -79,7 +75,7 @@ const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
     </div>
   );
 
-  if (!html) {
+  if (!effectiveHtml) {
     return renderCodeBlock(
       <pre className="p-4 text-gray-800 dark:text-neutral-300 text-sm whitespace-pre overflow-x-auto">
         <code>{code}</code>
@@ -90,15 +86,8 @@ const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
   return renderCodeBlock(
     <div 
       className="overflow-x-auto"
-      dangerouslySetInnerHTML={{ __html: html }}
-      style={{
-        margin: 0,
-        padding: '1rem',
-        fontSize: '0.875rem',
-        lineHeight: '1.25rem',
-        fontFamily: 'Fira Code, Monaco, Cascadia Code, Roboto Mono, monospace',
-        background: 'transparent'
-      }}
+      dangerouslySetInnerHTML={{ __html: effectiveHtml }}
+      style={highlightedCodeStyle}
     />
   );
 });
