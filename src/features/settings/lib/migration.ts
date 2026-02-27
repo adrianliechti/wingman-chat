@@ -328,7 +328,7 @@ async function migrateImages(): Promise<MigrationStats['images']> {
       indexEntries.push({
         id: image.id,
         title: image.title,
-        updated: stored.updated || stored.created || new Date().toISOString(),
+        updated: meta.updated || meta.created || new Date().toISOString(),
       });
       
       stats.migrated++;

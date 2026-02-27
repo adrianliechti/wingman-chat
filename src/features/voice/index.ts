@@ -13,8 +13,6 @@ export type { UseTranscriptionReturn } from './hooks/useTranscription';
 export { useVoiceWebSockets } from './hooks/useVoiceWebSockets';
 
 // Lib
-export { AudioPlayer } from './lib/AudioPlayer';
-export type { AudioPlayerOptions, AudioSegment } from './lib/AudioPlayer';
 export { AudioRecorder } from './lib/AudioRecorder';
 export type { AudioRecorderOptions, AudioChunk, ChunkCallback } from './lib/AudioRecorder';
 export { AudioStreamPlayer } from './lib/AudioStreamPlayer';

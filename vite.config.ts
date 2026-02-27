@@ -110,8 +110,6 @@ export default defineConfig({
             'remark-gfm',
             'remark-gemoji',
             'remark-math',
-            'rehype-raw', 
-            'rehype-sanitize',
             'rehype-katex'
           ],
           // UI libraries
