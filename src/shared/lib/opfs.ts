@@ -1067,9 +1067,22 @@ export async function rebuildFolderIndex(collection: string): Promise<void> {
         let title = name;
         let updated = new Date().toISOString();
         
-        // Try to read metadata file based on collection type
+        // Try AGENTS.md first (agent collection)
+        try {
+          const agentMd = await readText(`${collection}/${id}/AGENTS.md`)
+            || await readText(`${collection}/${id}/AGENT.md`);
+          if (agentMd) {
+            const nameMatch = agentMd.match(/^name:\s*(.+)$/m);
+            if (nameMatch) title = nameMatch[1].trim();
+            entries.push({ id, title, updated });
+            continue;
+          }
+        } catch { /* not an agent folder */ }
+
+        // Try JSON metadata files for other collection types
         const metadataFiles = [
           `${collection}/${id}/chat.json`,
+          `${collection}/${id}/agent.json`,
           `${collection}/${id}/repository.json`,
           `${collection}/${id}/metadata.json`,
         ];
@@ -1111,6 +1124,140 @@ export async function downloadFolderAsZip(folderPath: string, filename: string):
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Export agents with their referenced skills bundled into a single ZIP.
+ * Skills are nested inside each agent folder: agents/{uuid}/skills/{name}/...
+ * This makes each agent folder self-contained.
+ */
+export async function exportAgentsWithSkills(filename: string): Promise<void> {
+  const zip = new JSZip();
+
+  async function addDirectoryToZip(
+    handle: FileSystemDirectoryHandle,
+    zipFolder: JSZip
+  ): Promise<void> {
+    for await (const [name, entryHandle] of handle.entries()) {
+      if (entryHandle.kind === 'file') {
+        const fileHandle = entryHandle as FileSystemFileHandle;
+        const file = await fileHandle.getFile();
+        const arrayBuffer = await file.arrayBuffer();
+        zipFolder.file(name, arrayBuffer);
+      } else {
+        const dirHandle = entryHandle as FileSystemDirectoryHandle;
+        const subFolder = zipFolder.folder(name)!;
+        await addDirectoryToZip(dirHandle, subFolder);
+      }
+    }
+  }
+
+  // Export each agent with its referenced skills nested inside
+  try {
+    const agentIndex = await readIndex('agents');
+    const agentsZip = zip.folder('agents')!;
+
+    for (const entry of agentIndex) {
+      const agentFolder = agentsZip.folder(entry.id)!;
+
+      // Add agent's own files (AGENTS.md, servers.json, files/, etc.)
+      try {
+        const agentHandle = await getDirectory(`agents/${entry.id}`);
+        await addDirectoryToZip(agentHandle, agentFolder);
+      } catch { continue; }
+
+      // Parse skill names from AGENTS.md and bundle referenced skills
+      const md = await readText(`agents/${entry.id}/AGENTS.md`)
+        || await readText(`agents/${entry.id}/AGENT.md`);
+      if (!md) continue;
+
+      // Match bracket array: skills: ['a', 'b'] or comma-separated: skills: a, b
+      const skillsMatch = md.match(/^skills:\s*(.+)$/m);
+      if (!skillsMatch) continue;
+
+      let skillNames: string[];
+      const raw = skillsMatch[1].trim();
+      const bracketMatch = raw.match(/^\[(.*)\]$/);
+      if (bracketMatch) {
+        skillNames = bracketMatch[1].split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+      } else {
+        skillNames = raw.split(',').map(s => s.trim()).filter(Boolean);
+      }
+
+      const skillsFolder = agentFolder.folder('skills')!;
+
+      for (const skillName of skillNames) {
+        try {
+          const skillHandle = await getDirectory(`skills/${skillName}`);
+          const skillZipFolder = skillsFolder.folder(skillName)!;
+          await addDirectoryToZip(skillHandle, skillZipFolder);
+        } catch { /* skill folder missing */ }
+      }
+    }
+  } catch { /* no agents */ }
+
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Import agents with their bundled skills from a ZIP.
+ * Expects ZIP structure: agents/{uuid}/... with optional agents/{uuid}/skills/{name}/...
+ * Agent data goes to /agents/{uuid}/, skills are upserted to /skills/{name}/.
+ * Merges with existing data and rebuilds indices.
+ */
+export async function importAgentsWithSkills(zipBlob: Blob): Promise<void> {
+  const zip = await JSZip.loadAsync(zipBlob);
+
+  let hasAgents = false;
+  let hasSkills = false;
+
+  for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+    if (!relativePath.startsWith('agents/')) continue;
+
+    // Strip the leading "agents/" to get: {uuid}/...
+    const afterAgents = relativePath.slice('agents/'.length);
+
+    // Check if this is a skills entry: {uuid}/skills/{name}/...
+    const skillsMatch = afterAgents.match(/^[^/]+\/skills\/(.+)$/);
+    if (skillsMatch) {
+      // Redirect to global /skills/{name}/...
+      const skillRelPath = skillsMatch[1];
+      const targetPath = `skills/${skillRelPath}`;
+      hasSkills = true;
+
+      if (zipEntry.dir) {
+        await getDirectory(targetPath.replace(/\/$/, ''));
+      } else {
+        const content = await zipEntry.async('arraybuffer');
+        const blob = new Blob([content]);
+        await writeBlob(targetPath, blob);
+      }
+    } else {
+      // Regular agent data — write to /agents/...
+      const targetPath = `agents/${afterAgents}`;
+      hasAgents = true;
+
+      if (zipEntry.dir) {
+        await getDirectory(targetPath.replace(/\/$/, ''));
+      } else {
+        const content = await zipEntry.async('arraybuffer');
+        const blob = new Blob([content]);
+        await writeBlob(targetPath, blob);
+      }
+    }
+  }
+
+  // Rebuild indices for imported collections
+  if (hasAgents) await rebuildFolderIndex('agents');
+  if (hasSkills) await rebuildFolderIndex('skills');
 }
 
 // ============================================================================

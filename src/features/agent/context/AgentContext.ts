@@ -6,7 +6,7 @@ export interface AgentContextType {
   agents: Agent[];
   currentAgent: Agent | null;
   createAgent: (name: string) => Promise<Agent>;
-  updateAgent: (id: string, updates: Partial<Omit<Agent, 'id' | 'createdAt'>>) => void;
+  updateAgent: (id: string, updates: Partial<Omit<Agent, 'id'>>) => void;
   deleteAgent: (id: string) => Promise<void>;
   setCurrentAgent: (agent: Agent | null) => void;
   showAgentDrawer: boolean;

@@ -10,20 +10,6 @@ import { getConfig } from '@/shared/config';
 const COLLECTION = 'agents';
 const AGENT_STORAGE_KEY = 'app_agent';
 
-// Stored agent metadata (without files - they're stored separately)
-interface StoredAgentMeta {
-  id: string;
-  name: string;
-  instructions?: string;
-  repositoryEnabled: boolean;
-  embedder: string;
-  skills: string[];
-  servers: BridgeServer[];
-  tools: string[];
-  createdAt: string;
-  updatedAt: string;
-}
-
 // Stored file metadata (without text/vectors - they're stored separately)
 interface StoredFileMeta {
   id: string;
@@ -38,41 +24,97 @@ interface StoredFileMeta {
 }
 
 // Agent-specific OPFS operations using folder structure:
-// /agents/{id}/agent.json - metadata
+// /agents/{id}/AGENTS.md - YAML frontmatter (metadata) + markdown body (instructions)
+// /agents/{id}/servers.json - BridgeServer[] (complex nested data)
 // /agents/{id}/files/{fileId}/metadata.json - file metadata
 // /agents/{id}/files/{fileId}/content.txt - extracted text
 // /agents/{id}/files/{fileId}/embeddings.bin - embedding vectors as Float32Array
 // /agents/{id}/files/{fileId}/segments.json - segment texts
 
+// --- AGENTS.md serialization / parsing ---
+
+function serializeAgentMd(agent: Agent): string {
+  const lines: string[] = ['---'];
+  lines.push(`name: ${agent.name}`);
+  if (agent.description) lines.push(`description: ${agent.description}`);
+  if (agent.skills.length > 0) lines.push(`skills: [${agent.skills.map(s => `'${s}'`).join(', ')}]`);
+  if (agent.tools.length > 0) lines.push(`tools: [${agent.tools.map(t => `'${t}'`).join(', ')}]`);
+  lines.push('---');
+  if (agent.instructions) {
+    lines.push('');
+    lines.push(agent.instructions);
+  }
+  return lines.join('\n');
+}
+
+function parseAgentMd(content: string): {
+  name: string;
+  description?: string;
+  skills: string[];
+  tools: string[];
+  instructions?: string;
+} | undefined {
+  const match = content.match(/^---\n([\s\S]*?)\n---(?:\n([\s\S]*))?$/);
+  if (!match) return undefined;
+
+  const frontmatter = match[1];
+  const body = match[2]?.trim() || undefined;
+
+  const fields: Record<string, string> = {};
+  for (const line of frontmatter.split('\n')) {
+    const idx = line.indexOf(':');
+    if (idx === -1) continue;
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    fields[key] = value;
+  }
+
+  // Parse YAML list values — supports bracket arrays ['a', 'b'], or comma-separated a, b
+  const parseList = (val?: string): string[] => {
+    if (!val) return [];
+    // Bracket array: ['a', 'b'] or [a, b]
+    const bracketMatch = val.match(/^\[(.*)\]$/);
+    if (bracketMatch) {
+      return bracketMatch[1]
+        .split(',')
+        .map(s => s.trim().replace(/^['"]|['"]$/g, ''))
+        .filter(Boolean);
+    }
+    // Comma-separated (legacy)
+    return val.split(',').map(s => s.trim()).filter(Boolean);
+  };
+
+  return {
+    name: fields.name || 'Untitled',
+    description: fields.description || undefined,
+    skills: parseList(fields.skills),
+    tools: parseList(fields.tools),
+    instructions: body,
+  };
+}
+
 async function storeAgent(agent: Agent): Promise<void> {
   const agentPath = `${COLLECTION}/${agent.id}`;
-  
-  const meta: StoredAgentMeta = {
-    id: agent.id,
-    name: agent.name,
-    instructions: agent.instructions,
-    repositoryEnabled: agent.repositoryEnabled,
-    embedder: agent.embedder,
-    skills: agent.skills,
-    servers: agent.servers,
-    tools: agent.tools,
-    createdAt: agent.createdAt instanceof Date ? agent.createdAt.toISOString() : agent.createdAt as unknown as string,
-    updatedAt: agent.updatedAt instanceof Date ? agent.updatedAt.toISOString() : agent.updatedAt as unknown as string,
-  };
-  
-  await opfs.writeJson(`${agentPath}/agent.json`, meta);
-  
+
+  // Write AGENTS.md (frontmatter + instructions body)
+  await opfs.writeText(`${agentPath}/AGENTS.md`, serializeAgentMd(agent));
+
+  // Write servers separately (complex nested data)
+  if (agent.servers.length > 0) {
+    await opfs.writeJson(`${agentPath}/servers.json`, agent.servers);
+  }
+
   // Store each file separately
   if (agent.files) {
     for (const file of agent.files) {
       await storeAgentFile(agent.id, file);
     }
   }
-  
+
   await opfs.upsertIndexEntry(COLLECTION, {
     id: agent.id,
     title: agent.name,
-    updated: meta.updatedAt,
+    updated: new Date().toISOString(),
   });
 }
 
@@ -119,32 +161,70 @@ async function storeAgentFile(agentId: string, file: RepositoryFile): Promise<vo
 
 async function loadAgent(id: string): Promise<Agent | undefined> {
   const agentPath = `${COLLECTION}/${id}`;
-  
-  const meta = await opfs.readJson<StoredAgentMeta>(`${agentPath}/agent.json`);
-  if (!meta) return undefined;
-  
+
+  // Try AGENTS.md first, then legacy AGENT.md, then agent.json
+  let name = 'Untitled';
+  let description: string | undefined;
+  let instructions: string | undefined;
+  let skills: string[] = [];
+  let tools: string[] = [];
+  let servers: BridgeServer[] = [];
+
+  const mdContent = await opfs.readText(`${agentPath}/AGENTS.md`)
+    || await opfs.readText(`${agentPath}/AGENT.md`);
+  if (mdContent) {
+    const parsed = parseAgentMd(mdContent);
+    if (parsed) {
+      name = parsed.name;
+      description = parsed.description;
+      instructions = parsed.instructions;
+      skills = parsed.skills;
+      tools = parsed.tools;
+    }
+  } else {
+    // Legacy: read agent.json
+    const meta = await opfs.readJson<{
+      id: string; name: string; instructions?: string;
+      repositoryEnabled?: boolean; embedder: string;
+      skills: string[]; servers: BridgeServer[]; tools: string[];
+      createdAt: string; updatedAt: string;
+    }>(`${agentPath}/agent.json`);
+    if (!meta) return undefined;
+
+    name = meta.name;
+    instructions = meta.instructions;
+    skills = meta.skills || [];
+    tools = meta.tools || [];
+    servers = meta.servers || [];
+  }
+
+  // Load servers from servers.json (new format; legacy agents have them inline in agent.json)
+  if (servers.length === 0) {
+    const loadedServers = await opfs.readJson<BridgeServer[]>(`${agentPath}/servers.json`);
+    if (loadedServers && Array.isArray(loadedServers)) {
+      servers = loadedServers;
+    }
+  }
+
   // Load files from subfolders
   const files: RepositoryFile[] = [];
   const fileIds = await opfs.listDirectories(`${agentPath}/files`);
-  
+
   for (const fileId of fileIds) {
     const file = await loadAgentFile(id, fileId);
     if (file) {
       files.push(file);
     }
   }
-  
+
   return {
-    id: meta.id,
-    name: meta.name,
-    instructions: meta.instructions,
-    repositoryEnabled: meta.repositoryEnabled ?? false,
-    embedder: meta.embedder || '',
-    skills: meta.skills || [],
-    servers: meta.servers || [],
-    tools: meta.tools || [],
-    createdAt: new Date(meta.createdAt),
-    updatedAt: new Date(meta.updatedAt),
+    id,
+    name,
+    description,
+    instructions,
+    skills,
+    servers,
+    tools,
     files: files.length > 0 ? files : undefined,
   };
 }
@@ -213,13 +293,12 @@ async function migrateFromLegacy(): Promise<Agent[]> {
   
   try {
     const config = getConfig();
-    const embedder = config.repository?.embedder || '';
     
-    // Collect existing skill IDs
-    let enabledSkillIds: string[] = [];
+    // Collect existing skill names
+    let enabledSkillNames: string[] = [];
     try {
       const skills = await opfs.loadAllSkills();
-      enabledSkillIds = skills.map(s => s.id);
+      enabledSkillNames = skills.map(s => s.name);
     } catch { /* no skills */ }
     
     // Collect existing bridge servers
@@ -296,13 +375,9 @@ async function migrateFromLegacy(): Promise<Agent[]> {
             id: agentId,
             name: repoMeta.name,
             instructions: repoMeta.instructions,
-            repositoryEnabled: true,
-            embedder: repoMeta.embedder || embedder,
-            skills: firstAgent ? enabledSkillIds : [],
+            skills: firstAgent ? enabledSkillNames : [],
             servers: firstAgent ? bridgeServers : [],
             tools: defaultTools,
-            createdAt: new Date(repoMeta.createdAt),
-            updatedAt: new Date(repoMeta.updatedAt),
             files: files.length > 0 ? files : undefined,
           };
           
@@ -313,18 +388,14 @@ async function migrateFromLegacy(): Promise<Agent[]> {
           console.error(`Failed to migrate repository ${entry.id}:`, error);
         }
       }
-    } else if (bridgeServers.length > 0 || enabledSkillIds.length > 0) {
+    } else if (bridgeServers.length > 0 || enabledSkillNames.length > 0) {
       // No repositories but we have bridge servers or skills — create a Default agent
       const agent: Agent = {
         id: crypto.randomUUID(),
         name: 'Default',
-        repositoryEnabled: false,
-        embedder,
-        skills: enabledSkillIds,
+        skills: enabledSkillNames,
         servers: bridgeServers,
         tools: defaultTools,
-        createdAt: new Date(),
-        updatedAt: new Date(),
       };
       
       await storeAgent(agent);
@@ -464,24 +535,12 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, [currentAgent, isLoaded]);
 
   const createAgent = useCallback(async (name: string): Promise<Agent> => {
-    const config = getConfig();
-
-    // Determine default-on tool IDs from config
-    const defaultTools: string[] = [];
-    if (config.internet) defaultTools.push('internet');
-    if (config.interpreter) defaultTools.push('interpreter');
-    if (config.renderer) defaultTools.push('renderer');
-
     const newAgent: Agent = {
       id: crypto.randomUUID(),
       name,
-      repositoryEnabled: false,
-      embedder: config.repository?.embedder || '',
       skills: [],
       servers: [],
-      tools: defaultTools,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      tools: [],
     };
     
     setAgents(prev => [...prev, newAgent]);
@@ -496,11 +555,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     return newAgent;
   }, []);
 
-  const updateAgent = useCallback((id: string, updates: Partial<Omit<Agent, 'id' | 'createdAt'>>) => {
+  const updateAgent = useCallback((id: string, updates: Partial<Omit<Agent, 'id'>>) => {
     setAgents(prev => {
       const updated = prev.map(agent => 
         agent.id === id 
-          ? { ...agent, ...updates, updatedAt: new Date() }
+          ? { ...agent, ...updates }
           : agent
       );
       
@@ -510,7 +569,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     });
     
     if (currentAgent?.id === id) {
-      setCurrentAgent(prev => prev ? { ...prev, ...updates, updatedAt: new Date() } : null);
+      setCurrentAgent(prev => prev ? { ...prev, ...updates } : null);
     }
   }, [currentAgent, scheduleSave]);
 
@@ -540,7 +599,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         } else {
           files.push(file);
         }
-        return { ...agent, files, updatedAt: new Date() };
+        return { ...agent, files };
       });
       
       setTimeout(() => scheduleSave(agentId), 0);
@@ -554,7 +613,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       const updated = prev.map(agent => {
         if (agent.id !== agentId) return agent;
         const files = agent.files ? agent.files.filter(f => f.id !== fileId) : [];
-        return { ...agent, files, updatedAt: new Date() };
+        return { ...agent, files };
       });
       
       removeAgentFile(agentId, fileId).catch(error => {
@@ -577,14 +636,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     setAgents(prev => {
       const updated = prev.map(agent => {
         if (agent.id !== agentId) return agent;
-        return { ...agent, servers: [...agent.servers, newServer], updatedAt: new Date() };
+        return { ...agent, servers: [...agent.servers, newServer] };
       });
       setTimeout(() => scheduleSave(agentId), 0);
       return updated;
     });
     
     if (currentAgent?.id === agentId) {
-      setCurrentAgent(prev => prev ? { ...prev, servers: [...prev.servers, newServer], updatedAt: new Date() } : null);
+      setCurrentAgent(prev => prev ? { ...prev, servers: [...prev.servers, newServer] } : null);
     }
     
     return newServer;
@@ -597,7 +656,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         return {
           ...agent,
           servers: agent.servers.map(s => s.id === serverId ? { ...s, ...updates } : s),
-          updatedAt: new Date(),
         };
       });
       setTimeout(() => scheduleSave(agentId), 0);
@@ -608,7 +666,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       setCurrentAgent(prev => prev ? {
         ...prev,
         servers: prev.servers.map(s => s.id === serverId ? { ...s, ...updates } : s),
-        updatedAt: new Date(),
       } : null);
     }
   }, [currentAgent, scheduleSave]);
@@ -620,7 +677,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         return {
           ...agent,
           servers: agent.servers.filter(s => s.id !== serverId),
-          updatedAt: new Date(),
         };
       });
       setTimeout(() => scheduleSave(agentId), 0);
@@ -631,7 +687,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       setCurrentAgent(prev => prev ? {
         ...prev,
         servers: prev.servers.filter(s => s.id !== serverId),
-        updatedAt: new Date(),
       } : null);
     }
   }, [currentAgent, scheduleSave]);
@@ -643,7 +698,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         return {
           ...agent,
           servers: agent.servers.map(s => s.id === serverId ? { ...s, enabled: !s.enabled } : s),
-          updatedAt: new Date(),
         };
       });
       setTimeout(() => scheduleSave(agentId), 0);
@@ -654,7 +708,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       setCurrentAgent(prev => prev ? {
         ...prev,
         servers: prev.servers.map(s => s.id === serverId ? { ...s, enabled: !s.enabled } : s),
-        updatedAt: new Date(),
       } : null);
     }
   }, [currentAgent, scheduleSave]);

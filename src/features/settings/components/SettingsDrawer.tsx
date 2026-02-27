@@ -1,9 +1,10 @@
 import { useState, useEffect, Fragment } from 'react';
-import { Settings, MessageSquare, User, Download, Upload, Trash2, ChevronsUpDown, Check, X, ChevronRight } from 'lucide-react';
+import { Settings, MessageSquare, User, Download, Upload, Trash2, ChevronsUpDown, Check, X, ChevronRight, Bot } from 'lucide-react';
 import { Transition, Listbox } from '@headlessui/react';
 import { useSettings } from '@/features/settings/hooks/useSettings';
 import { useChat } from '@/features/chat/hooks/useChat';
-import { getStorageUsage, downloadFolderAsZip, importFolderFromZip, clearAll } from '@/shared/lib/opfs';
+import { useAgents } from '@/features/agent/hooks/useAgents';
+import { getStorageUsage, downloadFolderAsZip, importFolderFromZip, clearAll, exportAgentsWithSkills, importAgentsWithSkills } from '@/shared/lib/opfs';
 import * as opfs from '@/shared/lib/opfs';
 import { formatBytes } from '@/shared/lib/utils';
 import type { Theme, LayoutMode, BackgroundPack } from '@/shared/types/settings';
@@ -112,7 +113,7 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
     profile, updateProfile,
   } = useSettings();
   const { chats, deleteChat } = useChat();
-  
+  const { agents } = useAgents();
 
   const [storageInfo, setStorageInfo] = useState<{
     totalSize: number;
@@ -276,6 +277,61 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
     } catch (error) {
       console.error('Failed to export chats:', error);
       alert('Failed to export chats. Please try again.');
+    }
+  };
+
+  const exportAgents = async () => {
+    try {
+      const filename = `wingman-agents-${new Date().toISOString().split('T')[0]}.zip`;
+      await exportAgentsWithSkills(filename);
+    } catch (error) {
+      console.error('Failed to export agents:', error);
+      alert('Failed to export agents. Please try again.');
+    }
+  };
+
+  const importAgents = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.zip';
+    input.multiple = false;
+
+    input.onchange = async (event) => {
+      const file = (event.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      if (!window.confirm('Import agents from ZIP? This will merge with your existing agents and skills.')) {
+        return;
+      }
+
+      try {
+        await importAgentsWithSkills(file);
+        alert('Agents imported successfully! Please refresh the page to see the changes.');
+        window.location.reload();
+      } catch (error) {
+        console.error('Failed to import agents:', error);
+        alert('Failed to import agents. Please check the file and try again.');
+      }
+    };
+
+    input.click();
+  };
+
+  const deleteAgents = async () => {
+    if (!window.confirm(`Are you sure you want to delete all ${agents.length} agent${agents.length === 1 ? '' : 's'}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      for (const agent of agents) {
+        await opfs.deleteDirectory(`agents/${agent.id}`);
+        await opfs.removeIndexEntry('agents', agent.id);
+      }
+      alert('All agents deleted. The page will now reload.');
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to delete agents:', error);
+      alert('Failed to delete agents. Please try again.');
     }
   };
 
@@ -466,6 +522,54 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
                 </div>
 
                 <p className="text-xs text-neutral-400 dark:text-neutral-500">Stored locally in your browser</p>
+              </div>
+            </AccordionSection>
+
+            {/* Agents Section */}
+            <AccordionSection
+              title="Agents"
+              icon={<Bot size={20} />}
+              isOpen={openSection === 'agents'}
+              onClick={() => toggleSection('agents')}
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Storage</span>
+                  <span className="text-sm text-neutral-500 dark:text-neutral-400">
+                    {agents.length} agent{agents.length === 1 ? '' : 's'} • {storageInfo.isLoading ? '...' : formatBytes(storageInfo.entries.filter(e => e.path.startsWith('agents/')).reduce((sum, e) => sum + e.size, 0))}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={importAgents}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
+                  >
+                    <Download size={14} />
+                    Import
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exportAgents}
+                    disabled={agents.length === 0}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
+                  >
+                    <Upload size={14} />
+                    Export
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deleteAgents}
+                    disabled={agents.length === 0}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50/50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
+                  >
+                    <Trash2 size={14} />
+                    Delete All
+                  </button>
+                </div>
+
+                <p className="text-xs text-neutral-400 dark:text-neutral-500">Includes instructions, files, skills, and MCP server configurations</p>
               </div>
             </AccordionSection>
 

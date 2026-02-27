@@ -12,18 +12,13 @@ export interface BridgeServer {
 export interface Agent {
   id: string;
   name: string;
+  description?: string;
 
   instructions?: string;
 
-  repositoryEnabled: boolean;
-  embedder: string;
-
-  skills: string[]; // IDs referencing global skill library
+  skills: string[]; // names referencing global skill library
   servers: BridgeServer[]; // per-agent MCP server definitions
   tools: string[]; // active built-in tool IDs: "internet", "interpreter", "renderer"
-
-  createdAt: Date;
-  updatedAt: Date;
 
   files?: import('@/features/repository/types/repository').RepositoryFile[];
 }

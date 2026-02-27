@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import pLimit from 'p-limit';
 import { Client } from '@/shared/lib/client';
+import { getConfig } from '@/shared/config';
 import { VectorDB } from '@/features/repository/lib/vectordb';
 import type { Document } from '@/features/repository/lib/vectordb';
 import type { RepositoryFile } from '@/features/repository/types/repository';
@@ -123,7 +124,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
     });
 
     const limit = pLimit(10);
-    const model = agent?.embedder ?? '';
+    const model = getConfig().repository?.embedder ?? '';
 
     let completedCount = 0;
 
@@ -177,7 +178,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
       segments: chunks,
       uploadedAt: new Date(),
     });
-  }, [upsertFile, agentId, agent?.embedder, vectorDB]);
+  }, [upsertFile, agentId, vectorDB]);
 
   const addFile = useCallback(async (file: File) => {
     const fileId = crypto.randomUUID();
@@ -211,7 +212,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
     if (!query.trim()) return [];
 
     try {
-      const model = agent?.embedder ?? '';
+      const model = getConfig().repository?.embedder ?? '';
       const vector = await client.embedText(model, query);
       const results = vectorDB.queryDocuments(vector, topK);
 
@@ -233,7 +234,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
       console.error('[agent] Search failed', { query, agentId, error });
       return [];
     }
-  }, [vectorDB, agentId, agent?.embedder, files]);
+  }, [vectorDB, agentId, files]);
 
   return {
     files,

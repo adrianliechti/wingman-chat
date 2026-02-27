@@ -16,7 +16,7 @@ interface SkillsSectionProps {
 }
 
 export function SkillsSection({ agent, isOpen, onToggle }: SkillsSectionProps) {
-  const { updateAgent } = useAgents();
+  const { agents, updateAgent } = useAgents();
   const { skills: allSkills, addSkill, updateSkill, removeSkill } = useSkills();
 
   const [editorOpen, setEditorOpen] = useState(false);
@@ -24,11 +24,11 @@ export function SkillsSection({ agent, isOpen, onToggle }: SkillsSectionProps) {
 
   const agentSkillIds = useMemo(() => new Set(agent.skills || []), [agent.skills]);
 
-  const toggleSkill = (skillId: string) => {
+  const toggleSkill = (skillName: string) => {
     const current = agent.skills || [];
-    const next = current.includes(skillId)
-      ? current.filter(id => id !== skillId)
-      : [...current, skillId];
+    const next = current.includes(skillName)
+      ? current.filter(n => n !== skillName)
+      : [...current, skillName];
     updateAgent(agent.id, { skills: next });
   };
 
@@ -45,16 +45,26 @@ export function SkillsSection({ agent, isOpen, onToggle }: SkillsSectionProps) {
   const handleSave = (data: Omit<Skill, 'id'>) => {
     if (editingSkill) {
       updateSkill(editingSkill.id, data);
+      // Propagate skill rename to all agents that reference the old name
+      if (data.name && data.name !== editingSkill.name) {
+        for (const a of agents) {
+          if (a.skills?.includes(editingSkill.name)) {
+            updateAgent(a.id, {
+              skills: a.skills.map(n => n === editingSkill.name ? data.name : n),
+            });
+          }
+        }
+      }
     } else {
       const newSkill = addSkill(data);
-      updateAgent(agent.id, { skills: [...(agent.skills || []), newSkill.id] });
+      updateAgent(agent.id, { skills: [...(agent.skills || []), newSkill.name] });
     }
   };
 
   const handleDelete = (skill: Skill) => {
     if (window.confirm(`Delete the skill "${skill.name}"?`)) {
       removeSkill(skill.id);
-      updateAgent(agent.id, { skills: (agent.skills || []).filter(id => id !== skill.id) });
+      updateAgent(agent.id, { skills: (agent.skills || []).filter(n => n !== skill.name) });
     }
   };
 
@@ -79,7 +89,7 @@ export function SkillsSection({ agent, isOpen, onToggle }: SkillsSectionProps) {
                 const result = parseSkillFile(content);
                 if (result.success) {
                   const s = addSkill(result.skill);
-                  newIds.push(s.id);
+                  newIds.push(s.name);
                   importedCount++;
                 }
               } catch { /* skip */ }
@@ -89,7 +99,7 @@ export function SkillsSection({ agent, isOpen, onToggle }: SkillsSectionProps) {
             const result = parseSkillFile(content);
             if (result.success) {
               const s = addSkill(result.skill);
-              newIds.push(s.id);
+              newIds.push(s.name);
               importedCount++;
             }
           }
@@ -119,10 +129,10 @@ export function SkillsSection({ agent, isOpen, onToggle }: SkillsSectionProps) {
               >
                 <button
                   type="button"
-                  onClick={() => toggleSkill(skill.id)}
-                  className={`shrink-0 ${agentSkillIds.has(skill.id) ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-400 dark:text-neutral-500'}`}
+                  onClick={() => toggleSkill(skill.name)}
+                  className={`shrink-0 ${agentSkillIds.has(skill.name) ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-400 dark:text-neutral-500'}`}
                 >
-                  {agentSkillIds.has(skill.id) ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                  {agentSkillIds.has(skill.name) ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
                 </button>
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-xs text-neutral-900 dark:text-neutral-100 truncate">{skill.name}</div>

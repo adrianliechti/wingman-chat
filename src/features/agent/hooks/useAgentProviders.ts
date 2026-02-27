@@ -21,7 +21,7 @@ export interface AgentProviders {
 
 /**
  * Given an Agent, assembles all its ToolProviders:
- * - Repository provider (if repositoryEnabled and files exist)
+ * - Repository provider (if files exist)
  * - Skills provider (filtered to agent.skills IDs from global library)
  * - Bridge MCP clients (for agent.servers)
  * Also returns the agent.tools list for ToolsProvider to know which built-in tools to activate.
@@ -100,7 +100,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
 
   const enabledSkills = useMemo(() => {
     if (!agent || agentSkillIds.size === 0) return [];
-    return allSkills.filter(s => agentSkillIds.has(s.id));
+    return allSkills.filter(s => agentSkillIds.has(s.name));
   }, [agent, allSkills, agentSkillIds]);
 
   const getSkillTools = useCallback((): Tool[] => {
@@ -128,7 +128,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
           if (!skill) {
             return [{ type: 'text' as const, text: JSON.stringify({ error: `Skill "${skillName}" not found` }) }];
           }
-          if (!agentSkillIds.has(skill.id)) {
+          if (!agentSkillIds.has(skill.name)) {
             return [{ type: 'text' as const, text: JSON.stringify({ error: `Skill "${skillName}" is not enabled for this agent` }) }];
           }
           return [{

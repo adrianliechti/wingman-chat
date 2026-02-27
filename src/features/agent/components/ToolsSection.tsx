@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
 import {
   Plus, Pencil, Trash2, ToggleLeft, ToggleRight,
-  Globe, Code, Image, Server,
+  Server, Wrench,
 } from 'lucide-react';
 import { useAgents } from '@/features/agent/hooks/useAgents';
-import { getConfig } from '@/shared/config';
+import { useToolsContext } from '@/features/tools/hooks/useToolsContext';
 import { BridgeEditor } from '@/features/agent/components/BridgeEditor';
 import type { Agent, BridgeServer } from '@/features/agent/types/agent';
 import { Section } from './Section';
@@ -16,22 +16,30 @@ interface ToolsSectionProps {
 }
 
 export function ToolsSection({ agent, isOpen, onToggle }: ToolsSectionProps) {
-  const config = getConfig();
   const { updateAgent, addServer, updateServer, removeServer, toggleServer } = useAgents();
+  const { providers } = useToolsContext();
 
   const [bridgeEditorOpen, setBridgeEditorOpen] = useState(false);
   const [editingBridge, setEditingBridge] = useState<BridgeServer | null>(null);
 
+  // Agent-internal provider IDs to exclude (handled elsewhere in the drawer)
+  const agentInternalIds = useMemo(() => {
+    const ids = new Set(['repository', 'skills']);
+    for (const s of agent.servers) ids.add(s.id);
+    return ids;
+  }, [agent.servers]);
+
+  // Global tools: built-in providers + config MCPs (everything not agent-internal)
   const availableTools = useMemo(() => {
-    const tools: { id: string; label: string; description?: string; icon: React.ReactNode }[] = [];
-    if (config.internet) tools.push({ id: 'internet', label: config.internet.researcher ? 'Web Research' : 'Web Search', description: 'Access the internet', icon: <Globe size={16} /> });
-    if (config.interpreter) tools.push({ id: 'interpreter', label: 'Code Runner', description: 'Execute code', icon: <Code size={16} /> });
-    if (config.renderer) tools.push({ id: 'renderer', label: 'Image Editor', description: 'Generate and edit images', icon: <Image size={16} /> });
-    for (const mcp of config.mcps || []) {
-      tools.push({ id: mcp.id, label: mcp.name, description: mcp.description, icon: <Server size={16} /> });
-    }
-    return tools;
-  }, [config]);
+    return providers
+      .filter(p => !agentInternalIds.has(p.id))
+      .map(p => ({
+        id: p.id,
+        label: p.name,
+        description: p.description,
+        Icon: p.icon,
+      }));
+  }, [providers, agentInternalIds]);
 
   const agentToolIds = useMemo(() => new Set(agent.tools || []), [agent.tools]);
 
@@ -78,7 +86,7 @@ export function ToolsSection({ agent, isOpen, onToggle }: ToolsSectionProps) {
 
       <Section
         title="Tools"
-        icon={<Code size={16} />}
+        icon={<Wrench size={16} />}
         isOpen={isOpen}
         onOpenToggle={onToggle}
       >
@@ -96,7 +104,9 @@ export function ToolsSection({ agent, isOpen, onToggle }: ToolsSectionProps) {
                   >
                     {agentToolIds.has(tool.id) ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
                   </button>
-                  <span className="text-neutral-600 dark:text-neutral-400">{tool.icon}</span>
+                  <span className="text-neutral-600 dark:text-neutral-400">
+                    {tool.Icon ? <tool.Icon width={16} height={16} /> : <Wrench size={16} />}
+                  </span>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{tool.label}</div>
                     {tool.description && (
