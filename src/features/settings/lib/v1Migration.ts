@@ -4,7 +4,7 @@
  * Handles importing old backup formats for chats and repositories.
  * This module provides migration functions for JSON import files.
  * 
- * REMOVE AFTER MARCH 2026 when all users have migrated their backups.
+ * REMOVE AFTER APRIL 2026 when all users have migrated their backups.
  */
 
 import type { Chat, Message, Content } from '@/shared/types/chat';

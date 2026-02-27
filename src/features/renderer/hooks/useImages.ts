@@ -63,47 +63,17 @@ async function loadImage(id: string): Promise<Image | undefined> {
     // Try new folder structure first
     const meta = await opfs.readJson<StoredImageMeta>(`${imagePath}/metadata.json`);
     
-    if (meta) {
-      // Load binary data
-      const blob = await opfs.readBlob(`${imagePath}/image.bin`);
-      const data = blob ? await opfs.blobToDataUrl(blob) : '';
-      
-      return {
-        ...meta,
-        data,
-        created: meta.created ? new Date(meta.created) : null,
-        updated: meta.updated ? new Date(meta.updated) : null,
-      };
-    }
-    
-    // Fall back to legacy file: /images/{id}.json
-    const legacy = await opfs.readJson<{
-      id: string;
-      title?: string;
-      created: string | null;
-      updated: string | null;
-      model: string;
-      prompt: string;
-      data: string; // blob:id reference in legacy format
-    }>(`${COLLECTION}/${id}.json`);
-    
-    if (!legacy) return undefined;
-    
-    // Rehydrate blob reference from legacy central storage
-    let data = legacy.data;
-    const blobId = opfs.parseBlobRef(legacy.data);
-    if (blobId) {
-      const blob = await opfs.getBlob(blobId);
-      if (blob) {
-        data = await opfs.blobToDataUrl(blob);
-      }
-    }
+    if (!meta) return undefined;
+
+    // Load binary data
+    const blob = await opfs.readBlob(`${imagePath}/image.bin`);
+    const data = blob ? await opfs.blobToDataUrl(blob) : '';
     
     return {
-      ...legacy,
+      ...meta,
       data,
-      created: legacy.created ? new Date(legacy.created) : null,
-      updated: legacy.updated ? new Date(legacy.updated) : null,
+      created: meta.created ? new Date(meta.created) : null,
+      updated: meta.updated ? new Date(meta.updated) : null,
     };
   } catch (error) {
     console.error(`Error loading image ${id} from OPFS:`, error);
@@ -115,16 +85,6 @@ async function removeImage(id: string): Promise<void> {
   try {
     // Delete entire folder (includes metadata.json and image.bin)
     await opfs.deleteDirectory(`${COLLECTION}/${id}`);
-    
-    // Also try to delete legacy file and blob
-    const legacy = await opfs.readJson<{ data: string }>(`${COLLECTION}/${id}.json`);
-    if (legacy) {
-      const blobId = opfs.parseBlobRef(legacy.data);
-      if (blobId) {
-        await opfs.deleteBlob(blobId);
-      }
-      await opfs.deleteFile(`${COLLECTION}/${id}.json`);
-    }
     
     // Update index
     await opfs.removeIndexEntry(COLLECTION, id);

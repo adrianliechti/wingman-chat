@@ -20,11 +20,7 @@ export function getConnectedData(
         // Add each item from the data
         result.items.push(...nodeOutput.items);
       } else {
-        // Fallback: try to get text from output or legacy outputText property
-        let text = getDataText(nodeOutput);
-        if (!text && typeof sourceNode.data.outputText === 'string') {
-          text = sourceNode.data.outputText;
-        }
+        const text = getDataText(nodeOutput);
         if (text) {
           result.items.push({ value: text, text });
         }

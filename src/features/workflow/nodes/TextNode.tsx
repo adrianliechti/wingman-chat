@@ -7,17 +7,14 @@ import { useWorkflow } from '@/features/workflow/hooks/useWorkflow';
 import { WorkflowNode } from '@/features/workflow/components/WorkflowNode';
 
 // TextNode data interface
-export interface TextNodeData extends BaseNodeData {
-  outputText?: string;  // Legacy property, kept for backward compatibility
-}
+export interface TextNodeData extends BaseNodeData {}
 
 // TextNode type
 export type TextNodeType = Node<TextNodeData, 'text'>;
 
 export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) => {
   const { updateNode } = useWorkflow();
-  // Support both old 'outputText' format and new 'output' format
-  const currentText = data.output?.items?.[0]?.text ?? data.outputText ?? '';
+  const currentText = data.output?.items?.[0]?.text ?? '';
   const [localValue, setLocalValue] = useState(currentText);
   const isLocalChangeRef = useRef(false);
 
@@ -35,15 +32,14 @@ export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) =
     const newValue = e.target.value;
     setLocalValue(newValue);
     isLocalChangeRef.current = true;
-    // Write to both formats for compatibility
-    updateNode(id, { data: { ...data, output: createData(newValue), outputText: newValue } });
+    updateNode(id, { data: { ...data, output: createData(newValue) } });
   };
 
-  // Ensure output is always set (handles initial mount with empty output or migration from old format)
+  // Ensure output is always set on initial mount
   useEffect(() => {
     if (localValue && !data.output) {
       isLocalChangeRef.current = true;
-      updateNode(id, { data: { ...data, output: createData(localValue), outputText: localValue } });
+      updateNode(id, { data: { ...data, output: createData(localValue) } });
     }
     // Only run on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps

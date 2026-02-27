@@ -58,9 +58,6 @@ export { modelType, modelName } from './lib/models';
 export type { CopyOptions } from './lib/copy';
 export { copyToClipboard } from './lib/copy';
 
-// Lib - DB
-export { openDB, closeDB, setValue, getValue, deleteValue, clearDB, getStorageUsage } from './lib/db';
-
 // Lib - Document conversion
 export { docxToMarkdown } from './lib/docx';
 export { markdownToDocx } from './lib/markdownToDocx';
@@ -118,9 +115,6 @@ export {
   getChatBlob,
   deleteChatBlob,
   listChatBlobs,
-  storeBlob,
-  getBlob,
-  deleteBlob,
   writeArtifact,
   readArtifact,
   deleteArtifact,

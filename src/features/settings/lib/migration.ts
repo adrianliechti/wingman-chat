@@ -300,26 +300,30 @@ async function migrateImages(): Promise<MigrationStats['images']> {
   for (const image of oldImages) {
     const imageId = image?.id || 'unknown';
     try {
-      // Extract the image data as a blob
-      let blobRef = image.data;
-      if (opfs.isDataUrl(image.data)) {
-        const blob = opfs.dataUrlToBlob(image.data);
-        const blobId = await opfs.storeBlob(blob);
-        blobRef = opfs.createBlobRef(blobId);
-      }
-      
-      const stored = {
-        ...image,
-        data: blobRef,
+      // Store metadata
+      const meta = {
+        id: image.id,
+        title: image.title,
         created: image.created instanceof Date 
           ? image.created.toISOString() 
           : image.created,
         updated: image.updated instanceof Date 
           ? image.updated.toISOString() 
           : image.updated,
+        model: image.model,
+        prompt: image.prompt,
       };
       
-      await opfs.writeJson(`images/${image.id}.json`, stored);
+      await opfs.writeJson(`images/${image.id}/metadata.json`, meta);
+      
+      // Store image data as binary
+      if (opfs.isDataUrl(image.data)) {
+        const blob = opfs.dataUrlToBlob(image.data);
+        await opfs.writeBlob(`images/${image.id}/image.bin`, blob);
+      } else if (image.data) {
+        const blob = new Blob([image.data], { type: 'application/octet-stream' });
+        await opfs.writeBlob(`images/${image.id}/image.bin`, blob);
+      }
       
       indexEntries.push({
         id: image.id,
