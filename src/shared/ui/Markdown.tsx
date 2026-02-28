@@ -18,6 +18,7 @@ import { CodeRenderer } from './CodeRenderer';
 import { HtmlRenderer } from './renderers/HtmlRenderer';
 import { CsvRenderer } from './renderers/CsvRenderer';
 import { SvgRenderer } from './renderers/SvgRenderer';
+import { MarkdownRenderer } from './renderers/MarkdownRenderer';
 import { MediaPlayer } from './MediaPlayer';
 import { isAudioUrl, isVideoUrl } from '@/shared/lib/utils';
 import type { ReactNode } from 'react';
@@ -133,7 +134,7 @@ const components: Partial<Components> = {
         if (internalHash) {
             return (
                 <a
-                    className="text-blue-500 hover:underline"
+                    className="hover:underline"
                     href={`#${internalHash}`}
                     onClick={(e) => {
                         e.preventDefault();
@@ -148,7 +149,7 @@ const components: Partial<Components> = {
         
         return (
             <a
-                className="text-blue-500 hover:underline"
+                className="hover:underline"
                 href={url}
                 target="_blank"
                 rel="noreferrer noopener"
@@ -253,7 +254,7 @@ const components: Partial<Components> = {
         const match = /language-(\w+)/.exec(className || "");
         
         // If no match but children contains newlines, it's likely a code block without language
-        const text = String(children).replace(/\n$/, "");
+        const text = extractText(children).replace(/\n$/, "");
         const isMultiLine = text.includes('\n');
         
         // Inline code (no language specified and single line)
@@ -332,7 +333,7 @@ const components: Partial<Components> = {
 
         // Markdown code blocks - render content as markdown
         if (language === "markdown" || language === "md") {
-            return <Markdown>{text}</Markdown>;
+            return <MarkdownRenderer content={text} language={language} />;
         }
 
         // Extract filename from code if present
