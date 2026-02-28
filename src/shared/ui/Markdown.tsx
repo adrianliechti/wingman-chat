@@ -1,6 +1,10 @@
-import { memo, useDeferredValue } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
-import type { PluggableList } from 'unified';
+import { memo, useDeferredValue, useEffect, useRef, useState } from 'react';
+import { Fragment, jsx, jsxs } from 'react/jsx-runtime';
+import { unified } from 'unified';
+import rehypeReact from 'rehype-react';
+import type { Components } from 'hast-util-to-jsx-runtime';
+import remarkParse from 'remark-parse';
+import remarkRehype from 'remark-rehype';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import remarkGemoji from 'remark-gemoji';
@@ -189,12 +193,6 @@ const components: Partial<Components> = {
         }
 
         // Code block without language - render as plain text
-        if (!match && isMultiLine) {
-            return <CodeRenderer code={text} language="text" />;
-        }
-
-        // If no match, it's not a language-specific block, so we can't proceed with language checks.
-        // This case should ideally not be hit if the above logic is correct, but as a safeguard:
         if (!match) {
             return <CodeRenderer code={text} language="text" />;
         }
@@ -270,64 +268,95 @@ const components: Partial<Components> = {
     },
 };
 
-// Disable single $ math to avoid conflicts with currency ($100, R$50, etc.)
-// Use $$ for both inline and display math
-const remarkPlugins: PluggableList = [
-    remarkGfm, 
-    remarkBreaks, 
-    remarkGemoji, 
-    [remarkMath, { singleDollarTextMath: false }],
-];
-const rehypePlugins: PluggableList = [
-    [
-        rehypeKatex,
-        {
-            strict: 'ignore',
-            throwOnError: false,
-            errorColor: 'transparent',
-        },
-    ],
-];
+const katexPluginOptions: Parameters<typeof rehypeKatex>[0] = {
+    strict: 'ignore',
+    errorColor: 'transparent',
+};
 
-const NonMemoizedMarkdown = ({ children }: { children: string }) => {
-    // Let React deprioritize re-parses during rapid streaming updates
-    const deferredChildren = useDeferredValue(children);
-    
-    if (!deferredChildren) return null;
-    
-    // Preprocess markdown to fix common formatting issues
-    let processedContent = deferredChildren;
-    
+const rehypeReactOptions: Parameters<typeof rehypeReact>[0] = {
+    Fragment,
+    jsx,
+    jsxs,
+    components,
+    ignoreInvalidStyle: true,
+    passKeys: true,
+    passNode: true,
+};
+
+const STREAM_RENDER_THROTTLE_MS = 120;
+
+const preprocessMarkdown = (content: string): string => {
+    let processedContent = content;
+
     // Convert LaTeX-style display math \[...\] to $$...$$
-    processedContent = processedContent.replace(/\\\[([\s\S]+?)\\\]/g, (_match, content) => {
-        return `$$${content}$$`;
+    processedContent = processedContent.replace(/\\\[([\s\S]+?)\\\]/g, (_match, mathContent) => {
+        return `$$${mathContent}$$`;
     });
-    
+
     // Convert LaTeX-style inline math \(...\) to $$...$$ (since single $ is disabled)
-    processedContent = processedContent.replace(/\\\(([\s\S]+?)\\\)/g, (_match, content) => {
-        return `$$${content}$$`;
+    processedContent = processedContent.replace(/\\\(([\s\S]+?)\\\)/g, (_match, mathContent) => {
+        return `$$${mathContent}$$`;
     });
-    
+
     // Ensure blank line before code blocks that come after headings
     processedContent = processedContent.replace(/^(#{1,6}\s+.+)\n```/gm, '$1\n\n```');
-    
+
     // Ensure blank line after code blocks before headings
     processedContent = processedContent.replace(/```\n(#{1,6}\s+)/gm, '```\n\n$1');
-    
-    return (
-        <ReactMarkdown 
-            remarkPlugins={remarkPlugins} 
-            components={components}
-            rehypePlugins={rehypePlugins}
-        >
-            {processedContent}
-        </ReactMarkdown>
-    );
+
+    return processedContent;
+};
+
+// Build the processor once at module scope.
+// Disable single $ math to avoid conflicts with currency ($100, R$50, etc.)
+const processor = unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(remarkBreaks)
+    .use(remarkGemoji)
+    .use(remarkMath, { singleDollarTextMath: false })
+    .use(remarkRehype, { allowDangerousHtml: true })
+    .use(rehypeKatex, katexPluginOptions)
+    .use(rehypeReact, rehypeReactOptions);
+
+type MarkdownProps = {
+    children: string;
+    isStreaming?: boolean;
+};
+
+const NonMemoizedMarkdown = ({ children, isStreaming = false }: MarkdownProps) => {
+    const [throttled, setThrottled] = useState(children);
+    const lastFlushRef = useRef(0);
+    const timerRef = useRef<number>(undefined);
+
+    useEffect(() => {
+        if (!isStreaming) {
+            window.clearTimeout(timerRef.current);
+            return;
+        }
+
+        const delay = Math.max(0, STREAM_RENDER_THROTTLE_MS - (Date.now() - lastFlushRef.current));
+
+        window.clearTimeout(timerRef.current);
+        timerRef.current = window.setTimeout(() => {
+            lastFlushRef.current = Date.now();
+            setThrottled(children);
+        }, delay);
+
+        return () => window.clearTimeout(timerRef.current);
+    }, [children, isStreaming]);
+
+    // Throttle limits parse frequency during streaming; useDeferredValue
+    // lets React interrupt long renders to keep the UI responsive.
+    const input = useDeferredValue(isStreaming ? throttled : children);
+    if (!input) return null;
+
+    return processor.processSync(preprocessMarkdown(input)).result;
 };
 
 export const Markdown = memo(
     NonMemoizedMarkdown,
-    (prevProps, nextProps) => prevProps.children === nextProps.children,
+    (prev, next) => prev.children === next.children && prev.isStreaming === next.isStreaming,
 );
 
 const extractFilename = (code: string): string | undefined => {

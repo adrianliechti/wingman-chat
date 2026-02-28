@@ -675,7 +675,14 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                   );
                 }
                 if (part.type === 'text') {
-                  return <Markdown key={index}>{part.text}</Markdown>;
+                  return (
+                    <Markdown
+                      key={index}
+                      isStreaming={!!(props.isLast && isResponding)}
+                    >
+                      {part.text}
+                    </Markdown>
+                  );
                 }
                 if (part.type === 'tool_call') {
                   // Tool calls shown inline only when streaming

@@ -105,7 +105,10 @@ export default defineConfig({
           ],
           // Markdown rendering
           'vendor-markdown': [
-            'react-markdown', 
+            'unified',
+            'rehype-react',
+            'remark-parse',
+            'remark-rehype',
             'remark-breaks', 
             'remark-gfm',
             'remark-gemoji',

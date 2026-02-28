@@ -1,9 +1,5 @@
 import mime from 'mime';
-import { unified } from 'unified';
-import remarkParse from 'remark-parse';
-import remarkGfm from 'remark-gfm';
-import remarkRehype from 'remark-rehype';
-import rehypeStringify from 'rehype-stringify';
+import { marked } from 'marked';
 import type { TextContent, ImageContent, AudioContent, FileContent } from '@/shared/types/chat';
 
 // Parse a data URL to extract mimeType and base64 data
@@ -209,14 +205,7 @@ export function markdownToHtml(markdown: string): string {
   if (!markdown) return '';
   
   try {
-    const result = unified()
-      .use(remarkParse)        // Parse markdown
-      .use(remarkGfm)          // Support tables, strikethrough, task lists, etc.
-      .use(remarkRehype, { allowDangerousHtml: true })       // Convert to HTML with raw HTML support
-      .use(rehypeStringify, { allowDangerousHtml: true })    // Stringify to HTML
-      .processSync(markdown);
-    
-    let html = String(result);
+    let html = marked.parse(markdown, { gfm: true, breaks: false }) as string;
     
     // Add Word-compatible styling for tables
     html = html
