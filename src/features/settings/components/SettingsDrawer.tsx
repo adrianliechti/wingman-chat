@@ -11,6 +11,8 @@ import { personaOptions } from '@/features/settings/lib/personas';
 import type { PersonaKey } from '@/features/settings/lib/personas';
 import { importChatsFromZip, importChatsFromLegacyJson, exportChatsAsZip } from '@/features/settings/lib/chatImportExport';
 import { importAgentsFromZip, importAgentsFromLegacyJson, exportAgentsAsZip } from '@/features/settings/lib/agentImportExport';
+import { rebuildAllIndexes } from '@/features/settings/lib/rebuildIndexes';
+import { downloadFolderAsZip } from '@/shared/lib/opfs-zip';
 import { OpfsBrowser } from './OpfsBrowser';
 
 interface SettingsDrawerProps {
@@ -110,6 +112,8 @@ function AccordionSection({ title, icon, isOpen, onClick, children }: AccordionS
 export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawerProps) {
   const [openSection, setOpenSection] = useState<string | null>(null);
   const [opfsBrowserOpen, setOpfsBrowserOpen] = useState(false);
+  const [isRebuildingIndexes, setIsRebuildingIndexes] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const {
     theme, setTheme, layoutMode, setLayoutMode,
     backgroundPacks, backgroundSetting, setBackground,
@@ -179,6 +183,37 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
     } catch (error) {
       console.error('Delete all failed:', error);
       alert('Failed to delete all data. Please try again.');
+    }
+  };
+
+  const rebuildIndexes = async () => {
+    if (!window.confirm('Rebuild OPFS indexes now? This will rescan chats, agents, images, skills, and repositories.')) {
+      return;
+    }
+
+    try {
+      setIsRebuildingIndexes(true);
+      const result = await rebuildAllIndexes();
+      alert(
+        `Indexes rebuilt successfully.\n\n` +
+        `Chats: ${result.chats}\n` +
+        `Agents: ${result.agents}\n` +
+        `Images: ${result.images}\n` +
+        `Skills: ${result.skills}\n` +
+        `Repositories: ${result.repositories}\n\n` +
+        `Cleaned empty folders:\n` +
+        `- Chats: ${result.cleanedChatsFolders}\n` +
+        `- Agents: ${result.cleanedAgentsFolders}\n` +
+        `- Images: ${result.cleanedImagesFolders}\n` +
+        `- Skills: ${result.cleanedSkillsFolders}\n` +
+        `- Repositories: ${result.cleanedRepositoryFolders}`
+      );
+      await loadStorageInfo();
+    } catch (error) {
+      console.error('Rebuild indexes failed:', error);
+      alert('Failed to rebuild indexes. Check console for details.');
+    } finally {
+      setIsRebuildingIndexes(false);
     }
   };
 
@@ -546,27 +581,94 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
             {showAdvanced && (
               <AccordionSection
                 title="Advanced"
-                icon={<Settings size={20} />}
+                icon={<HardDrive size={20} />}
                 isOpen={openSection === 'advanced'}
                 onClick={() => toggleSection('advanced')}
               >
-                <div className="space-y-3">
-                  <div className="pt-1 flex flex-wrap gap-2">
+                <div className="space-y-4">
+                  {/* Storage Overview */}
+                  <div className="rounded-lg bg-white/40 dark:bg-neutral-800/40 border border-neutral-200/50 dark:border-neutral-700/50 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Total Storage</span>
+                      <span className="text-sm font-mono text-neutral-600 dark:text-neutral-400">
+                        {storageInfo.isLoading ? '...' : formatBytes(storageInfo.totalSize)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-500">
+                      Browser Origin Private File System (OPFS)
+                    </p>
+                  </div>
+
+                  {/* Backup */}
+                  <div className="space-y-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-500">Backup</span>
                     <button
                       type="button"
-                      onClick={() => setOpfsBrowserOpen(true)}
-                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors"
+                      onClick={async () => {
+                        setIsExporting(true);
+                        try {
+                          await downloadFolderAsZip('/', `wingman-backup-${new Date().toISOString().split('T')[0]}.zip`);
+                        } catch (error) {
+                          console.error('Export failed:', error);
+                          alert('Failed to export data. Please try again.');
+                        } finally {
+                          setIsExporting(false);
+                        }
+                      }}
+                      disabled={isExporting}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg border border-neutral-300/50 dark:border-neutral-700/50 bg-white/30 dark:bg-neutral-800/30 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/50 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <HardDrive size={14} />
-                      OPFS Browser
+                      <Upload size={16} className={`text-neutral-500 dark:text-neutral-400 shrink-0 ${isExporting ? 'animate-pulse' : ''}`} />
+                      <div className="min-w-0">
+                        <div className="font-medium">{isExporting ? 'Exporting...' : 'Export All Data'}</div>
+                        <div className="text-xs text-neutral-500 dark:text-neutral-500 truncate">Download chats, agents, skills, and settings as ZIP</div>
+                      </div>
                     </button>
+                  </div>
+
+                  {/* Diagnostic Tools */}
+                  <div className="space-y-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-500">Diagnostic Tools</span>
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setOpfsBrowserOpen(true)}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg border border-neutral-300/50 dark:border-neutral-700/50 bg-white/30 dark:bg-neutral-800/30 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/50 transition-colors text-left"
+                      >
+                        <HardDrive size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+                        <div className="min-w-0">
+                          <div className="font-medium">OPFS Browser</div>
+                          <div className="text-xs text-neutral-500 dark:text-neutral-500 truncate">Browse and inspect stored files</div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={rebuildIndexes}
+                        disabled={isRebuildingIndexes}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg border border-neutral-300/50 dark:border-neutral-700/50 bg-white/30 dark:bg-neutral-800/30 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-700/50 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Settings size={16} className={`text-neutral-500 dark:text-neutral-400 shrink-0 ${isRebuildingIndexes ? 'animate-spin' : ''}`} />
+                        <div className="min-w-0">
+                          <div className="font-medium">{isRebuildingIndexes ? 'Rebuilding...' : 'Rebuild Indexes'}</div>
+                          <div className="text-xs text-neutral-500 dark:text-neutral-500 truncate">Rescan and repair storage indexes</div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Danger Zone */}
+                  <div className="space-y-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-red-500/80 dark:text-red-400/80">Danger Zone</span>
                     <button
                       type="button"
                       onClick={deleteAllData}
-                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-red-300 dark:border-red-600/50 text-red-600 dark:text-red-400 hover:bg-red-50/50 dark:hover:bg-red-900/20 transition-colors"
+                      className="w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/30 text-red-700 dark:text-red-400 hover:bg-red-100/50 dark:hover:bg-red-900/30 transition-colors text-left"
                     >
-                      <Trash2 size={14} />
-                      Delete All Data
+                      <Trash2 size={16} className="shrink-0" />
+                      <div className="min-w-0">
+                        <div className="font-medium">Delete All Data</div>
+                        <div className="text-xs text-red-600/70 dark:text-red-400/70 truncate">Permanently remove all chats, agents, and settings</div>
+                      </div>
                     </button>
                   </div>
                 </div>

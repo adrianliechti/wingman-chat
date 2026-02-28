@@ -7,7 +7,7 @@
 
 import JSZip from 'jszip';
 import {
-  getDirectory, writeJson, writeBlob, readJson, readText,
+  getRoot, getDirectory, writeJson, writeBlob, readJson, readText,
   type IndexEntry,
 } from './opfs-core';
 
@@ -37,12 +37,14 @@ export async function addDirectoryToZip(
 
 /**
  * Export a specific folder from OPFS as a ZIP blob.
+ * Use empty string or '/' for root.
  */
 export async function exportFolderAsZip(folderPath: string): Promise<Blob> {
   const zip = new JSZip();
 
   try {
-    const folderHandle = await getDirectory(folderPath);
+    const isRoot = !folderPath || folderPath === '/';
+    const folderHandle = isRoot ? await getRoot() : await getDirectory(folderPath);
     await addDirectoryToZip(folderHandle, zip);
   } catch {
     // Folder doesn't exist, return empty zip
@@ -59,13 +61,13 @@ export async function exportFolderAsZip(folderPath: string): Promise<Blob> {
 export async function importFolderFromZip(folderPath: string, zipBlob: Blob): Promise<void> {
   const zip = await JSZip.loadAsync(zipBlob);
 
-  await getDirectory(folderPath);
+  await getDirectory(folderPath, { create: true });
 
   for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
     const fullPath = `${folderPath}/${relativePath}`;
 
     if (zipEntry.dir) {
-      await getDirectory(fullPath.replace(/\/$/, ''));
+      await getDirectory(fullPath.replace(/\/$/, ''), { create: true });
     } else {
       const content = await zipEntry.async('arraybuffer');
       await writeBlob(fullPath, new Blob([content]));

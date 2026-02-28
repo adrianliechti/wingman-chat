@@ -53,16 +53,20 @@ export async function getRoot(): Promise<FileSystemDirectoryHandle> {
 }
 
 /**
- * Get or create a directory handle at the given path.
- * Creates parent directories as needed.
+ * Get a directory handle at the given path.
+ * Creates parent directories only when create=true.
  */
-export async function getDirectory(path: string): Promise<FileSystemDirectoryHandle> {
+export async function getDirectory(
+  path: string,
+  options: { create?: boolean } = {}
+): Promise<FileSystemDirectoryHandle> {
+  const { create = false } = options;
   const root = await getRoot();
   const parts = path.split('/').filter(Boolean);
   
   let current = root;
   for (const part of parts) {
-    current = await current.getDirectoryHandle(part, { create: true });
+    current = await current.getDirectoryHandle(part, { create });
   }
   
   return current;
@@ -90,7 +94,7 @@ export async function writeText(path: string, content: string): Promise<void> {
  */
 export async function writeBlob(path: string, blob: Blob): Promise<void> {
   const { dir, name } = parsePath(path);
-  const directory = await getDirectory(dir);
+  const directory = await getDirectory(dir, { create: true });
   const fileHandle = await directory.getFileHandle(name, { create: true });
   
   const writable = await fileHandle.createWritable();
@@ -247,7 +251,9 @@ export async function deleteDirectory(path: string): Promise<void> {
     const parentPath = parts.slice(0, -1).join('/');
     const dirName = parts[parts.length - 1];
     
-    const parent = parentPath ? await getDirectory(parentPath) : await getRoot();
+    const parent = parentPath
+      ? await getDirectory(parentPath)
+      : await getRoot();
     await parent.removeEntry(dirName, { recursive: true });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'NotFoundError') {

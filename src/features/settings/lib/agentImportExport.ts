@@ -121,7 +121,7 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
       hasSkills = true;
 
       if (zipEntry.dir) {
-        await getDirectory(targetPath.replace(/\/$/, ''));
+        await getDirectory(targetPath.replace(/\/$/, ''), { create: true });
       } else {
         const content = await zipEntry.async('arraybuffer');
         await writeBlob(targetPath, new Blob([content]));
@@ -131,7 +131,7 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
       hasAgents = true;
 
       if (zipEntry.dir) {
-        await getDirectory(targetPath.replace(/\/$/, ''));
+        await getDirectory(targetPath.replace(/\/$/, ''), { create: true });
       } else {
         const content = await zipEntry.async('arraybuffer');
         await writeBlob(targetPath, new Blob([content]));
@@ -286,7 +286,7 @@ async function importLegacyRepositoriesFromZip(zip: JSZip): Promise<void> {
       const targetPath = `agents/${newId}/${relPath}`;
 
       if (zipEntry.dir) {
-        await getDirectory(targetPath.replace(/\/$/, ''));
+        await getDirectory(targetPath.replace(/\/$/, ''), { create: true });
       } else {
         const content = await zipEntry.async('arraybuffer');
         await writeBlob(targetPath, new Blob([content]));
