@@ -4,6 +4,11 @@
     font-family: 'Noto Emoji', sans-serif;
     font-size: 0.9em;
     vertical-align: -0.05em;
+  visibility: hidden;
+}
+
+.noto-emoji-ready .noto-emoji {
+  visibility: visible;
 }
 
 /* Unordered list with properly sized bullets */

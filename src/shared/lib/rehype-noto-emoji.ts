@@ -1,7 +1,6 @@
-import type { Root, Text, Element, ElementContent } from 'hast';
+import type { Root, Text, Element as HastElement, ElementContent } from 'hast';
 import { visit } from 'unist-util-visit';
 import emojiRegex from 'emoji-regex';
-import '@fontsource/noto-emoji/300.css';
 
 /**
  * Rehype plugin that wraps emoji characters in a span with the "noto-emoji"
@@ -35,7 +34,7 @@ const rehypeNotoEmoji = () => {
                 }
 
                 // Wrap the emoji in <span class="noto-emoji">
-                const emojiSpan: Element = {
+                const emojiSpan: HastElement = {
                     type: 'element',
                     tagName: 'span',
                     properties: { className: ['noto-emoji'] },

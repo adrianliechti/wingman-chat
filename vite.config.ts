@@ -31,6 +31,20 @@ function viteStaticCopyPyodide() {
     ],
   });
 }
+// Vite plugin: override font-display for @fontsource/noto-emoji from "swap" to
+// "block" so the browser never falls back to OS color emoji while the font
+// file is downloading. "block" shows invisible text during the load period
+// instead of the OS fallback glyph, eliminating the brief color-emoji flash.
+function notoEmojiFontDisplayBlock() {
+  return {
+    name: 'noto-emoji-font-display-block',
+    transform(code: string, id: string) {
+      if (!id.includes('@fontsource/noto-emoji')) return;
+      return code.replace(/font-display:\s*swap/g, 'font-display: block');
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   resolve: {
@@ -58,6 +72,7 @@ export default defineConfig({
     }
   },
   plugins: [
+    notoEmojiFontDisplayBlock(),
     react({
       babel: {
         plugins: [
