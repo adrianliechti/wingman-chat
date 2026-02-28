@@ -12,6 +12,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import rehypeNotoEmoji from '@/shared/lib/rehype-noto-emoji';
 import { MermaidRenderer } from './renderers/MermaidRenderer';
 import { CodeRenderer } from './CodeRenderer';
 import { HtmlRenderer } from './renderers/HtmlRenderer';
@@ -26,16 +27,38 @@ const components: Partial<Components> = {
             {children}
         </>;
     },
-    li: ({ children, ...props }) => {
+    input: ({ type, checked, ...props }) => {
+        if (type === 'checkbox') {
+            return (
+                <svg
+                    className={`task-checkbox${checked ? ' checked' : ''}`}
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    role="checkbox"
+                    aria-checked={checked}
+                    {...props}
+                >
+                    <rect x="1" y="1" width="14" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+                    {checked && (
+                        <path d="M4.5 8L7 10.5L11.5 5.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+                    )}
+                </svg>
+            );
+        }
+        return <input type={type} checked={checked} {...props} />;
+    },
+    li: ({ children, className, ...props }) => {
+        const isTask = typeof className === 'string' && className.includes('task-list-item');
         return (
-            <li className="py-1 ml-0" {...props}>
+            <li className={`py-1 ml-0 ${isTask ? 'task-list-item' : ''}`} {...props}>
                 {children}
             </li>
         );
     },
-    ul: ({ children, ...props }) => {
+    ul: ({ children, className, ...props }) => {
+        const isTaskList = typeof className === 'string' && className.includes('contains-task-list');
         return (
-            <ul className="list-disc list-outside ml-6 pl-0" {...props}>
+            <ul className={isTaskList ? 'task-list ml-0 pl-0' : 'custom-list ml-5 pl-0'} {...props}>
                 {children}
             </ul>
         );
@@ -317,6 +340,7 @@ const processor = unified()
     .use(remarkMath, { singleDollarTextMath: false })
     .use(remarkRehype, { allowDangerousHtml: true })
     .use(rehypeKatex, katexPluginOptions)
+    .use(rehypeNotoEmoji)
     .use(rehypeReact, rehypeReactOptions);
 
 type MarkdownProps = {

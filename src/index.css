@@ -1,5 +1,44 @@
 @import "tailwindcss";
 
+.noto-emoji {
+    font-family: 'Noto Emoji', sans-serif;
+    font-size: 0.9em;
+    vertical-align: -0.05em;
+}
+
+/* Unordered list with properly sized bullets */
+.custom-list {
+    list-style: disc outside;
+}
+
+.custom-list > li::marker {
+    font-family: system-ui, sans-serif;
+    font-size: 1.1em;
+    line-height: 1;
+}
+
+/* Task list */
+.task-list {
+    list-style: none;
+}
+
+.task-list-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.task-checkbox {
+    width: 1em;
+    height: 1em;
+    flex-shrink: 0;
+    opacity: 0.3;
+}
+
+.task-checkbox.checked {
+    opacity: 0.7;
+}
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Hide scrollbar utility */

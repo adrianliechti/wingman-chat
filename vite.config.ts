@@ -113,7 +113,9 @@ export default defineConfig({
             'remark-gfm',
             'remark-gemoji',
             'remark-math',
-            'rehype-katex'
+            'rehype-katex',
+            'emoji-regex',
+            '@fontsource/noto-emoji'
           ],
           // UI libraries
           'vendor-ui': [
