@@ -60,6 +60,7 @@ function AppContent() {
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsAdvanced, setSettingsAdvanced] = useState(false);
   
   // Refs and state for animated slider (tablet and desktop only)
   const tabletRef = useRef<HTMLDivElement>(null);
@@ -253,7 +254,7 @@ function AppContent() {
       )}
 
       {/* Settings Drawer - must be outside the z-10 content wrapper */}
-      <SettingsDrawer isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDrawer isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} showAdvanced={settingsAdvanced} />
 
       {/* Main app content */}
       <div className={`flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? 'md:ml-59' : 'ml-0'}`}>
@@ -395,7 +396,10 @@ function AppContent() {
             <div className="flex items-center gap-2 justify-end flex-1">
               {/* Hide settings button on mobile - it's in the menu */}
               <div className="hidden md:block">
-                <SettingsButton onClick={() => setSettingsOpen(true)} />
+                <SettingsButton onClick={(e) => {
+                  setSettingsAdvanced(e.altKey);
+                  setSettingsOpen(true);
+                }} />
               </div>
               {rightActions}
             </div>
@@ -430,7 +434,8 @@ function AppContent() {
               
               {/* Settings */}
               <button
-                onClick={() => {
+                onClick={(e) => {
+                  setSettingsAdvanced(e.altKey);
                   setSettingsOpen(true);
                   setMobileMenuOpen(false);
                 }}

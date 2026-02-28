@@ -1,6 +1,7 @@
 // Components
 export { SettingsButton } from './components/SettingsButton';
 export { SettingsDrawer } from './components/SettingsDrawer';
+export { OpfsBrowser } from './components/OpfsBrowser';
 
 // Context
 export { BridgeContext } from './context/BridgeContext';

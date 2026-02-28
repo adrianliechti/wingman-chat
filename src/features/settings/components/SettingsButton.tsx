@@ -1,7 +1,7 @@
 import { Settings } from 'lucide-react';
 
 interface SettingsButtonProps {
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
 }
 
 export function SettingsButton({ onClick }: SettingsButtonProps) {

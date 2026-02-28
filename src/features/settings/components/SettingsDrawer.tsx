@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from 'react';
-import { Settings, MessageSquare, User, Download, Upload, Trash2, ChevronsUpDown, Check, X, ChevronRight, Bot } from 'lucide-react';
+import { Settings, MessageSquare, User, Download, Upload, Trash2, ChevronsUpDown, Check, X, ChevronRight, Bot, HardDrive } from 'lucide-react';
 import { Transition, Listbox } from '@headlessui/react';
 import { useSettings } from '@/features/settings/hooks/useSettings';
 import { useChat } from '@/features/chat/hooks/useChat';
@@ -11,10 +11,12 @@ import { personaOptions } from '@/features/settings/lib/personas';
 import type { PersonaKey } from '@/features/settings/lib/personas';
 import { importChatsFromZip, importChatsFromLegacyJson, exportChatsAsZip } from '@/features/settings/lib/chatImportExport';
 import { importAgentsFromZip, importAgentsFromLegacyJson, exportAgentsAsZip } from '@/features/settings/lib/agentImportExport';
+import { OpfsBrowser } from './OpfsBrowser';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  showAdvanced?: boolean;
 }
 
 const themeOptions: { value: Theme; label: string }[] = [
@@ -105,8 +107,9 @@ function AccordionSection({ title, icon, isOpen, onClick, children }: AccordionS
   );
 }
 
-export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
+export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawerProps) {
   const [openSection, setOpenSection] = useState<string | null>(null);
+  const [opfsBrowserOpen, setOpfsBrowserOpen] = useState(false);
   const {
     theme, setTheme, layoutMode, setLayoutMode,
     backgroundPacks, backgroundSetting, setBackground,
@@ -539,31 +542,42 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
               </div>
             </AccordionSection>
 
-            {/* Danger Zone */}
-            <AccordionSection
-              title="Advanced"
-              icon={<Settings size={20} />}
-              isOpen={openSection === 'advanced'}
-              onClick={() => toggleSection('advanced')}
-            >
-              <div className="space-y-3">
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={deleteAllData}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-red-300 dark:border-red-600/50 text-red-600 dark:text-red-400 hover:bg-red-50/50 dark:hover:bg-red-900/20 transition-colors"
-                  >
-                    <Trash2 size={14} />
-                    Delete All Data
-                  </button>
+            {/* Advanced — only visible via Alt+click */}
+            {showAdvanced && (
+              <AccordionSection
+                title="Advanced"
+                icon={<Settings size={20} />}
+                isOpen={openSection === 'advanced'}
+                onClick={() => toggleSection('advanced')}
+              >
+                <div className="space-y-3">
+                  <div className="pt-1 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setOpfsBrowserOpen(true)}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors"
+                    >
+                      <HardDrive size={14} />
+                      OPFS Browser
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deleteAllData}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-red-300 dark:border-red-600/50 text-red-600 dark:text-red-400 hover:bg-red-50/50 dark:hover:bg-red-900/20 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                      Delete All Data
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </AccordionSection>
+              </AccordionSection>
+            )}
           </div>
         </div>
           </Transition.Child>
         </div>
       </Transition>
+      <OpfsBrowser isOpen={opfsBrowserOpen} onClose={() => setOpfsBrowserOpen(false)} />
     </>
   );
 }
