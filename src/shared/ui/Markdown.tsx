@@ -20,6 +20,40 @@ import { CsvRenderer } from './renderers/CsvRenderer';
 import { SvgRenderer } from './renderers/SvgRenderer';
 import { MediaPlayer } from './MediaPlayer';
 import { isAudioUrl, isVideoUrl } from '@/shared/lib/utils';
+import type { ReactNode } from 'react';
+
+const slugify = (children: ReactNode): string => {
+    const text = extractText(children);
+    return text
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '');
+};
+
+const getInternalHash = (url: string): string | null => {
+    if (!url) return null;
+    if (url.startsWith('#')) return decodeURIComponent(url.slice(1));
+    if (typeof window === 'undefined') return null;
+    try {
+        const parsed = new URL(url, window.location.href);
+        if (parsed.origin === window.location.origin && parsed.pathname === window.location.pathname && parsed.hash) {
+            return decodeURIComponent(parsed.hash.slice(1));
+        }
+    } catch { /* ignore */ }
+    return null;
+};
+
+const extractText = (node: ReactNode): string => {
+    if (typeof node === 'string') return node;
+    if (typeof node === 'number') return String(node);
+    if (Array.isArray(node)) return node.map(extractText).join('');
+    if (node && typeof node === 'object' && 'props' in node) {
+        return extractText((node as { props: { children?: ReactNode } }).props.children);
+    }
+    return '';
+};
 
 const components: Partial<Components> = {
     pre: ({ children }) => {
@@ -79,6 +113,7 @@ const components: Partial<Components> = {
     },
     a: ({ children, href, ...props }) => {
         let url = href || '';
+        const internalHash = getInternalHash(url);
 
         if (url && !url.startsWith('http') && !url.startsWith('#')) {
             url = `https://${url}`;
@@ -92,6 +127,23 @@ const components: Partial<Components> = {
         // Check if this is a video link
         if (isVideoUrl(url)) {
             return <MediaPlayer url={url} type="video">{children}</MediaPlayer>;
+        }
+
+        // Anchor links scroll within the page
+        if (internalHash) {
+            return (
+                <a
+                    className="text-blue-500 hover:underline"
+                    href={`#${internalHash}`}
+                    onClick={(e) => {
+                        e.preventDefault();
+                        document.getElementById(internalHash)?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    {...props}
+                >
+                    {children}
+                </a>
+            );
         }
         
         return (
@@ -108,42 +160,42 @@ const components: Partial<Components> = {
     },
     h1: ({ children, ...props }) => {
         return (
-            <h1 className="text-3xl font-semibold mt-6 mb-2" {...props}>
+            <h1 id={slugify(children)} className="text-3xl font-semibold mt-6 mb-2" {...props}>
                 {children}
             </h1>
         );
     },
     h2: ({ children, ...props }) => {
         return (
-            <h2 className="text-2xl font-semibold mt-6 mb-2" {...props}>
+            <h2 id={slugify(children)} className="text-2xl font-semibold mt-6 mb-2" {...props}>
                 {children}
             </h2>
         );
     },
     h3: ({ children, ...props }) => {
         return (
-            <h3 className="text-xl font-semibold mt-6 mb-2" {...props}>
+            <h3 id={slugify(children)} className="text-xl font-semibold mt-6 mb-2" {...props}>
                 {children}
             </h3>
         );
     },
     h4: ({ children, ...props }) => {
         return (
-            <h4 className="text-lg font-semibold mt-6 mb-2" {...props}>
+            <h4 id={slugify(children)} className="text-lg font-semibold mt-6 mb-2" {...props}>
                 {children}
             </h4>
         );
     },
     h5: ({ children, ...props }) => {
         return (
-            <h5 className="text-base font-semibold mt-6 mb-2" {...props}>
+            <h5 id={slugify(children)} className="text-base font-semibold mt-6 mb-2" {...props}>
                 {children}
             </h5>
         );
     },
     h6: ({ children, ...props }) => {
         return (
-            <h6 className="text-sm font-semibold mt-6 mb-2" {...props}>
+            <h6 id={slugify(children)} className="text-sm font-semibold mt-6 mb-2" {...props}>
                 {children}
             </h6>
         );
