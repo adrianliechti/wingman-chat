@@ -295,15 +295,6 @@ async function migrateFromLegacy(): Promise<Agent[]> {
       enabledSkillNames = skills.map(s => s.name);
     } catch { /* no skills */ }
     
-    // Collect existing bridge servers
-    let bridgeServers: BridgeServer[] = [];
-    try {
-      const raw = await opfs.readJson<BridgeServer[]>('bridge.json');
-      if (raw && Array.isArray(raw)) {
-        bridgeServers = raw;
-      }
-    } catch { /* no bridges */ }
-    
     // Determine default-on tool IDs from config
     const defaultTools: string[] = [];
     
@@ -440,7 +431,7 @@ async function migrateFromLegacy(): Promise<Agent[]> {
             name: repoName,
             instructions: repoInstructions,
             skills: firstAgent ? enabledSkillNames : [],
-            servers: firstAgent ? bridgeServers : [],
+            servers: [],
             tools: defaultTools,
             files: files.length > 0 ? files : undefined,
           };
@@ -452,18 +443,6 @@ async function migrateFromLegacy(): Promise<Agent[]> {
           console.error(`Failed to migrate repository ${entry.id}:`, error);
         }
       }
-    } else if (bridgeServers.length > 0 || enabledSkillNames.length > 0) {
-      // No repositories but we have bridge servers or skills — create a Default agent
-      const agent: Agent = {
-        id: crypto.randomUUID(),
-        name: 'Default',
-        skills: enabledSkillNames,
-        servers: bridgeServers,
-        tools: defaultTools,
-      };
-      
-      await storeAgent(agent);
-      migrated.push(agent);
     }
     
     // Mark migration complete

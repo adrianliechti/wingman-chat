@@ -5,7 +5,7 @@ import * as opfs from '@/shared/lib/opfs';
  * Options for usePersistedState hook
  */
 export interface UsePersistedStateOptions<T> {
-  /** File path in OPFS (e.g., 'profile.json', 'bridge.json') */
+  /** File path in OPFS (e.g., 'profile.json') */
   key: string;
   
   /** Default value when no persisted data exists */

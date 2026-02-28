@@ -30,7 +30,6 @@
  *   └── image.bin             # Image binary
  *   /images/index.json        # Images index for fast listing
  *
- *   /bridge.json              # Bridge server config
  *   /profile.json             # User profile settings
  */
 

@@ -26,7 +26,6 @@ interface MigrationStats {
   chats: { total: number; migrated: number; failed: string[] };
   repositories: { total: number; migrated: number; failed: string[] };
   images: { total: number; migrated: number; failed: string[] };
-  bridge: boolean;
   profile: boolean;
   skills: boolean;
 }
@@ -353,29 +352,6 @@ async function migrateImages(): Promise<MigrationStats['images']> {
 }
 
 /**
- * Migrate bridge servers from IndexedDB to OPFS.
- * Best effort: logs error but doesn't throw.
- */
-async function migrateBridge(): Promise<boolean> {
-  console.log('[Migration] Migrating bridge servers...');
-  
-  try {
-    const servers = await readOldValue('bridge');
-    if (!servers) {
-      console.log('[Migration] No bridge servers to migrate');
-      return true;
-    }
-    
-    await opfs.writeJson('bridge.json', servers);
-    console.log('[Migration] Bridge servers migration complete');
-    return true;
-  } catch (error) {
-    console.error('[Migration] Failed to migrate bridge servers:', error);
-    return false;
-  }
-}
-
-/**
  * Migrate profile settings from IndexedDB to OPFS.
  * Best effort: logs error but doesn't throw.
  */
@@ -476,7 +452,6 @@ export async function runMigration(): Promise<void> {
     chats: { total: 0, migrated: 0, failed: [] },
     repositories: { total: 0, migrated: 0, failed: [] },
     images: { total: 0, migrated: 0, failed: [] },
-    bridge: false,
     profile: false,
     skills: false,
   };
@@ -486,7 +461,6 @@ export async function runMigration(): Promise<void> {
   stats.chats = await migrateChats();
   stats.repositories = await migrateRepositories();
   stats.images = await migrateImages();
-  stats.bridge = await migrateBridge();
   stats.profile = await migrateProfile();
   stats.skills = await migrateSkills();
   
@@ -504,7 +478,6 @@ export async function runMigration(): Promise<void> {
   if (stats.images.failed.length > 0) {
     console.log(`[Migration]   Failed: ${stats.images.failed.join(', ')}`);
   }
-  console.log(`[Migration] Bridge: ${stats.bridge ? 'success' : 'failed/empty'}`);
   console.log(`[Migration] Profile: ${stats.profile ? 'success' : 'failed/empty'}`);
   console.log(`[Migration] Skills: ${stats.skills ? 'success' : 'failed/empty'}`);
   
