@@ -13,7 +13,7 @@ import { SkillsSection } from './SkillsSection';
 import { ToolsSection } from './ToolsSection';
 import { MemorySection } from './MemorySection';
 
-// ─── Agent details: collapsible sections ───
+// ─── Agent details: sections ───
 
 interface AgentDetailsProps {
   agent: Agent;
@@ -21,49 +21,18 @@ interface AgentDetailsProps {
 
 function AgentDetails({ agent }: AgentDetailsProps) {
   const config = getConfig();
-  const [openSection, setOpenSection] = useState<Set<string>>(new Set(['instructions']));
-
-  const toggleSection = (key: string) => {
-    setOpenSection(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  };
 
   return (
     <div className="flex flex-col flex-1 overflow-auto">
-      <InstructionsSection
-        agent={agent}
-        isOpen={openSection.has('instructions')}
-        onToggle={() => toggleSection('instructions')}
-      />
+      <InstructionsSection agent={agent} />
 
       {config.repository && (
-        <FilesSection
-          agent={agent}
-          isOpen={openSection.has('repository')}
-          onToggle={() => toggleSection('repository')}
-        />
+        <FilesSection agent={agent} />
       )}
 
-      <SkillsSection
-        agent={agent}
-        isOpen={openSection.has('skills')}
-        onToggle={() => toggleSection('skills')}
-      />
-
-      <ToolsSection
-        agent={agent}
-        isOpen={openSection.has('tools')}
-        onToggle={() => toggleSection('tools')}
-      />
-
-      <MemorySection
-        agent={agent}
-        isOpen={openSection.has('memory')}
-        onToggle={() => toggleSection('memory')}
-      />
+      <SkillsSection agent={agent} />
+      <ToolsSection agent={agent} />
+      <MemorySection agent={agent} />
     </div>
   );
 }

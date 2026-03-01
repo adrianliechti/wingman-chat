@@ -8,11 +8,9 @@ import { Markdown } from '@/shared/ui/Markdown';
 
 interface MemorySectionProps {
   agent: Agent;
-  isOpen: boolean;
-  onToggle: () => void;
 }
 
-export function MemorySection({ agent, isOpen, onToggle }: MemorySectionProps) {
+export function MemorySection({ agent }: MemorySectionProps) {
   const { updateAgent } = useAgents();
   const [content, setContent] = useState<string | undefined>();
 
@@ -26,13 +24,13 @@ export function MemorySection({ agent, isOpen, onToggle }: MemorySectionProps) {
   }, [agent.id, agent.memory]);
 
   useEffect(() => {
-    if (isOpen) { loadMemory(); }
+    loadMemory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, agent.memory]);
+  }, [agent.memory]);
 
   // Live-update when the agent writes memory
   useEffect(() => {
-    if (!isOpen || !agent.memory) return;
+    if (!agent.memory) return;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.agentId === agent.id) loadMemory();
@@ -40,7 +38,7 @@ export function MemorySection({ agent, isOpen, onToggle }: MemorySectionProps) {
     window.addEventListener('memory-updated', handler);
     return () => window.removeEventListener('memory-updated', handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, agent.memory, agent.id]);
+  }, [agent.memory, agent.id]);
 
   const toggleMemory = () => {
     updateAgent(agent.id, { memory: !agent.memory });
@@ -50,8 +48,8 @@ export function MemorySection({ agent, isOpen, onToggle }: MemorySectionProps) {
     <Section
       title="Memory"
       icon={<BrainCircuit size={16} />}
-      isOpen={isOpen}
-      onOpenToggle={onToggle}
+      isOpen={true}
+      collapsible={false}
       headerAction={
         <button
           type="button"

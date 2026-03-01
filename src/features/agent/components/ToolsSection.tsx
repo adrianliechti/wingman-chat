@@ -11,11 +11,9 @@ import { Section } from './Section';
 
 interface ToolsSectionProps {
   agent: Agent;
-  isOpen: boolean;
-  onToggle: () => void;
 }
 
-export function ToolsSection({ agent, isOpen, onToggle }: ToolsSectionProps) {
+export function ToolsSection({ agent }: ToolsSectionProps) {
   const { updateAgent, addServer, updateServer, removeServer, toggleServer } = useAgents();
   const { providers } = useToolsContext();
 
@@ -87,8 +85,8 @@ export function ToolsSection({ agent, isOpen, onToggle }: ToolsSectionProps) {
       <Section
         title="Tools"
         icon={<Wrench size={16} />}
-        isOpen={isOpen}
-        onOpenToggle={onToggle}
+        isOpen={true}
+        collapsible={false}
       >
         <div className="space-y-3">
           {/* Available tools */}

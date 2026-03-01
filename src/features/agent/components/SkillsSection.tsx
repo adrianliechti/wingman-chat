@@ -11,11 +11,9 @@ import JSZip from 'jszip';
 
 interface SkillsSectionProps {
   agent: Agent;
-  isOpen: boolean;
-  onToggle: () => void;
 }
 
-export function SkillsSection({ agent, isOpen, onToggle }: SkillsSectionProps) {
+export function SkillsSection({ agent }: SkillsSectionProps) {
   const { agents, updateAgent } = useAgents();
   const { skills: allSkills, addSkill, updateSkill, removeSkill } = useSkills();
 
@@ -117,8 +115,8 @@ export function SkillsSection({ agent, isOpen, onToggle }: SkillsSectionProps) {
       <Section
         title="Skills"
         icon={<Sparkles size={16} />}
-        isOpen={isOpen}
-        onOpenToggle={onToggle}
+        isOpen={true}
+        collapsible={false}
       >
         {allSkills.length > 0 ? (
           <div className="space-y-1.5">

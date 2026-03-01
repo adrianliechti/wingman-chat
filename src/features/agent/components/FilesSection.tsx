@@ -7,11 +7,9 @@ import { Section } from './Section';
 
 interface FilesSectionProps {
   agent: Agent;
-  isOpen: boolean;
-  onToggle: () => void;
 }
 
-export function FilesSection({ agent, isOpen, onToggle }: FilesSectionProps) {
+export function FilesSection({ agent }: FilesSectionProps) {
   const { files, addFile, removeFile } = useAgentFiles(agent.id);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,8 +69,8 @@ export function FilesSection({ agent, isOpen, onToggle }: FilesSectionProps) {
       <Section
         title="Files"
         icon={<Folder size={16} />}
-        isOpen={isOpen}
-        onOpenToggle={onToggle}
+        isOpen={true}
+        collapsible={false}
       >
         <div className="space-y-2">
           {/* Upload button */}

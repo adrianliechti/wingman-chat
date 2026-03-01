@@ -7,11 +7,9 @@ import { Section } from './Section';
 
 interface InstructionsSectionProps {
   agent: Agent;
-  isOpen: boolean;
-  onToggle: () => void;
 }
 
-export function InstructionsSection({ agent, isOpen, onToggle }: InstructionsSectionProps) {
+export function InstructionsSection({ agent }: InstructionsSectionProps) {
   const { updateAgent } = useAgents();
   const [isEditing, setIsEditing] = useState(false);
   const [value, setValue] = useState('');
@@ -85,8 +83,8 @@ export function InstructionsSection({ agent, isOpen, onToggle }: InstructionsSec
       <Section
         title="Instructions"
         icon={<PenLine size={16} />}
-        isOpen={isOpen}
-        onOpenToggle={onToggle}
+        isOpen={true}
+        collapsible={false}
       >
         <div
           onClick={startEditing}
