@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Sparkles, Plus, Download, Pencil, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
 import { useAgents } from '@/features/agent/hooks/useAgents';
 import { useSkills } from '@/features/skills/hooks/useSkills';
@@ -19,6 +19,14 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
+    };
+  }, []);
 
   const agentSkillIds = useMemo(() => new Set(agent.skills || []), [agent.skills]);
 
@@ -74,50 +82,95 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
     input.onchange = async (event) => {
       const files = (event.target as HTMLInputElement).files;
       if (!files || files.length === 0) return;
-      let importedCount = 0;
-      const newIds: string[] = [];
-      for (const file of Array.from(files)) {
-        try {
-          if (file.name.endsWith('.zip')) {
-            const zip = await JSZip.loadAsync(file);
-            for (const [filename, zipEntry] of Object.entries(zip.files)) {
-              if (zipEntry.dir || !filename.endsWith('.md')) continue;
-              try {
-                const content = await zipEntry.async('string');
-                const result = parseSkillFile(content);
-                if (result.success) {
-                  const s = addSkill(result.skill);
-                  newIds.push(s.name);
-                  importedCount++;
-                }
-              } catch { /* skip */ }
-            }
-          } else {
-            const content = await file.text();
-            const result = parseSkillFile(content);
-            if (result.success) {
-              const s = addSkill(result.skill);
-              newIds.push(s.name);
-              importedCount++;
-            }
-          }
-        } catch { /* skip */ }
-      }
-      if (importedCount > 0) {
-        updateAgent(agent.id, { skills: [...(agent.skills || []), ...newIds] });
-      }
+      await importSkillFiles(Array.from(files));
     };
     input.click();
   };
 
+  const importSkillFiles = async (files: File[]) => {
+    let importedCount = 0;
+    const newIds: string[] = [];
+    for (const file of files) {
+      try {
+        if (file.name.endsWith('.zip')) {
+          const zip = await JSZip.loadAsync(file);
+          for (const [filename, zipEntry] of Object.entries(zip.files)) {
+            if (zipEntry.dir || !filename.endsWith('.md')) continue;
+            try {
+              const content = await zipEntry.async('string');
+              const result = parseSkillFile(content);
+              if (result.success) {
+                const s = addSkill(result.skill);
+                newIds.push(s.name);
+                importedCount++;
+              }
+            } catch { /* skip */ }
+          }
+        } else {
+          const content = await file.text();
+          const result = parseSkillFile(content);
+          if (result.success) {
+            const s = addSkill(result.skill);
+            newIds.push(s.name);
+            importedCount++;
+          }
+        }
+      } catch { /* skip */ }
+    }
+    if (importedCount > 0) {
+      updateAgent(agent.id, { skills: [...(agent.skills || []), ...newIds] });
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (dragTimeoutRef.current) {
+      clearTimeout(dragTimeoutRef.current);
+      dragTimeoutRef.current = null;
+    }
+    const droppedFiles = Array.from(e.dataTransfer.files).filter(
+      f => f.name.endsWith('.md') || f.name.endsWith('.zip')
+    );
+    if (droppedFiles.length > 0) {
+      await importSkillFiles(droppedFiles);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragOver) setIsDragOver(true);
+    if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
+    dragTimeoutRef.current = setTimeout(() => {
+      setIsDragOver(false);
+      dragTimeoutRef.current = null;
+    }, 100);
+  };
+
   return (
     <>
-      <Section
-        title="Skills"
-        icon={<Sparkles size={16} />}
-        isOpen={true}
-        collapsible={false}
+      <div
+        className={`relative ${isDragOver ? 'bg-slate-50/50 dark:bg-slate-900/50' : ''}`}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
       >
+        {isDragOver && (
+          <div className="absolute inset-0 z-10 bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm border-2 border-dashed border-slate-400 dark:border-slate-500 rounded-lg flex items-center justify-center">
+            <div className="text-center">
+              <Plus size={24} className="mx-auto text-neutral-600 dark:text-neutral-400 mb-1" />
+              <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Drop skills to import</p>
+            </div>
+          </div>
+        )}
+
+        <Section
+          title="Skills"
+          icon={<Sparkles size={16} />}
+          isOpen={true}
+          collapsible={false}
+        >
         {allSkills.length > 0 ? (
           <div className="space-y-1.5">
             {allSkills.map(skill => (
@@ -190,7 +243,8 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
             Import
           </button>
         </div>
-      </Section>
+        </Section>
+      </div>
 
       <SkillEditor
         isOpen={editorOpen}

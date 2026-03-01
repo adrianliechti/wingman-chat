@@ -22,6 +22,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragOver(false);
     if (dragTimeoutRef.current) {
       clearTimeout(dragTimeoutRef.current);
@@ -35,6 +36,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!isDragOver) setIsDragOver(true);
     if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
     dragTimeoutRef.current = setTimeout(() => {
@@ -60,35 +62,34 @@ export function FilesSection({ agent }: FilesSectionProps) {
       {isDragOver && (
         <div className="absolute inset-0 z-10 bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm border-2 border-dashed border-slate-400 dark:border-slate-500 rounded-lg flex items-center justify-center">
           <div className="text-center">
-            <Plus size={32} className="mx-auto text-neutral-600 dark:text-neutral-400 mb-2" />
-            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Drop files to add</p>
+            <Plus size={24} className="mx-auto text-neutral-600 dark:text-neutral-400 mb-1" />
+            <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Drop files to add</p>
           </div>
         </div>
       )}
 
       <Section
-        title="Files"
+        title="Knowledge Base"
         icon={<Folder size={16} />}
         isOpen={true}
         collapsible={false}
       >
-        <div className="space-y-2">
-          {/* Upload button */}
-          <div
-            className="border-2 border-dashed rounded-lg p-3 text-center transition-colors cursor-pointer bg-white/30 dark:bg-neutral-900/60 backdrop-blur-lg border-neutral-300 dark:border-neutral-600 hover:border-slate-400 dark:hover:border-slate-500 hover:bg-white/40 dark:hover:bg-neutral-900/80"
-            onClick={() => document.getElementById(`agent-file-upload-${agent.id}`)?.click()}
-          >
-            <div className="flex items-center justify-center gap-1 text-xs text-neutral-600 dark:text-neutral-400">
-              <Upload size={12} /> Upload Files
-            </div>
-            <input
-              type="file"
-              multiple
-              onChange={handleFileSelect}
-              className="hidden"
-              id={`agent-file-upload-${agent.id}`}
-            />
-          </div>
+      <div className="space-y-2">
+        {/* Upload button */}
+        <button
+          type="button"
+          onClick={() => document.getElementById(`agent-file-upload-${agent.id}`)?.click()}
+          className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
+        >
+          <Upload size={12} /> Upload files
+        </button>
+        <input
+          type="file"
+          multiple
+          onChange={handleFileSelect}
+          className="hidden"
+          id={`agent-file-upload-${agent.id}`}
+        />
 
           {/* File grid */}
           {files.length > 0 && (

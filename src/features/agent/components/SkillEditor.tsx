@@ -110,23 +110,23 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-2xl transform overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 shadow-xl transition-all">
+              <Dialog.Panel className="w-full max-w-2xl transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all">
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 dark:border-neutral-800">
-                  <Dialog.Title className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
+                  <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
                     {skill ? 'Edit Skill' : 'New Skill'}
                   </Dialog.Title>
                   <button
                     type="button"
                     onClick={onClose}
-                    className="p-1.5 rounded-full text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                    className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
                   >
-                    <X size={18} />
+                    <X size={16} />
                   </button>
                 </div>
 
                 {/* Content */}
-                <div className="px-6 py-4 space-y-4">
+                <div className="px-5 py-3.5 space-y-3.5">
                   {/* Name field */}
                   <div>
                     <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
@@ -136,10 +136,10 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value.toLowerCase())}
-                      className={`w-full px-3 py-2.5 text-sm rounded-lg bg-white dark:bg-neutral-800 border ${
+                      className={`w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border ${
                         nameError 
-                          ? 'border-red-500 focus:ring-red-500' 
-                          : 'border-neutral-300 dark:border-neutral-700 focus:ring-blue-500'
+                          ? 'border-red-400/70 focus:ring-red-500/60' 
+                          : 'border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60'
                       } focus:ring-2 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors`}
                       placeholder="my-skill-name"
                       disabled={!!skill} // Can't change name when editing
@@ -160,7 +160,7 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                     <textarea
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      className="w-full px-3 py-2.5 text-sm rounded-lg bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none transition-colors"
+                      className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none transition-colors"
                       rows={2}
                       placeholder="Describe what this skill does and when to use it..."
                     />
@@ -177,8 +177,8 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                     <textarea
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
-                      className="w-full px-3 py-2.5 text-sm rounded-lg bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100 font-mono resize-none transition-colors"
-                      rows={12}
+                      className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 font-mono resize-none transition-colors"
+                      rows={10}
                       placeholder="# Skill Instructions&#10;&#10;Detailed instructions, examples, and edge cases for the AI to follow..."
                     />
                     <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
@@ -188,25 +188,25 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-between px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/50">
+                <div className="flex items-center justify-between px-5 py-3 border-t border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/30">
                   <button
                     type="button"
                     onClick={handleOptimize}
                     disabled={!canOptimize}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium rounded-md border border-neutral-300/60 dark:border-neutral-700/60 text-neutral-500 dark:text-neutral-400 hover:text-amber-600 dark:hover:text-amber-400 hover:border-amber-300/60 dark:hover:border-amber-700/60 hover:bg-amber-50/40 dark:hover:bg-amber-950/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     {isOptimizing ? (
-                      <Loader2 size={15} className="animate-spin" />
+                      <Loader2 size={12} className="animate-spin" />
                     ) : (
-                      <Sparkles size={15} />
+                      <Sparkles size={12} />
                     )}
-                    {isOptimizing ? 'Optimizing...' : 'Optimize'}
+                    {isOptimizing ? 'Optimizing…' : 'Optimize'}
                   </button>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2.5">
                     <button
                       type="button"
                       onClick={onClose}
-                      className="px-4 py-2 text-sm font-medium rounded-lg text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                      className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
                     >
                       Cancel
                     </button>
@@ -214,9 +214,9 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                       type="button"
                       onClick={handleSave}
                       disabled={!isValid}
-                      className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600/90 text-white hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
-                      {skill ? 'Save Changes' : 'Create Skill'}
+                      Save
                     </button>
                   </div>
                 </div>
