@@ -53,8 +53,6 @@ func main() {
 	extractor := os.Getenv("EXTRACTOR_ENABLED") == "true"
 	extractorModel := os.Getenv("EXTRACTOR_MODEL")
 
-	interpreter := os.Getenv("INTERPRETER_ENABLED") == "true"
-
 	artifacts := os.Getenv("ARTIFACTS_ENABLED") == "true"
 
 	repository := os.Getenv("REPOSITORY_ENABLED") == "true"
@@ -135,8 +133,6 @@ func main() {
 			Elicitation bool   `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
 		}
 
-		type interpreterType struct{}
-
 		type artifactsType struct{}
 
 		type repositoryType struct {
@@ -183,7 +179,6 @@ func main() {
 
 			Internet    *internetType    `json:"internet,omitempty" yaml:"internet,omitempty"`
 			Renderer    *rendererType    `json:"renderer,omitempty" yaml:"renderer,omitempty"`
-			Interpreter *interpreterType `json:"interpreter,omitempty" yaml:"interpreter,omitempty"`
 
 			Artifacts  *artifactsType  `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 			Repository *repositoryType `json:"repository,omitempty" yaml:"repository,omitempty"`
@@ -328,10 +323,6 @@ func main() {
 			if rendererElicitation {
 				config.Renderer.Elicitation = true
 			}
-		}
-
-		if interpreter {
-			config.Interpreter = &interpreterType{}
 		}
 
 		if artifacts {

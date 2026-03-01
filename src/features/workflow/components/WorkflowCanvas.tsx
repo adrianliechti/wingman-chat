@@ -19,7 +19,6 @@ import { MarkdownNode } from '@/features/workflow/nodes/MarkdownNode';
 import { AudioNode } from '@/features/workflow/nodes/AudioNode';
 import { ImageNode } from '@/features/workflow/nodes/ImageNode';
 import { CsvNode } from '@/features/workflow/nodes/CsvNode';
-import { CodeNode } from '@/features/workflow/nodes/CodeNode';
 
 // Move nodeTypes outside component to prevent recreating on every render
 const nodeTypes: NodeTypes = {
@@ -32,7 +31,6 @@ const nodeTypes: NodeTypes = {
   audio: AudioNode,
   image: ImageNode,
   csv: CsvNode,
-  code: CodeNode,
 };
 
 // Move defaultEdgeOptions outside to prevent recreating

@@ -131,7 +131,7 @@ export function ChatInput() {
   }, [model?.tools]);
 
   // Providers visible in the UI (agent-internal providers are not user-controllable)
-  const hiddenProviderIds = useMemo(() => new Set(['skills', 'repository']), []);
+  const hiddenProviderIds = useMemo(() => new Set(['skills', 'repository', 'memory']), []);
   const visibleProviders = useMemo(
     () => providers.filter((p: ToolProvider) => !hiddenProviderIds.has(p.id)),
     [providers, hiddenProviderIds]
@@ -724,11 +724,6 @@ export function ChatInput() {
                       <TriangleAlert size={14} />
                     ) : (
                       <IconComponent size={14} />
-                    )}
-                    {providerEnabled && (
-                      <span className="hidden sm:inline">
-                        {provider.name}
-                      </span>
                     )}
                   </button>
                 );

@@ -18,7 +18,7 @@ export interface Agent {
 
   skills: string[]; // names referencing global skill library
   servers: BridgeServer[]; // per-agent MCP server definitions
-  tools: string[]; // active built-in tool IDs: "internet", "interpreter", "renderer"
+  tools: string[]; // active built-in tool IDs: "internet", "renderer"
 
   memory?: boolean; // enable persistent memory via MEMORY.md
 

@@ -10,6 +10,7 @@ export interface CodeExecutionResult {
   success: boolean;
   output: string;
   error?: string;
+  files?: Record<string, string>;
 }
 
 let pyodideInstance: PyodideInterface | null = null;
@@ -129,9 +130,39 @@ export async function executeCode(request: CodeExecutionRequest): Promise<CodeEx
       output = String(result);
     }
 
+    // Read files back from Pyodide VFS
+    const changedFiles: Record<string, string> = {};
+    const walkDir = (dir: string) => {
+      try {
+        const entries = pyodide.FS.readdir(dir).filter((e: string) => e !== '.' && e !== '..');
+        for (const entry of entries) {
+          const fullPath = dir === '/' ? `/${entry}` : `${dir}/${entry}`;
+          try {
+            const stat = pyodide.FS.stat(fullPath);
+            if (pyodide.FS.isDir(stat.mode)) {
+              walkDir(fullPath);
+            } else {
+              const data = pyodide.FS.readFile(fullPath, { encoding: 'utf8' }) as string;
+              // Store path relative to baseDir
+              const relativePath = fullPath.slice(baseDir.length + 1);
+              if (relativePath) {
+                changedFiles[relativePath] = data;
+              }
+            }
+          } catch {
+            // Skip files that can't be read
+          }
+        }
+      } catch {
+        // Skip directories that can't be listed
+      }
+    };
+    walkDir(baseDir);
+
     return {
       success: true,
       output: output.trim() || 'Code executed successfully (no output)',
+      files: changedFiles,
     };
   } catch (error) {
     console.error('Code execution error:', error);

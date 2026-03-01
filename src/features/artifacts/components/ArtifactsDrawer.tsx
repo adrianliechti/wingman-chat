@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { File as FileIcon2, Code, Eye, PanelRightOpen, PanelRightClose, Play, Loader2 } from 'lucide-react';
+import { File as FileIcon2, Code, Eye, PanelRightOpen, PanelRightClose, Play, Loader2, TerminalSquare } from 'lucide-react';
 import { useArtifacts } from '@/features/artifacts/hooks/useArtifacts';
 import { useChat } from '@/features/chat/hooks/useChat';
 import { HtmlEditor } from '@/shared/ui/editors/HtmlEditor';
@@ -11,6 +11,7 @@ import { MermaidEditor } from '@/shared/ui/editors/MermaidEditor';
 import { MarkdownEditor } from '@/shared/ui/editors/MarkdownEditor';
 import { PythonEditor } from '@/shared/ui/editors/PythonEditor';
 import { JsEditor } from '@/shared/ui/editors/JsEditor';
+import { BashEditor } from '@/shared/ui/editors/BashEditor';
 import { ArtifactsBrowser } from './ArtifactsBrowser';
 import { artifactKind, artifactLanguage, processUploadedFile } from '@/features/artifacts/lib/artifacts';
 import { FileIcon } from '@/shared/ui/FileIcon';
@@ -30,6 +31,8 @@ export function ArtifactsDrawer() {
   const [isRunning, setIsRunning] = useState(false);
   const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
   const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [terminalMounted, setTerminalMounted] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hasAutoShownBrowser, setHasAutoShownBrowser] = useState(false);
   
@@ -46,6 +49,30 @@ export function ArtifactsDrawer() {
   const toggleFileBrowser = useCallback(() => {
     setShowFileBrowser(prev => !prev);
   }, []);
+
+  // Ensure a chat exists and FS is ready (creates chat if needed)
+  const ensureFs = useCallback(async () => {
+    if (!chat) {
+      await createChat();
+    }
+    if (fs && !fs.isReady) {
+      let attempts = 0;
+      while (!fs.isReady && attempts < 10) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        attempts++;
+      }
+    }
+  }, [chat, createChat, fs]);
+
+  // Toggle terminal panel (auto-creates chat if needed)
+  const toggleTerminal = useCallback(async () => {
+    const opening = !showTerminal;
+    if (opening) {
+      await ensureFs();
+      setTerminalMounted(true);
+    }
+    setShowTerminal(opening);
+  }, [showTerminal, ensureFs]);
 
   // Callback for editors to register their run handler
   const onRunReady = useCallback((handler: (() => Promise<void>) | null) => {
@@ -167,19 +194,8 @@ export function ArtifactsDrawer() {
       return;
     }
 
-    // Create a chat if one doesn't exist (filesystem needs a chat to store files)
-    if (!chat) {
-      await createChat();
-    }
-
-    // Wait for filesystem to be ready (handlers set up after chat creation)
-    if (fs && !fs.isReady) {
-      let attempts = 0;
-      while (!fs.isReady && attempts < 10) {
-        await new Promise(resolve => setTimeout(resolve, 50));
-        attempts++;
-      }
-    }
+    // Ensure a chat and FS exist before writing files
+    await ensureFs();
 
     for (const file of droppedFiles) {
       try {
@@ -228,6 +244,11 @@ export function ArtifactsDrawer() {
 
   // Render the appropriate editor based on file type
   const renderEditor = () => {
+    return renderFileEditor();
+  };
+
+  // Render the file-specific editor
+  const renderFileEditor = () => {
     if (!activeFile) {
       return (
         <div className="h-full flex flex-col items-center justify-center p-8 text-center">
@@ -274,6 +295,9 @@ export function ArtifactsDrawer() {
         }
         if (lang === 'js') {
           return <JsEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
+        }
+        if (lang === 'sh' || lang === 'bash') {
+          return <BashEditor key={`${activeFile}-${editorVersion}`} initialScript={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
         }
         return (
           <CodeEditor
@@ -374,6 +398,20 @@ export function ArtifactsDrawer() {
                 </button>
               )}
 
+              {/* Terminal toggle */}
+              <button
+                type="button"
+                onClick={toggleTerminal}
+                className={`p-2 rounded transition-all duration-150 ease-out ${
+                  showTerminal
+                    ? 'text-green-500 dark:text-green-400 bg-green-500/10'
+                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
+                }`}
+                title={showTerminal ? 'Close terminal' : 'Open terminal'}
+              >
+                <TerminalSquare size={16} />
+              </button>
+
               {/* File browser toggle */}
               {files.length > 0 && (
                 <button
@@ -420,6 +458,13 @@ export function ArtifactsDrawer() {
           )}
         </div>
       </div>
+
+      {/* Terminal panel — below the controls bar, stays mounted once opened */}
+      {terminalMounted && (
+        <div className={`shrink-0 border-t border-black/10 dark:border-white/10 ${showTerminal ? 'h-1/3' : 'hidden'}`}>
+          <BashEditor key="terminal" visible={showTerminal} />
+        </div>
+      )}
     </div>
   );
 }

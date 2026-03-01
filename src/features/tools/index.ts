@@ -4,7 +4,6 @@ export type { ToolsContextValue } from './context/ToolsContext';
 export { ToolsProvider } from './context/ToolsProvider';
 
 // Hooks
-export { useInterpreterProvider } from './hooks/useInterpreterProvider';
 export { useToolsContext } from './hooks/useToolsContext';
 
 // Lib

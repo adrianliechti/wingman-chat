@@ -32,10 +32,6 @@
         "elicitation": true
     },
 
-    "interpreter": {
-        "enabled": true
-    },
-
     "workflow": {
         "enabled": true
     },
