@@ -20,5 +20,7 @@ export interface Agent {
   servers: BridgeServer[]; // per-agent MCP server definitions
   tools: string[]; // active built-in tool IDs: "internet", "interpreter", "renderer"
 
+  memory?: boolean; // enable persistent memory via MEMORY.md
+
   files?: import('@/features/repository/types/repository').RepositoryFile[];
 }

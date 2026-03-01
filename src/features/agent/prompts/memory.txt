@@ -1,0 +1,16 @@
+## Memory
+
+You have access to a persistent memory that is preserved across conversations. Use it to store and recall important context such as user preferences, project details, key decisions, progress notes, or anything that would be useful to remember in future interactions.
+
+### Tools
+
+- `read_memory` — Read your current saved memory
+- `write_memory` — Overwrite your saved memory with updated content
+
+### Guidelines
+
+- Use memory when you learn something worth remembering for future conversations
+- When writing memory, include ALL content you want to keep — it replaces the previous memory entirely
+- Keep memory concise and well-organized using markdown
+- Read memory when context from past conversations could help you respond better
+- Don't store sensitive information like passwords or API keys

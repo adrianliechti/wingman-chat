@@ -11,6 +11,7 @@ import { InstructionsSection } from './InstructionsSection';
 import { FilesSection } from './FilesSection';
 import { SkillsSection } from './SkillsSection';
 import { ToolsSection } from './ToolsSection';
+import { MemorySection } from './MemorySection';
 
 // ─── Agent details: collapsible sections ───
 
@@ -56,6 +57,12 @@ function AgentDetails({ agent }: AgentDetailsProps) {
         agent={agent}
         isOpen={openSection.has('tools')}
         onToggle={() => toggleSection('tools')}
+      />
+
+      <MemorySection
+        agent={agent}
+        isOpen={openSection.has('memory')}
+        onToggle={() => toggleSection('memory')}
       />
     </div>
   );

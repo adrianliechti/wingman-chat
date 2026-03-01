@@ -24,7 +24,7 @@ export function ToolsSection({ agent, isOpen, onToggle }: ToolsSectionProps) {
 
   // Agent-internal provider IDs to exclude (handled elsewhere in the drawer)
   const agentInternalIds = useMemo(() => {
-    const ids = new Set(['repository', 'skills']);
+    const ids = new Set(['repository', 'skills', 'memory']);
     for (const s of agent.servers) ids.add(s.id);
     return ids;
   }, [agent.servers]);

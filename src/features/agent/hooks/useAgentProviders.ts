@@ -8,7 +8,9 @@ import type { Tool, ToolProvider } from '@/shared/types/chat';
 import { createRepositoryTools } from '@/features/repository/lib/repository-tools';
 import repositoryInstructions from '@/features/repository/prompts/repository.txt?raw';
 import skillsPrompt from '@/features/skills/prompts/skills.txt?raw';
-import { Package, Sparkles } from 'lucide-react';
+import memoryPrompt from '@/features/agent/prompts/memory.txt?raw';
+import * as opfs from '@/shared/lib/opfs';
+import { Package, Sparkles, BrainCircuit } from 'lucide-react';
 
 export interface AgentProviders {
   /** All tool providers assembled from this agent's config */
@@ -167,14 +169,73 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     };
   }, [enabledSkills, getSkillTools]);
 
+  // --- Memory provider ---
+  const getMemoryTools = useCallback((): Tool[] => {
+    if (!agent?.memory) return [];
+    const agentPath = `agents/${agentId}`;
+    return [
+      {
+        name: 'read_memory',
+        description: 'Read your persistent memory from previous conversations.',
+        parameters: {
+          type: 'object',
+          properties: {},
+          required: [],
+        },
+        function: async () => {
+          const content = await opfs.readText(`${agentPath}/MEMORY.md`);
+          return [{ type: 'text' as const, text: content || '' }];
+        },
+      },
+      {
+        name: 'write_memory',
+        description: 'Write/update your persistent memory. This replaces the entire memory content.',
+        parameters: {
+          type: 'object',
+          properties: {
+            content: {
+              type: 'string',
+              description: 'The full memory content to save (markdown format).',
+            },
+          },
+          required: ['content'],
+        },
+        function: async (args: Record<string, unknown>) => {
+          const content = args.content as string;
+          if (!content) {
+            return [{ type: 'text' as const, text: JSON.stringify({ error: 'No content provided' }) }];
+          }
+          await opfs.writeText(`${agentPath}/MEMORY.md`, content);
+          window.dispatchEvent(new CustomEvent('memory-updated', { detail: { agentId } }));
+          return [{ type: 'text' as const, text: 'Memory updated successfully.' }];
+        },
+      },
+    ];
+  }, [agent?.memory, agentId]);
+
+  const memoryProvider = useMemo<ToolProvider | null>(() => {
+    if (!agent?.memory) return null;
+
+    const tools = getMemoryTools();
+    return {
+      id: 'memory',
+      name: 'Memory',
+      description: 'Persistent memory across conversations',
+      icon: BrainCircuit,
+      instructions: memoryPrompt || undefined,
+      tools,
+    };
+  }, [agent?.memory, getMemoryTools]);
+
   // --- Combine all providers ---
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
     if (repositoryProvider) list.push(repositoryProvider);
     if (skillsProvider) list.push(skillsProvider);
+    if (memoryProvider) list.push(memoryProvider);
     list.push(...mcpClients);
     return list;
-  }, [repositoryProvider, skillsProvider, mcpClients]);
+  }, [repositoryProvider, skillsProvider, memoryProvider, mcpClients]);
 
   const enabledToolIds = useMemo(() => agent?.tools || [], [agent?.tools]);
 
