@@ -22,9 +22,6 @@ export interface ChatContextType {
   addMessage: (message: Message) => Promise<void>;
   sendMessage: (message: Message, historyOverride?: Message[]) => Promise<void>;
 
-  // Tool providers state (from global ToolsContext)
-  isInitializing: boolean | null; // null = no providers, true = initializing, false = all ready
-
   // Elicitation state
   pendingElicitation: PendingElicitation | null;
   resolveElicitation: (result: ElicitationResult) => void;

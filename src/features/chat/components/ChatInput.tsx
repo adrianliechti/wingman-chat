@@ -101,40 +101,19 @@ export function ChatInput() {
   // Transcription hook
   const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription();
 
-  // Helper to check if a tool is enabled/disabled based on model config
-  const isToolEnabledByModel = useCallback((providerId: string) => {
-    if (!model?.tools) {
-      return null; // No restrictions
-    }
-
-    const enabledTools = model.tools.enabled || [];
-    const disabledTools = model.tools.disabled || [];
-
-    // If there are enabled tools specified, this tool must be in that list
-    if (enabledTools.length > 0) {
-      return enabledTools.includes(providerId);
-    }
-
-    // Otherwise, this tool must not be in the disabled list
-    return !disabledTools.includes(providerId);
+  const modelTools = useMemo(() => {
+    const ids = new Set<string>();
+    (model?.tools?.enabled || []).forEach(id => ids.add(id));
+    (model?.tools?.disabled || []).forEach(id => ids.add(id));
+    return ids;
   }, [model?.tools]);
 
-  const isToolRequiredByModel = useCallback((providerId: string) => {
-    if (!model?.tools) {
-      return false; // Not required if no restrictions
-    }
-
-    const enabledTools = model.tools.enabled || [];
-
-    // Tool is required if it's in the enabled list
-    return enabledTools.includes(providerId);
-  }, [model?.tools]);
-
-  // Providers visible in the UI (agent-internal providers are not user-controllable)
-  const hiddenProviderIds = useMemo(() => new Set(['skills', 'repository', 'memory']), []);
+  // Providers visible in the UI: exclude model-configured and agent-required
   const visibleProviders = useMemo(
-    () => providers.filter((p: ToolProvider) => !hiddenProviderIds.has(p.id)),
-    [providers, hiddenProviderIds]
+    () => providers.filter((p: ToolProvider) =>
+      !modelTools.has(p.id) && !isProviderRequired(p.id)
+    ),
+    [providers, modelTools, isProviderRequired]
   );
 
   // Tool providers indicator logic
@@ -459,7 +438,7 @@ export function ChatInput() {
     <form onSubmit={handleSubmit}>
       <div
         ref={containerRef}
-        className={`[contain:layout_style] [will-change:height] ${isDragging
+        className={`contain-[layout_style] will-change-[height] ${isDragging
           ? 'border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl'
           : `border-0 md:border-2 border-t-2 border-solid ${messages.length === 0
             ? 'border-neutral-200/50'
@@ -675,10 +654,6 @@ export function ChatInput() {
               // Inline toggle buttons for 2 or fewer providers
               visibleProviders.map((provider: ToolProvider) => {
                 const IconComponent = provider.icon || Sparkles;
-                const isEnabled = isToolEnabledByModel(provider.id);
-                const isRequired = isToolRequiredByModel(provider.id);
-                const isAgentRequired = isProviderRequired(provider.id);
-                const canToggle = isEnabled !== false && !isRequired && !isAgentRequired;
                 const state = getProviderState(provider.id);
                 const providerEnabled = state === ProviderState.Connected;
                 const providerInitializing = state === ProviderState.Initializing;
@@ -696,26 +671,20 @@ export function ChatInput() {
                     onClick={async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      if (!canToggle || providerInitializing) return;
+                      if (providerInitializing) return;
                       try {
                         await setProviderEnabled(provider.id, !providerEnabled);
                       } catch (error) {
                         console.error(`Failed to toggle provider ${provider.name}:`, error);
                       }
                     }}
-                    disabled={providerInitializing || !canToggle}
+                    disabled={providerInitializing}
                     title={
-                      isEnabled === false
-                        ? `${provider.name} - Disabled by model configuration`
-                        : isRequired
-                          ? `${provider.name} - Required by model configuration`
-                          : isAgentRequired
-                            ? `${provider.name} - Required by agent`
-                            : providerFailed
-                              ? `${provider.name} - Failed to connect (click to retry)`
-                              : providerEnabled
-                                ? `${provider.name} - Click to disable`
-                                : `${provider.name} - Click to enable`
+                      providerFailed
+                        ? `${provider.name} - Failed to connect (click to retry)`
+                        : providerEnabled
+                          ? `${provider.name} - Click to disable`
+                          : `${provider.name} - Click to enable`
                     }
                   >
                     {providerInitializing ? (
@@ -745,11 +714,6 @@ export function ChatInput() {
                 >
                   {visibleProviders.map((provider: ToolProvider) => {
                     const IconComponent = provider.icon || Sparkles;
-
-                    const isEnabled = isToolEnabledByModel(provider.id);
-                    const isRequired = isToolRequiredByModel(provider.id);
-                    const isAgentRequired = isProviderRequired(provider.id);
-                    const canToggle = isEnabled !== false && !isRequired && !isAgentRequired;
                     const state = getProviderState(provider.id);
                     const providerEnabled = state === ProviderState.Connected;
                     const providerInitializing = state === ProviderState.Initializing;
@@ -762,31 +726,19 @@ export function ChatInput() {
                           onClick={async (e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            if (!canToggle) return;
                             try {
                               await setProviderEnabled(provider.id, !providerEnabled);
                             } catch (error) {
                               console.error(`Failed to toggle provider ${provider.name}:`, error);
                             }
                           }}
-                          disabled={providerInitializing || !canToggle}
+                          disabled={providerInitializing}
                           className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50`}
-                          title={
-                            isEnabled === false
-                              ? 'Disabled by model configuration'
-                              : isRequired || isAgentRequired
-                                ? 'Required by agent'
-                                : undefined
-                          }
                         >
                           <div className="flex items-center gap-3">
                             <IconComponent size={16} />
                             <div className="flex flex-col items-start">
-                              <span className="font-medium text-sm">
-                                {provider.name}
-                                {(isRequired || isAgentRequired) && <span className="text-xs ml-1 text-neutral-500 dark:text-neutral-400">(required)</span>}
-                                {isEnabled === false && <span className="text-xs ml-1 text-neutral-500 dark:text-neutral-400">(disabled)</span>}
-                              </span>
+                              <span className="font-medium text-sm">{provider.name}</span>
                               {provider.description && (
                                 <span className="text-xs text-neutral-600 dark:text-neutral-400">{provider.description}</span>
                               )}

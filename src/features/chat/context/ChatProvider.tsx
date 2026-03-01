@@ -1,13 +1,11 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { Role } from "@/shared/types/chat";
-import type { Message, ToolProvider, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation, Content } from '@/shared/types/chat';
-import { ProviderState } from '@/shared/types/chat';
+import type { Message, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation, Content } from '@/shared/types/chat';
 import { useModels } from "@/features/chat/hooks/useModels";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useApp } from "@/shell/hooks/useApp";
-import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
 import { ChatContext } from './ChatContext';
 import type { ChatContextType } from './ChatContext';
@@ -32,20 +30,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const chat = chats.find(c => c.id === chatId) ?? null;
   const model = chat?.model ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat', model);
-  const { providers, getProviderState, setProviderEnabled } = useToolsContext();
-
-  // Calculate tool providers connection state
-  const isInitializing = useMemo(() => {
-    const hasProviders = providers.length > 0;
-    if (!hasProviders) {
-      return null; // No providers configured
-    }
-    const isAnyInitializing = providers.some((p: ToolProvider) => getProviderState(p.id) === ProviderState.Initializing);
-    if (isAnyInitializing) {
-      return true; // At least one provider is initializing
-    }
-    return false; // All providers are ready
-  }, [providers, getProviderState]);
 
   const messages = useMemo(() => {
     const baseMessages = chat?.messages ?? [];
@@ -71,16 +55,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const createChat = useCallback(async () => {
     const newChat = await createChatHook();
     setChatId(newChat.id);
-    // Disable all tools when creating a new chat to prevent accidental usage
-    providers.forEach((p: ToolProvider) => setProviderEnabled(p.id, false));
     return newChat;
-  }, [createChatHook, providers, setProviderEnabled]);
+  }, [createChatHook]);
 
   const selectChat = useCallback((chatId: string) => {
     setChatId(chatId);
-    // Disable all tools when switching chats to prevent accidental usage
-    providers.forEach((p: ToolProvider) => setProviderEnabled(p.id, false));
-  }, [providers, setProviderEnabled]);
+  }, []);
 
   const deleteChat = useCallback(
     (id: string) => {
@@ -391,8 +371,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     sendMessage,
 
     isResponding,
-    isInitializing,
-
     // Elicitation
     pendingElicitation,
     resolveElicitation,

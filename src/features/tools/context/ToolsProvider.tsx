@@ -44,8 +44,13 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     };
   }, []);
 
-  // The set of enabled tool IDs from the current agent
-  const enabledToolSet = useMemo(() => new Set(enabledToolIds), [enabledToolIds]);
+  // Required providers: agent-enabled built-ins + all agent-assembled providers
+  // (repository, skills, memory, bridge MCPs) — all always on.
+  const requiredProviders = useMemo(() => {
+    const ids = new Set(enabledToolIds);
+    agentProviders.forEach(p => ids.add(p.id));
+    return ids;
+  }, [enabledToolIds, agentProviders]);
 
   // Combine all MCP clients (config + agent bridge servers)
   const allMcpClients = useMemo(() => {
@@ -82,15 +87,15 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
   }, [providerStates]);
 
   const isProviderRequired = useCallback((id: string): boolean => {
-    return enabledToolSet.has(id);
-  }, [enabledToolSet]);
+    return requiredProviders.has(id);
+  }, [requiredProviders]);
 
-  // Auto-connect agent-required providers (built-in tools selected in agent)
+  // Auto-connect agent-required providers (enabled built-ins + enabled bridges)
   useEffect(() => {
-    if (enabledToolSet.size === 0) return;
+    if (requiredProviders.size === 0) return;
 
     const connectRequired = async () => {
-      for (const id of enabledToolSet) {
+      for (const id of requiredProviders) {
         const state = providerStates.get(id);
         if (!state || state === ProviderState.Disconnected) {
           const provider = providers.find(p => p.id === id);
@@ -107,23 +112,7 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
 
     connectRequired();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabledToolSet]);
-
-  // Agent local providers (repository, skills) are always-on — they are
-  // local functions, not network resources, so bypass connection state.
-  const agentLocalIds = useMemo(() => {
-    const mcpIds = new Set(agentMcpClients.map(c => c.id));
-    return agentProviders.filter(p => !mcpIds.has(p.id)).map(p => p.id);
-  }, [agentProviders, agentMcpClients]);
-
-  useEffect(() => {
-    if (agentLocalIds.length === 0) return;
-    setProviderStates(prev => {
-      const next = new Map(prev);
-      agentLocalIds.forEach(id => next.set(id, ProviderState.Connected));
-      return next;
-    });
-  }, [agentLocalIds]);
+  }, [requiredProviders]);
 
   const setProviderEnabled = useCallback(async (id: string, enabled: boolean) => {
     // Find the provider - check if it's an MCPClient
