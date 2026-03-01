@@ -1,4 +1,4 @@
-import { Globe, Sparkles, FileText, FileType, Volume2, Image, StickyNote, Languages, Table, Code2 } from 'lucide-react';
+import { Globe, Sparkles, FileText, FileType, Volume2, Image, StickyNote, Languages, Table } from 'lucide-react';
 import { useWorkflow } from '@/features/workflow/hooks/useWorkflow';
 import type { Node } from '@xyflow/react';
 import { useState, useEffect, useRef } from 'react';
@@ -7,7 +7,6 @@ import { createSearchNode } from '@/features/workflow/nodes/SearchNode.factory';
 import { createPromptNode } from '@/features/workflow/nodes/PromptNode.factory';
 import { createTextNode } from '@/features/workflow/nodes/TextNode.factory';
 import { createFileNode } from '@/features/workflow/nodes/FileNode.factory';
-import { createCodeNode } from '@/features/workflow/nodes/CodeNode.factory';
 import { createTranslateNode } from '@/features/workflow/nodes/TranslateNode.factory';
 import { createMarkdownNode } from '@/features/workflow/nodes/MarkdownNode.factory';
 import { createAudioNode } from '@/features/workflow/nodes/AudioNode.factory';
@@ -106,13 +105,6 @@ export function WorkflowPalette() {
           icon={<Sparkles size={20} />}
           createNode={createPromptNode}
         />
-        {config.interpreter && (
-          <WorkflowPaletteItem
-            label="Code"
-            icon={<Code2 size={20} />}
-            createNode={createCodeNode}
-          />
-        )}
         {config.translator && (
           <WorkflowPaletteItem
             label="Translate"

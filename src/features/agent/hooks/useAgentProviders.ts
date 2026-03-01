@@ -13,7 +13,7 @@ import { Package, Sparkles } from 'lucide-react';
 export interface AgentProviders {
   /** All tool providers assembled from this agent's config */
   providers: ToolProvider[];
-  /** Built-in tool IDs this agent has enabled (e.g. "internet", "interpreter", "renderer") */
+  /** Built-in tool IDs this agent has enabled (e.g. "internet", "renderer") */
   enabledToolIds: string[];
   /** MCP clients owned by this agent (for lifecycle management) */
   mcpClients: MCPClient[];

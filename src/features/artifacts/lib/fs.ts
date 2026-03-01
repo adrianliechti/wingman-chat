@@ -15,6 +15,27 @@ type FileEventHandler<T extends FileEventType> = T extends 'fileCreated'
   ? (path: string) => void
   : never;
 
+export interface OverlayFile {
+  content: string;
+  contentType?: string;
+}
+
+export interface OverlayDelta {
+  upserts: Record<string, OverlayFile>;
+  deletes: string[];
+}
+
+export interface OverlayCommitSummary {
+  created: number;
+  updated: number;
+  deleted: number;
+}
+
+export interface OverlaySnapshotOptions {
+  deleteMissing?: boolean;
+  defaultContentType?: string;
+}
+
 /**
  * FileSystemManager - OPFS-backed file system for artifacts
  * 
@@ -77,6 +98,22 @@ export class FileSystemManager {
         }
       });
     }
+  }
+
+  private normalizePath(path: string): string {
+    let normalized = path.trim();
+
+    if (!normalized.startsWith('/')) {
+      normalized = '/' + normalized;
+    }
+
+    normalized = normalized.replace(/\/{2,}/g, '/');
+
+    if (normalized.length > 1 && normalized.endsWith('/')) {
+      normalized = normalized.slice(0, -1);
+    }
+
+    return normalized;
   }
 
   /**
@@ -227,6 +264,108 @@ export class FileSystemManager {
     }
 
     return files;
+  }
+
+  /**
+   * Return a normalized overlay snapshot of all files for the current chat.
+   */
+  async getOverlaySnapshot(): Promise<Record<string, OverlayFile>> {
+    const files = await this.listFiles();
+    const snapshot: Record<string, OverlayFile> = {};
+
+    for (const file of files) {
+      const path = this.normalizePath(file.path);
+      snapshot[path] = {
+        content: file.content,
+        contentType: file.contentType,
+      };
+    }
+
+    return snapshot;
+  }
+
+  /**
+   * Apply explicit overlay delta (upserts + deletes) to OPFS.
+   */
+  async applyOverlayDelta(delta: OverlayDelta): Promise<OverlayCommitSummary> {
+    if (!this._chatId) {
+      throw new Error('No chat ID set - cannot apply overlay delta');
+    }
+
+    const existingFiles = await this.listFiles();
+    const existingByPath = new Map(existingFiles.map(file => [this.normalizePath(file.path), file]));
+
+    let created = 0;
+    let updated = 0;
+    let deleted = 0;
+
+    for (const [rawPath, file] of Object.entries(delta.upserts)) {
+      const path = this.normalizePath(rawPath);
+      const existing = existingByPath.get(path);
+
+      if (!existing) {
+        await this.createFile(path, file.content, file.contentType);
+        created++;
+      } else if (existing.content !== file.content || existing.contentType !== file.contentType) {
+        await this.createFile(path, file.content, file.contentType ?? existing.contentType);
+        updated++;
+      }
+    }
+
+    for (const rawPath of delta.deletes) {
+      const path = this.normalizePath(rawPath);
+
+      if (!existingByPath.has(path)) {
+        continue;
+      }
+
+      const didDelete = await this.deleteFile(path);
+      if (didDelete) {
+        deleted++;
+      }
+    }
+
+    return { created, updated, deleted };
+  }
+
+  /**
+   * Apply a full runtime snapshot to OPFS as overlay commit.
+   * When deleteMissing=true, paths absent in snapshot are removed.
+   */
+  async applyOverlaySnapshot(
+    runtimeFiles: Record<string, string | OverlayFile>,
+    options: OverlaySnapshotOptions = {}
+  ): Promise<OverlayCommitSummary> {
+    const { deleteMissing = false, defaultContentType } = options;
+    const normalizedRuntimePaths = new Set<string>();
+    const upserts: Record<string, OverlayFile> = {};
+
+    for (const [rawPath, value] of Object.entries(runtimeFiles)) {
+      const path = this.normalizePath(rawPath);
+      normalizedRuntimePaths.add(path);
+
+      if (typeof value === 'string') {
+        upserts[path] = { content: value, contentType: defaultContentType };
+      } else {
+        upserts[path] = {
+          content: value.content,
+          contentType: value.contentType ?? defaultContentType,
+        };
+      }
+    }
+
+    const deletes: string[] = [];
+    if (deleteMissing) {
+      const existingFiles = await this.listFiles();
+      for (const file of existingFiles) {
+        const existingPath = this.normalizePath(file.path);
+        if (!normalizedRuntimePaths.has(existingPath)) {
+          deletes.push(existingPath);
+        }
+      }
+    }
+
+    return this.applyOverlayDelta({ upserts, deletes });
   }
 
   /**

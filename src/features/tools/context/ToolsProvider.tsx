@@ -4,7 +4,6 @@ import { MCPClient } from "@/features/settings/lib/mcp";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
-import { useInterpreterProvider } from "@/features/tools/hooks/useInterpreterProvider";
 import { useRendererProvider } from "@/features/renderer/hooks/useRendererProvider";
 import { ToolsContext } from "./ToolsContext";
 import type { ToolsContextValue } from "./ToolsContext";
@@ -33,7 +32,6 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
   const { providers: agentProviders, enabledToolIds, mcpClients: agentMcpClients } = useAgentProviders(currentAgent);
   
   const internetProvider = useInternetProvider();
-  const interpreterProvider = useInterpreterProvider();
   const rendererProvider = useRendererProvider();
 
   // Cleanup config MCP clients on unmount
@@ -61,7 +59,6 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
     // Add local providers (always available if configured)
     if (internetProvider) list.push(internetProvider);
     if (rendererProvider) list.push(rendererProvider);
-    if (interpreterProvider) list.push(interpreterProvider);
     
     // Add config MCP clients (always available)
     list.push(...configMcpClients);
@@ -75,7 +72,6 @@ export function ToolsProvider({ children }: ToolsProviderProps) {
   }, [
     internetProvider,
     rendererProvider,
-    interpreterProvider,
     configMcpClients,
     agentProviders,
   ]);

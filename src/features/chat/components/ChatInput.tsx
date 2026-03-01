@@ -725,11 +725,6 @@ export function ChatInput() {
                     ) : (
                       <IconComponent size={14} />
                     )}
-                    {providerEnabled && (
-                      <span className="hidden sm:inline">
-                        {provider.name}
-                      </span>
-                    )}
                   </button>
                 );
               })

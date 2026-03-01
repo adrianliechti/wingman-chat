@@ -32,7 +32,6 @@ interface config {
 
   renderer?: rendererConfig;
   extractor?: extractorConfig;
-  interpreter?: interpreterConfig;
 
   artifacts?: artifactsConfig;
   repository?: repositoryConfig;
@@ -106,8 +105,6 @@ interface internetConfig {
   elicitation?: boolean;
 }
 
-type interpreterConfig = object;
-
 interface extractorConfig {
   model?: string;
   files: string[];
@@ -160,7 +157,6 @@ interface Config {
   internet: internetConfig | null;
 
   renderer: rendererConfig | null;
-  interpreter: interpreterConfig | null;
 
   artifacts: artifactsConfig | null;
   repository: repositoryConfig | null;
@@ -291,7 +287,6 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       internet: cfg.internet ?? null,
       renderer: cfg.renderer ?? null,
-      interpreter: cfg.interpreter ?? null,
       repository: cfg.repository ?? null,
       artifacts: cfg.artifacts ?? null,
 

@@ -3,6 +3,9 @@ import { Table } from 'lucide-react';
 import { useArtifacts } from './useArtifacts';
 import type { Tool, ToolProvider } from '@/shared/types/chat';
 import artifactsInstructionsText from '@/features/artifacts/prompts/artifacts.txt?raw';
+import interpreterInstructionsText from '@/features/artifacts/prompts/interpreter.txt?raw';
+import { executeCode } from '@/features/tools/lib/interpreter';
+import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from '@/features/tools/lib/bash';
 
 export function useArtifactsProvider(): ToolProvider | null {
   const { fs, activeFile, isAvailable } = useArtifacts();
@@ -321,6 +324,117 @@ export function useArtifactsProvider(): ToolProvider | null {
             return [{ type: 'text' as const, text: JSON.stringify({ error: 'Failed to get current file info' }) }];
           }
         }
+      },
+      // --- Code Execution Tools ---
+      {
+        name: "execute_python_code",
+        description: "Execute Python code with optional package dependencies. Works with the artifacts filesystem — all artifact files are available under /home/pyodide/ and any files written there are synced back.",
+        parameters: {
+          type: "object",
+          properties: {
+            code: {
+              type: "string",
+              description: "The Python code to execute. Can include imports, functions, calculations, and print statements."
+            },
+            packages: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional list of Python packages required (e.g., ['numpy', 'pandas']). These will be available for import."
+            }
+          },
+          required: ["code"]
+        },
+        function: async (args: Record<string, unknown>) => {
+          const { code, packages } = args;
+
+          try {
+            // Load artifact files into Pyodide's VFS
+            const artifactFiles: Record<string, { content: string; contentType?: string }> = {};
+            if (fs?.isReady) {
+              const snapshot = await fs.getOverlaySnapshot();
+              for (const [path, file] of Object.entries(snapshot)) {
+                artifactFiles[path] = { content: file.content, contentType: file.contentType };
+              }
+            }
+
+            const result = await executeCode({
+              code: code as string,
+              packages: packages as string[] | undefined,
+              files: artifactFiles,
+            });
+
+            if (!result.success) {
+              return [{ type: 'text' as const, text: `Error executing code: ${result.error || 'Unknown error'}` }];
+            }
+
+            // Sync changed files back to artifacts
+            if (fs?.isReady && result.files) {
+              await fs.applyOverlaySnapshot(result.files, { deleteMissing: false });
+            }
+
+            return [{ type: 'text' as const, text: result.output }];
+          } catch (error) {
+            return [{ type: 'text' as const, text: `Code execution failed: ${error instanceof Error ? error.message : 'Unknown error'}` }];
+          }
+        }
+      },
+      {
+        name: "execute_bash_code",
+        description: "Execute bash commands or scripts in a sandboxed shell. Works with the artifacts filesystem — all artifact files are preloaded and any files created/modified are synced back. Supports pipes, redirections, loops, variables, jq, yq, xan, sqlite3, grep, sed, awk, and more.",
+        parameters: {
+          type: "object",
+          properties: {
+            command: {
+              type: "string",
+              description: "The bash command or script to execute. Supports full shell syntax: pipes (|), redirections (>, >>), chaining (&&, ||, ;), variables, loops, functions, and glob patterns."
+            }
+          },
+          required: ["command"]
+        },
+        function: async (args: Record<string, unknown>) => {
+          const { command } = args;
+
+          try {
+            // Load artifact files into bash's InMemoryFs before execution
+            if (fs?.isReady) {
+              const { memFs } = getSingleton();
+              const snapshot = await fs.getOverlaySnapshot();
+              const artifactFiles = Object.entries(snapshot).map(([path, file]) => ({
+                path,
+                content: file.content,
+                contentType: file.contentType,
+              }));
+              await loadArtifactsIntoFs(memFs, artifactFiles);
+            }
+
+            const result = await executeBash({
+              command: command as string,
+            });
+
+            // Save changed files back to artifacts after execution
+            if (fs?.isReady) {
+              const { memFs } = getSingleton();
+              const currentFiles = await readFilesFromFs(memFs);
+
+              await fs.applyOverlaySnapshot(currentFiles, { deleteMissing: true });
+            }
+
+            const parts: string[] = [];
+            if (result.stdout) parts.push(result.stdout);
+            if (result.stderr) parts.push(`stderr: ${result.stderr}`);
+            if (result.exitCode !== 0) parts.push(`exit code: ${result.exitCode}`);
+
+            const output = parts.join('\n') || 'Command executed successfully (no output)';
+
+            if (!result.success) {
+              return [{ type: 'text' as const, text: `Error: ${output}` }];
+            }
+
+            return [{ type: 'text' as const, text: output }];
+          } catch (error) {
+            return [{ type: 'text' as const, text: `Bash execution failed: ${error instanceof Error ? error.message : 'Unknown error'}` }];
+          }
+        }
       }
     ];
   }, [fs, activeFile]);
@@ -333,9 +447,9 @@ export function useArtifactsProvider(): ToolProvider | null {
     return {
       id: "artifacts",
       name: "Artifacts",
-      description: "Create and edit files",
+      description: "Create and edit files, run Python and Bash code",
       icon: Table,
-      instructions: artifactsInstructionsText,
+      instructions: artifactsInstructionsText + '\n\n' + interpreterInstructionsText,
       tools: artifactsTools(),
     };
   }, [isAvailable, artifactsTools]);

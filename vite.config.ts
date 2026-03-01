@@ -50,6 +50,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      // Shim node:zlib that just-bash's browser bundle imports but can't use in the browser
+      'node:zlib': path.resolve(__dirname, 'src/shared/lib/zlib-shim.ts'),
+      'zlib': path.resolve(__dirname, 'src/shared/lib/zlib-shim.ts'),
     },
   },
   optimizeDeps: {
@@ -86,13 +89,15 @@ export default defineConfig({
   build: {
     rollupOptions: {
       onwarn(warning, warn) {
-        // Suppress Pyodide Node.js module externalization warnings
+        // Suppress Pyodide and just-bash Node.js module externalization warnings
         if (warning.code === 'MODULE_LEVEL_DIRECTIVE' || 
-            warning.message?.includes('externalized for browser compatibility')) {
+            warning.message?.includes('externalized for browser compatibility') ||
+            warning.message?.includes('is not exported by')) {
           return;
         }
         warn(warning);
       },
+
       output: {
         manualChunks: {
           // Core React
@@ -103,6 +108,10 @@ export default defineConfig({
           // Pyodide as separate chunk for better caching
           'vendor-pyodide': [
             'pyodide'
+          ],
+          // Bash interpreter
+          'vendor-bash': [
+            'just-bash'
           ],
           // Heavy libraries split out
           'vendor-reactflow': [
