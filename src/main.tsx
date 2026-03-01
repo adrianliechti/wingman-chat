@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import "./index.css";
 import App from "./App.tsx";
+import "./shared/lib/noto-emoji.ts";
 
 import { loadConfig } from "./shared/config.ts";
 import { runMigration } from "./features/settings/lib/migration.ts";

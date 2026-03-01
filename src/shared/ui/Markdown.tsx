@@ -12,13 +12,49 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import rehypeNotoEmoji from '@/shared/lib/rehype-noto-emoji';
 import { MermaidRenderer } from './renderers/MermaidRenderer';
 import { CodeRenderer } from './CodeRenderer';
 import { HtmlRenderer } from './renderers/HtmlRenderer';
 import { CsvRenderer } from './renderers/CsvRenderer';
 import { SvgRenderer } from './renderers/SvgRenderer';
+import { MarkdownRenderer } from './renderers/MarkdownRenderer';
 import { MediaPlayer } from './MediaPlayer';
 import { isAudioUrl, isVideoUrl } from '@/shared/lib/utils';
+import type { ReactNode } from 'react';
+
+const slugify = (children: ReactNode): string => {
+    const text = extractText(children);
+    return text
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '');
+};
+
+const getInternalHash = (url: string): string | null => {
+    if (!url) return null;
+    if (url.startsWith('#')) return decodeURIComponent(url.slice(1));
+    if (typeof window === 'undefined') return null;
+    try {
+        const parsed = new URL(url, window.location.href);
+        if (parsed.origin === window.location.origin && parsed.pathname === window.location.pathname && parsed.hash) {
+            return decodeURIComponent(parsed.hash.slice(1));
+        }
+    } catch { /* ignore */ }
+    return null;
+};
+
+const extractText = (node: ReactNode): string => {
+    if (typeof node === 'string') return node;
+    if (typeof node === 'number') return String(node);
+    if (Array.isArray(node)) return node.map(extractText).join('');
+    if (node && typeof node === 'object' && 'props' in node) {
+        return extractText((node as { props: { children?: ReactNode } }).props.children);
+    }
+    return '';
+};
 
 const components: Partial<Components> = {
     pre: ({ children }) => {
@@ -26,16 +62,38 @@ const components: Partial<Components> = {
             {children}
         </>;
     },
-    li: ({ children, ...props }) => {
+    input: ({ type, checked, ...props }) => {
+        if (type === 'checkbox') {
+            return (
+                <svg
+                    className={`task-checkbox${checked ? ' checked' : ''}`}
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    role="checkbox"
+                    aria-checked={checked}
+                    {...props}
+                >
+                    <rect x="1" y="1" width="14" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+                    {checked && (
+                        <path d="M4.5 8L7 10.5L11.5 5.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+                    )}
+                </svg>
+            );
+        }
+        return <input type={type} checked={checked} {...props} />;
+    },
+    li: ({ children, className, ...props }) => {
+        const isTask = typeof className === 'string' && className.includes('task-list-item');
         return (
-            <li className="py-1 ml-0" {...props}>
+            <li className={`py-1 ml-0 ${isTask ? 'task-list-item' : ''}`} {...props}>
                 {children}
             </li>
         );
     },
-    ul: ({ children, ...props }) => {
+    ul: ({ children, className, ...props }) => {
+        const isTaskList = typeof className === 'string' && className.includes('contains-task-list');
         return (
-            <ul className="list-disc list-outside ml-6 pl-0" {...props}>
+            <ul className={isTaskList ? 'task-list ml-0 pl-0' : 'custom-list ml-5 pl-0'} {...props}>
                 {children}
             </ul>
         );
@@ -56,6 +114,7 @@ const components: Partial<Components> = {
     },
     a: ({ children, href, ...props }) => {
         let url = href || '';
+        const internalHash = getInternalHash(url);
 
         if (url && !url.startsWith('http') && !url.startsWith('#')) {
             url = `https://${url}`;
@@ -70,10 +129,27 @@ const components: Partial<Components> = {
         if (isVideoUrl(url)) {
             return <MediaPlayer url={url} type="video">{children}</MediaPlayer>;
         }
+
+        // Anchor links scroll within the page
+        if (internalHash) {
+            return (
+                <a
+                    className="hover:underline"
+                    href={`#${internalHash}`}
+                    onClick={(e) => {
+                        e.preventDefault();
+                        document.getElementById(internalHash)?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    {...props}
+                >
+                    {children}
+                </a>
+            );
+        }
         
         return (
             <a
-                className="text-blue-500 hover:underline"
+                className="hover:underline"
                 href={url}
                 target="_blank"
                 rel="noreferrer noopener"
@@ -85,42 +161,42 @@ const components: Partial<Components> = {
     },
     h1: ({ children, ...props }) => {
         return (
-            <h1 className="text-3xl font-semibold mt-6 mb-2" {...props}>
+            <h1 id={slugify(children)} className="text-3xl font-semibold mt-6 mb-2" {...props}>
                 {children}
             </h1>
         );
     },
     h2: ({ children, ...props }) => {
         return (
-            <h2 className="text-2xl font-semibold mt-6 mb-2" {...props}>
+            <h2 id={slugify(children)} className="text-2xl font-semibold mt-6 mb-2" {...props}>
                 {children}
             </h2>
         );
     },
     h3: ({ children, ...props }) => {
         return (
-            <h3 className="text-xl font-semibold mt-6 mb-2" {...props}>
+            <h3 id={slugify(children)} className="text-xl font-semibold mt-6 mb-2" {...props}>
                 {children}
             </h3>
         );
     },
     h4: ({ children, ...props }) => {
         return (
-            <h4 className="text-lg font-semibold mt-6 mb-2" {...props}>
+            <h4 id={slugify(children)} className="text-lg font-semibold mt-6 mb-2" {...props}>
                 {children}
             </h4>
         );
     },
     h5: ({ children, ...props }) => {
         return (
-            <h5 className="text-base font-semibold mt-6 mb-2" {...props}>
+            <h5 id={slugify(children)} className="text-base font-semibold mt-6 mb-2" {...props}>
                 {children}
             </h5>
         );
     },
     h6: ({ children, ...props }) => {
         return (
-            <h6 className="text-sm font-semibold mt-6 mb-2" {...props}>
+            <h6 id={slugify(children)} className="text-sm font-semibold mt-6 mb-2" {...props}>
                 {children}
             </h6>
         );
@@ -178,7 +254,7 @@ const components: Partial<Components> = {
         const match = /language-(\w+)/.exec(className || "");
         
         // If no match but children contains newlines, it's likely a code block without language
-        const text = String(children).replace(/\n$/, "");
+        const text = extractText(children).replace(/\n$/, "");
         const isMultiLine = text.includes('\n');
         
         // Inline code (no language specified and single line)
@@ -257,7 +333,7 @@ const components: Partial<Components> = {
 
         // Markdown code blocks - render content as markdown
         if (language === "markdown" || language === "md") {
-            return <Markdown>{text}</Markdown>;
+            return <MarkdownRenderer content={text} language={language} />;
         }
 
         // Extract filename from code if present
@@ -317,6 +393,7 @@ const processor = unified()
     .use(remarkMath, { singleDollarTextMath: false })
     .use(remarkRehype, { allowDangerousHtml: true })
     .use(rehypeKatex, katexPluginOptions)
+    .use(rehypeNotoEmoji)
     .use(rehypeReact, rehypeReactOptions);
 
 type MarkdownProps = {

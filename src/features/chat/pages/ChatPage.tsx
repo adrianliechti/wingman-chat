@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { Plus as PlusIcon, Bot, BotMessageSquare, Info, ArrowDown, Package, PackageOpen, Rocket } from "lucide-react";
+import { Plus as PlusIcon, BotMessageSquare, Info, ArrowDown, Paperclip, Rocket } from "lucide-react";
 import DOMPurify from "dompurify";
 import { getConfig } from "@/shared/config";
 import { useAutoScroll } from "@/shared/hooks/useAutoScroll";
@@ -141,20 +141,20 @@ export function ChatPage() {
         {artifactsAvailable && (
           <button
             type="button"
-            className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+            className={`p-2 rounded transition-all duration-150 ease-out ${showArtifactsDrawer ? 'text-neutral-900 dark:text-neutral-100' : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'}`}
             onClick={toggleArtifactsDrawer}
             title={showArtifactsDrawer ? 'Close artifacts' : 'Open artifacts'}
           >
-            {showArtifactsDrawer ? <PackageOpen size={20} /> : <Package size={20} />}
+            <Paperclip size={20} />
           </button>
         )}
         <button
           type="button"
-          className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+          className={`p-2 rounded transition-all duration-150 ease-out ${showAgentDrawer ? 'text-neutral-900 dark:text-neutral-100' : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'}`}
           onClick={toggleAgentDrawer}
           title={showAgentDrawer ? 'Close agent' : 'Open agent'}
         >
-          {showAgentDrawer ? <BotMessageSquare size={20} /> : <Bot size={20} />}
+          <BotMessageSquare size={20} />
         </button>
         <button
           type="button"
