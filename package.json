@@ -23,7 +23,7 @@
     "jszip": "^3.10.1",
     "just-bash": "^2.11.6",
     "katex": "^0.16.33",
-    "lucide-react": "^0.575.0",
+    "lucide-react": "^0.576.0",
     "marked": "^17.0.3",
     "mermaid": "^11.12.3",
     "mime": "^4.1.0",
@@ -40,7 +40,7 @@
     "remark-math": "^6.0.0",
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
-    "shiki": "^3.23.0",
+    "shiki": "^4.0.1",
     "unified": "^11.0.5",
     "unist-util-visit": "^5.1.0",
     "zod": "^4.3.6"
