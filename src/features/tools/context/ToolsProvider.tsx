@@ -9,25 +9,11 @@ import { ToolsContext } from "./ToolsContext";
 import type { ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 
-const STORAGE_KEY = "app_tools";
-
-function loadUserTools(): Set<string> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return new Set(JSON.parse(raw));
-  } catch { /* ignore */ }
-  return new Set();
-}
-
-function saveUserTools(ids: Set<string>) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...ids])); } catch { /* ignore */ }
-}
-
 export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const config = getConfig();
 
-  // User-selected tools (persisted in localStorage)
-  const [userTools, setUserTools] = useState(loadUserTools);
+  // User-selected tools (session-only, reset on new chat)
+  const [userTools, setUserTools] = useState<Set<string>>(new Set);
   const [modelEnabledTools, setModelEnabledTools] = useState<Set<string>>(new Set());
   const [modelDisabledTools, setModelDisabledTools] = useState<Set<string>>(new Set());
 
@@ -129,12 +115,16 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     setUserTools(prev => {
       const next = new Set(prev);
       if (enabled) next.add(id); else next.delete(id);
-      saveUserTools(next);
       return next;
     });
     // Immediate MCP connection for responsiveness
     if (mcpIds.has(id)) await connectMcp(id, enabled);
   }, [mcpIds, connectMcp]);
+
+  // Reset user tool selections (called on new/switch chat)
+  const resetTools = useCallback(() => {
+    setUserTools(new Set());
+  }, []);
 
   const setModelOverrides = useCallback((enabled: string[], disabled: string[]) => {
     setModelEnabledTools(new Set(enabled));
@@ -148,7 +138,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   }, [configMcpClients]);
 
   return (
-    <ToolsContext.Provider value={{ providers, getProviderState, setProviderEnabled, setModelOverrides }}>
+    <ToolsContext.Provider value={{ providers, getProviderState, setProviderEnabled, setModelOverrides, resetTools }}>
       {children}
     </ToolsContext.Provider>
   );

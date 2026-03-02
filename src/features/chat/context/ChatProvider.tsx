@@ -7,6 +7,7 @@ import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useApp } from "@/shell/hooks/useApp";
 import { useAgents } from "@/features/agent/hooks/useAgents";
+import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
 import { ChatContext } from './ChatContext';
 import type { ChatContextType } from './ChatContext';
@@ -24,6 +25,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { isAvailable: artifactsEnabled, setChatId: setArtifactsChatId } = useArtifacts();
   const { getIframe, showDrawer } = useApp();
   const { currentAgent } = useAgents();
+  const { resetTools } = useToolsContext();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
@@ -58,12 +60,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const createChat = useCallback(async () => {
     const newChat = await createChatHook();
     setChatId(newChat.id);
+    resetTools();
     return newChat;
-  }, [createChatHook]);
+  }, [createChatHook, resetTools]);
 
   const selectChat = useCallback((chatId: string) => {
     setChatId(chatId);
-  }, []);
+    resetTools();
+  }, [resetTools]);
 
   const deleteChat = useCallback(
     (id: string) => {

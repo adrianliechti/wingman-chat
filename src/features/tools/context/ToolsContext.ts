@@ -6,6 +6,7 @@ export interface ToolsContextValue {
   getProviderState: (id: string) => ProviderState;
   setProviderEnabled: (id: string, enabled: boolean) => Promise<void>;
   setModelOverrides: (enabled: string[], disabled: string[]) => void;
+  resetTools: () => void;
 }
 
 export const ToolsContext = createContext<ToolsContextValue | undefined>(undefined);
