@@ -170,23 +170,35 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
   }, [enabledSkills, getSkillTools]);
 
   // --- Memory provider ---
+  const memoryPath = agent?.memory ? `agents/${agentId}/MEMORY.md` : '';
+  const [memoryContent, setMemoryContent] = useState<string>('');
+
+  // Load memory content from OPFS when memory is enabled
+  useEffect(() => {
+    if (!memoryPath) {
+      setMemoryContent('');
+      return;
+    }
+    opfs.readText(memoryPath).then(text => setMemoryContent(text || ''));
+  }, [memoryPath]);
+
+  // Re-read memory when the agent writes to it mid-conversation
+  useEffect(() => {
+    if (!agent?.memory) return;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.agentId === agentId) {
+        opfs.readText(memoryPath).then(text => setMemoryContent(text || ''));
+      }
+    };
+    window.addEventListener('memory-updated', handler);
+    return () => window.removeEventListener('memory-updated', handler);
+  }, [agent?.memory, agentId, memoryPath]);
+
   const getMemoryTools = useCallback((): Tool[] => {
     if (!agent?.memory) return [];
     const agentPath = `agents/${agentId}`;
     return [
-      {
-        name: 'read_memory',
-        description: 'Read your persistent memory from previous conversations.',
-        parameters: {
-          type: 'object',
-          properties: {},
-          required: [],
-        },
-        function: async () => {
-          const content = await opfs.readText(`${agentPath}/MEMORY.md`);
-          return [{ type: 'text' as const, text: content || '' }];
-        },
-      },
       {
         name: 'write_memory',
         description: 'Write/update your persistent memory. This replaces the entire memory content.',
@@ -217,15 +229,19 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     if (!agent?.memory) return null;
 
     const tools = getMemoryTools();
+    const memorySection = memoryContent.trim()
+      ? `\n\n<memory>\n${memoryContent.trim()}\n</memory>`
+      : '\n\nNo memories yet.';
+
     return {
       id: 'memory',
       name: 'Memory',
       description: 'Persistent memory across conversations',
       icon: BrainCircuit,
-      instructions: memoryPrompt || undefined,
+      instructions: (memoryPrompt || '') + memorySection,
       tools,
     };
-  }, [agent?.memory, getMemoryTools]);
+  }, [agent?.memory, getMemoryTools, memoryContent]);
 
   // --- Combine all providers ---
   const providers = useMemo<ToolProvider[]>(() => {
