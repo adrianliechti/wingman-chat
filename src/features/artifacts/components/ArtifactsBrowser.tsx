@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { Folder, FolderOpen, ChevronRight, ChevronDown, Download, Upload, MoreVertical, Trash, Edit2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Folder, FolderOpen, ChevronRight, ChevronDown, MoreVertical, Trash, Edit2 } from 'lucide-react';
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import { FileIcon } from '@/shared/ui/FileIcon';
 import { FileSystemManager } from '@/features/artifacts/lib/fs';
@@ -211,7 +211,6 @@ interface ArtifactsBrowserProps {
   files: File[];
   openTabs: string[];
   onFileClick: (path: string) => void;
-  onUpload?: (files: FileList) => void;
 }
 
 export function ArtifactsBrowser({
@@ -219,12 +218,10 @@ export function ArtifactsBrowser({
   files,
   openTabs,
   onFileClick,
-  onUpload
 }: ArtifactsBrowserProps) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Subscribe to filesystem events for folder expansion/collapse UI
   useEffect(() => {
@@ -340,49 +337,6 @@ export function ArtifactsBrowser({
           </div>
         )}
       </div>
-      
-      {/* Upload/Download Buttons - fixed at bottom, aligned with bottom bar */}
-      {files.length > 0 && (
-        <>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files && onUpload) {
-                onUpload(e.target.files);
-                e.target.value = ''; // Reset to allow re-uploading same file
-              }
-            }}
-          />
-          <div className="shrink-0 h-14 flex items-center justify-center border-t border-black/10 dark:border-white/10 gap-2">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="p-2 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
-              title="Upload files"
-            >
-              <Upload size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await fs.downloadAsZip();
-                } catch (error) {
-                  console.error('Failed to download files:', error);
-                  alert('Failed to download files. Please try again.');
-                }
-              }}
-              className="p-2 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
-              title={`Download all files as zip (${files.length} file${files.length !== 1 ? 's' : ''})`}
-            >
-              <Download size={16} />
-            </button>
-          </div>
-        </>
-      )}
 
       {/* Rename Dialog */}
       {renamingPath && (

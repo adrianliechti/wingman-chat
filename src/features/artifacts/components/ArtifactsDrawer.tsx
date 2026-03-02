@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { File as FileIcon2, Code, Eye, PanelRightOpen, PanelRightClose, Play, Loader2, TerminalSquare } from 'lucide-react';
+import { File as FileIcon2, Code, Eye, Play, Loader2, TerminalSquare, Upload, Download } from 'lucide-react';
 import { useArtifacts } from '@/features/artifacts/hooks/useArtifacts';
 import { useChat } from '@/features/chat/hooks/useChat';
 import { HtmlEditor } from '@/shared/ui/editors/HtmlEditor';
@@ -30,11 +30,10 @@ export function ArtifactsDrawer() {
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
   const [isRunning, setIsRunning] = useState(false);
   const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
-  const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
   const [terminalMounted, setTerminalMounted] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [hasAutoShownBrowser, setHasAutoShownBrowser] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // State for files list (loaded from async fs.listFiles)
   const [files, setFiles] = useState<File[]>([]);
@@ -155,19 +154,9 @@ export function ArtifactsDrawer() {
   const [prevActiveFile, setPrevActiveFile] = useState(activeFile);
 
   // Adjust state during render when files or activeFile changes
-  // This is React's recommended pattern for updating state based on props/state changes
   if (files !== prevFiles || activeFile !== prevActiveFile) {
     setPrevFiles(files);
     setPrevActiveFile(activeFile);
-    
-    if (activeFile) {
-      setHasAutoShownBrowser(false); // Reset when a file is selected
-    } else if (files.length === 1) {
-      // Will trigger openFile in effect below (can't call during render as it's async)
-    } else if (files.length > 0 && !showFileBrowser && !hasAutoShownBrowser) {
-      setHasAutoShownBrowser(true);
-      setShowFileBrowser(true);
-    }
   }
 
   // Handle auto-opening single file (needs effect since openFile is async)
@@ -348,113 +337,139 @@ export function ArtifactsDrawer() {
         </div>
       )}
 
-      {/* Main Content Area with Right Sidebar and Bottom Bar */}
+      {/* Hidden file input for uploads */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={async (e) => {
+          if (!e.target.files || e.target.files.length === 0) return;
+          const selectedFiles = Array.from(e.target.files);
+          e.target.value = ''; // Reset to allow re-uploading same file
+          await ensureFs();
+          for (const file of selectedFiles) {
+            try {
+              const processedFiles = await processUploadedFile(file);
+              for (const processed of processedFiles) {
+                if (fs?.isReady) {
+                  await fs.createFile(processed.path, processed.content, processed.contentType);
+                  openFile(processed.path);
+                }
+              }
+            } catch (error) {
+              console.error(`Error uploading file ${file.name}:`, error);
+            }
+          }
+        }}
+      />
+
+      {/* Main Content Area with Right Sidebar */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Main editor and bottom bar container */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Editor area */}
-          <div className="flex-1 overflow-hidden">
-            {renderEditor()}
-          </div>
-
-          {/* Bottom Bar with File Title and Actions */}
-          <div className="shrink-0 h-14 flex border-t border-black/10 dark:border-white/10">
-            {/* File title */}
-            <div className="flex-1 flex items-center min-w-0 px-3">
-              {activeFile && (
-                <>
-                  <FileIcon name={activeFile} />
-                  <span className="text-sm font-medium truncate flex-1 text-left ml-1.5 text-neutral-700 dark:text-neutral-300" title={getFileName(activeFile)}>
-                    {getFileName(activeFile)}
-                  </span>
-                </>
-              )}
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex items-center gap-1 px-2">
-              {/* Run button - only show when editor has a run handler */}
-              {runHandler && (
-                <button
-                  type="button"
-                  onClick={handleRun}
-                  disabled={isRunning}
-                  className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 disabled:opacity-50"
-                  title={isRunning ? 'Running...' : 'Run'}
-                >
-                  {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-                </button>
-              )}
-
-              {/* View mode toggle - only show for files that support preview */}
-              {supportsPreview() && (
-                <button
-                  type="button"
-                  onClick={() => setViewMode(viewMode === 'preview' ? 'code' : 'preview')}
-                  className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                  title={viewMode === 'preview' ? 'Switch to code' : 'Switch to preview'}
-                >
-                  {viewMode === 'preview' ? <Code size={16} /> : <Eye size={16} />}
-                </button>
-              )}
-
-              {/* Terminal toggle */}
-              <button
-                type="button"
-                onClick={toggleTerminal}
-                className={`p-2 rounded transition-all duration-150 ease-out ${
-                  showTerminal
-                    ? 'text-green-500 dark:text-green-400 bg-green-500/10'
-                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
-                }`}
-                title={showTerminal ? 'Close terminal' : 'Open terminal'}
-              >
-                <TerminalSquare size={16} />
-              </button>
-
-              {/* File browser toggle */}
-              {files.length > 0 && (
-                <button
-                  type="button"
-                  onClick={toggleFileBrowser}
-                  className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                  title={showFileBrowser ? 'Close file browser' : 'Open file browser'}
-                >
-                  {showFileBrowser ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
-                </button>
-              )}
-            </div>
-          </div>
+        {/* Editor area */}
+        <div className="flex-1 overflow-hidden">
+          {renderEditor()}
         </div>
 
         {/* Right Side Panel - File Browser (full height) */}
-        <div className={`transition-all duration-500 ease-in-out relative ${showFileBrowser ? 'w-48 opacity-100' : 'w-0 opacity-0'
+        <div className={`transition-all duration-500 ease-in-out relative ${files.length > 0 ? 'w-48 opacity-100' : 'w-0 opacity-0'
           } shrink-0 overflow-hidden`}>
           <div className="absolute inset-y-0 left-0 w-px bg-black/10 dark:bg-white/10"></div>
           {fs && (
-            <div className={`h-full transition-opacity duration-500 ${showFileBrowser ? 'opacity-100' : 'opacity-0'}`}>
+            <div className={`h-full transition-opacity duration-500 ${files.length > 0 ? 'opacity-100' : 'opacity-0'}`}>
               <ArtifactsBrowser
                 fs={fs}
                 files={files}
                 openTabs={activeFile ? [activeFile] : []}
                 onFileClick={openFile}
-                onUpload={async (fileList) => {
-                  for (const file of Array.from(fileList)) {
-                    try {
-                      // Process file (converts XLSX to CSV automatically)
-                      const processedFiles = await processUploadedFile(file);
-
-                      for (const processed of processedFiles) {
-                        await fs.createFile(processed.path, processed.content, processed.contentType);
-                        openFile(processed.path);
-                      }
-                    } catch (error) {
-                      console.error(`Error uploading file ${file.name}:`, error);
-                    }
-                  }
-                }}
               />
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom Bar with File Title and Actions — full width */}
+      <div className="shrink-0 h-14 flex border-t border-black/10 dark:border-white/10">
+        {/* File title */}
+        <div className="flex-1 flex items-center min-w-0 px-3">
+          {activeFile && (
+            <>
+              <FileIcon name={activeFile} />
+              <span className="text-sm font-medium truncate flex-1 text-left ml-1.5 text-neutral-700 dark:text-neutral-300" title={getFileName(activeFile)}>
+                {getFileName(activeFile)}
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-1 px-2">
+          {/* Run button - only show when editor has a run handler */}
+          {runHandler && (
+            <button
+              type="button"
+              onClick={handleRun}
+              disabled={isRunning}
+              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 disabled:opacity-50"
+              title={isRunning ? 'Running...' : 'Run'}
+            >
+              {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+            </button>
+          )}
+
+          {/* View mode toggle - only show for files that support preview */}
+          {supportsPreview() && (
+            <button
+              type="button"
+              onClick={() => setViewMode(viewMode === 'preview' ? 'code' : 'preview')}
+              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+              title={viewMode === 'preview' ? 'Switch to code' : 'Switch to preview'}
+            >
+              {viewMode === 'preview' ? <Code size={16} /> : <Eye size={16} />}
+            </button>
+          )}
+
+          {/* Terminal toggle */}
+          <button
+            type="button"
+            onClick={toggleTerminal}
+            className={`p-2 rounded transition-all duration-150 ease-out ${
+              showTerminal
+                ? 'text-green-500 dark:text-green-400 bg-green-500/10'
+                : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
+            }`}
+            title={showTerminal ? 'Close terminal' : 'Open terminal'}
+          >
+            <TerminalSquare size={16} />
+          </button>
+
+          {/* Upload button — always visible */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+            title="Upload files"
+          >
+            <Upload size={16} />
+          </button>
+
+          {/* Download button — only when files exist */}
+          {files.length > 0 && fs && (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await fs.downloadAsZip();
+                } catch (error) {
+                  console.error('Failed to download files:', error);
+                  alert('Failed to download files. Please try again.');
+                }
+              }}
+              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+              title={`Download all files as zip (${files.length} file${files.length !== 1 ? 's' : ''})`}
+            >
+              <Download size={16} />
+            </button>
           )}
         </div>
       </div>
