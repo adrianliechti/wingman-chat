@@ -6,6 +6,7 @@ import { useChats } from "@/features/chat/hooks/useChats";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useApp } from "@/shell/hooks/useApp";
+import { useAgents } from "@/features/agent/hooks/useAgents";
 import { getConfig } from "@/shared/config";
 import { ChatContext } from './ChatContext';
 import type { ChatContextType } from './ChatContext';
@@ -22,13 +23,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { isAvailable: artifactsEnabled, setChatId: setArtifactsChatId } = useArtifacts();
   const { getIframe, showDrawer } = useApp();
+  const { currentAgent } = useAgents();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
 
   const chat = chats.find(c => c.id === chatId) ?? null;
-  const model = chat?.model ?? selectedModel ?? models[0];
+  const agentModel = currentAgent?.model ? models.find(m => m.id === currentAgent.model) ?? null : null;
+  const model = chat?.model ?? agentModel ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat', model);
 
   const messages = useMemo(() => {

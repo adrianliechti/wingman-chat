@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 .noto-emoji {
-    font-family: 'Noto Emoji', sans-serif;
-    font-size: 0.9em;
-    vertical-align: -0.05em;
+  font-family: 'Noto Emoji', sans-serif;
+  font-size: 0.9em;
+  vertical-align: -0.05em;
   visibility: hidden;
 }
 
@@ -13,35 +13,35 @@
 
 /* Unordered list with properly sized bullets */
 .custom-list {
-    list-style: disc outside;
+  list-style: disc outside;
 }
 
-.custom-list > li::marker {
-    font-family: system-ui, sans-serif;
-    font-size: 1.1em;
-    line-height: 1;
+.custom-list>li::marker {
+  font-family: system-ui, sans-serif;
+  font-size: 1.1em;
+  line-height: 1;
 }
 
 /* Task list */
 .task-list {
-    list-style: none;
+  list-style: none;
 }
 
 .task-list-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .task-checkbox {
-    width: 1em;
-    height: 1em;
-    flex-shrink: 0;
-    opacity: 0.3;
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  opacity: 0.3;
 }
 
 .task-checkbox.checked {
-    opacity: 0.7;
+  opacity: 0.7;
 }
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -49,12 +49,15 @@
 /* Hide scrollbar utility */
 @layer utilities {
   .scrollbar-hide {
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none;
+    /* Firefox */
+    -ms-overflow-style: none;
+    /* IE and Edge */
   }
-  
+
   .scrollbar-hide::-webkit-scrollbar {
-    display: none; /* Chrome, Safari, Opera */
+    display: none;
+    /* Chrome, Safari, Opera */
   }
 }
 
@@ -112,7 +115,8 @@
   overflow-y: visible !important;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   overflow: hidden;
   -webkit-overflow-scrolling: touch;
@@ -165,7 +169,7 @@ button[data-headlessui-state]:disabled,
   overflow: hidden;
   white-space: nowrap;
   margin: 0;
-  animation: 
+  animation:
     typing var(--animation-duration, 2.5s) steps(var(--text-length, 20), end) 0.5s 1 normal both;
 }
 
@@ -174,10 +178,11 @@ button[data-headlessui-state]:disabled,
 }
 
 @keyframes typing {
-  from { 
+  from {
     width: 0;
   }
-  to { 
+
+  to {
     width: 100%;
   }
 }

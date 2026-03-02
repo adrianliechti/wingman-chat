@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 
-import { Send, Paperclip, ScreenShare, Sparkles, Loader2, Lightbulb, Mic, Square, Bot, Check, LoaderCircle, Rocket, Sliders, TriangleAlert } from "lucide-react";
+import { Send, Paperclip, ScreenShare, Sparkles, Loader2, Lightbulb, Mic, Square, Bot, Check, LoaderCircle, Rocket, Sliders, TriangleAlert, X } from "lucide-react";
 
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSuggestions } from "./ChatInputSuggestions";
@@ -31,7 +31,7 @@ export function ChatInput() {
   const client = config.client;
 
   const { sendMessage, models, model, setModel: onModelChange, messages, isResponding } = useChat();
-  const { currentAgent } = useAgents();
+  const { currentAgent, setCurrentAgent } = useAgents();
   const { profile } = useSettings();
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
   const { providers, getProviderState, isProviderRequired, setProviderEnabled } = useToolsContext();
@@ -563,84 +563,112 @@ export function ChatInput() {
               )}
             </button>
 
-            {models.length > 0 && (
-              <Menu>
-                <MenuButton className="flex items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm max-w-48">
-                  <span className="shrink-0 w-3.5 flex justify-center">{toolIndicator}</span>
-                  <span className="truncate min-w-0">
-                    {model?.name ?? model?.id ?? "Select Model"}
-                  </span>
-                </MenuButton>
-                <MenuItems
-                  modal={false}
-                  transition
-                  anchor="bottom start"
-                  className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 whitespace-nowrap dark:ring-1 dark:ring-white/10"
-                >
-                  {models.map((modelItem) => (
-                    <MenuItem key={modelItem.id}>
-                      <button
-                        type="button"
-                        onClick={() => onModelChange(modelItem)}
-                        title={modelItem.description}
-                        className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                      >
-                        <div className="flex items-center gap-2.5 w-full">
-                          <div className="shrink-0 w-3.5 flex justify-center">
-                            {model?.id === modelItem.id && (
-                              <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
-                            )}
-                          </div>
-                          <div className="flex flex-col items-start flex-1 min-w-0">
-                            <div className="font-semibold text-sm leading-tight whitespace-nowrap">
-                              {modelItem.name ?? modelItem.id}
-                            </div>
-                            {modelItem.description && (
-                              <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
-                                {modelItem.description}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                    </MenuItem>
-                  ))}
-                  {voiceAvailable && (
-                    <MenuItem>
-                      <button
-                        type="button"
-                        onClick={() => onModelChange(isRealtimeSelected ? models[0] : { id: 'realtime', name: 'Voice Mode', description: 'Real-time voice conversation' })}
-                        className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                      >
-                        <div className="flex items-center gap-2.5 w-full">
-                          <div className="shrink-0 w-3.5 flex justify-center">
-                            {isRealtimeSelected && (
-                              <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
-                            )}
-                          </div>
-                          <div className="flex flex-col items-start flex-1 min-w-0">
-                            <div className="font-semibold text-sm leading-tight whitespace-nowrap">
-                              Voice Mode
-                            </div>
-                            <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
-                              Real-time voice conversation
-                            </div>
-                          </div>
-                        </div>
-                      </button>
-                    </MenuItem>
-                  )}
-                </MenuItems>
-              </Menu>
-            )}
-
-            {currentAgent && (
-              <div className="hidden lg:flex group items-center gap-1 px-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm" title={currentAgent.name}>
-                <Bot size={14} />
-                <span className="max-w-20 truncate">
+            {currentAgent?.model ? (
+              /* Agent overrides model — show agent badge instead of model selector */
+              <button
+                type="button"
+                onClick={() => setCurrentAgent(null)}
+                className="hidden lg:flex group items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors max-w-48"
+                title="Deselect agent"
+              >
+                <span className="shrink-0 w-3.5 flex justify-center relative">
+                  <Bot size={14} className="transition-opacity group-hover:opacity-0" />
+                  <X size={14} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100" />
+                </span>
+                <span className="truncate min-w-0">
                   {currentAgent.name}
                 </span>
-              </div>
+              </button>
+            ) : (
+              <>
+                {models.length > 0 && (
+                  <Menu>
+                    <MenuButton className="flex items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm max-w-48">
+                      <span className="shrink-0 w-3.5 flex justify-center">{toolIndicator}</span>
+                      <span className="truncate min-w-0">
+                        {model?.name ?? model?.id ?? "Select Model"}
+                      </span>
+                    </MenuButton>
+                    <MenuItems
+                      modal={false}
+                      transition
+                      anchor="bottom start"
+                      className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 whitespace-nowrap dark:ring-1 dark:ring-white/10"
+                    >
+                      {models.map((modelItem) => (
+                        <MenuItem key={modelItem.id}>
+                          <button
+                            type="button"
+                            onClick={() => onModelChange(modelItem)}
+                            title={modelItem.description}
+                            className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
+                          >
+                            <div className="flex items-center gap-2.5 w-full">
+                              <div className="shrink-0 w-3.5 flex justify-center">
+                                {model?.id === modelItem.id && (
+                                  <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
+                                )}
+                              </div>
+                              <div className="flex flex-col items-start flex-1 min-w-0">
+                                <div className="font-semibold text-sm leading-tight whitespace-nowrap">
+                                  {modelItem.name ?? modelItem.id}
+                                </div>
+                                {modelItem.description && (
+                                  <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
+                                    {modelItem.description}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        </MenuItem>
+                      ))}
+                      {voiceAvailable && (
+                        <MenuItem>
+                          <button
+                            type="button"
+                            onClick={() => onModelChange(isRealtimeSelected ? models[0] : { id: 'realtime', name: 'Voice Mode', description: 'Real-time voice conversation' })}
+                            className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
+                          >
+                            <div className="flex items-center gap-2.5 w-full">
+                              <div className="shrink-0 w-3.5 flex justify-center">
+                                {isRealtimeSelected && (
+                                  <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
+                                )}
+                              </div>
+                              <div className="flex flex-col items-start flex-1 min-w-0">
+                                <div className="font-semibold text-sm leading-tight whitespace-nowrap">
+                                  Voice Mode
+                                </div>
+                                <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
+                                  Real-time voice conversation
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+                        </MenuItem>
+                      )}
+                    </MenuItems>
+                  </Menu>
+                )}
+
+                {currentAgent && (
+                  <button
+                    type="button"
+                    onClick={() => setCurrentAgent(null)}
+                    className="hidden lg:flex group items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors"
+                    title="Deselect agent"
+                  >
+                    <span className="shrink-0 w-3.5 flex justify-center relative">
+                      <Bot size={14} className="transition-opacity group-hover:opacity-0" />
+                      <X size={14} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100" />
+                    </span>
+                    <span className="max-w-20 truncate">
+                      {currentAgent.name}
+                    </span>
+                  </button>
+                )}
+              </>
             )}
 
           </div>

@@ -33,6 +33,7 @@ function serializeAgentMd(agent: Agent): string {
   const lines: string[] = ['---'];
   lines.push(`name: ${agent.name}`);
   if (agent.description) lines.push(`description: ${agent.description}`);
+  if (agent.model) lines.push(`model: ${agent.model}`);
   if (agent.skills.length > 0) lines.push(`skills: [${agent.skills.map(s => `'${s}'`).join(', ')}]`);
   if (agent.tools.length > 0) lines.push(`tools: [${agent.tools.map(t => `'${t}'`).join(', ')}]`);
   if (agent.memory) lines.push('memory: true');
@@ -47,6 +48,7 @@ function serializeAgentMd(agent: Agent): string {
 function parseAgentMd(content: string): {
   name: string;
   description?: string;
+  model?: string;
   skills: string[];
   tools: string[];
   memory?: boolean;
@@ -87,6 +89,7 @@ function parseAgentMd(content: string): {
     description: fields.description || undefined,
     skills: parseList(fields.skills),
     tools: parseList(fields.tools),
+    model: fields.model || undefined,
     memory: fields.memory === 'true',
     instructions: body,
   };
@@ -165,6 +168,7 @@ async function loadAgent(id: string): Promise<Agent | undefined> {
   let skills: string[] = [];
   let tools: string[] = [];
   let servers: BridgeServer[] = [];
+  let model: string | undefined;
   let memory: boolean | undefined;
 
   const mdContent = await opfs.readText(`${agentPath}/AGENTS.md`)
@@ -177,6 +181,7 @@ async function loadAgent(id: string): Promise<Agent | undefined> {
       instructions = parsed.instructions;
       skills = parsed.skills;
       tools = parsed.tools;
+      model = parsed.model;
       memory = parsed.memory || undefined;
     }
   } else {
@@ -223,6 +228,7 @@ async function loadAgent(id: string): Promise<Agent | undefined> {
     skills,
     servers,
     tools,
+    model,
     memory,
     files: files.length > 0 ? files : undefined,
   };

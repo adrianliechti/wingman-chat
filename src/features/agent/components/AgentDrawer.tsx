@@ -12,6 +12,7 @@ import { FilesSection } from './FilesSection';
 import { SkillsSection } from './SkillsSection';
 import { ToolsSection } from './ToolsSection';
 import { MemorySection } from './MemorySection';
+import { ModelSection } from './ModelSection';
 
 // ─── Agent details: sections ───
 
@@ -24,6 +25,7 @@ function AgentDetails({ agent }: AgentDetailsProps) {
 
   return (
     <div className="flex flex-col flex-1 overflow-auto">
+      <ModelSection agent={agent} />
       <InstructionsSection agent={agent} />
 
       {config.repository && (
