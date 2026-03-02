@@ -1,4 +1,14 @@
-export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
+export type ToolIconUrl = {
+  /** URI pointing to the icon resource (HTTP/HTTPS URL or data URI) */
+  src: string;
+  /** MIME type of the icon (e.g. "image/svg+xml", "image/png") */
+  mimeType?: string;
+  /** Size specifications (e.g. ["48x48"], ["any"] for SVG, ["48x48", "96x96"]) */
+  sizes?: string[];
+  /** Theme preference for the icon (light or dark background) */
+  theme?: 'light' | 'dark';
+};
+export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | ToolIconUrl[];
 
 export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "synthesizer" | "transcriber";
 

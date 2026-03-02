@@ -8,6 +8,7 @@ import { useToolsContext } from '@/features/tools/hooks/useToolsContext';
 import { BridgeEditor } from '@/features/agent/components/BridgeEditor';
 import type { Agent, BridgeServer } from '@/features/agent/types/agent';
 import { Section } from './Section';
+import { ToolIconRenderer } from '@/shared/ui/ToolIconRenderer';
 
 interface ToolsSectionProps {
   agent: Agent;
@@ -103,7 +104,13 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                     {agentToolIds.has(tool.id) ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
                   </button>
                   <span className="text-neutral-600 dark:text-neutral-400">
-                    {tool.Icon ? <tool.Icon width={16} height={16} /> : <Wrench size={16} />}
+                    {!tool.Icon ? (
+                      <Wrench size={16} />
+                    ) : Array.isArray(tool.Icon) ? (
+                      <ToolIconRenderer icon={tool.Icon} size={16} />
+                    ) : (
+                      <tool.Icon width={16} height={16} />
+                    )}
                   </span>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{tool.label}</div>

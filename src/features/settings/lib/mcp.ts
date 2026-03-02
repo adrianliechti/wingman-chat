@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport as ClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult, ContentBlock as MCPContentBlock, ResourceContents as MCPResourceContents, Tool as MCPTool } from "@modelcontextprotocol/sdk/types.js";
 import { AppBridge, PostMessageTransport } from "@modelcontextprotocol/ext-apps/app-bridge";
-import type { Tool, ToolContext, ToolProvider, TextContent, ImageContent, AudioContent, FileContent } from '@/shared/types/chat';
+import type { Tool, ToolContext, ToolProvider, ToolIcon, TextContent, ImageContent, AudioContent, FileContent } from '@/shared/types/chat';
 import { Rocket } from "lucide-react";
 
 export class MCPClient implements ToolProvider {
@@ -12,7 +12,7 @@ export class MCPClient implements ToolProvider {
   readonly name: string;
   readonly description?: string;
   
-  readonly icon = Rocket;
+  icon: ToolIcon = Rocket;
 
   readonly headers?: Record<string, string>;
 
@@ -79,6 +79,12 @@ export class MCPClient implements ToolProvider {
     console.log('MCP client connected');
     
     this.client = client;
+
+    // Extract server icons if provided
+    const serverInfo = client.getServerVersion();
+    if (Array.isArray(serverInfo?.icons) && serverInfo.icons.length > 0) {
+      this.icon = serverInfo.icons;
+    }
     
     // Load and store tools and instructions after connection
     await this.loadToolsAndInstructions();

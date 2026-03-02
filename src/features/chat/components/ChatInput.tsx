@@ -25,6 +25,7 @@ import { useDropZone } from "@/shared/hooks/useDropZone";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+import { ToolIconRenderer } from "@/shared/ui/ToolIconRenderer";
 
 export function ChatInput() {
   const config = getConfig();
@@ -660,11 +661,18 @@ export function ChatInput() {
                 {visibleProviders.length > 0 && visibleProviders.length <= 2 ? (
               // Inline toggle buttons for 2 or fewer providers
               visibleProviders.map((provider: ToolProvider) => {
-                const IconComponent = provider.icon || Sparkles;
+                const icon = provider.icon || Sparkles;
                 const state = getProviderState(provider.id);
                 const providerEnabled = state === ProviderState.Connected;
                 const providerInitializing = state === ProviderState.Initializing;
                 const providerFailed = state === ProviderState.Failed;
+
+                const renderIcon = () => {
+                  if (providerInitializing) return <LoaderCircle size={14} className="animate-spin" />;
+                  if (providerFailed) return <TriangleAlert size={14} />;
+                  if (Array.isArray(icon)) return <ToolIconRenderer icon={icon} size={14} />;
+                  const Icon = icon; return <Icon size={14} />;
+                };
 
                 return (
                   <button
@@ -694,13 +702,7 @@ export function ChatInput() {
                           : `${provider.name} - Click to enable`
                     }
                   >
-                    {providerInitializing ? (
-                      <LoaderCircle size={14} className="animate-spin" />
-                    ) : providerFailed ? (
-                      <TriangleAlert size={14} />
-                    ) : (
-                      <IconComponent size={14} />
-                    )}
+                    {renderIcon()}
                   </button>
                 );
               })
@@ -720,11 +722,16 @@ export function ChatInput() {
                   className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto"
                 >
                   {visibleProviders.map((provider: ToolProvider) => {
-                    const IconComponent = provider.icon || Sparkles;
+                    const icon = provider.icon || Sparkles;
                     const state = getProviderState(provider.id);
                     const providerEnabled = state === ProviderState.Connected;
                     const providerInitializing = state === ProviderState.Initializing;
                     const providerFailed = state === ProviderState.Failed;
+
+                    const renderIcon = () => {
+                      if (Array.isArray(icon)) return <ToolIconRenderer icon={icon} size={16} />;
+                      const Icon = icon; return <Icon size={16} />;
+                    };
 
                     return (
                       <MenuItem key={provider.id}>
@@ -743,7 +750,7 @@ export function ChatInput() {
                           className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50`}
                         >
                           <div className="flex items-center gap-3">
-                            <IconComponent size={16} />
+                            {renderIcon()}
                             <div className="flex flex-col items-start">
                               <span className="font-medium text-sm">{provider.name}</span>
                               {provider.description && (
