@@ -85,9 +85,10 @@ export async function exportAgentsAsZip(): Promise<void> {
 
 /**
  * Import agents (with bundled skills) from a ZIP file.
- * Supports two formats:
+ * Supports three formats:
  *  1. New: agents/{uuid}/AGENTS.md with optional agents/{uuid}/skills/{name}/…
- *  2. Legacy: {uuid}/repository.json with optional {uuid}/files/…
+ *  2. Flat: AGENTS.md at the root (no uuid folder) — a new UUID is generated.
+ *  3. Legacy: {uuid}/repository.json with optional {uuid}/files/…
  *
  * Agent data goes to /agents/{uuid}/, skills are upserted to /skills/{name}/.
  * Merges with existing data and rebuilds indices.
@@ -98,8 +99,16 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
   // Detect format
   const paths = Object.keys(zip.files);
   const isNewFormat = paths.some((p) => p.startsWith('agents/'));
+  const isFlatFormat =
+    !isNewFormat &&
+    paths.some((p) => p === 'AGENTS.md' || p === 'AGENT.md');
   const isLegacyRepo =
-    !isNewFormat && paths.some((p) => /^[^/]+\/repository\.json$/.test(p));
+    !isNewFormat && !isFlatFormat && paths.some((p) => /^[^/]+\/repository\.json$/.test(p));
+
+  if (isFlatFormat) {
+    await importFlatAgentFromZip(zip);
+    return;
+  }
 
   if (isLegacyRepo) {
     await importLegacyRepositoriesFromZip(zip);
@@ -233,6 +242,47 @@ export async function importAgentsFromLegacyJson(
   }
 
   return { total, imported, failed: total - imported };
+}
+
+// ============================================================================
+// Flat Agent ZIP Import (private)
+// ============================================================================
+
+/**
+ * Import a single agent from a flat ZIP where AGENTS.md is at the root.
+ * A new UUID is generated for the agent.
+ * Skills nested under skills/{name}/ are upserted to /skills/{name}/.
+ */
+async function importFlatAgentFromZip(zip: JSZip): Promise<void> {
+  const newId = crypto.randomUUID();
+  let hasSkills = false;
+
+  for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+    // skills/{name}/… → upsert to global skills store
+    if (relativePath.startsWith('skills/')) {
+      const targetPath = relativePath;
+      hasSkills = true;
+      if (zipEntry.dir) {
+        await getDirectory(targetPath.replace(/\/$/, ''), { create: true });
+      } else {
+        const content = await zipEntry.async('arraybuffer');
+        await writeBlob(targetPath, new Blob([content]));
+      }
+      continue;
+    }
+
+    // Everything else (AGENTS.md, servers.json, MEMORY.md, files/…)
+    // goes under agents/{newId}/
+    if (zipEntry.dir) {
+      await getDirectory(`agents/${newId}/${relativePath}`.replace(/\/$/, ''), { create: true });
+    } else {
+      const content = await zipEntry.async('arraybuffer');
+      await writeBlob(`agents/${newId}/${relativePath}`, new Blob([content]));
+    }
+  }
+
+  await rebuildFolderIndex('agents');
+  if (hasSkills) await rebuildFolderIndex('skills');
 }
 
 // ============================================================================
