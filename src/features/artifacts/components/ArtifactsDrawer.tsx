@@ -43,11 +43,6 @@ export function ArtifactsDrawer() {
   
   // Local version counter for forcing editor remounts when file content changes
   const [editorVersion, setEditorVersion] = useState(0);
-  
-  // Toggle file browser visibility
-  const toggleFileBrowser = useCallback(() => {
-    setShowFileBrowser(prev => !prev);
-  }, []);
 
   // Ensure a chat exists and FS is ready (creates chat if needed)
   const ensureFs = useCallback(async () => {

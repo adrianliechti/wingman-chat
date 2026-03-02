@@ -16,7 +16,7 @@ export interface AgentProviders {
   /** All tool providers assembled from this agent's config */
   providers: ToolProvider[];
   /** Built-in tool IDs this agent has enabled (e.g. "internet", "renderer") */
-  enabledToolIds: string[];
+  enabledTools: string[];
   /** MCP clients owned by this agent (for lifecycle management) */
   mcpClients: MCPClient[];
 }
@@ -237,11 +237,11 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     return list;
   }, [repositoryProvider, skillsProvider, memoryProvider, mcpClients]);
 
-  const enabledToolIds = useMemo(() => agent?.tools || [], [agent?.tools]);
+  const enabledTools = useMemo(() => agent?.tools || [], [agent?.tools]);
 
   return {
     providers,
-    enabledToolIds,
+    enabledTools,
     mcpClients,
   };
 }

@@ -249,7 +249,7 @@ export class MCPClient implements ToolProvider {
       clearInterval(this.pingInterval);
     }
 
-    // Ping every 30 seconds
+    // Ping every 20 seconds
     this.pingInterval = setInterval(async () => {
       if (this.client) {
         try {

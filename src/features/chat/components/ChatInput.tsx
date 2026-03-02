@@ -34,7 +34,7 @@ export function ChatInput() {
   const { currentAgent, setCurrentAgent } = useAgents();
   const { profile } = useSettings();
   const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
-  const { providers, getProviderState, isProviderRequired, setProviderEnabled } = useToolsContext();
+  const { providers, getProviderState, setProviderEnabled, setModelOverrides } = useToolsContext();
   const { isAvailable: voiceAvailable, isListening, startVoice, stopVoice } = useVoice();
 
   // Track if realtime mode model is selected
@@ -108,12 +108,10 @@ export function ChatInput() {
     return ids;
   }, [model?.tools]);
 
-  // Providers visible in the UI: exclude model-configured and agent-required
+  // Providers visible in the UI: exclude model-configured; hidden entirely when agent active
   const visibleProviders = useMemo(
-    () => providers.filter((p: ToolProvider) =>
-      !modelTools.has(p.id) && !isProviderRequired(p.id)
-    ),
-    [providers, modelTools, isProviderRequired]
+    () => currentAgent ? [] : providers.filter((p: ToolProvider) => !modelTools.has(p.id)),
+    [currentAgent, providers, modelTools]
   );
 
   // Tool providers indicator logic
@@ -140,29 +138,10 @@ export function ChatInput() {
     }
   }, [visibleProviders, getProviderState]);
 
-  // Auto-connect required tools when model changes
+  // Apply model-level forced tool overrides (delta over user + agent tools)
   useEffect(() => {
-    if (!model?.tools?.enabled || model.tools.enabled.length === 0) {
-      return;
-    }
-
-    const enableTools = async () => {
-      for (const providerId of model.tools!.enabled) {
-        const provider = providers.find((p: ToolProvider) => p.id === providerId);
-
-        if (provider) {
-          try {
-            await setProviderEnabled(provider.id, true);
-          } catch (error) {
-            console.error(`Failed to auto-connect required provider ${provider.name}:`, error);
-          }
-        }
-      }
-    };
-
-    enableTools();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model?.tools?.enabled, providers]);
+    setModelOverrides(model?.tools?.enabled || [], model?.tools?.disabled || []);
+  }, [model?.tools?.enabled, model?.tools?.disabled, setModelOverrides]);
 
 
 

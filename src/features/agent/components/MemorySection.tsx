@@ -27,7 +27,7 @@ export function MemorySection({ agent }: MemorySectionProps) {
     }
     const text = await opfs.readText(memoryPath);
     setContent(text || '');
-  }, [agent.id, agent.memory, memoryPath]);
+  }, [agent.memory, memoryPath]);
 
   useEffect(() => {
     loadMemory();

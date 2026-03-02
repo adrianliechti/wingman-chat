@@ -4,8 +4,8 @@ import type { ToolProvider, ProviderState } from '@/shared/types/chat';
 export interface ToolsContextValue {
   providers: ToolProvider[];
   getProviderState: (id: string) => ProviderState;
-  isProviderRequired: (id: string) => boolean;
   setProviderEnabled: (id: string, enabled: boolean) => Promise<void>;
+  setModelOverrides: (enabled: string[], disabled: string[]) => void;
 }
 
 export const ToolsContext = createContext<ToolsContextValue | undefined>(undefined);
