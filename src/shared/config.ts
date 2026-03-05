@@ -9,9 +9,15 @@ interface backgroundPackConfig {
   [packName: string]: backgroundConfig[];
 }
 
+interface supportConfig {
+  url?: string;
+  email?: string;
+}
+
 interface config {
   title: string;
   disclaimer: string;
+  support?: supportConfig;
 
   tools: toolConfig[];
   models: modelConfig[];
@@ -137,6 +143,7 @@ interface chatConfig {
 interface Config {
   title: string;
   disclaimer: string;
+  support: supportConfig | null;
 
   client: Client;
 
@@ -185,6 +192,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
     config = {
       title: cfg.title,
       disclaimer: cfg.disclaimer,
+      support: cfg.support ?? null,
 
       client: client,
 

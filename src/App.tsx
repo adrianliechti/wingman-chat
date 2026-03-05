@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Languages, PanelLeftOpen, Workflow, ChevronDown, Settings, Image, MoreHorizontal, Globe } from "lucide-react";
+import { MessageCircle, Languages, PanelLeftOpen, Workflow, ChevronDown, Settings, Image, MoreHorizontal, Globe, GraduationCap } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems, Transition } from "@headlessui/react";
 import { ChatPage } from "./features/chat/pages/ChatPage";
 import { TranslatePage } from "./features/translate/pages/TranslatePage";
@@ -394,6 +394,17 @@ function AppContent() {
             
             {/* Right section */}
             <div className="flex items-center gap-2 justify-end flex-1">
+              {config.support?.url && (
+                <a
+                  href={config.support.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  title="Support"
+                >
+                  <GraduationCap size={24} />
+                </a>
+              )}
               {/* Hide settings button on mobile - it's in the menu */}
               <div className="hidden md:block">
                 <SettingsButton onClick={(e) => {

@@ -64,6 +64,9 @@ func main() {
 
 	chatRetentionDays := os.Getenv("CHAT_RETENTION_DAYS")
 
+	supportURL := os.Getenv("SUPPORT_URL")
+	supportEmail := os.Getenv("SUPPORT_EMAIL")
+
 	mux := http.NewServeMux()
 	dist := os.DirFS("dist")
 
@@ -162,9 +165,15 @@ func main() {
 			URL string `json:"url,omitempty" yaml:"url,omitempty"`
 		}
 
+		type supportType struct {
+			URL   string `json:"url,omitempty" yaml:"url,omitempty"`
+			Email string `json:"email,omitempty" yaml:"email,omitempty"`
+		}
+
 		type configType struct {
-			Title      string `json:"title,omitempty" yaml:"title,omitempty"`
-			Disclaimer string `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
+			Title      string       `json:"title,omitempty" yaml:"title,omitempty"`
+			Disclaimer string       `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
+			Support    *supportType `json:"support,omitempty" yaml:"support,omitempty"`
 
 			Tools  []toolType  `json:"tools,omitempty" yaml:"tools,omitempty"`
 			Models []modelType `json:"models,omitempty" yaml:"models,omitempty"`
@@ -195,6 +204,13 @@ func main() {
 		config := configType{
 			Title:      title,
 			Disclaimer: disclaimer,
+		}
+
+		if supportURL != "" || supportEmail != "" {
+			config.Support = &supportType{
+				URL:   supportURL,
+				Email: supportEmail,
+			}
 		}
 
 		if data, err := os.ReadFile("tools.yaml"); err == nil {

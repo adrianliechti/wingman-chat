@@ -235,22 +235,34 @@ export function ArtifactsDrawer() {
   const renderFileEditor = () => {
     if (!activeFile) {
       return (
-        <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-          <Code size={64} className="text-neutral-300 dark:text-neutral-600 mb-6" />
-          <h3 className="text-xl font-medium text-neutral-900 dark:text-neutral-100 mb-3">
-            {files.length === 0 ? "No Artifacts Yet" : "Select a File"}
-          </h3>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4 max-w-sm">
-            {files.length === 0
-              ? "Ask the AI to create code, documents, or other files — they'll appear here for you to view, edit, and download."
-              : "Click a filename in the sidebar to open and edit it."}
-          </p>
-          {files.length === 0 && (
-            <div className="text-xs text-neutral-500 dark:text-neutral-500 inline-flex flex-col items-start space-y-1">
-              <p className="italic">"Create a Python script that..."</p>
-              <p className="italic">"Write an HTML page for..."</p>
-            </div>
-          )}
+        <div className="h-full flex flex-col items-center justify-center p-8">
+          <div className="w-full max-w-xl">
+            <Code size={32} className="text-neutral-300 dark:text-neutral-600 mb-4" />
+            <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
+              {files.length === 0 ? "No files yet" : "Select a file"}
+            </h3>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed mb-5">
+              {files.length === 0
+                ? "Files you create in the chat appear here. Refine them with follow-up prompts and download when ready. Use the upload button to bring in your own files."
+                : "Click a filename in the sidebar to open and edit it."}
+            </p>
+            {files.length === 0 && (
+              <>
+                <p className="text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide mb-2">Try asking</p>
+                <ul className="space-y-2">
+                  {[
+                    "Turn this dense policy document into a one-page cheat sheet for compliance officers.",
+                    "Create a visually engaging overview document from these rough project notes.",
+                    "Transform this bullet-point draft into a polished, client-ready email.",
+                  ].map((example) => (
+                    <li key={example} className="text-xs text-neutral-500 dark:text-neutral-400 italic bg-black/5 dark:bg-white/5 rounded-md px-3 py-2 leading-relaxed">
+                      &ldquo;{example}&rdquo;
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
         </div>
       );
     }
