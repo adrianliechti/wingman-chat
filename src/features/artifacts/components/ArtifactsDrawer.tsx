@@ -15,7 +15,8 @@ import { BashEditor } from '@/shared/ui/editors/BashEditor';
 import { ArtifactsBrowser } from './ArtifactsBrowser';
 import { artifactKind, artifactLanguage, processUploadedFile } from '@/features/artifacts/lib/artifacts';
 import { FileIcon } from '@/shared/ui/FileIcon';
-import { getFileName } from '@/shared/lib/utils';
+import { getFileName, downloadBlob } from '@/shared/lib/utils';
+import { markdownToDocx } from '@/shared/lib/markdownToDocx';
 import type { File } from '@/features/artifacts/types/file';
 
 export function ArtifactsDrawer() {
@@ -433,6 +434,26 @@ export function ArtifactsDrawer() {
               title={viewMode === 'preview' ? 'Switch to code' : 'Switch to preview'}
             >
               {viewMode === 'preview' ? <Code size={16} /> : <Eye size={16} />}
+            </button>
+          )}
+
+          {/* Word download button — only for markdown files */}
+          {activeFile && artifactKind(activeFile) === 'markdown' && activeFileData && (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const blob = await markdownToDocx(activeFileData.content);
+                  const baseName = getFileName(activeFile).replace(/\.(md|markdown)$/i, '');
+                  downloadBlob(blob, `${baseName}.docx`);
+                } catch (error) {
+                  console.error('Failed to convert to Word:', error);
+                }
+              }}
+              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+              title="Download as Word (.docx)"
+            >
+              <img src="/icons/file-word.svg" alt="Word" width={16} height={16} className="dark:invert" />
             </button>
           )}
 

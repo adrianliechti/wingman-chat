@@ -60,6 +60,7 @@ func main() {
 	repositoryExtractor := os.Getenv("REPOSITORY_EXTRACTOR")
 	repositoryContextPages := os.Getenv("REPOSITORY_CONTEXT_PAGES")
 
+	memory := os.Getenv("MEMORY_ENABLED") == "true"
 	workflow := os.Getenv("WORKFLOW_ENABLED") == "true"
 
 	chatRetentionDays := os.Getenv("CHAT_RETENTION_DAYS")
@@ -147,6 +148,8 @@ func main() {
 
 		type workflowType struct{}
 
+		type memoryType struct{}
+
 		type researcherType struct {
 			Model string `json:"model,omitempty" yaml:"model,omitempty"`
 		}
@@ -186,13 +189,14 @@ func main() {
 			Text      *textType      `json:"text,omitempty" yaml:"text,omitempty"`
 			Extractor *extractorType `json:"extractor,omitempty" yaml:"extractor,omitempty"`
 
-			Internet    *internetType    `json:"internet,omitempty" yaml:"internet,omitempty"`
-			Renderer    *rendererType    `json:"renderer,omitempty" yaml:"renderer,omitempty"`
+			Internet *internetType `json:"internet,omitempty" yaml:"internet,omitempty"`
+			Renderer *rendererType `json:"renderer,omitempty" yaml:"renderer,omitempty"`
 
 			Artifacts  *artifactsType  `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 			Repository *repositoryType `json:"repository,omitempty" yaml:"repository,omitempty"`
 
 			Workflow   *workflowType   `json:"workflow,omitempty" yaml:"workflow,omitempty"`
+			Memory     *memoryType     `json:"memory,omitempty" yaml:"memory,omitempty"`
 			Researcher *researcherType `json:"researcher,omitempty" yaml:"researcher,omitempty"`
 			Translator *translatorType `json:"translator,omitempty" yaml:"translator,omitempty"`
 
@@ -365,6 +369,10 @@ func main() {
 
 		if workflow {
 			config.Workflow = &workflowType{}
+		}
+
+		if memory {
+			config.Memory = &memoryType{}
 		}
 
 		if researcher {

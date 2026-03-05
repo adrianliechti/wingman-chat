@@ -34,7 +34,7 @@ function AgentDetails({ agent }: AgentDetailsProps) {
 
       <SkillsSection agent={agent} />
       <ToolsSection agent={agent} />
-      <MemorySection agent={agent} />
+      {config.memory && <MemorySection agent={agent} />}
     </div>
   );
 }

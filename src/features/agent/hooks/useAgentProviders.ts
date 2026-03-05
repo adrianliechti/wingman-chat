@@ -10,6 +10,7 @@ import repositoryInstructions from '@/features/repository/prompts/repository.txt
 import skillsPrompt from '@/features/skills/prompts/skills.txt?raw';
 import memoryPrompt from '@/features/agent/prompts/memory.txt?raw';
 import * as opfs from '@/shared/lib/opfs';
+import { getConfig } from '@/shared/config';
 import { Package, Sparkles, BrainCircuit } from 'lucide-react';
 
 export interface AgentProviders {
@@ -170,7 +171,9 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
   }, [enabledSkills, getSkillTools]);
 
   // --- Memory provider ---
-  const memoryPath = agent?.memory ? `agents/${agentId}/MEMORY.md` : '';
+  const config = getConfig();
+  const memoryEnabled = !!config.memory && !!agent?.memory;
+  const memoryPath = memoryEnabled ? `agents/${agentId}/MEMORY.md` : '';
   const [memoryContent, setMemoryContent] = useState<string>('');
 
   // Load memory content from OPFS when memory is enabled
@@ -184,7 +187,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
 
   // Re-read memory when the agent writes to it mid-conversation
   useEffect(() => {
-    if (!agent?.memory) return;
+    if (!memoryEnabled) return;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.agentId === agentId) {
@@ -193,10 +196,10 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     };
     window.addEventListener('memory-updated', handler);
     return () => window.removeEventListener('memory-updated', handler);
-  }, [agent?.memory, agentId, memoryPath]);
+  }, [memoryEnabled, agentId, memoryPath]);
 
   const getMemoryTools = useCallback((): Tool[] => {
-    if (!agent?.memory) return [];
+    if (!memoryEnabled) return [];
     const agentPath = `agents/${agentId}`;
     return [
       {
@@ -223,10 +226,10 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
         },
       },
     ];
-  }, [agent?.memory, agentId]);
+  }, [memoryEnabled, agentId]);
 
   const memoryProvider = useMemo<ToolProvider | null>(() => {
-    if (!agent?.memory) return null;
+    if (!memoryEnabled) return null;
 
     const tools = getMemoryTools();
     const memorySection = memoryContent.trim()
@@ -241,7 +244,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
       instructions: (memoryPrompt || '') + memorySection,
       tools,
     };
-  }, [agent?.memory, getMemoryTools, memoryContent]);
+  }, [memoryEnabled, getMemoryTools, memoryContent]);
 
   // --- Combine all providers ---
   const providers = useMemo<ToolProvider[]>(() => {

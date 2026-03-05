@@ -39,6 +39,8 @@ interface config {
   renderer?: rendererConfig;
   extractor?: extractorConfig;
 
+  memory?: memoryConfig;
+
   artifacts?: artifactsConfig;
   repository?: repositoryConfig;
   translator?: translatorConfig;
@@ -123,6 +125,8 @@ interface repositoryConfig {
   context_pages?: number;
 }
 
+type memoryConfig = object;
+
 type artifactsConfig = object;
 
 interface translatorConfig {
@@ -164,6 +168,8 @@ interface Config {
   internet: internetConfig | null;
 
   renderer: rendererConfig | null;
+
+  memory: memoryConfig | null;
 
   artifacts: artifactsConfig | null;
   repository: repositoryConfig | null;
@@ -295,6 +301,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       internet: cfg.internet ?? null,
       renderer: cfg.renderer ?? null,
+      memory: cfg.memory ?? null,
       repository: cfg.repository ?? null,
       artifacts: cfg.artifacts ?? null,
 
