@@ -1,38 +1,36 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Languages, PanelLeftOpen, Workflow, Disc3, ChevronDown, Settings, Image, MoreHorizontal, Globe } from "lucide-react";
+import { MessageCircle, Languages, PanelLeftOpen, Workflow, ChevronDown, Settings, Image, MoreHorizontal, Globe, GraduationCap } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems, Transition } from "@headlessui/react";
-import { ChatPage } from "./pages/ChatPage";
-import { TranslatePage } from "./pages/TranslatePage";
-import { WorkflowPage } from "./pages/WorkflowPage";
-import { RecorderPage } from "./pages/RecorderPage";
-import { RendererPage } from "./pages/RendererPage";
-import { ResearchPage } from "./pages/ResearchPage";
-import { getConfig } from "./config";
-import { SidebarProvider } from "./contexts/SidebarProvider";
-import { useSidebar } from "./hooks/useSidebar";
-import { NavigationProvider } from "./contexts/NavigationProvider";
-import { useNavigation } from "./hooks/useNavigation";
-import { ThemeProvider } from "./contexts/ThemeProvider";
-import { LayoutProvider } from "./contexts/LayoutProvider";
-import { BackgroundProvider } from "./contexts/BackgroundProvider";
-import { ChatProvider } from "./contexts/ChatProvider";
-import { TranslateProvider } from "./contexts/TranslateProvider";
-import { VoiceProvider } from "./contexts/VoiceProvider";
-import { SettingsButton } from "./components/SettingsButton";
-import { SettingsDrawer } from "./components/SettingsDrawer";
-import { RepositoryProvider } from "./contexts/RepositoryProvider";
-import { SkillsProvider } from "./contexts/SkillsProvider";
-import { ArtifactsProvider } from "./contexts/ArtifactsProvider";
-import { AppProvider } from "./contexts/AppProvider";
-import { ProfileProvider } from "./contexts/ProfileProvider";
-import { ScreenCaptureProvider } from "./contexts/ScreenCaptureProvider";
-import { ToolsProvider } from "./contexts/ToolsProvider";
-import { BridgeProvider } from "./contexts/BridgeProvider";
-import { useArtifacts } from "./hooks/useArtifacts";
-import { useRepositories } from "./hooks/useRepositories";
-import { useApp } from "./hooks/useApp";
+import { ChatPage } from "./features/chat/pages/ChatPage";
+import { TranslatePage } from "./features/translate/pages/TranslatePage";
+import { WorkflowPage } from "./features/workflow/pages/WorkflowPage";
+import { RendererPage } from "./features/renderer/pages/RendererPage";
+import { ResearchPage } from "./features/research/pages/ResearchPage";
+import { getConfig } from "./shared/config";
+import { SidebarProvider } from "./shell/context/SidebarProvider";
+import { useSidebar } from "./shell/hooks/useSidebar";
+import { NavigationProvider } from "./shell/context/NavigationProvider";
+import { useNavigation } from "./shell/hooks/useNavigation";
+import { ThemeProvider } from "./shell/context/ThemeProvider";
+import { LayoutProvider } from "./shell/context/LayoutProvider";
+import { BackgroundProvider } from "./shell/context/BackgroundProvider";
+import { ChatProvider } from "./features/chat/context/ChatProvider";
+import { TranslateProvider } from "./features/translate/context/TranslateProvider";
+import { VoiceProvider } from "./features/voice/context/VoiceProvider";
+import { SettingsButton } from "./features/settings/components/SettingsButton";
+import { SettingsDrawer } from "./features/settings/components/SettingsDrawer";
+import { AgentProvider } from "./features/agent/context/AgentProvider";
+import { SkillsProvider } from "./features/skills/context/SkillsProvider";
+import { ArtifactsProvider } from "./features/artifacts/context/ArtifactsProvider";
+import { AppProvider } from "./shell/context/AppProvider";
+import { ProfileProvider } from "./features/settings/context/ProfileProvider";
+import { ScreenCaptureProvider } from "./features/chat/context/ScreenCaptureProvider";
+import { ToolsProvider } from "./features/tools/context/ToolsProvider";
+import { useArtifacts } from "./features/artifacts/hooks/useArtifacts";
+import { useAgents } from "./features/agent/hooks/useAgents";
+import { useApp } from "./shell/hooks/useApp";
 
-type Page = "chat" | "flow" | "translate" | "renderer" | "research" | "recorder";
+type Page = "chat" | "flow" | "translate" | "renderer" | "research";
 
 function AppContent() {
   const config = getConfig();
@@ -40,11 +38,11 @@ function AppContent() {
   const { showSidebar, setShowSidebar, toggleSidebar, sidebarContent } = useSidebar();
   const { leftActions, rightActions } = useNavigation();
   const { showArtifactsDrawer } = useArtifacts();
-  const { showRepositoryDrawer } = useRepositories();
+  const { showAgentDrawer } = useAgents();
   const { showAppDrawer } = useApp();
   
   // Detect if any panel is open - sidebar becomes overlay when panels are open
-  const hasPanelOpen = showArtifactsDrawer || showRepositoryDrawer || showAppDrawer;
+  const hasPanelOpen = showArtifactsDrawer || showAgentDrawer || showAppDrawer;
   
   // Track previous panel state to detect when panels open (using state for adjust-during-render pattern)
   const [prevHasPanelOpen, setPrevHasPanelOpen] = useState(hasPanelOpen);
@@ -62,6 +60,7 @@ function AppContent() {
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsAdvanced, setSettingsAdvanced] = useState(false);
   
   // Refs and state for animated slider (tablet and desktop only)
   const tabletRef = useRef<HTMLDivElement>(null);
@@ -113,8 +112,6 @@ function AppContent() {
           return config.renderer ? 'renderer' : 'chat';
         case '#research':
           return config.researcher ? 'research' : 'chat';
-        case '#recorder':
-          return config.recorder ? 'recorder' : 'chat';
         default:
           return 'chat';
       }
@@ -135,7 +132,7 @@ function AppContent() {
     // Listen for hash changes
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [config.workflow, config.translator, config.recorder, config.renderer, config.researcher]);
+  }, [config.workflow, config.translator, config.renderer, config.researcher]);
 
   // Auto-close sidebar on mobile screens and update sliders on resize
   useEffect(() => {
@@ -194,11 +191,9 @@ function AppContent() {
   const secondaryPages = [
     { key: "renderer" as const, label: "Renderer", icon: <Image size={20} /> },
     { key: "research" as const, label: "Research", icon: <Globe size={20} /> },
-    { key: "recorder" as const, label: "Recorder", icon: <Disc3 size={20} /> },
   ].filter(page => {
     if (page.key === "renderer") return !!config.renderer;
     if (page.key === "research") return !!config.researcher;
-    if (page.key === "recorder") return !!config.recorder;
     return true;
   });
 
@@ -259,7 +254,7 @@ function AppContent() {
       )}
 
       {/* Settings Drawer - must be outside the z-10 content wrapper */}
-      <SettingsDrawer isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDrawer isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} showAdvanced={settingsAdvanced} />
 
       {/* Main app content */}
       <div className={`flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? 'md:ml-59' : 'ml-0'}`}>
@@ -399,9 +394,23 @@ function AppContent() {
             
             {/* Right section */}
             <div className="flex items-center gap-2 justify-end flex-1">
+              {config.support?.url && (
+                <a
+                  href={config.support.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  title="Support"
+                >
+                  <GraduationCap size={24} />
+                </a>
+              )}
               {/* Hide settings button on mobile - it's in the menu */}
               <div className="hidden md:block">
-                <SettingsButton onClick={() => setSettingsOpen(true)} />
+                <SettingsButton onClick={(e) => {
+                  setSettingsAdvanced(e.altKey);
+                  setSettingsOpen(true);
+                }} />
               </div>
               {rightActions}
             </div>
@@ -436,7 +445,8 @@ function AppContent() {
               
               {/* Settings */}
               <button
-                onClick={() => {
+                onClick={(e) => {
+                  setSettingsAdvanced(e.altKey);
                   setSettingsOpen(true);
                   setMobileMenuOpen(false);
                 }}
@@ -466,7 +476,6 @@ function AppContent() {
             {currentPage === "translate" && <TranslatePage />}
             {currentPage === "renderer" && <RendererPage />}
             {currentPage === "research" && <ResearchPage />}
-            {currentPage === "recorder" && <RecorderPage />}
           </div>
         </div>
       </div>
@@ -485,9 +494,8 @@ const providers = [
   NavigationProvider,
   ArtifactsProvider,
   AppProvider,
-  RepositoryProvider,
+  AgentProvider,
   ScreenCaptureProvider,
-  BridgeProvider,
   ToolsProvider,
   ChatProvider,
   VoiceProvider,

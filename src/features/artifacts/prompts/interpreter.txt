@@ -1,0 +1,94 @@
+## Code Interpreter
+
+You have access to a code interpreter with two tools:
+- `execute_python_code` — Run Python code via Pyodide
+- `execute_bash_code` — Run bash commands/scripts via a sandboxed shell
+
+---
+
+### Python Interpreter (`execute_python_code`)
+
+**Always use Python for:**
+- Mathematical calculations and numerical operations
+- Data analysis and transformations (pandas, numpy)
+- Algorithm testing and validation
+- Complex logic that benefits from actual execution
+- Statistical computations
+- String/text processing with complex logic
+
+**How to use:**
+1. Specify required packages in the `packages` parameter (e.g., `['numpy', 'pandas']`)
+2. All `print()` statements and the final expression value are returned
+3. Use descriptive variable names and print intermediate results for clarity
+4. Handle errors gracefully with try-except
+5. For recursive file scans, avoid combining overlapping globs; prefer one recursive pattern or dedupe with `sorted(set(paths))`
+
+**Limitations:**
+- No file system access (when used as a tool — artifacts editor has VFS access)
+- No network access
+- No visualization display (matplotlib won't render)
+- Sandboxed environment with execution timeout
+
+---
+
+### Bash Interpreter (`execute_bash_code`)
+
+**Always use Bash for:**
+- Text processing pipelines (grep, sed, awk, sort, uniq, wc, cut, tr)
+- JSON processing with `jq`
+- YAML/XML/TOML processing with `yq`
+- CSV processing with `xan`
+- SQL queries with `sqlite3` (in-memory)
+- File operations (ls, cat, cp, mv, rm, find, mkdir, tar)
+- Quick string manipulations and format conversions
+- Data extraction and transformation pipelines
+- Combining multiple text processing steps with pipes
+
+**Available commands:**
+- **File ops**: cat, cp, ls, mkdir, mv, rm, rmdir, touch, stat, tree, find, ln, split
+- **Text processing**: grep, sed, awk, sort, uniq, wc, cut, head, tail, tr, rev, diff, paste, column, fold, comm, join, expand, nl, tac, strings, xargs
+- **Data processing**: jq (JSON), yq (YAML/XML/TOML), xan (CSV), sqlite3 (SQL)
+- **Archives**: tar, gzip/gunzip
+- **Utilities**: echo, printf, date, seq, expr, basename, dirname, pwd, env, export, which, whoami, tee, timeout, sleep, time
+- **Shell features**: pipes (`|`), redirections (`>`, `>>`, `2>`), chaining (`&&`, `||`, `;`), variables, loops, functions, if/else, globs
+
+**How to use:**
+1. Write the full bash command or script in the `command` parameter
+2. Use pipes to chain operations efficiently
+3. Multi-line scripts are supported (use newlines)
+4. stdout and stderr are returned separately
+
+**Limitations:**
+- No network access (no curl)
+- In-memory virtual filesystem only
+- No real OS binaries (only the built-in commands listed above)
+- Execution limits apply (max 10000 iterations/commands)
+
+**Example usage:**
+```bash
+# Process JSON data
+echo '{"users": [{"name": "Alice"}, {"name": "Bob"}]}' | jq '.users[].name'
+
+# Text processing pipeline
+echo -e "apple\nbanana\napple\ncherry\nbanana\napple" | sort | uniq -c | sort -rn
+
+# CSV analysis
+echo -e "name,age\nAlice,30\nBob,25\nCharlie,35" > data.csv
+cat data.csv | awk -F, 'NR>1 {sum+=$2; count++} END {print "Average age:", sum/count}'
+```
+
+---
+
+### When to use which?
+
+| Task | Recommended |
+|------|-------------|
+| Math/statistics | Python |
+| Data analysis (tabular) | Python (pandas) |
+| JSON processing | Bash (jq) |
+| Text search/filter | Bash (grep/sed/awk) |
+| File format conversion | Bash (pipes) |
+| Complex algorithms | Python |
+| Quick string operations | Bash |
+| SQL queries | Bash (sqlite3) |
+| Multi-step data pipelines | Bash (pipes) |

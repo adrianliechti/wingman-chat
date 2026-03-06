@@ -26,8 +26,6 @@ func main() {
 	platformURL := platformURL()
 	realtimeURL := realtimeURL()
 
-	bridgeURL := os.Getenv("BRIDGE_URL")
-
 	tts := os.Getenv("TTS_ENABLED") == "true"
 	ttsModel := os.Getenv("TTS_MODEL")
 	stt := os.Getenv("STT_ENABLED") == "true"
@@ -55,8 +53,6 @@ func main() {
 	extractor := os.Getenv("EXTRACTOR_ENABLED") == "true"
 	extractorModel := os.Getenv("EXTRACTOR_MODEL")
 
-	interpreter := os.Getenv("INTERPRETER_ENABLED") == "true"
-
 	artifacts := os.Getenv("ARTIFACTS_ENABLED") == "true"
 
 	repository := os.Getenv("REPOSITORY_ENABLED") == "true"
@@ -64,10 +60,13 @@ func main() {
 	repositoryExtractor := os.Getenv("REPOSITORY_EXTRACTOR")
 	repositoryContextPages := os.Getenv("REPOSITORY_CONTEXT_PAGES")
 
+	memory := os.Getenv("MEMORY_ENABLED") == "true"
 	workflow := os.Getenv("WORKFLOW_ENABLED") == "true"
-	recorder := os.Getenv("RECORDER_ENABLED") == "true"
 
 	chatRetentionDays := os.Getenv("CHAT_RETENTION_DAYS")
+
+	supportURL := os.Getenv("SUPPORT_URL")
+	supportEmail := os.Getenv("SUPPORT_EMAIL")
 
 	mux := http.NewServeMux()
 	dist := os.DirFS("dist")
@@ -138,12 +137,6 @@ func main() {
 			Elicitation bool   `json:"elicitation,omitempty" yaml:"elicitation,omitempty"`
 		}
 
-		type interpreterType struct{}
-
-		type bridgeType struct {
-			URL string `json:"url,omitempty" yaml:"url,omitempty"`
-		}
-
 		type artifactsType struct{}
 
 		type repositoryType struct {
@@ -155,7 +148,7 @@ func main() {
 
 		type workflowType struct{}
 
-		type recorderType struct{}
+		type memoryType struct{}
 
 		type researcherType struct {
 			Model string `json:"model,omitempty" yaml:"model,omitempty"`
@@ -175,9 +168,15 @@ func main() {
 			URL string `json:"url,omitempty" yaml:"url,omitempty"`
 		}
 
+		type supportType struct {
+			URL   string `json:"url,omitempty" yaml:"url,omitempty"`
+			Email string `json:"email,omitempty" yaml:"email,omitempty"`
+		}
+
 		type configType struct {
-			Title      string `json:"title,omitempty" yaml:"title,omitempty"`
-			Disclaimer string `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
+			Title      string       `json:"title,omitempty" yaml:"title,omitempty"`
+			Disclaimer string       `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
+			Support    *supportType `json:"support,omitempty" yaml:"support,omitempty"`
 
 			Tools  []toolType  `json:"tools,omitempty" yaml:"tools,omitempty"`
 			Models []modelType `json:"models,omitempty" yaml:"models,omitempty"`
@@ -190,17 +189,14 @@ func main() {
 			Text      *textType      `json:"text,omitempty" yaml:"text,omitempty"`
 			Extractor *extractorType `json:"extractor,omitempty" yaml:"extractor,omitempty"`
 
-			Internet    *internetType    `json:"internet,omitempty" yaml:"internet,omitempty"`
-			Renderer    *rendererType    `json:"renderer,omitempty" yaml:"renderer,omitempty"`
-			Interpreter *interpreterType `json:"interpreter,omitempty" yaml:"interpreter,omitempty"`
-
-			Bridge *bridgeType `json:"bridge,omitempty" yaml:"bridge,omitempty"`
+			Internet *internetType `json:"internet,omitempty" yaml:"internet,omitempty"`
+			Renderer *rendererType `json:"renderer,omitempty" yaml:"renderer,omitempty"`
 
 			Artifacts  *artifactsType  `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 			Repository *repositoryType `json:"repository,omitempty" yaml:"repository,omitempty"`
 
 			Workflow   *workflowType   `json:"workflow,omitempty" yaml:"workflow,omitempty"`
-			Recorder   *recorderType   `json:"recorder,omitempty" yaml:"recorder,omitempty"`
+			Memory     *memoryType     `json:"memory,omitempty" yaml:"memory,omitempty"`
 			Researcher *researcherType `json:"researcher,omitempty" yaml:"researcher,omitempty"`
 			Translator *translatorType `json:"translator,omitempty" yaml:"translator,omitempty"`
 
@@ -212,6 +208,13 @@ func main() {
 		config := configType{
 			Title:      title,
 			Disclaimer: disclaimer,
+		}
+
+		if supportURL != "" || supportEmail != "" {
+			config.Support = &supportType{
+				URL:   supportURL,
+				Email: supportEmail,
+			}
 		}
 
 		if data, err := os.ReadFile("tools.yaml"); err == nil {
@@ -342,16 +345,6 @@ func main() {
 			}
 		}
 
-		if interpreter {
-			config.Interpreter = &interpreterType{}
-		}
-
-		if bridgeURL != "" {
-			config.Bridge = &bridgeType{
-				URL: bridgeURL,
-			}
-		}
-
 		if artifacts {
 			config.Artifacts = &artifactsType{}
 		}
@@ -378,8 +371,8 @@ func main() {
 			config.Workflow = &workflowType{}
 		}
 
-		if recorder {
-			config.Recorder = &recorderType{}
+		if memory {
+			config.Memory = &memoryType{}
 		}
 
 		if researcher {

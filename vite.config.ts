@@ -5,6 +5,8 @@ import { viteStaticCopy } from 'vite-plugin-static-copy';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const ReactCompilerConfig = {
   target: '19'
 };
@@ -29,8 +31,30 @@ function viteStaticCopyPyodide() {
     ],
   });
 }
+// Vite plugin: override font-display for @fontsource/noto-emoji from "swap" to
+// "block" so the browser never falls back to OS color emoji while the font
+// file is downloading. "block" shows invisible text during the load period
+// instead of the OS fallback glyph, eliminating the brief color-emoji flash.
+function notoEmojiFontDisplayBlock() {
+  return {
+    name: 'noto-emoji-font-display-block',
+    transform(code: string, id: string) {
+      if (!id.includes('@fontsource/noto-emoji')) return;
+      return code.replace(/font-display:\s*swap/g, 'font-display: block');
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+      // Shim node:zlib that just-bash's browser bundle imports but can't use in the browser
+      'node:zlib': path.resolve(__dirname, 'src/shared/lib/zlib-shim.ts'),
+      'zlib': path.resolve(__dirname, 'src/shared/lib/zlib-shim.ts'),
+    },
+  },
   optimizeDeps: {
     exclude: ['pyodide']
   },
@@ -51,6 +75,7 @@ export default defineConfig({
     }
   },
   plugins: [
+    notoEmojiFontDisplayBlock(),
     react({
       babel: {
         plugins: [
@@ -64,13 +89,15 @@ export default defineConfig({
   build: {
     rollupOptions: {
       onwarn(warning, warn) {
-        // Suppress Pyodide Node.js module externalization warnings
+        // Suppress Pyodide and just-bash Node.js module externalization warnings
         if (warning.code === 'MODULE_LEVEL_DIRECTIVE' || 
-            warning.message?.includes('externalized for browser compatibility')) {
+            warning.message?.includes('externalized for browser compatibility') ||
+            warning.message?.includes('is not exported by')) {
           return;
         }
         warn(warning);
       },
+
       output: {
         manualChunks: {
           // Core React
@@ -81,6 +108,10 @@ export default defineConfig({
           // Pyodide as separate chunk for better caching
           'vendor-pyodide': [
             'pyodide'
+          ],
+          // Bash interpreter
+          'vendor-bash': [
+            'just-bash'
           ],
           // Heavy libraries split out
           'vendor-reactflow': [
@@ -98,14 +129,17 @@ export default defineConfig({
           ],
           // Markdown rendering
           'vendor-markdown': [
-            'react-markdown', 
+            'unified',
+            'rehype-react',
+            'remark-parse',
+            'remark-rehype',
             'remark-breaks', 
             'remark-gfm',
             'remark-gemoji',
             'remark-math',
-            'rehype-raw', 
-            'rehype-sanitize',
-            'rehype-katex'
+            'rehype-katex',
+            'emoji-regex',
+            '@fontsource/noto-emoji'
           ],
           // UI libraries
           'vendor-ui': [
