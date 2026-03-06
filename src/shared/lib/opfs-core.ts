@@ -1,3 +1,4 @@
+import { artifactContentToBlob } from './artifactFiles';
 import { inferContentTypeFromPath } from './fileTypes';
 
 /**
@@ -78,15 +79,14 @@ export async function getDirectory(
  */
 export async function writeJson<T>(path: string, data: T): Promise<void> {
   const json = JSON.stringify(data);
-  await writeText(path, json);
+  await writeText(path, json, 'application/json');
 }
 
 /**
  * Write text data to a file.
  */
-export async function writeText(path: string, content: string): Promise<void> {
-  const blob = new Blob([content], { type: 'application/json' });
-  await writeBlob(path, blob);
+export async function writeText(path: string, content: string, contentType: string = 'text/plain;charset=utf-8'): Promise<void> {
+  await writeBlob(path, artifactContentToBlob(content, contentType));
 }
 
 /**
@@ -153,6 +153,22 @@ export async function readBlob(path: string): Promise<Blob | undefined> {
     }
     throw error;
   }
+}
+
+/**
+ * Read file metadata without hydrating file content.
+ * Returns undefined if file doesn't exist.
+ */
+export async function readFileMetadata(path: string): Promise<{ size: number; contentType?: string } | undefined> {
+  const blob = await readBlob(path);
+  if (!blob) {
+    return undefined;
+  }
+
+  return {
+    size: blob.size,
+    contentType: blob.type || inferContentType(path),
+  };
 }
 
 /**

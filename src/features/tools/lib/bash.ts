@@ -1,7 +1,7 @@
 import { Bash, InMemoryFs } from 'just-bash/browser';
 import type { InitialFiles } from 'just-bash/browser';
+import { bytesToDataUrl, dataUrlToBytes } from '@/shared/lib/artifactFiles';
 import { inferContentTypeFromPath, isTextContentType } from '@/shared/lib/fileTypes';
-import { parseDataUrl } from '@/shared/lib/utils';
 import type { OverlayFile } from '@/features/artifacts/lib/fs';
 
 export interface BashExecutionRequest {
@@ -22,27 +22,10 @@ export interface BashInstance {
 
 const HOME = '/home/user';
 
-function decodeBase64(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let index = 0; index < binaryString.length; index += 1) {
-    bytes[index] = binaryString.charCodeAt(index);
-  }
-  return bytes;
-}
-
-function encodeBase64(bytes: Uint8Array): string {
-  let binaryString = '';
-  for (const byte of bytes) {
-    binaryString += String.fromCharCode(byte);
-  }
-  return btoa(binaryString);
-}
-
 function toFsContent(file: { content: string; contentType?: string }): string | Uint8Array {
-  const parsed = parseDataUrl(file.content);
+  const parsed = dataUrlToBytes(file.content);
   if (parsed) {
-    return decodeBase64(parsed.data);
+    return parsed.bytes;
   }
 
   return file.content;
@@ -59,7 +42,7 @@ function toOverlayFile(path: string, content: Uint8Array): OverlayFile {
 
   const mimeType = contentType ?? 'application/octet-stream';
   return {
-    content: `data:${mimeType};base64,${encodeBase64(content)}`,
+    content: bytesToDataUrl(content, mimeType),
     contentType: mimeType,
   };
 }

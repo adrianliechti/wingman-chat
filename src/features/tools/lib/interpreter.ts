@@ -1,4 +1,5 @@
 import { loadPyodide as loadPyodideRuntime, version as pyodideVersion, type PyodideInterface } from 'pyodide';
+import { bytesToDataUrl, dataUrlToBytes, isDataUrlContent } from '@/shared/lib/artifactFiles';
 import { inferContentTypeFromPath, isTextContentType } from '@/shared/lib/fileTypes';
 
 interface ArtifactFile {
@@ -203,42 +204,17 @@ function toFsPath(path: string): string {
   return `${PYODIDE_BASE_DIR}/${relativePath}`;
 }
 
-function isDataUrl(content: string): boolean {
-  return content.startsWith('data:');
-}
-
 function isBinaryFile(file: ArtifactFile): boolean {
-  return isDataUrl(file.content) || (!!file.contentType && !isTextContentType(file.contentType));
+  return isDataUrlContent(file.content) || (!!file.contentType && !isTextContentType(file.contentType));
 }
 
-function decodeBase64(content: string): Uint8Array {
-  const binaryString = atob(content);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let index = 0; index < binaryString.length; index += 1) {
-    bytes[index] = binaryString.charCodeAt(index);
-  }
-  return bytes;
-}
-
-function decodeDataUrl(content: string): Uint8Array {
-  const commaIndex = content.indexOf(',');
-  if (commaIndex === -1) {
-    throw new Error('Invalid data URL content');
+function toBinaryBytes(file: ArtifactFile): Uint8Array {
+  const parsed = dataUrlToBytes(file.content);
+  if (parsed) {
+    return parsed.bytes;
   }
 
-  return decodeBase64(content.slice(commaIndex + 1));
-}
-
-function encodeBase64(bytes: Uint8Array): string {
-  let binaryString = '';
-  for (const byte of bytes) {
-    binaryString += String.fromCharCode(byte);
-  }
-  return btoa(binaryString);
-}
-
-function toDataUrl(bytes: Uint8Array, contentType: string): string {
-  return `data:${contentType};base64,${encodeBase64(bytes)}`;
+  return new TextEncoder().encode(file.content);
 }
 
 function clearPyodideDirectory(pyodide: PyodideInterface, dir: string): void {
@@ -275,7 +251,7 @@ function syncFilesToPyodide(pyodide: PyodideInterface, files: ArtifactFiles): vo
     }
 
     if (isBinaryFile(file)) {
-      pyodide.FS.writeFile(fsPath, isDataUrl(file.content) ? decodeDataUrl(file.content) : decodeBase64(file.content));
+      pyodide.FS.writeFile(fsPath, toBinaryBytes(file));
     } else {
       pyodide.FS.writeFile(fsPath, file.content);
     }
@@ -317,7 +293,7 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
 
           const bytes = pyodide.FS.readFile(fullPath) as Uint8Array;
           files[relativePath] = {
-            content: toDataUrl(bytes, contentType ?? 'application/octet-stream'),
+            content: bytesToDataUrl(bytes, contentType ?? 'application/octet-stream'),
             contentType: contentType ?? 'application/octet-stream',
           };
         } catch {

@@ -17,7 +17,7 @@ import { artifactKind, artifactLanguage, processUploadedFile } from '@/features/
 import { FileIcon } from '@/shared/ui/FileIcon';
 import { getFileName, downloadBlob } from '@/shared/lib/utils';
 import { markdownToDocx } from '@/shared/lib/markdownToDocx';
-import type { File } from '@/features/artifacts/types/file';
+import type { File, FileEntry } from '@/features/artifacts/types/file';
 
 export function ArtifactsDrawer() {
   const {
@@ -37,7 +37,7 @@ export function ArtifactsDrawer() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // State for files list (loaded from async fs.listFiles)
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<FileEntry[]>([]);
   
   // State for active file content (loaded from async fs.getFile)
   const [activeFileData, setActiveFileData] = useState<File | null>(null);
@@ -86,9 +86,9 @@ export function ArtifactsDrawer() {
       }
       
       try {
-        const fileList = await fs.listFiles();
+        const fileList = await fs.listEntries();
         if (!cancelled) {
-          setFiles(fileList.sort((a, b) => a.path.localeCompare(b.path)));
+          setFiles(fileList);
         }
       } catch (error) {
         console.error('Error loading files:', error);

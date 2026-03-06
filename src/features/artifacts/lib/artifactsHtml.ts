@@ -4,6 +4,7 @@
  * Transforms HTML content to use data URLs for virtual file references,
  * enabling iframes to access files from the artifact filesystem.
  */
+import { isDataUrlContent, normalizeArtifactReferencePath, textToDataUrl } from '@/shared/lib/artifactFiles';
 import { lookupContentType, getFileExt } from '@/shared/lib/utils';
 import type { FileSystem } from '@/features/artifacts/types/file';
 
@@ -17,32 +18,16 @@ export interface TransformResult {
 }
 
 /**
- * Normalize a file path by removing leading ./ and /
- */
-function normalizePath(path: string): string {
-  return path.replace(/^\.\//, '').replace(/^\//, '');
-}
-
-/**
- * Check if content is a data URL (base64 encoded)
- */
-function isDataUrl(content: string): boolean {
-  return content.startsWith('data:');
-}
-
-/**
  * Convert file content to a data URL
  * If already a data URL, returns as-is
  * Otherwise encodes as base64 with the appropriate MIME type
  */
 function contentToDataUrl(content: string, contentType?: string): string {
-  if (isDataUrl(content)) {
+  if (isDataUrlContent(content)) {
     return content;
   }
-  // Plain text content - encode as base64 data URL
-  const mimeType = contentType || 'text/plain';
-  const base64 = btoa(unescape(encodeURIComponent(content)));
-  return `data:${mimeType};base64,${base64}`;
+
+  return textToDataUrl(content, contentType || 'text/plain;charset=utf-8');
 }
 
 /**
@@ -54,7 +39,7 @@ function generateDataUrls(files: FileSystem): Map<string, string> {
   const urls = new Map<string, string>();
 
   for (const [path, file] of Object.entries(files)) {
-    const normalized = normalizePath(path);
+    const normalized = normalizeArtifactReferencePath(path);
     
     // Determine content type from file extension if not provided
     const ext = getFileExt(path);
@@ -77,7 +62,7 @@ function generateDataUrls(files: FileSystem): Map<string, string> {
  * Get raw file content (decode if data URL, otherwise return as-is)
  */
 function getFileContent(file: { content: string }): string {
-  if (isDataUrl(file.content)) {
+  if (isDataUrlContent(file.content)) {
     // Decode base64 data URL to get raw content
     const [header, base64] = file.content.split(',');
     // Check if it's base64 encoded
@@ -103,7 +88,7 @@ function transformCssUrls(css: string, urls: Map<string, string>): string {
     if (path.startsWith('data:') || path.startsWith('http://') || path.startsWith('https://')) {
       return match;
     }
-    const normalized = normalizePath(path);
+    const normalized = normalizeArtifactReferencePath(path);
     const dataUrl = urls.get(normalized);
     return dataUrl ? `url("${dataUrl}")` : match;
   });
@@ -154,7 +139,7 @@ export function transformHtmlForPreview(html: string, files: FileSystem): Transf
         return match;
       }
       
-      const normalized = normalizePath(href);
+      const normalized = normalizeArtifactReferencePath(href);
       // Also try with leading slash since artifacts may be stored that way
       const withSlash = '/' + normalized;
       const file = files[normalized] || files[href] || files[withSlash];
@@ -177,7 +162,7 @@ export function transformHtmlForPreview(html: string, files: FileSystem): Transf
       if (path.startsWith('data:') || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('blob:')) {
         return match;
       }
-      const normalized = normalizePath(path);
+      const normalized = normalizeArtifactReferencePath(path);
       const dataUrl = urls.get(normalized);
       return dataUrl ? `${prefix}src="${dataUrl}"` : match;
     }
@@ -194,7 +179,7 @@ export function transformHtmlForPreview(html: string, files: FileSystem): Transf
           path.startsWith('blob:')) {
         return match;
       }
-      const normalized = normalizePath(path);
+      const normalized = normalizeArtifactReferencePath(path);
       const dataUrl = urls.get(normalized);
       return dataUrl ? `${prefix}href="${dataUrl}"` : match;
     }
