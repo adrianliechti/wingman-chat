@@ -3,7 +3,7 @@ import { StreamableHTTPClientTransport as ClientTransport } from "@modelcontextp
 import type { CallToolResult, ContentBlock as MCPContentBlock, ResourceContents as MCPResourceContents, Tool as MCPTool } from "@modelcontextprotocol/sdk/types.js";
 import { AppBridge, PostMessageTransport, RESOURCE_MIME_TYPE, getToolUiResourceUri, isToolVisibilityAppOnly } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { McpUiHostCapabilities, McpUiHostContext, McpUiResourceMeta } from "@modelcontextprotocol/ext-apps/app-bridge";
-import type { Tool, ToolContext, ToolProvider, ToolIcon, TextContent, ImageContent, AudioContent, FileContent } from '@/shared/types/chat';
+import { Role, type Tool, type ToolContext, type ToolProvider, type ToolIcon, type TextContent, type ImageContent, type AudioContent, type FileContent, type Message } from '@/shared/types/chat';
 import { Rocket } from "lucide-react";
 
 const HOST_INFO = {
@@ -18,6 +18,8 @@ type UiResourceEntry = {
   content: MCPResourceContents;
   meta?: McpUiResourceMeta;
 };
+
+type McpServerCapabilities = NonNullable<ReturnType<Client['getServerCapabilities']>>;
 
 export class MCPClient implements ToolProvider {
   readonly id: string;
@@ -234,7 +236,11 @@ export class MCPClient implements ToolProvider {
     const bridge = new AppBridge(
       this.client!,
       HOST_INFO,
-      buildHostCapabilities(resource.meta),
+      buildHostCapabilities(
+        resource.meta,
+        this.client!.getServerCapabilities(),
+        !!context.sendMessage,
+      ),
       { hostContext: buildHostContext(toolDefinition, iframe) }
     );
 
@@ -303,6 +309,34 @@ export class MCPClient implements ToolProvider {
     };
 
     bridge.onrequestdisplaymode = async () => ({ mode: 'inline' });
+
+    bridge.onmessage = async ({ role, content }) => {
+      if (!context.sendMessage || role !== 'user') {
+        return { isError: true };
+      }
+
+      const textBlocks = content.filter((block): block is Extract<MCPContentBlock, { type: 'text' }> => block.type === 'text');
+
+      if (textBlocks.length !== content.length || textBlocks.length === 0) {
+        return { isError: true };
+      }
+
+      const message: Message = {
+        role: Role.User,
+        content: textBlocks.map((block) => ({
+          type: 'text',
+          text: block.text ?? '',
+        })),
+      };
+
+      try {
+        await context.sendMessage(message);
+        return {};
+      } catch (error) {
+        console.error(`Failed to process MCP app message for ${toolName}:`, error);
+        return { isError: true };
+      }
+    };
 
     bridge.onloggingmessage = ({ level, logger, data }) => {
       const prefix = logger ? `[${logger}]` : '[MCP App]';
@@ -447,17 +481,37 @@ function getHtmlContent(resource: MCPResourceContents): string {
   return '<!doctype html><html><body>No content available.</body></html>';
 }
 
-function buildHostCapabilities(resourceMeta?: McpUiResourceMeta): McpUiHostCapabilities {
-  return {
+function buildHostCapabilities(
+  resourceMeta?: McpUiResourceMeta,
+  serverCapabilities?: McpServerCapabilities | null,
+  supportsMessages = false,
+): McpUiHostCapabilities {
+  const capabilities: McpUiHostCapabilities = {
     openLinks: {},
-    serverTools: {},
-    serverResources: {},
     logging: {},
     sandbox: {
       permissions: resourceMeta?.permissions,
       csp: resourceMeta?.csp,
     },
   };
+
+  if (serverCapabilities?.tools) {
+    capabilities.serverTools = {
+      ...(serverCapabilities.tools.listChanged ? { listChanged: true } : {}),
+    };
+  }
+
+  if (serverCapabilities?.resources) {
+    capabilities.serverResources = {
+      ...(serverCapabilities.resources.listChanged ? { listChanged: true } : {}),
+    };
+  }
+
+  if (supportsMessages) {
+    capabilities.message = { text: {} };
+  }
+
+  return capabilities;
 }
 
 function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement): McpUiHostContext {

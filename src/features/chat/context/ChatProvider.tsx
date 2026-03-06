@@ -120,10 +120,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [getOrCreateChat, updateChat]
   );
 
-  const sendMessage = useCallback(
-    async (message: Message, historyOverride?: Message[]) => {
-      const { id, chat: chatObj } = await getOrCreateChat();
-
+  const runMessageInChat = useCallback(
+    async (id: string, message: Message, historyOverride?: Message[], initialTitle?: string) => {
       const history = historyOverride ?? (chats.find(c => c.id === id)?.messages || []);
       let conversation = [...history, message];
 
@@ -135,6 +133,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
         content: () => message.content.filter(p => 
           p.type === 'text' || p.type === 'image' || p.type === 'file'
         ) as Content[],
+        sendMessage: async (appMessage: Message) => {
+          await runMessageInChat(id, appMessage, conversation, initialTitle);
+        },
         elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
           return new Promise((resolve) => {
             setPendingElicitation({
@@ -236,7 +237,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               setPendingElicitation(null);
 
               // Add tool result to conversation as user message
-              conversation = [...conversation, {
+              const toolResultMessage: Message = {
                 role: Role.User,
                 content: [{
                   type: 'tool_result',
@@ -245,13 +246,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   arguments: toolCall.arguments,
                   result: result,
                 }],
-              }];
+              };
+              conversation = [...conversation, toolResultMessage];
             }
             catch (error) {
               console.error("Tool failed", error);
 
               // Add tool error to conversation as user message
-              conversation = [...conversation, {
+              const toolErrorMessage: Message = {
                 role: Role.User,
                 content: [{
                   type: 'tool_result',
@@ -264,7 +266,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   code: 'TOOL_EXECUTION_ERROR',
                   message: 'The tool could not complete the requested action. Please try again or use a different approach.'
                 },
-              }];
+              };
+              conversation = [...conversation, toolErrorMessage];
             }
           }
 
@@ -277,7 +280,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Ensure streaming buffer is cleared after completion
         setStreamingMessage(null);
 
-        if (!chatObj.title || conversation.length % 3 === 0) {
+        if (!initialTitle || conversation.length % 3 === 0) {
           client
             .summarizeTitle(model!.id, conversation)
             .then(title => {
@@ -335,7 +338,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Ensure streaming buffer is cleared on errors
         setStreamingMessage(null);
       }
-    }, [getOrCreateChat, chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, renderApp]);
+    }, [chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, renderApp]);
+
+  const sendMessage = useCallback(
+    async (message: Message, historyOverride?: Message[]) => {
+      const { id, chat: chatObj } = await getOrCreateChat();
+      if (!chatObj) {
+        throw new Error(`Chat ${id} not found`);
+      }
+      await runMessageInChat(id, message, historyOverride, chatObj.title);
+    },
+    [getOrCreateChat, runMessageInChat]
+  );
 
 
 

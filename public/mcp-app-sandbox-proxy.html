@@ -75,10 +75,17 @@
           const baseUriDomains = Array.isArray(csp == null ? void 0 : csp.baseUriDomains) && csp.baseUriDomains.length > 0
             ? csp.baseUriDomains.join(' ')
             : "'self'";
+          const scriptSources = ["'self'", "'unsafe-inline'", 'blob:', 'data:', resourceDomains]
+            .filter(Boolean)
+            .join(' ');
+          const workerSources = ["'self'", 'blob:', 'data:', resourceDomains]
+            .filter(Boolean)
+            .join(' ');
 
           return [
             "default-src 'none'",
-            `script-src 'self' 'unsafe-inline' ${resourceDomains}`.trim(),
+            `script-src ${scriptSources}`,
+            `worker-src ${workerSources}`,
             `style-src 'self' 'unsafe-inline' ${resourceDomains}`.trim(),
             `img-src 'self' data: ${resourceDomains}`.trim(),
             `font-src 'self' ${resourceDomains}`.trim(),

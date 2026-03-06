@@ -94,6 +94,7 @@ export interface ToolContext {
     content?(): Content[];
     elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
     render?(): Promise<RenderedAppHandle>;
+    sendMessage?(message: Message): Promise<void>;
 }
 
 // Content parts for messages - order matters
