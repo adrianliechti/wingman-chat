@@ -240,6 +240,7 @@ export class MCPClient implements ToolProvider {
         resource.meta,
         this.client!.getServerCapabilities(),
         !!context.sendMessage,
+        !!context.updateModelContext,
       ),
       { hostContext: buildHostContext(toolDefinition, iframe) }
     );
@@ -309,6 +310,20 @@ export class MCPClient implements ToolProvider {
     };
 
     bridge.onrequestdisplaymode = async () => ({ mode: 'inline' });
+
+    bridge.onupdatemodelcontext = async ({ content, structuredContent }) => {
+      try {
+        if (!context.updateModelContext) {
+          throw new Error('updateModelContext is not supported by the host context');
+        }
+
+        await context.updateModelContext(serializeModelContext(content, structuredContent));
+        return {};
+      } catch (error) {
+        console.error(`Failed to update model context for ${toolName}:`, error);
+        throw error instanceof Error ? error : new Error('Failed to update model context');
+      }
+    };
 
     bridge.onmessage = async ({ role, content }) => {
       if (!context.sendMessage || role !== 'user') {
@@ -485,6 +500,7 @@ function buildHostCapabilities(
   resourceMeta?: McpUiResourceMeta,
   serverCapabilities?: McpServerCapabilities | null,
   supportsMessages = false,
+  supportsModelContext = false,
 ): McpUiHostCapabilities {
   const capabilities: McpUiHostCapabilities = {
     openLinks: {},
@@ -509,6 +525,13 @@ function buildHostCapabilities(
 
   if (supportsMessages) {
     capabilities.message = { text: {} };
+  }
+
+  if (supportsModelContext) {
+    capabilities.updateModelContext = {
+      text: {},
+      structuredContent: {},
+    };
   }
 
   return capabilities;
@@ -555,4 +578,46 @@ function isSafeExternalUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function serializeModelContext(
+  content?: MCPContentBlock[],
+  structuredContent?: Record<string, unknown>,
+): string | null {
+  const textParts = (content ?? []).map(serializeModelContextBlock).filter((part): part is string => !!part);
+
+  if (structuredContent && Object.keys(structuredContent).length > 0) {
+    textParts.push(`Structured context:\n${JSON.stringify(structuredContent, null, 2)}`);
+  }
+
+  if (textParts.length === 0) {
+    return null;
+  }
+
+  return textParts.join('\n\n');
+}
+
+function serializeModelContextBlock(block: MCPContentBlock): string | null {
+  if (block.type === 'text') {
+    const text = block.text?.trim();
+    return text ? text : null;
+  }
+
+  if (block.type === 'image') {
+    return `[Image context: ${block.mimeType ?? 'image'}]`;
+  }
+
+  if (block.type === 'audio') {
+    return `[Audio context: ${block.mimeType ?? 'audio'}]`;
+  }
+
+  if (block.type === 'resource_link') {
+    return `[Resource link context: ${block.uri}]`;
+  }
+
+  if (block.type === 'resource') {
+    return `[Embedded resource context: ${block.resource?.uri ?? 'resource'}]`;
+  }
+
+  return JSON.stringify(block);
 }

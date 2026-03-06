@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Role } from "@/shared/types/chat";
 import type { Message, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation, Content } from '@/shared/types/chat';
 import { useModels } from "@/features/chat/hooks/useModels";
@@ -30,6 +30,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
+  const pendingModelContextRef = useRef<Map<string, string | null>>(new Map());
 
   const chat = chats.find(c => c.id === chatId) ?? null;
   const agentModel = currentAgent?.model ? models.find(m => m.id === currentAgent.model) ?? null : null;
@@ -120,21 +121,39 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [getOrCreateChat, updateChat]
   );
 
+  const updateModelContext = useCallback(async (targetChatId: string, text: string | null) => {
+    if (!text || !text.trim()) {
+      pendingModelContextRef.current.delete(targetChatId);
+      return;
+    }
+
+    pendingModelContextRef.current.set(targetChatId, text.trim());
+  }, []);
+
   const runMessageInChat = useCallback(
     async (id: string, message: Message, historyOverride?: Message[], initialTitle?: string) => {
       const history = historyOverride ?? (chats.find(c => c.id === id)?.messages || []);
-      let conversation = [...history, message];
+      const pendingModelContext = pendingModelContextRef.current.get(id) ?? null;
+      pendingModelContextRef.current.delete(id);
+
+      const outgoingMessage = appendTextContent(message, pendingModelContext);
+
+      let conversation = [...history, outgoingMessage];
+      let modelConversation = [...conversation];
 
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
 
       // Create tool context with current message content and elicitation support
       const createToolContext = (currentToolCall: { id: string; name: string }): ToolContext => ({
-        content: () => message.content.filter(p => 
+        content: () => outgoingMessage.content.filter((p: Content) => 
           p.type === 'text' || p.type === 'image' || p.type === 'file'
         ) as Content[],
         sendMessage: async (appMessage: Message) => {
           await runMessageInChat(id, appMessage, conversation, initialTitle);
+        },
+        updateModelContext: async (text: string | null) => {
+          await updateModelContext(id, text);
         },
         elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
           return new Promise((resolve) => {
@@ -166,7 +185,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           const assistantMessage = await client.complete(
             model!.id,
             instructions,
-            conversation,
+            modelConversation,
             tools,
             (contentParts) => {
               setStreamingMessage({ 
@@ -186,6 +205,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
           // Add the assistant message to conversation
           conversation = [...conversation, assistantMessage];
+          modelConversation = [...modelConversation, assistantMessage];
 
           // Commit the completed message once per turn
           updateChat(id, () => ({ messages: conversation }));
@@ -223,6 +243,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   message: `Tool "${toolCall.name}" is not available or not executable.`
                 },
               }];
+              modelConversation = [...modelConversation, conversation[conversation.length - 1]];
 
               continue;
             }
@@ -248,6 +269,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 }],
               };
               conversation = [...conversation, toolResultMessage];
+              modelConversation = [...modelConversation, toolResultMessage];
             }
             catch (error) {
               console.error("Tool failed", error);
@@ -268,6 +290,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 },
               };
               conversation = [...conversation, toolErrorMessage];
+              modelConversation = [...modelConversation, toolErrorMessage];
             }
           }
 
@@ -338,7 +361,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Ensure streaming buffer is cleared on errors
         setStreamingMessage(null);
       }
-    }, [chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, renderApp]);
+    }, [chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, renderApp, updateModelContext]);
 
   const sendMessage = useCallback(
     async (message: Message, historyOverride?: Message[]) => {
@@ -389,3 +412,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
+
+function appendTextContent(message: Message, text: string | null): Message {
+  if (!text || message.role !== Role.User) {
+    return message;
+  }
+
+  return {
+    ...message,
+    content: [...message.content, { type: 'text', text }],
+  };
+}
+
+
