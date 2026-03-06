@@ -1,9 +1,23 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport as ClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult, ContentBlock as MCPContentBlock, ResourceContents as MCPResourceContents, Tool as MCPTool } from "@modelcontextprotocol/sdk/types.js";
-import { AppBridge, PostMessageTransport } from "@modelcontextprotocol/ext-apps/app-bridge";
+import { AppBridge, PostMessageTransport, RESOURCE_MIME_TYPE, getToolUiResourceUri, isToolVisibilityAppOnly } from "@modelcontextprotocol/ext-apps/app-bridge";
+import type { McpUiHostCapabilities, McpUiHostContext, McpUiResourceMeta } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { Tool, ToolContext, ToolProvider, ToolIcon, TextContent, ImageContent, AudioContent, FileContent } from '@/shared/types/chat';
 import { Rocket } from "lucide-react";
+
+const HOST_INFO = {
+  name: 'Wingman Chat',
+  version: '1.0.0',
+};
+
+const MCP_UI_EXTENSION = 'io.modelcontextprotocol/ui';
+
+type UiResourceEntry = {
+  uri: string;
+  content: MCPResourceContents;
+  meta?: McpUiResourceMeta;
+};
 
 export class MCPClient implements ToolProvider {
   readonly id: string;
@@ -17,13 +31,15 @@ export class MCPClient implements ToolProvider {
   readonly headers?: Record<string, string>;
 
   private client: Client | null = null;
+  private activeBridge: AppBridge | null = null;
   
   private pingInterval: ReturnType<typeof setInterval> | undefined;
 
   instructions?: string;
 
   tools: Tool[] = [];
-  uiResources: Map<string, MCPResourceContents> = new Map();
+  uiResources: Map<string, UiResourceEntry> = new Map();
+  toolDefinitions: Map<string, MCPTool> = new Map();
 
   constructor(
     id: string, 
@@ -58,9 +74,14 @@ export class MCPClient implements ToolProvider {
     const url = new URL(this.url);
     const transport = new ClientTransport(url, opts);
 
-    const client = new Client({
-      name: 'Wingman Chat',
-      version: '1.0.0'
+    const client = new Client(HOST_INFO, {
+      capabilities: {
+        extensions: {
+          [MCP_UI_EXTENSION]: {
+            mimeTypes: [RESOURCE_MIME_TYPE],
+          },
+        },
+      } as never,
     });
 
     // Setup error and close handlers
@@ -94,6 +115,7 @@ export class MCPClient implements ToolProvider {
   
   async disconnect(): Promise<void> {
     this.stopPing();
+    await this.cleanupActiveBridge();
     
     if (this.client) {
       try {
@@ -113,7 +135,29 @@ export class MCPClient implements ToolProvider {
     this.client = null;
     this.tools = [];
     this.uiResources.clear();
+    this.toolDefinitions.clear();
     this.instructions = undefined;
+  }
+
+  private async cleanupActiveBridge(): Promise<void> {
+    if (!this.activeBridge) {
+      return;
+    }
+
+    const bridge = this.activeBridge;
+    this.activeBridge = null;
+
+    try {
+      await bridge.teardownResource({});
+    } catch {
+      // Ignore teardown failures for sessions that never fully initialized.
+    }
+
+    try {
+      await bridge.close();
+    } catch (error) {
+      console.error('Error closing MCP app bridge:', error);
+    }
   }
   
   private async loadToolsAndInstructions(): Promise<void> {
@@ -128,8 +172,11 @@ export class MCPClient implements ToolProvider {
       // Load tools
       const toolsResponse = await this.client.listTools();
       const tools = toolsResponse.tools || [];
+      this.toolDefinitions = new Map(tools.map((tool) => [tool.name, tool]));
 
-      this.tools = tools.map((tool) => ({
+      this.tools = tools
+        .filter((tool) => !isToolVisibilityAppOnly(tool))
+        .map((tool) => ({
         name: tool.name,
 
         description: tool.description || "",
@@ -154,7 +201,7 @@ export class MCPClient implements ToolProvider {
           const resource = this.uiResources.get(tool.name);
           
           if (resource && context?.render) {
-            await this.renderToolUI(tool.name, resource, normalizedResult, context);
+            await this.renderToolUI(tool.name, resource, normalizedResult, args, context);
             return [{ type: 'text' as const, text: "The tool result has been rendered in an interactive UI component and is now visible to the user." }];
           }
           
@@ -171,39 +218,110 @@ export class MCPClient implements ToolProvider {
   
   private async renderToolUI(
     toolName: string,
-    resource: MCPResourceContents,
+    resource: UiResourceEntry,
     result: CallToolResult,
+    args: Record<string, unknown>,
     context: ToolContext
   ): Promise<void> {
-    const iframe = await context.render!();
-    
+    const renderTarget = await context.render!();
+    const { iframe } = renderTarget;
+    const toolDefinition = this.toolDefinitions.get(toolName);
+
+    if (!toolDefinition) {
+      throw new Error(`MCP tool definition not found for ${toolName}`);
+    }
+
     const bridge = new AppBridge(
       this.client!,
-      { name: "Wingman Chat", version: "1.0.0" },
-      { openLinks: {}, serverTools: {}, logging: {} }
+      HOST_INFO,
+      buildHostCapabilities(resource.meta),
+      { hostContext: buildHostContext(toolDefinition, iframe) }
     );
+
+    this.activeBridge = bridge;
+
+    renderTarget.registerCleanup(async () => {
+      if (this.activeBridge === bridge) {
+        this.activeBridge = null;
+      }
+
+      try {
+        await bridge.teardownResource({});
+      } catch {
+        // Ignore teardown failures for sessions that are still booting.
+      }
+
+      try {
+        await bridge.close();
+      } catch (error) {
+        console.error('Error closing MCP app bridge:', error);
+      }
+    });
     
     const transport = new PostMessageTransport(
       iframe.contentWindow!,
       iframe.contentWindow!,
     );
     
+    bridge.onsandboxready = () => {
+      bridge.sendSandboxResourceReady({
+        html: getHtmlContent(resource.content),
+        sandbox: 'allow-scripts',
+        csp: resource.meta?.csp,
+        permissions: resource.meta?.permissions,
+      }).catch((error) => {
+        console.error(`Failed to load sandbox resource for ${toolName}:`, error);
+      });
+    };
+
     bridge.oninitialized = () => {
-      console.log("Guest UI initialized for tool:", toolName);
-      bridge.sendToolResult(result);
+      console.log('Guest UI initialized for tool:', toolName);
+      bridge.sendToolInput({ arguments: args })
+        .then(() => bridge.sendToolResult(result))
+        .catch((error) => {
+          console.error(`Failed to send MCP app data for ${toolName}:`, error);
+        });
+    };
+
+    bridge.onsizechange = ({ width, height }) => {
+      if (typeof width === 'number' && width > 0) {
+        iframe.style.width = `${width}px`;
+      }
+
+      if (typeof height === 'number' && height > 0) {
+        iframe.style.height = `${height}px`;
+      }
+    };
+
+    bridge.onopenlink = async ({ url }) => {
+      if (!isSafeExternalUrl(url)) {
+        return { isError: true };
+      }
+
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      return opened ? {} : { isError: true };
+    };
+
+    bridge.onrequestdisplaymode = async () => ({ mode: 'inline' });
+
+    bridge.onloggingmessage = ({ level, logger, data }) => {
+      const prefix = logger ? `[${logger}]` : '[MCP App]';
+      const line = `${prefix} ${level}`;
+
+      if (level === 'error' || level === 'critical' || level === 'alert' || level === 'emergency') {
+        console.error(line, data);
+        return;
+      }
+
+      if (level === 'warning') {
+        console.warn(line, data);
+        return;
+      }
+
+      console.log(line, data);
     };
     
     await bridge.connect(transport);
-    
-    const htmlContent = 'text' in resource
-      ? (resource.text as string)
-      : 'blob' in resource
-        ? atob(resource.blob as string)
-        : '<html><body>No content available</body></html>';
-    
-    iframe.contentWindow!.document.open();
-    iframe.contentWindow!.document.writeln(htmlContent);
-    iframe.contentWindow!.document.close();
   }
   
   private async loadUIResources(tools: MCPTool[]): Promise<void> {
@@ -215,12 +333,13 @@ export class MCPClient implements ToolProvider {
     const uriToTools = new Map<string, string[]>();
     
     for (const tool of tools) {
-      let resourceUri: string | undefined = undefined;
+      let resourceUri: string | undefined;
 
-      if (tool._meta?.ui && typeof tool._meta.ui === 'object' && 'resourceUri' in tool._meta.ui) {
-        resourceUri = (tool._meta.ui as Record<string, unknown>).resourceUri as string | undefined;
-      } else if (tool._meta && typeof tool._meta === 'object' && 'ui/resourceUri' in tool._meta) {
-        resourceUri = (tool._meta['ui/resourceUri'] as string) || undefined;
+      try {
+        resourceUri = getToolUiResourceUri(tool);
+      } catch (error) {
+        console.warn(`Skipping invalid MCP UI resource URI for ${tool.name}:`, error);
+        continue;
       }
 
       if (resourceUri) {
@@ -237,10 +356,18 @@ export class MCPClient implements ToolProvider {
           const result = await this.client!.readResource({ uri });
           const content = result.contents[0];
 
-          if (content) {
-            for (const toolName of toolNames) {
-              this.uiResources.set(toolName, content);
-            }
+          if (!content || content.mimeType !== RESOURCE_MIME_TYPE || !content.uri?.startsWith('ui://')) {
+            return;
+          }
+
+          const entry: UiResourceEntry = {
+            uri,
+            content,
+            meta: content._meta?.ui as McpUiResourceMeta | undefined,
+          };
+
+          for (const toolName of toolNames) {
+            this.uiResources.set(toolName, entry);
           }
         } catch (error) {
           console.error(`Error loading resource ${uri}:`, error);
@@ -306,4 +433,72 @@ function processContent(input: MCPContentBlock[]): ToolResultContent[] {
     .filter((c): c is ToolResultContent => c !== null);
 
   return result.length ? result : [{ type: 'text' as const, text: JSON.stringify(input.length === 1 ? input[0] : input) }];
+}
+
+function getHtmlContent(resource: MCPResourceContents): string {
+  if ('text' in resource && typeof resource.text === 'string') {
+    return resource.text;
+  }
+
+  if ('blob' in resource && typeof resource.blob === 'string') {
+    return atob(resource.blob);
+  }
+
+  return '<!doctype html><html><body>No content available.</body></html>';
+}
+
+function buildHostCapabilities(resourceMeta?: McpUiResourceMeta): McpUiHostCapabilities {
+  return {
+    openLinks: {},
+    serverTools: {},
+    serverResources: {},
+    logging: {},
+    sandbox: {
+      permissions: resourceMeta?.permissions,
+      csp: resourceMeta?.csp,
+    },
+  };
+}
+
+function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement): McpUiHostContext {
+  const isDark = document.documentElement.classList.contains('dark');
+  const width = iframe.clientWidth || undefined;
+  const height = iframe.clientHeight || undefined;
+
+  return {
+    toolInfo: { tool },
+    theme: isDark ? 'dark' : 'light',
+    styles: {
+      variables: {
+        '--color-background-primary': isDark ? '#0a0a0a' : '#ffffff',
+        '--color-text-primary': isDark ? '#fafafa' : '#171717',
+        '--color-border-primary': isDark ? '#404040' : '#d4d4d4',
+        '--font-sans': 'ui-sans-serif, system-ui, sans-serif',
+        '--font-mono': 'ui-monospace, SFMono-Regular, monospace',
+      } as NonNullable<NonNullable<McpUiHostContext['styles']>['variables']>,
+    },
+    displayMode: 'inline',
+    availableDisplayModes: ['inline'],
+    containerDimensions: {
+      ...(typeof width === 'number' ? { maxWidth: width } : {}),
+      ...(typeof height === 'number' ? { maxHeight: height } : {}),
+    },
+    locale: navigator.language,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    userAgent: navigator.userAgent,
+    platform: window.innerWidth < 768 ? 'mobile' : 'web',
+    deviceCapabilities: {
+      touch: window.matchMedia('(pointer: coarse)').matches,
+      hover: window.matchMedia('(hover: hover)').matches,
+    },
+  };
+}
+
+function isSafeExternalUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }

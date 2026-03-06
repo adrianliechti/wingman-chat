@@ -85,10 +85,15 @@ export type PendingElicitation = {
     resolve: (result: ElicitationResult) => void;
 };
 
+export interface RenderedAppHandle {
+    iframe: HTMLIFrameElement;
+    registerCleanup(cleanup: () => Promise<void> | void): void;
+}
+
 export interface ToolContext {
     content?(): Content[];
     elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
-    render?(): Promise<HTMLIFrameElement>;
+    render?(): Promise<RenderedAppHandle>;
 }
 
 // Content parts for messages - order matters

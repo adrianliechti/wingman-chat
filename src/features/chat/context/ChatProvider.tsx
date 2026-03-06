@@ -23,7 +23,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { isAvailable: artifactsEnabled, setChatId: setArtifactsChatId } = useArtifacts();
-  const { getIframe, showDrawer } = useApp();
+  const { renderApp } = useApp();
   const { currentAgent } = useAgents();
   const { resetTools } = useToolsContext();
   const [chatId, setChatId] = useState<string | null>(null);
@@ -145,20 +145,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
             });
           });
         },
-        render: async (): Promise<HTMLIFrameElement> => {
+        render: async () => {
           console.log('[Render] Getting iframe for tool call:', currentToolCall.id, currentToolCall.name);
-          
-          // Get the persistent iframe from the drawer
-          const iframe = getIframe();
-          
-          if (!iframe) {
-            throw new Error('App drawer iframe not available. Make sure the drawer is mounted.');
-          }
-          
-          // Show the drawer when rendering
-          showDrawer();
-          
-          return iframe;
+
+          return renderApp();
         }
       });
 
@@ -345,7 +335,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Ensure streaming buffer is cleared on errors
         setStreamingMessage(null);
       }
-    }, [getOrCreateChat, chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, getIframe, showDrawer]);
+    }, [getOrCreateChat, chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, renderApp]);
 
 
 
