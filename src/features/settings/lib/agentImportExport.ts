@@ -79,6 +79,77 @@ export async function exportAgentsAsZip(): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Export a single agent (with referenced skills) as a ZIP.
+ */
+export async function exportSingleAgentAsZip(
+  agentId: string,
+  { includeMemory = false }: { includeMemory?: boolean } = {},
+): Promise<void> {
+  const zip = new JSZip();
+
+  // Add agent's own files (AGENTS.md, servers.json, files/, etc.) at the root
+  const agentHandle = await getDirectory(`agents/${agentId}`);
+  await addDirectoryToZip(agentHandle, zip);
+
+  // Strip MEMORY.md unless explicitly requested
+  if (!includeMemory) {
+    zip.remove('MEMORY.md');
+  }
+
+  // Parse skill names from AGENTS.md and bundle referenced skills
+  const md =
+    (await readText(`agents/${agentId}/AGENTS.md`)) ||
+    (await readText(`agents/${agentId}/AGENT.md`));
+
+  if (md) {
+    const skillsMatch = md.match(/^skills:\s*(.+)$/m);
+    if (skillsMatch) {
+      let skillNames: string[];
+      const raw = skillsMatch[1].trim();
+      const bracketMatch = raw.match(/^\[(.*)\]$/);
+      if (bracketMatch) {
+        skillNames = bracketMatch[1]
+          .split(',')
+          .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+          .filter(Boolean);
+      } else {
+        skillNames = raw.split(',').map((s) => s.trim()).filter(Boolean);
+      }
+
+      const skillsFolder = zip.folder('skills')!;
+      for (const skillName of skillNames) {
+        try {
+          const skillHandle = await getDirectory(`skills/${skillName}`);
+          const skillZipFolder = skillsFolder.folder(skillName)!;
+          await addDirectoryToZip(skillHandle, skillZipFolder);
+        } catch {
+          /* skill folder missing */
+        }
+      }
+    }
+  }
+
+  // Derive a filename-safe agent name from AGENTS.md frontmatter
+  let agentName = 'agent';
+  if (md) {
+    const nameMatch = md.match(/^name:\s*(.+)$/m);
+    if (nameMatch) {
+      agentName = nameMatch[1].trim().replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+    }
+  }
+
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `wingman-agent-${agentName}-${new Date().toISOString().split('T')[0]}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // ============================================================================
 // Import — ZIP
 // ============================================================================

@@ -2,9 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Plus, Folder, X, ChevronDown, Check, Edit,
   Trash2, PenLine, MessageSquare, Sparkles,
-  Bot,
+  Bot, Download, Upload,
 } from 'lucide-react';
 import { useAgents } from '@/features/agent/hooks/useAgents';
+import { exportSingleAgentAsZip, importAgentsFromZip, importAgentsFromLegacyJson } from '@/features/settings/lib/agentImportExport';
 import { getConfig } from '@/shared/config';
 import type { Agent } from '@/features/agent/types/agent';
 import { InstructionsSection } from './InstructionsSection';
@@ -235,6 +236,9 @@ export function AgentDrawer() {
                       </div>
                       {!isEditing && (
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity ml-2">
+                          <button type="button" onClick={e => { e.stopPropagation(); exportSingleAgentAsZip(agent.id); }} className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-400 rounded transition-colors" title="Export agent">
+                            <Download size={12} />
+                          </button>
                           <button type="button" onClick={e => { e.stopPropagation(); startInlineEdit(agent); }} className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-400 rounded transition-colors" title="Edit name">
                             <Edit size={12} />
                           </button>
@@ -279,6 +283,60 @@ export function AgentDrawer() {
               <div className="flex items-center gap-2"><MessageSquare size={12} className="shrink-0" /><span>Configure tools & MCP servers</span></div>
             </div>
           )}
+          <div className="flex items-center gap-2 mt-6">
+            <button
+              type="button"
+              onClick={() => { setIsCreatingNew(true); setEditingName(''); setIsDropdownOpen(true); }}
+              className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+            >
+              <Plus size={12} />
+              Create Agent
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.zip,.json';
+                input.multiple = false;
+                input.onchange = async (event) => {
+                  const file = (event.target as HTMLInputElement).files?.[0];
+                  if (!file) return;
+                  const isZip = file.name.endsWith('.zip');
+                  if (isZip) {
+                    if (!window.confirm('Import agents from ZIP? This will merge with your existing agents and skills.')) return;
+                    try {
+                      await importAgentsFromZip(file);
+                      alert('Agents imported successfully! Please refresh the page to see the changes.');
+                      window.location.reload();
+                    } catch (error) {
+                      console.error('Failed to import agents:', error);
+                      alert('Failed to import agents. Please check the file and try again.');
+                    }
+                  } else {
+                    try {
+                      const jsonData = await file.text();
+                      const parsed = JSON.parse(jsonData);
+                      const count = parsed.repositories?.length ?? 0;
+                      if (!count) { alert('Invalid import file.'); return; }
+                      if (!window.confirm(`Import ${count} legacy repositor${count === 1 ? 'y' : 'ies'} as agents?`)) return;
+                      const result = await importAgentsFromLegacyJson(jsonData);
+                      alert(`Imported ${result.imported} agent${result.imported === 1 ? '' : 's'}. Please refresh to see changes.`);
+                      window.location.reload();
+                    } catch (error) {
+                      console.error('Failed to import agents:', error);
+                      alert('Failed to import. Please check the file format and try again.');
+                    }
+                  }
+                };
+                input.click();
+              }}
+              className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+            >
+              <Upload size={12} />
+              Import Agent(s)
+            </button>
+          </div>
         </div>
       )}
     </div>
