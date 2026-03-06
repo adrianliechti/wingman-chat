@@ -328,13 +328,17 @@ export function useArtifactsProvider(): ToolProvider | null {
       // --- Code Execution Tools ---
       {
         name: "execute_python_code",
-        description: "Execute Python code with optional package dependencies. Works with the artifacts filesystem — all artifact files are available under /home/pyodide/ and any files written there are synced back.",
+        description: "Execute Python code or run a Python artifact file with optional package dependencies. Works with the artifacts filesystem — all artifact files are available under /home/pyodide/ and any files written there are synced back.",
         parameters: {
           type: "object",
           properties: {
             code: {
               type: "string",
-              description: "The Python code to execute. Can include imports, functions, calculations, and print statements."
+              description: "Inline Python code to execute. Prefer this for short snippets; use `path` for existing scripts in artifacts."
+            },
+            path: {
+              type: "string",
+              description: "Path to a Python script in the artifacts filesystem to execute, such as `/analysis.py`. Prefer this for existing or longer scripts."
             },
             packages: {
               type: "array",
@@ -342,10 +346,11 @@ export function useArtifactsProvider(): ToolProvider | null {
               description: "Optional list of Python packages required (e.g., ['numpy', 'pandas']). These will be available for import."
             }
           },
-          required: ["code"]
+          required: []
         },
         function: async (args: Record<string, unknown>) => {
           const { code, packages } = args;
+          const path = normalizePath(args.path as string | undefined);
 
           try {
             // Load artifact files into Pyodide's VFS
@@ -357,8 +362,33 @@ export function useArtifactsProvider(): ToolProvider | null {
               }
             }
 
+            const hasCode = typeof code === 'string' && code.trim().length > 0;
+            const hasPath = typeof path === 'string' && path.length > 0;
+
+            if (hasCode === hasPath) {
+              return [{
+                type: 'text' as const,
+                text: 'Error executing code: provide exactly one of `code` or `path`.',
+              }];
+            }
+
+            let script = code as string;
+
+            if (hasPath) {
+              if (!fs) {
+                return [{ type: 'text' as const, text: 'Error executing code: file system not available.' }];
+              }
+
+              const file = await fs.getFile(path);
+              if (!file) {
+                return [{ type: 'text' as const, text: `Error executing code: file not found: ${path}` }];
+              }
+
+              script = file.content;
+            }
+
             const result = await executeCode({
-              code: code as string,
+              code: script,
               packages: packages as string[] | undefined,
               files: artifactFiles,
             });

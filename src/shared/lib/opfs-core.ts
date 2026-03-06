@@ -1,3 +1,5 @@
+import { inferContentTypeFromPath } from './fileTypes';
+
 /**
  * OPFS Core — File/folder CRUD, index management, storage usage, and shared utilities.
  *
@@ -476,38 +478,5 @@ export function parsePath(path: string): { dir: string; name: string } {
  * Infer content type from file path extension.
  */
 export function inferContentType(path: string): string | undefined {
-  const ext = path.split('.').pop()?.toLowerCase();
-  const contentTypes: Record<string, string> = {
-    'html': 'text/html',
-    'htm': 'text/html',
-    'css': 'text/css',
-    'js': 'text/javascript',
-    'jsx': 'text/javascript',
-    'ts': 'text/typescript',
-    'tsx': 'text/typescript',
-    'json': 'application/json',
-    'md': 'text/markdown',
-    'txt': 'text/plain',
-    'svg': 'image/svg+xml',
-    'png': 'image/png',
-    'jpg': 'image/jpeg',
-    'jpeg': 'image/jpeg',
-    'gif': 'image/gif',
-    'webp': 'image/webp',
-    'pdf': 'application/pdf',
-    'xml': 'application/xml',
-    'yaml': 'application/yaml',
-    'yml': 'application/yaml',
-    'csv': 'text/csv',
-    'py': 'text/x-python',
-    'rb': 'text/x-ruby',
-    'go': 'text/x-go',
-    'rs': 'text/x-rust',
-    'java': 'text/x-java',
-    'c': 'text/x-c',
-    'cpp': 'text/x-c++',
-    'h': 'text/x-c',
-    'hpp': 'text/x-c++',
-  };
-  return ext ? contentTypes[ext] : undefined;
+  return inferContentTypeFromPath(path);
 }

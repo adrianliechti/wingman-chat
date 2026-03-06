@@ -4,7 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "npm run bundle:pyodide",
     "dev": "vite",
+    "bundle:pyodide": "node scripts/bundle-pyodide-packages.mjs",
+    "prebuild": "npm run bundle:pyodide",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

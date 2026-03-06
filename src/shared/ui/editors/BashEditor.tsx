@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useArtifacts } from '@/features/artifacts/hooks/useArtifacts';
 import { createBashInstance, loadArtifactsIntoFs, readFilesFromFs } from '@/features/tools/lib/bash';
 import type { BashInstance } from '@/features/tools/lib/bash';
+import type { OverlayFile } from '@/features/artifacts/lib/fs';
 
 interface BashEditorProps {
   /** If provided, this script content is shown as the initial command (for .sh files) */
@@ -28,7 +29,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
   const [historyIndex, setHistoryIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
-  const previousFilesRef = useRef<Record<string, string>>({});
+  const previousFilesRef = useRef<Record<string, OverlayFile>>({});
   const hasRunInitialScript = useRef(false);
 
   useEffect(() => {
@@ -46,9 +47,9 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
       if (cancelled) return;
 
       // Create bash instance with artifact files preloaded
-      const fileMap: Record<string, { content: string }> = {};
+      const fileMap: Record<string, { content: string; contentType?: string }> = {};
       for (const file of artifactFiles) {
-        fileMap[file.path] = { content: file.content };
+        fileMap[file.path] = { content: file.content, contentType: file.contentType };
       }
 
       const instance = createBashInstance(fileMap);
@@ -67,7 +68,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     init();
 
     return () => { cancelled = true; };
-  }, [fs]);
+  }, [fs, fs?.chatId]);
 
   // Run initial script once when bash is ready
   useEffect(() => {
@@ -94,9 +95,10 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
       const prevFiles = previousFilesRef.current;
 
       // Find new or modified files
-      for (const [path, content] of Object.entries(currentFiles)) {
-        if (prevFiles[path] !== content) {
-          await fs.createFile(path, content);
+      for (const [path, file] of Object.entries(currentFiles)) {
+        const previous = prevFiles[path];
+        if (!previous || previous.content !== file.content || previous.contentType !== file.contentType) {
+          await fs.createFile(path, file.content, file.contentType);
         }
       }
 
@@ -111,7 +113,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     } catch (error) {
       console.error('Error syncing bash FS to artifacts:', error);
     }
-  }, [fs]);
+  }, [fs, fs?.chatId]);
 
   // Sync new artifact files into bash (when created externally, e.g. by the LLM)
   useEffect(() => {
@@ -140,7 +142,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
       unsubCreate();
       unsubUpdate();
     };
-  }, [fs, isReady]);
+  }, [fs, fs?.chatId, isReady]);
 
   const executeCommand = useCallback(async (command: string) => {
     if (!instanceRef.current || !command.trim()) return;

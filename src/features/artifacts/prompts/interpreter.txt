@@ -11,22 +11,30 @@ You have access to a code interpreter with two tools:
 **Always use Python for:**
 - Mathematical calculations and numerical operations
 - Data analysis and transformations (pandas, numpy)
+- Data visualization (matplotlib, plotly, seaborn)
+- Office document processing (Excel, Word, PowerPoint)
 - Algorithm testing and validation
 - Complex logic that benefits from actual execution
 - Statistical computations
 - String/text processing with complex logic
 
 **How to use:**
-1. Specify required packages in the `packages` parameter (e.g., `['numpy', 'pandas']`)
-2. All `print()` statements and the final expression value are returned
-3. Use descriptive variable names and print intermediate results for clarity
-4. Handle errors gracefully with try-except
-5. For recursive file scans, avoid combining overlapping globs; prefer one recursive pattern or dedupe with `sorted(set(paths))`
+1. Provide exactly one of `code` or `path`
+2. Use `path` for scripts that already exist in artifacts, especially if they are long; this avoids resending large script bodies in the tool call
+3. Use `code` for short one-off snippets, quick calculations, and temporary experiments
+4. Specify required packages in the `packages` parameter (e.g., `['numpy', 'pandas', 'plotly', 'seaborn', 'openpyxl', 'docx', 'pptx']`)
+5. All `print()` statements and the final expression value are returned
+6. Use descriptive variable names and print intermediate results for clarity
+7. Handle errors gracefully with try-except
+8. Only bundled offline packages are available; if you need a non-bundled package, choose a built-in Pyodide package or an already bundled one
+9. For recursive file scans, avoid combining overlapping globs; prefer one recursive pattern or dedupe with `sorted(set(paths))`
 
 **Limitations:**
-- No file system access (when used as a tool — artifacts editor has VFS access)
+- `path` must point to a file that already exists in the artifacts filesystem
 - No network access
-- No visualization display (matplotlib won't render)
+- Python packages must be built into Pyodide or bundled with the app for offline use
+- Common offline office packages include openpyxl, xlsxwriter, python-docx (`docx`), python-pptx (`pptx`), and docx2txt
+- Visualization libraries (matplotlib, plotly, seaborn) can generate files but not display inline
 - Sandboxed environment with execution timeout
 
 ---

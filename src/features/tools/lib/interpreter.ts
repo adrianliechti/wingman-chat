@@ -1,21 +1,409 @@
 import { loadPyodide as loadPyodideRuntime, version as pyodideVersion, type PyodideInterface } from 'pyodide';
+import { inferContentTypeFromPath, isTextContentType } from '@/shared/lib/fileTypes';
+
+interface ArtifactFile {
+  content: string;
+  contentType?: string;
+}
+
+type ArtifactFiles = Record<string, ArtifactFile>;
+
+interface PyodideProxy<T = unknown> {
+  toJs?: () => T;
+  destroy?: () => void;
+}
+
+interface MicropipModule {
+  install: (pkg: string) => Promise<void>;
+  destroy?: () => void;
+}
+
+const PACKAGE_ALIASES: Record<string, string> = {
+  'matplotlib.pyplot': 'matplotlib',
+  'matplotlib.ticker': 'matplotlib',
+  'docx': 'python-docx',
+  'pptx': 'python-pptx',
+  'pil': 'pillow',
+  'bs4': 'beautifulsoup4',
+  'sklearn': 'scikit-learn',
+  'dateutil': 'python-dateutil',
+  'typing_extensions': 'typing-extensions',
+};
+
+const BUNDLED_PACKAGE_DEPENDENCIES: Record<string, string[]> = {
+  plotly: ['tenacity'],
+  openpyxl: ['et-xmlfile'],
+  'python-pptx': ['xlsxwriter'],
+};
+
+let standardLibraryModules: Set<string> | null = null;
+const PYODIDE_BASE_DIR = '/home/pyodide';
+const NO_OUTPUT_MESSAGE = 'Code executed successfully (no output)';
+
+function normalizePackageName(name: string): string {
+  const trimmed = name.trim();
+  const lower = trimmed.toLowerCase();
+  if (!lower) {
+    return lower;
+  }
+
+  if (PACKAGE_ALIASES[lower]) {
+    return PACKAGE_ALIASES[lower];
+  }
+
+  const rootModule = lower.split('.')[0];
+  return PACKAGE_ALIASES[rootModule] ?? rootModule;
+}
+
+function expandBundledDependencies(packages: string[]): string[] {
+  const ordered: string[] = [];
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  const visit = (pkg: string) => {
+    if (visited.has(pkg)) {
+      return;
+    }
+
+    if (visiting.has(pkg)) {
+      throw new Error(`Circular bundled package dependency detected for ${pkg}`);
+    }
+
+    visiting.add(pkg);
+    for (const dependency of BUNDLED_PACKAGE_DEPENDENCIES[pkg] ?? []) {
+      visit(dependency);
+    }
+    visiting.delete(pkg);
+    visited.add(pkg);
+    ordered.push(pkg);
+  };
+
+  for (const pkg of packages) {
+    visit(pkg);
+  }
+
+  return ordered;
+}
+
+function uniquePackages(packages: string[]): string[] {
+  return Array.from(new Set(packages.map(normalizePackageName).filter(Boolean)));
+}
+
+// Manifest mapping package names to local wheel filenames (built at compile time)
+let wheelManifest: Record<string, string> | null = null;
+async function getWheelManifest(): Promise<Record<string, string>> {
+  if (wheelManifest) {
+    return wheelManifest;
+  }
+
+  try {
+    const res = await fetch('/pyodide/pypi-manifest.json');
+    if (!res.ok) {
+      throw new Error(`Failed to load bundled package manifest: ${res.status}`);
+    }
+
+    wheelManifest = await res.json() as Record<string, string>;
+    return wheelManifest;
+  } catch (error) {
+    throw new Error(
+      `Bundled Python package manifest is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function getStandardLibraryModules(pyodide: PyodideInterface): Promise<Set<string>> {
+  if (standardLibraryModules) {
+    return standardLibraryModules;
+  }
+
+  const modules = pyodide.runPython(
+    'import sys\nsorted(set(sys.stdlib_module_names) | set(sys.builtin_module_names))',
+  ) as PyodideProxy<unknown>;
+
+  try {
+    const values = modules.toJs ? modules.toJs() : modules;
+    standardLibraryModules = new Set(
+      Array.isArray(values)
+        ? values.filter((value): value is string => typeof value === 'string').map((value) => value.toLowerCase())
+        : [],
+    );
+    return standardLibraryModules;
+  } finally {
+    modules.destroy?.();
+  }
+}
+
+function isStandardLibraryModule(name: string, stdlibModules: Set<string>): boolean {
+  const rootModule = name.trim().toLowerCase().split('.')[0];
+  return stdlibModules.has(rootModule);
+}
+
+async function findImportedPackages(pyodide: PyodideInterface, code: string): Promise<string[]> {
+  const globals = pyodide.toPy({ source_code: code });
+
+  try {
+    const imports = pyodide.runPython(
+      `from pyodide.code import find_imports\nfind_imports(source_code)`,
+      { globals },
+    ) as PyodideProxy<unknown>;
+
+    try {
+      const values = imports.toJs ? imports.toJs() : imports;
+      if (Array.isArray(values)) {
+        const stdlibModules = await getStandardLibraryModules(pyodide);
+        return uniquePackages(
+          values
+            .filter((value): value is string => typeof value === 'string')
+            .filter((value) => !isStandardLibraryModule(value, stdlibModules)),
+        );
+      }
+
+      return [];
+    } finally {
+      imports.destroy?.();
+    }
+  } finally {
+    globals.destroy();
+  }
+}
 
 export interface CodeExecutionRequest {
   code: string;
   packages?: string[];
-  files?: Record<string, { content: string; contentType?: string }>;
+  files?: ArtifactFiles;
 }
 
 export interface CodeExecutionResult {
   success: boolean;
   output: string;
   error?: string;
-  files?: Record<string, string>;
+  files?: ArtifactFiles;
 }
 
 let pyodideInstance: PyodideInterface | null = null;
 let pyodideLoading: Promise<PyodideInterface> | null = null;
 const loadedPackages = new Set<string>();
+
+function getPyodideIndexUrl(): string {
+  return import.meta.env.DEV
+    ? `https://cdn.jsdelivr.net/pyodide/v${pyodideVersion}/full/`
+    : '/pyodide/';
+}
+
+function ensureDirectory(pyodide: PyodideInterface, dir: string): void {
+  try {
+    pyodide.FS.mkdirTree(dir);
+  } catch {
+    // Directory may already exist.
+  }
+}
+
+function toFsPath(path: string): string {
+  const relativePath = path.startsWith('/') ? path.slice(1) : path;
+  return `${PYODIDE_BASE_DIR}/${relativePath}`;
+}
+
+function isDataUrl(content: string): boolean {
+  return content.startsWith('data:');
+}
+
+function isBinaryFile(file: ArtifactFile): boolean {
+  return isDataUrl(file.content) || (!!file.contentType && !isTextContentType(file.contentType));
+}
+
+function decodeBase64(content: string): Uint8Array {
+  const binaryString = atob(content);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let index = 0; index < binaryString.length; index += 1) {
+    bytes[index] = binaryString.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function decodeDataUrl(content: string): Uint8Array {
+  const commaIndex = content.indexOf(',');
+  if (commaIndex === -1) {
+    throw new Error('Invalid data URL content');
+  }
+
+  return decodeBase64(content.slice(commaIndex + 1));
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  let binaryString = '';
+  for (const byte of bytes) {
+    binaryString += String.fromCharCode(byte);
+  }
+  return btoa(binaryString);
+}
+
+function toDataUrl(bytes: Uint8Array, contentType: string): string {
+  return `data:${contentType};base64,${encodeBase64(bytes)}`;
+}
+
+function clearPyodideDirectory(pyodide: PyodideInterface, dir: string): void {
+  try {
+    const entries = pyodide.FS.readdir(dir).filter((entry: string) => entry !== '.' && entry !== '..');
+
+    for (const entry of entries) {
+      const fullPath = dir === '/' ? `/${entry}` : `${dir}/${entry}`;
+      const stat = pyodide.FS.stat(fullPath);
+
+      if (pyodide.FS.isDir(stat.mode)) {
+        clearPyodideDirectory(pyodide, fullPath);
+        pyodide.FS.rmdir(fullPath);
+      } else {
+        pyodide.FS.unlink(fullPath);
+      }
+    }
+  } catch {
+    // Ignore directories that do not exist yet.
+  }
+}
+
+function syncFilesToPyodide(pyodide: PyodideInterface, files: ArtifactFiles): void {
+  clearPyodideDirectory(pyodide, PYODIDE_BASE_DIR);
+
+  ensureDirectory(pyodide, PYODIDE_BASE_DIR);
+
+  for (const [path, file] of Object.entries(files)) {
+    const fsPath = toFsPath(path);
+    const dir = fsPath.substring(0, fsPath.lastIndexOf('/'));
+
+    if (dir) {
+      ensureDirectory(pyodide, dir);
+    }
+
+    if (isBinaryFile(file)) {
+      pyodide.FS.writeFile(fsPath, isDataUrl(file.content) ? decodeDataUrl(file.content) : decodeBase64(file.content));
+    } else {
+      pyodide.FS.writeFile(fsPath, file.content);
+    }
+  }
+}
+
+function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFiles): ArtifactFiles {
+  const files: ArtifactFiles = {};
+
+  const walkDir = (dir: string) => {
+    try {
+      const entries = pyodide.FS.readdir(dir).filter((entry: string) => entry !== '.' && entry !== '..');
+
+      for (const entry of entries) {
+        const fullPath = dir === '/' ? `/${entry}` : `${dir}/${entry}`;
+
+        try {
+          const stat = pyodide.FS.stat(fullPath);
+          if (pyodide.FS.isDir(stat.mode)) {
+            walkDir(fullPath);
+            continue;
+          }
+
+          const relativePath = fullPath.slice(PYODIDE_BASE_DIR.length + 1);
+          if (!relativePath) {
+            continue;
+          }
+
+          const priorContentType = sourceFiles[`/${relativePath}`]?.contentType ?? sourceFiles[relativePath]?.contentType;
+          const contentType = priorContentType ?? inferContentTypeFromPath(relativePath);
+
+          if (isTextContentType(contentType)) {
+            files[relativePath] = {
+              content: pyodide.FS.readFile(fullPath, { encoding: 'utf8' }) as string,
+              contentType,
+            };
+            continue;
+          }
+
+          const bytes = pyodide.FS.readFile(fullPath) as Uint8Array;
+          files[relativePath] = {
+            content: toDataUrl(bytes, contentType ?? 'application/octet-stream'),
+            contentType: contentType ?? 'application/octet-stream',
+          };
+        } catch {
+          // Skip files that can't be read.
+        }
+      }
+    } catch {
+      // Skip directories that can't be listed.
+    }
+  };
+
+  walkDir(PYODIDE_BASE_DIR);
+  return files;
+}
+
+async function installBundledPackages(pyodide: PyodideInterface, packages: string[]): Promise<void> {
+  if (packages.length === 0) {
+    return;
+  }
+
+  await pyodide.loadPackage('micropip');
+  const micropip = pyodide.pyimport('micropip') as MicropipModule;
+  const manifest = await getWheelManifest();
+  const installQueue = expandBundledDependencies(packages);
+
+  try {
+    for (const pkg of installQueue) {
+      if (loadedPackages.has(pkg)) {
+        continue;
+      }
+
+      const wheelFile = manifest[pkg];
+      if (!wheelFile) {
+        throw new Error(`Python package "${pkg}" is not bundled for offline use`);
+      }
+
+      await micropip.install(`/pyodide/${wheelFile}`);
+      loadedPackages.add(pkg);
+    }
+  } finally {
+    micropip.destroy?.();
+  }
+}
+
+async function ensurePackagesLoaded(pyodide: PyodideInterface, packages: string[]): Promise<void> {
+  const bundledPackages: string[] = [];
+
+  for (const pkg of packages) {
+    if (loadedPackages.has(pkg)) {
+      continue;
+    }
+
+    try {
+      await pyodide.loadPackage(pkg);
+      loadedPackages.add(pkg);
+    } catch {
+      bundledPackages.push(pkg);
+    }
+  }
+
+  await installBundledPackages(pyodide, bundledPackages);
+}
+
+async function runPythonCode(pyodide: PyodideInterface, code: string): Promise<string> {
+  let output = '';
+
+  pyodide.setStdout({
+    batched: (text: string) => {
+      output += `${text}\n`;
+    },
+  });
+
+  pyodide.setStderr({
+    batched: (text: string) => {
+      output += `${text}\n`;
+    },
+  });
+
+  const result = await pyodide.runPythonAsync(code);
+
+  if (result !== undefined && result !== null && !output.trim()) {
+    return String(result);
+  }
+
+  return output.trim() || NO_OUTPUT_MESSAGE;
+}
 
 async function loadPyodide(): Promise<PyodideInterface> {
   if (pyodideInstance) {
@@ -28,15 +416,11 @@ async function loadPyodide(): Promise<PyodideInterface> {
 
   pyodideLoading = (async () => {
     try {
-      const indexURL = import.meta.env.DEV 
-        ? `https://cdn.jsdelivr.net/pyodide/v${pyodideVersion}/full/`
-        : '/assets/pyodide/';
-      
       pyodideInstance = await loadPyodideRuntime({
-        indexURL,
+        indexURL: getPyodideIndexUrl(),
       });
-      
-      console.log(`Pyodide v${pyodideVersion} loaded successfully from ${import.meta.env.DEV ? 'CDN' : 'local assets'}`);
+
+      console.log(`Pyodide v${pyodideVersion} loaded successfully (${import.meta.env.DEV ? 'CDN' : 'local'})`);
       return pyodideInstance;
     } catch (error) {
       console.error('Failed to load Pyodide:', error);
@@ -53,120 +437,20 @@ export async function executeCode(request: CodeExecutionRequest): Promise<CodeEx
 
   try {
     const pyodide = await loadPyodide();
+    const importedPackages = await findImportedPackages(pyodide, code);
+    const requestedPackages = uniquePackages([...importedPackages, ...packages]);
 
-    // Sync artifact files to Pyodide's virtual filesystem
-    // Write to /home/pyodide which is the default working directory
-    const baseDir = '/home/pyodide';
-    for (const [path, file] of Object.entries(files)) {
-      // Normalize path - remove leading slash if present, then prepend base dir
-      const relativePath = path.startsWith('/') ? path.slice(1) : path;
-      const fsPath = `${baseDir}/${relativePath}`;
-      
-      // Ensure parent directories exist
-      const dir = fsPath.substring(0, fsPath.lastIndexOf('/'));
-      if (dir) {
-        try {
-          pyodide.FS.mkdirTree(dir);
-        } catch {
-          // Directory may already exist
-        }
-      }
-      
-      // Write file - detect binary content types
-      const isBinary = file.contentType?.startsWith('image/') ||
-                       file.contentType?.startsWith('audio/') ||
-                       file.contentType?.startsWith('video/') ||
-                       file.contentType === 'application/octet-stream';
-      
-      if (isBinary) {
-        // Convert base64 to Uint8Array for binary files
-        const binaryString = atob(file.content);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        pyodide.FS.writeFile(fsPath, bytes);
-      } else {
-        // Write text content directly (Pyodide FS handles string encoding)
-        pyodide.FS.writeFile(fsPath, file.content);
-      }
-    }
-
-    if (packages.length > 0) {
-      try {
-        await pyodide.loadPackagesFromImports(code);
-        
-        for (const pkg of packages) {
-          if (!loadedPackages.has(pkg)) {
-            try {
-              await pyodide.loadPackage(pkg);
-              loadedPackages.add(pkg);
-            } catch {
-              console.warn(`Package ${pkg} not available in Pyodide, skipping`);
-            }
-          }
-        }
-      } catch (error) {
-        console.warn('Error loading packages:', error);
-      }
-    }
-
-    let output = '';
-    pyodide.setStdout({
-      batched: (text: string) => {
-        output += text + '\n';
-      }
-    });
-
-    pyodide.setStderr({
-      batched: (text: string) => {
-        output += text + '\n';
-      }
-    });
-
-    const result = await pyodide.runPythonAsync(code);
-
-    if (result !== undefined && result !== null && !output.trim()) {
-      output = String(result);
-    }
-
-    // Read files back from Pyodide VFS
-    const changedFiles: Record<string, string> = {};
-    const walkDir = (dir: string) => {
-      try {
-        const entries = pyodide.FS.readdir(dir).filter((e: string) => e !== '.' && e !== '..');
-        for (const entry of entries) {
-          const fullPath = dir === '/' ? `/${entry}` : `${dir}/${entry}`;
-          try {
-            const stat = pyodide.FS.stat(fullPath);
-            if (pyodide.FS.isDir(stat.mode)) {
-              walkDir(fullPath);
-            } else {
-              const data = pyodide.FS.readFile(fullPath, { encoding: 'utf8' }) as string;
-              // Store path relative to baseDir
-              const relativePath = fullPath.slice(baseDir.length + 1);
-              if (relativePath) {
-                changedFiles[relativePath] = data;
-              }
-            }
-          } catch {
-            // Skip files that can't be read
-          }
-        }
-      } catch {
-        // Skip directories that can't be listed
-      }
-    };
-    walkDir(baseDir);
+    syncFilesToPyodide(pyodide, files);
+    await ensurePackagesLoaded(pyodide, requestedPackages);
 
     return {
       success: true,
-      output: output.trim() || 'Code executed successfully (no output)',
-      files: changedFiles,
+      output: await runPythonCode(pyodide, code),
+      files: collectPyodideFiles(pyodide, files),
     };
   } catch (error) {
     console.error('Code execution error:', error);
-    
+
     return {
       success: false,
       output: '',

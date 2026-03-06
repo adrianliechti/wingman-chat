@@ -2,11 +2,14 @@
  * OPFS Artifacts — Artifact file CRUD within chat folders.
  */
 
+import { isBinaryContentType } from './fileTypes';
+
 import {
-  writeText, writeBlob, readText, deleteFile, deleteDirectory,
+  writeText, writeBlob, readBlob, deleteFile, deleteDirectory,
   listFiles, listDirectories,
   dataUrlToBlob, inferContentType,
 } from './opfs-core';
+import { readAsDataURL } from './utils';
 
 // ============================================================================
 // Artifacts Storage (stored as real files within chat folders)
@@ -19,19 +22,18 @@ export async function writeArtifact(chatId: string, path: string, content: strin
   // Normalize path - remove leading slash if present
   const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
   const fullPath = `chats/${chatId}/artifacts/${normalizedPath}`;
-  
-  // Determine how to write based on content type
-  if (contentType && (contentType.startsWith('image/') || contentType.startsWith('application/octet-stream'))) {
-    // Binary content - base64 decode if needed
-    if (content.startsWith('data:')) {
-      const blob = dataUrlToBlob(content);
-      await writeBlob(fullPath, blob);
-    } else {
-      await writeText(fullPath, content);
-    }
-  } else {
-    await writeText(fullPath, content);
+
+  if (content.startsWith('data:')) {
+    await writeBlob(fullPath, dataUrlToBlob(content));
+    return;
   }
+
+  if (isBinaryContentType(contentType)) {
+    await writeBlob(fullPath, new Blob([content], { type: contentType }));
+    return;
+  }
+
+  await writeText(fullPath, content);
 }
 
 /**
@@ -40,16 +42,20 @@ export async function writeArtifact(chatId: string, path: string, content: strin
 export async function readArtifact(chatId: string, path: string): Promise<{ content: string; contentType?: string } | undefined> {
   const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
   const fullPath = `chats/${chatId}/artifacts/${normalizedPath}`;
-  
-  const content = await readText(fullPath);
-  if (content === undefined) {
+
+  const blob = await readBlob(fullPath);
+  if (!blob) {
     return undefined;
   }
-  
+
   // Infer content type from extension
   const contentType = inferContentType(path);
-  
-  return { content, contentType };
+
+  if (isBinaryContentType(contentType)) {
+    return { content: await readAsDataURL(blob), contentType };
+  }
+
+  return { content: await blob.text(), contentType };
 }
 
 /**

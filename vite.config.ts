@@ -11,7 +11,8 @@ const ReactCompilerConfig = {
   target: '19'
 };
 
-// Pyodide files to exclude from static copy
+// Pyodide files to exclude from static copy (wheels are bundled separately
+// by the bundle:pyodide script into public/pyodide/)
 const PYODIDE_EXCLUDE = [
   "!**/*.{md,html}",
   "!**/*.d.ts",
@@ -26,7 +27,7 @@ function viteStaticCopyPyodide() {
     targets: [
       {
         src: [path.join(pyodideDir, "*").replace(/\\/g, "/")].concat(PYODIDE_EXCLUDE),
-        dest: "assets/pyodide",
+        dest: "pyodide",
       },
     ],
   });

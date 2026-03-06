@@ -11,10 +11,10 @@ interface FileNode {
   path: string;
   type: 'file' | 'folder';
   children?: FileNode[];
-  file?: { path: string; content: string }; // Reference to the actual file object
+  file?: { path: string; content: string; contentType?: string }; // Reference to the actual file object
 }
 
-function buildFileTree(files: { path: string; content: string }[]): FileNode[] {
+function buildFileTree(files: { path: string; content: string; contentType?: string }[]): FileNode[] {
   const tree: FileNode[] = [];
   const folderMap = new Map<string, FileNode>();
 
@@ -155,7 +155,7 @@ function FileTreeNode({
         onClick={() => onFileClick(node.path)}
         className="flex items-center gap-1 flex-1 min-w-0 text-left"
       >
-        <FileIcon name={node.path} />
+        <FileIcon name={node.path} contentType={node.file?.contentType} />
         <span 
           className={`text-sm truncate ${
             isTabOpen 

@@ -1,5 +1,8 @@
 import { Bash, InMemoryFs } from 'just-bash/browser';
 import type { InitialFiles } from 'just-bash/browser';
+import { inferContentTypeFromPath, isTextContentType } from '@/shared/lib/fileTypes';
+import { parseDataUrl } from '@/shared/lib/utils';
+import type { OverlayFile } from '@/features/artifacts/lib/fs';
 
 export interface BashExecutionRequest {
   command: string;
@@ -19,6 +22,48 @@ export interface BashInstance {
 
 const HOME = '/home/user';
 
+function decodeBase64(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let index = 0; index < binaryString.length; index += 1) {
+    bytes[index] = binaryString.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  let binaryString = '';
+  for (const byte of bytes) {
+    binaryString += String.fromCharCode(byte);
+  }
+  return btoa(binaryString);
+}
+
+function toFsContent(file: { content: string; contentType?: string }): string | Uint8Array {
+  const parsed = parseDataUrl(file.content);
+  if (parsed) {
+    return decodeBase64(parsed.data);
+  }
+
+  return file.content;
+}
+
+function toOverlayFile(path: string, content: Uint8Array): OverlayFile {
+  const contentType = inferContentTypeFromPath(path);
+  if (isTextContentType(contentType)) {
+    return {
+      content: new TextDecoder().decode(content),
+      contentType,
+    };
+  }
+
+  const mimeType = contentType ?? 'application/octet-stream';
+  return {
+    content: `data:${mimeType};base64,${encodeBase64(content)}`,
+    contentType: mimeType,
+  };
+}
+
 let singleton: BashInstance | null = null;
 
 /**
@@ -26,14 +71,14 @@ let singleton: BashInstance | null = null;
  * Files keys are artifact paths (e.g. "/script.sh"), mapped to /home/user/...
  */
 export function createBashInstance(
-  files?: Record<string, { content: string }>
+  files?: Record<string, { content: string; contentType?: string }>
 ): BashInstance {
   const initialFiles: InitialFiles = {};
 
   if (files) {
     for (const [path, file] of Object.entries(files)) {
       const relativePath = path.startsWith('/') ? path.slice(1) : path;
-      initialFiles[`${HOME}/${relativePath}`] = file.content;
+      initialFiles[`${HOME}/${relativePath}`] = toFsContent(file);
     }
   }
 
@@ -102,7 +147,7 @@ export function resetBash(): void {
  */
 export async function loadArtifactsIntoFs(
   memFs: InMemoryFs,
-  files: { path: string; content: string }[]
+  files: { path: string; content: string; contentType?: string }[]
 ): Promise<void> {
   for (const file of files) {
     const relativePath = file.path.startsWith('/') ? file.path.slice(1) : file.path;
@@ -114,7 +159,7 @@ export async function loadArtifactsIntoFs(
       await memFs.mkdir(dir, { recursive: true });
     }
 
-    await memFs.writeFile(fsPath, file.content);
+    await memFs.writeFile(fsPath, toFsContent(file));
   }
 }
 
@@ -125,8 +170,8 @@ export async function loadArtifactsIntoFs(
  */
 export async function readFilesFromFs(
   memFs: InMemoryFs
-): Promise<Record<string, string>> {
-  const result: Record<string, string> = {};
+): Promise<Record<string, OverlayFile>> {
+  const result: Record<string, OverlayFile> = {};
   const allPaths = memFs.getAllPaths();
 
   for (const fsPath of allPaths) {
@@ -136,9 +181,9 @@ export async function readFilesFromFs(
       const stat = await memFs.stat(fsPath);
       if (!stat.isFile) continue;
 
-      const content = await memFs.readFile(fsPath);
       const artifactPath = '/' + fsPath.slice(`${HOME}/`.length);
-      result[artifactPath] = content;
+      const content = await memFs.readFileBuffer(fsPath);
+      result[artifactPath] = toOverlayFile(artifactPath, content);
     } catch {
       // Skip unreadable entries
     }
