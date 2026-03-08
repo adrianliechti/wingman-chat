@@ -106,10 +106,6 @@ export default defineConfig({
             'react',
             'react-dom'
           ],
-          // Pyodide as separate chunk for better caching
-          'vendor-pyodide': [
-            'pyodide'
-          ],
           // Bash interpreter
           'vendor-bash': [
             'just-bash'
@@ -154,7 +150,12 @@ export default defineConfig({
             'zod',
             'p-limit',
             'mime',
-            'jszip'
+            'jszip',
+            'marked'
+          ],
+          // Document export (lazy, keep out of main bundle)
+          'vendor-docx': [
+            'docx'
           ]
         }
       }
