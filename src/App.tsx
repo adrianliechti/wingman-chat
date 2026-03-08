@@ -13,6 +13,7 @@ import { NavigationProvider } from "./shell/context/NavigationProvider";
 import { useNavigation } from "./shell/hooks/useNavigation";
 import { ThemeProvider } from "./shell/context/ThemeProvider";
 import { LayoutProvider } from "./shell/context/LayoutProvider";
+import { EmojiProvider } from "./shell/context/EmojiProvider";
 import { BackgroundProvider } from "./shell/context/BackgroundProvider";
 import { ChatProvider } from "./features/chat/context/ChatProvider";
 import { TranslateProvider } from "./features/translate/context/TranslateProvider";
@@ -487,6 +488,7 @@ function AppContent() {
 const providers = [
   ThemeProvider,
   LayoutProvider,
+  EmojiProvider,
   BackgroundProvider,
   ProfileProvider,
   SkillsProvider,

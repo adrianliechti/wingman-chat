@@ -6,7 +6,7 @@ import { useChat } from '@/features/chat/hooks/useChat';
 import { useAgents } from '@/features/agent/hooks/useAgents';
 import { getStorageUsage, clearAll, deleteDirectory, removeIndexEntry } from '@/shared/lib/opfs';
 import { formatBytes } from '@/shared/lib/utils';
-import type { Theme, LayoutMode, BackgroundPack } from '@/shared/types/settings';
+import type { Theme, LayoutMode, BackgroundPack, EmojiMode } from '@/shared/types/settings';
 import { personaOptions } from '@/features/settings/lib/personas';
 import type { PersonaKey } from '@/features/settings/lib/personas';
 import { importChatsFromZip, importChatsFromLegacyJson, exportChatsAsZip } from '@/features/settings/lib/chatImportExport';
@@ -27,9 +27,14 @@ const themeOptions: { value: Theme; label: string }[] = [
   { value: 'dark', label: 'Dark' },
 ];
 
-const layoutOptions: { value: LayoutMode; label: string; description?: string }[] = [
-  { value: 'normal', label: 'Normal', description: 'Centered chat with comfortable reading width' },
-  { value: 'wide', label: 'Wide', description: 'Full-width chat for more content visibility' },
+const layoutOptions: { value: LayoutMode; label: string }[] = [
+  { value: 'normal', label: 'Normal' },
+  { value: 'wide', label: 'Wide' },
+];
+
+const emojiOptions: { value: EmojiMode; label: string }[] = [
+  { value: 'monochrome', label: 'Minimal' },
+  { value: 'native', label: 'Native' },
 ];
 
 // A generic, reusable Select component using Headless UI Listbox
@@ -64,6 +69,31 @@ function Select<T extends string | null>({ label, value, onChange, options, desc
       {description && (
         <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{description}</p>
       )}
+    </div>
+  );
+}
+
+// Compact segmented control for small option sets
+function SegmentedControl<T extends string>({ label, value, onChange, options }: { label: string, value: T, onChange: (v: T) => void, options: { value: T, label: string }[] }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">{label}</label>
+      <div className="flex rounded-lg overflow-hidden border border-neutral-300/50 dark:border-neutral-700/50">
+        {options.map(opt => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`flex-1 py-2 px-2 text-xs font-medium transition-colors truncate ${
+              value === opt.value
+                ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100'
+                : 'bg-white/50 dark:bg-neutral-800/50 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -117,6 +147,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
   const {
     theme, setTheme, layoutMode, setLayoutMode,
     backgroundPacks, backgroundSetting, setBackground,
+    emojiMode, setEmojiMode,
     profile, updateProfile,
   } = useSettings();
   const { chats, deleteChat } = useChat();
@@ -408,27 +439,19 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
               isOpen={openSection === 'general'}
               onClick={() => toggleSection('general')}
             >
-              <Select 
-                label="Theme" 
-                value={theme} 
-                onChange={setTheme} 
-                options={themeOptions} 
-              />
+              <div className="grid grid-cols-2 gap-3">
+                <SegmentedControl label="Theme" value={theme} onChange={setTheme} options={themeOptions} />
+                <SegmentedControl label="Emoji" value={emojiMode} onChange={setEmojiMode} options={emojiOptions} />
+              </div>
+              <SegmentedControl label="Layout" value={layoutMode} onChange={setLayoutMode} options={layoutOptions} />
               {backgroundPacks.length > 0 && (
-                <Select 
-                  label="Background" 
-                  value={backgroundSetting} 
-                  onChange={setBackground} 
-                  options={backgroundOptions} 
+                <Select
+                  label="Background"
+                  value={backgroundSetting}
+                  onChange={setBackground}
+                  options={backgroundOptions}
                 />
               )}
-              <Select 
-                label="Layout" 
-                value={layoutMode} 
-                onChange={setLayoutMode} 
-                options={layoutOptions}
-                description={layoutOptions.find(l => l.value === layoutMode)?.description}
-              />
             </AccordionSection>
 
             {/* Profile Section */}
