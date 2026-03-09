@@ -3,8 +3,7 @@ import { StreamableHTTPClientTransport as ClientTransport } from "@modelcontextp
 import type { CallToolResult, ContentBlock as MCPContentBlock, ResourceContents as MCPResourceContents, Tool as MCPTool } from "@modelcontextprotocol/sdk/types.js";
 import { AppBridge, PostMessageTransport, RESOURCE_MIME_TYPE, getToolUiResourceUri, isToolVisibilityAppOnly } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { McpUiHostCapabilities, McpUiHostContext, McpUiResourceMeta } from "@modelcontextprotocol/ext-apps/app-bridge";
-import { Role, type Tool, type ToolContext, type ToolProvider, type ToolIcon, type TextContent, type ImageContent, type AudioContent, type FileContent, type Message } from '@/shared/types/chat';
-import { Rocket } from "lucide-react";
+import { Role, type Tool, type ToolContext, type ToolProvider, type TextContent, type ImageContent, type AudioContent, type FileContent, type Message } from '@/shared/types/chat';
 
 const HOST_INFO = {
   name: 'Wingman Chat',
@@ -28,7 +27,7 @@ export class MCPClient implements ToolProvider {
   readonly name: string;
   readonly description?: string;
   
-  icon: ToolIcon = Rocket;
+  icon?: string;
 
   readonly headers?: Record<string, string>;
 
@@ -44,18 +43,19 @@ export class MCPClient implements ToolProvider {
   toolDefinitions: Map<string, MCPTool> = new Map();
 
   constructor(
-    id: string, 
-    url: string, 
-    name: string, 
+    id: string,
+    url: string,
+    name: string,
     description: string,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
+    icon?: string,
   ) {
     this.id = id;
     this.url = url;
-    
     this.name = name;
     this.description = description;
     this.headers = headers;
+    this.icon = icon;
   }
   
   async connect(): Promise<void> {
@@ -103,12 +103,6 @@ export class MCPClient implements ToolProvider {
     
     this.client = client;
 
-    // Extract server icons if provided
-    const serverInfo = client.getServerVersion();
-    if (Array.isArray(serverInfo?.icons) && serverInfo.icons.length > 0) {
-      this.icon = serverInfo.icons;
-    }
-    
     // Load and store tools and instructions after connection
     await this.loadToolsAndInstructions();
 

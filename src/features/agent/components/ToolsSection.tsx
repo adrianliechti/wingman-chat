@@ -9,7 +9,6 @@ import { BridgeEditor } from '@/features/agent/components/BridgeEditor';
 import type { Agent, BridgeServer } from '@/features/agent/types/agent';
 import { ProviderState } from '@/shared/types/chat';
 import { Section } from './Section';
-import { ToolIconRenderer } from '@/shared/ui/ToolIconRenderer';
 
 interface ToolsSectionProps {
   agent: Agent;
@@ -107,8 +106,8 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                   <span className="text-neutral-600 dark:text-neutral-400">
                     {!tool.Icon ? (
                       <Wrench size={16} />
-                    ) : Array.isArray(tool.Icon) ? (
-                      <ToolIconRenderer icon={tool.Icon} size={16} />
+                    ) : typeof tool.Icon === 'string' ? (
+                      <span className="bg-current inline-block" style={{ width: 16, height: 16, maskImage: `url(${tool.Icon})`, WebkitMaskImage: `url(${tool.Icon})`, maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }} />
                     ) : (
                       <tool.Icon width={16} height={16} />
                     )}
@@ -156,7 +155,10 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                       {server.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
                     </button>
                   )}
-                  <Server size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+                  {server.icon
+                    ? <span className="shrink-0 bg-current inline-block" style={{ width: 14, height: 14, maskImage: `url(${server.icon})`, WebkitMaskImage: `url(${server.icon})`, maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }} />
+                    : <Server size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+                  }
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{server.name}</div>
                     <div className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">{server.url}</div>

@@ -24,7 +24,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Config MCP clients (created once)
   const [configMcpClients] = useState<MCPClient[]>(() =>
-    (config.mcps || []).map(mcp => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers))
+    (config.mcps || []).map(mcp => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers, mcp.icon))
   );
 
   // Agent
