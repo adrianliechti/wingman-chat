@@ -17,7 +17,7 @@ interface ToolsSectionProps {
 
 export function ToolsSection({ agent }: ToolsSectionProps) {
   const { updateAgent, addServer, updateServer, removeServer, toggleServer } = useAgents();
-  const { providers, getProviderState } = useToolsContext();
+  const { providers, getProviderState, setProviderEnabled } = useToolsContext();
 
   const [bridgeEditorOpen, setBridgeEditorOpen] = useState(false);
   const [editingBridge, setEditingBridge] = useState<BridgeServer | null>(null);
@@ -141,24 +141,26 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                 const state = server.enabled ? getProviderState(server.id) : ProviderState.Disconnected;
                 return (
                 <div key={server.id} className="flex items-center gap-2 p-2 rounded-lg bg-white/30 dark:bg-neutral-900/40 border border-neutral-200/40 dark:border-neutral-700/40 group">
-                  <button
-                    type="button"
-                    onClick={() => toggleServer(agent.id, server.id)}
-                    className={`shrink-0 ${server.enabled ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-400 dark:text-neutral-500'}`}
-                  >
-                    {server.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-                  </button>
+                  {state === ProviderState.Failed ? (
+                    <button type="button" onClick={() => setProviderEnabled(server.id, true)} className="shrink-0 text-amber-500 hover:text-amber-600" title="Connection failed — click to retry">
+                      <AlertTriangle size={16} />
+                    </button>
+                  ) : state === ProviderState.Initializing ? (
+                    <Loader2 size={16} className="shrink-0 text-neutral-400 animate-spin" title="Connecting…" />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => toggleServer(agent.id, server.id)}
+                      className={`shrink-0 ${server.enabled ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-400 dark:text-neutral-500'}`}
+                    >
+                      {server.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                    </button>
+                  )}
                   <Server size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{server.name}</div>
                     <div className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">{server.url}</div>
                   </div>
-                  {state === ProviderState.Failed && (
-                    <AlertTriangle size={12} className="shrink-0 text-amber-500" title="Connection failed" />
-                  )}
-                  {state === ProviderState.Initializing && (
-                    <Loader2 size={12} className="shrink-0 text-neutral-400 animate-spin" title="Connecting…" />
-                  )}
                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button type="button" onClick={() => handleEditBridge(server)} className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded transition-colors" title="Edit">
                       <Pencil size={12} />
