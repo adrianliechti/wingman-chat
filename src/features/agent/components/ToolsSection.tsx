@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react';
 import {
   Plus, Pencil, Trash2, ToggleLeft, ToggleRight,
-  Server, Wrench,
+  Server, Wrench, AlertTriangle, Loader2,
 } from 'lucide-react';
 import { useAgents } from '@/features/agent/hooks/useAgents';
 import { useToolsContext } from '@/features/tools/hooks/useToolsContext';
 import { BridgeEditor } from '@/features/agent/components/BridgeEditor';
 import type { Agent, BridgeServer } from '@/features/agent/types/agent';
+import { ProviderState } from '@/shared/types/chat';
 import { Section } from './Section';
 import { ToolIconRenderer } from '@/shared/ui/ToolIconRenderer';
 
@@ -16,7 +17,7 @@ interface ToolsSectionProps {
 
 export function ToolsSection({ agent }: ToolsSectionProps) {
   const { updateAgent, addServer, updateServer, removeServer, toggleServer } = useAgents();
-  const { providers } = useToolsContext();
+  const { providers, getProviderState } = useToolsContext();
 
   const [bridgeEditorOpen, setBridgeEditorOpen] = useState(false);
   const [editingBridge, setEditingBridge] = useState<BridgeServer | null>(null);
@@ -136,7 +137,9 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
               </button>
             </div>
             {agent.servers.length > 0 ? (
-              agent.servers.map(server => (
+              agent.servers.map(server => {
+                const state = server.enabled ? getProviderState(server.id) : ProviderState.Disconnected;
+                return (
                 <div key={server.id} className="flex items-center gap-2 p-2 rounded-lg bg-white/30 dark:bg-neutral-900/40 border border-neutral-200/40 dark:border-neutral-700/40 group">
                   <button
                     type="button"
@@ -150,6 +153,12 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                     <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{server.name}</div>
                     <div className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">{server.url}</div>
                   </div>
+                  {state === ProviderState.Failed && (
+                    <AlertTriangle size={12} className="shrink-0 text-amber-500" title="Connection failed" />
+                  )}
+                  {state === ProviderState.Initializing && (
+                    <Loader2 size={12} className="shrink-0 text-neutral-400 animate-spin" title="Connecting…" />
+                  )}
                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button type="button" onClick={() => handleEditBridge(server)} className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded transition-colors" title="Edit">
                       <Pencil size={12} />
@@ -159,7 +168,8 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                     </button>
                   </div>
                 </div>
-              ))
+                );
+              })
             ) : (
               <p className="text-xs text-neutral-400 dark:text-neutral-500 text-center py-1">
                 No MCP servers configured.

@@ -132,6 +132,8 @@ export class MCPClient implements ToolProvider {
     }
   }
   
+  onDisconnected: (() => void) | null = null;
+
   private handleDisconnect(): void {
     this.stopPing();
     this.client = null;
@@ -139,6 +141,7 @@ export class MCPClient implements ToolProvider {
     this.uiResources.clear();
     this.toolDefinitions.clear();
     this.instructions = undefined;
+    this.onDisconnected?.();
   }
 
   private async cleanupActiveBridge(): Promise<void> {
