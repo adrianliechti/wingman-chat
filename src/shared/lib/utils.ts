@@ -44,9 +44,9 @@ export function serializeToolResultForApi(result: (TextContent | ImageContent | 
   return JSON.stringify(serialized);
 }
 
-export function lookupContentType(ext: string): string {
+export function lookupContentType(ext: string): string | undefined {
   const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
-  return mime.getType(normalizedExt) || 'application/octet-stream';
+  return mime.getType(normalizedExt) ?? undefined;
 }
 
 export function readAsText(blob: Blob): Promise<string> {
