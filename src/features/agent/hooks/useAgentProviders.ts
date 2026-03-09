@@ -64,7 +64,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
       const newClients = enabledServers.map(server => {
         const existing = clientsRef.current.find(c => c.id === server.id);
         if (existing) return existing;
-        return new MCPClient(server.id, server.url, server.name, server.description, server.headers);
+        return new MCPClient(server.id, server.url, server.name, server.description, server.headers, server.icon);
       });
 
       clientsRef.current = newClients;

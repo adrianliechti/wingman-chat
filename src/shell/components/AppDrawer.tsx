@@ -15,6 +15,8 @@ export function AppDrawer() {
       <iframe
         ref={iframeRef}
         className="w-full h-full border-none"
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
         title="App"
       />
     </div>

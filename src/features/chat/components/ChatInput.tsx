@@ -25,7 +25,7 @@ import { useDropZone } from "@/shared/hooks/useDropZone";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
-import { ToolIconRenderer } from "@/shared/ui/ToolIconRenderer";
+
 
 export function ChatInput() {
   const config = getConfig();
@@ -670,7 +670,7 @@ export function ChatInput() {
                 const renderIcon = () => {
                   if (providerInitializing) return <LoaderCircle size={14} className="animate-spin" />;
                   if (providerFailed) return <TriangleAlert size={14} />;
-                  if (Array.isArray(icon)) return <ToolIconRenderer icon={icon} size={14} />;
+                  if (typeof icon === 'string') return <span className="shrink-0 bg-current inline-block" style={{ width: 14, height: 14, maskImage: `url(${icon})`, WebkitMaskImage: `url(${icon})`, maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }} />;
                   const Icon = icon; return <Icon size={14} />;
                 };
 
@@ -729,7 +729,7 @@ export function ChatInput() {
                     const providerFailed = state === ProviderState.Failed;
 
                     const renderIcon = () => {
-                      if (Array.isArray(icon)) return <ToolIconRenderer icon={icon} size={16} />;
+                      if (typeof icon === 'string') return <span className="shrink-0 bg-current inline-block" style={{ width: 16, height: 16, maskImage: `url(${icon})`, WebkitMaskImage: `url(${icon})`, maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }} />;
                       const Icon = icon; return <Icon size={16} />;
                     };
 

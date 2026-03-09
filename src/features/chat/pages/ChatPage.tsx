@@ -247,7 +247,7 @@ export function ChatPage() {
       
       {/* Main content area */}
       <div className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-500 ease-in-out ${
-        showAppDrawer ? 'md:mr-[calc(66vw+0.75rem)]' :
+        showAppDrawer ? 'md:mr-[calc(50vw+0.75rem)]' :
         showArtifactsDrawer ? 'md:mr-[calc(66vw+0.75rem)]' : 
         showAgentDrawer ? 'md:mr-83' : ''
       }`}>
@@ -297,7 +297,7 @@ export function ChatPage() {
           {/* Jump to latest button - positioned relative to chat area */}
           {messages.length > 0 && !isAutoScrollEnabled && (
             <div className={`fixed flex justify-center pointer-events-none z-10 transition-all duration-300 ease-out ${
-              showAppDrawer ? 'left-0 right-[calc(66vw+0.75rem)]' :
+              showAppDrawer ? 'left-0 right-[calc(50vw+0.75rem)]' :
               showArtifactsDrawer ? 'left-0 right-[calc(66vw+0.75rem)]' :
               showAgentDrawer ? 'left-0 right-83' : 'left-0 right-0'
             }`} style={{ bottom: `${chatInputHeight + 16}px` }}>
@@ -319,7 +319,7 @@ export function ChatPage() {
           } ${
             showSidebar && chats.length > 0 && !showArtifactsDrawer && !showAgentDrawer && !showAppDrawer ? 'md:left-59' : ''
           } ${
-            showAppDrawer ? 'right-0 md:right-[calc(66vw+0.75rem)]' :
+            showAppDrawer ? 'right-0 md:right-[calc(50vw+0.75rem)]' :
             showArtifactsDrawer ? 'right-0 md:right-[calc(66vw+0.75rem)]' :
             showAgentDrawer ? 'right-0 md:right-83' : 'right-0'
           }`}>

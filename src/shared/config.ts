@@ -74,6 +74,8 @@ interface toolConfig {
 
   name: string;
   description: string;
+
+  icon?: string;
 }
 
 interface ttsConfig {
@@ -207,15 +209,17 @@ export const loadConfig = async (): Promise<Config | undefined> => {
           return {
             id: mcp.id,
 
-            name: mcp.name,
-            description: mcp.description,
-
             url:
               mcp.url ??
               new URL(
                 `/api/v1/mcp/${mcp.id}`,
                 window.location.origin,
               ).toString(),
+
+            name: mcp.name,
+            description: mcp.description,
+
+            icon: mcp.icon,
           };
         }) ?? [],
 
@@ -246,13 +250,13 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       vision: cfg.vision
         ? {
-            files: cfg.vision.files ?? [
-              "image/jpeg",
-              "image/png",
-              "image/gif",
-              "image/webp",
-            ],
-          }
+          files: cfg.vision.files ?? [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+          ],
+        }
         : null,
 
       text: {
@@ -287,16 +291,16 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       extractor: cfg.extractor
         ? {
-            files: cfg.extractor.files ?? [
-              "application/pdf",
-              "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          files: cfg.extractor.files ?? [
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 
-              ".msg",
-              ".eml",
-            ],
-          }
+            ".msg",
+            ".eml",
+          ],
+        }
         : null,
 
       internet: cfg.internet ?? null,
@@ -307,16 +311,16 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       translator: cfg.translator
         ? {
-            model: cfg.translator.model,
-            files: cfg.translator.files ?? [],
-            languages: cfg.translator.languages ?? [
-              "en",
-              "de",
-              "fr",
-              "it",
-              "es",
-            ],
-          }
+          model: cfg.translator.model,
+          files: cfg.translator.files ?? [],
+          languages: cfg.translator.languages ?? [
+            "en",
+            "de",
+            "fr",
+            "it",
+            "es",
+          ],
+        }
         : null,
 
       researcher: cfg.researcher ?? null,

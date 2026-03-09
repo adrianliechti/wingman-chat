@@ -17,7 +17,7 @@ import { artifactKind, artifactLanguage, processUploadedFile } from '@/features/
 import { FileIcon } from '@/shared/ui/FileIcon';
 import { getFileName, downloadBlob } from '@/shared/lib/utils';
 import { markdownToDocx } from '@/shared/lib/markdownToDocx';
-import type { File } from '@/features/artifacts/types/file';
+import type { File, FileEntry } from '@/features/artifacts/types/file';
 
 export function ArtifactsDrawer() {
   const {
@@ -37,7 +37,7 @@ export function ArtifactsDrawer() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // State for files list (loaded from async fs.listFiles)
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<FileEntry[]>([]);
   
   // State for active file content (loaded from async fs.getFile)
   const [activeFileData, setActiveFileData] = useState<File | null>(null);
@@ -86,9 +86,9 @@ export function ArtifactsDrawer() {
       }
       
       try {
-        const fileList = await fs.listFiles();
+        const fileList = await fs.listEntries();
         if (!cancelled) {
-          setFiles(fileList.sort((a, b) => a.path.localeCompare(b.path)));
+          setFiles(fileList);
         }
       } catch (error) {
         console.error('Error loading files:', error);
@@ -143,7 +143,7 @@ export function ArtifactsDrawer() {
       unsubscribeRenamed();
       unsubscribeUpdated();
     };
-  }, [fs, activeFile]);
+  }, [fs, fs?.chatId, activeFile]);
 
   // Track previous values for "adjust state during render" pattern
   const [prevFiles, setPrevFiles] = useState(files);
@@ -272,9 +272,38 @@ export function ArtifactsDrawer() {
       return null;
     }
 
-    const kind = artifactKind(activeFile);
+    const kind = artifactKind(activeFileData.path, activeFileData.contentType);
 
     switch (kind) {
+      case 'image':
+        return (
+          <div className="h-full flex items-center justify-center bg-neutral-50 dark:bg-neutral-900/60 p-6 overflow-auto">
+            <img
+              key={`${activeFile}-${editorVersion}`}
+              src={activeFileData.content}
+              alt={getFileName(activeFileData.path)}
+              className="max-w-full max-h-full object-contain rounded-md shadow-sm"
+              draggable={false}
+            />
+          </div>
+        );
+      case 'binary':
+        return (
+          <div className="h-full flex items-center justify-center p-8 bg-neutral-50 dark:bg-neutral-900/60">
+            <div className="max-w-md text-center">
+              <FileIcon2 size={32} className="mx-auto mb-4 text-neutral-300 dark:text-neutral-600" />
+              <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
+                Binary File
+              </h3>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                This file is stored as binary data and cannot be edited as plain text here.
+              </p>
+              <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
+                {activeFileData.contentType || 'application/octet-stream'}
+              </p>
+            </div>
+          </div>
+        );
       case 'html':
         return <HtmlEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
       case 'svg':
@@ -313,7 +342,7 @@ export function ArtifactsDrawer() {
   // Check if current file supports preview mode
   const supportsPreview = () => {
     if (!activeFile) return false;
-    const kind = artifactKind(activeFile);
+    const kind = activeFileData ? artifactKind(activeFileData.path, activeFileData.contentType) : artifactKind(activeFile);
     return ['html', 'svg', 'csv', 'mermaid', 'markdown'].includes(kind);
   };
 
@@ -438,13 +467,13 @@ export function ArtifactsDrawer() {
           )}
 
           {/* Word download button — only for markdown files */}
-          {activeFile && artifactKind(activeFile) === 'markdown' && activeFileData && (
+          {activeFileData && artifactKind(activeFileData.path, activeFileData.contentType) === 'markdown' && (
             <button
               type="button"
               onClick={async () => {
                 try {
                   const blob = await markdownToDocx(activeFileData.content);
-                  const baseName = getFileName(activeFile).replace(/\.(md|markdown)$/i, '');
+                  const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, '');
                   downloadBlob(blob, `${baseName}.docx`);
                 } catch (error) {
                   console.error('Failed to convert to Word:', error);

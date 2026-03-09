@@ -1,14 +1,4 @@
-export type ToolIconUrl = {
-  /** URI pointing to the icon resource (HTTP/HTTPS URL or data URI) */
-  src: string;
-  /** MIME type of the icon (e.g. "image/svg+xml", "image/png") */
-  mimeType?: string;
-  /** Size specifications (e.g. ["48x48"], ["any"] for SVG, ["48x48", "96x96"]) */
-  sizes?: string[];
-  /** Theme preference for the icon (light or dark background) */
-  theme?: 'light' | 'dark';
-};
-export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | ToolIconUrl[];
+export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
 export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "synthesizer" | "transcriber";
 
@@ -39,6 +29,7 @@ export type MCP = {
 
     url: string;
 
+    icon?: string;
     headers?: Record<string, string>;
 };
 
@@ -85,10 +76,17 @@ export type PendingElicitation = {
     resolve: (result: ElicitationResult) => void;
 };
 
+export interface RenderedAppHandle {
+    iframe: HTMLIFrameElement;
+    registerCleanup(cleanup: () => Promise<void> | void): void;
+}
+
 export interface ToolContext {
     content?(): Content[];
     elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
-    render?(): Promise<HTMLIFrameElement>;
+    render?(): Promise<RenderedAppHandle>;
+    sendMessage?(message: Message): Promise<void>;
+    updateModelContext?(text: string | null): Promise<void>;
 }
 
 // Content parts for messages - order matters

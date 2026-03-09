@@ -1,14 +1,14 @@
 import { useState, useMemo } from 'react';
 import {
   Plus, Pencil, Trash2, ToggleLeft, ToggleRight,
-  Server, Wrench,
+  Server, Wrench, AlertTriangle, Loader2,
 } from 'lucide-react';
 import { useAgents } from '@/features/agent/hooks/useAgents';
 import { useToolsContext } from '@/features/tools/hooks/useToolsContext';
 import { BridgeEditor } from '@/features/agent/components/BridgeEditor';
 import type { Agent, BridgeServer } from '@/features/agent/types/agent';
+import { ProviderState } from '@/shared/types/chat';
 import { Section } from './Section';
-import { ToolIconRenderer } from '@/shared/ui/ToolIconRenderer';
 
 interface ToolsSectionProps {
   agent: Agent;
@@ -16,7 +16,7 @@ interface ToolsSectionProps {
 
 export function ToolsSection({ agent }: ToolsSectionProps) {
   const { updateAgent, addServer, updateServer, removeServer, toggleServer } = useAgents();
-  const { providers } = useToolsContext();
+  const { providers, getProviderState, setProviderEnabled } = useToolsContext();
 
   const [bridgeEditorOpen, setBridgeEditorOpen] = useState(false);
   const [editingBridge, setEditingBridge] = useState<BridgeServer | null>(null);
@@ -106,8 +106,8 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                   <span className="text-neutral-600 dark:text-neutral-400">
                     {!tool.Icon ? (
                       <Wrench size={16} />
-                    ) : Array.isArray(tool.Icon) ? (
-                      <ToolIconRenderer icon={tool.Icon} size={16} />
+                    ) : typeof tool.Icon === 'string' ? (
+                      <span className="bg-current inline-block" style={{ width: 16, height: 16, maskImage: `url(${tool.Icon})`, WebkitMaskImage: `url(${tool.Icon})`, maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }} />
                     ) : (
                       <tool.Icon width={16} height={16} />
                     )}
@@ -136,16 +136,29 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
               </button>
             </div>
             {agent.servers.length > 0 ? (
-              agent.servers.map(server => (
+              agent.servers.map(server => {
+                const state = server.enabled ? getProviderState(server.id) : ProviderState.Disconnected;
+                return (
                 <div key={server.id} className="flex items-center gap-2 p-2 rounded-lg bg-white/30 dark:bg-neutral-900/40 border border-neutral-200/40 dark:border-neutral-700/40 group">
-                  <button
-                    type="button"
-                    onClick={() => toggleServer(agent.id, server.id)}
-                    className={`shrink-0 ${server.enabled ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-400 dark:text-neutral-500'}`}
-                  >
-                    {server.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-                  </button>
-                  <Server size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+                  {state === ProviderState.Failed ? (
+                    <button type="button" onClick={() => setProviderEnabled(server.id, true)} className="shrink-0 text-amber-500 hover:text-amber-600" title="Connection failed — click to retry">
+                      <AlertTriangle size={16} />
+                    </button>
+                  ) : state === ProviderState.Initializing ? (
+                    <Loader2 size={16} className="shrink-0 text-neutral-400 animate-spin" aria-label="Connecting…" />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => toggleServer(agent.id, server.id)}
+                      className={`shrink-0 ${server.enabled ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-400 dark:text-neutral-500'}`}
+                    >
+                      {server.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                    </button>
+                  )}
+                  {server.icon
+                    ? <span className="shrink-0 bg-current inline-block" style={{ width: 14, height: 14, maskImage: `url(${server.icon})`, WebkitMaskImage: `url(${server.icon})`, maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }} />
+                    : <Server size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+                  }
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{server.name}</div>
                     <div className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">{server.url}</div>
@@ -159,7 +172,8 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                     </button>
                   </div>
                 </div>
-              ))
+                );
+              })
             ) : (
               <p className="text-xs text-neutral-400 dark:text-neutral-500 text-center py-1">
                 No MCP servers configured.

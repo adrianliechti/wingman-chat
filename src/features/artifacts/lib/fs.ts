@@ -1,7 +1,8 @@
 import JSZip from 'jszip';
+import { artifactContentToZipValue, normalizeArtifactPath } from '@/shared/lib/artifactFiles';
 import { downloadBlob } from '@/shared/lib/utils';
 import * as opfs from '@/shared/lib/opfs';
-import type { File } from '@/features/artifacts/types/file';
+import type { File, FileEntry } from '@/features/artifacts/types/file';
 
 type FileEventType = 'fileCreated' | 'fileDeleted' | 'fileRenamed' | 'fileUpdated';
 
@@ -101,16 +102,9 @@ export class FileSystemManager {
   }
 
   private normalizePath(path: string): string {
-    let normalized = path.trim();
-
-    if (!normalized.startsWith('/')) {
-      normalized = '/' + normalized;
-    }
-
-    normalized = normalized.replace(/\/{2,}/g, '/');
-
-    if (normalized.length > 1 && normalized.endsWith('/')) {
-      normalized = normalized.slice(0, -1);
+    const normalized = normalizeArtifactPath(path);
+    if (!normalized) {
+      throw new Error('Artifact path is required');
     }
 
     return normalized;
@@ -242,6 +236,18 @@ export class FileSystemManager {
   }
 
   /**
+   * List file entries without hydrating full content.
+   */
+  async listEntries(): Promise<FileEntry[]> {
+    if (!this._chatId) {
+      return [];
+    }
+
+    const entries = await opfs.listArtifactEntries(this._chatId);
+    return entries.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  /**
    * List all files in the filesystem.
    */
   async listFiles(): Promise<File[]> {
@@ -249,10 +255,10 @@ export class FileSystemManager {
       return [];
     }
 
-    const paths = await opfs.listArtifacts(this._chatId);
+    const entries = await this.listEntries();
     const files: File[] = [];
 
-    for (const path of paths) {
+    for (const { path } of entries) {
       const data = await opfs.readArtifact(this._chatId, path);
       if (data) {
         files.push({
@@ -356,9 +362,9 @@ export class FileSystemManager {
 
     const deletes: string[] = [];
     if (deleteMissing) {
-      const existingFiles = await this.listFiles();
-      for (const file of existingFiles) {
-        const existingPath = this.normalizePath(file.path);
+      const existingEntries = await this.listEntries();
+      for (const entry of existingEntries) {
+        const existingPath = this.normalizePath(entry.path);
         if (!normalizedRuntimePaths.has(existingPath)) {
           deletes.push(existingPath);
         }
@@ -388,8 +394,7 @@ export class FileSystemManager {
       return 0;
     }
 
-    const paths = await opfs.listArtifacts(this._chatId);
-    return paths.length;
+    return (await this.listEntries()).length;
   }
 
   /**
@@ -421,7 +426,7 @@ export async function downloadFilesystemAsZip(
     const cleanPath = path.startsWith('/') ? path.substring(1) : path;
     
     // Add file to zip with its content
-    zip.file(cleanPath, file.content);
+    zip.file(cleanPath, artifactContentToZipValue(file));
   }
 
   try {

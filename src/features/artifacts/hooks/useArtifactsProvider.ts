@@ -6,6 +6,7 @@ import artifactsInstructionsText from '@/features/artifacts/prompts/artifacts.tx
 import interpreterInstructionsText from '@/features/artifacts/prompts/interpreter.txt?raw';
 import { executeCode } from '@/features/tools/lib/interpreter';
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from '@/features/tools/lib/bash';
+import { normalizeArtifactPath } from '@/shared/lib/artifactFiles';
 
 export function useArtifactsProvider(): ToolProvider | null {
   const { fs, activeFile, isAvailable } = useArtifacts();
@@ -30,7 +31,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: ['path', 'content']
         },
         function: async (args: Record<string, unknown>) => {
-          const path = normalizePath(args.path as string);
+          const path = normalizeArtifactPath(args.path as string);
           const content = args.content as string;
 
           if (!path || !content) {
@@ -66,21 +67,21 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: []
         },
         function: async (args: Record<string, unknown>) => {
-          const path = normalizePath((args.directory as string) ?? '/');
+          const path = normalizeArtifactPath((args.directory as string) ?? '/');
 
           if (!fs) {
             return [{ type: 'text' as const, text: JSON.stringify({ error: 'File system not available' }) }];
           }
 
           try {
-            const allFiles = await fs.listFiles();
+            const allFiles = await fs.listEntries();
             const filteredFiles = !path || path === '/'
               ? allFiles
               : allFiles.filter(file => file.path.startsWith(path));
 
             const fileList = filteredFiles.map(file => ({
               path: file.path,
-              size: file.content.length,
+              size: file.size,
               contentType: file.contentType
             }));
 
@@ -108,7 +109,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: ['path']
         },
         function: async (args: Record<string, unknown>) => {
-          const path = normalizePath(args.path as string);
+          const path = normalizeArtifactPath(args.path as string);
 
           if (!path) {
             return [{ type: 'text' as const, text: JSON.stringify({ error: 'Path is required' }) }];
@@ -119,7 +120,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           }
 
           const file = await fs.getFile(path);
-          const allFiles = await fs.listFiles();
+          const allFiles = await fs.listEntries();
           const isFolder = allFiles.some(f => f.path.startsWith(path + '/'));
 
           if (!file && !isFolder) {
@@ -161,8 +162,8 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: ['from', 'to']
         },
         function: async (args: Record<string, unknown>) => {
-          const fromPath = normalizePath(args.from as string);
-          const toPath = normalizePath(args.to as string);
+          const fromPath = normalizeArtifactPath(args.from as string);
+          const toPath = normalizeArtifactPath(args.to as string);
 
           if (!fromPath || !toPath) {
             return [{ type: 'text' as const, text: JSON.stringify({ error: 'Both from and to path are required' }) }];
@@ -216,7 +217,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: ['path']
         },
         function: async (args: Record<string, unknown>) => {
-          const path = normalizePath(args.path as string);
+          const path = normalizeArtifactPath(args.path as string);
 
           if (!path) {
             return [{ type: 'text' as const, text: JSON.stringify({ error: 'Path is required' }) }];
@@ -328,13 +329,17 @@ export function useArtifactsProvider(): ToolProvider | null {
       // --- Code Execution Tools ---
       {
         name: "execute_python_code",
-        description: "Execute Python code with optional package dependencies. Works with the artifacts filesystem — all artifact files are available under /home/pyodide/ and any files written there are synced back.",
+        description: "Execute Python code or run a Python artifact file with optional package dependencies. Works with the artifacts filesystem — all artifact files are available under /home/pyodide/ and any files written there are synced back.",
         parameters: {
           type: "object",
           properties: {
             code: {
               type: "string",
-              description: "The Python code to execute. Can include imports, functions, calculations, and print statements."
+              description: "Inline Python code to execute. Prefer this for short snippets; use `path` for existing scripts in artifacts."
+            },
+            path: {
+              type: "string",
+              description: "Path to a Python script in the artifacts filesystem to execute, such as `/analysis.py`. Prefer this for existing or longer scripts."
             },
             packages: {
               type: "array",
@@ -342,10 +347,11 @@ export function useArtifactsProvider(): ToolProvider | null {
               description: "Optional list of Python packages required (e.g., ['numpy', 'pandas']). These will be available for import."
             }
           },
-          required: ["code"]
+          required: []
         },
         function: async (args: Record<string, unknown>) => {
           const { code, packages } = args;
+          const path = normalizeArtifactPath(args.path as string | undefined);
 
           try {
             // Load artifact files into Pyodide's VFS
@@ -357,8 +363,33 @@ export function useArtifactsProvider(): ToolProvider | null {
               }
             }
 
+            const hasCode = typeof code === 'string' && code.trim().length > 0;
+            const hasPath = typeof path === 'string' && path.length > 0;
+
+            if (hasCode === hasPath) {
+              return [{
+                type: 'text' as const,
+                text: 'Error executing code: provide exactly one of `code` or `path`.',
+              }];
+            }
+
+            let script = code as string;
+
+            if (hasPath) {
+              if (!fs) {
+                return [{ type: 'text' as const, text: 'Error executing code: file system not available.' }];
+              }
+
+              const file = await fs.getFile(path);
+              if (!file) {
+                return [{ type: 'text' as const, text: `Error executing code: file not found: ${path}` }];
+              }
+
+              script = file.content;
+            }
+
             const result = await executeCode({
-              code: code as string,
+              code: script,
               packages: packages as string[] | undefined,
               files: artifactFiles,
             });
@@ -455,32 +486,4 @@ export function useArtifactsProvider(): ToolProvider | null {
   }, [isAvailable, artifactsTools]);
 
   return provider;
-}
-
-function normalizePath(path: string | undefined): string | undefined {
-  if (!path) {
-    return undefined;
-  }
-
-  // Remove leading/trailing whitespace
-  let normalized = path.trim();
-
-  if (!normalized) {
-    return undefined;
-  }
-
-  // Ensure path starts with /
-  if (!normalized.startsWith('/')) {
-    normalized = '/' + normalized;
-  }
-
-  // Remove duplicate slashes
-  normalized = normalized.replace(/\/+/g, '/');
-
-  // Remove trailing slash unless it's the root
-  if (normalized.length > 1 && normalized.endsWith('/')) {
-    normalized = normalized.slice(0, -1);
-  }
-
-  return normalized;
 }

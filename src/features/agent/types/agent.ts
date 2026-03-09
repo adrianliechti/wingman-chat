@@ -2,10 +2,15 @@ export type { RepositoryFile } from '@/features/repository/types/repository';
 
 export interface BridgeServer {
   id: string;
+
   name: string;
   description: string;
+
   url: string;
+  
+  icon?: string;
   headers?: Record<string, string>;
+  
   enabled: boolean;
 }
 

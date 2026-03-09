@@ -50,7 +50,7 @@ function HtmlPreview({ content }: { content: string }) {
       unsubscribeRenamed();
       unsubscribeUpdated();
     };
-  }, [fs]);
+  }, [fs, fs?.chatId]);
 
   // Transform HTML content with data URLs for artifact references
   // Data URLs don't need cleanup (unlike blob URLs)

@@ -11,6 +11,13 @@
   visibility: visible;
 }
 
+html.emoji-native .noto-emoji {
+  font-family: inherit;
+  font-size: inherit;
+  vertical-align: initial;
+  visibility: visible;
+}
+
 /* Unordered list with properly sized bullets */
 .custom-list {
   list-style: disc outside;

@@ -6,6 +6,9 @@ export type { LayoutMode } from '@/shell/context/LayoutContext';
 // Theme settings
 export type { Theme } from '@/shell/context/ThemeContext';
 
+// Emoji settings
+export type { EmojiMode } from '@/shell/context/EmojiContext';
+
 // Background settings
 export type { 
   BackgroundPack, 

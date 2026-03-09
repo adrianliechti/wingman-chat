@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Role } from "@/shared/types/chat";
 import type { Message, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation, Content } from '@/shared/types/chat';
 import { useModels } from "@/features/chat/hooks/useModels";
@@ -23,13 +23,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { isAvailable: artifactsEnabled, setChatId: setArtifactsChatId } = useArtifacts();
-  const { getIframe, showDrawer } = useApp();
+  const { renderApp } = useApp();
   const { currentAgent } = useAgents();
   const { resetTools } = useToolsContext();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
+  const pendingModelContextRef = useRef<Map<string, string | null>>(new Map());
 
   const chat = chats.find(c => c.id === chatId) ?? null;
   const agentModel = currentAgent?.model ? models.find(m => m.id === currentAgent.model) ?? null : null;
@@ -120,21 +121,40 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [getOrCreateChat, updateChat]
   );
 
-  const sendMessage = useCallback(
-    async (message: Message, historyOverride?: Message[]) => {
-      const { id, chat: chatObj } = await getOrCreateChat();
+  const updateModelContext = useCallback(async (targetChatId: string, text: string | null) => {
+    if (!text || !text.trim()) {
+      pendingModelContextRef.current.delete(targetChatId);
+      return;
+    }
 
+    pendingModelContextRef.current.set(targetChatId, text.trim());
+  }, []);
+
+  const runMessageInChat = useCallback(
+    async (id: string, message: Message, historyOverride?: Message[], initialTitle?: string) => {
       const history = historyOverride ?? (chats.find(c => c.id === id)?.messages || []);
-      let conversation = [...history, message];
+      const pendingModelContext = pendingModelContextRef.current.get(id) ?? null;
+      pendingModelContextRef.current.delete(id);
+
+      const outgoingMessage = appendTextContent(message, pendingModelContext);
+
+      let conversation = [...history, outgoingMessage];
+      let modelConversation = [...conversation];
 
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
 
       // Create tool context with current message content and elicitation support
       const createToolContext = (currentToolCall: { id: string; name: string }): ToolContext => ({
-        content: () => message.content.filter(p => 
+        content: () => outgoingMessage.content.filter((p: Content) => 
           p.type === 'text' || p.type === 'image' || p.type === 'file'
         ) as Content[],
+        sendMessage: async (appMessage: Message) => {
+          await runMessageInChat(id, appMessage, conversation, initialTitle);
+        },
+        updateModelContext: async (text: string | null) => {
+          await updateModelContext(id, text);
+        },
         elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
           return new Promise((resolve) => {
             setPendingElicitation({
@@ -145,20 +165,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
             });
           });
         },
-        render: async (): Promise<HTMLIFrameElement> => {
+        render: async () => {
           console.log('[Render] Getting iframe for tool call:', currentToolCall.id, currentToolCall.name);
-          
-          // Get the persistent iframe from the drawer
-          const iframe = getIframe();
-          
-          if (!iframe) {
-            throw new Error('App drawer iframe not available. Make sure the drawer is mounted.');
-          }
-          
-          // Show the drawer when rendering
-          showDrawer();
-          
-          return iframe;
+
+          return renderApp();
         }
       });
 
@@ -175,7 +185,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           const assistantMessage = await client.complete(
             model!.id,
             instructions,
-            conversation,
+            modelConversation,
             tools,
             (contentParts) => {
               setStreamingMessage({ 
@@ -195,6 +205,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
           // Add the assistant message to conversation
           conversation = [...conversation, assistantMessage];
+          modelConversation = [...modelConversation, assistantMessage];
 
           // Commit the completed message once per turn
           updateChat(id, () => ({ messages: conversation }));
@@ -232,6 +243,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   message: `Tool "${toolCall.name}" is not available or not executable.`
                 },
               }];
+              modelConversation = [...modelConversation, conversation[conversation.length - 1]];
 
               continue;
             }
@@ -246,7 +258,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               setPendingElicitation(null);
 
               // Add tool result to conversation as user message
-              conversation = [...conversation, {
+              const toolResultMessage: Message = {
                 role: Role.User,
                 content: [{
                   type: 'tool_result',
@@ -255,13 +267,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   arguments: toolCall.arguments,
                   result: result,
                 }],
-              }];
+              };
+              conversation = [...conversation, toolResultMessage];
+              modelConversation = [...modelConversation, toolResultMessage];
             }
             catch (error) {
               console.error("Tool failed", error);
 
               // Add tool error to conversation as user message
-              conversation = [...conversation, {
+              const toolErrorMessage: Message = {
                 role: Role.User,
                 content: [{
                   type: 'tool_result',
@@ -274,7 +288,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   code: 'TOOL_EXECUTION_ERROR',
                   message: 'The tool could not complete the requested action. Please try again or use a different approach.'
                 },
-              }];
+              };
+              conversation = [...conversation, toolErrorMessage];
+              modelConversation = [...modelConversation, toolErrorMessage];
             }
           }
 
@@ -287,7 +303,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Ensure streaming buffer is cleared after completion
         setStreamingMessage(null);
 
-        if (!chatObj.title || conversation.length % 3 === 0) {
+        if (!initialTitle || conversation.length % 3 === 0) {
           client
             .summarizeTitle(model!.id, conversation)
             .then(title => {
@@ -345,7 +361,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Ensure streaming buffer is cleared on errors
         setStreamingMessage(null);
       }
-    }, [getOrCreateChat, chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, getIframe, showDrawer]);
+    }, [chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, renderApp, updateModelContext]);
+
+  const sendMessage = useCallback(
+    async (message: Message, historyOverride?: Message[]) => {
+      const { id, chat: chatObj } = await getOrCreateChat();
+      if (!chatObj) {
+        throw new Error(`Chat ${id} not found`);
+      }
+      await runMessageInChat(id, message, historyOverride, chatObj.title);
+    },
+    [getOrCreateChat, runMessageInChat]
+  );
 
 
 
@@ -385,3 +412,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
+
+function appendTextContent(message: Message, text: string | null): Message {
+  if (!text || message.role !== Role.User) {
+    return message;
+  }
+
+  return {
+    ...message,
+    content: [...message.content, { type: 'text', text }],
+  };
+}
+
+

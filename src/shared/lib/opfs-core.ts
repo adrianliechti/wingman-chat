@@ -1,3 +1,6 @@
+import { artifactContentToBlob } from './artifactFiles';
+import { inferContentTypeFromPath } from './fileTypes';
+
 /**
  * OPFS Core — File/folder CRUD, index management, storage usage, and shared utilities.
  *
@@ -76,15 +79,14 @@ export async function getDirectory(
  */
 export async function writeJson<T>(path: string, data: T): Promise<void> {
   const json = JSON.stringify(data);
-  await writeText(path, json);
+  await writeText(path, json, 'application/json');
 }
 
 /**
  * Write text data to a file.
  */
-export async function writeText(path: string, content: string): Promise<void> {
-  const blob = new Blob([content], { type: 'application/json' });
-  await writeBlob(path, blob);
+export async function writeText(path: string, content: string, contentType: string = 'text/plain;charset=utf-8'): Promise<void> {
+  await writeBlob(path, artifactContentToBlob(content, contentType));
 }
 
 /**
@@ -151,6 +153,22 @@ export async function readBlob(path: string): Promise<Blob | undefined> {
     }
     throw error;
   }
+}
+
+/**
+ * Read file metadata without hydrating file content.
+ * Returns undefined if file doesn't exist.
+ */
+export async function readFileMetadata(path: string): Promise<{ size: number; contentType?: string } | undefined> {
+  const blob = await readBlob(path);
+  if (!blob) {
+    return undefined;
+  }
+
+  return {
+    size: blob.size,
+    contentType: blob.type || inferContentType(path),
+  };
 }
 
 /**
@@ -476,38 +494,5 @@ export function parsePath(path: string): { dir: string; name: string } {
  * Infer content type from file path extension.
  */
 export function inferContentType(path: string): string | undefined {
-  const ext = path.split('.').pop()?.toLowerCase();
-  const contentTypes: Record<string, string> = {
-    'html': 'text/html',
-    'htm': 'text/html',
-    'css': 'text/css',
-    'js': 'text/javascript',
-    'jsx': 'text/javascript',
-    'ts': 'text/typescript',
-    'tsx': 'text/typescript',
-    'json': 'application/json',
-    'md': 'text/markdown',
-    'txt': 'text/plain',
-    'svg': 'image/svg+xml',
-    'png': 'image/png',
-    'jpg': 'image/jpeg',
-    'jpeg': 'image/jpeg',
-    'gif': 'image/gif',
-    'webp': 'image/webp',
-    'pdf': 'application/pdf',
-    'xml': 'application/xml',
-    'yaml': 'application/yaml',
-    'yml': 'application/yaml',
-    'csv': 'text/csv',
-    'py': 'text/x-python',
-    'rb': 'text/x-ruby',
-    'go': 'text/x-go',
-    'rs': 'text/x-rust',
-    'java': 'text/x-java',
-    'c': 'text/x-c',
-    'cpp': 'text/x-c++',
-    'h': 'text/x-c',
-    'hpp': 'text/x-c++',
-  };
-  return ext ? contentTypes[ext] : undefined;
+  return inferContentTypeFromPath(path);
 }

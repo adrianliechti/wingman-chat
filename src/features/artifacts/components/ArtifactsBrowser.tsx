@@ -3,7 +3,7 @@ import { Folder, FolderOpen, ChevronRight, ChevronDown, MoreVertical, Trash, Edi
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import { FileIcon } from '@/shared/ui/FileIcon';
 import { FileSystemManager } from '@/features/artifacts/lib/fs';
-import type { File } from '@/features/artifacts/types/file';
+import type { FileEntry } from '@/features/artifacts/types/file';
 
 // Helper function to build folder tree structure
 interface FileNode {
@@ -11,10 +11,10 @@ interface FileNode {
   path: string;
   type: 'file' | 'folder';
   children?: FileNode[];
-  file?: { path: string; content: string }; // Reference to the actual file object
+  file?: FileEntry;
 }
 
-function buildFileTree(files: { path: string; content: string }[]): FileNode[] {
+function buildFileTree(files: FileEntry[]): FileNode[] {
   const tree: FileNode[] = [];
   const folderMap = new Map<string, FileNode>();
 
@@ -155,7 +155,7 @@ function FileTreeNode({
         onClick={() => onFileClick(node.path)}
         className="flex items-center gap-1 flex-1 min-w-0 text-left"
       >
-        <FileIcon name={node.path} />
+        <FileIcon name={node.path} contentType={node.file?.contentType} />
         <span 
           className={`text-sm truncate ${
             isTabOpen 
@@ -208,7 +208,7 @@ function FileTreeNode({
 
 interface ArtifactsBrowserProps {
   fs: FileSystemManager;
-  files: File[];
+  files: FileEntry[];
   openTabs: string[];
   onFileClick: (path: string) => void;
 }
@@ -267,7 +267,7 @@ export function ArtifactsBrowser({
   }, [fs]);
 
   // Build the file tree from files state
-  const fileTree = buildFileTree(files.map(file => ({ path: file.path, content: file.content })));
+  const fileTree = buildFileTree(files);
 
   const handleToggleFolder = (path: string) => {
     const newExpanded = new Set(expandedFolders);

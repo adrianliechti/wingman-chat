@@ -24,7 +24,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Config MCP clients (created once)
   const [configMcpClients] = useState<MCPClient[]>(() =>
-    (config.mcps || []).map(mcp => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers))
+    (config.mcps || []).map(mcp => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers, mcp.icon))
   );
 
   // Agent
@@ -98,6 +98,31 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       setMcpStates(prev => new Map(prev).set(id, ProviderState.Disconnected));
     }
   }, [allMcpClients]);
+
+  // Wire up onDisconnected callbacks so ping failures update state
+  useEffect(() => {
+    for (const client of allMcpClients) {
+      client.onDisconnected = () => {
+        setMcpStates(prev => new Map(prev).set(client.id, ProviderState.Failed));
+      };
+    }
+  }, [allMcpClients]);
+
+  // When a client is removed from allMcpClients, clear its stale state so
+  // re-adding it (toggle off → on) doesn't get blocked by the Connected guard.
+  useEffect(() => {
+    setMcpStates(prev => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const id of next.keys()) {
+        if (!mcpIds.has(id)) {
+          next.delete(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [mcpIds]);
 
   // Reconcile MCP connections with desired state (idempotent — safe to re-run)
   useEffect(() => {

@@ -1,9 +1,11 @@
 import { docxToMarkdown } from '@/shared/lib/docx';
+import { isTextContentType } from '@/shared/lib/fileTypes';
 import { pptxToMarkdown } from '@/shared/lib/pptx';
+import { readAsDataURL } from '@/shared/lib/utils';
 import { xlsxToCsv } from '@/shared/lib/xlsx';
 
 // Artifact kind type
-export type ArtifactKind = 'text' | 'code' | 'svg' | 'html' | 'csv' | 'mermaid' | 'markdown';
+export type ArtifactKind = 'text' | 'code' | 'svg' | 'html' | 'csv' | 'mermaid' | 'markdown' | 'image' | 'binary';
 
 // Re-export HTML transformation utilities
 export { transformHtmlForPreview, type TransformResult } from './artifactsHtml';
@@ -86,12 +88,15 @@ export async function processUploadedFile(file: File): Promise<ProcessedFile[]> 
     }
   }
 
-  // Default: read as text
-  const content = await file.text();
+  const contentType = file.type || 'text/plain';
+  const content = isTextContentType(contentType)
+    ? await file.text()
+    : await readAsDataURL(file);
+
   return [{
     path: `/${file.name}`,
     content,
-    contentType: file.type || 'text/plain'
+    contentType,
   }];
 }
 
@@ -113,10 +118,31 @@ export function artifactLanguage(path: string): string {
   return ext;
 }
 
-// Helper function to determine the kind of artifact based on file extension
-export function artifactKind(path: string): ArtifactKind {
+// Helper function to determine the kind of artifact based on file extension and content type.
+export function artifactKind(path: string, contentType?: string): ArtifactKind {
   const ext = path.split('.').pop()?.toLowerCase() || '';
   const basename = path.split('/').pop()?.toLowerCase() || '';
+  const normalizedContentType = contentType?.toLowerCase();
+
+  if (normalizedContentType === 'image/svg+xml') {
+    return 'svg';
+  }
+
+  if (normalizedContentType === 'text/html') {
+    return 'html';
+  }
+
+  if (normalizedContentType === 'text/csv' || normalizedContentType === 'text/tab-separated-values') {
+    return 'csv';
+  }
+
+  if (normalizedContentType === 'text/markdown') {
+    return 'markdown';
+  }
+
+  if (normalizedContentType === 'text/vnd.mermaid') {
+    return 'mermaid';
+  }
   
   // Dockerfile files (check for exact names)
   if (basename === 'dockerfile' || basename.startsWith('dockerfile.')) {
@@ -152,6 +178,12 @@ export function artifactKind(path: string): ArtifactKind {
   if (ext === 'md' || ext === 'markdown') {
     return 'markdown';
   }
+
+  const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif', 'tif', 'tiff'];
+
+  if (normalizedContentType?.startsWith('image/') || imageExtensions.includes(ext)) {
+    return 'image';
+  }
   
   // Code files
   const codeExtensions = [
@@ -169,6 +201,19 @@ export function artifactKind(path: string): ArtifactKind {
   
   if (codeExtensions.includes(ext || '')) {
     return 'code';
+  }
+
+  const binaryExtensions = [
+    'pdf', 'zip', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar',
+    'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx',
+    'woff', 'woff2', 'ttf', 'otf', 'eot',
+    'mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac',
+    'mp4', 'webm', 'mov', 'avi', 'mkv', 'wmv',
+    'bin', 'wasm', 'pyc', 'pkl', 'pickle', 'sqlite', 'db', 'ico'
+  ];
+
+  if ((normalizedContentType && !isTextContentType(normalizedContentType)) || binaryExtensions.includes(ext)) {
+    return 'binary';
   }
   
   // Default to text for everything else
