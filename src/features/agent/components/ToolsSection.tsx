@@ -145,7 +145,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                       <AlertTriangle size={16} />
                     </button>
                   ) : state === ProviderState.Initializing ? (
-                    <Loader2 size={16} className="shrink-0 text-neutral-400 animate-spin" title="Connecting…" />
+                    <Loader2 size={16} className="shrink-0 text-neutral-400 animate-spin" aria-label="Connecting…" />
                   ) : (
                     <button
                       type="button"

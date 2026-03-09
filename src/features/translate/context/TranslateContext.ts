@@ -77,10 +77,10 @@ export const supportedFiles = (): SupportedFile[] => {
     const config = getConfig();
     if (!config.translator) return [];
     const fileExtensions = config.translator.files || [];
-    return fileExtensions.map(ext => ({
-      ext,
-      mime: lookupContentType(ext)
-    }));
+    return fileExtensions.flatMap(ext => {
+      const mime = lookupContentType(ext);
+      return mime ? [{ ext, mime }] : [];
+    });
   } catch {
     // Return empty array if config is not loaded yet
     return [];
