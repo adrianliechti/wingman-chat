@@ -201,7 +201,7 @@ export class MCPClient implements ToolProvider {
           
           if (resource && context?.render) {
             await this.renderToolUI(tool.name, resource, normalizedResult, args, context);
-            return [{ type: 'text' as const, text: "The tool result has been rendered in an interactive UI component and is now visible to the user." }];
+            context.setMeta?.({ toolProvider: this.id, toolResource: resource.uri });
           }
           
           return processContent(normalizedResult.content as MCPContentBlock[]);
@@ -237,7 +237,7 @@ export class MCPClient implements ToolProvider {
         resource.meta,
         this.client!.getServerCapabilities(),
         !!context.sendMessage,
-        !!context.updateModelContext,
+        !!context.setContext,
       ),
       { hostContext: buildHostContext(toolDefinition, iframe) }
     );
@@ -310,11 +310,11 @@ export class MCPClient implements ToolProvider {
 
     bridge.onupdatemodelcontext = async ({ content, structuredContent }) => {
       try {
-        if (!context.updateModelContext) {
-          throw new Error('updateModelContext is not supported by the host context');
+        if (!context.setContext) {
+          throw new Error('setContext is not supported by the host context');
         }
 
-        await context.updateModelContext(serializeModelContext(content, structuredContent));
+        await context.setContext(serializeModelContext(content, structuredContent));
         return {};
       } catch (error) {
         console.error(`Failed to update model context for ${toolName}:`, error);
@@ -368,6 +368,57 @@ export class MCPClient implements ToolProvider {
     };
     
     await bridge.connect(transport);
+  }
+
+  /**
+   * Restore an MCP App UI from persisted chat data.
+   * Re-fetches the UI resource if not cached, renders the iframe, and replays stored tool input + result.
+   */
+  async restoreToolUI(
+    toolName: string,
+    uiResourceUri: string,
+    args: Record<string, unknown>,
+    storedResult: (TextContent | ImageContent | AudioContent | FileContent)[],
+    context: ToolContext,
+  ): Promise<void> {
+    if (!this.client) {
+      throw new Error('MCP client not connected');
+    }
+
+    // Convert stored content back to MCP CallToolResult format
+    const result: CallToolResult = {
+      content: storedResult.map(c => {
+        if (c.type === 'text') return { type: 'text' as const, text: c.text };
+        if (c.type === 'image') {
+          const match = c.data?.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) return { type: 'image' as const, mimeType: match[1], data: match[2] };
+        }
+        return { type: 'text' as const, text: JSON.stringify(c) };
+      }),
+    };
+
+    // Try to use cached resource, otherwise re-fetch
+    let resource = this.uiResources.get(toolName);
+    if (!resource) {
+      try {
+        const readResult = await this.client.readResource({ uri: uiResourceUri });
+        const content = readResult.contents[0];
+        if (!content || content.mimeType !== RESOURCE_MIME_TYPE || !content.uri?.startsWith('ui://')) {
+          throw new Error(`Invalid UI resource for ${toolName}`);
+        }
+        resource = {
+          uri: uiResourceUri,
+          content,
+          meta: content._meta?.ui as McpUiResourceMeta | undefined,
+        };
+        this.uiResources.set(toolName, resource);
+      } catch (error) {
+        console.error(`Failed to fetch UI resource for ${toolName}:`, error);
+        throw error;
+      }
+    }
+
+    await this.renderToolUI(toolName, resource, result, args, context);
   }
   
   private async loadUIResources(tools: MCPTool[]): Promise<void> {

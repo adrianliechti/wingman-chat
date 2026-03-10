@@ -6,7 +6,7 @@ import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import { useRendererProvider } from "@/features/renderer/hooks/useRendererProvider";
 import { ToolsContext } from "./ToolsContext";
-import type { ToolProvider } from "@/shared/types/chat";
+import type { ToolProvider, TextContent, ImageContent, AudioContent, FileContent, ToolContext } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 
 export function ToolsProvider({ children }: { children: React.ReactNode }) {
@@ -151,6 +151,23 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     setUserTools(new Set());
   }, []);
 
+  // Restore an MCP app UI from persisted chat data
+  const restoreToolUI = useCallback(async (
+    providerId: string,
+    toolName: string,
+    resourceUri: string,
+    args: Record<string, unknown>,
+    result: (TextContent | ImageContent | AudioContent | FileContent)[],
+    context: ToolContext,
+  ) => {
+    const client = allMcpClients.find(c => c.id === providerId);
+    if (!client || !client.isConnected()) {
+      console.warn(`Cannot restore tool UI: MCP client ${providerId} not connected`);
+      return;
+    }
+    await client.restoreToolUI(toolName, resourceUri, args, result, context);
+  }, [allMcpClients]);
+
   const setModelOverrides = useCallback((enabled: string[], disabled: string[]) => {
     setModelEnabledTools(new Set(enabled));
     setModelDisabledTools(new Set(disabled));
@@ -163,7 +180,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   }, [configMcpClients]);
 
   return (
-    <ToolsContext.Provider value={{ providers, getProviderState, setProviderEnabled, setModelOverrides, resetTools }}>
+    <ToolsContext.Provider value={{ providers, getProviderState, setProviderEnabled, setModelOverrides, resetTools, restoreToolUI }}>
       {children}
     </ToolsContext.Provider>
   );
