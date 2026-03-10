@@ -54,6 +54,9 @@ export default defineConfig({
       // Shim node:zlib that just-bash's browser bundle imports but can't use in the browser
       'node:zlib': path.resolve(__dirname, 'src/shared/lib/zlib-shim.ts'),
       'zlib': path.resolve(__dirname, 'src/shared/lib/zlib-shim.ts'),
+      // Shim node:dns that just-bash's browser bundle imports for network resolution
+      'node:dns': path.resolve(__dirname, 'src/shared/lib/dns-shim.ts'),
+      'dns': path.resolve(__dirname, 'src/shared/lib/dns-shim.ts'),
     },
   },
   optimizeDeps: {

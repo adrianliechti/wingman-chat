@@ -86,7 +86,8 @@ export interface ToolContext {
     elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
     render?(): Promise<RenderedAppHandle>;
     sendMessage?(message: Message): Promise<void>;
-    updateModelContext?(text: string | null): Promise<void>;
+    setMeta?(meta: Record<string, unknown>): void;
+    setContext?(text: string | null): Promise<void>;
 }
 
 // Content parts for messages - order matters
@@ -110,6 +111,7 @@ export type ToolResultContent = {
     id: string;
     name: string;
     arguments: string;
+    meta?: Record<string, unknown>;
     result: (TextContent | ImageContent | AudioContent | FileContent)[];
 };
 

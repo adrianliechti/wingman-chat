@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Role } from "@/shared/types/chat";
-import type { Message, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation, Content } from '@/shared/types/chat';
+import type { Message, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation, Content, ToolResultContent } from '@/shared/types/chat';
 import { useModels } from "@/features/chat/hooks/useModels";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
@@ -25,7 +25,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { isAvailable: artifactsEnabled, setChatId: setArtifactsChatId } = useArtifacts();
   const { renderApp } = useApp();
   const { currentAgent } = useAgents();
-  const { resetTools } = useToolsContext();
+  const { resetTools, setProviderEnabled, restoreToolUI } = useToolsContext();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
@@ -65,10 +65,48 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return newChat;
   }, [createChatHook, resetTools]);
 
+  const restoreToolApp = useCallback(async (toolResult: ToolResultContent) => {
+    if (!toolResult.meta?.toolProvider || !toolResult.meta?.toolResource) return;
+
+    const providerId = toolResult.meta.toolProvider as string;
+    const resourceUri = toolResult.meta.toolResource as string;
+    const args = JSON.parse(toolResult.arguments || '{}');
+
+    // Enable the provider (connects if not already connected)
+    await setProviderEnabled(providerId, true);
+
+    const context: ToolContext = {
+      render: () => renderApp(),
+    };
+
+    try {
+      await restoreToolUI(providerId, toolResult.name, resourceUri, args, toolResult.result, context);
+    } catch (error) {
+      console.error('Failed to restore tool app:', error);
+    }
+  }, [setProviderEnabled, restoreToolUI, renderApp]);
+
   const selectChat = useCallback((chatId: string) => {
     setChatId(chatId);
     resetTools();
-  }, [resetTools]);
+
+    // Auto-restore the last MCP app for this chat
+    const chatData = chats.find(c => c.id === chatId);
+    if (chatData?.messages?.length) {
+      const lastAppResult = chatData.messages
+        .flatMap(m => m.content)
+        .filter((c): c is ToolResultContent =>
+          c.type === 'tool_result' && !!c.meta?.toolProvider && !!c.meta?.toolResource
+        )
+        .pop();
+
+      if (lastAppResult) {
+        restoreToolApp(lastAppResult).catch(error => {
+          console.error('Failed to auto-restore app on chat load:', error);
+        });
+      }
+    }
+  }, [chats, resetTools, restoreToolApp]);
 
   const deleteChat = useCallback(
     (id: string) => {
@@ -145,32 +183,41 @@ export function ChatProvider({ children }: ChatProviderProps) {
       setIsResponding(true);
 
       // Create tool context with current message content and elicitation support
-      const createToolContext = (currentToolCall: { id: string; name: string }): ToolContext => ({
-        content: () => outgoingMessage.content.filter((p: Content) => 
-          p.type === 'text' || p.type === 'image' || p.type === 'file'
-        ) as Content[],
-        sendMessage: async (appMessage: Message) => {
-          await runMessageInChat(id, appMessage, conversation, initialTitle);
-        },
-        updateModelContext: async (text: string | null) => {
-          await updateModelContext(id, text);
-        },
-        elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
-          return new Promise((resolve) => {
-            setPendingElicitation({
-              toolCallId: currentToolCall.id,
-              toolName: currentToolCall.name,
-              elicitation,
-              resolve,
-            });
-          });
-        },
-        render: async () => {
-          console.log('[Render] Getting iframe for tool call:', currentToolCall.id, currentToolCall.name);
+      const createToolContext = (currentToolCall: { id: string; name: string }): { context: ToolContext; getResultMeta: () => Record<string, unknown> | undefined } => {
+        let resultMeta: Record<string, unknown> | undefined;
+        return {
+          context: {
+            content: () => outgoingMessage.content.filter((p: Content) => 
+              p.type === 'text' || p.type === 'image' || p.type === 'file'
+            ) as Content[],
+            sendMessage: async (appMessage: Message) => {
+              await runMessageInChat(id, appMessage, conversation, initialTitle);
+            },
+            setContext: async (text: string | null) => {
+              await updateModelContext(id, text);
+            },
+            elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
+              return new Promise((resolve) => {
+                setPendingElicitation({
+                  toolCallId: currentToolCall.id,
+                  toolName: currentToolCall.name,
+                  elicitation,
+                  resolve,
+                });
+              });
+            },
+            render: async () => {
+              console.log('[Render] Getting iframe for tool call:', currentToolCall.id, currentToolCall.name);
 
-          return renderApp();
-        }
-      });
+              return renderApp();
+            },
+            setMeta: (meta: Record<string, unknown>) => {
+              resultMeta = meta;
+            },
+          },
+          getResultMeta: () => resultMeta,
+        };
+      };
 
       try {
         // Get tools and instructions when needed
@@ -250,7 +297,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
             try {
               const args = JSON.parse(toolCall.arguments || "{}");
-              const toolContext = createToolContext(toolCall);
+              const { context: toolContext, getResultMeta } = createToolContext(toolCall);
 
               const result = await tool.function(args, toolContext);
 
@@ -266,6 +313,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   name: toolCall.name,
                   arguments: toolCall.arguments,
                   result: result,
+                  ...(getResultMeta() ? { meta: getResultMeta() } : {}),
                 }],
               };
               conversation = [...conversation, toolResultMessage];
@@ -405,6 +453,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     sendMessage,
 
     isResponding,
+    restoreToolApp,
     // Elicitation
     pendingElicitation,
     resolveElicitation,
