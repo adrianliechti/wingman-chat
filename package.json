@@ -20,7 +20,7 @@
     "@tailwindcss/vite": "^4.2.1",
     "@xyflow/react": "^12.10.1",
     "docx": "^9.6.1",
-    "dompurify": "^3.3.2",
+    "dompurify": "^3.3.3",
     "emoji-regex": "^10.6.0",
     "hast-util-to-jsx-runtime": "^2.3.6",
     "jszip": "^3.10.1",

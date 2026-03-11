@@ -66,11 +66,12 @@ export function TranslatePage() {
   const [errorExpanded, setErrorExpanded] = useState(false);
   const lastSelectionRef = useRef<string>('');
 
-  // Sync currentText when translatedText changes from API response
-  // Using "adjust state during render" pattern
-  if (currentText !== translatedText && translatedText !== '') {
+  // Sync currentText when a new translation arrives from the API.
+  // Using useEffect (not render-time assignment) so local refinement edits
+  // are never overwritten by a stale translatedText comparison mid-render.
+  useEffect(() => {
     setCurrentText(translatedText);
-  }
+  }, [translatedText]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -172,7 +173,7 @@ export function TranslatePage() {
 
   const handlePromptSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    
+
     if (!promptText.trim() || !currentText.trim() || isPromptLoading || !selectedLanguage) return;
 
     setIsPromptLoading(true);
@@ -187,7 +188,7 @@ export function TranslatePage() {
         undefined, // style
         promptText.trim() // userPrompt
       );
-      
+
       if (result) {
         setCurrentText(result);
         setPromptText(""); // Clear the prompt input after successful rewrite
