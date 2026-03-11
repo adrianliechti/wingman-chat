@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useDropZone } from "@/shared/hooks/useDropZone";
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { SelectorMenu } from "@/shared/ui/SelectorMenu";
 import { PilcrowRightIcon, Loader2, PlusIcon, GlobeIcon, FileIcon, UploadIcon, XIcon, DownloadIcon, ThermometerIcon, SwatchBookIcon, AlertCircle, ChevronDown, ChevronRight, SparklesIcon } from "lucide-react";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useLayout } from "@/shell/hooks/useLayout";
@@ -320,30 +320,15 @@ export function TranslatePage() {
 
               {/* Language selector and translate button */}
               <div className="flex items-center gap-3">
-                <Menu>
-                  <MenuButton className="inline-flex items-center gap-2 px-4 py-2 bg-white/60 dark:bg-neutral-900/50 backdrop-blur-lg rounded-full border border-neutral-200/60 dark:border-neutral-700/50 text-neutral-700 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100 text-sm font-medium transition-all hover:bg-white/80 dark:hover:bg-neutral-900/70 shadow-sm">
-                    <GlobeIcon size={16} />
-                    <span>{selectedLanguage?.name || 'Select Language'}</span>
-                  </MenuButton>
-                  <MenuItems
-                    modal={false}
-                    transition
-                    anchor="bottom"
-                    className="max-h-[50vh]! mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
-                  >
-                    {supportedLanguages.map((lang) => (
-                      <MenuItem key={lang.code}>
-                        <button
-                          type="button"
-                          onClick={() => setTargetLang(lang.code)}
-                          className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
-                        >
-                          {lang.name}
-                        </button>
-                      </MenuItem>
-                    ))}
-                  </MenuItems>
-                </Menu>
+                <SelectorMenu
+                  icon={<GlobeIcon size={16} />}
+                  label={selectedLanguage?.name || 'Select Language'}
+                  options={supportedLanguages.map(l => ({ value: l.code, label: l.name }))}
+                  onSelect={setTargetLang}
+                  anchor="bottom"
+                  variant="pill"
+                  scrollable
+                />
 
                 {/* Translate button - only show when not yet translated */}
                 {!translatedFileUrl && !isLoading && (
@@ -482,89 +467,25 @@ export function TranslatePage() {
                   {/* Target section */}
                   <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
                     <div className="absolute top-2 left-3 z-10 flex items-center gap-2">
-                      {/* Language selector */}
-                      <Menu>
-                        <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
-                          <GlobeIcon size={14} />
-                          <span>
-                            {selectedLanguage?.name || 'Select Language'}
-                          </span>
-                        </MenuButton>
-                        <MenuItems
-                          modal={false}
-                          transition
-                          anchor="bottom start"
-                          className="max-h-[50vh]! mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
-                        >
-                          {supportedLanguages.map((lang) => (
-                            <MenuItem key={lang.code}>
-                              <button
-                                type="button"
-                                onClick={() => setTargetLang(lang.code)}
-                                className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
-                              >
-                                {lang.name}
-                              </button>
-                            </MenuItem>
-                          ))}
-                        </MenuItems>
-                      </Menu>
-
-                      {/* Tone selector */}
-                      <Menu>
-                        <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
-                          <ThermometerIcon size={14} />
-                          <span>
-                            {tone ? toneOptions.find(t => t.value === tone)?.label : 'Tone'}
-                          </span>
-                        </MenuButton>
-                        <MenuItems
-                          modal={false}
-                          transition
-                          anchor="bottom start"
-                          className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
-                        >
-                          {toneOptions.map((toneOption) => (
-                            <MenuItem key={toneOption.value}>
-                              <button
-                                type="button"
-                                onClick={() => setTone(toneOption.value)}
-                                className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
-                              >
-                                {toneOption.label}
-                              </button>
-                            </MenuItem>
-                          ))}
-                        </MenuItems>
-                      </Menu>
-
-                      {/* Style selector */}
-                      <Menu>
-                        <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
-                          <SwatchBookIcon size={14} />
-                          <span>
-                            {style ? styleOptions.find(s => s.value === style)?.label : 'Style'}
-                          </span>
-                        </MenuButton>
-                        <MenuItems
-                          modal={false}
-                          transition
-                          anchor="bottom start"
-                          className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
-                        >
-                          {styleOptions.map((styleOption) => (
-                            <MenuItem key={styleOption.value}>
-                              <button
-                                type="button"
-                                onClick={() => setStyle(styleOption.value)}
-                                className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
-                              >
-                                {styleOption.label}
-                              </button>
-                            </MenuItem>
-                          ))}
-                        </MenuItems>
-                      </Menu>
+                      <SelectorMenu
+                        icon={<GlobeIcon size={14} />}
+                        label={selectedLanguage?.name || 'Select Language'}
+                        options={supportedLanguages.map(l => ({ value: l.code, label: l.name }))}
+                        onSelect={setTargetLang}
+                        scrollable
+                      />
+                      <SelectorMenu
+                        icon={<ThermometerIcon size={14} />}
+                        label={tone ? (toneOptions.find(t => t.value === tone)?.label ?? 'Tone') : 'Tone'}
+                        options={toneOptions}
+                        onSelect={setTone}
+                      />
+                      <SelectorMenu
+                        icon={<SwatchBookIcon size={14} />}
+                        label={style ? (styleOptions.find(s => s.value === style)?.label ?? 'Style') : 'Style'}
+                        options={styleOptions}
+                        onSelect={setStyle}
+                      />
                     </div>
                     
                     {/* Interactive text area */}
