@@ -402,8 +402,10 @@ export class MCPClient implements ToolProvider {
     if (!resource) {
       try {
         const readResult = await this.client.readResource({ uri: uiResourceUri });
-        const content = readResult.contents[0];
-        if (!content || content.mimeType !== RESOURCE_MIME_TYPE || !content.uri?.startsWith('ui://')) {
+        const content = readResult.contents.find(
+          (entry) => entry.mimeType === RESOURCE_MIME_TYPE && entry.uri?.startsWith('ui://')
+        );
+        if (!content) {
           throw new Error(`Invalid UI resource for ${toolName}`);
         }
         resource = {
@@ -451,9 +453,11 @@ export class MCPClient implements ToolProvider {
       Array.from(uriToTools.entries()).map(async ([uri, toolNames]) => {
         try {
           const result = await this.client!.readResource({ uri });
-          const content = result.contents[0];
+          const content = result.contents.find(
+            (entry) => entry.mimeType === RESOURCE_MIME_TYPE && entry.uri?.startsWith('ui://')
+          );
 
-          if (!content || content.mimeType !== RESOURCE_MIME_TYPE || !content.uri?.startsWith('ui://')) {
+          if (!content) {
             return;
           }
 
