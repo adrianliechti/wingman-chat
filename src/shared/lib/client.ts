@@ -139,28 +139,40 @@ export class Client {
           //   items.push(reasoningItem as unknown as OpenAI.Responses.ResponseInputItem);
           // }
 
-          // Find tool_call parts
-          const toolCalls = m.content.filter(p => p.type === 'tool_call');
-          
-          if (toolCalls.length > 0) {
-            for (const tc of toolCalls) {
-              items.push({
-                type: "function_call",
-                call_id: tc.id,
-                name: tc.name,
-                arguments: tc.arguments,
-              });
+          let bufferedText = '';
+
+          const flushAssistantText = () => {
+            if (!bufferedText) {
+              return;
             }
-          } else {
-            // Find text parts and combine them
-            const textParts = m.content.filter(p => p.type === 'text');
-            const textContent = textParts.map(p => p.text).join('');
+
             items.push({
               type: "message",
               role: "assistant",
-              content: textContent,
+              content: bufferedText,
             });
+
+            bufferedText = '';
+          };
+
+          for (const part of m.content) {
+            if (part.type === 'text') {
+              bufferedText += part.text;
+              continue;
+            }
+
+            if (part.type === 'tool_call') {
+              flushAssistantText();
+              items.push({
+                type: "function_call",
+                call_id: part.id,
+                name: part.name,
+                arguments: part.arguments,
+              });
+            }
           }
+
+          flushAssistantText();
 
           break;
         }
