@@ -398,7 +398,7 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                           <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{skill.name}</div>
                           <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">{skill.description}</div>
                         </div>
-                        <div className="w-0 overflow-hidden group-hover:w-[52px] flex items-center gap-0.5 shrink-0">
+                        <div className="w-0 overflow-hidden group-hover:w-16 flex items-center gap-0.5 shrink-0">
                           <button
                             type="button"
                             onClick={() => openEditor(skill)}
