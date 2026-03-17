@@ -329,7 +329,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       // --- Code Execution Tools ---
       {
         name: "execute_python_code",
-        description: "Execute Python code or run a Python artifact file with optional package dependencies. Works with the artifacts filesystem — all artifact files are available under /home/pyodide/ and any files written there are synced back.",
+        description: "Execute Python code or an existing Python artifact file with optional package dependencies. Provide exactly one of `code` or `path`. All artifact files are available under /home/pyodide/, and files written there are synced back.",
         parameters: {
           type: "object",
           properties: {
@@ -411,7 +411,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       },
       {
         name: "execute_bash_code",
-        description: "Execute bash commands or scripts in a sandboxed shell. Works with the artifacts filesystem — all artifact files are preloaded and any files created/modified are synced back. Supports pipes, redirections, loops, variables, jq, yq, xan, sqlite3, grep, sed, awk, and more.",
+        description: "Execute bash commands or scripts in a sandboxed shell. All artifact files are preloaded and any files created or modified are synced back. Prefer explicit paths rather than relying on prior shell state. Supports pipes, redirections, loops, variables, jq, yq, xan, sqlite3, grep, sed, awk, and more.",
         parameters: {
           type: "object",
           properties: {

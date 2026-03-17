@@ -14,6 +14,7 @@ import path from "node:path";
 
 // ---------------------------------------------------------------------------
 // Extra PyPI packages (not built into Pyodide – installed via micropip)
+// Their transitive dependencies are resolved automatically at bundle time.
 // ---------------------------------------------------------------------------
 const PYPI_PACKAGES = [
   "seaborn",
@@ -77,6 +78,90 @@ async function getLatestWheel(packageName) {
   );
   if (!wheel) throw new Error(`No pure-Python wheel found for ${packageName}`);
   return { url: wheel.url, filename: wheel.filename, version: data.info.version };
+}
+
+/** Normalize PyPI package names to compare them (PEP 503). */
+function normalizePkgName(name) {
+  return name.toLowerCase().replace(/[-_.]+/g, "-");
+}
+
+/**
+ * Parse core (non-extra, non-conditional) dependencies from requires_dist.
+ * Skips entries with `extra ==` anywhere in the marker string, and
+ * platform-specific markers that don't apply to Pyodide (wasm32).
+ */
+function parseCoreRequires(requiresDist) {
+  if (!requiresDist) return [];
+  const deps = [];
+  for (const req of requiresDist) {
+    // Extract the marker portion (everything after the first unquoted semicolon)
+    const markerMatch = req.match(/;(.+)$/);
+    if (markerMatch) {
+      const marker = markerMatch[1];
+      // Skip anything that requires a specific extra
+      if (/extra\s*==/.test(marker)) continue;
+      // Skip platform-specific markers that don't apply to Pyodide (wasm32)
+      if (/(sys_platform|platform_system|os_name)\s*==/.test(marker)) continue;
+    }
+    // Extract the package name (first token before version specifiers / markers)
+    const match = req.match(/^([A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?)/);
+    if (match) deps.push(normalizePkgName(match[1]));
+  }
+  return deps;
+}
+
+/**
+ * Resolve transitive dependencies for all PyPI packages.
+ * Returns { extraPyodideBuiltins: string[], extraPypiPackages: string[] }
+ * — packages that need to be bundled but aren't already listed.
+ */
+async function resolveTransitiveDeps(pypiPackages, pyodideLock, alreadyBundled) {
+  const pyodidePkgNames = new Set(
+    Object.keys(pyodideLock.packages).map(normalizePkgName)
+  );
+
+  const visited = new Set(pypiPackages.map(normalizePkgName));
+  for (const name of alreadyBundled) visited.add(normalizePkgName(name));
+
+  const extraPyodideBuiltins = [];
+  const extraPypiPackages = [];
+  const queue = [...pypiPackages];
+
+  while (queue.length > 0) {
+    const pkg = queue.shift();
+    let coreDeps;
+    try {
+      const res = await fetch(`https://pypi.org/pypi/${pkg}/json`);
+      if (!res.ok) continue;
+      const data = await res.json();
+      coreDeps = parseCoreRequires(data.info.requires_dist);
+    } catch {
+      continue;
+    }
+
+    for (const dep of coreDeps) {
+      if (visited.has(dep)) continue;
+      visited.add(dep);
+
+      if (pyodidePkgNames.has(dep)) {
+        // Available as a Pyodide built-in — make sure it gets bundled
+        const originalName = Object.keys(pyodideLock.packages).find(
+          (k) => normalizePkgName(k) === dep
+        );
+        if (originalName) {
+          extraPyodideBuiltins.push(originalName);
+          console.log(`  + ${originalName} (Pyodide built-in, needed by ${pkg})`);
+        }
+      } else {
+        // Not in Pyodide — need to bundle from PyPI
+        extraPypiPackages.push(dep);
+        queue.push(dep); // recurse into this dep's own deps
+        console.log(`  + ${dep} (PyPI, needed by ${pkg})`);
+      }
+    }
+  }
+
+  return { extraPyodideBuiltins, extraPypiPackages };
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +255,29 @@ async function bundlePypiPackages() {
 // ---------------------------------------------------------------------------
 
 async function main() {
+  // Resolve transitive dependencies of PyPI packages before bundling
+  const lockPath = path.resolve("node_modules/pyodide/pyodide-lock.json");
+  const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+
+  console.log("Resolving transitive dependencies of PyPI packages...");
+  const { extraPyodideBuiltins, extraPypiPackages } = await resolveTransitiveDeps(
+    PYPI_PACKAGES,
+    lock,
+    PYODIDE_BUILTIN_TARGETS
+  );
+
+  // Extend the target lists with discovered transitive deps
+  for (const pkg of extraPyodideBuiltins) {
+    if (!PYODIDE_BUILTIN_TARGETS.includes(pkg)) {
+      PYODIDE_BUILTIN_TARGETS.push(pkg);
+    }
+  }
+  for (const pkg of extraPypiPackages) {
+    if (!PYPI_PACKAGES.includes(pkg)) {
+      PYPI_PACKAGES.push(pkg);
+    }
+  }
+
   await bundlePyodideBuiltins();
   await bundlePypiPackages();
   console.log("Done.");

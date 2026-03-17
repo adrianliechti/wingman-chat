@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useArtifacts } from '@/features/artifacts/hooks/useArtifacts';
-import { createBashInstance, loadArtifactsIntoFs, readFilesFromFs } from '@/features/tools/lib/bash';
+import { BASH_HOME, createBashInstance, getBashCwd, getBashEnv, readFilesFromFs, resolveBashCwd } from '@/features/tools/lib/bash';
 import type { BashInstance } from '@/features/tools/lib/bash';
 import type { OverlayFile } from '@/features/artifacts/lib/fs';
 
@@ -16,6 +16,19 @@ interface BashEditorProps {
 interface OutputEntry {
   type: 'command' | 'stdout' | 'stderr' | 'info';
   text: string;
+  cwd?: string;
+}
+
+function formatPromptCwd(cwd: string): string {
+  if (cwd === BASH_HOME) {
+    return '~';
+  }
+
+  if (cwd.startsWith(`${BASH_HOME}/`)) {
+    return `~/${cwd.slice(BASH_HOME.length + 1)}`;
+  }
+
+  return cwd;
 }
 
 export function BashEditor({ initialScript, visible, onRunReady, onRunningChange }: BashEditorProps) {
@@ -25,12 +38,25 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [cwd, setCwd] = useState(BASH_HOME);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
   const previousFilesRef = useRef<Record<string, OverlayFile>>({});
   const hasRunInitialScript = useRef(false);
+  const isApplyingLocalSyncRef = useRef(false);
+  const cwdRef = useRef(BASH_HOME);
+  const shellEnvRef = useRef<Record<string, string>>({
+    HOME: BASH_HOME,
+    PWD: BASH_HOME,
+    OLDPWD: BASH_HOME,
+    PATH: '/usr/bin:/bin',
+  });
+
+  useEffect(() => {
+    cwdRef.current = cwd;
+  }, [cwd]);
 
   useEffect(() => {
     onRunningChange?.(isRunning);
@@ -41,6 +67,10 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     let cancelled = false;
 
     const init = async () => {
+      if (!fs) {
+        return;
+      }
+
       // Load artifact files
       const artifactFiles = await fs.listFiles();
 
@@ -53,13 +83,17 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
       }
 
       const instance = createBashInstance(fileMap);
+
       instanceRef.current = instance;
+      shellEnvRef.current = getBashEnv(instance);
 
       // Take initial snapshot using InMemoryFs.getAllPaths()
       const snapshot = await readFilesFromFs(instance.memFs);
       previousFilesRef.current = snapshot;
 
       if (!cancelled) {
+        setCwd(getBashCwd(instance));
+        setHistory([]);
         setIsReady(true);
         setEntries([{ type: 'info', text: 'Bash shell ready. Type commands below.' }]);
       }
@@ -68,7 +102,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     init();
 
     return () => { cancelled = true; };
-  }, [fs, fs?.chatId]);
+  }, [fs]);
 
   // Run initial script once when bash is ready
   useEffect(() => {
@@ -91,6 +125,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     if (!instanceRef.current || !fs) return;
 
     try {
+      isApplyingLocalSyncRef.current = true;
       const currentFiles = await readFilesFromFs(instanceRef.current.memFs);
       const prevFiles = previousFilesRef.current;
 
@@ -112,23 +147,38 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
       previousFilesRef.current = currentFiles;
     } catch (error) {
       console.error('Error syncing bash FS to artifacts:', error);
+    } finally {
+      isApplyingLocalSyncRef.current = false;
     }
-  }, [fs, fs?.chatId]);
+  }, [fs]);
 
   // Sync new artifact files into bash (when created externally, e.g. by the LLM)
   useEffect(() => {
-    if (!instanceRef.current || !isReady) return;
+    if (!instanceRef.current || !isReady || !fs) return;
 
     const syncFromArtifacts = async () => {
-      if (!instanceRef.current) return;
-      const { memFs } = instanceRef.current;
+      if (isApplyingLocalSyncRef.current || !fs) return;
 
       try {
         const fileList = await fs.listFiles();
-        await loadArtifactsIntoFs(memFs, fileList);
+        const fileMap: Record<string, { content: string; contentType?: string }> = {};
+        for (const file of fileList) {
+          fileMap[file.path] = { content: file.content, contentType: file.contentType };
+        }
+
+        const nextInstance = createBashInstance(fileMap);
+        const resolvedCwd = await resolveBashCwd(nextInstance.memFs, cwdRef.current);
+
+        instanceRef.current = nextInstance;
+        shellEnvRef.current = {
+          ...getBashEnv(nextInstance),
+          ...shellEnvRef.current,
+          PWD: resolvedCwd,
+        };
+        setCwd(resolvedCwd);
 
         // Update snapshot
-        const snapshot = await readFilesFromFs(memFs);
+        const snapshot = await readFilesFromFs(nextInstance.memFs);
         previousFilesRef.current = snapshot;
       } catch {
         // Ignore sync errors
@@ -137,12 +187,16 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
 
     const unsubCreate = fs.subscribe('fileCreated', syncFromArtifacts);
     const unsubUpdate = fs.subscribe('fileUpdated', syncFromArtifacts);
+    const unsubDelete = fs.subscribe('fileDeleted', syncFromArtifacts);
+    const unsubRename = fs.subscribe('fileRenamed', syncFromArtifacts);
 
     return () => {
       unsubCreate();
       unsubUpdate();
+      unsubDelete();
+      unsubRename();
     };
-  }, [fs, fs?.chatId, isReady]);
+  }, [fs, isReady]);
 
   const executeCommand = useCallback(async (command: string) => {
     if (!instanceRef.current || !command.trim()) return;
@@ -156,7 +210,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     }
 
     setIsRunning(true);
-    setEntries(prev => [...prev, { type: 'command', text: trimmed }]);
+    setEntries(prev => [...prev, { type: 'command', text: trimmed, cwd }]);
 
     // Add to history
     setHistory(prev => {
@@ -167,7 +221,15 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     setHistoryIndex(-1);
 
     try {
-      const result = await instanceRef.current.bash.exec(trimmed);
+      const result = await instanceRef.current.bash.exec(trimmed, {
+        cwd,
+        env: shellEnvRef.current,
+        replaceEnv: true,
+      });
+
+      const nextEnv = (result as { env?: Record<string, string> }).env ?? shellEnvRef.current;
+      shellEnvRef.current = nextEnv;
+      setCwd(nextEnv.PWD ?? cwd);
 
       setEntries(prev => {
         const newEntries = [...prev];
@@ -193,7 +255,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     } finally {
       setIsRunning(false);
     }
-  }, [syncToArtifacts]);
+  }, [cwd, syncToArtifacts]);
 
   // Register run handler — for .sh files, execute the script content
   useEffect(() => {
@@ -246,6 +308,14 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     }
   }, [visible, isReady]);
 
+  useEffect(() => {
+    if (!isReady || isRunning || visible === false) {
+      return;
+    }
+
+    inputRef.current?.focus();
+  }, [isReady, isRunning, visible]);
+
   // Focus input when clicking anywhere in the terminal
   const handleTerminalClick = useCallback(() => {
     inputRef.current?.focus();
@@ -263,7 +333,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
             case 'command':
               return (
                 <div key={i} className="flex">
-                  <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">$</span>
+                  <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">{formatPromptCwd(entry.cwd ?? cwd)} $</span>
                   <span className="text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap break-all">{entry.text}</span>
                 </div>
               );
@@ -292,15 +362,17 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
 
       {/* Input line */}
       <div className="shrink-0 flex items-center border-t border-neutral-200/60 dark:border-neutral-800/60 px-3 py-2">
-        <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">$ </span>
+        <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">{formatPromptCwd(cwd)} $ </span>
         <input
           ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={!isReady || isRunning}
-          className="flex-1 bg-transparent text-neutral-900 dark:text-neutral-100 outline-none placeholder-neutral-400 dark:placeholder-neutral-600 caret-emerald-600 dark:caret-green-400 disabled:opacity-50"
+          disabled={!isReady}
+          readOnly={isRunning}
+          aria-busy={isRunning}
+          className="flex-1 bg-transparent text-neutral-900 dark:text-neutral-100 outline-none placeholder-neutral-400 dark:placeholder-neutral-600 caret-emerald-600 dark:caret-green-400 disabled:opacity-50 read-only:opacity-75"
           placeholder={isReady ? 'Enter a command...' : 'Initializing...'}
           autoFocus
           spellCheck={false}

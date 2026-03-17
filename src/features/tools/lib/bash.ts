@@ -20,7 +20,7 @@ export interface BashInstance {
   memFs: InMemoryFs;
 }
 
-const HOME = '/home/user';
+export const BASH_HOME = '/home/user';
 
 function toFsContent(file: { content: string; contentType?: string }): string | Uint8Array {
   const parsed = dataUrlToBytes(file.content);
@@ -61,14 +61,14 @@ export function createBashInstance(
   if (files) {
     for (const [path, file] of Object.entries(files)) {
       const relativePath = path.startsWith('/') ? path.slice(1) : path;
-      initialFiles[`${HOME}/${relativePath}`] = toFsContent(file);
+      initialFiles[`${BASH_HOME}/${relativePath}`] = toFsContent(file);
     }
   }
 
   const memFs = new InMemoryFs(initialFiles);
   const bash = new Bash({
     fs: memFs,
-    cwd: HOME,
+    cwd: BASH_HOME,
     executionLimits: {
       maxCallDepth: 50,
       maxCommandCount: 10000,
@@ -77,6 +77,30 @@ export function createBashInstance(
   });
 
   return { bash, memFs };
+}
+
+export function getBashCwd(instance: BashInstance): string {
+  const bashWithCwd = instance.bash as Bash & { getCwd?: () => string };
+  return bashWithCwd.getCwd?.() ?? BASH_HOME;
+}
+
+export function getBashEnv(instance: BashInstance): Record<string, string> {
+  const bashWithEnv = instance.bash as Bash & { getEnv?: () => Record<string, string> };
+  return bashWithEnv.getEnv?.() ?? { HOME: BASH_HOME, PWD: BASH_HOME, OLDPWD: BASH_HOME, PATH: '/usr/bin:/bin' };
+}
+
+export async function resolveBashCwd(memFs: InMemoryFs, cwd?: string | null): Promise<string> {
+  const candidate = cwd?.trim();
+  if (!candidate) {
+    return BASH_HOME;
+  }
+
+  try {
+    const stat = await memFs.stat(candidate);
+    return stat.isDirectory ? candidate : BASH_HOME;
+  } catch {
+    return BASH_HOME;
+  }
 }
 
 /**
@@ -134,7 +158,7 @@ export async function loadArtifactsIntoFs(
 ): Promise<void> {
   for (const file of files) {
     const relativePath = file.path.startsWith('/') ? file.path.slice(1) : file.path;
-    const fsPath = `${HOME}/${relativePath}`;
+    const fsPath = `${BASH_HOME}/${relativePath}`;
 
     // Ensure parent directories exist
     const dir = fsPath.substring(0, fsPath.lastIndexOf('/'));
@@ -158,13 +182,13 @@ export async function readFilesFromFs(
   const allPaths = memFs.getAllPaths();
 
   for (const fsPath of allPaths) {
-    if (!fsPath.startsWith(`${HOME}/`)) continue;
+    if (!fsPath.startsWith(`${BASH_HOME}/`)) continue;
 
     try {
       const stat = await memFs.stat(fsPath);
       if (!stat.isFile) continue;
 
-      const artifactPath = '/' + fsPath.slice(`${HOME}/`.length);
+      const artifactPath = '/' + fsPath.slice(`${BASH_HOME}/`.length);
       const content = await memFs.readFileBuffer(fsPath);
       result[artifactPath] = toOverlayFile(artifactPath, content);
     } catch {

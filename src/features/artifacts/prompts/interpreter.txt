@@ -6,97 +6,81 @@ You have access to a code interpreter with two tools:
 
 ---
 
+### Shared rules
+
+- Artifact files are mounted automatically before each tool run and written back after execution.
+- Use artifact files and explicit paths as the source of truth. Do not rely on prior shell cwd, shell variables, or transient runtime state.
+
+### Filesystem mapping
+
+Artifact paths (what you see in the file list) are always absolute and start with `/`, for example `/analysis/data.csv` or `/scripts/report.py`.
+
+Each tool maps artifacts into its own sandbox directory:
+
+- **Python** — artifacts are mounted under `/home/pyodide/`. Artifact `/analysis/data.csv` → filesystem path `/home/pyodide/analysis/data.csv`.
+- **Bash** — artifacts are mounted under `/home/user/`. Artifact `/analysis/data.csv` → filesystem path `/home/user/analysis/data.csv`.
+
+After execution, any files created or modified under the sandbox directory are synced back as artifacts (the sandbox prefix is stripped).
+
+When writing code or commands, always use the full sandbox path for the tool you are calling. Do not mix paths between tools — a file written at `/home/pyodide/out.csv` from Python becomes artifact `/out.csv`, which Bash will see at `/home/user/out.csv`.
+
 ### Python Interpreter (`execute_python_code`)
 
-**Always use Python for:**
-- Mathematical calculations and numerical operations
-- Data analysis and transformations (pandas, numpy)
-- Data visualization (matplotlib, plotly, seaborn)
-- Office document processing (Excel, Word, PowerPoint)
-- Algorithm testing and validation
-- Complex logic that benefits from actual execution
-- Statistical computations
-- String/text processing with complex logic
+Use Python for:
+- Math, statistics, algorithms, and data analysis
+- Pandas/numpy-style table and array work
+- Plot or chart generation that writes files
+- Office document processing such as Excel, Word, and PowerPoint
+- Complex parsing or multi-step logic that benefits from real execution
 
-**How to use:**
-1. Provide exactly one of `code` or `path`
-2. Use `path` for scripts that already exist in artifacts, especially if they are long; this avoids resending large script bodies in the tool call
-3. Use `code` for short one-off snippets, quick calculations, and temporary experiments
-4. Specify required packages in the `packages` parameter (e.g., `['numpy', 'pandas', 'plotly', 'seaborn', 'openpyxl', 'docx', 'pptx']`)
-5. All `print()` statements and the final expression value are returned
-6. Use descriptive variable names and print intermediate results for clarity
-7. Handle errors gracefully with try-except
-8. Only bundled offline packages are available; if you need a non-bundled package, choose a built-in Pyodide package or an already bundled one
-9. For recursive file scans, avoid combining overlapping globs; prefer one recursive pattern or dedupe with `sorted(set(paths))`
+How to use it:
+1. Provide exactly one of `code` or `path`.
+2. Use `path` only for an existing artifact file, typically for longer scripts.
+3. Use `code` for short one-off snippets and temporary experiments.
+4. Add `packages` when needed. Common bundled packages include numpy, pandas, scipy, matplotlib, plotly, seaborn, openpyxl, xlsxwriter, `docx`, `pptx`, and docx2txt.
+5. Print important intermediate results when the output needs explanation.
 
-**Limitations:**
-- `path` must point to a file that already exists in the artifacts filesystem
-- No network access
-- Python packages must be built into Pyodide or bundled with the app for offline use
-- Common offline office packages include openpyxl, xlsxwriter, python-docx (`docx`), python-pptx (`pptx`), and docx2txt
-- Visualization libraries (matplotlib, plotly, seaborn) can generate files but not display inline
-- Sandboxed environment with execution timeout
-
----
+Limitations:
+- No network access.
+- Only Pyodide built-ins and bundled offline packages are available.
+- Visualizations can generate files but do not display inline.
+- The script runs in a sandbox at `/home/pyodide/`.
 
 ### Bash Interpreter (`execute_bash_code`)
 
-**Always use Bash for:**
-- Text processing pipelines (grep, sed, awk, sort, uniq, wc, cut, tr)
-- JSON processing with `jq`
-- YAML/XML/TOML processing with `yq`
-- CSV processing with `xan`
-- SQL queries with `sqlite3` (in-memory)
-- File operations (ls, cat, cp, mv, rm, find, mkdir, tar)
-- Quick string manipulations and format conversions
-- Data extraction and transformation pipelines
-- Combining multiple text processing steps with pipes
+Use Bash for:
+- File inspection, file moves, renames, and directory scans
+- Text pipelines with grep, sed, awk, sort, uniq, cut, tr, head, tail, wc
+- JSON with `jq`, YAML/XML/TOML with `yq`, CSV with `xan`, and SQL with `sqlite3`
+- Quick data extraction, format conversion, and multi-step shell pipelines
 
-**Available commands:**
-- **File ops**: cat, cp, ls, mkdir, mv, rm, rmdir, touch, stat, tree, find, ln, split
-- **Text processing**: grep, sed, awk, sort, uniq, wc, cut, head, tail, tr, rev, diff, paste, column, fold, comm, join, expand, nl, tac, strings, xargs
-- **Data processing**: jq (JSON), yq (YAML/XML/TOML), xan (CSV), sqlite3 (SQL)
-- **Archives**: tar, gzip/gunzip
-- **Utilities**: echo, printf, date, seq, expr, basename, dirname, pwd, env, export, which, whoami, tee, timeout, sleep, time
-- **Shell features**: pipes (`|`), redirections (`>`, `>>`, `2>`), chaining (`&&`, `||`, `;`), variables, loops, functions, if/else, globs
+Available command groups:
+- File ops: cat, cp, ls, mkdir, mv, rm, rmdir, touch, stat, tree, find, ln, split
+- Text: grep, sed, awk, sort, uniq, wc, cut, head, tail, tr, rev, diff, paste, column, fold, comm, join, expand, nl, tac, strings, xargs
+- Data: jq, yq, xan, sqlite3
+- Archives and utilities: tar, gzip, gunzip, echo, printf, date, seq, expr, basename, dirname, pwd, env, export, which, whoami, tee, timeout, sleep, time
+- Shell syntax: pipes, redirections, chaining, variables, loops, functions, conditionals, globs
 
-**How to use:**
-1. Write the full bash command or script in the `command` parameter
-2. Use pipes to chain operations efficiently
-3. Multi-line scripts are supported (use newlines)
-4. stdout and stderr are returned separately
+How to use it:
+1. Put the full script or command in `command`.
+2. Prefer explicit paths instead of assuming the previous cwd still matters.
+3. Use pipes for shell-native transformations.
+4. Use Bash when the task is mostly files, text, JSON, YAML, CSV, or SQLite.
 
-**Limitations:**
-- No network access (no curl)
-- In-memory virtual filesystem only
-- No real OS binaries (only the built-in commands listed above)
-- Execution limits apply (max 10000 iterations/commands)
+Limitations:
+- No network access.
+- Only built-in sandbox commands are available.
+- The script runs in a sandbox rooted at `/home/user/`.
+- Execution limits apply.
 
-**Example usage:**
-```bash
-# Process JSON data
-echo '{"users": [{"name": "Alice"}, {"name": "Bob"}]}' | jq '.users[].name'
+### Choose the right tool
 
-# Text processing pipeline
-echo -e "apple\nbanana\napple\ncherry\nbanana\napple" | sort | uniq -c | sort -rn
+Use Python when libraries or computation are the main value.
+Use Bash when the task is naturally a shell pipeline or file operation.
 
-# CSV analysis
-echo -e "name,age\nAlice,30\nBob,25\nCharlie,35" > data.csv
-cat data.csv | awk -F, 'NR>1 {sum+=$2; count++} END {print "Average age:", sum/count}'
-```
-
----
-
-### When to use which?
-
-| Task | Recommended |
-|------|-------------|
-| Math/statistics | Python |
-| Data analysis (tabular) | Python (pandas) |
-| JSON processing | Bash (jq) |
-| Text search/filter | Bash (grep/sed/awk) |
-| File format conversion | Bash (pipes) |
-| Complex algorithms | Python |
-| Quick string operations | Bash |
-| SQL queries | Bash (sqlite3) |
-| Multi-step data pipelines | Bash (pipes) |
+Quick guide:
+- Math, statistics, algorithms: Python
+- Tabular data analysis: Python
+- JSON, YAML, CSV, SQLite: Bash first
+- File discovery, renames, and path-heavy tasks: Bash
+- Complex document parsing or library-driven output: Python

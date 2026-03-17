@@ -31,12 +31,6 @@ const PACKAGE_ALIASES: Record<string, string> = {
   'typing_extensions': 'typing-extensions',
 };
 
-const BUNDLED_PACKAGE_DEPENDENCIES: Record<string, string[]> = {
-  plotly: ['tenacity'],
-  openpyxl: ['et-xmlfile'],
-  'python-pptx': ['xlsxwriter'],
-};
-
 let standardLibraryModules: Set<string> | null = null;
 const PYODIDE_BASE_DIR = '/home/pyodide';
 const NO_OUTPUT_MESSAGE = 'Code executed successfully (no output)';
@@ -54,36 +48,6 @@ function normalizePackageName(name: string): string {
 
   const rootModule = lower.split('.')[0];
   return PACKAGE_ALIASES[rootModule] ?? rootModule;
-}
-
-function expandBundledDependencies(packages: string[]): string[] {
-  const ordered: string[] = [];
-  const visiting = new Set<string>();
-  const visited = new Set<string>();
-
-  const visit = (pkg: string) => {
-    if (visited.has(pkg)) {
-      return;
-    }
-
-    if (visiting.has(pkg)) {
-      throw new Error(`Circular bundled package dependency detected for ${pkg}`);
-    }
-
-    visiting.add(pkg);
-    for (const dependency of BUNDLED_PACKAGE_DEPENDENCIES[pkg] ?? []) {
-      visit(dependency);
-    }
-    visiting.delete(pkg);
-    visited.add(pkg);
-    ordered.push(pkg);
-  };
-
-  for (const pkg of packages) {
-    visit(pkg);
-  }
-
-  return ordered;
 }
 
 function uniquePackages(packages: string[]): string[] {
@@ -309,52 +273,44 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
   return files;
 }
 
-async function installBundledPackages(pyodide: PyodideInterface, packages: string[]): Promise<void> {
-  if (packages.length === 0) {
+async function ensurePackagesLoaded(pyodide: PyodideInterface, packages: string[]): Promise<void> {
+  const toLoad = packages.filter((pkg) => !loadedPackages.has(pkg));
+  if (toLoad.length === 0) {
     return;
   }
 
-  await pyodide.loadPackage('micropip');
-  const micropip = pyodide.pyimport('micropip') as MicropipModule;
   const manifest = await getWheelManifest();
-  const installQueue = expandBundledDependencies(packages);
+  const pyodideBuiltins: string[] = [];
+  const pypiPackages: string[] = [];
 
-  try {
-    for (const pkg of installQueue) {
-      if (loadedPackages.has(pkg)) {
-        continue;
-      }
+  for (const pkg of toLoad) {
+    if (manifest[pkg]) {
+      pypiPackages.push(pkg);
+    } else {
+      pyodideBuiltins.push(pkg);
+    }
+  }
 
-      const wheelFile = manifest[pkg];
-      if (!wheelFile) {
-        throw new Error(`Python package "${pkg}" is not bundled for offline use`);
-      }
-
-      await micropip.install(`/pyodide/${wheelFile}`);
+  if (pyodideBuiltins.length > 0) {
+    await pyodide.loadPackage(pyodideBuiltins);
+    for (const pkg of pyodideBuiltins) {
       loadedPackages.add(pkg);
     }
-  } finally {
-    micropip.destroy?.();
   }
-}
 
-async function ensurePackagesLoaded(pyodide: PyodideInterface, packages: string[]): Promise<void> {
-  const bundledPackages: string[] = [];
-
-  for (const pkg of packages) {
-    if (loadedPackages.has(pkg)) {
-      continue;
-    }
+  if (pypiPackages.length > 0) {
+    await pyodide.loadPackage('micropip');
+    const micropip = pyodide.pyimport('micropip') as MicropipModule;
 
     try {
-      await pyodide.loadPackage(pkg);
-      loadedPackages.add(pkg);
-    } catch {
-      bundledPackages.push(pkg);
+      for (const pkg of pypiPackages) {
+        await micropip.install(`/pyodide/${manifest[pkg]}`);
+        loadedPackages.add(pkg);
+      }
+    } finally {
+      micropip.destroy?.();
     }
   }
-
-  await installBundledPackages(pyodide, bundledPackages);
 }
 
 async function runPythonCode(pyodide: PyodideInterface, code: string): Promise<string> {
