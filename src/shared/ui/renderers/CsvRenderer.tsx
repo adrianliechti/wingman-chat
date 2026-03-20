@@ -1,4 +1,6 @@
-import { memo, useState, useMemo } from 'react';
+import { memo, useRef, useState, useMemo } from 'react';
+import { useReactTable, getCoreRowModel, flexRender, type ColumnDef } from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { CopyButton } from '@/shared/ui/CopyButton';
 import { PreviewButton } from '@/shared/ui/PreviewButton';
 
@@ -84,12 +86,47 @@ const parseCSV = (csv: string): string[][] => {
   return result;
 };
 
+const ROW_HEIGHT = 35;
+const OVERSCAN = 20;
+
 const NonMemoizedCsvRenderer = ({ csv, language, name }: CsvRendererProps) => {
+  'use no memo';
+
   const [showCode, setShowCode] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const parsedData = useMemo(() => parseCSV(csv), [csv]);
-  const headers = parsedData.length > 0 ? parsedData[0] : [];
-  const rows = parsedData.slice(1);
+  const rows = useMemo(() => parsedData.slice(1), [parsedData]);
+
+  const columns = useMemo<ColumnDef<string[]>[]>(
+    () => {
+      const headers = parsedData.length > 0 ? parsedData[0] : [];
+      return headers.map((header, index) => ({
+        id: String(index),
+        header: () => header,
+        accessorFn: (row: string[]) => row[index] ?? '',
+        size: 150,
+        minSize: 60,
+        meta: { title: header },
+      }));
+    },
+    [parsedData],
+  );
+
+  const table = useReactTable({
+    data: rows,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
+  const tableRows = table.getRowModel().rows;
+
+  const virtualizer = useVirtualizer({
+    count: tableRows.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: OVERSCAN,
+  });
 
   const isEmpty = !csv.trim() || parsedData.length === 0;
 
@@ -152,41 +189,64 @@ const NonMemoizedCsvRenderer = ({ csv, language, name }: CsvRendererProps) => {
             </pre>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            {parsedData.length > 0 ? (
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-neutral-700">
-                <thead className="bg-white dark:bg-neutral-900">
-                  <tr>
-                    {headers.map((header, index) => (
+          <div ref={scrollContainerRef} className="overflow-auto max-h-96">
+            <table style={{ display: 'grid', minWidth: '100%' }}>
+              <thead
+                className="sticky top-0 z-10 bg-white dark:bg-neutral-900"
+                style={{ display: 'grid' }}
+              >
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <tr key={headerGroup.id} style={{ display: 'flex' }}>
+                    {headerGroup.headers.map((header) => (
                       <th
-                        key={index}
-                        className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wider border-r border-gray-200 dark:border-neutral-600 last:border-r-0"
+                        key={header.id}
+                        className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wider border-r border-gray-200 dark:border-neutral-600 last:border-r-0 truncate"
+                        style={{ width: header.getSize(), flex: 'none' }}
+                        title={(header.column.columnDef.meta as { title: string } | undefined)?.title ?? ''}
                       >
-                        {header}
+                        {flexRender(header.column.columnDef.header, header.getContext())}
                       </th>
                     ))}
                   </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-neutral-900 divide-y divide-gray-200 dark:divide-neutral-700">
-                  {rows.map((row, rowIndex) => (
-                    <tr key={rowIndex} className="hover:bg-gray-50 dark:hover:bg-neutral-800">
-                      {row.map((cell, cellIndex) => (
+                ))}
+              </thead>
+              <tbody
+                style={{
+                  display: 'grid',
+                  height: virtualizer.getTotalSize(),
+                  position: 'relative',
+                }}
+              >
+                {virtualizer.getVirtualItems().map((virtualRow) => {
+                  const row = tableRows[virtualRow.index];
+                  return (
+                    <tr
+                      key={row.id}
+                      data-index={virtualRow.index}
+                      ref={virtualizer.measureElement}
+                      className="hover:bg-gray-50 dark:hover:bg-neutral-800"
+                      style={{
+                        display: 'flex',
+                        position: 'absolute',
+                        transform: `translateY(${virtualRow.start}px)`,
+                        width: '100%',
+                      }}
+                    >
+                      {row.getVisibleCells().map((cell) => (
                         <td
-                          key={cellIndex}
-                          className="px-3 py-2 text-sm text-gray-900 dark:text-neutral-100 border-r border-gray-200 dark:border-neutral-600 last:border-r-0"
+                          key={cell.id}
+                          className="px-3 py-2 text-sm text-gray-900 dark:text-neutral-100 border-r border-gray-200 dark:border-neutral-600 last:border-r-0 truncate"
+                          style={{ width: cell.column.getSize(), flex: 'none' }}
+                          title={String(cell.getValue())}
                         >
-                          {cell}
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </td>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="text-center py-8 text-gray-500 dark:text-neutral-500">
-                No data to display
-              </div>
-            )}
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
