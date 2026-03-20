@@ -106,7 +106,7 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
     if (!search.trim()) return sorted;
     const q = search.toLowerCase();
     return sorted.filter(s => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
-  }, [allSkills, enabledSkillNames, search]);
+  }, [allSkills, search]);
 
   const handleDelete = (skill: Skill) => {
     if (window.confirm(`Delete the skill "${skill.name}"?`)) {

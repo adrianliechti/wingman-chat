@@ -17,7 +17,7 @@ export function lookup(
   const resolvedCallback = typeof options === 'function' ? options : callback;
   const all = typeof options === 'object' && options?.all;
 
-  const error = new Error(`node:dns.lookup is not available in the browser for host \"${hostname}\"`);
+  const error = new Error(`node:dns.lookup is not available in the browser for host "${hostname}"`);
 
   if (resolvedCallback) {
     queueMicrotask(() => {

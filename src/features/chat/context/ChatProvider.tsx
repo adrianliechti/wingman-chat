@@ -169,7 +169,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, []);
 
   const runMessageInChat = useCallback(
-    async (id: string, message: Message, historyOverride?: Message[], initialTitle?: string) => {
+    async function run(id: string, message: Message, historyOverride?: Message[], initialTitle?: string) {
       const history = historyOverride ?? (chats.find(c => c.id === id)?.messages || []);
       const pendingModelContext = pendingModelContextRef.current.get(id) ?? null;
       pendingModelContextRef.current.delete(id);
@@ -191,7 +191,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               p.type === 'text' || p.type === 'image' || p.type === 'file'
             ) as Content[],
             sendMessage: async (appMessage: Message) => {
-              await runMessageInChat(id, appMessage, conversation, initialTitle);
+              await run(id, appMessage, conversation, initialTitle);
             },
             setContext: async (text: string | null) => {
               await updateModelContext(id, text);

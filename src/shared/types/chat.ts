@@ -33,12 +33,13 @@ export type MCP = {
     headers?: Record<string, string>;
 };
 
-export enum ProviderState {
-    Disconnected = 'disconnected',
-    Initializing = 'initializing',
-    Connected = 'connected',
-    Failed = 'failed',
-}
+export const ProviderState = {
+    Disconnected: 'disconnected',
+    Initializing: 'initializing',
+    Connected: 'connected',
+    Failed: 'failed',
+} as const;
+export type ProviderState = typeof ProviderState[keyof typeof ProviderState];
 
 export interface ToolProvider {
     readonly id: string;
@@ -159,10 +160,11 @@ export type MessageError = {
     message: string;
 };
 
-export enum Role {
-    User = "user",
-    Assistant = "assistant",
-}
+export const Role = {
+    User: "user",
+    Assistant: "assistant",
+} as const;
+export type Role = typeof Role[keyof typeof Role];
 
 export type Chat = {
     id: string;

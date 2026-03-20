@@ -102,6 +102,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // Wire up onDisconnected callbacks so ping failures update state
   useEffect(() => {
     for (const client of allMcpClients) {
+      // eslint-disable-next-line react-hooks/immutability -- setting callbacks on external MCP client objects is the purpose of this effect
       client.onDisconnected = () => {
         setMcpStates(prev => new Map(prev).set(client.id, ProviderState.Failed));
       };
