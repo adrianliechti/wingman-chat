@@ -26,6 +26,8 @@ const PYPI_PACKAGES = [
   "python-docx",
   "python-pptx",
   "docx2txt",
+  "pypdf",
+  "markdown",
 ];
 const PYPI_OUTPUT_DIR = "public/pyodide";
 
@@ -51,6 +53,7 @@ const PYODIDE_BUILTIN_TARGETS = [
   "packaging",
   "typing-extensions",
   "six",
+  "pyyaml",
 ];
 const PYODIDE_OUTPUT_DIR = "public/pyodide";
 

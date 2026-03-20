@@ -1,3 +1,4 @@
+import { getConfig } from '@/shared/config';
 import { docxToMarkdown } from '@/shared/lib/docx';
 import { isTextContentType } from '@/shared/lib/fileTypes';
 import { pptxToMarkdown } from '@/shared/lib/pptx';
@@ -85,6 +86,44 @@ export async function processUploadedFile(file: File): Promise<ProcessedFile[]> 
     } catch (error) {
       console.error(`Error converting PPTX file ${file.name}:`, error);
       // Fall through to default text handling on error
+    }
+  }
+
+  // Handle PDF files -> extract to Markdown via backend API
+  const isPdf = fileName.endsWith('.pdf') || file.type === 'application/pdf';
+
+  if (isPdf) {
+    try {
+      const markdown = await getConfig().client.extractText(file);
+      const baseName = file.name.replace(/\.pdf$/i, '');
+
+      return [{
+        path: `/${baseName}.md`,
+        content: markdown,
+        contentType: 'text/markdown'
+      }];
+    } catch (error) {
+      console.error(`Error extracting PDF file ${file.name}:`, error);
+      // Fall through to default handling on error
+    }
+  }
+
+  // Handle email files (.msg, .eml) -> extract to Markdown via backend API
+  const isEmail = fileName.endsWith('.msg') || fileName.endsWith('.eml');
+
+  if (isEmail) {
+    try {
+      const markdown = await getConfig().client.extractText(file);
+      const baseName = file.name.replace(/\.(msg|eml)$/i, '');
+
+      return [{
+        path: `/${baseName}.md`,
+        content: markdown,
+        contentType: 'text/markdown'
+      }];
+    } catch (error) {
+      console.error(`Error extracting email file ${file.name}:`, error);
+      // Fall through to default handling on error
     }
   }
 
