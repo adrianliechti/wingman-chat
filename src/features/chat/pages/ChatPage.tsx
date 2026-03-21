@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Plus as PlusIcon, BotMessageSquare, Info, Paperclip, Rocket } from "lucide-react";
+import { Plus as PlusIcon, BotMessageSquare, Info, Paperclip, Rocket, ArrowDown } from "lucide-react";
 import DOMPurify from "dompurify";
+import { useAutoScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 import { useNavigation } from "@/shell/hooks/useNavigation";
@@ -81,7 +82,6 @@ const Disclaimer = () => {
 
 export function ChatPage() {
   const {
-    chat,
     messages,
     createChat,
     chats,
@@ -109,21 +109,44 @@ export function ChatPage() {
   const { setRightActions } = useNavigation();
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
 
   // Ref to track chat input height for dynamic padding
   const [chatInputHeight, setChatInputHeight] = useState(112); // Default to pb-28 (7rem = 112px)
 
-  // Virtualizer for chat messages
+  // Virtualizer for chat messages – the +1 adds a zero-height sentinel at the
+  // end of the list so scrollToIndex always has a stable, measurement-free target.
   const virtualizer = useVirtualizer({
-    count: messages.length,
+    count: messages.length + 1,
     getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => 120,
+    estimateSize: (i) => (i < messages.length ? 120 : 0),
     paddingEnd: chatInputHeight,
     scrollPaddingEnd: chatInputHeight,
     overscan: 10,
   });
 
+  const totalSize = virtualizer.getTotalSize();
   const virtualItems = virtualizer.getVirtualItems();
+  const previousMessageCountRef = useRef(messages.length);
+
+  const { enableAutoScroll, isAutoScrollEnabled } = useAutoScroll({
+    scrollElement,
+    virtualizer,
+  });
+
+  const handleScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
+    scrollContainerRef.current = element;
+    setScrollElement(element);
+  }, []);
+
+  // Re-enable auto-scroll when the user sends a new message while scrolled up.
+  useEffect(() => {
+    const prev = previousMessageCountRef.current;
+    previousMessageCountRef.current = messages.length;
+    if (messages.length > prev && messages[messages.length - 1]?.role === 'user') {
+      enableAutoScroll();
+    }
+  }, [messages, enableAutoScroll]);
 
   // Track window resize for mobile detection
   useEffect(() => {
@@ -286,7 +309,7 @@ export function ChatPage() {
             <div
               className="flex-1 overflow-auto transition-opacity duration-300 relative"
               style={{ overflowAnchor: 'none' }}
-              ref={scrollContainerRef}
+              ref={handleScrollContainerRef}
             >
               <div className={`px-3 pt-18 transition-all duration-150 ease-out ${
                 layoutMode === 'wide'
@@ -296,7 +319,7 @@ export function ChatPage() {
                 <Disclaimer />
                 
                 {/* Virtualized message list */}
-                <div style={{ height: virtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
+                <div style={{ height: totalSize, width: '100%', position: 'relative' }}>
                   <div style={{
                     position: 'absolute',
                     top: 0,
@@ -304,25 +327,42 @@ export function ChatPage() {
                     width: '100%',
                     transform: `translateY(${virtualItems[0]?.start ?? 0}px)`,
                   }}>
-                    {virtualItems.map((virtualRow) => (
-                      <div
-                        key={virtualRow.key}
-                        data-index={virtualRow.index}
-                        ref={virtualizer.measureElement}
-                        className="flow-root"
-                      >
-                        <ChatMessage
-                          index={virtualRow.index}
-                          message={messages[virtualRow.index]}
-                          isLast={virtualRow.index === messages.length - 1}
-                          isResponding={isResponding}
-                        />
-                      </div>
-                    ))}
+                    {virtualItems.map((virtualRow) =>
+                      virtualRow.index < messages.length ? (
+                        <div
+                          key={virtualRow.key}
+                          data-index={virtualRow.index}
+                          ref={virtualizer.measureElement}
+                          className="flow-root"
+                        >
+                          <ChatMessage
+                            index={virtualRow.index}
+                            message={messages[virtualRow.index]}
+                            isLast={virtualRow.index === messages.length - 1}
+                            isResponding={isResponding}
+                          />
+                        </div>
+                      ) : (
+                        <div key="__sentinel" data-index={virtualRow.index} ref={virtualizer.measureElement} />
+                      )
+                    )}
                   </div>
                 </div>
               </div>
             </div>
+          )}
+
+          {messages.length > 0 && !isAutoScrollEnabled && (
+            <button
+              type="button"
+              onClick={enableAutoScroll}
+              className="absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-neutral-200/80 bg-white/95 px-3 py-2 text-sm font-medium text-neutral-700 shadow-sm backdrop-blur transition-colors hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-700/80 dark:bg-neutral-900/95 dark:text-neutral-200 dark:hover:border-neutral-600 dark:hover:text-neutral-50"
+              style={{ bottom: chatInputHeight + 16 }}
+              title="Jump to latest"
+            >
+              <ArrowDown size={16} />
+              <span>Latest</span>
+            </button>
           )}
 
         </main>

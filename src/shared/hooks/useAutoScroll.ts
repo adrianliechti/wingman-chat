@@ -2,88 +2,104 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import type { Virtualizer } from "@tanstack/react-virtual";
 
 interface UseAutoScrollOptions {
-  /**
-   * The virtualizer instance used for scrollToIndex.
-   */
+  /** The mounted scrollable container element. */
+  scrollElement: HTMLDivElement | null;
+  /** Virtualizer instance — count is read from virtualizer.options.count. */
   virtualizer: Virtualizer<HTMLDivElement, Element>;
-  /**
-   * Total item count (used for scrollToIndex).
-   */
-  count: number;
-  /**
-   * Dependencies that trigger auto-scroll when changed (e.g., messages, chat)
-   */
-  dependencies: unknown[];
-  /**
-   * Pixel distance from the very bottom that still counts as "at bottom".
-   * Defaults to 20 px for touchpad-friendly sensitivity.
-   */
+  /** Pixel distance from bottom that still counts as "at bottom". */
   bottomThreshold?: number;
 }
 
 export function useAutoScroll({
+  scrollElement,
   virtualizer,
-  count,
-  dependencies,
-  bottomThreshold = 20,
+  bottomThreshold = 48,
 }: UseAutoScrollOptions) {
-  const isAutoScrollEnabledRef = useRef(true);
-  const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
+  const pinnedRef = useRef(true);
+  const [isPinned, setIsPinned] = useState(true);
+  const unpinTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const rafRef = useRef(0);
 
+  const isAtBottom = useCallback(() => {
+    if (!scrollElement) return true;
+    return scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight <= bottomThreshold;
+  }, [scrollElement, bottomThreshold]);
+
+  // Scroll to the last virtual item (sentinel). Reading count at call-time
+  // avoids a dependency on it and prevents stale closures.
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    if (!scrollElement) return;
+    const count = virtualizer.options.count;
     if (count === 0) return;
-    requestAnimationFrame(() => {
-      virtualizer.scrollToIndex(count - 1, { align: 'end', behavior });
+    virtualizer.scrollToIndex(count - 1, { align: "end", behavior });
+  }, [scrollElement, virtualizer]);
+
+  // Debounced unpin UI: pinnedRef is set immediately (gates ResizeObserver
+  // scrolling), but the React state that shows "Latest" is debounced so the
+  // button doesn't flicker during fast streaming when isAtBottom() briefly
+  // returns false between a resize and the corrective scroll.
+  useEffect(() => {
+    if (!scrollElement) return;
+
+    const onScroll = () => {
+      if (isAtBottom()) {
+        clearTimeout(unpinTimerRef.current);
+        pinnedRef.current = true;
+        setIsPinned((c) => (c ? c : true));
+      } else {
+        // Stop the ResizeObserver from scrolling immediately.
+        pinnedRef.current = false;
+        // Delay the UI update so the "Latest" button doesn't flash.
+        clearTimeout(unpinTimerRef.current);
+        unpinTimerRef.current = setTimeout(() => {
+          if (!isAtBottom()) {
+            setIsPinned(false);
+          }
+        }, 150);
+      }
+    };
+
+    onScroll();
+    scrollElement.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scrollElement.removeEventListener("scroll", onScroll);
+      clearTimeout(unpinTimerRef.current);
+    };
+  }, [scrollElement, isAtBottom]);
+
+  // Keep pinned during late layout changes (streaming, images, measurement).
+  // Throttled to one scrollToBottom per animation frame.
+  useEffect(() => {
+    if (!scrollElement) return;
+
+    const observer = new ResizeObserver(() => {
+      if (!pinnedRef.current) return;
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        scrollToBottom("auto");
+      });
     });
-  }, [virtualizer, count]);
 
-  const updateAutoScrollState = useCallback(() => {
-    const container = virtualizer.scrollElement;
-    if (!container) return;
+    const content = scrollElement.firstElementChild;
+    if (content) observer.observe(content);
+    observer.observe(scrollElement);
 
-    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    const isAtBottom = distanceToBottom <= bottomThreshold;
-
-    isAutoScrollEnabledRef.current = isAtBottom;
-    setIsAutoScrollEnabled(isAtBottom);
-  }, [virtualizer, bottomThreshold]);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, [scrollElement, scrollToBottom]);
 
   const enableAutoScroll = useCallback(() => {
-    isAutoScrollEnabledRef.current = true;
-    setIsAutoScrollEnabled(true);
+    clearTimeout(unpinTimerRef.current);
+    pinnedRef.current = true;
+    setIsPinned(true);
     scrollToBottom("smooth");
   }, [scrollToBottom]);
 
-  // Track user scroll intent
-  useEffect(() => {
-    const container = virtualizer.scrollElement;
-    if (!container) return;
-
-    let ticking = false;
-    const handleScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        ticking = false;
-        updateAutoScrollState();
-      });
-    };
-
-    updateAutoScrollState();
-    container.addEventListener("scroll", handleScroll, { passive: true });
-    return () => container.removeEventListener("scroll", handleScroll);
-  }, [virtualizer.scrollElement, updateAutoScrollState]);
-
-  // Auto-scroll when dependencies change (e.g., new tokens during streaming)
-  useEffect(() => {
-    if (isAutoScrollEnabledRef.current) {
-      scrollToBottom("auto");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, dependencies);
-
   return {
     enableAutoScroll,
-    isAutoScrollEnabled,
+    isAutoScrollEnabled: isPinned,
+    scrollToBottom,
   };
 }
