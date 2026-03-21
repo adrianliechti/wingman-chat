@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useArtifacts } from '@/features/artifacts/hooks/useArtifacts';
 import { BASH_HOME, createBashInstance, getBashCwd, getBashEnv, readFilesFromFs, resolveBashCwd } from '@/features/tools/lib/bash';
 import type { BashInstance } from '@/features/tools/lib/bash';
@@ -119,6 +120,16 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
   }, [entries]);
+
+  // Virtualizer for terminal output entries
+  const outputVirtualizer = useVirtualizer({
+    count: entries.length,
+    getScrollElement: () => outputRef.current,
+    estimateSize: () => 20,
+    overscan: 40,
+  });
+
+  const virtualOutputItems = outputVirtualizer.getVirtualItems();
 
   // Sync bash FS changes back to artifacts
   const syncToArtifacts = useCallback(async () => {
@@ -327,30 +338,40 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
       onClick={handleTerminalClick}
     >
       {/* Output area */}
-      <div ref={outputRef} className="flex-1 overflow-auto p-3 space-y-0.5">
-        {entries.map((entry, i) => {
-          switch (entry.type) {
-            case 'command':
+      <div ref={outputRef} className="flex-1 overflow-auto p-3" style={{ overflowAnchor: 'none' }}>
+        <div style={{ height: outputVirtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            transform: `translateY(${virtualOutputItems[0]?.start ?? 0}px)`,
+          }}>
+            {virtualOutputItems.map((virtualRow) => {
+              const entry = entries[virtualRow.index];
               return (
-                <div key={i} className="flex">
-                  <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">{formatPromptCwd(entry.cwd ?? cwd)} $</span>
-                  <span className="text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap break-all">{entry.text}</span>
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={outputVirtualizer.measureElement}
+                >
+                  {entry.type === 'command' ? (
+                    <div className="flex">
+                      <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">{formatPromptCwd(entry.cwd ?? cwd)} $</span>
+                      <span className="text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap break-all">{entry.text}</span>
+                    </div>
+                  ) : entry.type === 'stdout' ? (
+                    <pre className="text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap break-all leading-relaxed">{entry.text}</pre>
+                  ) : entry.type === 'stderr' ? (
+                    <pre className="text-red-700 dark:text-red-400/80 whitespace-pre-wrap break-all leading-relaxed">{entry.text}</pre>
+                  ) : (
+                    <div className="text-neutral-500 dark:text-neutral-500 italic">{entry.text}</div>
+                  )}
                 </div>
               );
-            case 'stdout':
-              return (
-                <pre key={i} className="text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap break-all leading-relaxed">{entry.text}</pre>
-              );
-            case 'stderr':
-              return (
-                <pre key={i} className="text-red-700 dark:text-red-400/80 whitespace-pre-wrap break-all leading-relaxed">{entry.text}</pre>
-              );
-            case 'info':
-              return (
-                <div key={i} className="text-neutral-500 dark:text-neutral-500 italic">{entry.text}</div>
-              );
-          }
-        })}
+            })}
+          </div>
+        </div>
 
         {isRunning && (
           <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-500">

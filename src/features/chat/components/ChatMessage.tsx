@@ -6,7 +6,7 @@ import { RenderContents } from '@/shared/ui/ContentRenderer';
 import { CodeRenderer } from '@/shared/ui/CodeRenderer';
 import { ChatInputAttachments } from './ChatInputAttachments';
 import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil, ChevronRight } from "lucide-react";
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 
 import { Role } from "@/shared/types/chat";
 import type { Message, ElicitationResult, Content, ToolResultContent, ImageContent, AudioContent, FileContent, TextContent } from "@/shared/types/chat";
@@ -210,7 +210,7 @@ function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
   );
 }
 
-export function ChatMessage({ message, index, isResponding, ...props }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, index, isResponding, ...props }: ChatMessageProps) {
   const [toolResultExpanded, setToolResultExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   // Get first text content only (user's typed message)
@@ -734,4 +734,4 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
 
   // Unknown message type - render nothing
   return null;
-}
+});

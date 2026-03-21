@@ -1,6 +1,15 @@
 import { useEffect, useRef, useCallback, useState } from "react";
+import type { Virtualizer } from "@tanstack/react-virtual";
 
 interface UseAutoScrollOptions {
+  /**
+   * The virtualizer instance used for scrollToIndex.
+   */
+  virtualizer: Virtualizer<HTMLDivElement, Element>;
+  /**
+   * Total item count (used for scrollToIndex).
+   */
+  count: number;
   /**
    * Dependencies that trigger auto-scroll when changed (e.g., messages, chat)
    */
@@ -13,39 +22,23 @@ interface UseAutoScrollOptions {
 }
 
 export function useAutoScroll({
+  virtualizer,
+  count,
   dependencies,
   bottomThreshold = 20,
 }: UseAutoScrollOptions) {
-  const containerElementRef = useRef<HTMLDivElement | null>(null);
-  const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
-  const [bottomNode, setBottomNode] = useState<HTMLDivElement | null>(null);
   const isAutoScrollEnabledRef = useRef(true);
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
 
-  const containerRef = useCallback((node: HTMLDivElement | null) => {
-    containerElementRef.current = node;
-    setContainerNode(node);
-  }, []);
-
-  const bottomRef = useCallback((node: HTMLDivElement | null) => {
-    setBottomNode(node);
-  }, []);
-
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
-    // Defer to the next frame so layout (e.g., markdown render) has settled
+    if (count === 0) return;
     requestAnimationFrame(() => {
-      const container = containerElementRef.current;
-      if (!container) return;
-
-      container.scrollTo({
-        top: container.scrollHeight,
-        behavior,
-      });
+      virtualizer.scrollToIndex(count - 1, { align: 'end', behavior });
     });
-  }, []);
+  }, [virtualizer, count]);
 
   const updateAutoScrollState = useCallback(() => {
-    const container = containerElementRef.current;
+    const container = virtualizer.scrollElement;
     if (!container) return;
 
     const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
@@ -53,7 +46,7 @@ export function useAutoScroll({
 
     isAutoScrollEnabledRef.current = isAtBottom;
     setIsAutoScrollEnabled(isAtBottom);
-  }, [bottomThreshold]);
+  }, [virtualizer, bottomThreshold]);
 
   const enableAutoScroll = useCallback(() => {
     isAutoScrollEnabledRef.current = true;
@@ -61,31 +54,25 @@ export function useAutoScroll({
     scrollToBottom("smooth");
   }, [scrollToBottom]);
 
-  // Track user scroll intent: leave auto-scroll when they scroll up, re-enable when near bottom
+  // Track user scroll intent
   useEffect(() => {
-    const container = containerNode;
+    const container = virtualizer.scrollElement;
     if (!container) return;
 
     let ticking = false;
-
     const handleScroll = () => {
       if (ticking) return;
       ticking = true;
-
       requestAnimationFrame(() => {
         ticking = false;
         updateAutoScrollState();
       });
     };
 
-    // Initial check in case we're already at bottom on mount
     updateAutoScrollState();
     container.addEventListener("scroll", handleScroll, { passive: true });
-
-    return () => {
-      container.removeEventListener("scroll", handleScroll);
-    };
-  }, [containerNode, updateAutoScrollState]);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, [virtualizer.scrollElement, updateAutoScrollState]);
 
   // Auto-scroll when dependencies change (e.g., new tokens during streaming)
   useEffect(() => {
@@ -95,48 +82,7 @@ export function useAutoScroll({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, dependencies);
 
-  // Keep pinned to the bottom when content height changes (images, markdown layout)
-  useEffect(() => {
-    if (!bottomNode) return;
-    if (typeof ResizeObserver === "undefined") return;
-
-    const contentNode = bottomNode.parentElement;
-    if (!contentNode) return;
-
-    const resizeObserver = new ResizeObserver(() => {
-      if (isAutoScrollEnabledRef.current) {
-        scrollToBottom("auto");
-      }
-    });
-
-    resizeObserver.observe(contentNode);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [bottomNode, scrollToBottom]);
-
-  // Handle container resize (viewport changes, split panes)
-  useEffect(() => {
-    if (!containerNode) return;
-    if (typeof ResizeObserver === "undefined") return;
-
-    const resizeObserver = new ResizeObserver(() => {
-      if (isAutoScrollEnabledRef.current) {
-        scrollToBottom("auto");
-      }
-    });
-
-    resizeObserver.observe(containerNode);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [containerNode, scrollToBottom]);
-
   return {
-    containerRef,
-    bottomRef,
     enableAutoScroll,
     isAutoScrollEnabled,
   };
