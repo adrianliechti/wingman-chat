@@ -11,6 +11,7 @@ export interface ChatContextType {
   chats: Chat[];
   chat: Chat | null;
   messages: Message[];
+  isLoaded: boolean;
   isResponding: boolean;
 
   // Chat actions

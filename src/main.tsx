@@ -1,8 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { RouterProvider } from "@tanstack/react-router";
 
 import "./index.css";
-import App from "./App.tsx";
+import { router } from "./router";
 import "./shared/lib/noto-emoji.ts";
 
 import { loadConfig } from "./shared/config.ts";
@@ -79,7 +80,7 @@ const bootstrap = async () => {
 
     createRoot(document.getElementById("root")!).render(
       <StrictMode>
-        <App />
+        <RouterProvider router={router} />
       </StrictMode>
     );
   } catch (error) {

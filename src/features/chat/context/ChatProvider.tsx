@@ -1,4 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useNavigate, useParams } from "@tanstack/react-router";
+import { chatRouteTo } from "@/routeTargets";
 import { Role } from "@/shared/types/chat";
 import type { Message, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation, Content, ToolResultContent } from '@/shared/types/chat';
 import { useModels } from "@/features/chat/hooks/useModels";
@@ -19,19 +21,23 @@ interface ChatProviderProps {
 export function ChatProvider({ children }: ChatProviderProps) {
   const config = getConfig();
   const client = config.client;
+  const navigate = useNavigate();
+  const routeParams = useParams({ strict: false });
+  const routeChatId = "chatId" in routeParams && typeof routeParams.chatId === "string" ? routeParams.chatId : undefined;
 
   const { models, selectedModel, setSelectedModel } = useModels();
-  const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
+  const { chats, isLoaded, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { isAvailable: artifactsEnabled, setChatId: setArtifactsChatId } = useArtifacts();
   const { renderApp } = useApp();
   const { currentAgent } = useAgents();
   const { resetTools, setProviderEnabled, restoreToolUI } = useToolsContext();
-  const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
   const pendingModelContextRef = useRef<Map<string, string | null>>(new Map());
+  const previousRouteChatIdRef = useRef<string | null>(null);
 
+  const chatId = routeChatId ?? null;
   const chat = chats.find(c => c.id === chatId) ?? null;
   const agentModel = currentAgent?.model ? models.find(m => m.id === currentAgent.model) ?? null : null;
   const model = chat?.model ?? agentModel ?? selectedModel ?? models[0];
@@ -60,10 +66,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const createChat = useCallback(async () => {
     const newChat = await createChatHook();
-    setChatId(newChat.id);
     resetTools();
+    navigate({ to: chatRouteTo, params: { chatId: newChat.id } });
     return newChat;
-  }, [createChatHook, resetTools]);
+  }, [createChatHook, resetTools, navigate]);
 
   const restoreToolApp = useCallback(async (toolResult: ToolResultContent) => {
     if (!toolResult.meta?.toolProvider || !toolResult.meta?.toolResource) return;
@@ -86,36 +92,58 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, [setProviderEnabled, restoreToolUI, renderApp]);
 
-  const selectChat = useCallback((chatId: string) => {
-    setChatId(chatId);
+  useEffect(() => {
+    if (!isLoaded) {
+      return;
+    }
+
+    if (routeChatId && !chat) {
+      navigate({ to: chatRouteTo, params: { chatId: undefined }, replace: true });
+    }
+  }, [isLoaded, routeChatId, chat, navigate]);
+
+  useEffect(() => {
+    if (!isLoaded) {
+      return;
+    }
+
+    if (previousRouteChatIdRef.current === chatId) {
+      return;
+    }
+
+    previousRouteChatIdRef.current = chatId;
     resetTools();
 
-    // Auto-restore the last MCP app for this chat
-    const chatData = chats.find(c => c.id === chatId);
-    if (chatData?.messages?.length) {
-      const lastAppResult = chatData.messages
-        .flatMap(m => m.content)
-        .filter((c): c is ToolResultContent =>
-          c.type === 'tool_result' && !!c.meta?.toolProvider && !!c.meta?.toolResource
-        )
-        .pop();
-
-      if (lastAppResult) {
-        restoreToolApp(lastAppResult).catch(error => {
-          console.error('Failed to auto-restore app on chat load:', error);
-        });
-      }
+    if (!chat?.messages?.length) {
+      return;
     }
-  }, [chats, resetTools, restoreToolApp]);
+
+    const lastAppResult = chat.messages
+      .flatMap(m => m.content)
+      .filter((c): c is ToolResultContent =>
+        c.type === 'tool_result' && !!c.meta?.toolProvider && !!c.meta?.toolResource
+      )
+      .pop();
+
+    if (lastAppResult) {
+      restoreToolApp(lastAppResult).catch(error => {
+        console.error('Failed to auto-restore app on chat load:', error);
+      });
+    }
+  }, [chatId, chat?.messages, isLoaded, resetTools, restoreToolApp]);
+
+  const selectChat = useCallback((chatId: string) => {
+    navigate({ to: chatRouteTo, params: { chatId } });
+  }, [navigate]);
 
   const deleteChat = useCallback(
     (id: string) => {
       deleteChatHook(id);
       if (chatId === id) {
-        setChatId(null);
+        navigate({ to: chatRouteTo, params: { chatId: undefined } });
       }
     },
-    [deleteChatHook, chatId]
+    [deleteChatHook, chatId, navigate]
   );
 
   const setModel = useCallback((model: Model | null) => {
@@ -138,14 +166,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
       chatItem = await createChatHook();
       chatItem.model = model;
 
-      setChatId(chatItem.id);
       updateChat(chatItem.id, () => ({ model }));
+      navigate({ to: chatRouteTo, params: { chatId: chatItem.id }, replace: true });
 
       id = chatItem.id;
     }
 
     return { id: id!, chat: chatItem! };
-  }, [model, createChatHook, updateChat, setChatId, chatId, chats]);
+  }, [model, createChatHook, updateChat, chatId, chats, navigate]);
 
   const addMessage = useCallback(
     async (message: Message) => {
@@ -441,6 +469,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     chats,
     chat,
     messages,
+    isLoaded,
 
     // Chat actions
     createChat,

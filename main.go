@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	pathpkg "path"
 	"strconv"
 	"strings"
 
@@ -71,7 +73,31 @@ func main() {
 	mux := http.NewServeMux()
 	dist := os.DirFS("dist")
 
-	mux.Handle("/", http.FileServerFS(dist))
+	// SPA fallback: serve static files, fall back to index.html for client-side routes
+	fileServer := http.FileServerFS(dist)
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Try to serve the file directly
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path == "" {
+			path = "index.html"
+		}
+
+		// Check if the file exists in dist
+		if _, err := fs.Stat(dist, path); err == nil {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// Preserve 404s for missing static assets instead of returning index.html.
+		if path != "index.html" && pathpkg.Ext(path) != "" {
+			http.NotFound(w, r)
+			return
+		}
+
+		// File not found — serve index.html for SPA client-side routing
+		r.URL.Path = "/"
+		fileServer.ServeHTTP(w, r)
+	}))
 
 	mux.HandleFunc("GET /config.json", func(w http.ResponseWriter, r *http.Request) {
 		type toolType struct {

@@ -98,6 +98,7 @@ export default defineConfig({
         manualChunks(id) {
           const chunks: Record<string, RegExp> = {
             'vendor-react':     /node_modules\/(react|react-dom)\//,
+            'vendor-router':    /node_modules\/@tanstack\/react-router\//,
             'vendor-bash':      /node_modules\/just-bash\//,
             'vendor-reactflow': /node_modules\/@xyflow\/react\//,
             'vendor-shiki':     /node_modules\/shiki\//,
