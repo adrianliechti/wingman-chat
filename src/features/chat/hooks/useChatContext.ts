@@ -29,8 +29,10 @@ export function useChatContext(mode: 'voice' | 'chat' = 'chat', model?: Model | 
       // Start with base providers (includes agent repo, skills, bridges, and conditionally enabled built-in tools)
       let filteredProviders = providers.filter((p: ToolProvider) => getProviderState(p.id) === ProviderState.Connected);
       
-      // Add artifacts provider if conditions are met (enabled OR drawer is visible)
-      if (artifactsProvider && (artifactsEnabled || showArtifactsDrawer)) {
+      // Add artifacts provider: either explicitly enabled via agent tools toggle (already in filteredProviders),
+      // or auto-enabled when drawer is visible / chat has files (legacy fallback)
+      const artifactsAlreadyIncluded = filteredProviders.some((p: ToolProvider) => p.id === 'artifacts');
+      if (!artifactsAlreadyIncluded && artifactsProvider && (artifactsEnabled || showArtifactsDrawer)) {
         filteredProviders = [...filteredProviders, artifactsProvider];
       }
       
