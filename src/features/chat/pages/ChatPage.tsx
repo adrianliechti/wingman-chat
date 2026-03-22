@@ -96,7 +96,9 @@ export function ChatPage() {
   const chatIdMatch = useMatch({ from: '/chat/$chatId', shouldThrow: false });
   const routeChatId = chatIdMatch?.params.chatId;
 
-  // Route → state: select the chat indicated by the URL
+  // Sync URL → state for deep links and browser back/forward navigation.
+  // User-initiated actions (plus button, sidebar clicks) go through useChatNavigate
+  // which sets both state and URL directly, so this only catches external URL changes.
   useEffect(() => {
     if (routeChatId && routeChatId !== chat?.id) {
       selectChat(routeChatId);
@@ -105,19 +107,13 @@ export function ChatPage() {
     }
   }, [routeChatId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // State → URL: when a chat is implicitly created (getOrCreateChat during message send)
-  // the URL still shows /chat — update it to /chat/{id}.
-  // We track the previous chatId so we only redirect when a chat is *newly created*
-  // (transition from null → id), not when navigating TO /chat with an existing chat.
-  const prevChatIdRef = useRef<string | null | undefined>(undefined);
+  // Sync state → URL when a chat is implicitly created during message send.
+  // The URL is still /chat but chatId just appeared — update to /chat/$chatId.
   useEffect(() => {
-    const prevId = prevChatIdRef.current;
-    prevChatIdRef.current = chat?.id ?? null;
-
-    if (chat?.id && !routeChatId && !prevId) {
+    if (chat?.id && !routeChatId) {
       navigate({ to: '/chat/$chatId', params: { chatId: chat.id }, replace: true });
     }
-  }, [chat?.id, routeChatId, navigate]);
+  }, [chat?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { layoutMode } = useLayout();
   const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
