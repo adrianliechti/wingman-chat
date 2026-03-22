@@ -1,5 +1,6 @@
 import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router';
 import { getConfig } from './shared/config';
+import { AppLayout } from './shell/AppLayout';
 import { ChatPage } from './features/chat/pages/ChatPage';
 import { WorkflowPage } from './features/workflow/pages/WorkflowPage';
 import { TranslatePage } from './features/translate/pages/TranslatePage';
@@ -14,8 +15,9 @@ const hashToRoute: Record<string, string> = {
   research: '/research',
 };
 
-// Root route — handles hash-to-path redirect for backwards compatibility
-export const rootRoute = createRootRoute({
+// Root route — layout shell + hash-to-path redirect for backwards compatibility
+const rootRoute = createRootRoute({
+  component: AppLayout,
   beforeLoad: () => {
     const hash = window.location.hash;
     if (hash && hash.startsWith('#')) {
@@ -37,13 +39,13 @@ const indexRoute = createRoute({
 });
 
 // Chat routes
-export const chatRoute = createRoute({
+const chatRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/chat',
   component: ChatPage,
 });
 
-export const chatIdRoute = createRoute({
+const chatIdRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/chat/$chatId',
   component: ChatPage,

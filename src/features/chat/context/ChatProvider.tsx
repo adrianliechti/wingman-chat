@@ -86,7 +86,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, [setProviderEnabled, restoreToolUI, renderApp]);
 
+  const chatIdRef = useRef(chatId);
+  chatIdRef.current = chatId;
+
   const selectChat = useCallback((id: string | null) => {
+    if (id === chatIdRef.current) return;
+
     setChatId(id);
     resetTools();
 

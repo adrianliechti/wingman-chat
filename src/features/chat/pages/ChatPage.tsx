@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Plus as PlusIcon, BotMessageSquare, Info, Paperclip, Rocket, ArrowDown } from "lucide-react";
 import DOMPurify from "dompurify";
-import { useNavigate, useParams } from '@tanstack/react-router';
+import { useNavigate, useMatch } from '@tanstack/react-router';
+import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { useAutoScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
 import { useSidebar } from "@/shell/hooks/useSidebar";
@@ -84,7 +85,6 @@ const Disclaimer = () => {
 export function ChatPage() {
   const {
     messages,
-    createChat,
     selectChat,
     chat,
     chats,
@@ -92,31 +92,26 @@ export function ChatPage() {
   } = useChat();
 
   const navigate = useNavigate();
-  // Try to read chatId from route params (will be undefined on /chat, defined on /chat/$chatId)
-  const { chatId: routeChatId } = useParams({ strict: false }) as { chatId?: string };
+  const { newChat, openChat } = useChatNavigate();
+  const chatIdMatch = useMatch({ from: '/chat/$chatId', shouldThrow: false });
+  const routeChatId = chatIdMatch?.params.chatId;
 
-  // Sync route param → chat selection
+  // Route → state: select the chat indicated by the URL
   useEffect(() => {
     if (routeChatId && routeChatId !== chat?.id) {
       selectChat(routeChatId);
     } else if (!routeChatId && chat) {
-      // Navigated to /chat (no ID) means "new chat" — clear selection
       selectChat(null);
     }
   }, [routeChatId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync chat state → URL (e.g., after getOrCreateChat creates a chat mid-conversation)
+  // State → URL: when a chat is implicitly created (getOrCreateChat during message send)
+  // the URL still shows /chat — update it to /chat/{id}
   useEffect(() => {
-    if (chat?.id && chat.id !== routeChatId) {
+    if (chat?.id && !routeChatId) {
       navigate({ to: '/chat/$chatId', params: { chatId: chat.id }, replace: true });
     }
-  }, [chat?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Wrapped createChat that navigates to the new chat's URL
-  const handleCreateChat = useCallback(async () => {
-    const newChat = await createChat();
-    navigate({ to: '/chat/$chatId', params: { chatId: newChat.id } });
-  }, [createChat, navigate]);
+  }, [chat?.id, routeChatId, navigate]);
 
   const { layoutMode } = useLayout();
   const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
@@ -222,18 +217,17 @@ export function ChatPage() {
         <button
           type="button"
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
-          onClick={handleCreateChat}
+          onClick={newChat}
         >
           <PlusIcon size={20} />
         </button>
       </div>
     );
 
-    // Cleanup when component unmounts
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, handleCreateChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, showAgentDrawer, toggleAgentDrawer, hasAppContent, showAppDrawer, toggleAppDrawer]);
+  }, [setRightActions, newChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, showAgentDrawer, toggleAgentDrawer, hasAppContent, showAppDrawer, toggleAppDrawer]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {

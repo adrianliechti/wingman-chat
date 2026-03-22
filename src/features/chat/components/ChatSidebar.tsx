@@ -2,15 +2,15 @@ import { Trash, PanelRightOpen, MoreVertical, GitBranch, Search, X } from "lucid
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { useMemo, useCallback, useState, useRef } from "react";
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useNavigate } from '@tanstack/react-router';
 import { useChat } from "@/features/chat/hooks/useChat";
+import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 import { getTextFromContent } from "@/shared/types/chat";
 
 export function ChatSidebar() {
   const { chats, chat, deleteChat, createChat, updateChat } = useChat();
   const { setShowSidebar } = useSidebar();
-  const navigate = useNavigate();
+  const { newChat, openChat } = useChatNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   
@@ -151,14 +151,14 @@ export function ChatSidebar() {
     }));
 
     // Navigate to the new forked chat
-    navigate({ to: '/chat/$chatId', params: { chatId: newChat.id } });
+    openChat(newChat.id);
 
     requestAnimationFrame(() => {
       if (window.innerWidth < 768) {
         setShowSidebar(false);
       }
     });
-  }, [createChat, updateChat, navigate, setShowSidebar]);
+  }, [createChat, updateChat, openChat, setShowSidebar]);
 
   return (
     <div
@@ -257,7 +257,7 @@ export function ChatSidebar() {
                               onClick={() => {
                                 const hasActive = group.chats.some(c => c.id === chat?.id);
                                 group.chats.forEach((chatItem) => deleteChat(chatItem.id));
-                                if (hasActive) navigate({ to: '/chat' });
+                                if (hasActive) newChat();
                               }}
                               className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                             >
@@ -281,7 +281,7 @@ export function ChatSidebar() {
                 >
                   <div
                     onClick={() => {
-                      navigate({ to: '/chat/$chatId', params: { chatId: chatItem.id } });
+                      openChat(chatItem.id);
                       if (window.innerWidth < 768) {
                         setShowSidebar(false);
                       }
@@ -327,7 +327,7 @@ export function ChatSidebar() {
                             onClick={() => {
                               const wasActive = chatItem.id === chat?.id;
                               deleteChat(chatItem.id);
-                              if (wasActive) navigate({ to: '/chat' });
+                              if (wasActive) newChat();
                             }}
                             className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 "
                           >
