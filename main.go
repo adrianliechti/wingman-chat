@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 
@@ -71,7 +73,8 @@ func main() {
 	mux := http.NewServeMux()
 	dist := os.DirFS("dist")
 
-	mux.Handle("/", http.FileServerFS(dist))
+	// SPA fallback: serve index.html for routes that don't match real files
+	mux.Handle("/", spaHandler(dist))
 
 	mux.HandleFunc("GET /config.json", func(w http.ResponseWriter, r *http.Request) {
 		type toolType struct {
@@ -512,4 +515,36 @@ func realtimeURL() *url.URL {
 	}
 
 	return nil
+}
+
+// spaHandler serves static files from the given filesystem, falling back to
+// index.html for paths that don't match a real file. This lets the frontend
+// router handle client-side routes like /chat/123.
+func spaHandler(root fs.FS) http.Handler {
+	fileServer := http.FileServerFS(root)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Clean the path and try to open it as a real file
+		p := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if p == "" {
+			p = "index.html"
+		}
+
+		_, err := fs.Stat(root, p)
+		if err == nil {
+			// File exists — serve it normally
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// File doesn't exist — serve index.html and let the SPA router handle it
+		indexFile, err := fs.ReadFile(root, "index.html")
+		if err != nil {
+			http.Error(w, "index.html not found", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(indexFile)
+	})
 }

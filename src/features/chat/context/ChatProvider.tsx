@@ -86,12 +86,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, [setProviderEnabled, restoreToolUI, renderApp]);
 
-  const selectChat = useCallback((chatId: string) => {
-    setChatId(chatId);
+  const selectChat = useCallback((id: string | null) => {
+    setChatId(id);
     resetTools();
 
+    if (!id) return;
+
     // Auto-restore the last MCP app for this chat
-    const chatData = chats.find(c => c.id === chatId);
+    const chatData = chats.find(c => c.id === id);
     if (chatData?.messages?.length) {
       const lastAppResult = chatData.messages
         .flatMap(m => m.content)

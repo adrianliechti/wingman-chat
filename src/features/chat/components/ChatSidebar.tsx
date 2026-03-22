@@ -2,13 +2,15 @@ import { Trash, PanelRightOpen, MoreVertical, GitBranch, Search, X } from "lucid
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { useMemo, useCallback, useState, useRef } from "react";
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { useNavigate } from '@tanstack/react-router';
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 import { getTextFromContent } from "@/shared/types/chat";
 
 export function ChatSidebar() {
-  const { chats, chat, selectChat, deleteChat, createChat, updateChat } = useChat();
+  const { chats, chat, deleteChat, createChat, updateChat } = useChat();
   const { setShowSidebar } = useSidebar();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   
@@ -140,23 +142,23 @@ export function ChatSidebar() {
   // Function to fork a chat (create a new chat with copied messages)
   const forkChat = useCallback(async (chatToFork: typeof chats[0]) => {
     const newChat = await createChat();
-    
+
     // Copy all the properties from the original chat
     updateChat(newChat.id, () => ({
       title: chatToFork.title ? `${chatToFork.title} (Fork)` : "Forked Chat",
       model: chatToFork.model,
       messages: [...chatToFork.messages], // Create a copy of the messages array
     }));
-    
-    // The chat is already selected by createChat, but we need to ensure it's visible
-    // Use a small delay to ensure state updates have propagated
+
+    // Navigate to the new forked chat
+    navigate({ to: '/chat/$chatId', params: { chatId: newChat.id } });
+
     requestAnimationFrame(() => {
-      // Close sidebar on mobile after forking
       if (window.innerWidth < 768) {
         setShowSidebar(false);
       }
     });
-  }, [createChat, updateChat, setShowSidebar]);
+  }, [createChat, updateChat, navigate, setShowSidebar]);
 
   return (
     <div
@@ -253,7 +255,9 @@ export function ChatSidebar() {
                             <button
                               type="button"
                               onClick={() => {
+                                const hasActive = group.chats.some(c => c.id === chat?.id);
                                 group.chats.forEach((chatItem) => deleteChat(chatItem.id));
+                                if (hasActive) navigate({ to: '/chat' });
                               }}
                               className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                             >
@@ -277,7 +281,7 @@ export function ChatSidebar() {
                 >
                   <div
                     onClick={() => {
-                      selectChat(chatItem.id);
+                      navigate({ to: '/chat/$chatId', params: { chatId: chatItem.id } });
                       if (window.innerWidth < 768) {
                         setShowSidebar(false);
                       }
@@ -320,7 +324,11 @@ export function ChatSidebar() {
                         <MenuItem>
                           <button
                             type="button"
-                            onClick={() => deleteChat(chatItem.id)}
+                            onClick={() => {
+                              const wasActive = chatItem.id === chat?.id;
+                              deleteChat(chatItem.id);
+                              if (wasActive) navigate({ to: '/chat' });
+                            }}
                             className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 "
                           >
                             <Trash size={14} />

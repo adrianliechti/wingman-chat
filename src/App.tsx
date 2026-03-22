@@ -1,11 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { MessageCircle, Languages, PanelLeftOpen, Workflow, ChevronDown, Settings, Image, MoreHorizontal, Globe, GraduationCap } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems, Transition } from "@headlessui/react";
-import { ChatPage } from "./features/chat/pages/ChatPage";
-import { TranslatePage } from "./features/translate/pages/TranslatePage";
-import { WorkflowPage } from "./features/workflow/pages/WorkflowPage";
-import { RendererPage } from "./features/renderer/pages/RendererPage";
-import { ResearchPage } from "./features/research/pages/ResearchPage";
+import { RouterProvider, Outlet, Link, useRouterState } from '@tanstack/react-router';
 import { getConfig } from "./shared/config";
 import { SidebarProvider } from "./shell/context/SidebarProvider";
 import { useSidebar } from "./shell/hooks/useSidebar";
@@ -30,39 +26,51 @@ import { ToolsProvider } from "./features/tools/context/ToolsProvider";
 import { useArtifacts } from "./features/artifacts/hooks/useArtifacts";
 import { useAgents } from "./features/agent/hooks/useAgents";
 import { useApp } from "./shell/hooks/useApp";
+import { router, rootRoute } from "./router";
 
 type Page = "chat" | "flow" | "translate" | "renderer" | "research";
 
-function AppContent() {
+// Map route paths to page keys
+function getPageFromPath(pathname: string): Page {
+  const segment = pathname.split('/')[1] || 'chat';
+  switch (segment) {
+    case 'chat': return 'chat';
+    case 'flow': return 'flow';
+    case 'translate': return 'translate';
+    case 'renderer': return 'renderer';
+    case 'research': return 'research';
+    default: return 'chat';
+  }
+}
+
+function AppLayout() {
   const config = getConfig();
-  const [currentPage, setCurrentPage] = useState<Page>("chat");
+  const currentPage = useRouterState({ select: (s) => getPageFromPath(s.location.pathname) });
   const { showSidebar, setShowSidebar, toggleSidebar, sidebarContent } = useSidebar();
   const { leftActions, rightActions } = useNavigation();
   const { showArtifactsDrawer } = useArtifacts();
   const { showAgentDrawer } = useAgents();
   const { showAppDrawer } = useApp();
-  
+
   // Detect if any panel is open - sidebar becomes overlay when panels are open
   const hasPanelOpen = showArtifactsDrawer || showAgentDrawer || showAppDrawer;
-  
+
   // Track previous panel state to detect when panels open (using state for adjust-during-render pattern)
   const [prevHasPanelOpen, setPrevHasPanelOpen] = useState(hasPanelOpen);
-  
+
   // Auto-close sidebar when a panel opens (desktop only) - only on transition from closed to open
-  // Using "adjust state during render" pattern to detect transitions
   if (hasPanelOpen !== prevHasPanelOpen) {
     setPrevHasPanelOpen(hasPanelOpen);
-    // Check if panel just opened
     if (hasPanelOpen && !prevHasPanelOpen && showSidebar && window.innerWidth >= 768) {
       setShowSidebar(false);
     }
   }
-  
+
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsAdvanced, setSettingsAdvanced] = useState(false);
-  
+
   // Refs and state for animated slider (tablet and desktop only)
   const tabletRef = useRef<HTMLDivElement>(null);
   const desktopRef = useRef<HTMLDivElement>(null);
@@ -78,7 +86,7 @@ function AppContent() {
       if (activeButton) {
         const containerRect = containerRef.current.getBoundingClientRect();
         const buttonRect = activeButton.getBoundingClientRect();
-        
+
         setSliderStyles(prev => ({
           ...prev,
           [key]: {
@@ -92,63 +100,21 @@ function AppContent() {
 
   // Update slider positions for all breakpoints
   useEffect(() => {
-    // Initial update of all sliders
     setTimeout(() => {
       updateSlider(tabletRef, 'tablet');
       updateSlider(desktopRef, 'desktop');
     }, 0);
   }, [currentPage, updateSlider]);
 
-  // Simple hash-based router
-  useEffect(() => {
-    const getPageFromHash = (hash: string): Page => {
-      switch (hash) {
-        case '#chat':
-          return 'chat';
-        case '#flow':
-          return config.workflow ? 'flow' : 'chat';
-        case '#translate':
-          return config.translator ? 'translate' : 'chat';
-        case '#renderer':
-          return config.renderer ? 'renderer' : 'chat';
-        case '#research':
-          return config.researcher ? 'research' : 'chat';
-        default:
-          return 'chat';
-      }
-    };
-
-    const handleHashChange = () => {
-      const page = getPageFromHash(window.location.hash);
-      setCurrentPage(page);
-    };
-
-    // Set initial page from hash or set default hash if none exists
-    if (!window.location.hash) {
-      window.location.hash = '#chat';
-    } else {
-      handleHashChange();
-    }
-
-    // Listen for hash changes
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [config.workflow, config.translator, config.renderer, config.researcher]);
-
   // Auto-close sidebar on mobile screens and update sliders on resize
   useEffect(() => {
     const handleResize = () => {
-      // Auto-close sidebar on mobile
       if (window.innerWidth < 768) {
         setShowSidebar(false);
       }
-      
-      // Close mobile menu on resize to larger screens
       if (window.innerWidth >= 768) {
         setMobileMenuOpen(false);
       }
-      
-      // Update slider positions after a short delay
       setTimeout(() => {
         updateSlider(tabletRef, 'tablet');
         updateSlider(desktopRef, 'desktop');
@@ -156,7 +122,6 @@ function AppContent() {
     };
 
     handleResize();
-
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [setShowSidebar, currentPage, updateSlider]);
@@ -167,7 +132,6 @@ function AppContent() {
       e.preventDefault();
       e.stopPropagation();
     };
-
     window.addEventListener('dragover', preventDrop);
     window.addEventListener('drop', preventDrop);
     return () => {
@@ -178,9 +142,9 @@ function AppContent() {
 
   // Primary pages always shown in main nav
   const primaryPages = [
-    { key: "chat" as const, label: "Chat", icon: <MessageCircle size={20} /> },
-    { key: "flow" as const, label: "Flow", icon: <Workflow size={20} /> },
-    { key: "translate" as const, label: "Translate", icon: <Languages size={20} /> },
+    { key: "chat" as const, label: "Chat", icon: <MessageCircle size={20} />, to: "/chat" },
+    { key: "flow" as const, label: "Flow", icon: <Workflow size={20} />, to: "/flow" },
+    { key: "translate" as const, label: "Translate", icon: <Languages size={20} />, to: "/translate" },
   ].filter(page => {
     if (page.key === "chat") return true;
     if (page.key === "flow") return !!config.workflow;
@@ -190,8 +154,8 @@ function AppContent() {
 
   // Secondary pages always in overflow menu
   const secondaryPages = [
-    { key: "renderer" as const, label: "Renderer", icon: <Image size={20} /> },
-    { key: "research" as const, label: "Research", icon: <Globe size={20} /> },
+    { key: "renderer" as const, label: "Renderer", icon: <Image size={20} />, to: "/renderer" },
+    { key: "research" as const, label: "Research", icon: <Globe size={20} />, to: "/research" },
   ].filter(page => {
     if (page.key === "renderer") return !!config.renderer;
     if (page.key === "research") return !!config.researcher;
@@ -200,7 +164,6 @@ function AppContent() {
 
   // All pages combined for mobile menu
   const pages = [...primaryPages, ...secondaryPages];
-
   const showNavigation = pages.length > 1;
 
   return (
@@ -211,9 +174,7 @@ function AppContent() {
           <button
             type="button"
             className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
-            onClick={() => {
-              setShowSidebar(true);
-            }}
+            onClick={() => setShowSidebar(true)}
             aria-label="Open sidebar"
           >
             <PanelLeftOpen size={20} />
@@ -231,7 +192,7 @@ function AppContent() {
         leaveFrom="opacity-100"
         leaveTo="opacity-0"
       >
-        <div 
+        <div
           className="fixed inset-0 z-40 bg-black/40 dark:bg-black/60 hidden md:block"
           onClick={() => setShowSidebar(false)}
         />
@@ -277,12 +238,11 @@ function AppContent() {
                   </button>
                 )}
               </div>
-              
+
               {/* Mobile hamburger menu - visible on smaller screens */}
               {showNavigation && (
                 <div className="flex items-center md:hidden -ml-2 relative">
                   <div className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20">
-                    {/* Current page button with dropdown indicator */}
                     <button
                       type="button"
                       onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -290,22 +250,22 @@ function AppContent() {
                     >
                       {pages.find(p => p.key === currentPage)?.icon}
                       <span>{pages.find(p => p.key === currentPage)?.label}</span>
-                      <ChevronDown 
-                        size={14} 
+                      <ChevronDown
+                        size={14}
                         className={`transition-transform duration-200 ${mobileMenuOpen ? 'rotate-180' : ''}`}
                       />
                     </button>
                   </div>
                 </div>
               )}
-              
+
               {leftActions}
             </div>
-            
+
             {/* Center section - Modern pill navigation for desktop */}
             {showNavigation && (
               <div className="hidden md:flex items-center justify-center">
-                <div 
+                <div
                   ref={desktopRef}
                   className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
                 >
@@ -321,20 +281,16 @@ function AppContent() {
                       }}
                     />
                   )}
-                  
+
                   {/* Primary navigation items */}
-                  {primaryPages.map(({ key, label, icon }) => (
-                    <button
-                      type="button"
+                  {primaryPages.map(({ key, label, icon, to }) => (
+                    <Link
                       key={key}
+                      to={to}
                       data-page={key}
-                      onClick={() => {
-                        setCurrentPage(key);
-                        window.location.hash = `#${key}`;
-                      }}
                       className={`
                         relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out
-                        flex items-center gap-2 text-sm
+                        flex items-center gap-2 text-sm cursor-pointer
                         ${currentPage === key
                           ? "text-neutral-900 dark:text-neutral-100"
                           : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
@@ -343,10 +299,10 @@ function AppContent() {
                     >
                       {icon}
                       <span className="hidden sm:inline">{label}</span>
-                    </button>
+                    </Link>
                   ))}
-                  
-                  {/* Overflow menu for secondary pages - always shown if there are secondary pages */}
+
+                  {/* Overflow menu for secondary pages */}
                   {secondaryPages.length > 0 && (
                     <Menu>
                       <MenuButton
@@ -367,14 +323,10 @@ function AppContent() {
                         anchor="bottom"
                         className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden shadow-lg z-50 min-w-40"
                       >
-                        {secondaryPages.map(({ key, label, icon }) => (
+                        {secondaryPages.map(({ key, label, icon, to }) => (
                           <MenuItem key={key}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCurrentPage(key);
-                                window.location.hash = `#${key}`;
-                              }}
+                            <Link
+                              to={to}
                               className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${
                                 currentPage === key
                                   ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
@@ -383,7 +335,7 @@ function AppContent() {
                             >
                               {icon}
                               <span className="font-medium text-sm">{label}</span>
-                            </button>
+                            </Link>
                           </MenuItem>
                         ))}
                       </MenuItems>
@@ -392,7 +344,7 @@ function AppContent() {
                 </div>
               </div>
             )}
-            
+
             {/* Right section */}
             <div className="flex items-center gap-2 justify-end flex-1">
               {config.support?.url && (
@@ -406,7 +358,6 @@ function AppContent() {
                   <GraduationCap size={24} />
                 </a>
               )}
-              {/* Hide settings button on mobile - it's in the menu */}
               <div className="hidden md:block">
                 <SettingsButton onClick={(e) => {
                   setSettingsAdvanced(e.altKey);
@@ -417,19 +368,16 @@ function AppContent() {
             </div>
           </div>
         </nav>
-        
+
         {/* Mobile dropdown menu */}
         {mobileMenuOpen && (
           <div className="fixed top-14 left-3 z-30 md:hidden bg-white dark:bg-neutral-900 backdrop-blur-md border border-neutral-200 dark:border-neutral-800 shadow-lg rounded-xl overflow-hidden min-w-40">
             <div className="py-1">
-              {pages.map(({ key, label, icon }) => (
-                <button
+              {pages.map(({ key, label, icon, to }) => (
+                <Link
                   key={key}
-                  onClick={() => {
-                    setCurrentPage(key);
-                    window.location.hash = `#${key}`;
-                    setMobileMenuOpen(false);
-                  }}
+                  to={to}
+                  onClick={() => setMobileMenuOpen(false)}
                   className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${
                     currentPage === key
                       ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
@@ -438,13 +386,11 @@ function AppContent() {
                 >
                   {icon}
                   <span className="font-medium text-sm">{label}</span>
-                </button>
+                </Link>
               ))}
-              
-              {/* Divider */}
+
               <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
-              
-              {/* Settings */}
+
               <button
                 onClick={(e) => {
                   setSettingsAdvanced(e.altKey);
@@ -459,30 +405,28 @@ function AppContent() {
             </div>
           </div>
         )}
-        
+
         {/* Mobile menu backdrop */}
         {mobileMenuOpen && (
-          <div 
-            className="fixed inset-0 z-20 md:hidden" 
+          <div
+            className="fixed inset-0 z-20 md:hidden"
             onClick={() => setMobileMenuOpen(false)}
           />
         )}
-        
-        {/* Content area - no padding so it can scroll under the nav */}
+
+        {/* Content area */}
         <div className="flex-1 overflow-hidden flex">
-          {/* Main content */}
           <div className="flex-1 overflow-hidden">
-            {currentPage === "chat" && <ChatPage />}
-            {currentPage === "flow" && <WorkflowPage />}
-            {currentPage === "translate" && <TranslatePage />}
-            {currentPage === "renderer" && <RendererPage />}
-            {currentPage === "research" && <ResearchPage />}
+            <Outlet />
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+// Set root route's layout component
+rootRoute.update({ component: AppLayout });
 
 // Compose providers to avoid deep nesting
 const providers = [
@@ -507,7 +451,7 @@ const providers = [
 function App() {
   return providers.reduceRight(
     (acc, Provider) => <Provider>{acc}</Provider>,
-    <AppContent />
+    <RouterProvider router={router} />
   );
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Plus as PlusIcon, BotMessageSquare, Info, Paperclip, Rocket, ArrowDown } from "lucide-react";
 import DOMPurify from "dompurify";
+import { useNavigate, useParams } from '@tanstack/react-router';
 import { useAutoScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
 import { useSidebar } from "@/shell/hooks/useSidebar";
@@ -84,10 +85,39 @@ export function ChatPage() {
   const {
     messages,
     createChat,
+    selectChat,
+    chat,
     chats,
     isResponding,
   } = useChat();
-  
+
+  const navigate = useNavigate();
+  // Try to read chatId from route params (will be undefined on /chat, defined on /chat/$chatId)
+  const { chatId: routeChatId } = useParams({ strict: false }) as { chatId?: string };
+
+  // Sync route param → chat selection
+  useEffect(() => {
+    if (routeChatId && routeChatId !== chat?.id) {
+      selectChat(routeChatId);
+    } else if (!routeChatId && chat) {
+      // Navigated to /chat (no ID) means "new chat" — clear selection
+      selectChat(null);
+    }
+  }, [routeChatId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync chat state → URL (e.g., after getOrCreateChat creates a chat mid-conversation)
+  useEffect(() => {
+    if (chat?.id && chat.id !== routeChatId) {
+      navigate({ to: '/chat/$chatId', params: { chatId: chat.id }, replace: true });
+    }
+  }, [chat?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Wrapped createChat that navigates to the new chat's URL
+  const handleCreateChat = useCallback(async () => {
+    const newChat = await createChat();
+    navigate({ to: '/chat/$chatId', params: { chatId: newChat.id } });
+  }, [createChat, navigate]);
+
   const { layoutMode } = useLayout();
   const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
   const { showAgentDrawer, toggleAgentDrawer } = useAgents();
@@ -192,7 +222,7 @@ export function ChatPage() {
         <button
           type="button"
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
-          onClick={createChat}
+          onClick={handleCreateChat}
         >
           <PlusIcon size={20} />
         </button>
@@ -203,7 +233,7 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, createChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, showAgentDrawer, toggleAgentDrawer, hasAppContent, showAppDrawer, toggleAppDrawer]);
+  }, [setRightActions, handleCreateChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, showAgentDrawer, toggleAgentDrawer, hasAppContent, showAppDrawer, toggleAppDrawer]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {
