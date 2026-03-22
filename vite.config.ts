@@ -2,31 +2,7 @@ import { defineConfig } from 'vite'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 import tailwindcss from '@tailwindcss/vite';
-import { viteStaticCopy } from 'vite-plugin-static-copy';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-// Pyodide files to exclude from static copy (wheels are bundled separately
-// by the bundle:pyodide script into public/pyodide/)
-const PYODIDE_EXCLUDE = [
-  "!**/*.{md,html}",
-  "!**/*.d.ts",
-  "!**/*.whl",
-  "!**/node_modules",
-];
-
-// Plugin to copy Pyodide files to assets directory for local serving
-function viteStaticCopyPyodide() {
-  const pyodideDir = path.dirname(fileURLToPath(import.meta.resolve("pyodide")));
-  return viteStaticCopy({
-    targets: [
-      {
-        src: [path.join(pyodideDir, "*").replace(/\\/g, "/")].concat(PYODIDE_EXCLUDE),
-        dest: "pyodide",
-      },
-    ],
-  });
-}
 // Vite plugin: override font-display for @fontsource/noto-emoji from "swap" to
 // "block" so the browser never falls back to OS color emoji while the font
 // file is downloading. "block" shows invisible text during the load period
@@ -79,8 +55,7 @@ export default defineConfig({
     babel({
       presets: [reactCompilerPreset({ target: '19' })]
     }),
-    tailwindcss(),
-    viteStaticCopyPyodide()
+    tailwindcss()
   ],
   build: {
     rolldownOptions: {

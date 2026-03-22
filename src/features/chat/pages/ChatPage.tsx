@@ -92,7 +92,7 @@ export function ChatPage() {
   } = useChat();
 
   const navigate = useNavigate();
-  const { newChat, openChat } = useChatNavigate();
+  const { newChat } = useChatNavigate();
   const chatIdMatch = useMatch({ from: '/chat/$chatId', shouldThrow: false });
   const routeChatId = chatIdMatch?.params.chatId;
 
@@ -106,9 +106,15 @@ export function ChatPage() {
   }, [routeChatId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // State → URL: when a chat is implicitly created (getOrCreateChat during message send)
-  // the URL still shows /chat — update it to /chat/{id}
+  // the URL still shows /chat — update it to /chat/{id}.
+  // We track the previous chatId so we only redirect when a chat is *newly created*
+  // (transition from null → id), not when navigating TO /chat with an existing chat.
+  const prevChatIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (chat?.id && !routeChatId) {
+    const prevId = prevChatIdRef.current;
+    prevChatIdRef.current = chat?.id ?? null;
+
+    if (chat?.id && !routeChatId && !prevId) {
       navigate({ to: '/chat/$chatId', params: { chatId: chat.id }, replace: true });
     }
   }, [chat?.id, routeChatId, navigate]);

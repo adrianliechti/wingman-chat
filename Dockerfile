@@ -18,6 +18,7 @@ COPY go.* ./
 RUN go mod download
 
 COPY *.go ./
+COPY pkg ./pkg
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o server
 
 FROM alpine
