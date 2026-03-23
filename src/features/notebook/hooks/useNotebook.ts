@@ -265,8 +265,8 @@ export function useNotebook(notebookId?: string) {
         addedAt: new Date().toISOString(),
       };
 
-      const updated = await store.addSource(notebook.id, source);
-      setSources(updated);
+      await store.addSource(notebook.id, source);
+      setSources((prev) => [...prev, source]);
     },
     [notebook],
   );
@@ -296,8 +296,8 @@ export function useNotebook(notebookId?: string) {
         addedAt: new Date().toISOString(),
       };
 
-      const updated = await store.addSource(notebook.id, source);
-      setSources(updated);
+      await store.addSource(notebook.id, source);
+      setSources((prev) => [...prev, source]);
     },
     [notebook, client],
   );
@@ -330,8 +330,8 @@ export function useNotebook(notebookId?: string) {
         addedAt: new Date().toISOString(),
       };
 
-      const updated = await store.addSource(notebook.id, source);
-      setSources(updated);
+      await store.addSource(notebook.id, source);
+      setSources((prev) => [...prev, source]);
     },
     [notebook],
   );
@@ -339,8 +339,8 @@ export function useNotebook(notebookId?: string) {
   const deleteSource = useCallback(
     async (sourceId: string) => {
       if (!notebook) return;
-      const updated = await store.removeSource(notebook.id, sourceId);
-      setSources(updated);
+      await store.removeSource(notebook.id, sourceId);
+      setSources((prev) => prev.filter((s) => s.id !== sourceId));
     },
     [notebook],
   );
@@ -431,8 +431,7 @@ export function useNotebook(notebookId?: string) {
         setOutputs((prev) =>
           prev.map((o) => (o.id === output.id ? completed : o)),
         );
-        const current = await store.getOutputs(notebook.id);
-        await store.saveOutputs(notebook.id, [completed, ...current]);
+        await store.addOutput(notebook.id, completed);
       };
 
       const failOutput = (err: unknown) => {
@@ -686,8 +685,8 @@ export function useNotebook(notebookId?: string) {
   const deleteOutput = useCallback(
     async (outputId: string) => {
       if (!notebook) return;
-      const updated = await store.removeOutput(notebook.id, outputId);
-      setOutputs(updated);
+      await store.removeOutput(notebook.id, outputId);
+      setOutputs((prev) => prev.filter((o) => o.id !== outputId));
     },
     [notebook],
   );
