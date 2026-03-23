@@ -214,26 +214,24 @@ export function NotebookPage() {
         {/* Center: Chat or Output Viewer */}
         <div className="flex-1 min-w-0 h-full overflow-hidden">
           {viewingOutput ? (
-            <div className="h-full flex flex-col">
-              {/* Output header */}
-              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-end shrink-0">
-                <div className="flex items-center gap-1">
-                  {!viewingOutput.imageUrl && !viewingOutput.audioUrl && (
-                    <CopyButton text={viewingOutput.content} />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setViewingOutput(null)}
-                    className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                    title="Back to chat"
-                  >
-                    <X size={16} className="text-neutral-500" />
-                  </button>
-                </div>
+            <div className="h-full flex flex-col relative">
+              {/* Output buttons */}
+              <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+                {!viewingOutput.imageUrl && !viewingOutput.audioUrl && (
+                  <CopyButton text={viewingOutput.content} />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setViewingOutput(null)}
+                  className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  title="Back to chat"
+                >
+                  <X size={16} className="text-neutral-500" />
+                </button>
               </div>
 
               {/* Output content */}
-              <div className="flex-1 overflow-hidden min-h-0">
+              <div className="flex-1 overflow-hidden min-h-0 pt-8 pb-4">
                 {viewingOutput.quiz && viewingOutput.quiz.length > 0 ? (
                   <QuizViewer questions={viewingOutput.quiz} />
                 ) : viewingOutput.mindMap ? (

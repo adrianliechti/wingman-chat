@@ -1,9 +1,7 @@
 import { useMemo, useCallback, memo } from 'react';
 import {
   ReactFlow,
-  Background,
   Controls,
-  BackgroundVariant,
   type Node,
   type Edge,
   type NodeProps,
@@ -186,7 +184,7 @@ export function MindMapViewer({ root }: MindMapViewerProps) {
   }, []);
 
   return (
-    <div className="h-full w-full">
+    <div className="h-full w-full" style={{ background: 'transparent' }}>
       <ReactFlow
         nodes={flowNodes}
         edges={flowEdges}
@@ -202,8 +200,8 @@ export function MindMapViewer({ root }: MindMapViewerProps) {
         panOnScroll
         zoomOnScroll
         proOptions={{ hideAttribution: true }}
+        style={{ background: 'transparent' }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} className="!bg-neutral-50 dark:!bg-neutral-900/50" />
         <Controls
           showInteractive={false}
           className="!bg-white dark:!bg-neutral-800 !border-neutral-200 dark:!border-neutral-700 !shadow-md !rounded-lg [&>button]:!bg-white dark:[&>button]:!bg-neutral-800 [&>button]:!border-neutral-200 dark:[&>button]:!border-neutral-700 [&>button]:!text-neutral-600 dark:[&>button]:!text-neutral-400"

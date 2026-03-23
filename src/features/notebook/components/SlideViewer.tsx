@@ -22,7 +22,7 @@ export function SlideViewer({ content, slides }: SlideViewerProps) {
             </div>
           </div>
         ) : (
-          <div className="h-full flex items-center justify-center p-6 bg-neutral-50 dark:bg-neutral-900/50">
+          <div className="h-full flex items-center justify-center p-6">
             <img
               src={slides[activeIndex - 1]}
               alt={`Slide ${activeIndex}`}
@@ -33,7 +33,7 @@ export function SlideViewer({ content, slides }: SlideViewerProps) {
       </div>
 
       {/* Bottom thumbnail navigation */}
-      <div className="shrink-0 border-t border-neutral-200 dark:border-neutral-800 overflow-x-auto px-3 py-2">
+      <div className="shrink-0 overflow-x-auto px-3 py-2">
         <div className="flex items-center gap-2">
           {/* Text view thumbnail */}
           <button
