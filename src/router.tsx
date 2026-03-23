@@ -5,14 +5,15 @@ import { ChatPage } from './features/chat/pages/ChatPage';
 import { WorkflowPage } from './features/workflow/pages/WorkflowPage';
 import { TranslatePage } from './features/translate/pages/TranslatePage';
 import { RendererPage } from './features/renderer/pages/RendererPage';
-import { ResearchPage } from './features/research/pages/ResearchPage';
+import { NotebookPage } from './features/notebook/pages/NotebookPage';
 
 const hashToRoute: Record<string, string> = {
   chat: '/chat',
   flow: '/flow',
   translate: '/translate',
   renderer: '/renderer',
-  research: '/research',
+  research: '/notebook',
+  notebook: '/notebook',
 };
 
 // Root route — layout shell + hash-to-path redirect for backwards compatibility
@@ -79,13 +80,13 @@ const rendererRoute = createRoute({
   component: RendererPage,
 });
 
-const researchRoute = createRoute({
+const notebookRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/research',
+  path: '/notebook',
   beforeLoad: () => {
     if (!getConfig().researcher) throw redirect({ to: '/chat' });
   },
-  component: ResearchPage,
+  component: NotebookPage,
 });
 
 // Build route tree
@@ -96,7 +97,7 @@ const routeTree = rootRoute.addChildren([
   flowRoute,
   translateRoute,
   rendererRoute,
-  researchRoute,
+  notebookRoute,
 ]);
 
 // Create and export router

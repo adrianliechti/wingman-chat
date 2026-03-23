@@ -13,10 +13,10 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useDropZone } from '@/shared/hooks/useDropZone';
-import type { ResearchSource } from '../types/research';
+import type { NotebookSource } from '../types/notebook';
 
 interface SourcesPanelProps {
-  sources: ResearchSource[];
+  sources: NotebookSource[];
   isSearching: boolean;
   onWebSearch: (query: string, mode: 'web' | 'research') => Promise<void>;
   onFileAdd: (file: File) => Promise<void>;
@@ -382,7 +382,7 @@ function SourceItem({
   source,
   onDelete,
 }: {
-  source: ResearchSource;
+  source: NotebookSource;
   onDelete: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -419,10 +419,10 @@ function SourceItem({
       </div>
 
       {expanded && (
-        <div className="px-3 pb-2.5 max-h-40 overflow-y-auto">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap line-clamp-6">
-            {source.content.slice(0, 500)}
-            {source.content.length > 500 && '...'}
+        <div className="px-3 pb-2.5 max-h-80 overflow-y-auto">
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap">
+            {source.content.slice(0, 2000)}
+            {source.content.length > 2000 && '...'}
           </p>
         </div>
       )}

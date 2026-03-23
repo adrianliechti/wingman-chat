@@ -1,10 +1,10 @@
 /**
- * Source access tools for research.
+ * Source access tools for notebooks.
  * Provides list and read tools so the LLM can selectively access source content.
  */
 
 import type { Tool, TextContent } from '@/shared/types/chat';
-import type { ResearchSource } from '../types/research';
+import type { NotebookSource } from '../types/notebook';
 
 const MAX_READ_CHARS = 15000;
 
@@ -16,7 +16,7 @@ function errorResult(message: string): TextContent[] {
   return [{ type: 'text' as const, text: JSON.stringify({ error: message }) }];
 }
 
-function createListTool(sources: ResearchSource[]): Tool {
+function createListTool(sources: NotebookSource[]): Tool {
   return {
     name: 'source_list',
     description: 'List all available research sources with their ID, name, type, and size.',
@@ -41,7 +41,7 @@ function createListTool(sources: ResearchSource[]): Tool {
   };
 }
 
-function createReadTool(sources: ResearchSource[]): Tool {
+function createReadTool(sources: NotebookSource[]): Tool {
   return {
     name: 'source_read',
     description: 'Read the content of a specific research source by its ID.',
@@ -89,6 +89,6 @@ function createReadTool(sources: ResearchSource[]): Tool {
 /**
  * Create source access tools for the LLM.
  */
-export function createSourceTools(sources: ResearchSource[]): Tool[] {
+export function createSourceTools(sources: NotebookSource[]): Tool[] {
   return [createListTool(sources), createReadTool(sources)];
 }

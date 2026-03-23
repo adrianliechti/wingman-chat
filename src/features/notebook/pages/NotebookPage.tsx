@@ -1,62 +1,106 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { PlusIcon, PanelLeftClose, PanelRightClose, PanelLeft, PanelRight, X } from 'lucide-react';
 import { useNavigation } from '@/shell/hooks/useNavigation';
+import { useSidebar } from '@/shell/hooks/useSidebar';
 import { Markdown } from '@/shared/ui/Markdown';
 import { CopyButton } from '@/shared/ui/CopyButton';
-import { useResearch } from '../hooks/useResearch';
+import { useNotebook } from '../hooks/useNotebook';
 import { SourcesPanel } from '../components/SourcesPanel';
-import { ResearchChat } from '../components/ResearchChat';
+import { NotebookChat } from '../components/NotebookChat';
 import { StudioPanel } from '../components/StudioPanel';
 import { SlideViewer } from '../components/SlideViewer';
 import { AudioViewer } from '../components/AudioViewer';
-import * as store from '../lib/opfs-research';
-import type { Research, ResearchOutput } from '../types/research';
+import { NotebookSidebar } from '../components/NotebookSidebar';
+import * as store from '../lib/opfs-notebook';
+import type { Notebook, NotebookOutput } from '../types/notebook';
 
-export function ResearchPage() {
+export function NotebookPage() {
   const { setRightActions } = useNavigation();
+  const { setSidebarContent } = useSidebar();
 
-  const [researchId, setResearchId] = useState<string | undefined>();
-  const [researches, setResearches] = useState<Research[]>([]);
+  const [notebookId, setNotebookId] = useState<string | undefined>();
+  const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [showSources, setShowSources] = useState(true);
   const [showStudio, setShowStudio] = useState(true);
-  const [viewingOutput, setViewingOutput] = useState<ResearchOutput | null>(null);
+  const [viewingOutput, setViewingOutput] = useState<NotebookOutput | null>(null);
 
   const {
-    research,
+    notebook,
     sources,
     outputs,
     messages,
     isSearching,
     isChatting,
     streamingContent,
-    initResearch,
+    initNotebook,
     addWebSource,
     addFileSource,
     deleteSource,
     sendMessage,
     generateOutput,
     deleteOutput,
-  } = useResearch(researchId);
+  } = useNotebook(notebookId);
 
-  // Load list of researches
-  const loadResearches = useCallback(async () => {
-    const list = await store.listResearches();
-    setResearches(list);
+  // Load notebook list
+  const loadNotebooks = useCallback(async () => {
+    const list = await store.listNotebooks();
+    setNotebooks(list);
     return list;
   }, []);
 
-  // Create new research
+  // Create new notebook (only if current one has content, or none exists)
   const handleNew = useCallback(async () => {
-    const id = await initResearch();
-    setResearchId(id);
-    await loadResearches();
-  }, [initResearch, loadResearches]);
+    // Don't create if the current notebook is already empty
+    if (notebook && sources.length === 0 && messages.length === 0 && outputs.length === 0) {
+      return;
+    }
+    const id = await initNotebook();
+    setNotebookId(id);
+    setViewingOutput(null);
+    await loadNotebooks();
+  }, [initNotebook, loadNotebooks, notebook, sources, messages, outputs]);
+
+  // Delete notebook
+  const handleDelete = useCallback(
+    async (id: string) => {
+      await store.deleteNotebook(id);
+      const list = await loadNotebooks();
+
+      if (id === notebookId) {
+        // Select next available, or leave empty
+        if (list.length > 0) {
+          const sorted = [...list].sort(
+            (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+          );
+          setNotebookId(sorted[0].id);
+        } else {
+          // Truly no notebooks left — create one
+          const newId = await initNotebook();
+          setNotebookId(newId);
+          await loadNotebooks();
+        }
+        setViewingOutput(null);
+      }
+    },
+    [notebookId, loadNotebooks, initNotebook],
+  );
+
+  // Select notebook
+  const handleSelect = useCallback(
+    (id: string) => {
+      if (id !== notebookId) {
+        setNotebookId(id);
+        setViewingOutput(null);
+      }
+    },
+    [notebookId],
+  );
 
   // Initial load + auto-create or select
   useEffect(() => {
     if (loaded) return;
-    loadResearches().then((list) => {
+    loadNotebooks().then((list) => {
       setLoaded(true);
       if (list.length === 0) {
         handleNew();
@@ -64,10 +108,29 @@ export function ResearchPage() {
         const sorted = [...list].sort(
           (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
         );
-        setResearchId(sorted[0].id);
+        setNotebookId(sorted[0].id);
       }
     });
-  }, [loaded, loadResearches, handleNew]);
+  }, [loaded, loadNotebooks, handleNew]);
+
+  // Sidebar content
+  const sidebarContent = useMemo(() => {
+    if (notebooks.length === 0 && !loaded) return null;
+    return (
+      <NotebookSidebar
+        notebooks={notebooks}
+        activeId={notebookId}
+        onSelect={handleSelect}
+        onDelete={handleDelete}
+        onNew={handleNew}
+      />
+    );
+  }, [notebooks, notebookId, handleSelect, handleDelete, handleNew, loaded]);
+
+  useEffect(() => {
+    setSidebarContent(sidebarContent);
+    return () => setSidebarContent(null);
+  }, [sidebarContent, setSidebarContent]);
 
   // Navigation actions
   useEffect(() => {
@@ -109,7 +172,7 @@ export function ResearchPage() {
     setShowSources(true);
   }, []);
 
-  if (!research) {
+  if (!notebook) {
     return (
       <div className="h-full w-full flex items-center justify-center">
         <div className="text-neutral-400 animate-pulse">Loading...</div>
@@ -144,7 +207,7 @@ export function ResearchPage() {
                   {viewingOutput.title}
                 </h2>
                 <div className="flex items-center gap-1">
-                  {!viewingOutput.imageUrl && (
+                  {!viewingOutput.imageUrl && !viewingOutput.audioUrl && (
                     <CopyButton text={viewingOutput.content} />
                   )}
                   <button
@@ -190,7 +253,7 @@ export function ResearchPage() {
               </div>
             </div>
           ) : (
-            <ResearchChat
+            <NotebookChat
               messages={messages}
               sources={sources}
               isChatting={isChatting}

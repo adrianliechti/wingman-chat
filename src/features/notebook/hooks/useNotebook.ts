@@ -4,16 +4,16 @@ import { readAsText, getFileExt } from '@/shared/lib/utils';
 import { getTextFromContent } from '@/shared/types/chat';
 import type { Content } from '@/shared/types/chat';
 import type {
-  Research,
-  ResearchSource,
-  ResearchOutput,
-  ResearchMessage,
+  Notebook,
+  NotebookSource,
+  NotebookOutput,
+  NotebookMessage,
   OutputType,
-} from '../types/research';
+} from '../types/notebook';
 import { blobToDataUrl } from '@/shared/lib/opfs-core';
 import { createSourceTools } from '../lib/source-tools';
 import { runWithTools } from '../lib/tool-loop';
-import * as store from '../lib/opfs-research';
+import * as store from '../lib/opfs-notebook';
 
 import chatInstructions from '../prompts/chat.txt?raw';
 import studioAudioInstructions from '../prompts/studio-audio-overview.txt?raw';
@@ -107,14 +107,14 @@ const OUTPUT_TITLES: Record<OutputType, string> = {
   'data-table': 'Data Table',
 };
 
-export function useResearch(researchId?: string) {
+export function useNotebook(notebookId?: string) {
   const config = getConfig();
   const client = config.client;
 
-  const [research, setResearch] = useState<Research | null>(null);
-  const [sources, setSources] = useState<ResearchSource[]>([]);
-  const [outputs, setOutputs] = useState<ResearchOutput[]>([]);
-  const [messages, setMessages] = useState<ResearchMessage[]>([]);
+  const [notebook, setNotebook] = useState<Notebook | null>(null);
+  const [sources, setSources] = useState<NotebookSource[]>([]);
+  const [outputs, setOutputs] = useState<NotebookOutput[]>([]);
+  const [messages, setMessages] = useState<NotebookMessage[]>([]);
 
   const [isSearching, setIsSearching] = useState(false);
   const [isChatting, setIsChatting] = useState(false);
@@ -130,12 +130,12 @@ export function useResearch(researchId?: string) {
 
   // ── Init / Load ────────────────────────────────────────────────────
 
-  const initResearch = useCallback(async (id?: string) => {
+  const initNotebook = useCallback(async (id?: string) => {
     const rid = id || generateId();
-    const existing = await store.getResearch(rid);
+    const existing = await store.getNotebook(rid);
 
     if (existing) {
-      setResearch(existing);
+      setNotebook(existing);
       const [s, o, m] = await Promise.all([
         store.getSources(rid),
         store.getOutputs(rid),
@@ -146,14 +146,14 @@ export function useResearch(researchId?: string) {
       setMessages(m);
     } else {
       const now = new Date().toISOString();
-      const r: Research = {
+      const r: Notebook = {
         id: rid,
         title: 'Untitled notebook',
         createdAt: now,
         updatedAt: now,
       };
-      await store.saveResearch(r);
-      setResearch(r);
+      await store.saveNotebook(r);
+      setNotebook(r);
       setSources([]);
       setOutputs([]);
       setMessages([]);
@@ -163,28 +163,28 @@ export function useResearch(researchId?: string) {
   }, []);
 
   useEffect(() => {
-    if (researchId) {
-      initResearch(researchId);
+    if (notebookId) {
+      initNotebook(notebookId);
     }
-  }, [researchId, initResearch]);
+  }, [notebookId, initNotebook]);
 
   // ── Title ──────────────────────────────────────────────────────────
 
   const updateTitle = useCallback(
     async (title: string) => {
-      if (!research) return;
-      const updated = { ...research, title, updatedAt: new Date().toISOString() };
-      setResearch(updated);
-      await store.saveResearch(updated);
+      if (!notebook) return;
+      const updated = { ...notebook, title, updatedAt: new Date().toISOString() };
+      setNotebook(updated);
+      await store.saveNotebook(updated);
     },
-    [research],
+    [notebook],
   );
 
   // ── Sources ────────────────────────────────────────────────────────
 
   const addWebSource = useCallback(
     async (query: string, mode: 'web' | 'research') => {
-      if (!research) return;
+      if (!notebook) return;
       setIsSearching(true);
 
       try {
@@ -212,7 +212,7 @@ export function useResearch(researchId?: string) {
           throw new Error('No results found');
         }
 
-        const source: ResearchSource = {
+        const source: NotebookSource = {
           id: generateId(),
           type: 'web',
           name,
@@ -221,18 +221,18 @@ export function useResearch(researchId?: string) {
           addedAt: new Date().toISOString(),
         };
 
-        const updated = await store.addSource(research.id, source);
+        const updated = await store.addSource(notebook.id, source);
         setSources(updated);
       } finally {
         setIsSearching(false);
       }
     },
-    [research, client, config],
+    [notebook, client, config],
   );
 
   const addFileSource = useCallback(
     async (file: File) => {
-      if (!research) return;
+      if (!notebook) return;
 
       const textFiles = config.text?.files ?? [];
       const extractorFiles = config.extractor?.files ?? [];
@@ -252,7 +252,7 @@ export function useResearch(researchId?: string) {
         throw new Error(`Could not extract text from ${file.name}`);
       }
 
-      const source: ResearchSource = {
+      const source: NotebookSource = {
         id: generateId(),
         type: 'file',
         name: file.name,
@@ -264,30 +264,30 @@ export function useResearch(researchId?: string) {
         addedAt: new Date().toISOString(),
       };
 
-      const updated = await store.addSource(research.id, source);
+      const updated = await store.addSource(notebook.id, source);
       setSources(updated);
     },
-    [research, client, config],
+    [notebook, client, config],
   );
 
   const deleteSource = useCallback(
     async (sourceId: string) => {
-      if (!research) return;
-      const updated = await store.removeSource(research.id, sourceId);
+      if (!notebook) return;
+      const updated = await store.removeSource(notebook.id, sourceId);
       setSources(updated);
     },
-    [research],
+    [notebook],
   );
 
   // ── Chat ───────────────────────────────────────────────────────────
 
   const sendMessage = useCallback(
     async (text: string) => {
-      if (!research || isChatting) return;
+      if (!notebook || isChatting) return;
       setIsChatting(true);
       setStreamingContent(null);
 
-      const userMsg: ResearchMessage = {
+      const userMsg: NotebookMessage = {
         role: 'user',
         content: [{ type: 'text', text }],
         timestamp: new Date().toISOString(),
@@ -313,18 +313,18 @@ export function useResearch(researchId?: string) {
 
         setStreamingContent(null);
 
-        const assistantMsg: ResearchMessage = {
+        const assistantMsg: NotebookMessage = {
           ...response,
           timestamp: new Date().toISOString(),
         };
 
         const finalMessages = [...newMessages, assistantMsg];
         setMessages(finalMessages);
-        await store.saveMessages(research.id, finalMessages);
+        await store.saveMessages(notebook.id, finalMessages);
       } catch (err) {
         setStreamingContent(null);
 
-        const errorMsg: ResearchMessage = {
+        const errorMsg: NotebookMessage = {
           role: 'assistant',
           content: [
             {
@@ -340,16 +340,16 @@ export function useResearch(researchId?: string) {
         setIsChatting(false);
       }
     },
-    [research, messages, client, getModel, isChatting],
+    [notebook, messages, client, getModel, isChatting],
   );
 
   // ── Outputs ────────────────────────────────────────────────────────
 
   const generateOutput = useCallback(
     (type: OutputType) => {
-      if (!research || sources.length === 0) return;
+      if (!notebook || sources.length === 0) return;
 
-      const output: ResearchOutput = {
+      const output: NotebookOutput = {
         id: generateId(),
         type,
         title: OUTPUT_TITLES[type],
@@ -365,8 +365,8 @@ export function useResearch(researchId?: string) {
         setOutputs((prev) =>
           prev.map((o) => (o.id === output.id ? completed : o)),
         );
-        const current = await store.getOutputs(research.id);
-        await store.saveOutputs(research.id, [completed, ...current]);
+        const current = await store.getOutputs(notebook.id);
+        await store.saveOutputs(notebook.id, [completed, ...current]);
       };
 
       const failOutput = (err: unknown) => {
@@ -530,20 +530,20 @@ export function useResearch(researchId?: string) {
           .catch(failOutput);
       }
     },
-    [research, sources, client, config, getModel],
+    [notebook, sources, client, config, getModel],
   );
 
   const deleteOutput = useCallback(
     async (outputId: string) => {
-      if (!research) return;
-      const updated = await store.removeOutput(research.id, outputId);
+      if (!notebook) return;
+      const updated = await store.removeOutput(notebook.id, outputId);
       setOutputs(updated);
     },
-    [research],
+    [notebook],
   );
 
   return {
-    research,
+    notebook,
     sources,
     outputs,
     messages,
@@ -552,7 +552,7 @@ export function useResearch(researchId?: string) {
     isSearching,
     isChatting,
 
-    initResearch,
+    initNotebook,
     updateTitle,
 
     addWebSource,

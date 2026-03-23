@@ -11,16 +11,16 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useApp } from "@/shell/hooks/useApp";
 
-type Page = "chat" | "flow" | "translate" | "renderer" | "research";
+type Page = "chat" | "translate" | "notebook" | "flow" | "renderer";
 
 function getPageFromPath(pathname: string): Page {
   const segment = pathname.split('/')[1] || 'chat';
   switch (segment) {
     case 'chat': return 'chat';
-    case 'flow': return 'flow';
     case 'translate': return 'translate';
+    case 'notebook': return 'notebook';
+    case 'flow': return 'flow';
     case 'renderer': return 'renderer';
-    case 'research': return 'research';
     default: return 'chat';
   }
 }
@@ -136,10 +136,10 @@ export function AppLayout() {
   // Secondary pages always in overflow menu
   const secondaryPages = [
     { key: "renderer" as const, label: "Renderer", icon: <Image size={20} />, to: "/renderer" },
-    { key: "research" as const, label: "Research", icon: <Globe size={20} />, to: "/research" },
+    { key: "notebook" as const, label: "Notebook", icon: <Globe size={20} />, to: "/notebook" },
   ].filter(page => {
     if (page.key === "renderer") return !!config.renderer;
-    if (page.key === "research") return !!config.researcher;
+    if (page.key === "notebook") return !!config.researcher;
     return true;
   });
 
@@ -308,11 +308,10 @@ export function AppLayout() {
                           <MenuItem key={key}>
                             <Link
                               to={to}
-                              className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${
-                                currentPage === key
+                              className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${currentPage === key
                                   ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
                                   : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
-                              }`}
+                                }`}
                             >
                               {icon}
                               <span className="font-medium text-sm">{label}</span>
@@ -359,11 +358,10 @@ export function AppLayout() {
                   key={key}
                   to={to}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${
-                    currentPage === key
+                  className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${currentPage === key
                       ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
                       : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
-                  }`}
+                    }`}
                 >
                   {icon}
                   <span className="font-medium text-sm">{label}</span>

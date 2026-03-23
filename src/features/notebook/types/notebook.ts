@@ -1,11 +1,13 @@
-export interface Research {
+import type { Message } from '@/shared/types/chat';
+
+export interface Notebook {
   id: string;
   title: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface ResearchSource {
+export interface NotebookSource {
   id: string;
   type: 'web' | 'file';
   name: string;
@@ -25,7 +27,7 @@ export type OutputType =
   | 'infographic'
   | 'data-table';
 
-export interface ResearchOutput {
+export interface NotebookOutput {
   id: string;
   type: OutputType;
   title: string;
@@ -38,6 +40,4 @@ export interface ResearchOutput {
   createdAt: string;
 }
 
-import type { Message } from '@/shared/types/chat';
-
-export type ResearchMessage = Message & { timestamp: string };
+export type NotebookMessage = Message & { timestamp: string };

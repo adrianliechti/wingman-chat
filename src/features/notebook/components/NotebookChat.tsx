@@ -3,25 +3,25 @@ import { ArrowRight, Upload, Loader2 } from 'lucide-react';
 import { Markdown } from '@/shared/ui/Markdown';
 import { getTextFromContent } from '@/shared/types/chat';
 import type { Content } from '@/shared/types/chat';
-import type { ResearchMessage, ResearchSource } from '../types/research';
+import type { NotebookMessage, NotebookSource } from '../types/notebook';
 
-interface ResearchChatProps {
-  messages: ResearchMessage[];
-  sources: ResearchSource[];
+interface NotebookChatProps {
+  messages: NotebookMessage[];
+  sources: NotebookSource[];
   isChatting: boolean;
   streamingContent: Content[] | null;
   onSend: (message: string) => void;
   onUploadClick: () => void;
 }
 
-export function ResearchChat({
+export function NotebookChat({
   messages,
   sources,
   isChatting,
   streamingContent,
   onSend,
   onUploadClick,
-}: ResearchChatProps) {
+}: NotebookChatProps) {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);

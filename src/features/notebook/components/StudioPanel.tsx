@@ -9,14 +9,14 @@ import {
   AlertCircle,
   StickyNote,
 } from 'lucide-react';
-import type { ResearchOutput, ResearchSource, OutputType } from '../types/research';
+import type { NotebookOutput, NotebookSource, OutputType } from '../types/notebook';
 
 interface StudioPanelProps {
-  sources: ResearchSource[];
-  outputs: ResearchOutput[];
+  sources: NotebookSource[];
+  outputs: NotebookOutput[];
   onGenerate: (type: OutputType) => void;
   onDeleteOutput: (outputId: string) => void;
-  onSelectOutput: (output: ResearchOutput) => void;
+  onSelectOutput: (output: NotebookOutput) => void;
 }
 
 const OUTPUT_TYPES: {

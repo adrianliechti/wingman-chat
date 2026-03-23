@@ -1,5 +1,5 @@
 /**
- * Simplified tool execution loop for research.
+ * Simplified tool execution loop for notebooks.
  * Calls client.complete(), executes any tool calls, re-calls until done.
  */
 
