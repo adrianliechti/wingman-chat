@@ -80,6 +80,7 @@ interface toolConfig {
 
 interface ttsConfig {
   model?: string;
+  voices?: Record<string, string>;
 }
 
 interface sttConfig {
@@ -242,7 +243,18 @@ export const loadConfig = async (): Promise<Config | undefined> => {
           };
         }) ?? [],
 
-      tts: cfg.tts ?? null,
+      tts: cfg.tts
+        ? {
+            model: cfg.tts.model,
+            voices: cfg.tts.voices ?? {
+              host: 'nova',
+              analyst: 'onyx',
+              narrator: 'alloy',
+              storyteller: 'fable',
+              skeptic: 'echo',
+            },
+          }
+        : null,
       stt: cfg.stt ?? null,
 
       notebook: cfg.notebook ?? null,

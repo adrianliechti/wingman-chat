@@ -62,7 +62,8 @@ type Model struct {
 }
 
 type TTS struct {
-	Model string `json:"model,omitempty" yaml:"model,omitempty"`
+	Model  string            `json:"model,omitempty" yaml:"model,omitempty"`
+	Voices map[string]string `json:"voices,omitempty" yaml:"voices,omitempty"`
 }
 
 type STT struct {

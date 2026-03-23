@@ -18,6 +18,11 @@ import * as store from '../lib/opfs-notebook';
 import type { QuizQuestion, MindMapNode } from '../types/notebook';
 import chatInstructions from '../prompts/chat.txt?raw';
 import studioAudioInstructions from '../prompts/studio-audio-overview.txt?raw';
+import podcastStyleOverview from '../prompts/podcast-style-overview.txt?raw';
+import podcastStyleDeepDive from '../prompts/podcast-style-deep-dive.txt?raw';
+import podcastStyleBriefing from '../prompts/podcast-style-briefing.txt?raw';
+import podcastStyleStory from '../prompts/podcast-style-story.txt?raw';
+import podcastStyleDebate from '../prompts/podcast-style-debate.txt?raw';
 import studioSlideInstructions from '../prompts/studio-slide-deck.txt?raw';
 import slideCommonRules from '../prompts/slide-style-common.txt?raw';
 import slideStyleWhiteboard from '../prompts/slide-style-whiteboard.txt?raw';
@@ -119,11 +124,24 @@ export const SLIDE_STYLES = [
   { id: 'nature', label: 'Nature', prompt: slideStyleNature },
 ] as const;
 
+export const PODCAST_STYLES = [
+  { id: 'overview', label: 'Overview', prompt: podcastStyleOverview, voices: ['host'] },
+  { id: 'deep-dive', label: 'Deep Dive', prompt: podcastStyleDeepDive, voices: ['analyst'] },
+  { id: 'briefing', label: 'Briefing', prompt: podcastStyleBriefing, voices: ['narrator'] },
+  { id: 'story', label: 'Story', prompt: podcastStyleStory, voices: ['storyteller'] },
+  { id: 'debate', label: 'Debate', prompt: podcastStyleDebate, voices: ['host', 'skeptic'] },
+] as const;
+
 function buildSlideInstructions(styleId: string): string {
   const style = SLIDE_STYLES.find((s) => s.id === styleId) ?? SLIDE_STYLES[0];
   return studioSlideInstructions
     .replace('{{COMMON_RULES}}', slideCommonRules)
     .replace('{{STYLE_SECTION}}', style.prompt);
+}
+
+function buildAudioInstructions(styleId: string): string {
+  const style = PODCAST_STYLES.find((s) => s.id === styleId) ?? PODCAST_STYLES[0];
+  return studioAudioInstructions.replace('{{STYLE_SECTION}}', style.prompt);
 }
 
 const OUTPUT_TITLES: Record<OutputType, string> = {
@@ -436,7 +454,9 @@ export function useNotebook(notebookId?: string) {
       const tools = createSourceTools(sourcesRef.current);
       const instructions = type === 'slide-deck'
         ? buildSlideInstructions(styleId ?? 'whiteboard')
-        : STUDIO_PROMPTS[type];
+        : type === 'audio-overview'
+          ? buildAudioInstructions(styleId ?? 'overview')
+          : STUDIO_PROMPTS[type];
       const userMessage = {
         role: 'user' as const,
         content: [
@@ -457,17 +477,37 @@ export function useNotebook(notebookId?: string) {
             }
 
             const ttsModel = config.tts?.model || '';
-            // Split into paragraphs for TTS
-            const paragraphs = script
-              .split(/\n\n+/)
-              .map((p) => p.trim())
-              .filter((p) => p.length > 0);
+            const voiceMap = config.tts?.voices ?? {};
+            const resolveVoice = (role: string) => voiceMap[role] || role;
+            const podcastStyle = PODCAST_STYLES.find((s) => s.id === styleId) ?? PODCAST_STYLES[0];
+            const voices = podcastStyle.voices;
 
-            // Generate audio for each paragraph
+            // Parse segments: for multi-voice styles, extract [1]/[2] speaker tags
+            // For single-voice styles, just split by paragraphs
+            const segments: { text: string; voice: string }[] = [];
+            if (voices.length > 1) {
+              // Split by speaker tags: [1] or [2]
+              const tagPattern = /^\[(\d+)\]\s*/;
+              for (const para of script.split(/\n\n+/).map((p) => p.trim()).filter(Boolean)) {
+                const match = para.match(tagPattern);
+                if (match) {
+                  const idx = Math.min(parseInt(match[1], 10) - 1, voices.length - 1);
+                  segments.push({ text: para.replace(tagPattern, ''), voice: voices[Math.max(0, idx)] });
+                } else {
+                  segments.push({ text: para, voice: voices[0] });
+                }
+              }
+            } else {
+              for (const para of script.split(/\n\n+/).map((p) => p.trim()).filter(Boolean)) {
+                segments.push({ text: para, voice: voices[0] });
+              }
+            }
+
+            // Generate audio for each segment with its assigned voice
             const audioBlobs = await Promise.all(
-              paragraphs.map(async (text) => {
+              segments.map(async ({ text, voice }) => {
                 try {
-                  return await client.generateAudio(ttsModel, text);
+                  return await client.generateAudio(ttsModel, text, resolveVoice(voice));
                 } catch {
                   return null;
                 }
