@@ -128,9 +128,6 @@ interface TranscriptBlock {
 }
 
 function parseTranscript(content: string): TranscriptBlock[] {
-  // Match various host tag formats:
-  // [Host 1]: text    **[Host 1]:** text    **Host 1:** text    [Host 1] text
-  const hostPattern = /^(?:\*\*)?(?:\[([^\]]+)\]|([A-Za-z]+\s*\d*)):?\s*(?:\*\*)?\s*/;
   const lines = content.split('\n');
   const blocks: TranscriptBlock[] = [];
 

@@ -132,8 +132,8 @@ export function useNotebook(notebookId?: string) {
   sourcesRef.current = sources;
 
   const getModel = useCallback(() => {
-    return config.researcher?.model || config.models[0]?.id || '';
-  }, [config]);
+    return '';
+  }, []);
 
   // ── Init / Load ────────────────────────────────────────────────────
 
@@ -200,7 +200,7 @@ export function useNotebook(notebookId?: string) {
 
         if (mode === 'research') {
           content = await client.research(
-            config.researcher?.model || '',
+            '',
             query,
           );
           name = query.slice(0, 60);
@@ -359,7 +359,7 @@ export function useNotebook(notebookId?: string) {
       // Add immediately as generating
       setOutputs((prev) => [output, ...prev]);
 
-      const completeOutput = async (completed: ResearchOutput) => {
+      const completeOutput = async (completed: NotebookOutput) => {
         setOutputs((prev) =>
           prev.map((o) => (o.id === output.id ? completed : o)),
         );
