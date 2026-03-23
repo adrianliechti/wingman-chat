@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from 'react';
-import { Settings, MessageSquare, User, Download, Upload, Trash2, ChevronsUpDown, Check, X, Bot, HardDrive } from 'lucide-react';
+import { Settings, MessageSquare, User, Download, Upload, Trash2, ChevronsUpDown, Check, X, ChevronRight, Bot, HardDrive } from 'lucide-react';
 import { Transition, Listbox } from '@headlessui/react';
 import { useSettings } from '@/features/settings/hooks/useSettings';
 import { useChat } from '@/features/chat/hooks/useChat';
@@ -101,26 +101,45 @@ function SegmentedControl<T extends string>({ label, value, onChange, options }:
 interface SectionPanelProps {
   title: string;
   icon: React.ReactNode;
+  isOpen: boolean;
+  onClick: () => void;
   children: React.ReactNode;
 }
 
-function SectionPanel({ title, icon, children }: SectionPanelProps) {
+function SectionPanel({ title, icon, isOpen, onClick, children }: SectionPanelProps) {
   return (
-    <section className="border-b border-neutral-200 dark:border-neutral-800">
-      <div className="px-6 py-4 cursor-default">
-        <div className="flex items-center gap-3 cursor-default">
+    <div className="border-b border-neutral-200 dark:border-neutral-800">
+      <button
+        type="button"
+        onClick={onClick}
+        className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
           <span className="text-neutral-700 dark:text-neutral-300">{icon}</span>
           <span className="text-base font-medium text-neutral-900 dark:text-neutral-100">{title}</span>
         </div>
+        <ChevronRight
+          size={18}
+          className={`text-neutral-400 transition-transform duration-300 ease-out ${isOpen ? 'rotate-90' : ''}`}
+        />
+      </button>
+      <div
+        className={`grid transition-all duration-300 ease-out ${
+          isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+        }`}
+      >
+        <div className="overflow-hidden">
+          <div className="px-6 pb-6 pt-3 space-y-5 bg-neutral-100/30 dark:bg-neutral-900/30 shadow-[inset_0_4px_6px_-4px_rgba(0,0,0,0.1)] dark:shadow-[inset_0_4px_6px_-4px_rgba(0,0,0,0.3)]">
+            {children}
+          </div>
+        </div>
       </div>
-      <div className="px-6 pb-6 pt-3 space-y-5 bg-neutral-100/30 dark:bg-neutral-900/30 shadow-[inset_0_4px_6px_-4px_rgba(0,0,0,0.1)] dark:shadow-[inset_0_4px_6px_-4px_rgba(0,0,0,0.3)]">
-        {children}
-      </div>
-    </section>
+    </div>
   );
 }
 
 export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawerProps) {
+  const [openSection, setOpenSection] = useState<string | null>(null);
   const [opfsBrowserOpen, setOpfsBrowserOpen] = useState(false);
   const [isRebuildingIndexes, setIsRebuildingIndexes] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -352,6 +371,17 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
 
   const backgroundOptions = [{ value: null, label: 'None' }, ...backgroundPacks.map((p: BackgroundPack) => ({ value: p.name, label: p.name }))];
 
+  // Reset sections when drawer opens
+  useEffect(() => {
+    if (isOpen) {
+      setOpenSection(null);
+    }
+  }, [isOpen]);
+
+  const toggleSection = (section: string) => {
+    setOpenSection(openSection === section ? null : section);
+  };
+
   return (
     <>
     <Transition show={isOpen} as={Fragment}>
@@ -405,6 +435,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
             <SectionPanel
               title="General"
               icon={<Settings size={20} />}
+              isOpen={openSection === 'general'}
+              onClick={() => toggleSection('general')}
             >
               <div className="grid grid-cols-2 gap-3">
                 <SegmentedControl label="Theme" value={theme} onChange={setTheme} options={themeOptions} />
@@ -425,6 +457,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
             <SectionPanel
               title="Profile"
               icon={<User size={20} />}
+              isOpen={openSection === 'profile'}
+              onClick={() => toggleSection('profile')}
             >
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Name</label>
@@ -464,6 +498,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
             <SectionPanel
               title="Chats"
               icon={<MessageSquare size={20} />}
+              isOpen={openSection === 'chats'}
+              onClick={() => toggleSection('chats')}
             >
               <Select
                 label="Personality"
@@ -519,6 +555,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
             <SectionPanel
               title="Agents"
               icon={<Bot size={20} />}
+              isOpen={openSection === 'agents'}
+              onClick={() => toggleSection('agents')}
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -566,6 +604,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
               <SectionPanel
                 title="Advanced"
                 icon={<HardDrive size={20} />}
+                isOpen={openSection === 'advanced'}
+                onClick={() => toggleSection('advanced')}
               >
                 <div className="space-y-4">
                   {/* Storage Overview */}
