@@ -50,7 +50,7 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
       return;
     }
 
-    if (!description.trim()) {
+    if (!description.trim() || !content.trim()) {
       return;
     }
 
@@ -68,10 +68,7 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
     try {
       const config = getConfig();
       const result = await config.client.optimizeSkill('', name, description, content);
-      if (!skill) {
-        // Only update name for new skills (name is locked when editing)
-        setName(result.name);
-      }
+      setName(result.name);
       setDescription(result.description);
       setContent(result.content);
     } catch (error) {
@@ -82,7 +79,7 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
   };
 
   const canOptimize = (description.trim().length > 0 || content.trim().length > 0) && !isOptimizing;
-  const isValid = name && !nameError && description.trim();
+  const isValid = name && !nameError && description.trim() && content.trim();
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
@@ -130,8 +127,7 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                   {/* Name field */}
                   <div>
                     <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-                      Name <span className="text-red-500">*</span>
-                    </label>
+                      Name                    </label>
                     <input
                       type="text"
                       value={name}
@@ -142,7 +138,6 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                           : 'border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60'
                       } focus:ring-2 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors`}
                       placeholder="my-skill-name"
-                      disabled={!!skill} // Can't change name when editing
                     />
                     {nameError && (
                       <p className="mt-1 text-xs text-red-500">{nameError}</p>
@@ -155,8 +150,7 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                   {/* Description field */}
                   <div>
                     <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-                      Description <span className="text-red-500">*</span>
-                    </label>
+                      Description                    </label>
                     <textarea
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
