@@ -39,7 +39,10 @@ export function NotebookPage() {
     isChatting,
     streamingContent,
     initNotebook,
-    addWebSource,
+    searchWeb,
+    addSearchResult,
+    scrapeWeb,
+    addScrapeResult,
     addFileSource,
     deleteSource,
     sendMessage,
@@ -194,10 +197,18 @@ export function NotebookPage() {
           <SourcesPanel
             sources={sources}
             isSearching={isSearching}
-            onWebSearch={addWebSource}
+            searchWeb={searchWeb}
+            addSearchResult={addSearchResult}
+            scrapeWeb={scrapeWeb}
+            addScrapeResult={addScrapeResult}
             onFileAdd={addFileSource}
             onDeleteSource={deleteSource}
           />
+        </div>
+
+        {/* Divider */}
+        <div className="relative shrink-0 w-4 flex items-center justify-center">
+          <div className="absolute inset-y-4 w-px left-1/2 -translate-x-px bg-black/10 dark:bg-white/10"></div>
         </div>
 
         {/* Center: Chat or Output Viewer */}
@@ -205,10 +216,7 @@ export function NotebookPage() {
           {viewingOutput ? (
             <div className="h-full flex flex-col">
               {/* Output header */}
-              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between shrink-0">
-                <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-                  {viewingOutput.title}
-                </h2>
+              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-end shrink-0">
                 <div className="flex items-center gap-1">
                   {!viewingOutput.imageUrl && !viewingOutput.audioUrl && (
                     <CopyButton text={viewingOutput.content} />
@@ -268,6 +276,11 @@ export function NotebookPage() {
               onSend={sendMessage}
             />
           )}
+        </div>
+
+        {/* Divider */}
+        <div className="relative shrink-0 w-4 flex items-center justify-center">
+          <div className="absolute inset-y-4 w-px left-1/2 -translate-x-px bg-black/10 dark:bg-white/10"></div>
         </div>
 
         {/* Right: Studio */}

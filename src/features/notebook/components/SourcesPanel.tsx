@@ -11,14 +11,19 @@ import {
   Zap,
   ArrowRight,
   ChevronDown,
+  Link,
 } from 'lucide-react';
 import { useDropZone } from '@/shared/hooks/useDropZone';
+import { Markdown } from '@/shared/ui/Markdown';
 import type { NotebookSource } from '../types/notebook';
 
 interface SourcesPanelProps {
   sources: NotebookSource[];
   isSearching: boolean;
-  onWebSearch: (query: string, mode: 'web' | 'research') => Promise<void>;
+  searchWeb: (query: string, mode: 'web' | 'research') => Promise<string>;
+  addSearchResult: (query: string, mode: 'web' | 'research', content: string) => Promise<void>;
+  scrapeWeb: (url: string) => Promise<string>;
+  addScrapeResult: (url: string, content: string) => Promise<void>;
   onFileAdd: (file: File) => Promise<void>;
   onDeleteSource: (sourceId: string) => void;
 }
@@ -26,7 +31,10 @@ interface SourcesPanelProps {
 export function SourcesPanel({
   sources,
   isSearching,
-  onWebSearch,
+  searchWeb,
+  addSearchResult,
+  scrapeWeb,
+  addScrapeResult,
   onFileAdd,
   onDeleteSource,
 }: SourcesPanelProps) {
@@ -34,6 +42,7 @@ export function SourcesPanel({
   const [error, setError] = useState<string | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showSearchOverlay, setShowSearchOverlay] = useState(false);
+  const [showScrapeOverlay, setShowScrapeOverlay] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -66,14 +75,9 @@ export function SourcesPanel({
   return (
     <div
       ref={containerRef}
-      className="h-full flex flex-col border-r border-neutral-200 dark:border-neutral-800 relative"
+      className="h-full flex flex-col relative"
     >
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
-        <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-          Sources
-        </h2>
-      </div>
+
 
       {/* Error */}
       {error && (
@@ -89,19 +93,7 @@ export function SourcesPanel({
 
       {/* Sources list */}
       <div className="flex-1 overflow-y-auto px-3 pt-3 pb-3 min-h-0">
-        {sources.length === 0 && extracting.size === 0 && !isSearching ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="w-12 h-12 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-3">
-              <FileText size={20} className="text-neutral-400" />
-            </div>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">
-              Saved sources appear here
-            </p>
-            <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
-              Add files, web searches, or research
-            </p>
-          </div>
-        ) : (
+        {(sources.length > 0 || extracting.size > 0 || isSearching) && (
           <div className="space-y-1.5">
             {/* Extracting indicators */}
             {Array.from(extracting).map((fileId) => (
@@ -127,7 +119,7 @@ export function SourcesPanel({
       </div>
 
       {/* Bottom: Add sources dropdown */}
-      <div className="px-3 py-3 border-t border-neutral-200 dark:border-neutral-800 relative">
+      <div className="px-3 pt-3 pb-5 relative">
         <button
           type="button"
           onClick={() => setShowAddMenu(!showAddMenu)}
@@ -154,6 +146,17 @@ export function SourcesPanel({
               >
                 <File size={15} className="text-neutral-500" />
                 Files
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddMenu(false);
+                  setShowScrapeOverlay(true);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <Link size={15} className="text-neutral-500" />
+                Web Page
               </button>
               <button
                 type="button"
@@ -200,16 +203,35 @@ export function SourcesPanel({
       {showSearchOverlay && (
         <WebSearchOverlay
           isSearching={isSearching}
-          onSearch={async (query, mode) => {
+          searchWeb={searchWeb}
+          onAdd={async (query, mode, content) => {
             setError(null);
             try {
-              await onWebSearch(query, mode);
+              await addSearchResult(query, mode, content);
               setShowSearchOverlay(false);
             } catch (err) {
-              setError(err instanceof Error ? err.message : 'Search failed');
+              setError(err instanceof Error ? err.message : 'Failed to add search result');
             }
           }}
           onClose={() => setShowSearchOverlay(false)}
+        />
+      )}
+
+      {/* Web Page URL Overlay */}
+      {showScrapeOverlay && (
+        <WebScrapeOverlay
+          isLoading={isSearching}
+          scrapeWeb={scrapeWeb}
+          onAdd={async (url, content) => {
+            setError(null);
+            try {
+              await addScrapeResult(url, content);
+              setShowScrapeOverlay(false);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Failed to add page');
+            }
+          }}
+          onClose={() => setShowScrapeOverlay(false)}
         />
       )}
     </div>
@@ -220,16 +242,21 @@ export function SourcesPanel({
 
 function WebSearchOverlay({
   isSearching,
-  onSearch,
+  searchWeb,
+  onAdd,
   onClose,
 }: {
   isSearching: boolean;
-  onSearch: (query: string, mode: 'web' | 'research') => void;
+  searchWeb: (query: string, mode: 'web' | 'research') => Promise<string>;
+  onAdd: (query: string, mode: 'web' | 'research', content: string) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<'web' | 'research'>('web');
   const [showModeMenu, setShowModeMenu] = useState(false);
+  const [preview, setPreview] = useState('');
+  const [previewQuery, setPreviewQuery] = useState('');
+  const [previewMode, setPreviewMode] = useState<'web' | 'research'>('web');
 
   const modes = {
     web: { label: 'Web', icon: Globe },
@@ -238,13 +265,22 @@ function WebSearchOverlay({
 
   const ModeIcon = modes[mode].icon;
 
-  const handleSubmit = () => {
+  const handleSearch = async () => {
     if (!query.trim() || isSearching) return;
-    onSearch(query.trim(), mode);
+    const nextQuery = query.trim();
+    const content = await searchWeb(nextQuery, mode);
+    setPreview(content);
+    setPreviewQuery(nextQuery);
+    setPreviewMode(mode);
+  };
+
+  const handleAdd = () => {
+    if (!preview || previewQuery !== query.trim() || previewMode !== mode || isSearching) return;
+    onAdd(previewQuery, previewMode, preview);
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -279,7 +315,7 @@ function WebSearchOverlay({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
-                  handleSubmit();
+                  handleSearch();
                 }
               }}
               placeholder="What are you looking for?"
@@ -308,7 +344,7 @@ function WebSearchOverlay({
                     className="fixed inset-0 z-40"
                     onClick={() => setShowModeMenu(false)}
                   />
-                  <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg py-1 min-w-[130px]">
+                  <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg py-1 min-w-32.5">
                     {(Object.keys(modes) as Array<'web' | 'research'>).map((m) => {
                       const Icon = modes[m].icon;
                       return (
@@ -341,6 +377,18 @@ function WebSearchOverlay({
                 : 'Quick web search'}
             </span>
           </div>
+
+          <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/40 min-h-48 max-h-72 overflow-y-auto">
+            {preview ? (
+              <div className="px-4 py-3 text-sm text-neutral-700 dark:text-neutral-300">
+                <Markdown>{preview}</Markdown>
+              </div>
+            ) : (
+              <div className="px-4 py-3 text-sm text-neutral-400 dark:text-neutral-500">
+                Search results preview will appear here.
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Footer */}
@@ -352,24 +400,159 @@ function WebSearchOverlay({
           >
             Cancel
           </button>
+          {preview && previewQuery === query.trim() && previewMode === mode ? (
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={isSearching}
+              className="flex items-center gap-2 px-4 py-1.5 text-sm bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
+            >
+              Add
+              <ArrowRight size={14} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSearch}
+              disabled={!query.trim() || isSearching}
+              className="flex items-center gap-2 px-4 py-1.5 text-sm bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
+            >
+              {isSearching ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Searching...
+                </>
+              ) : (
+                <>
+                  Search
+                  <ArrowRight size={14} />
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Web Scrape Overlay ────────────────────────────────────────────────
+
+function WebScrapeOverlay({
+  isLoading,
+  scrapeWeb,
+  onAdd,
+  onClose,
+}: {
+  isLoading: boolean;
+  scrapeWeb: (url: string) => Promise<string>;
+  onAdd: (url: string, content: string) => void;
+  onClose: () => void;
+}) {
+  const [url, setUrl] = useState('');
+  const [preview, setPreview] = useState('');
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  const handleFetch = async () => {
+    if (!url.trim() || isLoading) return;
+    const nextUrl = url.trim();
+    const content = await scrapeWeb(nextUrl);
+    setPreview(content);
+    setPreviewUrl(nextUrl);
+  };
+
+  const handleAdd = () => {
+    if (!preview || previewUrl !== url.trim() || isLoading) return;
+    onAdd(previewUrl, preview);
+  };
+
+  return (
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className="relative z-10 w-full max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
+          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Add web page</h3>
           <button
             type="button"
-            onClick={handleSubmit}
-            disabled={!query.trim() || isSearching}
-            className="flex items-center gap-2 px-4 py-1.5 text-sm bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
+            onClick={onClose}
+            className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
           >
-            {isSearching ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                Searching...
-              </>
-            ) : (
-              <>
-                Search
-                <ArrowRight size={14} />
-              </>
-            )}
+            <X size={16} className="text-neutral-500" />
           </button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div className="flex items-center gap-2 px-3 py-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-lg border border-neutral-200 dark:border-neutral-700 focus-within:border-neutral-400 dark:focus-within:border-neutral-500 transition-colors">
+            <Link size={16} className="text-neutral-400 shrink-0" />
+            <input
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleFetch();
+                }
+              }}
+              placeholder="https://example.com"
+              disabled={isLoading}
+              autoFocus
+              className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 outline-none min-w-0"
+            />
+          </div>
+
+          <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/40 min-h-48 max-h-72 overflow-y-auto">
+            {preview ? (
+              <div className="px-4 py-3 text-sm text-neutral-700 dark:text-neutral-300">
+                <Markdown>{preview}</Markdown>
+              </div>
+            ) : (
+              <div className="px-4 py-3 text-sm text-neutral-400 dark:text-neutral-500">
+                Page content preview will appear here.
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-neutral-200 dark:border-neutral-800 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          {preview && previewUrl === url.trim() ? (
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={isLoading}
+              className="flex items-center gap-2 px-4 py-1.5 text-sm bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
+            >
+              Add
+              <ArrowRight size={14} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleFetch}
+              disabled={!url.trim() || isLoading}
+              className="flex items-center gap-2 px-4 py-1.5 text-sm bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Fetching...
+                </>
+              ) : (
+                <>
+                  Fetch
+                  <ArrowRight size={14} />
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>

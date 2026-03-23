@@ -4,7 +4,6 @@ import {
   BarChart3,
   Table2,
   Loader2,
-  Sparkles,
   X,
   AlertCircle,
   StickyNote,
@@ -44,13 +43,8 @@ export function StudioPanel({
   const hasSources = sources.length > 0;
 
   return (
-    <div className="h-full flex flex-col border-l border-neutral-200 dark:border-neutral-800">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
-        <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-          Studio
-        </h2>
-      </div>
+    <div className="h-full flex flex-col">
+
 
       {/* Output type buttons */}
       <div className="px-3 py-3 border-b border-neutral-200 dark:border-neutral-800">
@@ -72,21 +66,7 @@ export function StudioPanel({
 
       {/* Generated outputs list */}
       <div className="flex-1 overflow-y-auto px-3 pt-3 pb-3 min-h-0">
-        {outputs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="w-12 h-12 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-3">
-              <Sparkles size={20} className="text-neutral-400" />
-            </div>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">
-              Studio output will be saved here
-            </p>
-            <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
-              {hasSources
-                ? 'Click above to generate outputs'
-                : 'Add sources first, then generate outputs'}
-            </p>
-          </div>
-        ) : (
+        {outputs.length > 0 && (
           <div className="space-y-2">
             {outputs.map((output) => {
               const typeInfo = OUTPUT_TYPES.find((t) => t.type === output.type);

@@ -47,17 +47,7 @@ export function NotebookChat({
   const streamingText = streamingContent ? getTextFromContent(streamingContent) : '';
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-          Chat
-        </h2>
-        <span className="text-xs text-neutral-400">
-          {sources.length} source{sources.length !== 1 ? 's' : ''}
-        </span>
-      </div>
-
+    <div className="h-full flex flex-col relative">
       {/* Messages area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0">
         {messages.length === 0 && !streamingContent ? (
@@ -153,9 +143,9 @@ export function NotebookChat({
         )}
       </div>
 
-      {/* Input area */}
-      <div className="p-3 border-t border-neutral-200 dark:border-neutral-800">
-        <div className="flex items-end gap-2 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-200 dark:border-neutral-700 px-3 py-2">
+      {/* Floating input */}
+      <div className="absolute bottom-4 left-4 right-4 z-20">
+        <div className="flex items-end gap-2 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-neutral-700/40 shadow-lg shadow-black/5 dark:shadow-black/20 px-3 py-2">
           <textarea
             ref={inputRef}
             value={input}

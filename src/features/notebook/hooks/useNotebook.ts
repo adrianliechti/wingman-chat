@@ -189,52 +189,47 @@ export function useNotebook(notebookId?: string) {
 
   // ── Sources ────────────────────────────────────────────────────────
 
-  const addWebSource = useCallback(
-    async (query: string, mode: 'web' | 'research') => {
-      if (!notebook) return;
+  const searchWeb = useCallback(
+    async (query: string, mode: 'web' | 'research'): Promise<string> => {
       setIsSearching(true);
 
       try {
-        let content: string;
-        let name: string;
-
         if (mode === 'research') {
-          content = await client.research(
-            '',
-            query,
-          );
-          name = query.slice(0, 60);
-        } else {
-          const results = await client.search(
-            config.internet?.searcher || '',
-            query,
-          );
-          content = results
-            .map((r) => `## ${r.title || r.source || 'Result'}\n\n${r.content}`)
-            .join('\n\n---\n\n');
-          name = query.slice(0, 60);
+          const content = await client.research('', query);
+          if (!content?.trim()) throw new Error('No results found');
+          return content;
         }
 
-        if (!content?.trim()) {
-          throw new Error('No results found');
-        }
-
-        const source: NotebookSource = {
-          id: generateId(),
-          type: 'web',
-          name,
-          content,
-          metadata: { query, url: mode },
-          addedAt: new Date().toISOString(),
-        };
-
-        const updated = await store.addSource(notebook.id, source);
-        setSources(updated);
+        const results = await client.search(config.internet?.searcher || '', query);
+        const content = results
+          .map((r) => `## ${r.title || r.source || 'Result'}\n\n${r.content}`)
+          .join('\n\n---\n\n');
+        if (!content?.trim()) throw new Error('No results found');
+        return content;
       } finally {
         setIsSearching(false);
       }
     },
-    [notebook, client, config],
+    [client, config],
+  );
+
+  const addSearchResult = useCallback(
+    async (query: string, mode: 'web' | 'research', content: string) => {
+      if (!notebook) return;
+
+      const source: NotebookSource = {
+        id: generateId(),
+        type: 'web',
+        name: query.slice(0, 60),
+        content,
+        metadata: { query, url: mode },
+        addedAt: new Date().toISOString(),
+      };
+
+      const updated = await store.addSource(notebook.id, source);
+      setSources(updated);
+    },
+    [notebook],
   );
 
   const addFileSource = useCallback(
@@ -266,6 +261,40 @@ export function useNotebook(notebookId?: string) {
       setSources(updated);
     },
     [notebook, client],
+  );
+
+  const scrapeWeb = useCallback(
+    async (url: string): Promise<string> => {
+      setIsSearching(true);
+
+      try {
+        const content = await client.scrape(config.internet?.scraper || '', url);
+        if (!content?.trim()) throw new Error('Could not fetch page content');
+        return content;
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    [client, config],
+  );
+
+  const addScrapeResult = useCallback(
+    async (url: string, content: string) => {
+      if (!notebook) return;
+
+      const source: NotebookSource = {
+        id: generateId(),
+        type: 'web',
+        name: url,
+        content,
+        metadata: { url },
+        addedAt: new Date().toISOString(),
+      };
+
+      const updated = await store.addSource(notebook.id, source);
+      setSources(updated);
+    },
+    [notebook],
   );
 
   const deleteSource = useCallback(
@@ -490,20 +519,31 @@ export function useNotebook(notebookId?: string) {
 
             const textContent = slideTexts.join('\n\n---\n\n');
 
-            // Generate slide images sequentially, passing the previous slide
-            // as a visual reference so the renderer maintains a consistent style
+            // Generate first slide alone to establish style, then remaining in parallel batches of 4
             const rendererModel = config.renderer?.model || '';
-            const slideImages: string[] = [];
-            let prevBlob: Blob | null = null;
+            const slideImages: string[] = new Array(imagePrompts.length).fill('');
 
-            for (const prompt of imagePrompts) {
+            if (imagePrompts.length > 0) {
               try {
-                const refImages = prevBlob ? [prevBlob] : undefined;
-                const blob = await client.generateImage(rendererModel, prompt, refImages);
-                prevBlob = blob;
-                slideImages.push(await blobToDataUrl(blob));
+                const firstBlob = await client.generateImage(rendererModel, imagePrompts[0]);
+                slideImages[0] = await blobToDataUrl(firstBlob);
+
+                const remaining = imagePrompts.slice(1);
+                for (let i = 0; i < remaining.length; i += 4) {
+                  const batch = remaining.slice(i, i + 4);
+                  const results = await Promise.allSettled(
+                    batch.map((prompt) =>
+                      client.generateImage(rendererModel, prompt, [firstBlob])
+                        .then((blob) => blobToDataUrl(blob))
+                    )
+                  );
+                  for (let j = 0; j < results.length; j++) {
+                    const result = results[j];
+                    slideImages[1 + i + j] = result.status === 'fulfilled' ? result.value : '';
+                  }
+                }
               } catch {
-                slideImages.push(''); // skip failed slides
+                // first slide failed — skip all image generation
               }
             }
 
@@ -602,7 +642,10 @@ export function useNotebook(notebookId?: string) {
     initNotebook,
     updateTitle,
 
-    addWebSource,
+    searchWeb,
+    addSearchResult,
+    scrapeWeb,
+    addScrapeResult,
     addFileSource,
     deleteSource,
 
