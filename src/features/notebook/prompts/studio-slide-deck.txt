@@ -1,59 +1,39 @@
-You are creating a slide deck based on research sources. Each slide will be rendered as an image.
+You are creating a slide deck based on research sources. Each slide will be rendered as an image by an image generation model, so the quality of your image prompts is critical.
 
 You have access to tools that let you list and read research sources:
 - Use `source_list` to see all available sources.
 - Use `source_read` to read specific sources.
 
-Start by listing and reading the available sources, then create a slide deck with 8-12 slides.
+Start by listing and reading ALL available sources to understand the content deeply. Then create a slide deck with 8-12 slides.
 
-## Visual Style (apply consistently to EVERY slide)
+{{COMMON_RULES}}
 
-All slides MUST share a single, cohesive visual identity. Define it once and repeat it exactly:
+{{STYLE_SECTION}}
 
-- **Background:** soft off-white (#F5F2EB) with a subtle paper-like grain texture
-- **Accent color:** warm coral/salmon (#E8735A) for highlights, underlines, and decorative elements
-- **Title font style:** bold, slightly imperfect hand-drawn lettering — like a confident marker on a whiteboard
-- **Body font style:** clean handwritten style, relaxed but legible, in dark charcoal (#2D2D2D)
-- **Layout:** generous whitespace, left-aligned text, asymmetric placement that feels organic rather than rigid
-- **Decorative elements:** small hand-drawn doodles (arrows, circles, underlines, simple icons) in coral or light gray as accents — keep them consistent across slides
-- **Bullet points:** small hand-drawn dots or dashes, not perfect circles
-- **Data visualizations:** hand-drawn style charts and graphs when applicable, with the coral accent color
+## Your Process
 
-This creates a modern "sketch-notes" or "whiteboard" aesthetic — approachable, memorable, and visually consistent.
+1. **Read all sources** — understand the material thoroughly before planning slides.
+2. **Plan the deck structure** — decide on a narrative arc: opening hook → context → key insights → supporting detail → conclusion/call-to-action. Each slide should have a clear purpose in the story.
+3. **For each slide, write two things:**
+   - The **slide content** in markdown (title, text, data) — this is the text-view fallback.
+   - A **complete image generation prompt** — this is what the image model will render. This is the most important part. Make each prompt a rich, detailed description of exactly what the rendered slide should look like.
 
 ## Output Format
 
-CRITICAL: Output each slide separated by exactly "---SLIDE---" on its own line. For each slide, write TWO sections:
+Output each slide separated by exactly `---SLIDE---` on its own line.
 
-1. First, the slide content in markdown (title, bullet points, notes) for the text view.
-2. Then, after a line containing "---PROMPT---", write an image generation prompt describing how this slide should look.
+For each slide, write:
+1. The slide content in markdown (title as ##, bullet points, key data, speaker notes)
+2. A line containing exactly `---PROMPT---`
+3. A detailed image generation prompt for this slide
 
-Every image prompt MUST begin with the style preamble below (copy it verbatim), then add slide-specific content:
+The image prompt must be a COMPLETE, standalone description. The image model has no memory of previous slides — each prompt must fully describe the visual from scratch. For every prompt:
+- Open with the visual setting: background color/texture, overall aesthetic, mood
+- Describe the layout: where the title sits, where the visual element is, where body text goes
+- Include ALL text that should appear on the slide — the image model renders text too
+- Describe the primary visual element in detail (chart type, diagram structure, illustration subject)
+- Reference specific colors by hex code from the style palette
+- Specify typography styles: "large bold sans-serif title", "small italic caption"
+- End with "16:9 aspect ratio."
 
-> A hand-drawn style presentation slide on soft off-white (#F5F2EB) textured paper background. Uses warm coral (#E8735A) accents for underlines and highlights. Bold hand-lettered title in dark charcoal (#2D2D2D). Body text in clean handwritten font. Small doodle accents (arrows, circles, stars). Generous whitespace, organic asymmetric layout. 16:9 aspect ratio.
-
-After the preamble, describe the specific content: the title text, bullet points or data, any diagrams, and layout for this particular slide.
-
-Example:
-
-## Slide 1: Introduction
-- Key point one
-- Key point two
-
-**Notes:** Speaker notes here
-
----PROMPT---
-A hand-drawn style presentation slide on soft off-white (#F5F2EB) textured paper background. Uses warm coral (#E8735A) accents for underlines and highlights. Bold hand-lettered title in dark charcoal (#2D2D2D). Body text in clean handwritten font. Small doodle accents (arrows, circles, stars). Generous whitespace, organic asymmetric layout. 16:9 aspect ratio. The title "Introduction" is large and bold at the top-left with a coral underline swoosh beneath it. Two bullet points with small hand-drawn dots: "Key point one" and "Key point two" in relaxed handwriting. A small hand-drawn arrow doodle in the bottom-right corner.
-
----SLIDE---
-
-## Slide 2: Key Findings
-- Finding A with 45% increase
-- Finding B showing trend
-
-**Notes:** More context
-
----PROMPT---
-A hand-drawn style presentation slide on soft off-white (#F5F2EB) textured paper background. Uses warm coral (#E8735A) accents for underlines and highlights. Bold hand-lettered title in dark charcoal (#2D2D2D). Body text in clean handwritten font. Small doodle accents (arrows, circles, stars). Generous whitespace, organic asymmetric layout. 16:9 aspect ratio. Title "Key Findings" hand-lettered at the top with a wavy coral underline. A hand-drawn bar chart on the right side showing a 45% increase with coral-colored bars. Two bullet points on the left with hand-drawn dash markers. A small upward arrow doodle next to the growth number.
-
-Include the actual text content that should appear on each slide in the prompt. Keep prompts detailed but focused on layout and content placement.
+Keep the style consistent across all slides while varying the layout for each one.

@@ -55,32 +55,44 @@ export function RendererPage() {
   const styleInstructions: Record<string, string> = {
     // Photography styles
     'Leica': 'classic Leica rangefinder photograph with Summilux lens rendering, smooth creamy bokeh with gentle out-of-focus transitions, distinctive 3D pop and subject separation, beautiful highlight rolloff with subtle glow, natural micro-contrast and tack-sharp focus plane, authentic color rendering without oversaturation, shallow depth of field, 35mm or 50mm focal length perspective, natural available light, documentary street photography aesthetic',
-    'Polaroid': 'instant Polaroid photograph aesthetic with characteristic white frame border, slightly washed-out colors, soft focus, light leaks, vintage color shift, nostalgic amateur snapshot quality, square format composition',
-    'B&W Studio': 'professional black and white studio portrait photography, dramatic lighting with soft shadows, high contrast, clean backdrop, sharp focus, elegant and timeless aesthetic, Ansel Adams inspired tonal range',
-    'Professional': 'professional corporate photography in modern office environment, clean and polished look, natural window lighting, shallow depth of field, business casual aesthetic, LinkedIn profile quality',
-    
+    'Polaroid': 'instant Polaroid photograph aesthetic with characteristic white frame border, slightly washed-out colors with warm color shift, soft focus, subtle light leaks, nostalgic candid snapshot quality, slightly overexposed flash, square format composition, early 2000s party vibes',
+    'B&W Studio': 'professional black and white studio portrait photography, dramatic Rembrandt lighting with soft key light and deep shadows, high contrast tonal range, clean seamless backdrop, tack-sharp focus on eyes, elegant and timeless editorial aesthetic, rich silver gelatin print quality',
+    'Professional': 'professional corporate photography in modern office environment, clean and polished look, natural window lighting with soft fill, shallow depth of field, business casual aesthetic, crisp detail, neutral color grading, LinkedIn profile quality',
+    'Kodak Film': 'vintage Kodak Portra 400 film photograph, warm golden tones, natural film grain, slightly lifted blacks, soft halation around highlights, authentic 35mm analog feel, candid composition, nostalgic color rendering with rich skin tones',
+    'Cinematic': 'cinematic film still, anamorphic lens with subtle horizontal flare, teal and orange color grading, dramatic depth of field, 2.39:1 widescreen composition feel, volumetric lighting, atmospheric haze, Hollywood blockbuster production quality',
+    'Macro': 'extreme macro photography, razor-thin depth of field with silky smooth bokeh, hyper-detailed textures at microscopic level, studio ring light with soft diffusion, crystal-clear sharpness on focal plane, vivid natural colors, scientific precision meets artistic beauty',
+
     // Artistic styles
-    'Isometric': 'in isometric pixel art style with 30-degree angles, no perspective distortion, clean geometric shapes, and video game diorama aesthetic',
-    'Anime': 'in anime style with large expressive eyes, vibrant colors, clean cel-shading, soft gradients, and characteristic Japanese animation aesthetics',
-    'Watercolor': 'in watercolor painting style with soft wet-on-wet blending, visible brushstrokes, paper texture, flowing pigments, and delicate transparent washes',
-    'Oil Painting': 'as a classical oil painting with rich impasto texture, visible brushwork, deep saturated colors, and old master lighting techniques',
-    'Sketch': 'as a pencil sketch with cross-hatching, visible construction lines, paper texture, and loose artistic hand-drawn quality',
-    'Pop Art': 'in pop art style with bold primary colors, Ben-Day dots, thick black outlines, comic book aesthetics inspired by Roy Lichtenstein and Andy Warhol',
-    
+    'Ghibli': 'in Studio Ghibli anime style, lush hand-painted watercolor backgrounds with extraordinary environmental detail, soft cel-shaded characters with gentle round features, warm nostalgic color palette with rich greens and dreamy skies, whimsical and serene atmosphere, Hayao Miyazaki aesthetic with sense of wonder and magic in everyday scenes',
+    'Anime': 'in modern anime style with large expressive eyes, vibrant saturated colors, clean cel-shading with precise line art, soft gradient lighting, dynamic composition, characteristic Japanese animation aesthetics with detailed hair rendering and atmospheric effects',
+    'Watercolor': 'in watercolor painting style with soft wet-on-wet blending, visible organic brushstrokes on textured cold-press paper, flowing pigments with beautiful bleeds, delicate transparent washes, areas of white paper showing through, spontaneous and luminous quality',
+    'Oil Painting': 'as a classical oil painting with rich impasto texture and visible palette knife work, deep saturated colors with luminous glazing layers, dramatic chiaroscuro lighting, old master composition techniques, canvas texture visible in thin passages',
+    'Sketch': 'as a pencil sketch on cream paper with confident gestural lines, cross-hatching for tonal depth, visible construction lines and proportional guides, smudged graphite for soft shadows, loose artistic hand-drawn quality with raw energy',
+    'Pop Art': 'in pop art style with bold flat primary colors, halftone Ben-Day dots pattern, thick black outlines, high contrast graphic composition, inspired by Roy Lichtenstein and Andy Warhol, silk-screen print aesthetic with slight misregistration',
+    'Ukiyo-e': 'in traditional Japanese ukiyo-e woodblock print style, flat areas of bold color with black outlines, decorative wave and cloud patterns, elegant calligraphic line quality, Hokusai and Hiroshige inspired composition, handmade washi paper texture',
+    'Comic Book': 'in Western comic book illustration style, bold ink lines with dynamic hatching, vivid superhero-grade colors, dramatic foreshortening and action poses, CMYK halftone dot printing texture, speech bubble-ready composition, classic Marvel/DC aesthetic',
+    'Art Deco': 'in Art Deco style with bold geometric patterns, symmetrical composition, metallic gold and rich jewel-tone color palette, elegant streamlined forms, 1920s glamour aesthetic, Chrysler Building-inspired ornamental details, luxury and sophistication',
+
     // Commercial & Entertainment
-    'Movie Poster': 'cinematic movie poster design with dramatic lighting, bold typography space, high contrast, epic composition, Hollywood blockbuster aesthetic, theatrical one-sheet style',
-    'Chibi Crochet': 'as an adorable chibi-style crocheted amigurumi doll, handmade yarn texture, big cute head with small body proportions, kawaii button eyes, visible crochet stitches, soft pastel colors, handcrafted plushie aesthetic',
-    'Plushy': 'as a cute plush toy with soft fabric texture, rounded forms, button eyes, stitching details, and huggable kawaii aesthetic',
-    
+    'Movie Poster': 'cinematic movie poster design with dramatic three-point lighting, bold typography space reserved at top and bottom, high contrast with rich shadows, epic layered composition, Hollywood blockbuster aesthetic, theatrical one-sheet style with hero positioning',
+    'Sticker': 'as a cute die-cut sticker design with thick white border outline, vibrant flat colors, slightly glossy finish, kawaii-inspired simplified forms, clean vector-sharp edges, perfect for laptop or water bottle, transparent background ready',
+    'Chibi Crochet': 'as an adorable chibi-style crocheted amigurumi doll, handmade yarn texture with visible individual stitches, big cute head with small body proportions, kawaii embroidered eyes, soft pastel yarn colors, cozy handcrafted plushie aesthetic, photographed on light background',
+    'Plushy': 'as a cute plush toy with soft minky fabric texture, rounded puffy forms, embroidered eyes and details, visible seam stitching, huggable proportions with kawaii aesthetic, professional product photography lighting',
+
     // Digital & Tech styles
-    'Pixel Art': 'in retro pixel art style with limited color palette, crisp pixels, no anti-aliasing, 16-bit video game aesthetic',
-    'Low Poly': 'in low poly 3D style with flat shaded triangular faces, geometric simplification, vibrant gradients, and modern digital art aesthetic',
-    'Object Extract': 'clean product photography style with pure white background, isolated subject with precise edge extraction, professional e-commerce aesthetic, no shadows, transparent background ready',
-    
-    // Aesthetic movements
-    'Cyberpunk': 'in cyberpunk style with neon lights, rain-slicked streets, holographic displays, high-tech low-life aesthetic, and dramatic purple and cyan color grading',
-    'Vaporwave': 'in vaporwave aesthetic with pink and cyan gradients, Greek statues, retro computer graphics, palm trees, and 80s/90s nostalgia',
-    'Steampunk': 'in steampunk style with brass gears, copper pipes, Victorian machinery, clockwork mechanisms, and industrial revolution meets fantasy aesthetic'
+    'Isometric': 'in isometric pixel art style with precise 30-degree angles, no perspective distortion, clean geometric shapes, vibrant limited color palette, tiny detailed elements, video game diorama aesthetic, satisfying visual tidiness',
+    'Pixel Art': 'in retro pixel art style with strict limited 16-color palette, crisp hard-edged pixels, no anti-aliasing or smoothing, 16-bit SNES/Genesis video game aesthetic, dithering for gradients, nostalgic and charming',
+    'Low Poly': 'in low poly 3D render style with flat shaded triangular faces, geometric simplification of organic forms, subtle gradient coloring across faces, modern digital art aesthetic, clean minimal lighting, slightly glossy material',
+    '3D Cartoon': 'in Pixar/Disney 3D animation style, smooth subsurface scattering on skin, soft global illumination, appealing character proportions with slightly oversized head, rich detailed textures, vibrant color palette, professional studio render quality with subtle ambient occlusion',
+    'Flat Vector': 'in modern flat vector illustration style, clean geometric shapes with no outlines, limited harmonious color palette, minimal gradients, UI-friendly proportions, contemporary graphic design aesthetic, suitable for web and print, inspired by Kurzgesagt visual style',
+    'Object Extract': 'clean product photography style with pure white background, isolated subject with precise edge extraction, soft contact shadow only, professional e-commerce aesthetic, even studio lighting from all angles, transparent background ready',
+
+    // Artistic movements
+    'Cyberpunk': 'in cyberpunk style with vivid neon lights reflecting on rain-slicked streets, holographic displays and AR overlays, high-tech low-life aesthetic, dramatic purple and cyan color grading, volumetric fog with light rays, dense urban futuristic environment',
+    'Vaporwave': 'in vaporwave aesthetic with pink and cyan gradients, Greek marble statue elements, retro computer graphics and grid patterns, palm tree silhouettes, 80s/90s nostalgic dreamscape, lo-fi VHS scan lines, Japanese text accents, surreal and melancholic beauty',
+    'Steampunk': 'in steampunk style with intricate brass gears, copper pipes with verdigris patina, Victorian-era machinery and clockwork mechanisms, warm amber lighting, leather and rivets, industrial revolution meets fantasy, Jules Verne inspired aesthetic',
+    'Claymation': 'in stop-motion claymation style, visible fingerprint impressions on smooth clay surfaces, slightly imperfect handmade charm, warm studio lighting with soft shadows, miniature set design with tactile textures, Aardman or Laika Studios inspired quality',
+    'Neon': 'as a glowing neon sign against a dark background, bright luminous tube lighting with realistic glass tube bends, color bleeding and soft glow halos, subtle reflection on surface below, electric buzzing atmosphere, classic bar or storefront signage aesthetic'
   };
 
   const availableStyles = Object.keys(styleInstructions);
@@ -346,8 +358,8 @@ export function RendererPage() {
                   </Menu>
                 </div>
 
-                {/* Scrollable content area */}
-                <div className="flex-1 overflow-y-auto min-h-0 flex flex-col px-4 pt-2 pb-3">
+                {/* Scrollable text area */}
+                <div className="flex-1 overflow-y-auto min-h-0 px-4 pt-2">
                   <textarea
                     value={prompt}
                     onChange={(e) => {
@@ -362,13 +374,16 @@ export function RendererPage() {
                     placeholder="Describe the image you want to generate..."
                     className="w-full min-h-6 bg-transparent border-none resize-none text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-none"
                   />
+                </div>
 
-                  {/* Reference images below text */}
-                  <div className="flex flex-wrap gap-1.5 mt-4">
+                {/* Fixed bottom: reference images + style selector */}
+                <div className="shrink-0 px-4 pb-3 pt-2 flex flex-col gap-3">
+                  {/* Reference images */}
+                  <div className="flex flex-wrap gap-1.5">
                     {referenceImages.map((img, index) => (
                       <div
                         key={index}
-                        className="relative size-16 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-lg border border-white/40 dark:border-white/25 shadow-sm flex items-center justify-center group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all"
+                        className="relative size-10 md:size-16 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-lg border border-white/40 dark:border-white/25 shadow-sm flex items-center justify-center group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all"
                         title="Reference image"
                       >
                         <img
@@ -390,7 +405,7 @@ export function RendererPage() {
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        className="size-16 bg-white/30 dark:bg-neutral-800/60 backdrop-blur-lg rounded-lg border-2 border-dashed border-white/50 dark:border-white/30 shadow-sm flex items-center justify-center text-neutral-500 dark:text-neutral-400 hover:border-white/70 dark:hover:border-white/50 hover:shadow-md transition-all"
+                        className="size-10 md:size-16 bg-white/30 dark:bg-neutral-800/60 backdrop-blur-lg rounded-lg border-2 border-dashed border-white/50 dark:border-white/30 shadow-sm flex items-center justify-center text-neutral-500 dark:text-neutral-400 hover:border-white/70 dark:hover:border-white/50 hover:shadow-md transition-all"
                         title="Add reference image"
                       >
                         <ImagePlus size={18} />
@@ -399,7 +414,7 @@ export function RendererPage() {
                   </div>
 
                   {/* Style selector */}
-                  <div className="flex flex-wrap gap-1.5 mt-6">
+                  <div className="flex md:flex-wrap gap-1.5 overflow-x-auto md:overflow-x-visible scrollbar-hide">
                     {availableStyles.map((style) => {
                       const isSelected = selectedStyle === style;
                       return (
@@ -407,7 +422,7 @@ export function RendererPage() {
                           type="button"
                           key={style}
                           onClick={() => setSelectedStyle(isSelected ? null : style)}
-                          className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                          className={`text-xs px-2 py-1 rounded-md border transition-colors shrink-0 ${
                             isSelected
                               ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-600'
                               : 'bg-neutral-50 dark:bg-neutral-800/40 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-700/60'
@@ -439,17 +454,18 @@ export function RendererPage() {
               <div className="relative flex items-center justify-center py-2 md:py-0 md:w-14 shrink-0">
                 <div className="absolute md:inset-y-0 md:w-px md:left-1/2 md:-translate-x-px inset-x-0 h-px md:h-auto bg-black/20 dark:bg-white/20"></div>
                 
-                {/* Generate button centered on divider - only show when input available and not generating */}
-                {(prompt.trim() || referenceImages.length > 0) && !isGenerating && (
-                  <button
-                    type="button"
-                    onClick={handleGenerate}
-                    className="relative z-20 size-11 rounded-full bg-white dark:bg-neutral-950 border border-black/20 dark:border-white/20 text-neutral-500 dark:text-neutral-400 transition-all duration-200 hover:border-black/40 dark:hover:border-white/40 hover:text-neutral-700 dark:hover:text-neutral-200 hover:scale-105 active:scale-95 flex items-center justify-center"
-                    title={`Generate (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enter)`}
-                  >
-                    <ArrowRight size={18} className="rotate-90 md:rotate-0" />
-                  </button>
-                )}
+                {/* Generate button centered on divider */}
+                <button
+                  type="button"
+                  onClick={handleGenerate}
+                  disabled={!(prompt.trim() || referenceImages.length > 0) || isGenerating}
+                  className={`relative z-20 size-11 rounded-full bg-white dark:bg-neutral-950 border border-black/20 dark:border-white/20 text-neutral-500 dark:text-neutral-400 transition-all duration-200 hover:border-black/40 dark:hover:border-white/40 hover:text-neutral-700 dark:hover:text-neutral-200 hover:scale-105 active:scale-95 flex items-center justify-center ${
+                    (prompt.trim() || referenceImages.length > 0) && !isGenerating ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                  }`}
+                  title={`Generate (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enter)`}
+                >
+                  <ArrowRight size={18} className="rotate-90 md:rotate-0" />
+                </button>
               </div>
 
               {/* Right: Output section */}

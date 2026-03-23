@@ -1,0 +1,20 @@
+## Visual Style (apply consistently to EVERY slide)
+
+All slides MUST share a single, cohesive visual identity. Define it once and repeat it exactly:
+
+- **Background:** warm cream (#FAF6F0) with a very subtle watercolor paper texture — soft, organic, inviting. Feels like premium stationery.
+- **Primary color:** deep forest green (#2D5016) for titles and principal headings — rich, natural, grounding
+- **Color palette:** earthy, muted, sophisticated — sage green (#7A9B6D), warm terracotta (#C4704B), golden ochre (#D4A54A), dusty rose (#C17B7B), deep brown (#4A3728), muted lavender (#8B7FA8). All colors feel like they come from nature — clay, stone, leaf, bark, wildflower.
+- **Title font style:** elegant serif (Playfair Display / Cormorant Garamond style) in forest green, medium-to-bold weight. Refined and warm without being stuffy. Generous letter-spacing.
+- **Body font style:** clean light serif or soft humanist sans-serif in deep brown (#3D3025), comfortable to read. Line-height is generous (1.7x). Text feels unhurried.
+- **Layout:** flowing, organic compositions inspired by botanical illustrations. Asymmetric but balanced by visual weight. Content areas are framed or bordered by botanical illustrations. Text is inset with generous margins. Nothing feels cramped.
+- **Botanical illustrations:** each slide features watercolor-style botanical elements — leaves, branches, eucalyptus sprigs, ferns, wildflowers, seed pods — as decorative borders, corner accents, section dividers, or framing devices. These are soft, painterly, with visible brush strokes and translucent washes. They bleed to the edges of slides.
+- **Decorative elements:** thin hand-drawn botanical line art (single-weight pen drawings of leaves, vines, berries), natural-feeling dividers (a watercolor brushstroke line, a branch), small leaf motifs as bullet markers
+- **Color blocks:** occasional soft watercolor washes as background sections — a muted sage rectangle behind a quote, a faint terracotta wash highlighting a key stat. Edges are soft and organic, not hard rectangles.
+- **Data visualizations:** rounded, soft-colored charts using the earthy palette. Organic bar shapes with slightly rounded ends. Donut charts over pie charts. Thin, hand-drawn-feeling axes. Everything feels gentle.
+- **Bullet points:** small leaf icons, acorn dots, or elegant em-dashes in terracotta
+- **Emphasis:** key words highlighted with a soft golden ochre watercolor brush stroke behind them (like a highlighter) or underlined with a thin terracotta hand-drawn line
+- **Overall feeling:** like opening a beautifully designed book about botany or a premium artisan brand lookbook. Every slide could be framed.
+- **NO:** harsh lines, digital-feeling elements, flat solid fills, neon or saturated colors, geometric patterns, sharp corners on contained elements
+
+This creates an organic, nature-inspired watercolor aesthetic — warm, sophisticated, calming, and refined. Think premium wellness brand, botanical garden exhibition, or a high-end eco-conscious publication.

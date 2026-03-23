@@ -19,6 +19,12 @@ import type { QuizQuestion, MindMapNode } from '../types/notebook';
 import chatInstructions from '../prompts/chat.txt?raw';
 import studioAudioInstructions from '../prompts/studio-audio-overview.txt?raw';
 import studioSlideInstructions from '../prompts/studio-slide-deck.txt?raw';
+import slideCommonRules from '../prompts/slide-style-common.txt?raw';
+import slideStyleWhiteboard from '../prompts/slide-style-whiteboard.txt?raw';
+import slideStyleConsulting from '../prompts/slide-style-consulting.txt?raw';
+import slideStyleDark from '../prompts/slide-style-dark.txt?raw';
+import slideStyleSwiss from '../prompts/slide-style-swiss.txt?raw';
+import slideStyleNature from '../prompts/slide-style-nature.txt?raw';
 import studioInfographicInstructions from '../prompts/studio-infographic.txt?raw';
 import studioDataTableInstructions from '../prompts/studio-data-table.txt?raw';
 import studioQuizInstructions from '../prompts/studio-quiz.txt?raw';
@@ -105,9 +111,24 @@ const STUDIO_PROMPTS: Record<OutputType, string> = {
   'mind-map': studioMindMapInstructions,
 };
 
+export const SLIDE_STYLES = [
+  { id: 'whiteboard', label: 'Whiteboard', prompt: slideStyleWhiteboard },
+  { id: 'consulting', label: 'Consulting', prompt: slideStyleConsulting },
+  { id: 'dark', label: 'Dark', prompt: slideStyleDark },
+  { id: 'swiss', label: 'Swiss', prompt: slideStyleSwiss },
+  { id: 'nature', label: 'Nature', prompt: slideStyleNature },
+] as const;
+
+function buildSlideInstructions(styleId: string): string {
+  const style = SLIDE_STYLES.find((s) => s.id === styleId) ?? SLIDE_STYLES[0];
+  return studioSlideInstructions
+    .replace('{{COMMON_RULES}}', slideCommonRules)
+    .replace('{{STYLE_SECTION}}', style.prompt);
+}
+
 const OUTPUT_TITLES: Record<OutputType, string> = {
   'audio-overview': 'Audio Overview',
-  'slide-deck': 'Slide Deck',
+  'slide-deck': 'Slides',
   'infographic': 'Infographic',
   'data-table': 'Data Table',
   'quiz': 'Quiz',
@@ -373,7 +394,7 @@ export function useNotebook(notebookId?: string) {
   // ── Outputs ────────────────────────────────────────────────────────
 
   const generateOutput = useCallback(
-    (type: OutputType) => {
+    (type: OutputType, styleId?: string) => {
       if (!notebook || sources.length === 0) return;
 
       const output: NotebookOutput = {
@@ -413,7 +434,9 @@ export function useNotebook(notebookId?: string) {
 
       // Fire and forget
       const tools = createSourceTools(sourcesRef.current);
-      const instructions = STUDIO_PROMPTS[type];
+      const instructions = type === 'slide-deck'
+        ? buildSlideInstructions(styleId ?? 'whiteboard')
+        : STUDIO_PROMPTS[type];
       const userMessage = {
         role: 'user' as const,
         content: [

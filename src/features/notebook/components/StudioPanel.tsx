@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import {
   AudioLines,
   Presentation,
@@ -9,13 +10,15 @@ import {
   StickyNote,
   CircleHelp,
   Network,
+  ChevronDown,
 } from 'lucide-react';
 import type { NotebookOutput, NotebookSource, OutputType } from '../types/notebook';
+import { SLIDE_STYLES } from '../hooks/useNotebook';
 
 interface StudioPanelProps {
   sources: NotebookSource[];
   outputs: NotebookOutput[];
-  onGenerate: (type: OutputType) => void;
+  onGenerate: (type: OutputType, styleId?: string) => void;
   onDeleteOutput: (outputId: string) => void;
   onSelectOutput: (output: NotebookOutput) => void;
 }
@@ -26,7 +29,7 @@ const OUTPUT_TYPES: {
   icon: typeof AudioLines;
 }[] = [
   { type: 'audio-overview', label: 'Podcast', icon: AudioLines },
-  { type: 'slide-deck', label: 'Slide Deck', icon: Presentation },
+  { type: 'slide-deck', label: 'Slides', icon: Presentation },
   { type: 'data-table', label: 'Data Table', icon: Table2 },
   { type: 'infographic', label: 'Infographic', icon: BarChart3 },
   { type: 'quiz', label: 'Quiz', icon: CircleHelp },
@@ -41,6 +44,18 @@ export function StudioPanel({
   onSelectOutput,
 }: StudioPanelProps) {
   const hasSources = sources.length > 0;
+  const [showStyleMenu, setShowStyleMenu] = useState(false);
+  const styleMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (styleMenuRef.current && !styleMenuRef.current.contains(e.target as Node)) {
+        setShowStyleMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   return (
     <div className="h-full flex flex-col">
@@ -49,18 +64,50 @@ export function StudioPanel({
       {/* Output type buttons */}
       <div className="px-3 py-3 border-b border-neutral-200 dark:border-neutral-800">
         <div className="grid grid-cols-2 gap-2">
-          {OUTPUT_TYPES.map(({ type, label, icon: Icon }) => (
-            <button
-              key={type}
-              type="button"
-              onClick={() => onGenerate(type)}
-              disabled={!hasSources}
-              className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
-            >
-              <Icon size={16} className="shrink-0" />
-              <span className="text-xs font-medium">{label}</span>
-            </button>
-          ))}
+          {OUTPUT_TYPES.map(({ type, label, icon: Icon }) => {
+            if (type === 'slide-deck') {
+              return (
+                <div key={type} className="relative" ref={styleMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setShowStyleMenu((v) => !v)}
+                    disabled={!hasSources}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
+                  >
+                    <Icon size={16} className="shrink-0" />
+                    <span className="text-xs font-medium flex-1">{label}</span>
+                    <ChevronDown size={12} className="shrink-0 opacity-50" />
+                  </button>
+                  {showStyleMenu && (
+                    <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg py-1">
+                      {SLIDE_STYLES.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => { setShowStyleMenu(false); onGenerate('slide-deck', s.id); }}
+                          className="w-full text-left px-3 py-1.5 text-xs text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            return (
+              <button
+                key={type}
+                type="button"
+                onClick={() => onGenerate(type)}
+                disabled={!hasSources}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
+              >
+                <Icon size={16} className="shrink-0" />
+                <span className="text-xs font-medium">{label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
