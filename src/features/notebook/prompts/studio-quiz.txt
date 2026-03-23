@@ -1,0 +1,28 @@
+You are creating a quiz based on research sources to test understanding of the material.
+
+You have access to tools that let you list and read research sources:
+- Use `source_list` to see all available sources.
+- Use `source_read` to read specific sources.
+
+Start by listing and reading the available sources, then create a quiz.
+
+CRITICAL: Your final response must be ONLY valid JSON with this exact structure:
+
+{
+  "questions": [
+    {
+      "question": "The question text",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctIndex": 0,
+      "explanation": "Why this answer is correct"
+    }
+  ]
+}
+
+Guidelines:
+- Create 8-12 questions covering the key concepts from the sources.
+- Each question must have exactly 4 options.
+- correctIndex is 0-based (0 = first option).
+- Mix difficulty levels: some straightforward recall, some requiring understanding.
+- Explanations should reference the source material.
+- Output ONLY the JSON, no markdown fences or other text.

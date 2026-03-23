@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getConfig } from '@/shared/config';
-import { readAsText, getFileExt } from '@/shared/lib/utils';
+import { convertFileToText } from '@/shared/lib/convert';
 import { getTextFromContent } from '@/shared/types/chat';
 import type { Content } from '@/shared/types/chat';
 import type {
@@ -15,14 +15,17 @@ import { createSourceTools } from '../lib/source-tools';
 import { runWithTools } from '../lib/tool-loop';
 import * as store from '../lib/opfs-notebook';
 
+import type { QuizQuestion, MindMapNode } from '../types/notebook';
 import chatInstructions from '../prompts/chat.txt?raw';
 import studioAudioInstructions from '../prompts/studio-audio-overview.txt?raw';
 import studioSlideInstructions from '../prompts/studio-slide-deck.txt?raw';
 import studioInfographicInstructions from '../prompts/studio-infographic.txt?raw';
 import studioDataTableInstructions from '../prompts/studio-data-table.txt?raw';
+import studioQuizInstructions from '../prompts/studio-quiz.txt?raw';
+import studioMindMapInstructions from '../prompts/studio-mind-map.txt?raw';
 
 function generateId(): string {
-  return crypto.randomUUID().slice(0, 8);
+  return crypto.randomUUID()
 }
 
 /**
@@ -98,6 +101,8 @@ const STUDIO_PROMPTS: Record<OutputType, string> = {
   'slide-deck': studioSlideInstructions,
   'infographic': studioInfographicInstructions,
   'data-table': studioDataTableInstructions,
+  'quiz': studioQuizInstructions,
+  'mind-map': studioMindMapInstructions,
 };
 
 const OUTPUT_TITLES: Record<OutputType, string> = {
@@ -105,6 +110,8 @@ const OUTPUT_TITLES: Record<OutputType, string> = {
   'slide-deck': 'Slide Deck',
   'infographic': 'Infographic',
   'data-table': 'Data Table',
+  'quiz': 'Quiz',
+  'mind-map': 'Mind Map',
 };
 
 export function useNotebook(notebookId?: string) {
@@ -234,19 +241,10 @@ export function useNotebook(notebookId?: string) {
     async (file: File) => {
       if (!notebook) return;
 
-      const textFiles = config.text?.files ?? [];
-      const extractorFiles = config.extractor?.files ?? [];
-      const fileType = file.type || getFileExt(file.name);
-
-      let content: string;
-
-      if (textFiles.includes(fileType)) {
-        content = await readAsText(file);
-      } else if (extractorFiles.includes(fileType)) {
-        content = await client.extractText(file);
-      } else {
-        content = await readAsText(file);
-      }
+      const content = await convertFileToText(
+        file,
+        (f) => client.extractText(f),
+      );
 
       if (!content?.trim()) {
         throw new Error(`Could not extract text from ${file.name}`);
@@ -267,7 +265,7 @@ export function useNotebook(notebookId?: string) {
       const updated = await store.addSource(notebook.id, source);
       setSources(updated);
     },
-    [notebook, client, config],
+    [notebook, client],
   );
 
   const deleteSource = useCallback(
@@ -508,6 +506,50 @@ export function useNotebook(notebookId?: string) {
               ...output,
               content: textContent,
               slides: slideImages.filter(Boolean),
+              status: 'completed',
+            });
+          })
+          .catch(failOutput);
+      } else if (type === 'quiz') {
+        // Quiz: LLM reads sources → produces structured JSON
+        runWithTools(client, getModel(), instructions, [userMessage], tools)
+          .then(async (response) => {
+            const raw = getTextFromContent(response.content);
+            if (!raw?.trim()) throw new Error('Could not generate quiz');
+
+            const jsonStr = raw.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim();
+            const parsed = JSON.parse(jsonStr) as { questions: QuizQuestion[] };
+
+            if (!parsed.questions?.length) {
+              throw new Error('No questions generated');
+            }
+
+            await completeOutput({
+              ...output,
+              content: raw,
+              quiz: parsed.questions,
+              status: 'completed',
+            });
+          })
+          .catch(failOutput);
+      } else if (type === 'mind-map') {
+        // Mind map: LLM reads sources → produces structured JSON tree
+        runWithTools(client, getModel(), instructions, [userMessage], tools)
+          .then(async (response) => {
+            const raw = getTextFromContent(response.content);
+            if (!raw?.trim()) throw new Error('Could not generate mind map');
+
+            const jsonStr = raw.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim();
+            const parsed = JSON.parse(jsonStr) as MindMapNode;
+
+            if (!parsed.label) {
+              throw new Error('Invalid mind map structure');
+            }
+
+            await completeOutput({
+              ...output,
+              content: raw,
+              mindMap: parsed,
               status: 'completed',
             });
           })

@@ -25,7 +25,21 @@ export type OutputType =
   | 'audio-overview'
   | 'slide-deck'
   | 'infographic'
-  | 'data-table';
+  | 'data-table'
+  | 'quiz'
+  | 'mind-map';
+
+export interface QuizQuestion {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+}
+
+export interface MindMapNode {
+  label: string;
+  children?: MindMapNode[];
+}
 
 export interface NotebookOutput {
   id: string;
@@ -35,6 +49,8 @@ export interface NotebookOutput {
   imageUrl?: string;
   slides?: string[];
   audioUrl?: string;
+  quiz?: QuizQuestion[];
+  mindMap?: MindMapNode;
   status: 'generating' | 'completed' | 'error';
   error?: string;
   createdAt: string;

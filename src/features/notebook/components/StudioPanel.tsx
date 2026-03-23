@@ -8,6 +8,8 @@ import {
   X,
   AlertCircle,
   StickyNote,
+  CircleHelp,
+  Network,
 } from 'lucide-react';
 import type { NotebookOutput, NotebookSource, OutputType } from '../types/notebook';
 
@@ -24,10 +26,12 @@ const OUTPUT_TYPES: {
   label: string;
   icon: typeof AudioLines;
 }[] = [
-  { type: 'audio-overview', label: 'Audio Overview', icon: AudioLines },
+  { type: 'audio-overview', label: 'Podcast', icon: AudioLines },
   { type: 'slide-deck', label: 'Slide Deck', icon: Presentation },
   { type: 'data-table', label: 'Data Table', icon: Table2 },
   { type: 'infographic', label: 'Infographic', icon: BarChart3 },
+  { type: 'quiz', label: 'Quiz', icon: CircleHelp },
+  { type: 'mind-map', label: 'Mind Map', icon: Network },
 ];
 
 export function StudioPanel({
@@ -49,7 +53,7 @@ export function StudioPanel({
       </div>
 
       {/* Output type buttons */}
-      <div className="px-3 pt-3">
+      <div className="px-3 py-3 border-b border-neutral-200 dark:border-neutral-800">
         <div className="grid grid-cols-2 gap-2">
           {OUTPUT_TYPES.map(({ type, label, icon: Icon }) => (
             <button

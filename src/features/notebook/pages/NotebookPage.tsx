@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { PlusIcon, PanelLeftClose, PanelRightClose, PanelLeft, PanelRight, X } from 'lucide-react';
+import { PlusIcon, X } from 'lucide-react';
+import { useNavigate, useMatch } from '@tanstack/react-router';
 import { useNavigation } from '@/shell/hooks/useNavigation';
 import { useSidebar } from '@/shell/hooks/useSidebar';
 import { Markdown } from '@/shared/ui/Markdown';
@@ -10,6 +11,8 @@ import { NotebookChat } from '../components/NotebookChat';
 import { StudioPanel } from '../components/StudioPanel';
 import { SlideViewer } from '../components/SlideViewer';
 import { AudioViewer } from '../components/AudioViewer';
+import { QuizViewer } from '../components/QuizViewer';
+import { MindMapViewer } from '../components/MindMapViewer';
 import { NotebookSidebar } from '../components/NotebookSidebar';
 import * as store from '../lib/opfs-notebook';
 import type { Notebook, NotebookOutput } from '../types/notebook';
@@ -17,12 +20,14 @@ import type { Notebook, NotebookOutput } from '../types/notebook';
 export function NotebookPage() {
   const { setRightActions } = useNavigation();
   const { setSidebarContent } = useSidebar();
+  const navigate = useNavigate();
+
+  const notebookIdMatch = useMatch({ from: '/notebook/$notebookId', shouldThrow: false });
+  const routeNotebookId = notebookIdMatch?.params.notebookId;
 
   const [notebookId, setNotebookId] = useState<string | undefined>();
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [showSources, setShowSources] = useState(true);
-  const [showStudio, setShowStudio] = useState(true);
   const [viewingOutput, setViewingOutput] = useState<NotebookOutput | null>(null);
 
   const {
@@ -49,6 +54,14 @@ export function NotebookPage() {
     return list;
   }, []);
 
+  // Sync URL → state for deep links and browser back/forward
+  useEffect(() => {
+    if (routeNotebookId && routeNotebookId !== notebookId) {
+      setNotebookId(routeNotebookId);
+      setViewingOutput(null);
+    }
+  }, [routeNotebookId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Create new notebook (only if current one has content, or none exists)
   const handleNew = useCallback(async () => {
     // Don't create if the current notebook is already empty
@@ -58,8 +71,9 @@ export function NotebookPage() {
     const id = await initNotebook();
     setNotebookId(id);
     setViewingOutput(null);
+    navigate({ to: '/notebook/$notebookId', params: { notebookId: id } });
     await loadNotebooks();
-  }, [initNotebook, loadNotebooks, notebook, sources, messages, outputs]);
+  }, [initNotebook, loadNotebooks, navigate, notebook, sources, messages, outputs]);
 
   // Delete notebook
   const handleDelete = useCallback(
@@ -74,16 +88,18 @@ export function NotebookPage() {
             (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
           );
           setNotebookId(sorted[0].id);
+          navigate({ to: '/notebook/$notebookId', params: { notebookId: sorted[0].id } });
         } else {
           // Truly no notebooks left — create one
           const newId = await initNotebook();
           setNotebookId(newId);
+          navigate({ to: '/notebook/$notebookId', params: { notebookId: newId } });
           await loadNotebooks();
         }
         setViewingOutput(null);
       }
     },
-    [notebookId, loadNotebooks, initNotebook],
+    [notebookId, loadNotebooks, initNotebook, navigate],
   );
 
   // Select notebook
@@ -92,9 +108,10 @@ export function NotebookPage() {
       if (id !== notebookId) {
         setNotebookId(id);
         setViewingOutput(null);
+        navigate({ to: '/notebook/$notebookId', params: { notebookId: id } });
       }
     },
-    [notebookId],
+    [notebookId, navigate],
   );
 
   // Initial load + auto-create or select
@@ -102,6 +119,13 @@ export function NotebookPage() {
     if (loaded) return;
     loadNotebooks().then((list) => {
       setLoaded(true);
+
+      // If URL already has a notebook ID, use it
+      if (routeNotebookId) {
+        setNotebookId(routeNotebookId);
+        return;
+      }
+
       if (list.length === 0) {
         handleNew();
       } else {
@@ -109,9 +133,10 @@ export function NotebookPage() {
           (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
         );
         setNotebookId(sorted[0].id);
+        navigate({ to: '/notebook/$notebookId', params: { notebookId: sorted[0].id }, replace: true });
       }
     });
-  }, [loaded, loadNotebooks, handleNew]);
+  }, [loaded, loadNotebooks, handleNew, routeNotebookId, navigate]);
 
   // Sidebar content
   const sidebarContent = useMemo(() => {
@@ -139,22 +164,6 @@ export function NotebookPage() {
         <button
           type="button"
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
-          onClick={() => setShowSources((v) => !v)}
-          title={showSources ? 'Hide sources' : 'Show sources'}
-        >
-          {showSources ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
-        </button>
-        <button
-          type="button"
-          className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
-          onClick={() => setShowStudio((v) => !v)}
-          title={showStudio ? 'Hide studio' : 'Show studio'}
-        >
-          {showStudio ? <PanelRightClose size={18} /> : <PanelRight size={18} />}
-        </button>
-        <button
-          type="button"
-          className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
           onClick={handleNew}
           title="New notebook"
         >
@@ -166,11 +175,7 @@ export function NotebookPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, showSources, showStudio, handleNew]);
-
-  const handleUploadClick = useCallback(() => {
-    setShowSources(true);
-  }, []);
+  }, [setRightActions, handleNew]);
 
   if (!notebook) {
     return (
@@ -185,17 +190,15 @@ export function NotebookPage() {
       {/* Main 3-column layout */}
       <main className="w-full grow overflow-hidden flex pt-14 relative">
         {/* Left: Sources */}
-        {showSources && (
-          <div className="w-72 shrink-0 h-full overflow-hidden">
-            <SourcesPanel
-              sources={sources}
-              isSearching={isSearching}
-              onWebSearch={addWebSource}
-              onFileAdd={addFileSource}
-              onDeleteSource={deleteSource}
-            />
-          </div>
-        )}
+        <div className="w-72 shrink-0 h-full overflow-hidden">
+          <SourcesPanel
+            sources={sources}
+            isSearching={isSearching}
+            onWebSearch={addWebSource}
+            onFileAdd={addFileSource}
+            onDeleteSource={deleteSource}
+          />
+        </div>
 
         {/* Center: Chat or Output Viewer */}
         <div className="flex-1 min-w-0 h-full overflow-hidden">
@@ -223,7 +226,11 @@ export function NotebookPage() {
 
               {/* Output content */}
               <div className="flex-1 overflow-hidden min-h-0">
-                {viewingOutput.audioUrl ? (
+                {viewingOutput.quiz && viewingOutput.quiz.length > 0 ? (
+                  <QuizViewer questions={viewingOutput.quiz} />
+                ) : viewingOutput.mindMap ? (
+                  <MindMapViewer root={viewingOutput.mindMap} />
+                ) : viewingOutput.audioUrl ? (
                   <AudioViewer
                     content={viewingOutput.content}
                     audioUrl={viewingOutput.audioUrl}
@@ -259,23 +266,20 @@ export function NotebookPage() {
               isChatting={isChatting}
               streamingContent={streamingContent}
               onSend={sendMessage}
-              onUploadClick={handleUploadClick}
             />
           )}
         </div>
 
         {/* Right: Studio */}
-        {showStudio && (
-          <div className="w-72 shrink-0 h-full overflow-hidden">
-            <StudioPanel
-              sources={sources}
-              outputs={outputs}
-              onGenerate={generateOutput}
-              onDeleteOutput={deleteOutput}
-              onSelectOutput={setViewingOutput}
-            />
-          </div>
-        )}
+        <div className="w-72 shrink-0 h-full overflow-hidden">
+          <StudioPanel
+            sources={sources}
+            outputs={outputs}
+            onGenerate={generateOutput}
+            onDeleteOutput={deleteOutput}
+            onSelectOutput={setViewingOutput}
+          />
+        </div>
       </main>
     </div>
   );

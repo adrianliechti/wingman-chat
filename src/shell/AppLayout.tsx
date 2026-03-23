@@ -124,22 +124,22 @@ export function AppLayout() {
   // Primary pages always shown in main nav
   const primaryPages = [
     { key: "chat" as const, label: "Chat", icon: <MessageCircle size={20} />, to: "/chat" },
-    { key: "flow" as const, label: "Flow", icon: <Workflow size={20} />, to: "/flow" },
+    { key: "notebook" as const, label: "Notebook", icon: <Globe size={20} />, to: "/notebook" },
     { key: "translate" as const, label: "Translate", icon: <Languages size={20} />, to: "/translate" },
   ].filter(page => {
     if (page.key === "chat") return true;
-    if (page.key === "flow") return !!config.workflow;
     if (page.key === "translate") return !!config.translator;
+    if (page.key === "notebook") return !!config.researcher;
     return true;
   });
 
   // Secondary pages always in overflow menu
   const secondaryPages = [
     { key: "renderer" as const, label: "Renderer", icon: <Image size={20} />, to: "/renderer" },
-    { key: "notebook" as const, label: "Notebook", icon: <Globe size={20} />, to: "/notebook" },
+    { key: "flow" as const, label: "Flow", icon: <Workflow size={20} />, to: "/flow" },
   ].filter(page => {
     if (page.key === "renderer") return !!config.renderer;
-    if (page.key === "notebook") return !!config.researcher;
+    if (page.key === "flow") return !!config.workflow;
     return true;
   });
 

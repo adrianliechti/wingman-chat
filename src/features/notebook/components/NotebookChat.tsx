@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowRight, Upload, Loader2 } from 'lucide-react';
+import { ArrowRight, MessageSquare, Loader2, Globe, FileText, Sparkles } from 'lucide-react';
 import { Markdown } from '@/shared/ui/Markdown';
 import { getTextFromContent } from '@/shared/types/chat';
 import type { Content } from '@/shared/types/chat';
@@ -11,7 +11,6 @@ interface NotebookChatProps {
   isChatting: boolean;
   streamingContent: Content[] | null;
   onSend: (message: string) => void;
-  onUploadClick: () => void;
 }
 
 export function NotebookChat({
@@ -20,7 +19,6 @@ export function NotebookChat({
   isChatting,
   streamingContent,
   onSend,
-  onUploadClick,
 }: NotebookChatProps) {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -63,27 +61,46 @@ export function NotebookChat({
       {/* Messages area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0">
         {messages.length === 0 && !streamingContent ? (
-          <div className="h-full flex items-center justify-center p-6">
-            <div className="text-center max-w-sm">
-              <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center">
-                <Upload
-                  size={22}
-                  className="text-blue-400 dark:text-blue-500"
-                />
-              </div>
-              <p className="text-neutral-600 dark:text-neutral-400 font-medium">
-                {hasSources
-                  ? 'Ask questions about your sources'
-                  : 'Add a source to get started'}
-              </p>
-              {!hasSources && (
-                <button
-                  type="button"
-                  onClick={onUploadClick}
-                  className="mt-3 px-4 py-2 text-sm border border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:border-neutral-400 dark:hover:border-neutral-600 transition-colors"
-                >
-                  Upload a source
-                </button>
+          <div className="h-full flex items-center justify-center p-8">
+            <div className="text-center max-w-md">
+              {hasSources ? (
+                <>
+                  <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
+                    <MessageSquare size={22} className="text-neutral-400" />
+                  </div>
+                  <p className="text-neutral-600 dark:text-neutral-400 font-medium">
+                    Ask questions about your sources
+                  </p>
+                  <p className="text-sm text-neutral-400 dark:text-neutral-500 mt-1">
+                    The assistant can read and analyze your {sources.length} source{sources.length !== 1 ? 's' : ''}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
+                    <Sparkles size={24} className="text-neutral-400" />
+                  </div>
+                  <p className="text-lg font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                    Start building your notebook
+                  </p>
+                  <p className="text-sm text-neutral-400 dark:text-neutral-500 mb-6 leading-relaxed">
+                    Add sources from the web or upload files, then chat with your sources or generate outputs in the studio.
+                  </p>
+                  <div className="flex items-center justify-center gap-6 text-xs text-neutral-400 dark:text-neutral-500">
+                    <div className="flex items-center gap-1.5">
+                      <Globe size={13} />
+                      <span>Web search</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <FileText size={13} />
+                      <span>Upload files</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles size={13} />
+                      <span>Generate outputs</span>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           </div>

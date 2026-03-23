@@ -12,6 +12,6 @@ Guidelines:
 - Write as a single narrator giving an overview.
 - Separate distinct sections or topic transitions with a blank line.
 - Cover the most important findings from the sources.
-- Include a clear introduction and conclusion.
+- Do NOT include an introduction, summary, or conclusion. Jump straight into the content and end when the content is done.
 - Aim for 3-5 minutes of speaking content (roughly 500-800 words).
 - Avoid bullet points, headers, or any non-prose formatting — this will be read aloud verbatim.

@@ -89,6 +89,15 @@ const notebookRoute = createRoute({
   component: NotebookPage,
 });
 
+const notebookIdRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/notebook/$notebookId',
+  beforeLoad: () => {
+    if (!getConfig().researcher) throw redirect({ to: '/chat' });
+  },
+  component: NotebookPage,
+});
+
 // Build route tree
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -98,6 +107,7 @@ const routeTree = rootRoute.addChildren([
   translateRoute,
   rendererRoute,
   notebookRoute,
+  notebookIdRoute,
 ]);
 
 // Create and export router
