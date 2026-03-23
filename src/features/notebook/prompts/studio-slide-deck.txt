@@ -6,12 +6,35 @@ You have access to tools that let you list and read research sources:
 
 Start by listing and reading the available sources, then create a slide deck with 8-12 slides.
 
-CRITICAL FORMAT: Output each slide separated by exactly "---SLIDE---" on its own line. For each slide, write TWO sections:
+## Visual Style (apply consistently to EVERY slide)
+
+All slides MUST share a single, cohesive visual identity. Define it once and repeat it exactly:
+
+- **Background:** soft off-white (#F5F2EB) with a subtle paper-like grain texture
+- **Accent color:** warm coral/salmon (#E8735A) for highlights, underlines, and decorative elements
+- **Title font style:** bold, slightly imperfect hand-drawn lettering — like a confident marker on a whiteboard
+- **Body font style:** clean handwritten style, relaxed but legible, in dark charcoal (#2D2D2D)
+- **Layout:** generous whitespace, left-aligned text, asymmetric placement that feels organic rather than rigid
+- **Decorative elements:** small hand-drawn doodles (arrows, circles, underlines, simple icons) in coral or light gray as accents — keep them consistent across slides
+- **Bullet points:** small hand-drawn dots or dashes, not perfect circles
+- **Data visualizations:** hand-drawn style charts and graphs when applicable, with the coral accent color
+
+This creates a modern "sketch-notes" or "whiteboard" aesthetic — approachable, memorable, and visually consistent.
+
+## Output Format
+
+CRITICAL: Output each slide separated by exactly "---SLIDE---" on its own line. For each slide, write TWO sections:
 
 1. First, the slide content in markdown (title, bullet points, notes) for the text view.
-2. Then, after a line containing "---PROMPT---", write an image generation prompt that describes how this slide should look as a rendered presentation slide.
+2. Then, after a line containing "---PROMPT---", write an image generation prompt describing how this slide should look.
 
-Example format:
+Every image prompt MUST begin with the style preamble below (copy it verbatim), then add slide-specific content:
+
+> A hand-drawn style presentation slide on soft off-white (#F5F2EB) textured paper background. Uses warm coral (#E8735A) accents for underlines and highlights. Bold hand-lettered title in dark charcoal (#2D2D2D). Body text in clean handwritten font. Small doodle accents (arrows, circles, stars). Generous whitespace, organic asymmetric layout. 16:9 aspect ratio.
+
+After the preamble, describe the specific content: the title text, bullet points or data, any diagrams, and layout for this particular slide.
+
+Example:
 
 ## Slide 1: Introduction
 - Key point one
@@ -20,7 +43,7 @@ Example format:
 **Notes:** Speaker notes here
 
 ---PROMPT---
-A professional presentation slide with dark blue gradient background, large white title text "Introduction" at top, two bullet points in clean sans-serif font, subtle geometric accent shapes in corners, modern corporate style
+A hand-drawn style presentation slide on soft off-white (#F5F2EB) textured paper background. Uses warm coral (#E8735A) accents for underlines and highlights. Bold hand-lettered title in dark charcoal (#2D2D2D). Body text in clean handwritten font. Small doodle accents (arrows, circles, stars). Generous whitespace, organic asymmetric layout. 16:9 aspect ratio. The title "Introduction" is large and bold at the top-left with a coral underline swoosh beneath it. Two bullet points with small hand-drawn dots: "Key point one" and "Key point two" in relaxed handwriting. A small hand-drawn arrow doodle in the bottom-right corner.
 
 ---SLIDE---
 
@@ -31,6 +54,6 @@ A professional presentation slide with dark blue gradient background, large whit
 **Notes:** More context
 
 ---PROMPT---
-A data-focused presentation slide with clean white background, title "Key Findings" in bold dark text, two bullet points with orange accent markers, a subtle upward arrow graphic suggesting growth, professional business style
+A hand-drawn style presentation slide on soft off-white (#F5F2EB) textured paper background. Uses warm coral (#E8735A) accents for underlines and highlights. Bold hand-lettered title in dark charcoal (#2D2D2D). Body text in clean handwritten font. Small doodle accents (arrows, circles, stars). Generous whitespace, organic asymmetric layout. 16:9 aspect ratio. Title "Key Findings" hand-lettered at the top with a wavy coral underline. A hand-drawn bar chart on the right side showing a 45% increase with coral-colored bars. Two bullet points on the left with hand-drawn dash markers. A small upward arrow doodle next to the growth number.
 
-Make the image prompts describe visually appealing presentation slides with specific colors, typography descriptions, layout details, and any data visualizations. Include the actual text content that should appear on each slide in the prompt.
+Include the actual text content that should appear on each slide in the prompt. Keep prompts detailed but focused on layout and content placement.

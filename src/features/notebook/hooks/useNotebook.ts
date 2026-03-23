@@ -461,7 +461,8 @@ export function useNotebook(notebookId?: string) {
           })
           .catch(failOutput);
       } else if (type === 'slide-deck') {
-        // Slide deck: LLM generates slide text + image prompts → render each slide
+        // Slide deck: LLM generates slide text + image prompts → render each slide sequentially
+        // so each slide can use the previous one as a style reference
         runWithTools(client, getModel(), instructions, [userMessage], tools)
           .then(async (response) => {
             const fullContent = getTextFromContent(response.content);
@@ -489,18 +490,22 @@ export function useNotebook(notebookId?: string) {
 
             const textContent = slideTexts.join('\n\n---\n\n');
 
-            // Generate slide images in parallel
+            // Generate slide images sequentially, passing the previous slide
+            // as a visual reference so the renderer maintains a consistent style
             const rendererModel = config.renderer?.model || '';
-            const slideImages = await Promise.all(
-              imagePrompts.map(async (prompt) => {
-                try {
-                  const blob = await client.generateImage(rendererModel, prompt);
-                  return await blobToDataUrl(blob);
-                } catch {
-                  return ''; // skip failed slides
-                }
-              }),
-            );
+            const slideImages: string[] = [];
+            let prevBlob: Blob | null = null;
+
+            for (const prompt of imagePrompts) {
+              try {
+                const refImages = prevBlob ? [prevBlob] : undefined;
+                const blob = await client.generateImage(rendererModel, prompt, refImages);
+                prevBlob = blob;
+                slideImages.push(await blobToDataUrl(blob));
+              } catch {
+                slideImages.push(''); // skip failed slides
+              }
+            }
 
             await completeOutput({
               ...output,
