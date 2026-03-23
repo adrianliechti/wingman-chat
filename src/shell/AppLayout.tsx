@@ -129,7 +129,7 @@ export function AppLayout() {
   ].filter(page => {
     if (page.key === "chat") return true;
     if (page.key === "translate") return !!config.translator;
-    if (page.key === "notebook") return !!config.researcher;
+    if (page.key === "notebook") return !!config.notebook;
     return true;
   });
 

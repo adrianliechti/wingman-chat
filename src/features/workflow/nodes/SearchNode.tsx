@@ -51,7 +51,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
   const [activeTab, setActiveTab] = useState(0);
   const config = getConfig();
   const client = config.client;
-  const researcherEnabled = !!config.researcher;
+  const researcherEnabled = !!config.internet?.researcher;
 
   const handleExecute = async () => {
     const query = data.query?.trim() || '';
@@ -151,7 +151,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
                   researchQuery = item.text;
                 }
 
-                const result = await client.research(config.researcher?.model || '', researchQuery);
+                const result = await client.research(config.internet?.researcher || '', researchQuery);
                 results.push({
                   title: `Research ${i + 1}`,
                   content: result || 'No research results found',

@@ -81,12 +81,9 @@ func applyEnvOverrides(cfg *Config) {
 		r.ContextPages = envPositiveInt("REPOSITORY_CONTEXT_PAGES", r.ContextPages)
 	})
 
-	withFeature("WORKFLOW_ENABLED", &cfg.Workflow, nil)
 	withFeature("MEMORY_ENABLED", &cfg.Memory, nil)
-
-	withFeature("RESEARCHER_ENABLED", &cfg.Researcher, func(r *Researcher) {
-		envOverride("RESEARCHER_MODEL", &r.Model)
-	})
+	withFeature("NOTEBOOK_ENABLED", &cfg.Notebook, nil)
+	withFeature("WORKFLOW_ENABLED", &cfg.Workflow, nil)
 
 	withFeature("EXTRACTOR_ENABLED", &cfg.Extractor, func(e *Extractor) {
 		envOverride("EXTRACTOR_MODEL", &e.Model)

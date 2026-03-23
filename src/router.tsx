@@ -84,7 +84,7 @@ const notebookRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/notebook',
   beforeLoad: () => {
-    if (!getConfig().researcher) throw redirect({ to: '/chat' });
+    if (!getConfig().notebook) throw redirect({ to: '/chat' });
   },
   component: NotebookPage,
 });
@@ -93,7 +93,7 @@ const notebookIdRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/notebook/$notebookId',
   beforeLoad: () => {
-    if (!getConfig().researcher) throw redirect({ to: '/chat' });
+    if (!getConfig().notebook) throw redirect({ to: '/chat' });
   },
   component: NotebookPage,
 });

@@ -16,16 +16,16 @@ type Config struct {
 	Text      *Text      `json:"text,omitempty" yaml:"text,omitempty"`
 	Extractor *Extractor `json:"extractor,omitempty" yaml:"extractor,omitempty"`
 
-	Internet *Internet `json:"internet,omitempty" yaml:"internet,omitempty"`
-	Renderer *Renderer `json:"renderer,omitempty" yaml:"renderer,omitempty"`
+	Internet   *Internet   `json:"internet,omitempty" yaml:"internet,omitempty"`
+	Renderer   *Renderer   `json:"renderer,omitempty" yaml:"renderer,omitempty"`
+	Translator *Translator `json:"translator,omitempty" yaml:"translator,omitempty"`
 
 	Artifacts  *Artifacts  `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 	Repository *Repository `json:"repository,omitempty" yaml:"repository,omitempty"`
 
-	Workflow   *Workflow   `json:"workflow,omitempty" yaml:"workflow,omitempty"`
-	Memory     *Memory     `json:"memory,omitempty" yaml:"memory,omitempty"`
-	Researcher *Researcher `json:"researcher,omitempty" yaml:"researcher,omitempty"`
-	Translator *Translator `json:"translator,omitempty" yaml:"translator,omitempty"`
+	Memory   *Memory   `json:"memory,omitempty" yaml:"memory,omitempty"`
+	Notebook *Notebook `json:"notebook,omitempty" yaml:"notebook,omitempty"`
+	Workflow *Workflow `json:"workflow,omitempty" yaml:"workflow,omitempty"`
 
 	Chat *Chat `json:"chat,omitempty" yaml:"chat,omitempty"`
 
@@ -101,8 +101,6 @@ type Renderer struct {
 }
 
 type Artifacts struct{}
-type Workflow struct{}
-type Memory struct{}
 
 type Repository struct {
 	Embedder     string `json:"embedder,omitempty" yaml:"embedder,omitempty"`
@@ -110,9 +108,9 @@ type Repository struct {
 	ContextPages *int   `json:"context_pages,omitempty" yaml:"context_pages,omitempty"`
 }
 
-type Researcher struct {
-	Model string `json:"model,omitempty" yaml:"model,omitempty"`
-}
+type Memory struct{}
+type Notebook struct{}
+type Workflow struct{}
 
 type Chat struct {
 	RetentionDays *int `json:"retentionDays,omitempty" yaml:"retentionDays,omitempty"`
