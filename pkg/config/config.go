@@ -82,8 +82,14 @@ func applyEnvOverrides(cfg *Config) {
 	})
 
 	withFeature("MEMORY_ENABLED", &cfg.Memory, nil)
-	withFeature("NOTEBOOK_ENABLED", &cfg.Notebook, nil)
-	withFeature("WORKFLOW_ENABLED", &cfg.Workflow, nil)
+
+	withFeature("NOTEBOOK_ENABLED", &cfg.Notebook, func(n *Notebook) {
+		envOverride("NOTEBOOK_MODEL", &n.Model)
+	})
+
+	withFeature("WORKFLOW_ENABLED", &cfg.Workflow, func(w *Workflow) {
+		envOverride("WORKFLOW_MODEL", &w.Model)
+	})
 
 	withFeature("EXTRACTOR_ENABLED", &cfg.Extractor, func(e *Extractor) {
 		envOverride("EXTRACTOR_MODEL", &e.Model)

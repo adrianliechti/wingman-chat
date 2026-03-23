@@ -132,8 +132,8 @@ export function useNotebook(notebookId?: string) {
   sourcesRef.current = sources;
 
   const getModel = useCallback(() => {
-    return '';
-  }, []);
+    return config.notebook?.model || '';
+  }, [config.notebook]);
 
   // ── Init / Load ────────────────────────────────────────────────────
 

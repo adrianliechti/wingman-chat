@@ -109,8 +109,14 @@ type Repository struct {
 }
 
 type Memory struct{}
-type Notebook struct{}
-type Workflow struct{}
+
+type Notebook struct {
+	Model string `json:"model,omitempty" yaml:"model,omitempty"`
+}
+
+type Workflow struct {
+	Model string `json:"model,omitempty" yaml:"model,omitempty"`
+}
 
 type Chat struct {
 	RetentionDays *int `json:"retentionDays,omitempty" yaml:"retentionDays,omitempty"`
