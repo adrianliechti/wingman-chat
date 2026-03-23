@@ -1,236 +1,218 @@
-import { useState, useEffect, useRef } from "react";
-import { PlusIcon, Search, Loader2, ArrowRight } from "lucide-react";
-import { useNavigation } from "@/shell/hooks/useNavigation";
-import { useLayout } from "@/shell/hooks/useLayout";
-import { CopyButton } from "@/shared/ui/CopyButton";
-import { Markdown } from "@/shared/ui/Markdown";
-import { getConfig } from "@/shared/config";
+import { useState, useEffect, useCallback } from 'react';
+import { PlusIcon, PanelLeftClose, PanelRightClose, PanelLeft, PanelRight, X } from 'lucide-react';
+import { useNavigation } from '@/shell/hooks/useNavigation';
+import { Markdown } from '@/shared/ui/Markdown';
+import { CopyButton } from '@/shared/ui/CopyButton';
+import { useResearch } from '../hooks/useResearch';
+import { SourcesPanel } from '../components/SourcesPanel';
+import { ResearchChat } from '../components/ResearchChat';
+import { StudioPanel } from '../components/StudioPanel';
+import { SlideViewer } from '../components/SlideViewer';
+import { AudioViewer } from '../components/AudioViewer';
+import * as store from '../lib/opfs-research';
+import type { Research, ResearchOutput } from '../types/research';
 
 export function ResearchPage() {
   const { setRightActions } = useNavigation();
-  const { layoutMode } = useLayout();
-  const config = getConfig();
 
-  const [instruction, setInstruction] = useState("");
-  const [result, setResult] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [researchId, setResearchId] = useState<string | undefined>();
+  const [researches, setResearches] = useState<Research[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [showSources, setShowSources] = useState(true);
+  const [showStudio, setShowStudio] = useState(true);
+  const [viewingOutput, setViewingOutput] = useState<ResearchOutput | null>(null);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const {
+    research,
+    sources,
+    outputs,
+    messages,
+    isSearching,
+    isChatting,
+    streamingContent,
+    initResearch,
+    addWebSource,
+    addFileSource,
+    deleteSource,
+    sendMessage,
+    generateOutput,
+    deleteOutput,
+  } = useResearch(researchId);
 
-  const handleReset = () => {
-    setInstruction("");
-    setResult(null);
-    setError(null);
-    setIsLoading(false);
-    textareaRef.current?.focus();
-  };
+  // Load list of researches
+  const loadResearches = useCallback(async () => {
+    const list = await store.listResearches();
+    setResearches(list);
+    return list;
+  }, []);
 
-  const handleResearch = async () => {
-    if (!instruction.trim() || isLoading) return;
+  // Create new research
+  const handleNew = useCallback(async () => {
+    const id = await initResearch();
+    setResearchId(id);
+    await loadResearches();
+  }, [initResearch, loadResearches]);
 
-    setIsLoading(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const content = await config.client.research(config.researcher?.model || "", instruction.trim());
-
-      if (!content?.trim()) {
-        setError(
-          "No research results could be found for the given instruction.",
-        );
+  // Initial load + auto-create or select
+  useEffect(() => {
+    if (loaded) return;
+    loadResearches().then((list) => {
+      setLoaded(true);
+      if (list.length === 0) {
+        handleNew();
       } else {
-        setResult(content);
+        const sorted = [...list].sort(
+          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+        );
+        setResearchId(sorted[0].id);
       }
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Research failed. Please try again.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    });
+  }, [loaded, loadResearches, handleNew]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      handleResearch();
-    }
-  };
-
-  // Set up navigation actions
+  // Navigation actions
   useEffect(() => {
     setRightActions(
-      <button
-        type="button"
-        className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
-        onClick={handleReset}
-        title="New research"
-      >
-        <PlusIcon size={20} />
-      </button>,
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
+          onClick={() => setShowSources((v) => !v)}
+          title={showSources ? 'Hide sources' : 'Show sources'}
+        >
+          {showSources ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
+        </button>
+        <button
+          type="button"
+          className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
+          onClick={() => setShowStudio((v) => !v)}
+          title={showStudio ? 'Hide studio' : 'Show studio'}
+        >
+          {showStudio ? <PanelRightClose size={18} /> : <PanelRight size={18} />}
+        </button>
+        <button
+          type="button"
+          className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
+          onClick={handleNew}
+          title="New notebook"
+        >
+          <PlusIcon size={20} />
+        </button>
+      </div>,
     );
 
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions]);
+  }, [setRightActions, showSources, showStudio, handleNew]);
+
+  const handleUploadClick = useCallback(() => {
+    setShowSources(true);
+  }, []);
+
+  if (!research) {
+    return (
+      <div className="h-full w-full flex items-center justify-center">
+        <div className="text-neutral-400 animate-pulse">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden relative">
-      <main className="w-full grow overflow-hidden flex p-4 pt-20 relative">
-        <div
-          className={`w-full h-full ${layoutMode === "wide"
-              ? "max-w-full mx-auto"
-              : "max-w-[1200px] mx-auto"
-            }`}
-        >
-          <div className="relative h-full w-full overflow-hidden">
-            {/* 50/50 split layout */}
-            <div className="h-full flex flex-col md:flex-row min-h-0 transition-all duration-200">
-              {/* Left: Input section */}
-              <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
-                <textarea
-                  ref={textareaRef}
-                  value={instruction}
-                  onChange={(e) => setInstruction(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Enter your research instructions..."
-                  disabled={isLoading}
-                  className="absolute inset-0 w-full h-full pl-4 pr-2 pt-12 pb-4 bg-transparent border-none resize-none overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-none disabled:opacity-50"
-                />
-              </div>
+      {/* Main 3-column layout */}
+      <main className="w-full grow overflow-hidden flex pt-14 relative">
+        {/* Left: Sources */}
+        {showSources && (
+          <div className="w-72 shrink-0 h-full overflow-hidden">
+            <SourcesPanel
+              sources={sources}
+              isSearching={isSearching}
+              onWebSearch={addWebSource}
+              onFileAdd={addFileSource}
+              onDeleteSource={deleteSource}
+            />
+          </div>
+        )}
 
-              {/* Divider with Research Button */}
-              <div className="relative flex items-center justify-center py-2 md:py-0 md:w-14 shrink-0">
-                <div className="absolute md:inset-y-0 md:w-px md:left-1/2 md:-translate-x-px inset-x-0 h-px md:h-auto bg-black/20 dark:bg-white/20"></div>
-
-                {/* Research button centered on divider - only show when input available and not loading */}
-                {instruction.trim() && !isLoading && (
+        {/* Center: Chat or Output Viewer */}
+        <div className="flex-1 min-w-0 h-full overflow-hidden">
+          {viewingOutput ? (
+            <div className="h-full flex flex-col">
+              {/* Output header */}
+              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between shrink-0">
+                <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+                  {viewingOutput.title}
+                </h2>
+                <div className="flex items-center gap-1">
+                  {!viewingOutput.imageUrl && (
+                    <CopyButton text={viewingOutput.content} />
+                  )}
                   <button
                     type="button"
-                    onClick={handleResearch}
-                    className="relative z-20 size-11 rounded-full bg-white dark:bg-neutral-950 border border-black/20 dark:border-white/20 text-neutral-500 dark:text-neutral-400 transition-all duration-200 hover:border-black/40 dark:hover:border-white/40 hover:text-neutral-700 dark:hover:text-neutral-200 hover:scale-105 active:scale-95 flex items-center justify-center"
-                    title={`Research (${navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}+Enter)`}
+                    onClick={() => setViewingOutput(null)}
+                    className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                    title="Back to chat"
                   >
-                    <ArrowRight size={18} className="rotate-90 md:rotate-0" />
+                    <X size={16} className="text-neutral-500" />
                   </button>
-                )}
+                </div>
               </div>
 
-              {/* Right: Output section */}
-              <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
-                {/* Loading Animation */}
-                {isLoading && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="flex flex-col items-center gap-6">
-                      {/* Research Animation */}
-                      <div className="relative w-24 h-24">
-                        {/* Outer pulsing ring */}
-                        <div className="absolute inset-0 rounded-full border-2 border-neutral-300 dark:border-neutral-600 animate-ping opacity-20" />
-
-                        {/* Middle rotating ring */}
-                        <div
-                          className="absolute inset-2 rounded-full border-2 border-dashed border-neutral-400 dark:border-neutral-500 animate-spin"
-                          style={{ animationDuration: "3s" }}
-                        />
-
-                        {/* Inner spinning loader */}
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <Loader2
-                            size={32}
-                            className="text-neutral-600 dark:text-neutral-400 animate-spin"
-                          />
-                        </div>
-
-                        {/* Orbiting dots */}
-                        <div
-                          className="absolute inset-0 animate-spin"
-                          style={{ animationDuration: "2s" }}
-                        >
-                          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-neutral-500 dark:bg-neutral-400 rounded-full" />
-                        </div>
-                        <div
-                          className="absolute inset-0 animate-spin"
-                          style={{
-                            animationDuration: "2.5s",
-                            animationDirection: "reverse",
-                          }}
-                        >
-                          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-neutral-400 dark:bg-neutral-500 rounded-full" />
-                        </div>
-                      </div>
-
-                      <div className="text-center">
-                        <p className="text-neutral-600 dark:text-neutral-400 font-medium">
-                          Researching...
-                        </p>
-                        <p className="text-sm text-neutral-500 dark:text-neutral-500 mt-1">
-                          Gathering information from the web
-                        </p>
-                      </div>
+              {/* Output content */}
+              <div className="flex-1 overflow-hidden min-h-0">
+                {viewingOutput.audioUrl ? (
+                  <AudioViewer
+                    content={viewingOutput.content}
+                    audioUrl={viewingOutput.audioUrl}
+                  />
+                ) : viewingOutput.slides && viewingOutput.slides.length > 0 ? (
+                  <SlideViewer
+                    content={viewingOutput.content}
+                    slides={viewingOutput.slides}
+                  />
+                ) : viewingOutput.imageUrl ? (
+                  <div className="h-full overflow-y-auto p-6">
+                    <div className="flex flex-col items-center gap-4">
+                      <img
+                        src={viewingOutput.imageUrl}
+                        alt={viewingOutput.title}
+                        className="max-w-full rounded-lg shadow-md"
+                      />
                     </div>
                   </div>
-                )}
-
-                {/* Error State */}
-                {error && !isLoading && (
-                  <div className="absolute inset-0 flex items-center justify-center p-4">
-                    <div className="max-w-md p-6 bg-red-50/50 dark:bg-red-950/20 border border-red-200/60 dark:border-red-800/50 rounded-xl">
-                      <p className="text-red-600 dark:text-red-400 text-center">
-                        {error}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Result Section */}
-                {result && !isLoading && (
-                  <>
-                    {/* Copy button - fixed position */}
-                    <div className="absolute top-2 right-2 z-10">
-                      <CopyButton text={result} />
-                    </div>
-
-                    {/* Scrollable markdown content */}
-                    <div className="absolute inset-0 overflow-y-auto">
-                      <div
-                        className={`min-h-full pl-4 pr-2 pt-12 pb-4 ${layoutMode === "wide" ? "" : "max-w-5xl mx-auto w-full"}`}
-                      >
-                        <div className="prose prose-neutral dark:prose-invert max-w-none">
-                          <Markdown>{result}</Markdown>
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {/* Empty State */}
-                {!result && !isLoading && !error && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
-                        <Search
-                          size={28}
-                          className="text-neutral-400 dark:text-neutral-500"
-                        />
-                      </div>
-                      <p className="text-neutral-500 dark:text-neutral-400">
-                        Enter a research topic
-                      </p>
-                      <p className="text-sm text-neutral-400 dark:text-neutral-500 mt-1">
-                        Results will appear here
-                      </p>
+                ) : (
+                  <div className="h-full overflow-y-auto p-6">
+                    <div className="prose prose-neutral dark:prose-invert max-w-none">
+                      <Markdown>{viewingOutput.content}</Markdown>
                     </div>
                   </div>
                 )}
               </div>
             </div>
-          </div>
+          ) : (
+            <ResearchChat
+              messages={messages}
+              sources={sources}
+              isChatting={isChatting}
+              streamingContent={streamingContent}
+              onSend={sendMessage}
+              onUploadClick={handleUploadClick}
+            />
+          )}
         </div>
+
+        {/* Right: Studio */}
+        {showStudio && (
+          <div className="w-72 shrink-0 h-full overflow-hidden">
+            <StudioPanel
+              sources={sources}
+              outputs={outputs}
+              onGenerate={generateOutput}
+              onDeleteOutput={deleteOutput}
+              onSelectOutput={setViewingOutput}
+            />
+          </div>
+        )}
       </main>
     </div>
   );
