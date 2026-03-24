@@ -14,15 +14,18 @@ interface StoredImageMeta {
   prompt: string;
 }
 
-// Image-specific OPFS operations using new folder structure
+// Image-specific OPFS operations using folder structure
 // /images/{id}/metadata.json - metadata
-// /images/{id}/image.bin - image binary data
+// /images/{id}/image.png     - image binary
 
 async function storeImage(image: Image): Promise<void> {
   try {
     const imagePath = `${COLLECTION}/${image.id}`;
     
-    // Store metadata
+    const blob = opfs.isDataUrl(image.data)
+      ? opfs.dataUrlToBlob(image.data)
+      : new Blob([image.data], { type: 'image/png' });
+
     const meta: StoredImageMeta = {
       id: image.id,
       title: image.title,
@@ -33,16 +36,9 @@ async function storeImage(image: Image): Promise<void> {
     };
     
     await opfs.writeJson(`${imagePath}/metadata.json`, meta);
-    
-    // Store image data as binary
-    let blob: Blob;
-    if (opfs.isDataUrl(image.data)) {
-      blob = opfs.dataUrlToBlob(image.data);
-    } else {
-      // Already binary data or other format
-      blob = new Blob([image.data], { type: 'application/octet-stream' });
-    }
-    await opfs.writeBlob(`${imagePath}/image.bin`, blob);
+    await opfs.writeBlob(`${imagePath}/image.png`, blob);
+    // Clean up legacy file if present
+    try { await opfs.deleteFile(`${imagePath}/image.bin`); } catch { /* ignore */ }
     
     // Update index
     await opfs.upsertIndexEntry(COLLECTION, {
@@ -65,8 +61,9 @@ async function loadImage(id: string): Promise<Image | undefined> {
     
     if (!meta) return undefined;
 
-    // Load binary data
-    const blob = await opfs.readBlob(`${imagePath}/image.bin`);
+    // Load image (legacy files used .bin instead of .png)
+    const blob = await opfs.readBlob(`${imagePath}/image.png`)
+      ?? await opfs.readBlob(`${imagePath}/image.bin`);
     const data = blob ? await opfs.blobToDataUrl(blob) : '';
     
     return {
