@@ -51,7 +51,8 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
   const [activeTab, setActiveTab] = useState(0);
   const config = getConfig();
   const client = config.client;
-  const researcherEnabled = !!config.researcher;
+  const workflowModel = config.workflow?.model || '';
+  const researcherEnabled = !!config.internet?.researcher;
 
   const handleExecute = async () => {
     const query = data.query?.trim() || '';
@@ -137,7 +138,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
                 if (instructions) {
                   // Use LLM to create research query from input + instructions
                   const response = await client.complete(
-                    '',
+                    workflowModel,
                     'Create a detailed research query that combines the user instructions with the provided context. Return only the research query, nothing else.',
                     [{
                       role: Role.User,
@@ -151,7 +152,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
                   researchQuery = item.text;
                 }
 
-                const result = await client.research(config.researcher?.model || '', researchQuery);
+                const result = await client.research(config.internet?.researcher || '', researchQuery);
                 results.push({
                   title: `Research ${i + 1}`,
                   content: result || 'No research results found',
@@ -210,7 +211,7 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
                 : `Context:\n${inputText}\n\nGenerate the search query:`;
 
               const response = await client.complete(
-                '',
+                workflowModel,
                 systemPrompt,
                 [{
                   role: Role.User,

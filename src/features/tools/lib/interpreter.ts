@@ -1,4 +1,4 @@
-import { loadPyodide as loadPyodideRuntime, version as pyodideVersion, type PyodideInterface } from 'pyodide';
+import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from 'pyodide';
 import { bytesToDataUrl, dataUrlToBytes, isDataUrlContent } from '@/shared/lib/artifactFiles';
 import { inferContentTypeFromPath, isTextContentType } from '@/shared/lib/fileTypes';
 
@@ -148,12 +148,6 @@ export interface CodeExecutionResult {
 let pyodideInstance: PyodideInterface | null = null;
 let pyodideLoading: Promise<PyodideInterface> | null = null;
 const loadedPackages = new Set<string>();
-
-function getPyodideIndexUrl(): string {
-  return import.meta.env.DEV
-    ? `https://cdn.jsdelivr.net/pyodide/v${pyodideVersion}/full/`
-    : '/pyodide/';
-}
 
 function ensureDirectory(pyodide: PyodideInterface, dir: string): void {
   try {
@@ -349,10 +343,10 @@ async function loadPyodide(): Promise<PyodideInterface> {
   pyodideLoading = (async () => {
     try {
       pyodideInstance = await loadPyodideRuntime({
-        indexURL: getPyodideIndexUrl(),
+        indexURL: '/pyodide/',
       });
 
-      console.log(`Pyodide v${pyodideVersion} loaded successfully (${import.meta.env.DEV ? 'CDN' : 'local'})`);
+      console.log('Pyodide loaded successfully');
       return pyodideInstance;
     } catch (error) {
       console.error('Failed to load Pyodide:', error);

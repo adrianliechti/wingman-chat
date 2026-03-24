@@ -178,11 +178,20 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
 
   // Load memory content from OPFS when memory is enabled
   useEffect(() => {
-    if (!memoryPath) {
-      setMemoryContent('');
-      return;
-    }
-    opfs.readText(memoryPath).then(text => setMemoryContent(text || ''));
+    let cancelled = false;
+
+    const loadMemoryContent = async () => {
+      const text = memoryPath ? await opfs.readText(memoryPath) : '';
+      if (!cancelled) {
+        setMemoryContent(text || '');
+      }
+    };
+
+    loadMemoryContent().catch(console.error);
+
+    return () => {
+      cancelled = true;
+    };
   }, [memoryPath]);
 
   // Re-read memory when the agent writes to it mid-conversation

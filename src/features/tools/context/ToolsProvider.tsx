@@ -5,6 +5,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import { useRendererProvider } from "@/features/renderer/hooks/useRendererProvider";
+import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import { ToolsContext } from "./ToolsContext";
 import type { ToolProvider, TextContent, ImageContent, AudioContent, FileContent, ToolContext } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
@@ -34,6 +35,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // Built-in providers
   const internetProvider = useInternetProvider();
   const rendererProvider = useRendererProvider();
+  const artifactsProvider = useArtifactsProvider();
 
   // All MCP clients & lookup set
   const allMcpClients = useMemo(() => [...configMcpClients, ...agentMcpClients], [configMcpClients, agentMcpClients]);
@@ -62,11 +64,12 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // All available providers
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
-    if (internetProvider) list.push(internetProvider);
     if (rendererProvider) list.push(rendererProvider);
+    if (internetProvider) list.push(internetProvider);
+    if (artifactsProvider) list.push(artifactsProvider);
     list.push(...configMcpClients, ...agentProviders);
     return list;
-  }, [internetProvider, rendererProvider, configMcpClients, agentProviders]);
+  }, [internetProvider, rendererProvider, artifactsProvider, configMcpClients, agentProviders]);
 
   // State: MCP clients use lifecycle state, local providers derive from desiredTools
   const getProviderState = useCallback((id: string): ProviderState => {
@@ -102,6 +105,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // Wire up onDisconnected callbacks so ping failures update state
   useEffect(() => {
     for (const client of allMcpClients) {
+      // eslint-disable-next-line react-hooks/immutability -- setting callbacks on external MCP client objects is the purpose of this effect
       client.onDisconnected = () => {
         setMcpStates(prev => new Map(prev).set(client.id, ProviderState.Failed));
       };

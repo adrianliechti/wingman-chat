@@ -27,6 +27,7 @@ interface config {
   tts?: ttsConfig;
   stt?: sttConfig;
 
+  notebook?: notebookConfig;
   workflow?: workflowConfig;
 
   voice?: voiceConfig;
@@ -44,7 +45,6 @@ interface config {
   artifacts?: artifactsConfig;
   repository?: repositoryConfig;
   translator?: translatorConfig;
-  researcher?: researcherConfig;
 
   chat?: chatConfig;
 }
@@ -80,13 +80,20 @@ interface toolConfig {
 
 interface ttsConfig {
   model?: string;
+  voices?: Record<string, string>;
 }
 
 interface sttConfig {
   model?: string;
 }
 
-type workflowConfig = object;
+interface notebookConfig {
+  model?: string;
+}
+
+interface workflowConfig {
+  model?: string;
+}
 
 interface voiceConfig {
   model?: string;
@@ -106,7 +113,6 @@ interface rendererConfig {
   disclaimer?: string;
   elicitation?: boolean;
 }
-
 
 interface internetConfig {
   scraper?: string;
@@ -138,10 +144,6 @@ interface translatorConfig {
   languages: string[];
 }
 
-interface researcherConfig {
-  model?: string;
-}
-
 interface chatConfig {
   retentionDays?: number;
 }
@@ -159,6 +161,7 @@ interface Config {
   tts: ttsConfig | null;
   stt: sttConfig | null;
 
+  notebook: notebookConfig | null;
   workflow: workflowConfig | null;
 
   voice: voiceConfig | null;
@@ -176,7 +179,6 @@ interface Config {
   artifacts: artifactsConfig | null;
   repository: repositoryConfig | null;
   translator: translatorConfig | null;
-  researcher: researcherConfig | null;
 
   chat: chatConfig | null;
 
@@ -241,9 +243,21 @@ export const loadConfig = async (): Promise<Config | undefined> => {
           };
         }) ?? [],
 
-      tts: cfg.tts ?? null,
+      tts: cfg.tts
+        ? {
+            model: cfg.tts.model,
+            voices: cfg.tts.voices ?? {
+              host: 'nova',
+              analyst: 'onyx',
+              narrator: 'alloy',
+              storyteller: 'fable',
+              skeptic: 'echo',
+            },
+          }
+        : null,
       stt: cfg.stt ?? null,
 
+      notebook: cfg.notebook ?? null,
       workflow: cfg.workflow ?? null,
 
       voice: cfg.voice ?? null,
@@ -322,8 +336,6 @@ export const loadConfig = async (): Promise<Config | undefined> => {
           ],
         }
         : null,
-
-      researcher: cfg.researcher ?? null,
 
       chat: cfg.chat ?? null,
 

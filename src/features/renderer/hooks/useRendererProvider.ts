@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { Image } from 'lucide-react';
+import { Palette } from 'lucide-react';
 import { getConfig } from "@/shared/config";
 import type { Tool, ToolContext, ToolProvider, ImageContent } from "@/shared/types/chat";
 import { readAsDataURL } from "@/shared/lib/utils";
@@ -173,7 +173,7 @@ export function useRendererProvider(): ToolProvider | null {
       id: "renderer",
       name: "Image Editor",
       description: "Create and edit images",
-      icon: Image,
+      icon: Palette,
       instructions: rendererInstructionsText,
       tools: rendererTools(),
     };

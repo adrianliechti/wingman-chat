@@ -86,12 +86,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, [setProviderEnabled, restoreToolUI, renderApp]);
 
-  const selectChat = useCallback((chatId: string) => {
-    setChatId(chatId);
+  const chatIdRef = useRef(chatId);
+  chatIdRef.current = chatId;
+
+  const selectChat = useCallback((id: string | null) => {
+    if (id === chatIdRef.current) return;
+
+    setChatId(id);
     resetTools();
 
+    if (!id) return;
+
     // Auto-restore the last MCP app for this chat
-    const chatData = chats.find(c => c.id === chatId);
+    const chatData = chats.find(c => c.id === id);
     if (chatData?.messages?.length) {
       const lastAppResult = chatData.messages
         .flatMap(m => m.content)
@@ -169,7 +176,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, []);
 
   const runMessageInChat = useCallback(
-    async (id: string, message: Message, historyOverride?: Message[], initialTitle?: string) => {
+    async function run(id: string, message: Message, historyOverride?: Message[], initialTitle?: string) {
       const history = historyOverride ?? (chats.find(c => c.id === id)?.messages || []);
       const pendingModelContext = pendingModelContextRef.current.get(id) ?? null;
       pendingModelContextRef.current.delete(id);
@@ -191,7 +198,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               p.type === 'text' || p.type === 'image' || p.type === 'file'
             ) as Content[],
             sendMessage: async (appMessage: Message) => {
-              await runMessageInChat(id, appMessage, conversation, initialTitle);
+              await run(id, appMessage, conversation, initialTitle);
             },
             setContext: async (text: string | null) => {
               await updateModelContext(id, text);

@@ -5,8 +5,8 @@ import { PlayButton } from '@/shared/ui/PlayButton';
 import { RenderContents } from '@/shared/ui/ContentRenderer';
 import { CodeRenderer } from '@/shared/ui/CodeRenderer';
 import { ChatInputAttachments } from './ChatInputAttachments';
-import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil, ChevronRight } from "lucide-react";
-import { useState, useRef, useEffect } from 'react';
+import { Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil, ChevronRight } from "lucide-react";
+import { useState, useRef, useEffect, memo } from 'react';
 
 import { Role } from "@/shared/types/chat";
 import type { Message, ElicitationResult, Content, ToolResultContent, ImageContent, AudioContent, FileContent, TextContent } from "@/shared/types/chat";
@@ -96,7 +96,7 @@ function ErrorMessage({ title, message }: { title: string; message: string }) {
   const displayMessage = message || 'An error occurred'; // Show message if available, otherwise generic message
 
   return (
-    <div className="flex justify-start mb-4">
+    <div className="flex justify-start pb-4">
       <div className="flex-1 py-3">
         <div className="border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20 rounded-lg p-4 max-w-none">
           <div className="flex items-start gap-3">
@@ -176,6 +176,7 @@ function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
   const [isExpanded, setIsExpanded] = useState(isStreaming ?? false);
   // Track the previous streaming state to detect transitions
   const [prevIsStreaming, setPrevIsStreaming] = useState(isStreaming);
+  const label = isStreaming ? 'Thinking...' : isExpanded ? 'Hide Thoughts' : 'Expand Thoughts';
 
   // Adjust state during render when isStreaming prop changes
   // This is React's recommended pattern for updating state based on props
@@ -189,18 +190,20 @@ function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
   if (!reasoning && !isStreaming) return null;
 
   return (
-    <div className="mb-3">
+    <div className={isExpanded ? "mb-1" : "mb-0"}>
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
+        className="grid w-full grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 text-left text-xs text-neutral-500 transition-colors hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
       >
         <ChevronRight className={`w-3 h-3 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
-        <span className="font-medium">Thinking</span>
-        {isStreaming && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
+        <span className="flex items-center gap-1.5 min-w-0">
+          <span className="font-medium">{label}</span>
+          {isStreaming && <Loader2 className="w-3 h-3 animate-spin shrink-0" />}
+        </span>
       </button>
       
       {isExpanded && (
-        <div className="mt-2 pl-5 border-l-2 border-neutral-200 dark:border-neutral-700">
+        <div className="mt-1 ml-[18px]">
           <div className="text-sm text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap">
             {reasoning}
           </div>
@@ -210,7 +213,7 @@ function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
   );
 }
 
-export function ChatMessage({ message, index, isResponding, ...props }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, index, isResponding, ...props }: ChatMessageProps) {
   const [toolResultExpanded, setToolResultExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   // Get first text content only (user's typed message)
@@ -382,37 +385,36 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
     };
 
     return (
-      <div className="flex justify-start mb-2">
-        <div className="flex-1 py-1 max-w-full">
+      <div className="pb-2 max-w-full">
           <div className={`${isToolError ? 'bg-red-50/30 dark:bg-red-950/5' : ''} rounded-lg overflow-hidden max-w-full`}>
             <button 
               onClick={() => setToolResultExpanded(!toolResultExpanded)}
-              className="w-full flex items-center text-left transition-colors"
+              className="w-full text-left transition-colors"
             >
-              <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="grid grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 min-w-0">
                 <ChevronRight className={`w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 transition-transform ${toolResultExpanded ? 'rotate-90' : ''}`} />
-                {isToolError ? (
-                  <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 shrink-0" />
-                ) : (
-                  <Wrench className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
-                )}
-                <span className={`text-xs font-medium whitespace-nowrap ${
-                  isToolError 
-                    ? "text-red-500 dark:text-red-400" 
-                    : "text-neutral-500 dark:text-neutral-400"
-                }`}>
-                  {isToolError ? 'Tool Error' : `${toolResult?.name ? getToolDisplayName(toolResult.name) : 'Tool'}`}
-                </span>
-                {!toolResultExpanded && getPreviewText() && (
-                  <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
-                    {getPreviewText()}
+                <div className="flex items-center gap-2 min-w-0">
+                  {isToolError && (
+                    <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 shrink-0" />
+                  )}
+                  <span className={`text-xs font-medium whitespace-nowrap ${
+                    isToolError 
+                      ? "text-red-500 dark:text-red-400" 
+                      : "text-neutral-500 dark:text-neutral-400"
+                  }`}>
+                    {isToolError ? 'Tool Error' : `${toolResult?.name ? getToolDisplayName(toolResult.name) : 'Tool'}`}
                   </span>
-                )}
+                  {!toolResultExpanded && getPreviewText() && (
+                    <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
+                      {getPreviewText()}
+                    </span>
+                  )}
+                </div>
               </div>
             </button>
 
             {toolResultExpanded && (
-              <div className="ml-5 mt-2">
+              <div className="ml-[18px] mt-2">
                 {codeData ? (
                   <CodeRenderer code={codeData.code} language="python" />
                 ) : (
@@ -434,12 +436,11 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
 
             {/* Always render media content (images, audio, files) from tool results */}
             {toolResult?.result && toolResult.result.some(c => c.type === 'image' || c.type === 'audio' || c.type === 'file') && (
-              <div className="ml-5 mt-2">
+              <div className="ml-[18px] mt-2">
                 <RenderContents contents={toolResult.result} />
               </div>
             )}
           </div>
-        </div>
       </div>
     );
   }
@@ -457,8 +458,7 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
       }
       // Show just the reasoning block for completed messages with reasoning
       return (
-        <div className="flex justify-start mb-2">
-          <div className="flex-1 py-1 max-w-full">
+        <div className="pb-2">
             {reasoningParts.map((part, index) => (
               part.type === 'reasoning' && (
                 <ReasoningDisplay 
@@ -468,7 +468,6 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                 />
               )
             ))}
-          </div>
         </div>
       );
     }
@@ -487,8 +486,7 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
     // Show tool call indicators if there are tool calls
     if (hasToolCalls) {
       return (
-        <div className="flex justify-start mb-2">
-          <div className="flex-1 py-1 max-w-full">
+        <div className="pb-2">
             {/* Show reasoning above tool calls */}
             {hasReasoning && reasoningParts.map((part, index) => (
               part.type === 'reasoning' && (
@@ -499,7 +497,7 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                 />
               )
             ))}
-            <div className="space-y-1">
+            <div className="mt-0 space-y-0">
               {toolCallParts.map((part, index) => {
                 if (part.type !== 'tool_call') return null;
                 const toolCall = part;
@@ -535,7 +533,6 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                 );
               })}
             </div>
-          </div>
         </div>
       );
     }
@@ -544,8 +541,7 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
     // (reasoningParts and hasReasoning already defined above)
     
     return (
-      <div className="flex justify-start mb-4">
-        <div className="flex-1 py-3">
+      <div className="pb-4">
           {/* Show reasoning while thinking, even before content arrives */}
           {hasReasoning ? (
             reasoningParts.map((part, index) => (
@@ -566,7 +562,6 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
               </div>
             </div>
           )}
-        </div>
       </div>
     );
   }
@@ -580,7 +575,7 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
     
     return (
       <div
-        className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4 ${!isUser && isResponding && props.isLast ? '' : 'group'} text-neutral-900 dark:text-neutral-200`}
+        className={`flex ${isUser ? "justify-end" : "justify-start"} pb-4 ${!isUser && isResponding && props.isLast ? '' : 'group'} text-neutral-900 dark:text-neutral-200`}
       >
         {/* Edit button for user messages - positioned to the left of the bubble */}
         {isUser && !isEditing && !isResponding && (
@@ -675,13 +670,15 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                   );
                 }
                 if (part.type === 'text') {
+                  const hasPrecedingItems = message.content.slice(0, index).some(p => p.type === 'reasoning' || p.type === 'tool_call');
                   return (
-                    <Markdown
-                      key={index}
-                      isStreaming={!!(props.isLast && isResponding)}
-                    >
-                      {part.text}
-                    </Markdown>
+                    <div key={index} className={hasPrecedingItems ? "mt-2" : ""}>
+                      <Markdown
+                        isStreaming={!!(props.isLast && isResponding)}
+                      >
+                        {part.text}
+                      </Markdown>
+                    </div>
                   );
                 }
                 if (part.type === 'tool_call') {
@@ -689,7 +686,7 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
                   if (!props.isLast || !isResponding) return null;
                   const preview = getToolCallPreview(part.name, part.arguments);
                   return (
-                    <div key={index} className="my-2 rounded-lg overflow-hidden max-w-full">
+                    <div key={index} className="mt-0.5 mb-0 rounded-lg overflow-hidden max-w-full">
                       <div className="flex items-center gap-2 min-w-0">
                         <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
                         <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
@@ -734,4 +731,4 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
 
   // Unknown message type - render nothing
   return null;
-}
+});

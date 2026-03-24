@@ -28,6 +28,28 @@ import { inferContentTypeFromPath } from './fileTypes';
  *       └── embeddings.bin    # Embedding vectors as Float32Array
  *   /repositories/index.json  # Repositories index for fast listing
  *
+ *   /notebooks/{id}/
+ *   ├── notebook.json         # Metadata (id, title, dates)
+ *   ├── messages.json         # Chat messages
+ *   ├── sources/
+ *   │   ├── index.json        # Source listing
+ *   │   └── {sourceId}/
+ *   │       ├── metadata.json # Source metadata
+ *   │       └── content.txt   # Extracted text content
+ *   └── outputs/
+ *       ├── index.json        # Output listing
+ *       └── {outputId}/
+ *           ├── metadata.json # Output metadata
+ *           ├── content.txt   # Text content
+ *           ├── audio.wav     # Audio (audio-overview)
+ *           ├── image.png     # Image (infographic)
+ *           ├── quiz.json     # Questions (quiz)
+ *           ├── mindmap.json  # Tree (mind-map)
+ *           └── slides/       # Slide images (slide-deck)
+ *               ├── 000.png
+ *               └── ...
+ *   /notebooks/index.json     # Notebooks index for fast listing
+ *
  *   /images/{id}/
  *   ├── metadata.json         # Metadata
  *   └── image.bin             # Image binary

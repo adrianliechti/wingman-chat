@@ -44,6 +44,9 @@ export function ArtifactsDrawer() {
   
   // Local version counter for forcing editor remounts when file content changes
   const [editorVersion, setEditorVersion] = useState(0);
+  
+  // Processing state for file uploads
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Ensure a chat exists and FS is ready (creates chat if needed)
   const ensureFs = useCallback(async () => {
@@ -182,20 +185,25 @@ export function ArtifactsDrawer() {
     // Ensure a chat and FS exist before writing files
     await ensureFs();
 
-    for (const file of droppedFiles) {
-      try {
-        // Process file (converts XLSX to CSV automatically)
-        const processedFiles = await processUploadedFile(file);
+    setIsProcessing(true);
+    try {
+      for (const file of droppedFiles) {
+        try {
+          // Process file (converts XLSX to CSV automatically)
+          const processedFiles = await processUploadedFile(file);
 
-        for (const processed of processedFiles) {
-          if (fs?.isReady) {
-            await fs.createFile(processed.path, processed.content, processed.contentType);
-            openFile(processed.path);
+          for (const processed of processedFiles) {
+            if (fs?.isReady) {
+              await fs.createFile(processed.path, processed.content, processed.contentType);
+              openFile(processed.path);
+            }
           }
+        } catch (error) {
+          console.error(`Error processing file ${file.name}:`, error);
         }
-      } catch (error) {
-        console.error(`Error processing file ${file.name}:`, error);
       }
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -385,18 +393,23 @@ export function ArtifactsDrawer() {
           const selectedFiles = Array.from(e.target.files);
           e.target.value = ''; // Reset to allow re-uploading same file
           await ensureFs();
-          for (const file of selectedFiles) {
-            try {
-              const processedFiles = await processUploadedFile(file);
-              for (const processed of processedFiles) {
-                if (fs?.isReady) {
-                  await fs.createFile(processed.path, processed.content, processed.contentType);
-                  openFile(processed.path);
+          setIsProcessing(true);
+          try {
+            for (const file of selectedFiles) {
+              try {
+                const processedFiles = await processUploadedFile(file);
+                for (const processed of processedFiles) {
+                  if (fs?.isReady) {
+                    await fs.createFile(processed.path, processed.content, processed.contentType);
+                    openFile(processed.path);
+                  }
                 }
+              } catch (error) {
+                console.error(`Error uploading file ${file.name}:`, error);
               }
-            } catch (error) {
-              console.error(`Error uploading file ${file.name}:`, error);
             }
+          } finally {
+            setIsProcessing(false);
           }
         }}
       />
@@ -504,10 +517,11 @@ export function ArtifactsDrawer() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
+            disabled={isProcessing}
             className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-            title="Upload files"
+            title={isProcessing ? 'Processing files...' : 'Upload files'}
           >
-            <Upload size={16} />
+            {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
           </button>
 
           {/* Download button — only when files exist */}

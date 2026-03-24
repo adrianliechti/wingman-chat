@@ -26,6 +26,8 @@ const PYPI_PACKAGES = [
   "python-docx",
   "python-pptx",
   "docx2txt",
+  "pypdf",
+  "markdown",
 ];
 const PYPI_OUTPUT_DIR = "public/pyodide";
 
@@ -51,6 +53,7 @@ const PYODIDE_BUILTIN_TARGETS = [
   "packaging",
   "typing-extensions",
   "six",
+  "pyyaml",
 ];
 const PYODIDE_OUTPUT_DIR = "public/pyodide";
 
@@ -254,7 +257,24 @@ async function bundlePypiPackages() {
 // Main
 // ---------------------------------------------------------------------------
 
+/** Copy the Pyodide runtime files (JS, WASM, stdlib) into public/pyodide/. */
+function copyPyodideRuntime() {
+  const pyodideDir = path.resolve("node_modules/pyodide");
+  const outDir = PYODIDE_OUTPUT_DIR;
+  fs.mkdirSync(outDir, { recursive: true });
+
+  const extensions = [".js", ".mjs", ".wasm", ".zip", ".json"];
+  for (const file of fs.readdirSync(pyodideDir)) {
+    if (extensions.some((ext) => file.endsWith(ext))) {
+      fs.copyFileSync(path.join(pyodideDir, file), path.join(outDir, file));
+    }
+  }
+}
+
 async function main() {
+  // Copy Pyodide runtime into public/pyodide/ for both dev and prod
+  copyPyodideRuntime();
+
   // Resolve transitive dependencies of PyPI packages before bundling
   const lockPath = path.resolve("node_modules/pyodide/pyodide-lock.json");
   const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));

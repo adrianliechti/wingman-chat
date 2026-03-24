@@ -1,0 +1,18 @@
+## Visual Style (apply consistently to EVERY slide)
+
+All slides MUST share a single, cohesive visual identity. Define it once and repeat it exactly:
+
+- **Background:** clean white or soft off-white (#F8F8F8), mimicking a whiteboard surface — no gradients, no textures beyond a faint paper feel
+- **Color palette:** vibrant multi-color pops — warm orange (#E87D3E), teal (#3EB5A5), sky blue (#4A9FD9), leaf green (#5DB861), coral red (#E8635A) — used generously for doodles, icons, highlights, and illustrations
+- **Title font style:** bold, slightly imperfect hand-drawn lettering — like a confident marker on a whiteboard. Large, expressive, tilted slightly for energy. Think chisel-tip marker writing.
+- **Body font style:** clean handwritten style, relaxed but legible, in dark charcoal (#2D2D2D). Varies slightly in size like real handwriting.
+- **Layout:** generous whitespace, often a split composition — one side with a central hand-drawn illustration or concept diagram, the other side with text. Asymmetric placement that feels organic, spontaneous, not grid-locked. Content can angle and float.
+- **Central illustrations:** each slide MUST feature a prominent hand-drawn sketch/doodle as its visual focal point — lightbulbs for ideas, gears for processes, flow diagrams for systems, concept maps, stick figures for people, objects relevant to the topic. These should be large (30-50% of slide area), detailed, multi-colored, and the primary visual anchor.
+- **Scattered doodle elements:** smaller hand-drawn icons, arrows, stars, exclamation marks, question marks, speech bubbles, squiggly underlines, brackets, and connecting lines fill the whitespace around main content — in varied colors from the palette. These create the "busy whiteboard" energy.
+- **Connectors and emphasis:** thick hand-drawn arrows connecting ideas, circular emphasis rings around key terms, wavy underlines under important words, all in bright accent colors
+- **Bullet points:** small hand-drawn dots, dashes, checkmarks, or mini-doodle icons — never uniform
+- **Data visualizations:** hand-drawn style charts with wobbly lines, sketched bar charts, pie charts with hand-drawn segments, all using the multi-color palette with rough shading
+- **Overall density:** moderately busy — the whiteboard should feel alive with sketches and doodles, like a brainstorming session captured mid-flow. Every empty space gets a small doodle. But main content remains readable.
+- **Borders/frames:** none. Content floats freely on the whiteboard surface.
+
+This creates a vibrant "whiteboard doodle" or "sketch-notes" aesthetic — colorful, energetic, educational, and visually memorable. Think RSA Animate, TED talk whiteboard animations, or a creative teacher's whiteboard after an exciting lesson.

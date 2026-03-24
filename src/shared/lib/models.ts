@@ -53,7 +53,9 @@ export function modelType(id: string): ModelType | undefined {
 }
 
 export function modelName(id: string): string {
-  return id
+  const normalizedId = id.replace(/-(\d+)-(\d+)(?=(?:-|$))/g, '-$1.$2');
+
+  return normalizedId
     .split("-")
     .map(word => {
       const lowerWord = word.toLowerCase();
@@ -66,8 +68,20 @@ export function modelName(id: string): string {
         return "GPT";
       }
 
+        if (lowerWord === "glm") {
+        return "GLM";
+      }
+      
+      if (lowerWord === "aws") {
+        return "AWS";
+      }
+
       if (lowerWord === "github") {
         return "GitHub";
+      }
+
+      if (lowerWord === "openai") {
+        return "OpenAI";
       }
 
       return word.charAt(0).toUpperCase() + word.slice(1);

@@ -1,14 +1,93 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { getConfig } from "@/shared/config";
 import { resizeImageBlob, readAsDataURL, decodeDataURL } from "@/shared/lib/utils";
-import { X, ImagePlus, Sparkles, Download, PlusIcon, ArrowRight, Info } from "lucide-react";
+import { X, ImagePlus, Download, PlusIcon, Info, Loader2 } from "lucide-react";
 import DOMPurify from "dompurify";
 import { useNavigation } from "@/shell/hooks/useNavigation";
-import { useLayout } from "@/shell/hooks/useLayout";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { useImages } from "@/features/renderer/hooks/useImages";
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { RendererInput } from "@/features/renderer/components/RendererInput";
 import type { Model } from "@/shared/types/chat";
+
+const STYLE_INSTRUCTIONS: Record<string, string> = {
+  // Photography styles
+  'Leica': 'classic Leica rangefinder photograph with Summilux lens rendering, smooth creamy bokeh with gentle out-of-focus transitions, distinctive 3D pop and subject separation, beautiful highlight rolloff with subtle glow, natural micro-contrast and tack-sharp focus plane, authentic color rendering without oversaturation, shallow depth of field, 35mm or 50mm focal length perspective, natural available light, documentary street photography aesthetic',
+  'Polaroid': 'instant Polaroid photograph aesthetic with characteristic white frame border, slightly washed-out colors with warm color shift, soft focus, subtle light leaks, nostalgic candid snapshot quality, slightly overexposed flash, square format composition, early 2000s party vibes',
+  'B&W Studio': 'professional black and white studio portrait photography, dramatic Rembrandt lighting with soft key light and deep shadows, high contrast tonal range, clean seamless backdrop, tack-sharp focus on eyes, elegant and timeless editorial aesthetic, rich silver gelatin print quality',
+  'Professional': 'professional corporate photography in modern office environment, clean and polished look, natural window lighting with soft fill, shallow depth of field, business casual aesthetic, crisp detail, neutral color grading, LinkedIn profile quality',
+  'Kodak Film': 'vintage Kodak Portra 400 film photograph, warm golden tones, natural film grain, slightly lifted blacks, soft halation around highlights, authentic 35mm analog feel, candid composition, nostalgic color rendering with rich skin tones',
+  'Cinematic': 'cinematic film still, anamorphic lens with subtle horizontal flare, teal and orange color grading, dramatic depth of field, 2.39:1 widescreen composition feel, volumetric lighting, atmospheric haze, Hollywood blockbuster production quality',
+  'Macro': 'extreme macro photography, razor-thin depth of field with silky smooth bokeh, hyper-detailed textures at microscopic level, studio ring light with soft diffusion, crystal-clear sharpness on focal plane, vivid natural colors, scientific precision meets artistic beauty',
+
+  // Artistic styles
+  'Ghibli': 'in Studio Ghibli anime style, lush hand-painted watercolor backgrounds with extraordinary environmental detail, soft cel-shaded characters with gentle round features, warm nostalgic color palette with rich greens and dreamy skies, whimsical and serene atmosphere, Hayao Miyazaki aesthetic with sense of wonder and magic in everyday scenes',
+  'Anime': 'in modern anime style with large expressive eyes, vibrant saturated colors, clean cel-shading with precise line art, soft gradient lighting, dynamic composition, characteristic Japanese animation aesthetics with detailed hair rendering and atmospheric effects',
+  'Watercolor': 'in watercolor painting style with soft wet-on-wet blending, visible organic brushstrokes on textured cold-press paper, flowing pigments with beautiful bleeds, delicate transparent washes, areas of white paper showing through, spontaneous and luminous quality',
+  'Oil Painting': 'as a classical oil painting with rich impasto texture and visible palette knife work, deep saturated colors with luminous glazing layers, dramatic chiaroscuro lighting, old master composition techniques, canvas texture visible in thin passages',
+  'Sketch': 'as a pencil sketch on cream paper with confident gestural lines, cross-hatching for tonal depth, visible construction lines and proportional guides, smudged graphite for soft shadows, loose artistic hand-drawn quality with raw energy',
+  'Pop Art': 'in pop art style with bold flat primary colors, halftone Ben-Day dots pattern, thick black outlines, high contrast graphic composition, inspired by Roy Lichtenstein and Andy Warhol, silk-screen print aesthetic with slight misregistration',
+  'Ukiyo-e': 'in traditional Japanese ukiyo-e woodblock print style, flat areas of bold color with black outlines, decorative wave and cloud patterns, elegant calligraphic line quality, Hokusai and Hiroshige inspired composition, handmade washi paper texture',
+  'Comic Book': 'in Western comic book illustration style, bold ink lines with dynamic hatching, vivid superhero-grade colors, dramatic foreshortening and action poses, CMYK halftone dot printing texture, speech bubble-ready composition, classic Marvel/DC aesthetic',
+  'Art Deco': 'in Art Deco style with bold geometric patterns, symmetrical composition, metallic gold and rich jewel-tone color palette, elegant streamlined forms, 1920s glamour aesthetic, Chrysler Building-inspired ornamental details, luxury and sophistication',
+
+  // Commercial & Entertainment
+  'Movie Poster': 'cinematic movie poster design with dramatic three-point lighting, bold typography space reserved at top and bottom, high contrast with rich shadows, epic layered composition, Hollywood blockbuster aesthetic, theatrical one-sheet style with hero positioning',
+  'Sticker': 'as a cute die-cut sticker design with thick white border outline, vibrant flat colors, slightly glossy finish, kawaii-inspired simplified forms, clean vector-sharp edges, perfect for laptop or water bottle, transparent background ready',
+  'Chibi Crochet': 'as an adorable chibi-style crocheted amigurumi doll, handmade yarn texture with visible individual stitches, big cute head with small body proportions, kawaii embroidered eyes, soft pastel yarn colors, cozy handcrafted plushie aesthetic, photographed on light background',
+  'Plushy': 'as a cute plush toy with soft minky fabric texture, rounded puffy forms, embroidered eyes and details, visible seam stitching, huggable proportions with kawaii aesthetic, professional product photography lighting',
+
+  // Digital & Tech styles
+  'Isometric': 'in isometric pixel art style with precise 30-degree angles, no perspective distortion, clean geometric shapes, vibrant limited color palette, tiny detailed elements, video game diorama aesthetic, satisfying visual tidiness',
+  'Pixel Art': 'in retro pixel art style with strict limited 16-color palette, crisp hard-edged pixels, no anti-aliasing or smoothing, 16-bit SNES/Genesis video game aesthetic, dithering for gradients, nostalgic and charming',
+  'Low Poly': 'in low poly 3D render style with flat shaded triangular faces, geometric simplification of organic forms, subtle gradient coloring across faces, modern digital art aesthetic, clean minimal lighting, slightly glossy material',
+  '3D Cartoon': 'in Pixar/Disney 3D animation style, smooth subsurface scattering on skin, soft global illumination, appealing character proportions with slightly oversized head, rich detailed textures, vibrant color palette, professional studio render quality with subtle ambient occlusion',
+  'Flat Vector': 'in modern flat vector illustration style, clean geometric shapes with no outlines, limited harmonious color palette, minimal gradients, UI-friendly proportions, contemporary graphic design aesthetic, suitable for web and print, inspired by Kurzgesagt visual style',
+  'Object Extract': 'clean product photography style with pure white background, isolated subject with precise edge extraction, soft contact shadow only, professional e-commerce aesthetic, even studio lighting from all angles, transparent background ready',
+
+  // Artistic movements
+  'Cyberpunk': 'in cyberpunk style with vivid neon lights reflecting on rain-slicked streets, holographic displays and AR overlays, high-tech low-life aesthetic, dramatic purple and cyan color grading, volumetric fog with light rays, dense urban futuristic environment',
+  'Vaporwave': 'in vaporwave aesthetic with pink and cyan gradients, Greek marble statue elements, retro computer graphics and grid patterns, palm tree silhouettes, 80s/90s nostalgic dreamscape, lo-fi VHS scan lines, Japanese text accents, surreal and melancholic beauty',
+  'Steampunk': 'in steampunk style with intricate brass gears, copper pipes with verdigris patina, Victorian-era machinery and clockwork mechanisms, warm amber lighting, leather and rivets, industrial revolution meets fantasy, Jules Verne inspired aesthetic',
+  'Claymation': 'in stop-motion claymation style, visible fingerprint impressions on smooth clay surfaces, slightly imperfect handmade charm, warm studio lighting with soft shadows, miniature set design with tactile textures, Aardman or Laika Studios inspired quality',
+  'Neon': 'as a glowing neon sign against a dark background, bright luminous tube lighting with realistic glass tube bends, color bleeding and soft glow halos, subtle reflection on surface below, electric buzzing atmosphere, classic bar or storefront signage aesthetic'
+};
+
+const AVAILABLE_STYLES = Object.keys(STYLE_INSTRUCTIONS);
+
+const canvasBgStyle = `
+@keyframes drift-1 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(15%,15%) scale(1.1)} }
+@keyframes drift-2 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-15%,-15%) scale(1.05)} }
+@keyframes drift-3 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-10%,12%) scale(1.08)} }
+@keyframes drift-4 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(12%,-10%) scale(1.06)} }
+`;
+
+const blobs = [
+  { bg: 'radial-gradient(ellipse 80% 80% at center, rgba(120,119,198,0.18) 0%, transparent 70%)', top: '10%', left: '5%',  w: '55%', h: '55%', anim: 'drift-1 25s ease-in-out infinite' },
+  { bg: 'radial-gradient(ellipse 80% 80% at center, rgba(255,119,198,0.14) 0%, transparent 70%)', top: '15%', left: '45%', w: '50%', h: '50%', anim: 'drift-2 30s ease-in-out infinite' },
+  { bg: 'radial-gradient(ellipse 80% 80% at center, rgba(78,205,196,0.14) 0%, transparent 70%)',  top: '0%',  left: '20%', w: '50%', h: '50%', anim: 'drift-3 22s ease-in-out infinite' },
+  { bg: 'radial-gradient(ellipse 70% 70% at center, rgba(255,177,66,0.12) 0%, transparent 70%)',  top: '45%', left: '25%', w: '45%', h: '45%', anim: 'drift-4 28s ease-in-out infinite' },
+] as const;
+
+function CanvasBackground() {
+  return (
+    <>
+      <style>{canvasBgStyle}</style>
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {blobs.map((b, i) => (
+          <div
+            key={i}
+            className="absolute will-change-transform"
+            style={{
+              top: b.top, left: b.left, width: b.w, height: b.h,
+              backgroundImage: b.bg,
+              animation: b.anim,
+            }}
+          />
+        ))}
+      </div>
+    </>
+  );
+}
 
 // Memoized disclaimer component to avoid re-computing on every render
 const Disclaimer = () => {
@@ -40,54 +119,19 @@ const Disclaimer = () => {
 export function RendererPage() {
   const config = getConfig();
   const { setRightActions } = useNavigation();
-  const { layoutMode } = useLayout();
   const { images, createImage, deleteImage } = useImages();
 
   const [prompt, setPrompt] = useState("");
   const [referenceImages, setReferenceImages] = useState<{ blob: Blob; preview: string }[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [gridSize, setGridSize] = useState(3);
-  
+
   const [models, setModels] = useState<Model[]>([]);
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
   const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
-
-  const styleInstructions: Record<string, string> = {
-    // Photography styles
-    'Leica': 'classic Leica rangefinder photograph with Summilux lens rendering, smooth creamy bokeh with gentle out-of-focus transitions, distinctive 3D pop and subject separation, beautiful highlight rolloff with subtle glow, natural micro-contrast and tack-sharp focus plane, authentic color rendering without oversaturation, shallow depth of field, 35mm or 50mm focal length perspective, natural available light, documentary street photography aesthetic',
-    'Polaroid': 'instant Polaroid photograph aesthetic with characteristic white frame border, slightly washed-out colors, soft focus, light leaks, vintage color shift, nostalgic amateur snapshot quality, square format composition',
-    'B&W Studio': 'professional black and white studio portrait photography, dramatic lighting with soft shadows, high contrast, clean backdrop, sharp focus, elegant and timeless aesthetic, Ansel Adams inspired tonal range',
-    'Professional': 'professional corporate photography in modern office environment, clean and polished look, natural window lighting, shallow depth of field, business casual aesthetic, LinkedIn profile quality',
-    
-    // Artistic styles
-    'Isometric': 'in isometric pixel art style with 30-degree angles, no perspective distortion, clean geometric shapes, and video game diorama aesthetic',
-    'Anime': 'in anime style with large expressive eyes, vibrant colors, clean cel-shading, soft gradients, and characteristic Japanese animation aesthetics',
-    'Watercolor': 'in watercolor painting style with soft wet-on-wet blending, visible brushstrokes, paper texture, flowing pigments, and delicate transparent washes',
-    'Oil Painting': 'as a classical oil painting with rich impasto texture, visible brushwork, deep saturated colors, and old master lighting techniques',
-    'Sketch': 'as a pencil sketch with cross-hatching, visible construction lines, paper texture, and loose artistic hand-drawn quality',
-    'Pop Art': 'in pop art style with bold primary colors, Ben-Day dots, thick black outlines, comic book aesthetics inspired by Roy Lichtenstein and Andy Warhol',
-    
-    // Commercial & Entertainment
-    'Movie Poster': 'cinematic movie poster design with dramatic lighting, bold typography space, high contrast, epic composition, Hollywood blockbuster aesthetic, theatrical one-sheet style',
-    'Chibi Crochet': 'as an adorable chibi-style crocheted amigurumi doll, handmade yarn texture, big cute head with small body proportions, kawaii button eyes, visible crochet stitches, soft pastel colors, handcrafted plushie aesthetic',
-    'Plushy': 'as a cute plush toy with soft fabric texture, rounded forms, button eyes, stitching details, and huggable kawaii aesthetic',
-    
-    // Digital & Tech styles
-    'Pixel Art': 'in retro pixel art style with limited color palette, crisp pixels, no anti-aliasing, 16-bit video game aesthetic',
-    'Low Poly': 'in low poly 3D style with flat shaded triangular faces, geometric simplification, vibrant gradients, and modern digital art aesthetic',
-    'Object Extract': 'clean product photography style with pure white background, isolated subject with precise edge extraction, professional e-commerce aesthetic, no shadows, transparent background ready',
-    
-    // Aesthetic movements
-    'Cyberpunk': 'in cyberpunk style with neon lights, rain-slicked streets, holographic displays, high-tech low-life aesthetic, and dramatic purple and cyan color grading',
-    'Vaporwave': 'in vaporwave aesthetic with pink and cyan gradients, Greek statues, retro computer graphics, palm trees, and 80s/90s nostalgia',
-    'Steampunk': 'in steampunk style with brass gears, copper pipes, Victorian machinery, clockwork mechanisms, and industrial revolution meets fantasy aesthetic'
-  };
-
-  const availableStyles = Object.keys(styleInstructions);
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const gridIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Load available renderer models
   useEffect(() => {
@@ -111,9 +155,13 @@ export function RendererPage() {
 
   const handleReset = useCallback(() => {
     setPrompt("");
-    referenceImages.forEach(img => URL.revokeObjectURL(img.preview));
-    setReferenceImages([]);
-  }, [referenceImages]);
+    setReferenceImages(prev => {
+      prev.forEach(img => URL.revokeObjectURL(img.preview));
+      return [];
+    });
+    setSelectedStyle(null);
+    setSelectedImageId(null);
+  }, []);
 
   // Set up navigation actions
   useEffect(() => {
@@ -135,28 +183,29 @@ export function RendererPage() {
 
   const handleImageUpload = useCallback(async (files: FileList | File[]) => {
     const imageFiles = Array.from(files).filter(file => file.type.startsWith("image/"));
-    
+
     for (const file of imageFiles) {
-      if (referenceImages.length >= 4) {
-        break;
-      }
-      
       try {
         const resizedBlob = await resizeImageBlob(file, 1024, 1024);
         const preview = URL.createObjectURL(resizedBlob);
-        
+
+        let added = false;
         setReferenceImages(prev => {
           if (prev.length >= 4) {
-            URL.revokeObjectURL(preview);
             return prev;
           }
+          added = true;
           return [...prev, { blob: resizedBlob, preview }];
         });
+        if (!added) {
+          URL.revokeObjectURL(preview);
+          break;
+        }
       } catch (err) {
         console.error("Failed to process image:", err);
       }
     }
-  }, [referenceImages.length]);
+  }, []);
 
   const removeReferenceImage = useCallback((index: number) => {
     setReferenceImages(prev => {
@@ -203,47 +252,51 @@ export function RendererPage() {
 
   const isDragging = useDropZone(containerRef, handleDropFiles);
 
-  const handleGenerate = async () => {
-    if (!prompt.trim() && referenceImages.length === 0) {
+  const handleGenerate = async (overridePrompt?: string, sourceImageData?: string) => {
+    const activePrompt = overridePrompt ?? prompt;
+    if (!activePrompt.trim() && referenceImages.length === 0) {
       return;
     }
 
     setIsGenerating(true);
-    setGridSize(3);
 
-    gridIntervalRef.current = setInterval(() => {
-      setGridSize(prev => prev + 1);
-    }, 2000);
+    // Capture and clear reference images (revoke previews)
+    const currentRefImages = referenceImages;
+    setReferenceImages([]);
+    currentRefImages.forEach(img => URL.revokeObjectURL(img.preview));
 
     try {
       const model = selectedModel?.id || config.renderer?.model || "";
-      const images = referenceImages.map(img => img.blob);
-      
+
       // Build the full prompt with style if selected
-      const fullPrompt = selectedStyle 
-        ? `${prompt}${prompt.trim() ? ', ' : ''}${styleInstructions[selectedStyle]}`
-        : prompt;
-      
-      const resultBlob = await config.client.generateImage(model, fullPrompt, images.length > 0 ? images : undefined);
-      
+      const fullPrompt = selectedStyle
+        ? `${activePrompt}${activePrompt.trim() ? ', ' : ''}${STYLE_INSTRUCTIONS[selectedStyle]}`
+        : activePrompt;
+
+      // Collect reference images: user-uploaded + optionally the source image for refinement
+      const refImages: Blob[] = currentRefImages.map(img => img.blob);
+      if (sourceImageData) {
+        refImages.push(decodeDataURL(sourceImageData));
+      }
+
+      const resultBlob = await config.client.generateImage(model, fullPrompt, refImages.length > 0 ? refImages : undefined);
+
       // Convert to data URL for persistence and display
       const dataUrl = await readAsDataURL(resultBlob);
-      
+
       // Add to persisted images via hook
-      await createImage({
+      const newImage = await createImage({
         prompt: fullPrompt,
         model: model,
         data: dataUrl,
       });
+
+      setSelectedImageId(newImage.id);
+      setPrompt("");
     } catch (err) {
       console.error("Image generation failed:", err);
     } finally {
-      if (gridIntervalRef.current) {
-        clearInterval(gridIntervalRef.current);
-        gridIntervalRef.current = null;
-      }
       setIsGenerating(false);
-      setGridSize(3);
     }
   };
 
@@ -275,23 +328,31 @@ export function RendererPage() {
     }
   }, [handleImageUpload]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      handleGenerate();
+  // Derive the selected image object
+  const selectedImage = useMemo(
+    () => selectedImageId ? images.find(img => img.id === selectedImageId) ?? null : null,
+    [images, selectedImageId]
+  );
+
+  // Auto-select first image if selected image was deleted
+  useEffect(() => {
+    if (selectedImageId && !selectedImage && images.length > 0) {
+      setSelectedImageId(images[0].id);
+    } else if (selectedImageId && images.length === 0) {
+      setSelectedImageId(null);
     }
-  };
+  }, [images, selectedImageId, selectedImage]);
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden relative">
       <main 
         ref={containerRef}
-        className="w-full grow overflow-hidden flex p-4 pt-20 relative"
+        className="w-full grow overflow-hidden flex flex-col relative"
       >
         {/* Full-screen drop zone overlay */}
         {isDragging && (
-          <div className="absolute inset-0 flex items-center justify-center z-30 bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm">
-            <div className="relative bg-neutral-50/60 dark:bg-neutral-900/50 backdrop-blur-lg p-10 rounded-2xl shadow-xl border-2 border-dashed border-neutral-300 dark:border-neutral-600 flex flex-col items-center gap-5">
+          <div className="absolute inset-0 flex items-center justify-center z-30 bg-slate-50/80 dark:bg-slate-900/40 backdrop-blur-sm">
+            <div className="relative bg-neutral-50/60 dark:bg-neutral-900/50 backdrop-blur-lg p-10 rounded-2xl shadow-xl border-2 border-dashed border-slate-400 dark:border-slate-500 flex flex-col items-center gap-5">
               <ImagePlus size={64} className="text-neutral-400 dark:text-neutral-500" />
               <span className="text-base font-medium text-neutral-500 dark:text-neutral-400 text-center">
                 Drop images as reference
@@ -300,264 +361,178 @@ export function RendererPage() {
           </div>
         )}
 
-        <div className={`w-full h-full ${
-          layoutMode === 'wide' 
-            ? 'max-w-full mx-auto' 
-            : 'max-w-300 mx-auto'
-        }`}>
-          <div className="relative h-full w-full overflow-hidden flex flex-col">
-            <Disclaimer />
-            
-            {/* 50/50 split layout */}
-            <div className="flex-1 flex flex-col md:flex-row min-h-0 transition-all duration-200">
-              {/* Left: Input section */}
-              <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-                {/* Model selector at top - always rendered to avoid flickering */}
-                <div className="shrink-0 px-3 pt-2">
-                  <Menu>
-                    <MenuButton className="inline-flex items-center gap-1 pl-1 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
-                      <Sparkles size={14} />
-                      <span>{selectedModel?.name || 'Image Model'}</span>
-                    </MenuButton>
-                    <MenuItems
-                      modal={false}
-                      transition
-                      anchor="bottom start"
-                      className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50"
-                    >
-                      {models.length === 0 ? (
-                        <div className="px-4 py-2 text-neutral-500 dark:text-neutral-400 text-sm">
-                          Loading models...
-                        </div>
-                      ) : (
-                        models.map((model) => (
-                          <MenuItem key={model.id}>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedModel(model)}
-                              className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
-                            >
-                              {model.name}
-                            </button>
-                          </MenuItem>
-                        ))
-                      )}
-                    </MenuItems>
-                  </Menu>
-                </div>
-
-                {/* Scrollable content area */}
-                <div className="flex-1 overflow-y-auto min-h-0 flex flex-col px-4 pt-2 pb-3">
-                  <textarea
-                    value={prompt}
-                    onChange={(e) => {
-                      setPrompt(e.target.value);
-                      // Auto-resize textarea
-                      const target = e.target;
-                      target.style.height = 'auto';
-                      target.style.height = `${target.scrollHeight}px`;
-                    }}
-                    onPaste={handlePaste}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Describe the image you want to generate..."
-                    className="w-full min-h-6 bg-transparent border-none resize-none text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-none"
-                  />
-
-                  {/* Reference images below text */}
-                  <div className="flex flex-wrap gap-1.5 mt-4">
-                    {referenceImages.map((img, index) => (
-                      <div
-                        key={index}
-                        className="relative size-16 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-lg border border-white/40 dark:border-white/25 shadow-sm flex items-center justify-center group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all"
-                        title="Reference image"
-                      >
-                        <img
-                          src={img.preview}
-                          alt={`Reference ${index + 1}`}
-                          className="size-full object-cover rounded-lg"
-                        />
-                        <button
-                          type="button"
-                          className="absolute -top-1 -right-1 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm shadow-sm"
-                          onClick={() => removeReferenceImage(index)}
-                        >
-                          <X size={10} />
-                        </button>
-                      </div>
-                    ))}
-                    
-                    {referenceImages.length < 4 && (
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="size-16 bg-white/30 dark:bg-neutral-800/60 backdrop-blur-lg rounded-lg border-2 border-dashed border-white/50 dark:border-white/30 shadow-sm flex items-center justify-center text-neutral-500 dark:text-neutral-400 hover:border-white/70 dark:hover:border-white/50 hover:shadow-md transition-all"
-                        title="Add reference image"
-                      >
-                        <ImagePlus size={18} />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Style selector */}
-                  <div className="flex flex-wrap gap-1.5 mt-6">
-                    {availableStyles.map((style) => {
-                      const isSelected = selectedStyle === style;
-                      return (
-                        <button
-                          type="button"
-                          key={style}
-                          onClick={() => setSelectedStyle(isSelected ? null : style)}
-                          className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                            isSelected
-                              ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-600'
-                              : 'bg-neutral-50 dark:bg-neutral-800/40 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-700/60'
-                          }`}
-                        >
-                          {style}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(e) => {
-                    if (e.target.files) {
-                      handleImageUpload(e.target.files);
-                      e.target.value = "";
-                    }
-                  }}
-                  className="hidden"
+        {/* Main content — centered on full page width */}
+        <div className="flex-1 flex flex-col items-center min-h-0 p-4 pt-16 relative">
+          {selectedImage ? (
+            /* Image viewer — centered in space above the refine input */
+            <div className="flex items-center justify-center flex-1 min-h-0 pb-24 w-full">
+              {/* Inner wrapper sized to the image — loader and buttons anchor to this */}
+              <div className="relative rounded-2xl shadow-xl overflow-hidden">
+                <img
+                  src={selectedImage.data}
+                  alt={selectedImage.prompt || 'Generated image'}
+                  className="block max-w-full max-h-[calc(100vh-14rem)]"
                 />
-              </div>
 
-              {/* Divider with Generate Button */}
-              <div className="relative flex items-center justify-center py-2 md:py-0 md:w-14 shrink-0">
-                <div className="absolute md:inset-y-0 md:w-px md:left-1/2 md:-translate-x-px inset-x-0 h-px md:h-auto bg-black/20 dark:bg-white/20"></div>
-                
-                {/* Generate button centered on divider - only show when input available and not generating */}
-                {(prompt.trim() || referenceImages.length > 0) && !isGenerating && (
+                {/* Loader overlay — covers only the image */}
+                {isGenerating && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/40 backdrop-blur-sm">
+                    <Loader2 size={36} className="animate-spin text-white/80" />
+                  </div>
+                )}
+
+                {/* Action buttons — always visible on touch, hover-reveal on desktop */}
+                <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-100 md:opacity-0 md:hover:opacity-100 transition-opacity">
                   <button
                     type="button"
-                    onClick={handleGenerate}
-                    className="relative z-20 size-11 rounded-full bg-white dark:bg-neutral-950 border border-black/20 dark:border-white/20 text-neutral-500 dark:text-neutral-400 transition-all duration-200 hover:border-black/40 dark:hover:border-white/40 hover:text-neutral-700 dark:hover:text-neutral-200 hover:scale-105 active:scale-95 flex items-center justify-center"
-                    title={`Generate (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enter)`}
+                    onClick={() => addAsReference(selectedImage.id)}
+                    disabled={referenceImages.length >= 4}
+                    className="p-2 bg-black/40 hover:bg-black/60 backdrop-blur-lg text-white rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Use as reference"
                   >
-                    <ArrowRight size={18} className="rotate-90 md:rotate-0" />
+                    <ImagePlus size={16} />
                   </button>
-                )}
-              </div>
-
-              {/* Right: Output section */}
-              <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
-                <div className="absolute inset-0 overflow-y-auto">
-                  <div className="flex flex-wrap gap-3 content-start p-4 pt-12">
-                  {/* Generation placeholder - shown first while generating */}
-                  {isGenerating && (
-                    <div className="relative w-40 h-40 rounded-xl overflow-hidden shadow-sm bg-neutral-100 dark:bg-neutral-900">
-                      {/* Animated grid */}
-                      <svg 
-                        className="absolute inset-0 w-full h-full opacity-10 transition-opacity duration-300" 
-                        viewBox="0 0 100 100"
-                        preserveAspectRatio="none"
-                      >
-                        {Array.from({ length: gridSize }, (_, row) =>
-                          Array.from({ length: gridSize }, (_, col) => {
-                            const isEvenSquare = (row + col) % 2 === 0;
-                            const cellSize = 100 / gridSize;
-                            return (
-                              <rect
-                                key={`${row}-${col}`}
-                                x={col * cellSize}
-                                y={row * cellSize}
-                                width={cellSize}
-                                height={cellSize}
-                                className={isEvenSquare ? "fill-neutral-800 dark:fill-neutral-700" : "fill-neutral-900 dark:fill-neutral-800"}
-                              />
-                            );
-                          })
-                        ).flat()}
-                      </svg>
-                    </div>
-                  )}
-
-                  {/* Generated images (newest first) */}
-                  {images.map((img) => (
-                    <div
-                      key={img.id}
-                      className="relative w-40 h-40 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm flex items-center justify-center group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all cursor-pointer"
-                      onClick={() => handleDownload(img.data)}
-                      title={img.prompt || undefined}
-                    >
-                      <img
-                        src={img.data}
-                        alt={img.prompt || 'Generated image'}
-                        className="size-full object-cover rounded-xl"
-                      />
-                      <button
-                        type="button"
-                        className="absolute -top-1 -right-1 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm shadow-sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteImage(img.id);
-                        }}
-                      >
-                        <X size={10} />
-                      </button>
-                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            addAsReference(img.id);
-                          }}
-                          disabled={referenceImages.length >= 4}
-                          className="p-1.5 bg-white/90 dark:bg-neutral-900/90 text-neutral-800 dark:text-neutral-200 rounded-lg hover:bg-white dark:hover:bg-neutral-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Use as reference"
-                        >
-                          <ImagePlus size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownload(img.data);
-                          }}
-                          className="p-1.5 bg-white/90 dark:bg-neutral-900/90 text-neutral-800 dark:text-neutral-200 rounded-lg hover:bg-white dark:hover:bg-neutral-800 transition-all"
-                          title="Download"
-                        >
-                          <Download size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(selectedImage.data)}
+                    className="p-2 bg-black/40 hover:bg-black/60 backdrop-blur-lg text-white rounded-lg transition-all"
+                    title="Download"
+                  >
+                    <Download size={16} />
+                  </button>
                 </div>
-
-                {/* Empty State */}
-                {images.length === 0 && !isGenerating && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
-                        <Sparkles size={28} className="text-neutral-400 dark:text-neutral-500" />
-                      </div>
-                      <p className="text-neutral-500 dark:text-neutral-400">
-                        Describe an image to generate
-                      </p>
-                      <p className="text-sm text-neutral-400 dark:text-neutral-500 mt-1">
-                        Results will appear here
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
-          </div>
+          ) : (
+            /* Empty / prompt-only state */
+            <div className="flex flex-col items-center justify-center gap-5 w-full flex-1 relative">
+              <CanvasBackground />
+              <Disclaimer />
+
+              {isGenerating && (
+                <div className="relative w-64 h-64 md:w-72 md:h-72 rounded-2xl overflow-hidden bg-neutral-100 dark:bg-neutral-900 shadow-lg mb-2">
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Loader2 size={32} className="animate-spin text-neutral-400 dark:text-neutral-500" />
+                  </div>
+                </div>
+              )}
+
+              <RendererInput
+                prompt={prompt}
+                onPromptChange={setPrompt}
+                onSubmit={() => handleGenerate()}
+                onPaste={handlePaste}
+                referenceImages={referenceImages}
+                onRemoveReferenceImage={removeReferenceImage}
+                onFileUploadClick={() => fileInputRef.current?.click()}
+                models={models}
+                selectedModel={selectedModel}
+                onSelectModel={setSelectedModel}
+                availableStyles={AVAILABLE_STYLES}
+                selectedStyle={selectedStyle}
+                onSelectStyle={setSelectedStyle}
+                placeholder="Generate something new..."
+                disabled={isGenerating}
+                autoFocus
+              />
+            </div>
+          )}
+
+          {/* Refine input — floating bottom center overlay */}
+          {selectedImage && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-6 z-20 flex justify-center px-4">
+              <RendererInput
+                prompt={prompt}
+                onPromptChange={setPrompt}
+                onSubmit={() => handleGenerate(undefined, selectedImage.data)}
+                onPaste={handlePaste}
+                referenceImages={referenceImages}
+                onRemoveReferenceImage={removeReferenceImage}
+                onFileUploadClick={() => fileInputRef.current?.click()}
+                models={models}
+                selectedModel={selectedModel}
+                onSelectModel={setSelectedModel}
+                availableStyles={AVAILABLE_STYLES}
+                selectedStyle={selectedStyle}
+                onSelectStyle={setSelectedStyle}
+                placeholder="Refine the selected image..."
+                disabled={isGenerating}
+                className="pointer-events-auto"
+              />
+            </div>
+          )}
         </div>
+
+        {/* Thumbnail grid overlay — bottom horizontal on mobile, right vertical on desktop */}
+        {images.length > 0 && (
+          <div className="absolute bottom-20 inset-x-0 md:bottom-0 md:inset-auto md:top-16 md:right-0 z-10 flex md:flex-col items-center gap-2 p-2 overflow-x-auto md:overflow-x-hidden md:overflow-y-auto scrollbar-hide">
+            {/* New generation tile */}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedImageId(null);
+                setPrompt("");
+              }}
+              className={`size-16 md:size-20 rounded-xl border-2 border-dashed flex items-center justify-center transition-all shrink-0 ${
+                !selectedImageId
+                  ? 'border-blue-400 dark:border-blue-500 text-blue-500 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-900/20'
+                  : 'border-neutral-300 dark:border-neutral-600 text-neutral-400 dark:text-neutral-500 hover:border-neutral-400 dark:hover:border-neutral-500 hover:text-neutral-500 dark:hover:text-neutral-400 bg-white/60 dark:bg-neutral-900/60'
+              } backdrop-blur-lg`}
+              title="Generate new image"
+            >
+              <PlusIcon size={20} />
+            </button>
+
+            {/* Image thumbnails */}
+            {images.map((img) => {
+              const isActive = img.id === selectedImageId;
+              return (
+                <div
+                  key={img.id}
+                  onClick={() => {
+                    setSelectedImageId(img.id);
+                    setPrompt("");
+                  }}
+                  className={`relative size-16 md:size-20 rounded-xl overflow-hidden cursor-pointer group shrink-0 transition-all ${
+                    isActive
+                      ? 'ring-2 ring-blue-500 dark:ring-blue-400 shadow-md'
+                      : 'border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-500'
+                  }`}
+                >
+                  <img
+                    src={img.data}
+                    alt={img.prompt || 'Generated image'}
+                    className="size-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    className="absolute top-0.5 right-0.5 size-4 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteImage(img.id);
+                    }}
+                  >
+                    <X size={8} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={(e) => {
+            if (e.target.files) {
+              handleImageUpload(e.target.files);
+              e.target.value = "";
+            }
+          }}
+          className="hidden"
+        />
       </main>
     </div>
   );

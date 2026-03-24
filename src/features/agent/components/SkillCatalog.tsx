@@ -62,11 +62,11 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
     return validation.valid ? null : validation.error || null;
   }, [edName]);
 
-  const editorIsValid = edName && !nameError && edDescription.trim();
+  const editorIsValid = edName && !nameError && edDescription.trim() && edContent.trim();
 
   const handleEditorSave = () => {
     const validation = validateSkillName(edName);
-    if (!validation.valid || !edDescription.trim()) return;
+    if (!validation.valid || !edDescription.trim() || !edContent.trim()) return;
 
     const data = { name: edName, description: edDescription.trim(), content: edContent.trim() };
 
@@ -106,7 +106,7 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
     if (!search.trim()) return sorted;
     const q = search.toLowerCase();
     return sorted.filter(s => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
-  }, [allSkills, enabledSkillNames, search]);
+  }, [allSkills, search]);
 
   const handleDelete = (skill: Skill) => {
     if (window.confirm(`Delete the skill "${skill.name}"?`)) {
@@ -263,8 +263,7 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                     <div className="px-5 py-3.5 space-y-3.5">
                       <div>
                         <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-                          Name <span className="text-red-500">*</span>
-                        </label>
+                          Name                        </label>
                         <input
                           type="text"
                           value={edName}
@@ -275,7 +274,6 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                               : 'border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60'
                           } focus:ring-2 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors`}
                           placeholder="my-skill-name"
-                          disabled={editing !== 'new'}
                           autoFocus={editing === 'new'}
                         />
                         {nameError && <p className="mt-1 text-xs text-red-500">{nameError}</p>}
@@ -285,8 +283,7 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-                          Description <span className="text-red-500">*</span>
-                        </label>
+                          Description                        </label>
                         <textarea
                           value={edDescription}
                           onChange={(e) => setEdDescription(e.target.value)}

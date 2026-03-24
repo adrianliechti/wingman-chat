@@ -98,8 +98,7 @@ function SegmentedControl<T extends string>({ label, value, onChange, options }:
   );
 }
 
-// Accordion section component
-interface AccordionSectionProps {
+interface SectionPanelProps {
   title: string;
   icon: React.ReactNode;
   isOpen: boolean;
@@ -107,7 +106,7 @@ interface AccordionSectionProps {
   children: React.ReactNode;
 }
 
-function AccordionSection({ title, icon, isOpen, onClick, children }: AccordionSectionProps) {
+function SectionPanel({ title, icon, isOpen, onClick, children }: SectionPanelProps) {
   return (
     <div className="border-b border-neutral-200 dark:border-neutral-800">
       <button
@@ -119,8 +118,8 @@ function AccordionSection({ title, icon, isOpen, onClick, children }: AccordionS
           <span className="text-neutral-700 dark:text-neutral-300">{icon}</span>
           <span className="text-base font-medium text-neutral-900 dark:text-neutral-100">{title}</span>
         </div>
-        <ChevronRight 
-          size={18} 
+        <ChevronRight
+          size={18}
           className={`text-neutral-400 transition-transform duration-300 ease-out ${isOpen ? 'rotate-90' : ''}`}
         />
       </button>
@@ -430,10 +429,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
           </div>
         </div>
 
-        {/* Accordion Content */}
+        {/* Settings Content */}
         <div className="flex-1 overflow-y-auto">
             {/* General Section */}
-            <AccordionSection
+            <SectionPanel
               title="General"
               icon={<Settings size={20} />}
               isOpen={openSection === 'general'}
@@ -452,10 +451,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
                   options={backgroundOptions}
                 />
               )}
-            </AccordionSection>
+            </SectionPanel>
 
             {/* Profile Section */}
-            <AccordionSection
+            <SectionPanel
               title="Profile"
               icon={<User size={20} />}
               isOpen={openSection === 'profile'}
@@ -493,10 +492,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
                   placeholder="Brief description about yourself..."
                 />
               </div>
-            </AccordionSection>
+            </SectionPanel>
 
             {/* Chats Section */}
-            <AccordionSection
+            <SectionPanel
               title="Chats"
               icon={<MessageSquare size={20} />}
               isOpen={openSection === 'chats'}
@@ -550,10 +549,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
 
                 <p className="text-xs text-neutral-400 dark:text-neutral-500">Stored locally in your browser</p>
               </div>
-            </AccordionSection>
+            </SectionPanel>
 
             {/* Agents Section */}
-            <AccordionSection
+            <SectionPanel
               title="Agents"
               icon={<Bot size={20} />}
               isOpen={openSection === 'agents'}
@@ -598,11 +597,11 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
 
                 <p className="text-xs text-neutral-400 dark:text-neutral-500">Includes instructions, files, skills, and MCP server configurations</p>
               </div>
-            </AccordionSection>
+            </SectionPanel>
 
             {/* Advanced — only visible via Alt+click */}
             {showAdvanced && (
-              <AccordionSection
+              <SectionPanel
                 title="Advanced"
                 icon={<HardDrive size={20} />}
                 isOpen={openSection === 'advanced'}
@@ -695,7 +694,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
                     </button>
                   </div>
                 </div>
-              </AccordionSection>
+              </SectionPanel>
             )}
           </div>
         </div>

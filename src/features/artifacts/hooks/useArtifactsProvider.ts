@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { Table } from 'lucide-react';
+import { Paperclip } from 'lucide-react';
 import { useArtifacts } from './useArtifacts';
 import type { Tool, ToolProvider } from '@/shared/types/chat';
 import artifactsInstructionsText from '@/features/artifacts/prompts/artifacts.txt?raw';
@@ -477,9 +477,9 @@ export function useArtifactsProvider(): ToolProvider | null {
 
     return {
       id: "artifacts",
-      name: "Artifacts",
+      name: "File System",
       description: "Create and edit files, run Python and Bash code",
-      icon: Table,
+      icon: Paperclip,
       instructions: artifactsInstructionsText + '\n\n' + interpreterInstructionsText,
       tools: artifactsTools(),
     };

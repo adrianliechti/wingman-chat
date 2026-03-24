@@ -56,14 +56,14 @@ html.emoji-native .noto-emoji {
 /* Hide scrollbar utility */
 @layer utilities {
   .scrollbar-hide {
-    scrollbar-width: none;
+    scrollbar-width: none !important;
     /* Firefox */
-    -ms-overflow-style: none;
+    -ms-overflow-style: none !important;
     /* IE and Edge */
   }
 
   .scrollbar-hide::-webkit-scrollbar {
-    display: none;
+    display: none !important;
     /* Chrome, Safari, Opera */
   }
 }

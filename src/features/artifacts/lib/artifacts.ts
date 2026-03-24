@@ -1,6 +1,6 @@
-import { docxToMarkdown } from '@/shared/lib/docx';
+import { getConfig } from '@/shared/config';
+import { convertFileToText } from '@/shared/lib/convert';
 import { isTextContentType } from '@/shared/lib/fileTypes';
-import { pptxToMarkdown } from '@/shared/lib/pptx';
 import { readAsDataURL } from '@/shared/lib/utils';
 import { xlsxToCsv } from '@/shared/lib/xlsx';
 
@@ -20,8 +20,9 @@ export interface ProcessedFile {
 // Process an uploaded file, converting XLSX to CSV and DOCX to Markdown when detected
 export async function processUploadedFile(file: File): Promise<ProcessedFile[]> {
   const fileName = file.name.toLowerCase();
+  const extractText = (f: File) => getConfig().client.extractText(f);
 
-  // Handle XLSX files -> convert to CSV
+  // XLSX needs special handling: artifacts wants separate files per sheet
   const isXlsx = fileName.endsWith('.xlsx') ||
     file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -31,7 +32,6 @@ export async function processUploadedFile(file: File): Promise<ProcessedFile[]> 
       const baseName = file.name.replace(/\.xlsx$/i, '');
 
       return results.map((result) => {
-        // For single sheet, use simple filename; for multiple sheets, include sheet name
         const csvPath = results.length === 1
           ? `/${baseName}.csv`
           : `/${baseName}_${result.sheetName}.csv`;
@@ -44,50 +44,33 @@ export async function processUploadedFile(file: File): Promise<ProcessedFile[]> 
       });
     } catch (error) {
       console.error(`Error converting XLSX file ${file.name}:`, error);
-      // Fall through to default text handling on error
     }
   }
 
-  // Handle DOCX files -> extract to Markdown
-  const isDocx = fileName.endsWith('.docx') ||
-    file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  // Try shared converter for docx, pptx, pdf, email, text
+  try {
+    const content = await convertFileToText(file, extractText);
+    const ext = fileName.split('.').pop() || '';
+    const convertedExts: Record<string, { newExt: string; contentType: string }> = {
+      docx: { newExt: 'md', contentType: 'text/markdown' },
+      pptx: { newExt: 'md', contentType: 'text/markdown' },
+      pdf:  { newExt: 'md', contentType: 'text/markdown' },
+      msg:  { newExt: 'md', contentType: 'text/markdown' },
+      eml:  { newExt: 'md', contentType: 'text/markdown' },
+    };
 
-  if (isDocx) {
-    try {
-      const markdown = await docxToMarkdown(file);
-      const baseName = file.name.replace(/\.docx$/i, '');
-
-      return [{
-        path: `/${baseName}.md`,
-        content: markdown,
-        contentType: 'text/markdown'
-      }];
-    } catch (error) {
-      console.error(`Error converting DOCX file ${file.name}:`, error);
-      // Fall through to default text handling on error
+    if (convertedExts[ext]) {
+      const { newExt, contentType } = convertedExts[ext];
+      const baseName = file.name.replace(/\.[^.]+$/, '');
+      return [{ path: `/${baseName}.${newExt}`, content, contentType }];
     }
+
+    return [{ path: `/${file.name}`, content, contentType: file.type || 'text/plain' }];
+  } catch (error) {
+    console.error(`Error converting file ${file.name}:`, error);
   }
 
-  // Handle PPTX files -> extract to Markdown
-  const isPptx = fileName.endsWith('.pptx') ||
-    file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-
-  if (isPptx) {
-    try {
-      const markdown = await pptxToMarkdown(file);
-      const baseName = file.name.replace(/\.pptx$/i, '');
-
-      return [{
-        path: `/${baseName}.md`,
-        content: markdown,
-        contentType: 'text/markdown'
-      }];
-    } catch (error) {
-      console.error(`Error converting PPTX file ${file.name}:`, error);
-      // Fall through to default text handling on error
-    }
-  }
-
+  // Final fallback: binary as data URL
   const contentType = file.type || 'text/plain';
   const content = isTextContentType(contentType)
     ? await file.text()

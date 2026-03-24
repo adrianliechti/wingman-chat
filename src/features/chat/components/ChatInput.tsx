@@ -109,9 +109,9 @@ export function ChatInput() {
     return ids;
   }, [model?.tools]);
 
-  // Providers visible in the UI: exclude model-configured; hidden entirely when agent active
+  // Providers visible in the UI: exclude model-configured and artifacts; hidden entirely when agent active
   const visibleProviders = useMemo(
-    () => currentAgent ? [] : providers.filter((p: ToolProvider) => !modelTools.has(p.id)),
+    () => currentAgent ? [] : providers.filter((p: ToolProvider) => p.id !== 'artifacts' && !modelTools.has(p.id)),
     [currentAgent, providers, modelTools]
   );
 

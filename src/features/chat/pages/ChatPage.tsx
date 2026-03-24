@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { Plus as PlusIcon, BotMessageSquare, Info, ArrowDown, Paperclip, Rocket } from "lucide-react";
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { Plus as PlusIcon, BotMessageSquare, Info, Paperclip, Rocket, ArrowDown } from "lucide-react";
 import DOMPurify from "dompurify";
+import { useNavigate, useMatch } from '@tanstack/react-router';
+import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
+import { useAutoScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
-import { useAutoScroll } from "@/shared/hooks/useAutoScroll";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useLayout } from "@/shell/hooks/useLayout";
@@ -81,13 +84,37 @@ const Disclaimer = () => {
 
 export function ChatPage() {
   const {
-    chat,
     messages,
-    createChat,
+    selectChat,
+    chat,
     chats,
     isResponding,
   } = useChat();
-  
+
+  const navigate = useNavigate();
+  const { newChat } = useChatNavigate();
+  const chatIdMatch = useMatch({ from: '/chat/$chatId', shouldThrow: false });
+  const routeChatId = chatIdMatch?.params.chatId;
+
+  // Sync URL → state for deep links and browser back/forward navigation.
+  // User-initiated actions (plus button, sidebar clicks) go through useChatNavigate
+  // which sets both state and URL directly, so this only catches external URL changes.
+  useEffect(() => {
+    if (routeChatId && routeChatId !== chat?.id) {
+      selectChat(routeChatId);
+    } else if (!routeChatId && chat) {
+      selectChat(null);
+    }
+  }, [routeChatId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync state → URL when a chat is implicitly created during message send.
+  // The URL is still /chat but chatId just appeared — update to /chat/$chatId.
+  useEffect(() => {
+    if (chat?.id && !routeChatId) {
+      navigate({ to: '/chat/$chatId', params: { chatId: chat.id }, replace: true });
+    }
+  }, [chat?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const { layoutMode } = useLayout();
   const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
   const { showAgentDrawer, toggleAgentDrawer } = useAgents();
@@ -108,12 +135,45 @@ export function ChatPage() {
   const { setSidebarContent, showSidebar } = useSidebar();
   const { setRightActions } = useNavigation();
 
-  const { containerRef, bottomRef, enableAutoScroll, isAutoScrollEnabled } = useAutoScroll({
-    dependencies: [chat, messages],
-  });
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
 
   // Ref to track chat input height for dynamic padding
   const [chatInputHeight, setChatInputHeight] = useState(112); // Default to pb-28 (7rem = 112px)
+
+  // Virtualizer for chat messages – the +1 adds a zero-height sentinel at the
+  // end of the list so scrollToIndex always has a stable, measurement-free target.
+  const virtualizer = useVirtualizer({
+    count: messages.length + 1,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: (i) => (i < messages.length ? 120 : 0),
+    paddingEnd: chatInputHeight,
+    scrollPaddingEnd: chatInputHeight,
+    overscan: 10,
+  });
+
+  const totalSize = virtualizer.getTotalSize();
+  const virtualItems = virtualizer.getVirtualItems();
+  const previousMessageCountRef = useRef(messages.length);
+
+  const { enableAutoScroll, isAutoScrollEnabled } = useAutoScroll({
+    scrollElement,
+    virtualizer,
+  });
+
+  const handleScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
+    scrollContainerRef.current = element;
+    setScrollElement(element);
+  }, []);
+
+  // Re-enable auto-scroll when the user sends a new message while scrolled up.
+  useEffect(() => {
+    const prev = previousMessageCountRef.current;
+    previousMessageCountRef.current = messages.length;
+    if (messages.length > prev && messages[messages.length - 1]?.role === 'user') {
+      enableAutoScroll();
+    }
+  }, [messages, enableAutoScroll]);
 
   // Track window resize for mobile detection
   useEffect(() => {
@@ -159,18 +219,17 @@ export function ChatPage() {
         <button
           type="button"
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
-          onClick={createChat}
+          onClick={newChat}
         >
           <PlusIcon size={20} />
         </button>
       </div>
     );
 
-    // Cleanup when component unmounts
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, createChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, showAgentDrawer, toggleAgentDrawer, hasAppContent, showAppDrawer, toggleAppDrawer]);
+  }, [setRightActions, newChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, showAgentDrawer, toggleAgentDrawer, hasAppContent, showAppDrawer, toggleAppDrawer]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {
@@ -187,16 +246,16 @@ export function ChatPage() {
     return () => setSidebarContent(null);
   }, [sidebarContent, setSidebarContent]);
 
-  // Ref to cache the footer element
-  const footerElementRef = useRef<Element | null>(null);
+  // Ref to cache the fixed footer element
+  const footerElementRef = useRef<HTMLElement | null>(null);
 
   // Memoized height observer callback
   const observeHeight = useCallback(() => {
-    const element = footerElementRef.current ?? document.querySelector('footer form');
+    const element = footerElementRef.current ?? document.querySelector('footer');
     if (element) {
       footerElementRef.current = element;
       const height = element.getBoundingClientRect().height;
-      setChatInputHeight(height + 16);
+      setChatInputHeight(height + 24);
     }
   }, []);
 
@@ -211,11 +270,11 @@ export function ChatPage() {
     // Use ResizeObserver to watch for height changes
     const resizeObserver = new ResizeObserver(observeHeight);
 
-    // Start observing once the footer element exists
+    // Start observing once the fixed footer element exists
     const startObserving = () => {
-      const footerElement = document.querySelector('footer form');
+      const footerElement = document.querySelector('footer');
       if (footerElement) {
-        footerElementRef.current = footerElement;
+        footerElementRef.current = footerElement as HTMLElement;
         resizeObserver.observe(footerElement);
         mutationObserver.observe(footerElement, { 
           childList: true, 
@@ -275,42 +334,63 @@ export function ChatPage() {
           ) : (
             <div
               className="flex-1 overflow-auto transition-opacity duration-300 relative"
-              ref={containerRef}
+              style={{ overflowAnchor: 'none' }}
+              ref={handleScrollContainerRef}
             >
               <div className={`px-3 pt-18 transition-all duration-150 ease-out ${
                 layoutMode === 'wide'
                   ? 'max-w-full md:max-w-[80vw] mx-auto' 
                   : 'max-content-width'
-              }`} style={{ paddingBottom: `${chatInputHeight}px` }}>
+              }`}>
                 <Disclaimer />
                 
-                {messages.map((message, idx) => (
-                  <ChatMessage key={idx} index={idx} message={message} isLast={idx === messages.length - 1} isResponding={isResponding} />
-                ))}
-                
-                {/* sentinel for scrollIntoView */}
-                <div ref={bottomRef} />
+                {/* Virtualized message list */}
+                <div style={{ height: totalSize, width: '100%', position: 'relative' }}>
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualItems[0]?.start ?? 0}px)`,
+                  }}>
+                    {virtualItems.map((virtualRow) =>
+                      virtualRow.index < messages.length ? (
+                        <div
+                          key={virtualRow.key}
+                          data-index={virtualRow.index}
+                          ref={virtualizer.measureElement}
+                          className="flow-root"
+                        >
+                          <ChatMessage
+                            index={virtualRow.index}
+                            message={messages[virtualRow.index]}
+                            isLast={virtualRow.index === messages.length - 1}
+                            isResponding={isResponding}
+                          />
+                        </div>
+                      ) : (
+                        <div key="__sentinel" data-index={virtualRow.index} ref={virtualizer.measureElement} />
+                      )
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
-          {/* Jump to latest button - positioned relative to chat area */}
           {messages.length > 0 && !isAutoScrollEnabled && (
-            <div className={`fixed flex justify-center pointer-events-none z-10 transition-all duration-300 ease-out ${
-              showAppDrawer ? 'left-0 right-[calc(50vw+0.75rem)]' :
-              showArtifactsDrawer ? 'left-0 right-[calc(66vw+0.75rem)]' :
-              showAgentDrawer ? 'left-0 right-83' : 'left-0 right-0'
-            }`} style={{ bottom: `${chatInputHeight + 16}px` }}>
-              <button
-                type="button"
-                onClick={enableAutoScroll}
-                className="pointer-events-auto inline-flex items-center justify-center rounded-full bg-white/90 dark:bg-neutral-800/90 text-neutral-700 dark:text-neutral-300 p-2 shadow-md border border-neutral-200/50 dark:border-neutral-700/50 hover:bg-white dark:hover:bg-neutral-800 hover:shadow-lg transition-all backdrop-blur-sm"
-                aria-label="Scroll to bottom"
-              >
-                <ArrowDown size={16} />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={enableAutoScroll}
+              className="absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-neutral-200/80 bg-white/95 px-3 py-2 text-sm font-medium text-neutral-700 shadow-sm backdrop-blur transition-colors hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-700/80 dark:bg-neutral-900/95 dark:text-neutral-200 dark:hover:border-neutral-600 dark:hover:text-neutral-50"
+              style={{ bottom: chatInputHeight + 16 }}
+              title="Jump to latest"
+            >
+              <ArrowDown size={16} />
+              <span>Latest</span>
+            </button>
           )}
+
         </main>
 
         {/* Chat Input */}

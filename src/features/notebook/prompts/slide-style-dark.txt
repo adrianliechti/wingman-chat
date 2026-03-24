@@ -1,0 +1,22 @@
+## Visual Style (apply consistently to EVERY slide)
+
+All slides MUST share a single, cohesive visual identity. Define it once and repeat it exactly:
+
+- **Background:** deep charcoal-black (#111118) with a very subtle radial gradient lighter toward center (#181825) — creating depth without being distracting. Feels like a premium dark canvas.
+- **Primary text color:** pure bright white (#FFFFFF) for titles and hero numbers. Titles should feel luminous against the dark background.
+- **Secondary text color:** soft silver-gray (#A0A0B8) for body text, labels, and secondary information
+- **Accent color 1:** electric blue (#0A84FF) — the primary accent for highlights, chart fills, glowing elements, underlines, and interactive-feeling elements
+- **Accent color 2:** soft violet (#8B5CF6) — secondary accent for gradients paired with blue, secondary data series, and decorative elements
+- **Accent color 3:** warm coral (#FF6B6B) — used sparingly for alerts, critical data callouts, or a single contrasting element per slide
+- **Title font style:** bold modern sans-serif (SF Pro / Inter / Geist style), large, in pure white. Clean geometric letterforms. Can be very large (hero text) on title slides.
+- **Body font style:** regular weight sans-serif in silver-gray (#A0A0B8), generous line-height, highly readable against dark backgrounds
+- **Layout:** cinematic wide compositions with dramatic negative space. Content often occupies only 50-60% of the slide, letting the dark background breathe. Asymmetric but balanced. Key data or quotes can be very large (hero-sized).
+- **Graphic elements:** subtle gradient glows (blue-to-violet) behind important elements. Thin luminous lines (1px, blue or violet at 40% opacity) as dividers or decorative grids. Abstract geometric shapes — circles, arcs, thin line meshes — at very low opacity (10-15%) in the background as texture.
+- **Data visualizations:** charts with glowing blue fills and thin white borders. Bar and line charts feel like they emit light. Dark chart backgrounds (#1A1A2E). Subtle grid lines in very dark gray (#252540). Data labels in white.
+- **Cards/containers:** dark elevated surfaces (#1E1E30) with subtle 1px borders (#2A2A44) and very subtle drop shadows. Rounded corners (12px). Feel like floating panels.
+- **Hero numbers:** key statistics displayed enormous (72pt+) in white or blue, with a subtle blue glow behind them
+- **Bullet points:** small rounded dots in blue or thin dashes in gray
+- **Animations feel:** even though static, the design should feel kinetic — like a frame from a motion graphics piece. Diagonal compositions, elements breaking the grid slightly.
+- **NO:** harsh borders, pure black backgrounds (#000), text-heavy slides without visual hierarchy, or flat/amateur dark themes
+
+This creates a premium tech keynote aesthetic — think Apple WWDC, Stripe Sessions, or Vercel Ship. Bold, cinematic, contemporary. Every slide should feel like it could be a frame from a product launch video.
