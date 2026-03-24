@@ -9,6 +9,51 @@ import { useImages } from "@/features/renderer/hooks/useImages";
 import { RendererInput } from "@/features/renderer/components/RendererInput";
 import type { Model } from "@/shared/types/chat";
 
+const STYLE_INSTRUCTIONS: Record<string, string> = {
+  // Photography styles
+  'Leica': 'classic Leica rangefinder photograph with Summilux lens rendering, smooth creamy bokeh with gentle out-of-focus transitions, distinctive 3D pop and subject separation, beautiful highlight rolloff with subtle glow, natural micro-contrast and tack-sharp focus plane, authentic color rendering without oversaturation, shallow depth of field, 35mm or 50mm focal length perspective, natural available light, documentary street photography aesthetic',
+  'Polaroid': 'instant Polaroid photograph aesthetic with characteristic white frame border, slightly washed-out colors with warm color shift, soft focus, subtle light leaks, nostalgic candid snapshot quality, slightly overexposed flash, square format composition, early 2000s party vibes',
+  'B&W Studio': 'professional black and white studio portrait photography, dramatic Rembrandt lighting with soft key light and deep shadows, high contrast tonal range, clean seamless backdrop, tack-sharp focus on eyes, elegant and timeless editorial aesthetic, rich silver gelatin print quality',
+  'Professional': 'professional corporate photography in modern office environment, clean and polished look, natural window lighting with soft fill, shallow depth of field, business casual aesthetic, crisp detail, neutral color grading, LinkedIn profile quality',
+  'Kodak Film': 'vintage Kodak Portra 400 film photograph, warm golden tones, natural film grain, slightly lifted blacks, soft halation around highlights, authentic 35mm analog feel, candid composition, nostalgic color rendering with rich skin tones',
+  'Cinematic': 'cinematic film still, anamorphic lens with subtle horizontal flare, teal and orange color grading, dramatic depth of field, 2.39:1 widescreen composition feel, volumetric lighting, atmospheric haze, Hollywood blockbuster production quality',
+  'Macro': 'extreme macro photography, razor-thin depth of field with silky smooth bokeh, hyper-detailed textures at microscopic level, studio ring light with soft diffusion, crystal-clear sharpness on focal plane, vivid natural colors, scientific precision meets artistic beauty',
+
+  // Artistic styles
+  'Ghibli': 'in Studio Ghibli anime style, lush hand-painted watercolor backgrounds with extraordinary environmental detail, soft cel-shaded characters with gentle round features, warm nostalgic color palette with rich greens and dreamy skies, whimsical and serene atmosphere, Hayao Miyazaki aesthetic with sense of wonder and magic in everyday scenes',
+  'Anime': 'in modern anime style with large expressive eyes, vibrant saturated colors, clean cel-shading with precise line art, soft gradient lighting, dynamic composition, characteristic Japanese animation aesthetics with detailed hair rendering and atmospheric effects',
+  'Watercolor': 'in watercolor painting style with soft wet-on-wet blending, visible organic brushstrokes on textured cold-press paper, flowing pigments with beautiful bleeds, delicate transparent washes, areas of white paper showing through, spontaneous and luminous quality',
+  'Oil Painting': 'as a classical oil painting with rich impasto texture and visible palette knife work, deep saturated colors with luminous glazing layers, dramatic chiaroscuro lighting, old master composition techniques, canvas texture visible in thin passages',
+  'Sketch': 'as a pencil sketch on cream paper with confident gestural lines, cross-hatching for tonal depth, visible construction lines and proportional guides, smudged graphite for soft shadows, loose artistic hand-drawn quality with raw energy',
+  'Pop Art': 'in pop art style with bold flat primary colors, halftone Ben-Day dots pattern, thick black outlines, high contrast graphic composition, inspired by Roy Lichtenstein and Andy Warhol, silk-screen print aesthetic with slight misregistration',
+  'Ukiyo-e': 'in traditional Japanese ukiyo-e woodblock print style, flat areas of bold color with black outlines, decorative wave and cloud patterns, elegant calligraphic line quality, Hokusai and Hiroshige inspired composition, handmade washi paper texture',
+  'Comic Book': 'in Western comic book illustration style, bold ink lines with dynamic hatching, vivid superhero-grade colors, dramatic foreshortening and action poses, CMYK halftone dot printing texture, speech bubble-ready composition, classic Marvel/DC aesthetic',
+  'Art Deco': 'in Art Deco style with bold geometric patterns, symmetrical composition, metallic gold and rich jewel-tone color palette, elegant streamlined forms, 1920s glamour aesthetic, Chrysler Building-inspired ornamental details, luxury and sophistication',
+
+  // Commercial & Entertainment
+  'Movie Poster': 'cinematic movie poster design with dramatic three-point lighting, bold typography space reserved at top and bottom, high contrast with rich shadows, epic layered composition, Hollywood blockbuster aesthetic, theatrical one-sheet style with hero positioning',
+  'Sticker': 'as a cute die-cut sticker design with thick white border outline, vibrant flat colors, slightly glossy finish, kawaii-inspired simplified forms, clean vector-sharp edges, perfect for laptop or water bottle, transparent background ready',
+  'Chibi Crochet': 'as an adorable chibi-style crocheted amigurumi doll, handmade yarn texture with visible individual stitches, big cute head with small body proportions, kawaii embroidered eyes, soft pastel yarn colors, cozy handcrafted plushie aesthetic, photographed on light background',
+  'Plushy': 'as a cute plush toy with soft minky fabric texture, rounded puffy forms, embroidered eyes and details, visible seam stitching, huggable proportions with kawaii aesthetic, professional product photography lighting',
+
+  // Digital & Tech styles
+  'Isometric': 'in isometric pixel art style with precise 30-degree angles, no perspective distortion, clean geometric shapes, vibrant limited color palette, tiny detailed elements, video game diorama aesthetic, satisfying visual tidiness',
+  'Pixel Art': 'in retro pixel art style with strict limited 16-color palette, crisp hard-edged pixels, no anti-aliasing or smoothing, 16-bit SNES/Genesis video game aesthetic, dithering for gradients, nostalgic and charming',
+  'Low Poly': 'in low poly 3D render style with flat shaded triangular faces, geometric simplification of organic forms, subtle gradient coloring across faces, modern digital art aesthetic, clean minimal lighting, slightly glossy material',
+  '3D Cartoon': 'in Pixar/Disney 3D animation style, smooth subsurface scattering on skin, soft global illumination, appealing character proportions with slightly oversized head, rich detailed textures, vibrant color palette, professional studio render quality with subtle ambient occlusion',
+  'Flat Vector': 'in modern flat vector illustration style, clean geometric shapes with no outlines, limited harmonious color palette, minimal gradients, UI-friendly proportions, contemporary graphic design aesthetic, suitable for web and print, inspired by Kurzgesagt visual style',
+  'Object Extract': 'clean product photography style with pure white background, isolated subject with precise edge extraction, soft contact shadow only, professional e-commerce aesthetic, even studio lighting from all angles, transparent background ready',
+
+  // Artistic movements
+  'Cyberpunk': 'in cyberpunk style with vivid neon lights reflecting on rain-slicked streets, holographic displays and AR overlays, high-tech low-life aesthetic, dramatic purple and cyan color grading, volumetric fog with light rays, dense urban futuristic environment',
+  'Vaporwave': 'in vaporwave aesthetic with pink and cyan gradients, Greek marble statue elements, retro computer graphics and grid patterns, palm tree silhouettes, 80s/90s nostalgic dreamscape, lo-fi VHS scan lines, Japanese text accents, surreal and melancholic beauty',
+  'Steampunk': 'in steampunk style with intricate brass gears, copper pipes with verdigris patina, Victorian-era machinery and clockwork mechanisms, warm amber lighting, leather and rivets, industrial revolution meets fantasy, Jules Verne inspired aesthetic',
+  'Claymation': 'in stop-motion claymation style, visible fingerprint impressions on smooth clay surfaces, slightly imperfect handmade charm, warm studio lighting with soft shadows, miniature set design with tactile textures, Aardman or Laika Studios inspired quality',
+  'Neon': 'as a glowing neon sign against a dark background, bright luminous tube lighting with realistic glass tube bends, color bleeding and soft glow halos, subtle reflection on surface below, electric buzzing atmosphere, classic bar or storefront signage aesthetic'
+};
+
+const AVAILABLE_STYLES = Object.keys(STYLE_INSTRUCTIONS);
+
 // Memoized disclaimer component to avoid re-computing on every render
 const Disclaimer = () => {
   const disclaimer = useMemo(() => {
@@ -44,56 +89,11 @@ export function RendererPage() {
   const [prompt, setPrompt] = useState("");
   const [referenceImages, setReferenceImages] = useState<{ blob: Blob; preview: string }[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  
+
   const [models, setModels] = useState<Model[]>([]);
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
   const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
-
-  const styleInstructions: Record<string, string> = {
-    // Photography styles
-    'Leica': 'classic Leica rangefinder photograph with Summilux lens rendering, smooth creamy bokeh with gentle out-of-focus transitions, distinctive 3D pop and subject separation, beautiful highlight rolloff with subtle glow, natural micro-contrast and tack-sharp focus plane, authentic color rendering without oversaturation, shallow depth of field, 35mm or 50mm focal length perspective, natural available light, documentary street photography aesthetic',
-    'Polaroid': 'instant Polaroid photograph aesthetic with characteristic white frame border, slightly washed-out colors with warm color shift, soft focus, subtle light leaks, nostalgic candid snapshot quality, slightly overexposed flash, square format composition, early 2000s party vibes',
-    'B&W Studio': 'professional black and white studio portrait photography, dramatic Rembrandt lighting with soft key light and deep shadows, high contrast tonal range, clean seamless backdrop, tack-sharp focus on eyes, elegant and timeless editorial aesthetic, rich silver gelatin print quality',
-    'Professional': 'professional corporate photography in modern office environment, clean and polished look, natural window lighting with soft fill, shallow depth of field, business casual aesthetic, crisp detail, neutral color grading, LinkedIn profile quality',
-    'Kodak Film': 'vintage Kodak Portra 400 film photograph, warm golden tones, natural film grain, slightly lifted blacks, soft halation around highlights, authentic 35mm analog feel, candid composition, nostalgic color rendering with rich skin tones',
-    'Cinematic': 'cinematic film still, anamorphic lens with subtle horizontal flare, teal and orange color grading, dramatic depth of field, 2.39:1 widescreen composition feel, volumetric lighting, atmospheric haze, Hollywood blockbuster production quality',
-    'Macro': 'extreme macro photography, razor-thin depth of field with silky smooth bokeh, hyper-detailed textures at microscopic level, studio ring light with soft diffusion, crystal-clear sharpness on focal plane, vivid natural colors, scientific precision meets artistic beauty',
-
-    // Artistic styles
-    'Ghibli': 'in Studio Ghibli anime style, lush hand-painted watercolor backgrounds with extraordinary environmental detail, soft cel-shaded characters with gentle round features, warm nostalgic color palette with rich greens and dreamy skies, whimsical and serene atmosphere, Hayao Miyazaki aesthetic with sense of wonder and magic in everyday scenes',
-    'Anime': 'in modern anime style with large expressive eyes, vibrant saturated colors, clean cel-shading with precise line art, soft gradient lighting, dynamic composition, characteristic Japanese animation aesthetics with detailed hair rendering and atmospheric effects',
-    'Watercolor': 'in watercolor painting style with soft wet-on-wet blending, visible organic brushstrokes on textured cold-press paper, flowing pigments with beautiful bleeds, delicate transparent washes, areas of white paper showing through, spontaneous and luminous quality',
-    'Oil Painting': 'as a classical oil painting with rich impasto texture and visible palette knife work, deep saturated colors with luminous glazing layers, dramatic chiaroscuro lighting, old master composition techniques, canvas texture visible in thin passages',
-    'Sketch': 'as a pencil sketch on cream paper with confident gestural lines, cross-hatching for tonal depth, visible construction lines and proportional guides, smudged graphite for soft shadows, loose artistic hand-drawn quality with raw energy',
-    'Pop Art': 'in pop art style with bold flat primary colors, halftone Ben-Day dots pattern, thick black outlines, high contrast graphic composition, inspired by Roy Lichtenstein and Andy Warhol, silk-screen print aesthetic with slight misregistration',
-    'Ukiyo-e': 'in traditional Japanese ukiyo-e woodblock print style, flat areas of bold color with black outlines, decorative wave and cloud patterns, elegant calligraphic line quality, Hokusai and Hiroshige inspired composition, handmade washi paper texture',
-    'Comic Book': 'in Western comic book illustration style, bold ink lines with dynamic hatching, vivid superhero-grade colors, dramatic foreshortening and action poses, CMYK halftone dot printing texture, speech bubble-ready composition, classic Marvel/DC aesthetic',
-    'Art Deco': 'in Art Deco style with bold geometric patterns, symmetrical composition, metallic gold and rich jewel-tone color palette, elegant streamlined forms, 1920s glamour aesthetic, Chrysler Building-inspired ornamental details, luxury and sophistication',
-
-    // Commercial & Entertainment
-    'Movie Poster': 'cinematic movie poster design with dramatic three-point lighting, bold typography space reserved at top and bottom, high contrast with rich shadows, epic layered composition, Hollywood blockbuster aesthetic, theatrical one-sheet style with hero positioning',
-    'Sticker': 'as a cute die-cut sticker design with thick white border outline, vibrant flat colors, slightly glossy finish, kawaii-inspired simplified forms, clean vector-sharp edges, perfect for laptop or water bottle, transparent background ready',
-    'Chibi Crochet': 'as an adorable chibi-style crocheted amigurumi doll, handmade yarn texture with visible individual stitches, big cute head with small body proportions, kawaii embroidered eyes, soft pastel yarn colors, cozy handcrafted plushie aesthetic, photographed on light background',
-    'Plushy': 'as a cute plush toy with soft minky fabric texture, rounded puffy forms, embroidered eyes and details, visible seam stitching, huggable proportions with kawaii aesthetic, professional product photography lighting',
-
-    // Digital & Tech styles
-    'Isometric': 'in isometric pixel art style with precise 30-degree angles, no perspective distortion, clean geometric shapes, vibrant limited color palette, tiny detailed elements, video game diorama aesthetic, satisfying visual tidiness',
-    'Pixel Art': 'in retro pixel art style with strict limited 16-color palette, crisp hard-edged pixels, no anti-aliasing or smoothing, 16-bit SNES/Genesis video game aesthetic, dithering for gradients, nostalgic and charming',
-    'Low Poly': 'in low poly 3D render style with flat shaded triangular faces, geometric simplification of organic forms, subtle gradient coloring across faces, modern digital art aesthetic, clean minimal lighting, slightly glossy material',
-    '3D Cartoon': 'in Pixar/Disney 3D animation style, smooth subsurface scattering on skin, soft global illumination, appealing character proportions with slightly oversized head, rich detailed textures, vibrant color palette, professional studio render quality with subtle ambient occlusion',
-    'Flat Vector': 'in modern flat vector illustration style, clean geometric shapes with no outlines, limited harmonious color palette, minimal gradients, UI-friendly proportions, contemporary graphic design aesthetic, suitable for web and print, inspired by Kurzgesagt visual style',
-    'Object Extract': 'clean product photography style with pure white background, isolated subject with precise edge extraction, soft contact shadow only, professional e-commerce aesthetic, even studio lighting from all angles, transparent background ready',
-
-    // Artistic movements
-    'Cyberpunk': 'in cyberpunk style with vivid neon lights reflecting on rain-slicked streets, holographic displays and AR overlays, high-tech low-life aesthetic, dramatic purple and cyan color grading, volumetric fog with light rays, dense urban futuristic environment',
-    'Vaporwave': 'in vaporwave aesthetic with pink and cyan gradients, Greek marble statue elements, retro computer graphics and grid patterns, palm tree silhouettes, 80s/90s nostalgic dreamscape, lo-fi VHS scan lines, Japanese text accents, surreal and melancholic beauty',
-    'Steampunk': 'in steampunk style with intricate brass gears, copper pipes with verdigris patina, Victorian-era machinery and clockwork mechanisms, warm amber lighting, leather and rivets, industrial revolution meets fantasy, Jules Verne inspired aesthetic',
-    'Claymation': 'in stop-motion claymation style, visible fingerprint impressions on smooth clay surfaces, slightly imperfect handmade charm, warm studio lighting with soft shadows, miniature set design with tactile textures, Aardman or Laika Studios inspired quality',
-    'Neon': 'as a glowing neon sign against a dark background, bright luminous tube lighting with realistic glass tube bends, color bleeding and soft glow halos, subtle reflection on surface below, electric buzzing atmosphere, classic bar or storefront signage aesthetic'
-  };
-
-  const availableStyles = Object.keys(styleInstructions);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -120,11 +120,13 @@ export function RendererPage() {
 
   const handleReset = useCallback(() => {
     setPrompt("");
-    referenceImages.forEach(img => URL.revokeObjectURL(img.preview));
-    setReferenceImages([]);
+    setReferenceImages(prev => {
+      prev.forEach(img => URL.revokeObjectURL(img.preview));
+      return [];
+    });
     setSelectedStyle(null);
     setSelectedImageId(null);
-  }, [referenceImages]);
+  }, []);
 
   // Set up navigation actions
   useEffect(() => {
@@ -146,28 +148,29 @@ export function RendererPage() {
 
   const handleImageUpload = useCallback(async (files: FileList | File[]) => {
     const imageFiles = Array.from(files).filter(file => file.type.startsWith("image/"));
-    
+
     for (const file of imageFiles) {
-      if (referenceImages.length >= 4) {
-        break;
-      }
-      
       try {
         const resizedBlob = await resizeImageBlob(file, 1024, 1024);
         const preview = URL.createObjectURL(resizedBlob);
-        
+
+        let added = false;
         setReferenceImages(prev => {
           if (prev.length >= 4) {
-            URL.revokeObjectURL(preview);
             return prev;
           }
+          added = true;
           return [...prev, { blob: resizedBlob, preview }];
         });
+        if (!added) {
+          URL.revokeObjectURL(preview);
+          break;
+        }
       } catch (err) {
         console.error("Failed to process image:", err);
       }
     }
-  }, [referenceImages.length]);
+  }, []);
 
   const removeReferenceImage = useCallback((index: number) => {
     setReferenceImages(prev => {
@@ -221,31 +224,31 @@ export function RendererPage() {
     }
 
     setIsGenerating(true);
-    setPrompt("");
-    setReferenceImages(prev => {
-      prev.forEach(img => URL.revokeObjectURL(img.preview));
-      return [];
-    });
+
+    // Capture and clear reference images (revoke previews)
+    const currentRefImages = referenceImages;
+    setReferenceImages([]);
+    currentRefImages.forEach(img => URL.revokeObjectURL(img.preview));
 
     try {
       const model = selectedModel?.id || config.renderer?.model || "";
-      
+
       // Build the full prompt with style if selected
-      const fullPrompt = selectedStyle 
-        ? `${activePrompt}${activePrompt.trim() ? ', ' : ''}${styleInstructions[selectedStyle]}`
+      const fullPrompt = selectedStyle
+        ? `${activePrompt}${activePrompt.trim() ? ', ' : ''}${STYLE_INSTRUCTIONS[selectedStyle]}`
         : activePrompt;
 
       // Collect reference images: user-uploaded + optionally the source image for refinement
-      const refImages: Blob[] = referenceImages.map(img => img.blob);
+      const refImages: Blob[] = currentRefImages.map(img => img.blob);
       if (sourceImageData) {
         refImages.push(decodeDataURL(sourceImageData));
       }
-      
+
       const resultBlob = await config.client.generateImage(model, fullPrompt, refImages.length > 0 ? refImages : undefined);
-      
+
       // Convert to data URL for persistence and display
       const dataUrl = await readAsDataURL(resultBlob);
-      
+
       // Add to persisted images via hook
       const newImage = await createImage({
         prompt: fullPrompt,
@@ -254,6 +257,7 @@ export function RendererPage() {
       });
 
       setSelectedImageId(newImage.id);
+      setPrompt("");
     } catch (err) {
       console.error("Image generation failed:", err);
     } finally {
@@ -290,7 +294,10 @@ export function RendererPage() {
   }, [handleImageUpload]);
 
   // Derive the selected image object
-  const selectedImage = selectedImageId ? images.find(img => img.id === selectedImageId) : null;
+  const selectedImage = useMemo(
+    () => selectedImageId ? images.find(img => img.id === selectedImageId) ?? null : null,
+    [images, selectedImageId]
+  );
 
   // Auto-select first image if selected image was deleted
   useEffect(() => {
@@ -339,8 +346,8 @@ export function RendererPage() {
                   </div>
                 )}
 
-                {/* Action buttons on hover */}
-                <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 hover:opacity-100 transition-opacity">
+                {/* Action buttons — always visible on touch, hover-reveal on desktop */}
+                <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-100 md:opacity-0 md:hover:opacity-100 transition-opacity">
                   <button
                     type="button"
                     onClick={() => addAsReference(selectedImage.id)}
@@ -385,7 +392,7 @@ export function RendererPage() {
                 models={models}
                 selectedModel={selectedModel}
                 onSelectModel={setSelectedModel}
-                availableStyles={availableStyles}
+                availableStyles={AVAILABLE_STYLES}
                 selectedStyle={selectedStyle}
                 onSelectStyle={setSelectedStyle}
                 placeholder="Generate something new..."
@@ -409,7 +416,7 @@ export function RendererPage() {
                 models={models}
                 selectedModel={selectedModel}
                 onSelectModel={setSelectedModel}
-                availableStyles={availableStyles}
+                availableStyles={AVAILABLE_STYLES}
                 selectedStyle={selectedStyle}
                 onSelectStyle={setSelectedStyle}
                 placeholder="Refine the selected image..."
@@ -422,7 +429,7 @@ export function RendererPage() {
 
         {/* Thumbnail grid overlay — bottom horizontal on mobile, right vertical on desktop */}
         {images.length > 0 && (
-          <div className="absolute bottom-0 inset-x-0 md:inset-auto md:top-16 md:right-0 md:bottom-0 z-10 flex md:flex-col items-center gap-2 p-2 overflow-x-auto md:overflow-x-hidden md:overflow-y-auto scrollbar-hide">
+          <div className="absolute bottom-20 inset-x-0 md:bottom-0 md:inset-auto md:top-16 md:right-0 z-10 flex md:flex-col items-center gap-2 p-2 overflow-x-auto md:overflow-x-hidden md:overflow-y-auto scrollbar-hide">
             {/* New generation tile */}
             <button
               type="button"

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Languages, PanelLeftOpen, Workflow, ChevronDown, Settings, Image, MoreHorizontal, Globe, GraduationCap } from "lucide-react";
-import { Menu, MenuButton, MenuItem, MenuItems, Transition } from "@headlessui/react";
+import { MessageCircle, Languages, PanelLeftOpen, ChevronDown, Settings, Image, Globe, GraduationCap } from "lucide-react";
+import { Transition } from "@headlessui/react";
 import { Outlet, Link, useRouterState } from '@tanstack/react-router';
 import { getConfig } from "@/shared/config";
 import { useSidebar } from "@/shell/hooks/useSidebar";
@@ -11,7 +11,7 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useApp } from "@/shell/hooks/useApp";
 
-type Page = "chat" | "translate" | "notebook" | "flow" | "renderer";
+type Page = "chat" | "translate" | "notebook" | "renderer";
 
 function getPageFromPath(pathname: string): Page {
   const segment = pathname.split('/')[1] || 'chat';
@@ -19,7 +19,6 @@ function getPageFromPath(pathname: string): Page {
     case 'chat': return 'chat';
     case 'translate': return 'translate';
     case 'notebook': return 'notebook';
-    case 'flow': return 'flow';
     case 'renderer': return 'renderer';
     default: return 'chat';
   }
@@ -121,30 +120,19 @@ export function AppLayout() {
     };
   }, []);
 
-  // Primary pages always shown in main nav
-  const primaryPages = [
+  // Navigation pages
+  const pages = [
     { key: "chat" as const, label: "Chat", icon: <MessageCircle size={20} />, to: "/chat" },
     { key: "notebook" as const, label: "Notebook", icon: <Globe size={20} />, to: "/notebook" },
     { key: "translate" as const, label: "Translate", icon: <Languages size={20} />, to: "/translate" },
+    { key: "renderer" as const, label: "Canvas", icon: <Image size={20} />, to: "/renderer" },
   ].filter(page => {
     if (page.key === "chat") return true;
     if (page.key === "translate") return !!config.translator;
     if (page.key === "notebook") return !!config.notebook;
-    return true;
-  });
-
-  // Secondary pages always in overflow menu
-  const secondaryPages = [
-    { key: "renderer" as const, label: "Renderer", icon: <Image size={20} />, to: "/renderer" },
-    { key: "flow" as const, label: "Flow", icon: <Workflow size={20} />, to: "/flow" },
-  ].filter(page => {
     if (page.key === "renderer") return !!config.renderer;
-    if (page.key === "flow") return !!config.workflow;
     return true;
   });
-
-  // All pages combined for mobile menu
-  const pages = [...primaryPages, ...secondaryPages];
   const showNavigation = pages.length > 1;
 
   return (
@@ -250,8 +238,8 @@ export function AppLayout() {
                   ref={desktopRef}
                   className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
                 >
-                  {/* Animated slider background - only show if current page is in primary pages */}
-                  {primaryPages.some(p => p.key === currentPage) && (
+                  {/* Animated slider background */}
+                  {pages.some(p => p.key === currentPage) && (
                     <div
                       className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
                       style={{
@@ -263,8 +251,8 @@ export function AppLayout() {
                     />
                   )}
 
-                  {/* Primary navigation items */}
-                  {primaryPages.map(({ key, label, icon, to }) => (
+                  {/* Navigation items */}
+                  {pages.map(({ key, label, icon, to }) => (
                     <Link
                       key={key}
                       to={to}
@@ -282,45 +270,6 @@ export function AppLayout() {
                       <span className="hidden sm:inline">{label}</span>
                     </Link>
                   ))}
-
-                  {/* Overflow menu for secondary pages */}
-                  {secondaryPages.length > 0 && (
-                    <Menu>
-                      <MenuButton
-                        className={`
-                          relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out
-                          flex items-center gap-2 text-sm
-                          ${secondaryPages.some(p => p.key === currentPage)
-                            ? "text-neutral-900 dark:text-neutral-100"
-                            : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                          }
-                        `}
-                      >
-                        <MoreHorizontal size={20} />
-                      </MenuButton>
-                      <MenuItems
-                        modal={false}
-                        transition
-                        anchor="bottom"
-                        className="mt-2 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden shadow-lg z-50 min-w-40"
-                      >
-                        {secondaryPages.map(({ key, label, icon, to }) => (
-                          <MenuItem key={key}>
-                            <Link
-                              to={to}
-                              className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${currentPage === key
-                                  ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
-                                  : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
-                                }`}
-                            >
-                              {icon}
-                              <span className="font-medium text-sm">{label}</span>
-                            </Link>
-                          </MenuItem>
-                        ))}
-                      </MenuItems>
-                    </Menu>
-                  )}
                 </div>
               </div>
             )}

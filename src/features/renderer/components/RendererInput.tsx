@@ -2,9 +2,9 @@ import { useRef } from "react";
 import {
   X,
   ImagePlus,
-  Sparkles,
   ArrowRight,
   Paintbrush,
+  Sparkles,
 } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import type { Model } from "@/shared/types/chat";
@@ -92,6 +92,14 @@ export function RendererInput({
           const target = e.target;
           target.style.height = "auto";
           target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            if ((prompt.trim() || referenceImages.length > 0) && !disabled) {
+              onSubmit();
+            }
+          }
         }}
         onPaste={onPaste}
         rows={1}
