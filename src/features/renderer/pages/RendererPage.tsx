@@ -54,6 +54,41 @@ const STYLE_INSTRUCTIONS: Record<string, string> = {
 
 const AVAILABLE_STYLES = Object.keys(STYLE_INSTRUCTIONS);
 
+const canvasBgStyle = `
+@keyframes drift-1 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(15%,15%) scale(1.1)} }
+@keyframes drift-2 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-15%,-15%) scale(1.05)} }
+@keyframes drift-3 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-10%,12%) scale(1.08)} }
+@keyframes drift-4 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(12%,-10%) scale(1.06)} }
+`;
+
+const blobs = [
+  { bg: 'radial-gradient(ellipse 80% 80% at center, rgba(120,119,198,0.18) 0%, transparent 70%)', top: '10%', left: '5%',  w: '55%', h: '55%', anim: 'drift-1 25s ease-in-out infinite' },
+  { bg: 'radial-gradient(ellipse 80% 80% at center, rgba(255,119,198,0.14) 0%, transparent 70%)', top: '15%', left: '45%', w: '50%', h: '50%', anim: 'drift-2 30s ease-in-out infinite' },
+  { bg: 'radial-gradient(ellipse 80% 80% at center, rgba(78,205,196,0.14) 0%, transparent 70%)',  top: '0%',  left: '20%', w: '50%', h: '50%', anim: 'drift-3 22s ease-in-out infinite' },
+  { bg: 'radial-gradient(ellipse 70% 70% at center, rgba(255,177,66,0.12) 0%, transparent 70%)',  top: '45%', left: '25%', w: '45%', h: '45%', anim: 'drift-4 28s ease-in-out infinite' },
+] as const;
+
+function CanvasBackground() {
+  return (
+    <>
+      <style>{canvasBgStyle}</style>
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {blobs.map((b, i) => (
+          <div
+            key={i}
+            className="absolute will-change-transform"
+            style={{
+              top: b.top, left: b.left, width: b.w, height: b.h,
+              backgroundImage: b.bg,
+              animation: b.anim,
+            }}
+          />
+        ))}
+      </div>
+    </>
+  );
+}
+
 // Memoized disclaimer component to avoid re-computing on every render
 const Disclaimer = () => {
   const disclaimer = useMemo(() => {
@@ -316,8 +351,8 @@ export function RendererPage() {
       >
         {/* Full-screen drop zone overlay */}
         {isDragging && (
-          <div className="absolute inset-0 flex items-center justify-center z-30 bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm">
-            <div className="relative bg-neutral-50/60 dark:bg-neutral-900/50 backdrop-blur-lg p-10 rounded-2xl shadow-xl border-2 border-dashed border-neutral-300 dark:border-neutral-600 flex flex-col items-center gap-5">
+          <div className="absolute inset-0 flex items-center justify-center z-30 bg-slate-50/80 dark:bg-slate-900/40 backdrop-blur-sm">
+            <div className="relative bg-neutral-50/60 dark:bg-neutral-900/50 backdrop-blur-lg p-10 rounded-2xl shadow-xl border-2 border-dashed border-slate-400 dark:border-slate-500 flex flex-col items-center gap-5">
               <ImagePlus size={64} className="text-neutral-400 dark:text-neutral-500" />
               <span className="text-base font-medium text-neutral-500 dark:text-neutral-400 text-center">
                 Drop images as reference
@@ -370,7 +405,8 @@ export function RendererPage() {
             </div>
           ) : (
             /* Empty / prompt-only state */
-            <div className="flex flex-col items-center justify-center gap-5 w-full flex-1">
+            <div className="flex flex-col items-center justify-center gap-5 w-full flex-1 relative">
+              <CanvasBackground />
               <Disclaimer />
 
               {isGenerating && (
@@ -470,7 +506,7 @@ export function RendererPage() {
                   />
                   <button
                     type="button"
-                    className="absolute -top-0.5 -right-0.5 size-4 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                    className="absolute top-0.5 right-0.5 size-4 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm"
                     onClick={(e) => {
                       e.stopPropagation();
                       deleteImage(img.id);

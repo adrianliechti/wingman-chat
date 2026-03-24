@@ -82,7 +82,7 @@ export function SourcesPanel({
       {/* Error */}
       {error && (
         <div className="px-3 pt-2">
-          <div className="flex items-start gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded-lg">
+          <div className="flex items-start gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 rounded-lg">
             <span className="flex-1">{error}</span>
             <button type="button" onClick={() => setError(null)}>
               <X size={12} />

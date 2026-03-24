@@ -56,7 +56,7 @@ export function RendererInput({
 
   return (
     <div
-      className={`flex flex-col rounded-[1.4rem] backdrop-blur-2xl shadow-2xl shadow-black/20 dark:shadow-black/40 border border-neutral-200/80 dark:border-neutral-800 bg-white/70 dark:bg-neutral-950/72 w-full max-w-2xl overflow-hidden ${className}`}
+      className={`flex flex-col rounded-2xl backdrop-blur-2xl shadow-2xl shadow-black/60 dark:shadow-black/80 border border-neutral-200/50 dark:border-neutral-900 bg-white/60 dark:bg-neutral-950/70 dark:ring-1 dark:ring-white/10 w-full max-w-2xl overflow-hidden ${className}`}
     >
       {/* Reference images above text (like chat attachments) */}
       {referenceImages.length > 0 && (
@@ -104,7 +104,7 @@ export function RendererInput({
         onPaste={onPaste}
         rows={1}
         placeholder={placeholder}
-        className="px-4 pt-4 pb-2 flex-1 max-h-[30vh] overflow-y-auto min-h-12 bg-transparent text-[15px] leading-6 text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none resize-none"
+        className="px-4 pt-4 pb-2 flex-1 max-h-[30vh] overflow-y-auto min-h-12 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none resize-none"
         autoFocus={autoFocus}
         disabled={disabled}
       />
@@ -122,7 +122,7 @@ export function RendererInput({
               modal={false}
               transition
               anchor="bottom start"
-              className="max-h-[50vh]! mt-2 rounded-xl border bg-white/90 dark:bg-neutral-950/90 backdrop-blur-3xl border-neutral-200 dark:border-neutral-700 shadow-2xl shadow-black/20 dark:shadow-black/60 z-50 overflow-y-auto"
+              className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 shadow-2xl shadow-black/40 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 z-50 overflow-y-auto"
             >
               {models.length === 0 ? (
                 <div className="px-3 py-2 text-neutral-500 dark:text-neutral-400 text-sm">
@@ -160,7 +160,7 @@ export function RendererInput({
               modal={false}
               transition
               anchor="bottom start"
-              className="max-h-[50vh]! mt-2 rounded-xl border bg-white/90 dark:bg-neutral-950/90 backdrop-blur-3xl border-neutral-200 dark:border-neutral-700 shadow-2xl shadow-black/20 dark:shadow-black/60 z-50 overflow-y-auto min-w-36"
+              className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 shadow-2xl shadow-black/40 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 z-50 overflow-y-auto min-w-36"
             >
               {/* Clear style option */}
               {selectedStyle && (

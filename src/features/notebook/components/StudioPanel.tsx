@@ -85,7 +85,7 @@ export function StudioPanel({
                     <ChevronDown size={12} className="shrink-0 opacity-50" />
                   </button>
                   {openMenu === type && (
-                    <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg py-1">
+                    <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-2 border-white/40 dark:border-neutral-700/60 rounded-lg shadow-2xl shadow-black/40 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 py-1">
                       {styles.map((s) => (
                         <button
                           key={s.id}

@@ -55,7 +55,7 @@ export function NotebookChat({
             <div className="text-center max-w-md">
               {hasSources ? (
                 <>
-                  <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
                     <MessageSquare size={22} className="text-neutral-400" />
                   </div>
                   <p className="text-neutral-600 dark:text-neutral-400 font-medium">
@@ -106,7 +106,7 @@ export function NotebookChat({
                   <div
                     className={`max-w-[85%] rounded-xl px-4 py-2.5 ${
                       msg.role === 'user'
-                        ? 'bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900'
+                        ? 'bg-neutral-200 dark:bg-neutral-900'
                         : 'bg-neutral-100 dark:bg-neutral-800'
                     }`}
                   >
@@ -145,7 +145,7 @@ export function NotebookChat({
 
       {/* Floating input */}
       <div className="absolute bottom-4 left-4 right-4 z-20">
-        <div className="flex items-end gap-2 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-neutral-700/40 shadow-lg shadow-black/5 dark:shadow-black/20 px-3 py-2">
+        <div className="flex items-end gap-2 bg-white/60 dark:bg-neutral-950/70 backdrop-blur-2xl rounded-2xl border border-neutral-200/50 dark:border-neutral-900 shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 px-3 py-2">
           <textarea
             ref={inputRef}
             value={input}

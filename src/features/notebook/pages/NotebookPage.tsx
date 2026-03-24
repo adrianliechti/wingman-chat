@@ -32,6 +32,7 @@ export function NotebookPage() {
 
   const {
     notebook,
+    loading,
     sources,
     outputs,
     messages,
@@ -180,12 +181,8 @@ export function NotebookPage() {
     };
   }, [setRightActions, handleNew]);
 
-  if (!notebook) {
-    return (
-      <div className="h-full w-full flex items-center justify-center">
-        <div className="text-neutral-400 animate-pulse">Loading...</div>
-      </div>
-    );
+  if (!notebook && !loading) {
+    return <div className="h-full w-full" />;
   }
 
   return (
@@ -194,16 +191,20 @@ export function NotebookPage() {
       <main className="w-full grow overflow-hidden flex pt-14 relative">
         {/* Left: Sources */}
         <div className="w-72 shrink-0 h-full overflow-hidden">
-          <SourcesPanel
-            sources={sources}
-            isSearching={isSearching}
-            searchWeb={searchWeb}
-            addSearchResult={addSearchResult}
-            scrapeWeb={scrapeWeb}
-            addScrapeResult={addScrapeResult}
-            onFileAdd={addFileSource}
-            onDeleteSource={deleteSource}
-          />
+          {loading ? (
+            <div className="h-full" />
+          ) : (
+            <SourcesPanel
+              sources={sources}
+              isSearching={isSearching}
+              searchWeb={searchWeb}
+              addSearchResult={addSearchResult}
+              scrapeWeb={scrapeWeb}
+              addScrapeResult={addScrapeResult}
+              onFileAdd={addFileSource}
+              onDeleteSource={deleteSource}
+            />
+          )}
         </div>
 
         {/* Divider */}
@@ -213,7 +214,9 @@ export function NotebookPage() {
 
         {/* Center: Chat or Output Viewer */}
         <div className="flex-1 min-w-0 h-full overflow-hidden">
-          {viewingOutput ? (
+          {loading ? (
+            <div className="h-full" />
+          ) : viewingOutput ? (
             <div className="h-full flex flex-col relative">
               {/* Output buttons */}
               <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
@@ -283,13 +286,17 @@ export function NotebookPage() {
 
         {/* Right: Studio */}
         <div className="w-72 shrink-0 h-full overflow-hidden">
-          <StudioPanel
-            sources={sources}
-            outputs={outputs}
-            onGenerate={generateOutput}
-            onDeleteOutput={deleteOutput}
-            onSelectOutput={setViewingOutput}
-          />
+          {loading ? (
+            <div className="h-full" />
+          ) : (
+            <StudioPanel
+              sources={sources}
+              outputs={outputs}
+              onGenerate={generateOutput}
+              onDeleteOutput={deleteOutput}
+              onSelectOutput={setViewingOutput}
+            />
+          )}
         </div>
       </main>
     </div>

@@ -161,6 +161,7 @@ export function useNotebook(notebookId?: string) {
   const [sources, setSources] = useState<NotebookSource[]>([]);
   const [outputs, setOutputs] = useState<NotebookOutput[]>([]);
   const [messages, setMessages] = useState<NotebookMessage[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const [isSearching, setIsSearching] = useState(false);
   const [isChatting, setIsChatting] = useState(false);
@@ -170,6 +171,9 @@ export function useNotebook(notebookId?: string) {
   const sourcesRef = useRef(sources);
   sourcesRef.current = sources;
 
+  // Guard against stale async loads when switching notebooks quickly
+  const loadIdRef = useRef(0);
+
   const getModel = useCallback(() => {
     return config.notebook?.model || '';
   }, [config.notebook]);
@@ -178,31 +182,44 @@ export function useNotebook(notebookId?: string) {
 
   const initNotebook = useCallback(async (id?: string) => {
     const rid = id || generateId();
-    const existing = await store.getNotebook(rid);
+    const thisLoad = ++loadIdRef.current;
+    setLoading(true);
 
-    if (existing) {
-      setNotebook(existing);
-      const [s, o, m] = await Promise.all([
-        store.getSources(rid),
-        store.getOutputs(rid),
-        store.getMessages(rid),
-      ]);
-      setSources(s);
-      setOutputs(o);
-      setMessages(m);
-    } else {
-      const now = new Date().toISOString();
-      const r: Notebook = {
-        id: rid,
-        title: 'Untitled notebook',
-        createdAt: now,
-        updatedAt: now,
-      };
-      await store.saveNotebook(r);
-      setNotebook(r);
-      setSources([]);
-      setOutputs([]);
-      setMessages([]);
+    try {
+      const existing = await store.getNotebook(rid);
+      // Abort if a newer load was started while we were awaiting
+      if (loadIdRef.current !== thisLoad) return rid;
+
+      if (existing) {
+        const [s, o, m] = await Promise.all([
+          store.getSources(rid),
+          store.getOutputs(rid),
+          store.getMessages(rid),
+        ]);
+        if (loadIdRef.current !== thisLoad) return rid;
+        setNotebook(existing);
+        setSources(s);
+        setOutputs(o);
+        setMessages(m);
+      } else {
+        const now = new Date().toISOString();
+        const r: Notebook = {
+          id: rid,
+          title: 'Untitled notebook',
+          createdAt: now,
+          updatedAt: now,
+        };
+        await store.saveNotebook(r);
+        if (loadIdRef.current !== thisLoad) return rid;
+        setNotebook(r);
+        setSources([]);
+        setOutputs([]);
+        setMessages([]);
+      }
+    } finally {
+      if (loadIdRef.current === thisLoad) {
+        setLoading(false);
+      }
     }
 
     return rid;
@@ -210,6 +227,8 @@ export function useNotebook(notebookId?: string) {
 
   useEffect(() => {
     if (notebookId) {
+      // Clear stale data immediately to avoid showing old notebook content
+      setNotebook(null);
       initNotebook(notebookId);
     }
   }, [notebookId, initNotebook]);
@@ -693,6 +712,7 @@ export function useNotebook(notebookId?: string) {
 
   return {
     notebook,
+    loading,
     sources,
     outputs,
     messages,
