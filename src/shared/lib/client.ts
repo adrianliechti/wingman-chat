@@ -4,7 +4,7 @@ import { zodTextFormat } from "openai/helpers/zod";
 import mime from "mime";
 
 import { Role } from "@/shared/types/chat";
-import type { Tool, Content, ImageContent, FileContent, ToolResultContent, ReasoningContent } from "@/shared/types/chat";
+import type { Tool, Content, ImageContent, FileContent, ToolResultContent, ReasoningContent, CompactionContent } from "@/shared/types/chat";
 import type { Message, Model, ModelType } from "@/shared/types/chat";
 import type { SearchResult } from "@/features/research/types/search";
 import { modelType, modelName } from "./models";
@@ -59,6 +59,7 @@ export class Client {
       effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
       summary?: 'auto' | 'concise' | 'detailed';
       verbosity?: 'low' | 'medium' | 'high';
+      compactThreshold?: number;
     }
   ): Promise<Message> {
     input = this.sanitizeMessages(input);
@@ -170,6 +171,15 @@ export class Client {
                 arguments: part.arguments,
               });
             }
+
+            if (part.type === 'compaction') {
+              flushAssistantText();
+              items.push({
+                type: "compaction",
+                id: part.id,
+                encrypted_content: part.encrypted_content,
+              } as unknown as OpenAI.Responses.ResponseInputItem);
+            }
           }
 
           flushAssistantText();
@@ -230,6 +240,9 @@ export class Client {
         ...(options?.verbosity ? {
           text: { verbosity: options.verbosity }
         } : {}),
+        ...(options?.compactThreshold ? {
+          context_management: [{ type: 'compaction' as const, compact_threshold: options.compactThreshold }],
+        } : {}),
       })
       .on('response.reasoning_summary_text.delta', (event) => {
         appendReasoning(event.item_id, '', event.delta);
@@ -261,6 +274,14 @@ export class Client {
               handler?.([...contentParts]);
             }
           }
+        } else if (event.item.type === 'compaction') {
+          const compactionItem = event.item as { id: string; encrypted_content: string };
+          contentParts.push({
+            type: 'compaction',
+            id: compactionItem.id,
+            encrypted_content: compactionItem.encrypted_content,
+          });
+          handler?.([...contentParts]);
         }
       });
 

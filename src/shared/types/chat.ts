@@ -12,6 +12,7 @@ export type Model = {
     effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
     summary?: 'auto' | 'concise' | 'detailed';
     verbosity?: 'low' | 'medium' | 'high';
+    compactThreshold?: number;
 
     tools?: {
         enabled: string[];
@@ -116,8 +117,14 @@ export type ToolResultContent = {
     result: (TextContent | ImageContent | AudioContent | FileContent)[];
 };
 
+export type CompactionContent = {
+    type: 'compaction';
+    id: string;
+    encrypted_content: string;
+};
+
 // Content is the union of all content types used in messages
-export type Content = TextContent | ImageContent | AudioContent | FileContent | ReasoningContent | ToolCallContent | ToolResultContent;
+export type Content = TextContent | ImageContent | AudioContent | FileContent | ReasoningContent | ToolCallContent | ToolResultContent | CompactionContent;
 
 export type TextContent = {
     type: "text";

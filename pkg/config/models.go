@@ -51,14 +51,15 @@ type ModelTools struct {
 }
 
 type Model struct {
-	ID          string      `json:"id,omitempty" yaml:"id,omitempty"`
-	Name        string      `json:"name,omitempty" yaml:"name,omitempty"`
-	Description string      `json:"description,omitempty" yaml:"description,omitempty"`
-	Effort      string      `json:"effort,omitempty" yaml:"effort,omitempty"`
-	Summary     string      `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Verbosity   string      `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
-	Tools       *ModelTools `json:"tools,omitempty" yaml:"tools,omitempty"`
-	Prompts     []string    `json:"prompts,omitempty" yaml:"prompts,omitempty"`
+	ID               string      `json:"id,omitempty" yaml:"id,omitempty"`
+	Name             string      `json:"name,omitempty" yaml:"name,omitempty"`
+	Description      string      `json:"description,omitempty" yaml:"description,omitempty"`
+	Effort           string      `json:"effort,omitempty" yaml:"effort,omitempty"`
+	Summary          string      `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Verbosity        string      `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
+	CompactThreshold int         `json:"compactThreshold,omitempty" yaml:"compactThreshold,omitempty"`
+	Tools            *ModelTools `json:"tools,omitempty" yaml:"tools,omitempty"`
+	Prompts          []string    `json:"prompts,omitempty" yaml:"prompts,omitempty"`
 }
 
 type TTS struct {

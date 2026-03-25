@@ -12,6 +12,19 @@ import { getConfig } from "@/shared/config";
 import { ChatContext } from './ChatContext';
 import type { ChatContextType } from './ChatContext';
 
+/** Drop all messages before the last compaction item to keep API requests small. */
+function pruneAtCompaction(messages: Message[]): Message[] {
+  let lastCompactionIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].content.some(p => p.type === 'compaction')) {
+      lastCompactionIndex = i;
+      break;
+    }
+  }
+  if (lastCompactionIndex <= 0) return [...messages];
+  return messages.slice(lastCompactionIndex);
+}
+
 interface ChatProviderProps {
   children: React.ReactNode;
 }
@@ -184,7 +197,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const outgoingMessage = appendTextContent(message, pendingModelContext);
 
       let conversation = [...history, outgoingMessage];
-      let modelConversation = [...conversation];
+      let modelConversation = pruneAtCompaction(conversation);
 
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
@@ -254,12 +267,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
               effort: model?.effort,
               summary: model?.summary,
               verbosity: model?.verbosity,
+              compactThreshold: model?.compactThreshold,
             }
           );
 
           // Add the assistant message to conversation
           conversation = [...conversation, assistantMessage];
-          modelConversation = [...modelConversation, assistantMessage];
+          modelConversation = pruneAtCompaction([...modelConversation, assistantMessage]);
 
           // Commit the completed message once per turn
           updateChat(id, () => ({ messages: conversation }));
