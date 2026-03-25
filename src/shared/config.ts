@@ -58,6 +58,7 @@ interface modelConfig {
   effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
   summary?: 'auto' | 'concise' | 'detailed';
   verbosity?: 'low' | 'medium' | 'high';
+  compactThreshold?: number;
 
   tools?: {
     enabled: string[];
@@ -236,6 +237,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
             effort: model.effort,
             summary: model.summary,
             verbosity: model.verbosity,
+            compactThreshold: model.compactThreshold,
 
             prompts: model.prompts,
 

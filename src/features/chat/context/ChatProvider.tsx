@@ -47,7 +47,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const chat = chats.find(c => c.id === chatId) ?? null;
   const agentModel = currentAgent?.model ? models.find(m => m.id === currentAgent.model) ?? null : null;
-  const model = chat?.model ?? agentModel ?? selectedModel ?? models[0];
+  const chatModel = chat?.model ? models.find(m => m.id === chat.model!.id) ?? chat.model : null;
+  const model = chatModel ?? agentModel ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext('chat', model);
 
   const messages = useMemo(() => {
