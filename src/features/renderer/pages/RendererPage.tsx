@@ -54,38 +54,27 @@ const STYLE_INSTRUCTIONS: Record<string, string> = {
 
 const AVAILABLE_STYLES = Object.keys(STYLE_INSTRUCTIONS);
 
-const canvasBgStyle = `
-@keyframes drift-1 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(15%,15%) scale(1.1)} }
-@keyframes drift-2 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-15%,-15%) scale(1.05)} }
-@keyframes drift-3 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-10%,12%) scale(1.08)} }
-@keyframes drift-4 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(12%,-10%) scale(1.06)} }
-`;
-
 const blobs = [
-  { bg: 'radial-gradient(ellipse 80% 80% at center, rgba(120,119,198,0.18) 0%, transparent 70%)', top: '10%', left: '5%',  w: '55%', h: '55%', anim: 'drift-1 25s ease-in-out infinite' },
-  { bg: 'radial-gradient(ellipse 80% 80% at center, rgba(255,119,198,0.14) 0%, transparent 70%)', top: '15%', left: '45%', w: '50%', h: '50%', anim: 'drift-2 30s ease-in-out infinite' },
-  { bg: 'radial-gradient(ellipse 80% 80% at center, rgba(78,205,196,0.14) 0%, transparent 70%)',  top: '0%',  left: '20%', w: '50%', h: '50%', anim: 'drift-3 22s ease-in-out infinite' },
-  { bg: 'radial-gradient(ellipse 70% 70% at center, rgba(255,177,66,0.12) 0%, transparent 70%)',  top: '45%', left: '25%', w: '45%', h: '45%', anim: 'drift-4 28s ease-in-out infinite' },
+  { bg: 'radial-gradient(ellipse 80% 80% at center, rgba(120,119,198,0.18) 0%, transparent 70%)', top: '10%', left: '5%',  w: '55%', h: '55%' },
+  { bg: 'radial-gradient(ellipse 80% 80% at center, rgba(255,119,198,0.14) 0%, transparent 70%)', top: '15%', left: '45%', w: '50%', h: '50%' },
+  { bg: 'radial-gradient(ellipse 80% 80% at center, rgba(78,205,196,0.14) 0%, transparent 70%)',  top: '0%',  left: '20%', w: '50%', h: '50%' },
+  { bg: 'radial-gradient(ellipse 70% 70% at center, rgba(255,177,66,0.12) 0%, transparent 70%)',  top: '45%', left: '25%', w: '45%', h: '45%' },
 ] as const;
 
 function CanvasBackground() {
   return (
-    <>
-      <style>{canvasBgStyle}</style>
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        {blobs.map((b, i) => (
-          <div
-            key={i}
-            className="absolute will-change-transform"
-            style={{
-              top: b.top, left: b.left, width: b.w, height: b.h,
-              backgroundImage: b.bg,
-              animation: b.anim,
-            }}
-          />
-        ))}
-      </div>
-    </>
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      {blobs.map((b, i) => (
+        <div
+          key={i}
+          className="absolute"
+          style={{
+            top: b.top, left: b.left, width: b.w, height: b.h,
+            backgroundImage: b.bg,
+          }}
+        />
+      ))}
+    </div>
   );
 }
 
