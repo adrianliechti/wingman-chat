@@ -22,7 +22,7 @@ export function NotebookPage() {
   const { setSidebarContent } = useSidebar();
   const navigate = useNavigate();
 
-  const notebookIdMatch = useMatch({ from: '/notebook/$notebookId', shouldThrow: false });
+  const notebookIdMatch = useMatch({ from: '/app/notebook/$notebookId', shouldThrow: false });
   const routeNotebookId = notebookIdMatch?.params.notebookId;
 
   const [notebookId, setNotebookId] = useState<string | undefined>();
