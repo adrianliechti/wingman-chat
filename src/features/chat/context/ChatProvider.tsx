@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Role } from "@/shared/types/chat";
-import type { Message, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation, Content, ToolResultContent } from '@/shared/types/chat';
+import type { Message, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation, Content } from '@/shared/types/chat';
 import { useModels } from "@/features/chat/hooks/useModels";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
@@ -23,9 +23,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { isAvailable: artifactsEnabled, setChatId: setArtifactsChatId } = useArtifacts();
-  const { renderApp } = useApp();
+  const { renderApp, closeApp } = useApp();
   const { currentAgent } = useAgents();
-  const { resetTools, setProviderEnabled, restoreToolUI } = useToolsContext();
+  const { resetTools } = useToolsContext();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
@@ -65,48 +65,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return newChat;
   }, [createChatHook, resetTools]);
 
-  const restoreToolApp = useCallback(async (toolResult: ToolResultContent) => {
-    if (!toolResult.meta?.toolProvider || !toolResult.meta?.toolResource) return;
-
-    const providerId = toolResult.meta.toolProvider as string;
-    const resourceUri = toolResult.meta.toolResource as string;
-    const args = JSON.parse(toolResult.arguments || '{}');
-
-    // Enable the provider (connects if not already connected)
-    await setProviderEnabled(providerId, true);
-
-    const context: ToolContext = {
-      render: () => renderApp(),
-    };
-
-    try {
-      await restoreToolUI(providerId, toolResult.name, resourceUri, args, toolResult.result, context);
-    } catch (error) {
-      console.error('Failed to restore tool app:', error);
-    }
-  }, [setProviderEnabled, restoreToolUI, renderApp]);
-
   const selectChat = useCallback((chatId: string) => {
     setChatId(chatId);
     resetTools();
-
-    // Auto-restore the last MCP app for this chat
-    const chatData = chats.find(c => c.id === chatId);
-    if (chatData?.messages?.length) {
-      const lastAppResult = chatData.messages
-        .flatMap(m => m.content)
-        .filter((c): c is ToolResultContent =>
-          c.type === 'tool_result' && !!c.meta?.toolProvider && !!c.meta?.toolResource
-        )
-        .pop();
-
-      if (lastAppResult) {
-        restoreToolApp(lastAppResult).catch(error => {
-          console.error('Failed to auto-restore app on chat load:', error);
-        });
-      }
-    }
-  }, [chats, resetTools, restoreToolApp]);
+    closeApp();
+    // Inline MCP apps re-render automatically via InlineMcpApp component mount
+  }, [resetTools, closeApp]);
 
   const deleteChat = useCallback(
     (id: string) => {
@@ -453,7 +417,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     sendMessage,
 
     isResponding,
-    restoreToolApp,
     // Elicitation
     pendingElicitation,
     resolveElicitation,

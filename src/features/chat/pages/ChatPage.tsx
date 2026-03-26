@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { Plus as PlusIcon, BotMessageSquare, Info, ArrowDown, Paperclip, Rocket } from "lucide-react";
+import { Plus as PlusIcon, BotMessageSquare, Info, ArrowDown, Paperclip } from "lucide-react";
 import DOMPurify from "dompurify";
 import { getConfig } from "@/shared/config";
 import { useAutoScroll } from "@/shared/hooks/useAutoScroll";
@@ -91,7 +91,7 @@ export function ChatPage() {
   const { layoutMode } = useLayout();
   const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
   const { showAgentDrawer, toggleAgentDrawer } = useAgents();
-  const { showAppDrawer, toggleAppDrawer, hasAppContent } = useApp();
+  const { showAppDrawer } = useApp();
   
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
@@ -128,16 +128,6 @@ export function ChatPage() {
   useEffect(() => {
     setRightActions(
       <div className="flex items-center gap-2">
-        {hasAppContent && (
-          <button
-            type="button"
-            className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-            onClick={toggleAppDrawer}
-            title={showAppDrawer ? 'Close app' : 'Open app'}
-          >
-            <Rocket size={20} />
-          </button>
-        )}
         {artifactsAvailable && (
           <button
             type="button"
@@ -170,7 +160,7 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, createChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, showAgentDrawer, toggleAgentDrawer, hasAppContent, showAppDrawer, toggleAppDrawer]);
+  }, [setRightActions, createChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, showAgentDrawer, toggleAgentDrawer]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {

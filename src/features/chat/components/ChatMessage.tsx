@@ -5,6 +5,7 @@ import { PlayButton } from '@/shared/ui/PlayButton';
 import { RenderContents } from '@/shared/ui/ContentRenderer';
 import { CodeRenderer } from '@/shared/ui/CodeRenderer';
 import { ChatInputAttachments } from './ChatInputAttachments';
+import { InlineMcpApp } from './InlineMcpApp';
 import { Wrench, Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil, ChevronRight } from "lucide-react";
 import { useState, useRef, useEffect } from 'react';
 
@@ -437,6 +438,11 @@ export function ChatMessage({ message, index, isResponding, ...props }: ChatMess
               <div className="ml-5 mt-2">
                 <RenderContents contents={toolResult.result} />
               </div>
+            )}
+
+            {/* Render inline MCP app for tool results with UI metadata */}
+            {typeof toolResult?.meta?.toolProvider === 'string' && typeof toolResult?.meta?.toolResource === 'string' && (
+              <InlineMcpApp key={`${chat?.id}-${index}`} toolResult={toolResult} />
             )}
           </div>
         </div>

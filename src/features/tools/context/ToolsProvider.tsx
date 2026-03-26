@@ -159,13 +159,14 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     args: Record<string, unknown>,
     result: (TextContent | ImageContent | AudioContent | FileContent)[],
     context: ToolContext,
+    displayModeOptions?: import('@/features/settings/lib/mcp').DisplayModeOptions,
   ) => {
     const client = allMcpClients.find(c => c.id === providerId);
     if (!client || !client.isConnected()) {
       console.warn(`Cannot restore tool UI: MCP client ${providerId} not connected`);
       return;
     }
-    await client.restoreToolUI(toolName, resourceUri, args, result, context);
+    await client.restoreToolUI(toolName, resourceUri, args, result, context, displayModeOptions);
   }, [allMcpClients]);
 
   const setModelOverrides = useCallback((enabled: string[], disabled: string[]) => {

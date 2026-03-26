@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { Chat, Message, Model, PendingElicitation, ElicitationResult, ToolResultContent } from "@/shared/types/chat";
+import type { Chat, Message, Model, PendingElicitation, ElicitationResult } from "@/shared/types/chat";
 
 export interface ChatContextType {
   // Models
@@ -21,9 +21,6 @@ export interface ChatContextType {
 
   addMessage: (message: Message) => Promise<void>;
   sendMessage: (message: Message, historyOverride?: Message[]) => Promise<void>;
-
-  // App restore
-  restoreToolApp: (toolResult: ToolResultContent) => Promise<void>;
 
   // Elicitation state
   pendingElicitation: PendingElicitation | null;

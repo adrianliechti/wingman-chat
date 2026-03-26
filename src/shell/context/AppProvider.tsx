@@ -89,6 +89,46 @@ export function AppProvider({ children }: AppProviderProps) {
     };
   }, [runActiveCleanup]);
 
+  const renderAppInto = useCallback(async (iframe: HTMLIFrameElement): Promise<RenderedAppHandle> => {
+    const sessionId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}`;
+
+    await new Promise<void>((resolve, reject) => {
+      const handleLoad = () => {
+        cleanup();
+        resolve();
+      };
+
+      const handleError = () => {
+        cleanup();
+        reject(new Error('Failed to load MCP app sandbox proxy.'));
+      };
+
+      const cleanup = () => {
+        iframe.removeEventListener('load', handleLoad);
+        iframe.removeEventListener('error', handleError);
+      };
+
+      iframe.addEventListener('load', handleLoad);
+      iframe.addEventListener('error', handleError);
+      iframe.src = `${SANDBOX_PROXY_PATH}?session=${encodeURIComponent(sessionId)}`;
+    });
+
+    return {
+      iframe,
+      registerCleanup: () => {
+        // Inline apps manage their own cleanup via the component lifecycle
+      },
+    };
+  }, []);
+
+  const closeApp = useCallback(async () => {
+    setShowAppDrawer(false);
+    setHasAppContent(false);
+    await runActiveCleanup();
+  }, [runActiveCleanup]);
+
   const showDrawer = useCallback(() => {
     setShowAppDrawer(true);
     setHasAppContent(true);
@@ -107,6 +147,8 @@ export function AppProvider({ children }: AppProviderProps) {
     registerIframe,
     getIframe,
     renderApp,
+    renderAppInto,
+    closeApp,
     hasAppContent,
     showDrawer,
   };
