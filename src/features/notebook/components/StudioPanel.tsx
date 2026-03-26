@@ -120,7 +120,7 @@ export function StudioPanel({
       {/* Generated outputs list */}
       <div className="flex-1 overflow-y-auto px-3 pt-3 pb-3 min-h-0">
         {outputs.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-1">
             {outputs.map((output) => {
               const typeInfo = OUTPUT_TYPES.find((t) => t.type === output.type);
               const Icon = typeInfo?.icon || StickyNote;
@@ -130,25 +130,24 @@ export function StudioPanel({
               return (
                 <div
                   key={output.id}
-                  className={`group relative rounded-lg border transition-colors ${
+                  className={`group/output flex items-center gap-2 py-1.5 transition-colors ${
                     isGenerating
-                      ? 'border-neutral-200 dark:border-neutral-700/60 bg-neutral-50 dark:bg-neutral-800/30'
+                      ? 'opacity-60'
                       : isError
-                        ? 'border-red-200 dark:border-red-800/50 bg-red-50/50 dark:bg-red-950/20'
-                        : 'border-neutral-200 dark:border-neutral-700/60 hover:border-neutral-300 dark:hover:border-neutral-600 cursor-pointer'
+                        ? 'opacity-75'
+                        : 'cursor-pointer'
                   }`}
                   onClick={() => {
                     if (output.status === 'completed') onSelectOutput(output);
                   }}
                 >
-                  <div className="flex items-center gap-2 px-3 py-2.5">
-                    <div className="w-7 h-7 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
+                    <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
                       {isGenerating ? (
-                        <Loader2 size={14} className="text-neutral-400 animate-spin" />
+                        <Loader2 size={13} className="text-neutral-400 animate-spin" />
                       ) : isError ? (
-                        <AlertCircle size={14} className="text-red-400" />
+                        <AlertCircle size={13} className="text-red-400" />
                       ) : (
-                        <Icon size={14} className="text-neutral-500" />
+                        <Icon size={13} className="text-neutral-500" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -170,12 +169,11 @@ export function StudioPanel({
                           e.stopPropagation();
                           onDeleteOutput(output.id);
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-all"
+                        className="invisible group-hover/output:visible p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
                       >
                         <X size={12} className="text-neutral-400" />
                       </button>
                     )}
-                  </div>
                 </div>
               );
             })}

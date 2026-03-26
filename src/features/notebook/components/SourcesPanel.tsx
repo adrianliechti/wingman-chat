@@ -94,12 +94,12 @@ export function SourcesPanel({
       {/* Sources list */}
       <div className="flex-1 overflow-y-auto px-3 pt-3 pb-3 min-h-0">
         {(sources.length > 0 || extracting.size > 0 || isSearching) && (
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {/* Extracting indicators */}
             {Array.from(extracting).map((fileId) => (
               <div
                 key={fileId}
-                className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-neutral-50 dark:bg-neutral-800/50 animate-pulse"
+                className="flex items-center gap-2 px-3 py-2 animate-pulse"
               >
                 <Loader2 size={14} className="text-neutral-400 animate-spin shrink-0" />
                 <span className="text-xs text-neutral-500 truncate">{fileId}</span>
@@ -571,13 +571,13 @@ function SourceItem({
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="group relative rounded-lg border border-neutral-200 dark:border-neutral-700/60 hover:border-neutral-300 dark:hover:border-neutral-600 transition-colors">
+    <div className="group/source relative">
       <div
         role="button"
         tabIndex={0}
         onClick={() => setExpanded(!expanded)}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded(!expanded); }}
-        className="w-full flex items-center gap-2 px-3 py-2.5 text-left cursor-pointer"
+        className="w-full flex items-center gap-2 py-1.5 text-left cursor-pointer"
       >
         <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
           {source.type === 'web' ? (
@@ -595,14 +595,14 @@ function SourceItem({
             e.stopPropagation();
             onDelete();
           }}
-          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-all"
+          className="invisible group-hover/source:visible p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
         >
           <X size={12} className="text-neutral-400" />
         </button>
       </div>
 
       {expanded && (
-        <div className="px-3 pb-2.5 max-h-80 overflow-y-auto">
+        <div className="px-3 pb-2 max-h-80 overflow-y-auto">
           <p className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap">
             {source.content.slice(0, 2000)}
             {source.content.length > 2000 && '...'}
