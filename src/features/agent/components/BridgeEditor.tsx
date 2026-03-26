@@ -7,6 +7,7 @@ interface BridgeEditorProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (bridge: Omit<BridgeServer, 'id'>) => void;
+  onDelete?: () => void;
   bridge?: BridgeServer | null;
 }
 
@@ -16,7 +17,7 @@ interface HeaderEntry {
   value: string;
 }
 
-export function BridgeEditor({ isOpen, onClose, onSave, bridge }: BridgeEditorProps) {
+export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: BridgeEditorProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [url, setUrl] = useState('');
@@ -247,7 +248,17 @@ export function BridgeEditor({ isOpen, onClose, onSave, bridge }: BridgeEditorPr
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-end gap-2.5 px-5 py-3 border-t border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/30">
+                <div className="flex items-center justify-between px-5 py-3 border-t border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/30">
+                  {bridge && onDelete ? (
+                    <button
+                      type="button"
+                      onClick={() => { onDelete(); onClose(); }}
+                      className="px-3 py-1.5 text-xs font-medium rounded-md text-red-600 dark:text-red-400 hover:bg-red-100/60 dark:hover:bg-red-950/40 transition-colors"
+                    >
+                      Delete
+                    </button>
+                  ) : <span />}
+                  <div className="flex items-center gap-2.5">
                   <button
                     type="button"
                     onClick={onClose}
@@ -263,6 +274,7 @@ export function BridgeEditor({ isOpen, onClose, onSave, bridge }: BridgeEditorPr
                   >
                     Save
                   </button>
+                  </div>
                 </div>
               </Dialog.Panel>
             </Transition.Child>
