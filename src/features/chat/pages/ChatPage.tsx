@@ -93,7 +93,7 @@ export function ChatPage() {
 
   const navigate = useNavigate();
   const { newChat } = useChatNavigate();
-  const chatIdMatch = useMatch({ from: '/chat/$chatId', shouldThrow: false });
+  const chatIdMatch = useMatch({ from: '/app/chat/$chatId', shouldThrow: false });
   const routeChatId = chatIdMatch?.params.chatId;
 
   // Sync URL → state for deep links and browser back/forward navigation.
