@@ -11,6 +11,7 @@ import {
   CircleHelp,
   Network,
   ChevronDown,
+  Download,
 } from 'lucide-react';
 import type { NotebookOutput, NotebookSource, OutputType } from '../types/notebook';
 import { SLIDE_STYLES, PODCAST_STYLES } from '../hooks/useNotebook';
@@ -46,6 +47,18 @@ export function StudioPanel({
   const hasSources = sources.length > 0;
   const [openMenu, setOpenMenu] = useState<OutputType | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const downloadOutput = async (output: NotebookOutput) => {
+    const slug = output.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+
+    if (output.type === 'audio-overview' && output.audioUrl) {
+      downloadDataUrl(output.audioUrl, `${slug}.wav`);
+    } else if (output.type === 'infographic' && output.imageUrl) {
+      downloadDataUrl(output.imageUrl, `${slug}.png`);
+    } else if (output.type === 'slide-deck' && output.slides?.length) {
+      await downloadSlidesAsPdf(output.slides, slug);
+    }
+  };
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -163,16 +176,31 @@ export function StudioPanel({
                       </p>
                     </div>
                     {!isGenerating && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteOutput(output.id);
-                        }}
-                        className="invisible group-hover/output:visible p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-                      >
-                        <X size={12} className="text-neutral-400" />
-                      </button>
+                      <div className="invisible group-hover/output:visible flex items-center shrink-0">
+                        {output.status === 'completed' && canDownload(output) && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadOutput(output);
+                            }}
+                            className="p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                            title="Download"
+                          >
+                            <Download size={12} className="text-neutral-400" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteOutput(output.id);
+                          }}
+                          className="p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                        >
+                          <X size={12} className="text-neutral-400" />
+                        </button>
+                      </div>
                     )}
                 </div>
               );
@@ -182,4 +210,53 @@ export function StudioPanel({
       </div>
     </div>
   );
+}
+
+function canDownload(output: NotebookOutput): boolean {
+  return (
+    (output.type === 'audio-overview' && !!output.audioUrl) ||
+    (output.type === 'infographic' && !!output.imageUrl) ||
+    (output.type === 'slide-deck' && !!output.slides?.length)
+  );
+}
+
+function downloadDataUrl(dataUrl: string, filename: string) {
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = filename;
+  a.click();
+}
+
+async function downloadSlidesAsPdf(slides: string[], slug: string) {
+  const { jsPDF } = await import('jspdf');
+
+  // Load first image to get natural dimensions
+  const firstImg = await loadImage(slides[0]);
+  const w = firstImg.naturalWidth;
+  const h = firstImg.naturalHeight;
+  const landscape = w > h;
+
+  const doc = new jsPDF({
+    orientation: landscape ? 'landscape' : 'portrait',
+    unit: 'px',
+    format: [w, h],
+  });
+
+  doc.addImage(slides[0], 'PNG', 0, 0, w, h);
+
+  for (let i = 1; i < slides.length; i++) {
+    doc.addPage([w, h], landscape ? 'landscape' : 'portrait');
+    doc.addImage(slides[i], 'PNG', 0, 0, w, h);
+  }
+
+  doc.save(`${slug}.pdf`);
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
 }
