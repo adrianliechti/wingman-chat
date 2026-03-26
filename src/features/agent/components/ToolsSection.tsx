@@ -88,18 +88,19 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
         icon={<Wrench size={16} />}
         isOpen={true}
         collapsible={false}
+        headerAction={
+          <button
+            type="button"
+            onClick={handleNewBridge}
+            className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+          >
+            <Plus size={12} /> Add MCP
+          </button>
+        }
       >
-        <button
-          type="button"
-          onClick={handleNewBridge}
-          className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
-        >
-          <Plus size={12} /> Add MCP server
-        </button>
-
-        <div className="space-y-1.5 mt-2">
+        <div className="space-y-1">
           {availableTools.map(tool => (
-            <div key={tool.id} className="flex items-center gap-2 p-2 rounded-lg bg-white/30 dark:bg-neutral-900/40 border border-neutral-200/40 dark:border-neutral-700/40">
+            <div key={tool.id} className="flex items-center gap-2 py-1.5">
               <span className="text-neutral-600 dark:text-neutral-400">
                 {!tool.Icon ? (
                   <Wrench size={16} />
@@ -129,7 +130,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
           {agent.servers.map(server => {
             const state = server.enabled ? getProviderState(server.id) : ProviderState.Disconnected;
             return (
-              <div key={server.id} className="flex items-center gap-2 p-2 rounded-lg bg-white/30 dark:bg-neutral-900/40 border border-neutral-200/40 dark:border-neutral-700/40 cursor-pointer hover:bg-white/50 dark:hover:bg-neutral-800/50 transition-colors" onClick={() => handleEditBridge(server)}>
+              <div key={server.id} className="flex items-center gap-2 py-1.5 cursor-pointer" onClick={() => handleEditBridge(server)}>
                 {state === ProviderState.Failed ? (
                   <button type="button" onClick={(e) => { e.stopPropagation(); setProviderEnabled(server.id, true); }} className="shrink-0 text-amber-500 hover:text-amber-600" title="Connection failed — click to retry">
                     <AlertTriangle size={14} />

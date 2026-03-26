@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Sparkles, X, BookOpen } from 'lucide-react';
+import { Sparkles, X, BookOpen, Zap } from 'lucide-react';
 import { useAgents } from '@/features/agent/hooks/useAgents';
 import { useSkills } from '@/features/skills/hooks/useSkills';
 import { SkillCatalog } from './SkillCatalog';
@@ -55,22 +55,24 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
         icon={<Sparkles size={16} />}
         isOpen={true}
         collapsible={false}
+        headerAction={
+          <button
+            type="button"
+            onClick={() => setCatalogOpen(true)}
+            className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+          >
+            <BookOpen size={12} /> Catalog
+          </button>
+        }
       >
-        <button
-          type="button"
-          onClick={() => setCatalogOpen(true)}
-          className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
-        >
-          <BookOpen size={12} /> Add from Catalog
-        </button>
-
         {enabledSkills.length > 0 && (
-          <div className="space-y-1.5 mt-2">
+          <div className="space-y-1">
             {enabledSkills.map(skill => (
               <div
                 key={skill.id}
-                className="flex items-center gap-2 p-2 rounded-lg bg-white/30 dark:bg-neutral-900/40 border border-neutral-200/40 dark:border-neutral-700/40"
+                className="flex items-center gap-2 py-1.5"
               >
+                <Zap size={14} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-xs text-neutral-900 dark:text-neutral-100 truncate">{skill.name}</div>
                   <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">{skill.description}</div>

@@ -73,16 +73,17 @@ export function FilesSection({ agent }: FilesSectionProps) {
         icon={<Folder size={16} />}
         isOpen={true}
         collapsible={false}
+        headerAction={
+          <button
+            type="button"
+            onClick={() => document.getElementById(`agent-file-upload-${agent.id}`)?.click()}
+            className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+          >
+            <Upload size={12} /> Upload
+          </button>
+        }
       >
       <div className="space-y-2">
-        {/* Upload button */}
-        <button
-          type="button"
-          onClick={() => document.getElementById(`agent-file-upload-${agent.id}`)?.click()}
-          className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
-        >
-          <Upload size={12} /> Upload files
-        </button>
         <input
           type="file"
           multiple

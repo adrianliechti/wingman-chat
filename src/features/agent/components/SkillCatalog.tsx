@@ -381,16 +381,17 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                     return (
                       <div
                         key={skill.id}
-                        className="flex items-center gap-2.5 px-5 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-800/40 transition-colors group"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => onToggle(skill.name)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(skill.name); } }}
+                        className="flex items-center gap-2.5 px-5 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-800/40 transition-colors group cursor-pointer select-none"
                       >
-                        <button
-                          type="button"
-                          onClick={() => onToggle(skill.name)}
-                          className="shrink-0 rounded p-0.5 flex items-center justify-center text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
-                          title={enabled ? 'Remove skill' : 'Add skill'}
-                        >
+                        <span className={`shrink-0 rounded p-0.5 flex items-center justify-center transition-colors ${
+                          enabled ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-400 dark:text-neutral-500'
+                        }`}>
                           {enabled ? <Minus size={14} strokeWidth={3} /> : <Plus size={14} strokeWidth={3} />}
-                        </button>
+                        </span>
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{skill.name}</div>
                           <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">{skill.description}</div>
@@ -398,7 +399,7 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                         <div className="w-0 overflow-hidden group-hover:w-16 flex items-center gap-0.5 shrink-0">
                           <button
                             type="button"
-                            onClick={() => openEditor(skill)}
+                            onClick={(e) => { e.stopPropagation(); openEditor(skill); }}
                             className="p-1 rounded text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors"
                             title="Edit skill"
                           >
@@ -406,7 +407,7 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                           </button>
                           <button
                             type="button"
-                            onClick={() => downloadSkill(skill)}
+                            onClick={(e) => { e.stopPropagation(); downloadSkill(skill); }}
                             className="p-1 rounded text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors"
                             title="Export skill"
                           >
@@ -414,7 +415,7 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDelete(skill)}
+                            onClick={(e) => { e.stopPropagation(); handleDelete(skill); }}
                             className="p-1 rounded text-neutral-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
                             title="Delete skill"
                           >
