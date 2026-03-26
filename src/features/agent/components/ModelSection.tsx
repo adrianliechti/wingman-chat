@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Cpu, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useAgents } from '@/features/agent/hooks/useAgents';
 import { useChat } from '@/features/chat/hooks/useChat';
 import type { Agent } from '@/features/agent/types/agent';
@@ -33,7 +33,6 @@ export function ModelSection({ agent }: ModelSectionProps) {
   return (
     <Section
       title="Model"
-      icon={<Cpu size={16} />}
       isOpen={true}
       collapsible={false}
     >

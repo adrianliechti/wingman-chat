@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Sparkles, X, BookOpen, Zap } from 'lucide-react';
+import { X, BookOpen, Zap } from 'lucide-react';
 import { useAgents } from '@/features/agent/hooks/useAgents';
 import { useSkills } from '@/features/skills/hooks/useSkills';
 import { SkillCatalog } from './SkillCatalog';
@@ -52,7 +52,6 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
     <>
       <Section
         title="Skills"
-        icon={<Sparkles size={16} />}
         isOpen={true}
         collapsible={false}
         headerAction={

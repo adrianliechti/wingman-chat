@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Folder, FileText, X, Plus, Loader2, Upload } from 'lucide-react';
+import { FileText, X, Plus, Loader2, Upload } from 'lucide-react';
 import { useAgentFiles } from '@/features/agent/hooks/useAgentFiles';
 import type { Agent } from '@/features/agent/types/agent';
 import type { RepositoryFile } from '@/features/repository/types/repository';
@@ -70,7 +70,6 @@ export function FilesSection({ agent }: FilesSectionProps) {
 
       <Section
         title="Knowledge Base"
-        icon={<Folder size={16} />}
         isOpen={true}
         collapsible={false}
         headerAction={

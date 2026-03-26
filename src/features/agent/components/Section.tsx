@@ -2,7 +2,6 @@ import { ChevronRight } from 'lucide-react';
 
 interface SectionProps {
   title: string;
-  icon: React.ReactNode;
   isOpen: boolean;
   onOpenToggle?: () => void;
   collapsible?: boolean;
@@ -10,7 +9,7 @@ interface SectionProps {
   children: React.ReactNode;
 }
 
-export function Section({ title, icon, isOpen, onOpenToggle, collapsible = true, headerAction, children }: SectionProps) {
+export function Section({ title, isOpen, onOpenToggle, collapsible = true, headerAction, children }: SectionProps) {
   return (
     <div className="border-b border-neutral-200/40 dark:border-neutral-700/40">
       <div className="flex items-center gap-1 px-3 py-2">

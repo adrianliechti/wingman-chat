@@ -1,5 +1,5 @@
 import { useState, Fragment } from 'react';
-import { PenLine, Edit, X } from 'lucide-react';
+import { Edit, X } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { useAgents } from '@/features/agent/hooks/useAgents';
 import type { Agent } from '@/features/agent/types/agent';
@@ -154,7 +154,6 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
 
       <Section
         title="Instructions"
-        icon={<PenLine size={16} />}
         isOpen={true}
         collapsible={false}
       >

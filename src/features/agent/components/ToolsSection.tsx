@@ -85,7 +85,6 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
 
       <Section
         title="Tools"
-        icon={<Wrench size={16} />}
         isOpen={true}
         collapsible={false}
         headerAction={
