@@ -1,4 +1,4 @@
-import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router';
+import { createRootRoute, createRoute, createRouter, Outlet, redirect } from '@tanstack/react-router';
 import { getConfig } from './shared/config';
 import { AppLayout } from './shell/AppLayout';
 import { ChatPage } from './features/chat/pages/ChatPage';
@@ -6,6 +6,7 @@ import { WorkflowPage } from './features/workflow/pages/WorkflowPage';
 import { TranslatePage } from './features/translate/pages/TranslatePage';
 import { RendererPage } from './features/renderer/pages/RendererPage';
 import { NotebookPage } from './features/notebook/pages/NotebookPage';
+import { OAuthCallbackPage } from './features/settings/pages/OAuthCallbackPage';
 
 const hashToRoute: Record<string, string> = {
   chat: '/chat',
@@ -16,8 +17,13 @@ const hashToRoute: Record<string, string> = {
   notebook: '/notebook',
 };
 
-// Root route — layout shell + hash-to-path redirect for backwards compatibility
-const rootRoute = createRootRoute({
+// Root route — bare outlet, no shell
+const rootRoute = createRootRoute({ component: Outlet });
+
+// Pathless layout route — main app shell + hash-to-path redirect for backwards compatibility
+const appLayoutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'app',
   component: AppLayout,
   beforeLoad: () => {
     const hash = window.location.hash;
@@ -30,9 +36,16 @@ const rootRoute = createRootRoute({
   },
 });
 
+// Pathless layout route — bare shell for OAuth popup (no app providers or navigation)
+const oauthLayoutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'oauth',
+  component: Outlet,
+});
+
 // Index route — redirect / to /chat
 const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: '/',
   beforeLoad: () => {
     throw redirect({ to: '/chat' });
@@ -41,20 +54,20 @@ const indexRoute = createRoute({
 
 // Chat routes
 const chatRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: '/chat',
   component: ChatPage,
 });
 
 const chatIdRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: '/chat/$chatId',
   component: ChatPage,
 });
 
 // Feature routes with config guards
 const flowRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: '/flow',
   beforeLoad: () => {
     if (!getConfig().workflow) throw redirect({ to: '/chat' });
@@ -63,7 +76,7 @@ const flowRoute = createRoute({
 });
 
 const translateRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: '/translate',
   beforeLoad: () => {
     if (!getConfig().translator) throw redirect({ to: '/chat' });
@@ -72,7 +85,7 @@ const translateRoute = createRoute({
 });
 
 const rendererRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: '/renderer',
   beforeLoad: () => {
     if (!getConfig().renderer) throw redirect({ to: '/chat' });
@@ -81,7 +94,7 @@ const rendererRoute = createRoute({
 });
 
 const notebookRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: '/notebook',
   beforeLoad: () => {
     if (!getConfig().notebook) throw redirect({ to: '/chat' });
@@ -90,7 +103,7 @@ const notebookRoute = createRoute({
 });
 
 const notebookIdRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: '/notebook/$notebookId',
   beforeLoad: () => {
     if (!getConfig().notebook) throw redirect({ to: '/chat' });
@@ -98,16 +111,26 @@ const notebookIdRoute = createRoute({
   component: NotebookPage,
 });
 
+// OAuth callback route — rendered under bare layout (no app shell)
+const oauthCallbackRoute = createRoute({
+  getParentRoute: () => oauthLayoutRoute,
+  path: '/oauth/callback',
+  component: OAuthCallbackPage,
+});
+
 // Build route tree
 const routeTree = rootRoute.addChildren([
-  indexRoute,
-  chatRoute,
-  chatIdRoute,
-  flowRoute,
-  translateRoute,
-  rendererRoute,
-  notebookRoute,
-  notebookIdRoute,
+  appLayoutRoute.addChildren([
+    indexRoute,
+    chatRoute,
+    chatIdRoute,
+    flowRoute,
+    translateRoute,
+    rendererRoute,
+    notebookRoute,
+    notebookIdRoute,
+  ]),
+  oauthLayoutRoute.addChildren([oauthCallbackRoute]),
 ]);
 
 // Create and export router
