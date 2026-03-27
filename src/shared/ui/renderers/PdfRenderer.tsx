@@ -28,4 +28,7 @@ const NonMemoizedPdfRenderer = ({ src, name }: PdfRendererProps) => {
   );
 };
 
-export const PdfRenderer = memo(NonMemoizedPdfRenderer, (prevProps, nextProps) => prevProps.src === nextProps.src && prevProps.name === nextProps.name);
+export const PdfRenderer = memo(
+  NonMemoizedPdfRenderer,
+  (prevProps, nextProps) => prevProps.src === nextProps.src && prevProps.name === nextProps.name,
+);

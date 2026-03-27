@@ -73,7 +73,10 @@ const Disclaimer = () => {
     <div className="mb-6 mx-auto max-w-2xl">
       <div className="flex items-start justify-center gap-2 px-4 py-3">
         <Info size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-        <p className="text-xs text-neutral-600 dark:text-neutral-400 text-left" dangerouslySetInnerHTML={{ __html: disclaimer }} />
+        <p
+          className="text-xs text-neutral-600 dark:text-neutral-400 text-left"
+          dangerouslySetInnerHTML={{ __html: disclaimer }}
+        />
       </div>
     </div>
   );
@@ -115,8 +118,10 @@ export function ChatPage() {
   const { backgroundImage } = useBackground();
 
   // Drawer animation states using custom hook
-  const { isAnimating: isAgentDrawerAnimating, shouldRender: shouldRenderAgentDrawer } = useDrawerAnimation(showAgentDrawer);
-  const { isAnimating: isArtifactsDrawerAnimating, shouldRender: shouldRenderArtifactsDrawer } = useDrawerAnimation(showArtifactsDrawer);
+  const { isAnimating: isAgentDrawerAnimating, shouldRender: shouldRenderAgentDrawer } =
+    useDrawerAnimation(showAgentDrawer);
+  const { isAnimating: isArtifactsDrawerAnimating, shouldRender: shouldRenderArtifactsDrawer } =
+    useDrawerAnimation(showArtifactsDrawer);
   const { isAnimating: isAppDrawerAnimating, shouldRender: shouldRenderAppDrawer } = useDrawerAnimation(showAppDrawer);
 
   // Track if we're on mobile for drawer positioning
@@ -207,7 +212,11 @@ export function ChatPage() {
         >
           <BotMessageSquare size={20} />
         </button>
-        <button type="button" className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out" onClick={newChat}>
+        <button
+          type="button"
+          className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
+          onClick={newChat}
+        >
           <PlusIcon size={20} />
         </button>
       </div>,
@@ -216,7 +225,18 @@ export function ChatPage() {
     return () => {
       setRightActions(null);
     };
-  }, [setRightActions, newChat, artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, showAgentDrawer, toggleAgentDrawer, hasAppContent, showAppDrawer, toggleAppDrawer]);
+  }, [
+    setRightActions,
+    newChat,
+    artifactsAvailable,
+    showArtifactsDrawer,
+    toggleArtifactsDrawer,
+    showAgentDrawer,
+    toggleAgentDrawer,
+    hasAppContent,
+    showAppDrawer,
+    toggleAppDrawer,
+  ]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
   const sidebarContent = useMemo(() => {
@@ -294,7 +314,13 @@ export function ChatPage() {
       {/* Main content area */}
       <div
         className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-500 ease-in-out ${
-          showAppDrawer ? "md:mr-[calc(50vw+0.75rem)]" : showArtifactsDrawer ? "md:mr-[calc(66vw+0.75rem)]" : showAgentDrawer ? "md:mr-83" : ""
+          showAppDrawer
+            ? "md:mr-[calc(50vw+0.75rem)]"
+            : showArtifactsDrawer
+              ? "md:mr-[calc(66vw+0.75rem)]"
+              : showAgentDrawer
+                ? "md:mr-83"
+                : ""
         }`}
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -311,8 +337,14 @@ export function ChatPage() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 overflow-auto transition-opacity duration-300 relative" style={{ overflowAnchor: "none" }} ref={handleScrollContainerRef}>
-              <div className={`px-3 pt-18 transition-all duration-150 ease-out ${layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width"}`}>
+            <div
+              className="flex-1 overflow-auto transition-opacity duration-300 relative"
+              style={{ overflowAnchor: "none" }}
+              ref={handleScrollContainerRef}
+            >
+              <div
+                className={`px-3 pt-18 transition-all duration-150 ease-out ${layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width"}`}
+              >
                 <Disclaimer />
 
                 {/* Virtualized message list */}
@@ -328,8 +360,18 @@ export function ChatPage() {
                   >
                     {virtualItems.map((virtualRow) =>
                       virtualRow.index < messages.length ? (
-                        <div key={virtualRow.key} data-index={virtualRow.index} ref={virtualizer.measureElement} className="flow-root">
-                          <ChatMessage index={virtualRow.index} message={messages[virtualRow.index]} isLast={virtualRow.index === messages.length - 1} isResponding={isResponding} />
+                        <div
+                          key={virtualRow.key}
+                          data-index={virtualRow.index}
+                          ref={virtualizer.measureElement}
+                          className="flow-root"
+                        >
+                          <ChatMessage
+                            index={virtualRow.index}
+                            message={messages[virtualRow.index]}
+                            isLast={virtualRow.index === messages.length - 1}
+                            isResponding={isResponding}
+                          />
                         </div>
                       ) : (
                         <div key="__sentinel" data-index={virtualRow.index} ref={virtualizer.measureElement} />
@@ -358,9 +400,17 @@ export function ChatPage() {
         {/* Chat Input */}
         <footer
           className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-500 ease-in-out ${
-            messages.length === 0 && !showArtifactsDrawer && !showAppDrawer && !showAgentDrawer ? "md:bottom-1/3 md:transform md:translate-y-1/2" : ""
+            messages.length === 0 && !showArtifactsDrawer && !showAppDrawer && !showAgentDrawer
+              ? "md:bottom-1/3 md:transform md:translate-y-1/2"
+              : ""
           } ${showSidebar && chats.length > 0 && !showArtifactsDrawer && !showAgentDrawer && !showAppDrawer ? "md:left-59" : ""} ${
-            showAppDrawer ? "right-0 md:right-[calc(50vw+0.75rem)]" : showArtifactsDrawer ? "right-0 md:right-[calc(66vw+0.75rem)]" : showAgentDrawer ? "right-0 md:right-83" : "right-0"
+            showAppDrawer
+              ? "right-0 md:right-[calc(50vw+0.75rem)]"
+              : showArtifactsDrawer
+                ? "right-0 md:right-[calc(66vw+0.75rem)]"
+                : showAgentDrawer
+                  ? "right-0 md:right-83"
+                  : "right-0"
           }`}
         >
           <div className="relative pointer-events-auto md:max-w-4xl mx-auto">

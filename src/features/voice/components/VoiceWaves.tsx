@@ -51,7 +51,13 @@ export function VoiceWaves() {
   return (
     <div className="absolute inset-0 flex items-center justify-center">
       {isListening && (
-        <svg width="100%" height="100%" viewBox={`0 0 ${viewportWidth} 120`} className="w-full h-full" preserveAspectRatio="none">
+        <svg
+          width="100%"
+          height="100%"
+          viewBox={`0 0 ${viewportWidth} 120`}
+          className="w-full h-full"
+          preserveAspectRatio="none"
+        >
           {/* Wave line 1 - Main */}
           <path
             d={generateWavePath(0, 1.0, 0.015)}

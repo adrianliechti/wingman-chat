@@ -164,7 +164,10 @@ export const CsvNode = memo(({ id, data, selected }: NodeProps<CsvNodeType>) => 
               <thead>
                 <tr>
                   {headers.map((header, index) => (
-                    <th key={index} className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wider border-r border-gray-200 dark:border-neutral-700 last:border-r-0">
+                    <th
+                      key={index}
+                      className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-neutral-400 uppercase tracking-wider border-r border-gray-200 dark:border-neutral-700 last:border-r-0"
+                    >
                       {header}
                     </th>
                   ))}
@@ -174,7 +177,10 @@ export const CsvNode = memo(({ id, data, selected }: NodeProps<CsvNodeType>) => 
                 {rows.map((row, rowIndex) => (
                   <tr key={rowIndex}>
                     {row.map((cell, cellIndex) => (
-                      <td key={cellIndex} className="px-3 py-2 text-sm text-gray-900 dark:text-neutral-100 border-r border-gray-200 dark:border-neutral-700 last:border-r-0">
+                      <td
+                        key={cellIndex}
+                        className="px-3 py-2 text-sm text-gray-900 dark:text-neutral-100 border-r border-gray-200 dark:border-neutral-700 last:border-r-0"
+                      >
                         {cell}
                       </td>
                     ))}

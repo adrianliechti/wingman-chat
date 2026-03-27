@@ -15,7 +15,9 @@ export async function importChatsFromZip(file: File): Promise<void> {
  *
  * @returns The number of successfully imported chats and failures.
  */
-export async function importChatsFromLegacyJson(jsonData: string): Promise<{ total: number; imported: number; failed: number }> {
+export async function importChatsFromLegacyJson(
+  jsonData: string,
+): Promise<{ total: number; imported: number; failed: number }> {
   const importData = JSON.parse(jsonData);
 
   if (!importData.chats || !Array.isArray(importData.chats)) {

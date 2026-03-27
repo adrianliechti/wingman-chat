@@ -80,7 +80,8 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
           }
         } catch (err) {
           console.error("File translation failed:", err);
-          const errorMessage = err instanceof Error ? err.message : "An unknown error occurred during file translation.";
+          const errorMessage =
+            err instanceof Error ? err.message : "An unknown error occurred during file translation.";
           setError(errorMessage);
         } finally {
           setIsLoading(false);
@@ -104,7 +105,13 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
         if (typeof result === "string") {
           // Apply tone/style rewriting if either is not empty
           if (toneValue || styleValue) {
-            const rewrittenResult = await client.rewriteText(config.translator?.model || "", result, langToUse, toneValue, styleValue);
+            const rewrittenResult = await client.rewriteText(
+              config.translator?.model || "",
+              result,
+              langToUse,
+              toneValue,
+              styleValue,
+            );
             setTranslatedText(rewrittenResult);
           } else {
             setTranslatedText(result);

@@ -283,7 +283,10 @@ function createReadTool(files: RepositoryFile[], options: Required<RepositoryToo
       const safeStartLine = Math.max(1, startLine);
 
       // Determine actual end line
-      const actualEndLine = endLine !== undefined ? Math.min(endLine, totalLines) : Math.min(safeStartLine + options.maxReadLines - 1, totalLines);
+      const actualEndLine =
+        endLine !== undefined
+          ? Math.min(endLine, totalLines)
+          : Math.min(safeStartLine + options.maxReadLines - 1, totalLines);
 
       // Get the requested lines
       const requestedLines = getLineRange(allLines, safeStartLine, actualEndLine);
@@ -371,10 +374,20 @@ function createSearchTool(queryChunks: QueryChunksFunction, options: Required<Re
  * @param options - Optional configuration options
  * @returns Array of tools
  */
-export function createRepositoryTools(files: RepositoryFile[], queryChunks: QueryChunksFunction, options: RepositoryToolsOptions = {}): Tool[] {
+export function createRepositoryTools(
+  files: RepositoryFile[],
+  queryChunks: QueryChunksFunction,
+  options: RepositoryToolsOptions = {},
+): Tool[] {
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
-  return [createLsTool(files), createGlobTool(files), createGrepTool(files, opts), createReadTool(files, opts), createSearchTool(queryChunks, opts)];
+  return [
+    createLsTool(files),
+    createGlobTool(files),
+    createGrepTool(files, opts),
+    createReadTool(files, opts),
+    createSearchTool(queryChunks, opts),
+  ];
 }
 
 /**

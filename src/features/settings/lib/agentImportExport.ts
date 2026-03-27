@@ -81,7 +81,10 @@ export async function exportAgentsAsZip(): Promise<void> {
 /**
  * Export a single agent (with referenced skills) as a ZIP.
  */
-export async function exportSingleAgentAsZip(agentId: string, { includeMemory = false }: { includeMemory?: boolean } = {}): Promise<void> {
+export async function exportSingleAgentAsZip(
+  agentId: string,
+  { includeMemory = false }: { includeMemory?: boolean } = {},
+): Promise<void> {
   const zip = new JSZip();
 
   // Add agent's own files (AGENTS.md, servers.json, files/, etc.) at the root
@@ -231,7 +234,9 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
  *
  * @returns The number of successfully imported agents and failures.
  */
-export async function importAgentsFromLegacyJson(jsonData: string): Promise<{ total: number; imported: number; failed: number }> {
+export async function importAgentsFromLegacyJson(
+  jsonData: string,
+): Promise<{ total: number; imported: number; failed: number }> {
   const importData = JSON.parse(jsonData);
 
   if (!importData.repositories || !Array.isArray(importData.repositories)) {

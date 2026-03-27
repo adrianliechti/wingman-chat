@@ -44,7 +44,7 @@ export default defineConfig({
       },
 
       "/api": {
-        target: "http://localhost:4242",
+        target: "http://localhost:8080",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
@@ -62,7 +62,11 @@ export default defineConfig({
     rolldownOptions: {
       onwarn(warning, warn) {
         // Suppress Pyodide and just-bash Node.js module externalization warnings
-        if (warning.code === "MODULE_LEVEL_DIRECTIVE" || warning.message?.includes("externalized for browser compatibility") || warning.message?.includes("is not exported by")) {
+        if (
+          warning.code === "MODULE_LEVEL_DIRECTIVE" ||
+          warning.message?.includes("externalized for browser compatibility") ||
+          warning.message?.includes("is not exported by")
+        ) {
           return;
         }
         warn(warning);
@@ -77,8 +81,10 @@ export default defineConfig({
             "vendor-shiki": /node_modules\/shiki\//,
             "vendor-mermaid": /node_modules\/mermaid\//,
             "vendor-openai": /node_modules\/openai\//,
-            "vendor-markdown": /node_modules\/(unified|rehype-react|remark-parse|remark-rehype|remark-breaks|remark-gfm|remark-gemoji|remark-math|rehype-katex|emoji-regex|@fontsource\/noto-emoji)\//,
-            "vendor-ui": /node_modules\/(@headlessui\/react|@floating-ui\/react|@floating-ui\/react-dom|lucide-react)\//,
+            "vendor-markdown":
+              /node_modules\/(unified|rehype-react|remark-parse|remark-rehype|remark-breaks|remark-gfm|remark-gemoji|remark-math|rehype-katex|emoji-regex|@fontsource\/noto-emoji)\//,
+            "vendor-ui":
+              /node_modules\/(@headlessui\/react|@floating-ui\/react|@floating-ui\/react-dom|lucide-react)\//,
             "vendor-utils": /node_modules\/(zod|p-limit|mime|jszip|marked)\//,
             "vendor-docx": /node_modules\/docx\//,
           };

@@ -247,11 +247,17 @@ export function JsEditor({ content, onRunReady, onRunningChange }: JsEditorProps
         <div className="h-1/2 flex flex-col border-t border-black/5 dark:border-white/5">
           <div className="flex items-center justify-between px-3 py-1">
             <span className="text-[10px] uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Console</span>
-            <button onClick={handleClear} className="p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-neutral-400 dark:text-neutral-500" title="Clear console">
+            <button
+              onClick={handleClear}
+              className="p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-neutral-400 dark:text-neutral-500"
+              title="Clear console"
+            >
               <X size={12} />
             </button>
           </div>
-          <div className="flex-1 overflow-auto px-3 py-2 font-mono text-xs">{output.map((entry, index) => renderEntry(entry, index))}</div>
+          <div className="flex-1 overflow-auto px-3 py-2 font-mono text-xs">
+            {output.map((entry, index) => renderEntry(entry, index))}
+          </div>
         </div>
       )}
     </div>

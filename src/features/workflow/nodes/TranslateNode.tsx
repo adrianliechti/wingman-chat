@@ -138,7 +138,11 @@ export const TranslateNode = memo(({ id, data, selected }: NodeProps<TranslateNo
             </div>
             {/* Tab navigation at bottom */}
             <div className="shrink-0 flex items-center justify-between px-2 py-1.5 bg-gray-200/50 dark:bg-black/20 rounded-b-lg border-t border-gray-200/50 dark:border-gray-700/50">
-              <button onClick={() => setActiveTab(Math.max(0, activeTab - 1))} disabled={activeTab === 0} className="p-1 rounded hover:bg-gray-300/50 dark:hover:bg-gray-700/50 disabled:opacity-30 transition-colors nodrag">
+              <button
+                onClick={() => setActiveTab(Math.max(0, activeTab - 1))}
+                disabled={activeTab === 0}
+                className="p-1 rounded hover:bg-gray-300/50 dark:hover:bg-gray-700/50 disabled:opacity-30 transition-colors nodrag"
+              >
                 <ChevronLeft size={14} />
               </button>
               <div className="flex items-center gap-1">
@@ -147,7 +151,9 @@ export const TranslateNode = memo(({ id, data, selected }: NodeProps<TranslateNo
                     key={idx}
                     onClick={() => setActiveTab(idx)}
                     className={`w-6 h-6 text-xs rounded transition-colors nodrag ${
-                      idx === activeTab ? "bg-orange-500 text-white" : "bg-gray-300/50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400 hover:bg-gray-400/50 dark:hover:bg-gray-600/50"
+                      idx === activeTab
+                        ? "bg-orange-500 text-white"
+                        : "bg-gray-300/50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400 hover:bg-gray-400/50 dark:hover:bg-gray-600/50"
                     }`}
                   >
                     {idx + 1}

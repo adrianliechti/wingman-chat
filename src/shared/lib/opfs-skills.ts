@@ -4,7 +4,15 @@
 
 import type { Skill } from "@/features/skills/lib/skillParser";
 import { parseSkillFile } from "@/features/skills/lib/skillParser";
-import { writeText, readText, deleteDirectory, listDirectories, readIndex, upsertIndexEntry, removeIndexEntry } from "./opfs-core";
+import {
+  writeText,
+  readText,
+  deleteDirectory,
+  listDirectories,
+  readIndex,
+  upsertIndexEntry,
+  removeIndexEntry,
+} from "./opfs-core";
 import type { IndexEntry } from "./opfs-core";
 
 export interface StoredSkill {

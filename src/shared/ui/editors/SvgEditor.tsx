@@ -27,7 +27,9 @@ interface SvgEditorProps {
 export function SvgEditor({ content, viewMode = "preview" }: SvgEditorProps) {
   return (
     <div className="h-full flex flex-col overflow-hidden relative">
-      <div className="flex-1 overflow-auto min-h-0">{viewMode === "preview" ? <SvgPreview content={content} /> : <CodeEditor content={content} language="xml" />}</div>
+      <div className="flex-1 overflow-auto min-h-0">
+        {viewMode === "preview" ? <SvgPreview content={content} /> : <CodeEditor content={content} language="xml" />}
+      </div>
     </div>
   );
 }

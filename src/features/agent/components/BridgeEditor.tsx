@@ -104,18 +104,40 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-80" onClose={onClose}>
-        <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
           <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
         </Transition.Child>
 
         <div className="fixed inset-0 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
-            <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
               <Dialog.Panel className="w-full max-w-lg transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all">
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
-                  <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{bridge ? "Edit MCP Server" : "Add MCP Server"}</Dialog.Title>
-                  <button type="button" onClick={onClose} className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
+                  <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+                    {bridge ? "Edit MCP Server" : "Add MCP Server"}
+                  </Dialog.Title>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                  >
                     <X size={16} />
                   </button>
                 </div>
@@ -146,7 +168,9 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       className={`w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border ${
-                        urlError ? "border-red-400/70 focus:ring-red-500/60" : "border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60"
+                        urlError
+                          ? "border-red-400/70 focus:ring-red-500/60"
+                          : "border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60"
                       } focus:ring-2 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors`}
                       placeholder="https://example.com/mcp"
                     />
@@ -156,7 +180,9 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
 
                   {/* Description field */}
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">Description</label>
+                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                      Description
+                    </label>
                     <textarea
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
@@ -169,7 +195,9 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                   {/* Headers section */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Headers</label>
+                      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                        Headers
+                      </label>
                       <button
                         type="button"
                         onClick={handleAddHeader}
@@ -208,7 +236,9 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                         ))}
                       </div>
                     )}
-                    <p className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">Optional HTTP headers to include with requests (e.g., Authorization)</p>
+                    <p className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+                      Optional HTTP headers to include with requests (e.g., Authorization)
+                    </p>
                   </div>
                 </div>
 
@@ -229,7 +259,11 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                     <span />
                   )}
                   <div className="flex items-center gap-2.5">
-                    <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                    >
                       Cancel
                     </button>
                     <button

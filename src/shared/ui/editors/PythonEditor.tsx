@@ -73,12 +73,20 @@ export function PythonEditor({ content, onRunReady, onRunningChange }: PythonEdi
         <div className="h-1/2 flex flex-col border-t border-black/5 dark:border-white/5">
           <div className="flex items-center justify-between px-3 py-1">
             <span className="text-[10px] uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Output</span>
-            <button onClick={handleClear} className="p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-neutral-400 dark:text-neutral-500" title="Clear output">
+            <button
+              onClick={handleClear}
+              className="p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-neutral-400 dark:text-neutral-500"
+              title="Clear output"
+            >
               <X size={12} />
             </button>
           </div>
           <div className="flex-1 overflow-auto px-3 py-2 font-mono text-xs text-neutral-600 dark:text-neutral-400">
-            {error ? <pre className="text-red-500/80 dark:text-red-400/70 whitespace-pre-wrap">{error}</pre> : <pre className="whitespace-pre-wrap">{output}</pre>}
+            {error ? (
+              <pre className="text-red-500/80 dark:text-red-400/70 whitespace-pre-wrap">{error}</pre>
+            ) : (
+              <pre className="whitespace-pre-wrap">{output}</pre>
+            )}
           </div>
         </div>
       )}

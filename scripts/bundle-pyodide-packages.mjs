@@ -16,7 +16,19 @@ import path from "node:path";
 // Extra PyPI packages (not built into Pyodide – installed via micropip)
 // Their transitive dependencies are resolved automatically at bundle time.
 // ---------------------------------------------------------------------------
-const PYPI_PACKAGES = ["seaborn", "tenacity", "plotly", "et-xmlfile", "openpyxl", "xlsxwriter", "python-docx", "python-pptx", "docx2txt", "pypdf", "markdown"];
+const PYPI_PACKAGES = [
+  "seaborn",
+  "tenacity",
+  "plotly",
+  "et-xmlfile",
+  "openpyxl",
+  "xlsxwriter",
+  "python-docx",
+  "python-pptx",
+  "docx2txt",
+  "pypdf",
+  "markdown",
+];
 const PYPI_OUTPUT_DIR = "public/pyodide";
 
 // ---------------------------------------------------------------------------
@@ -61,7 +73,11 @@ async function getLatestWheel(packageName) {
   if (!res.ok) throw new Error(`PyPI lookup failed for ${packageName}: ${res.status}`);
   const data = await res.json();
 
-  const wheel = data.urls.find((u) => u.packagetype === "bdist_wheel" && (u.filename.endsWith("-py3-none-any.whl") || u.filename.endsWith("-py2.py3-none-any.whl")));
+  const wheel = data.urls.find(
+    (u) =>
+      u.packagetype === "bdist_wheel" &&
+      (u.filename.endsWith("-py3-none-any.whl") || u.filename.endsWith("-py2.py3-none-any.whl")),
+  );
   if (!wheel) throw new Error(`No pure-Python wheel found for ${packageName}`);
   return { url: wheel.url, filename: wheel.filename, version: data.info.version };
 }
@@ -155,7 +171,9 @@ async function bundlePyodideBuiltins() {
 
   const lockPath = path.resolve("node_modules/pyodide/pyodide-lock.json");
   const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
-  const pyodideNpmVersion = JSON.parse(fs.readFileSync(path.resolve("node_modules/pyodide/package.json"), "utf8")).version;
+  const pyodideNpmVersion = JSON.parse(
+    fs.readFileSync(path.resolve("node_modules/pyodide/package.json"), "utf8"),
+  ).version;
   const cdnBase = `https://cdn.jsdelivr.net/pyodide/v${pyodideNpmVersion}/full/`;
 
   // Resolve full dependency tree
@@ -252,7 +270,11 @@ async function main() {
   const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
 
   console.log("Resolving transitive dependencies of PyPI packages...");
-  const { extraPyodideBuiltins, extraPypiPackages } = await resolveTransitiveDeps(PYPI_PACKAGES, lock, PYODIDE_BUILTIN_TARGETS);
+  const { extraPyodideBuiltins, extraPypiPackages } = await resolveTransitiveDeps(
+    PYPI_PACKAGES,
+    lock,
+    PYODIDE_BUILTIN_TARGETS,
+  );
 
   // Extend the target lists with discovered transitive deps
   for (const pkg of extraPyodideBuiltins) {

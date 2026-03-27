@@ -1,5 +1,12 @@
 import { useRef, useMemo, useState } from "react";
-import { useReactTable, getCoreRowModel, getSortedRowModel, flexRender, type ColumnDef, type SortingState } from "@tanstack/react-table";
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  flexRender,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 interface CsvEditorProps {
@@ -127,7 +134,10 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
     overscan: OVERSCAN,
     // Use getBoundingClientRect for dynamic row measurement, except in Firefox
     // where it incorrectly measures table border height
-    measureElement: typeof window !== "undefined" && !navigator.userAgent.includes("Firefox") ? (element) => element?.getBoundingClientRect().height : undefined,
+    measureElement:
+      typeof window !== "undefined" && !navigator.userAgent.includes("Firefox")
+        ? (element) => element?.getBoundingClientRect().height
+        : undefined,
   });
 
   return (
@@ -153,7 +163,10 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
                       style={{ width: header.getSize(), flex: "none" }}
                       title={(header.column.columnDef.meta as { title: string } | undefined)?.title ?? ""}
                     >
-                      <span className={header.column.getCanSort() ? "cursor-pointer" : ""} onClick={header.column.getToggleSortingHandler()}>
+                      <span
+                        className={header.column.getCanSort() ? "cursor-pointer" : ""}
+                        onClick={header.column.getToggleSortingHandler()}
+                      >
                         {flexRender(header.column.columnDef.header, header.getContext())}
                         {{ asc: " ▲", desc: " ▼" }[header.column.getIsSorted() as string] ?? ""}
                       </span>

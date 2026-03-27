@@ -73,11 +73,20 @@ const NonMemoizedHtmlRenderer = ({ html, language, name }: HtmlRendererProps) =>
             </pre>
           </div>
         ) : (
-          <iframe srcDoc={html} sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals" className="w-full rounded-b-md" style={{ height: "400px" }} />
+          <iframe
+            srcDoc={html}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+            className="w-full rounded-b-md"
+            style={{ height: "400px" }}
+          />
         )}
       </div>
     </div>
   );
 };
 
-export const HtmlRenderer = memo(NonMemoizedHtmlRenderer, (prevProps, nextProps) => prevProps.html === nextProps.html && prevProps.language === nextProps.language && prevProps.name === nextProps.name);
+export const HtmlRenderer = memo(
+  NonMemoizedHtmlRenderer,
+  (prevProps, nextProps) =>
+    prevProps.html === nextProps.html && prevProps.language === nextProps.language && prevProps.name === nextProps.name,
+);

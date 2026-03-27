@@ -193,7 +193,9 @@ async function migrateChats(): Promise<MigrationStats["chats"]> {
     }
   }
 
-  console.log(`[Migration] Chats migration complete: ${stats.migrated}/${stats.total} chats (${stats.failed.length} failed)`);
+  console.log(
+    `[Migration] Chats migration complete: ${stats.migrated}/${stats.total} chats (${stats.failed.length} failed)`,
+  );
   return stats;
 }
 
@@ -260,7 +262,9 @@ async function migrateRepositories(): Promise<MigrationStats["repositories"]> {
     }
   }
 
-  console.log(`[Migration] Repositories migration complete: ${stats.migrated}/${stats.total} repositories (${stats.failed.length} failed)`);
+  console.log(
+    `[Migration] Repositories migration complete: ${stats.migrated}/${stats.total} repositories (${stats.failed.length} failed)`,
+  );
   return stats;
 }
 
@@ -339,7 +343,9 @@ async function migrateImages(): Promise<MigrationStats["images"]> {
     }
   }
 
-  console.log(`[Migration] Images migration complete: ${stats.migrated}/${stats.total} images (${stats.failed.length} failed)`);
+  console.log(
+    `[Migration] Images migration complete: ${stats.migrated}/${stats.total} images (${stats.failed.length} failed)`,
+  );
   return stats;
 }
 
@@ -408,7 +414,10 @@ function isOPFSSupported(): boolean {
 export async function runMigration(): Promise<void> {
   // Check OPFS support first
   if (!isOPFSSupported()) {
-    throw new Error("Your browser does not support the required storage features (OPFS). " + "Please use a modern browser like Chrome, Edge, Safari 15.2+, or Firefox 111+.");
+    throw new Error(
+      "Your browser does not support the required storage features (OPFS). " +
+        "Please use a modern browser like Chrome, Edge, Safari 15.2+, or Firefox 111+.",
+    );
   }
 
   // Check if already migrated

@@ -2,8 +2,26 @@
  * OPFS Chat — Chat-scoped blob storage, extraction/rehydration pipeline, and stored types.
  */
 
-import type { Content, Message, Chat, ImageContent, AudioContent, FileContent, ToolResultContent } from "@/shared/types/chat";
-import { writeBlob, readBlob, deleteFile, listFiles, dataUrlToBlob, blobToDataUrl, isDataUrl, createBlobRef, parseBlobRef } from "./opfs-core";
+import type {
+  Content,
+  Message,
+  Chat,
+  ImageContent,
+  AudioContent,
+  FileContent,
+  ToolResultContent,
+} from "@/shared/types/chat";
+import {
+  writeBlob,
+  readBlob,
+  deleteFile,
+  listFiles,
+  dataUrlToBlob,
+  blobToDataUrl,
+  isDataUrl,
+  createBlobRef,
+  parseBlobRef,
+} from "./opfs-core";
 
 // ============================================================================
 // Co-located Blob Storage (blobs stored within their parent entity folder)
@@ -87,7 +105,9 @@ async function extractContentBlobForChat(chatId: string, content: Content): Prom
   }
 
   if (content.type === "tool_result") {
-    const extractedResult = await Promise.all(content.result.map((r) => extractContentBlobForChat(chatId, r as Content)));
+    const extractedResult = await Promise.all(
+      content.result.map((r) => extractContentBlobForChat(chatId, r as Content)),
+    );
     return { ...content, result: extractedResult } as StoredContent;
   }
 
@@ -116,7 +136,9 @@ async function rehydrateContentBlobForChat(chatId: string, content: StoredConten
   }
 
   if (content.type === "tool_result") {
-    const rehydratedResult = await Promise.all(content.result.map((r) => rehydrateContentBlobForChat(chatId, r as StoredContent)));
+    const rehydratedResult = await Promise.all(
+      content.result.map((r) => rehydrateContentBlobForChat(chatId, r as StoredContent)),
+    );
     return { ...content, result: rehydratedResult } as Content;
   }
 

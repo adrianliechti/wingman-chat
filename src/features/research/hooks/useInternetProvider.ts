@@ -57,12 +57,19 @@ export function useInternetProvider(): ToolProvider | null {
             const content = await client.research(internet?.researcher || "", instructions as string);
 
             if (!content.trim()) {
-              return [{ type: "text" as const, text: "No research results could be generated for the given instructions." }];
+              return [
+                { type: "text" as const, text: "No research results could be generated for the given instructions." },
+              ];
             }
 
             return [{ type: "text" as const, text: content }];
           } catch (error) {
-            return [{ type: "text" as const, text: `Web research failed: ${error instanceof Error ? error.message : "Unknown error"}` }];
+            return [
+              {
+                type: "text" as const,
+                text: `Web research failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+              },
+            ];
           }
         },
       });
@@ -71,7 +78,8 @@ export function useInternetProvider(): ToolProvider | null {
       if (internet?.searcher) {
         tools.push({
           name: "web_search",
-          description: "Search online if the requested information cannot be found in the language model or the information could be present in a time after the language model was trained.",
+          description:
+            "Search online if the requested information cannot be found in the language model or the information could be present in a time after the language model was trained.",
           parameters: {
             type: "object",
             properties: {
@@ -81,7 +89,8 @@ export function useInternetProvider(): ToolProvider | null {
               },
               domains: {
                 type: "array",
-                description: "Optional list of website domains to restrict the search to (e.g. wikipedia.org, github.com).",
+                description:
+                  "Optional list of website domains to restrict the search to (e.g. wikipedia.org, github.com).",
                 items: {
                   type: "string",
                 },
@@ -113,7 +122,12 @@ export function useInternetProvider(): ToolProvider | null {
 
               return [{ type: "text" as const, text: JSON.stringify(results, null, 2) }];
             } catch (error) {
-              return [{ type: "text" as const, text: `Web search failed: ${error instanceof Error ? error.message : "Unknown error"}` }];
+              return [
+                {
+                  type: "text" as const,
+                  text: `Web search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+              ];
             }
           },
         });
@@ -122,7 +136,8 @@ export function useInternetProvider(): ToolProvider | null {
       if (internet?.scraper) {
         tools.push({
           name: "web_scraper",
-          description: "Extracts and returns the full text content from a specific webpage. Use when you need detailed information from a known URL or to deep-dive into a page found via search.",
+          description:
+            "Extracts and returns the full text content from a specific webpage. Use when you need detailed information from a known URL or to deep-dive into a page found via search.",
           parameters: {
             type: "object",
             properties: {
@@ -155,7 +170,12 @@ export function useInternetProvider(): ToolProvider | null {
 
               return [{ type: "text" as const, text: content }];
             } catch (error) {
-              return [{ type: "text" as const, text: `Web scraping failed: ${error instanceof Error ? error.message : "Unknown error"}` }];
+              return [
+                {
+                  type: "text" as const,
+                  text: `Web scraping failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+              ];
             }
           },
         });

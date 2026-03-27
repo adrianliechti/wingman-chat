@@ -17,7 +17,10 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onNew
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
 
-  const sorted = useMemo(() => [...notebooks].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()), [notebooks]);
+  const sorted = useMemo(
+    () => [...notebooks].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    [notebooks],
+  );
 
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return sorted;
@@ -165,10 +168,15 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onNew
                   key={notebook.id}
                   onClick={() => handleSelect(notebook.id)}
                   className={`flex items-center cursor-pointer relative shrink-0 group rounded transition-all duration-200 ${
-                    notebook.id === activeId ? "py-2 md:py-1.5 px-2.5 md:px-2 text-neutral-900 dark:text-neutral-100" : "py-2 md:py-1.5 pl-2.5 md:pl-2.5 pr-1 md:pr-0.5 hover:text-neutral-600 dark:hover:text-neutral-300"
+                    notebook.id === activeId
+                      ? "py-2 md:py-1.5 px-2.5 md:px-2 text-neutral-900 dark:text-neutral-100"
+                      : "py-2 md:py-1.5 pl-2.5 md:pl-2.5 pr-1 md:pr-0.5 hover:text-neutral-600 dark:hover:text-neutral-300"
                   }`}
                 >
-                  <div className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-base md:text-sm text-neutral-800 dark:text-neutral-200 pr-4" title={notebook.title}>
+                  <div
+                    className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-base md:text-sm text-neutral-800 dark:text-neutral-200 pr-4"
+                    title={notebook.title}
+                  >
                     {notebook.title}
                   </div>
                   <Menu>
@@ -205,7 +213,11 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onNew
             </div>
           ))}
 
-          {filtered.length === 0 && <div className="px-3 py-6 text-center text-sm text-neutral-400">{searchQuery ? "No notebooks found" : "No notebooks yet"}</div>}
+          {filtered.length === 0 && (
+            <div className="px-3 py-6 text-center text-sm text-neutral-400">
+              {searchQuery ? "No notebooks found" : "No notebooks yet"}
+            </div>
+          )}
         </div>
       </div>
     </div>

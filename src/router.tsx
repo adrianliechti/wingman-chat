@@ -119,7 +119,19 @@ const oauthCallbackRoute = createRoute({
 });
 
 // Build route tree
-const routeTree = rootRoute.addChildren([appLayoutRoute.addChildren([indexRoute, chatRoute, chatIdRoute, flowRoute, translateRoute, rendererRoute, notebookRoute, notebookIdRoute]), oauthLayoutRoute.addChildren([oauthCallbackRoute])]);
+const routeTree = rootRoute.addChildren([
+  appLayoutRoute.addChildren([
+    indexRoute,
+    chatRoute,
+    chatIdRoute,
+    flowRoute,
+    translateRoute,
+    rendererRoute,
+    notebookRoute,
+    notebookIdRoute,
+  ]),
+  oauthLayoutRoute.addChildren([oauthCallbackRoute]),
+]);
 
 // Create and export router
 export const router = createRouter({ routeTree });

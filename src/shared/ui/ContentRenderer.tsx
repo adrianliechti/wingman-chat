@@ -10,7 +10,12 @@ import mime from "mime";
 
 // Helper function to check if content is a URL
 function isUrl(content: string): boolean {
-  return content.startsWith("http://") || content.startsWith("https://") || content.startsWith("data:") || content.startsWith("blob:");
+  return (
+    content.startsWith("http://") ||
+    content.startsWith("https://") ||
+    content.startsWith("data:") ||
+    content.startsWith("blob:")
+  );
 }
 
 function detectMimeType(data: string, filename?: string): string {
@@ -69,7 +74,12 @@ function ImageDisplay({ content, className }: { content: ImageContent; className
 
   return (
     <div className="relative group/image inline-block">
-      <img src={content.data} alt={filename} className={className || "max-w-full h-auto rounded-md"} draggable={false} />
+      <img
+        src={content.data}
+        alt={filename}
+        className={className || "max-w-full h-auto rounded-md"}
+        draggable={false}
+      />
       <div className="absolute inset-0 flex items-center justify-center">
         <button
           onClick={handleDownload}
@@ -102,13 +112,21 @@ function FileDisplay({ content, className }: { content: FileContent; className?:
   const fileExtension = getFileExtension(content.name);
 
   return (
-    <div className={`relative inline-block cursor-pointer ${className || "w-48 h-48"}`} onClick={handleDownload} title={`Download ${content.name}`}>
+    <div
+      className={`relative inline-block cursor-pointer ${className || "w-48 h-48"}`}
+      onClick={handleDownload}
+      title={`Download ${content.name}`}
+    >
       {/* Main file container */}
       <div className="w-full h-full bg-neutral-100 dark:bg-neutral-800 rounded-md border-2 border-dashed border-neutral-300 dark:border-neutral-600 flex flex-col items-center justify-center p-4 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors">
         {/* File icon with extension overlay */}
         <div className="relative mb-3">
           <File className="w-12 h-12 text-neutral-500 dark:text-neutral-400" />
-          {fileExtension && <div className="absolute left-1/2 transform -translate-x-1/2 -bottom-2 bg-blue-600 text-white text-xs font-bold px-1.5 py-0.5 rounded w-12 text-center">{fileExtension}</div>}
+          {fileExtension && (
+            <div className="absolute left-1/2 transform -translate-x-1/2 -bottom-2 bg-blue-600 text-white text-xs font-bold px-1.5 py-0.5 rounded w-12 text-center">
+              {fileExtension}
+            </div>
+          )}
         </div>
 
         {/* Filename */}
@@ -171,7 +189,12 @@ function MermaidDisplay({ content }: { content: FileContent }) {
 // Main content renderer with simple design
 export function ContentRenderer({ content, className }: { content: Content; className?: string }) {
   // Handle text content - not rendered by this component
-  if (content.type === "text" || content.type === "reasoning" || content.type === "tool_call" || content.type === "tool_result") {
+  if (
+    content.type === "text" ||
+    content.type === "reasoning" ||
+    content.type === "tool_call" ||
+    content.type === "tool_result"
+  ) {
     return null;
   }
 
@@ -240,11 +263,17 @@ function MultipleContentsDisplay({ contents }: { contents: Content[] }) {
   return (
     <div className="flex flex-wrap gap-3">
       {renderableContents.map((content, index) => {
-        const mimeType = content.type === "image" ? detectMimeType(content.data, content.name) : content.type === "file" ? detectMimeType(content.data, content.name) : "audio/mpeg";
+        const mimeType =
+          content.type === "image"
+            ? detectMimeType(content.data, content.name)
+            : content.type === "file"
+              ? detectMimeType(content.data, content.name)
+              : "audio/mpeg";
 
         // Only show images as visual previews, everything else as file tiles
         if (content.type === "image" || (content.type === "file" && mimeType.startsWith("image/"))) {
-          const imageContent = content.type === "image" ? content : { type: "image" as const, name: content.name, data: content.data };
+          const imageContent =
+            content.type === "image" ? content : { type: "image" as const, name: content.name, data: content.data };
           return (
             <div
               key={index}

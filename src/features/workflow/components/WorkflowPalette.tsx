@@ -82,18 +82,24 @@ export function WorkflowPalette() {
       <div className={`grid ${useDoubleColumn ? "grid-cols-2" : "grid-cols-1"} gap-2`}>
         <WorkflowPaletteItem label="Text" icon={<StickyNote size={20} />} createNode={createTextNode} />
         <WorkflowPaletteItem label="File" icon={<FileText size={20} />} createNode={createFileNode} />
-        {config.internet && <WorkflowPaletteItem label="Search" icon={<Globe size={20} />} createNode={createSearchNode} />}
+        {config.internet && (
+          <WorkflowPaletteItem label="Search" icon={<Globe size={20} />} createNode={createSearchNode} />
+        )}
       </div>
       <div className="w-full h-px bg-gray-300/50 dark:bg-gray-600/50 my-1" />
       <div className={`grid ${useDoubleColumn ? "grid-cols-2" : "grid-cols-1"} gap-2`}>
         <WorkflowPaletteItem label="Prompt" icon={<Sparkles size={20} />} createNode={createPromptNode} />
-        {config.translator && <WorkflowPaletteItem label="Translate" icon={<Languages size={20} />} createNode={createTranslateNode} />}
+        {config.translator && (
+          <WorkflowPaletteItem label="Translate" icon={<Languages size={20} />} createNode={createTranslateNode} />
+        )}
       </div>
       <div className="w-full h-px bg-gray-300/50 dark:bg-gray-600/50 my-1" />
       <div className={`grid ${useDoubleColumn ? "grid-cols-2" : "grid-cols-1"} gap-2`}>
         <WorkflowPaletteItem label="Markdown" icon={<FileType size={20} />} createNode={createMarkdownNode} />
         {config.tts && <WorkflowPaletteItem label="Audio" icon={<Volume2 size={20} />} createNode={createAudioNode} />}
-        {config.renderer && <WorkflowPaletteItem label="Image" icon={<Image size={20} />} createNode={createImageNode} />}
+        {config.renderer && (
+          <WorkflowPaletteItem label="Image" icon={<Image size={20} />} createNode={createImageNode} />
+        )}
         <WorkflowPaletteItem label="CSV" icon={<Table size={20} />} createNode={createCsvNode} />
       </div>
     </div>

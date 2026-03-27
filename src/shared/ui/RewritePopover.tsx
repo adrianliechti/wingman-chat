@@ -20,7 +20,16 @@ interface AlternativeData {
   contextToReplace: string;
 }
 
-export function RewritePopover({ selectedText, fullText, selectionStart, selectionEnd, position, onClose, onSelect, onPreview }: RewritePopoverProps) {
+export function RewritePopover({
+  selectedText,
+  fullText,
+  selectionStart,
+  selectionEnd,
+  position,
+  onClose,
+  onSelect,
+  onPreview,
+}: RewritePopoverProps) {
   const [data, setData] = useState<AlternativeData>({
     alternatives: [],
     keyChanges: [],
@@ -38,7 +47,12 @@ export function RewritePopover({ selectedText, fullText, selectionStart, selecti
     const loadAlternatives = async () => {
       setIsLoading(true);
       try {
-        const result = await config.client.rewriteSelection(config.translator?.model || "", fullText, selectionStart, selectionEnd);
+        const result = await config.client.rewriteSelection(
+          config.translator?.model || "",
+          fullText,
+          selectionStart,
+          selectionEnd,
+        );
 
         if (result) {
           setData({
@@ -125,7 +139,13 @@ export function RewritePopover({ selectedText, fullText, selectionStart, selecti
           {isLoading ? (
             <LoadingState />
           ) : data.alternatives.length > 0 ? (
-            <AlternativesList alternatives={data.alternatives} keyChanges={data.keyChanges} onSelect={handleAlternativeClick} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} />
+            <AlternativesList
+              alternatives={data.alternatives}
+              keyChanges={data.keyChanges}
+              onSelect={handleAlternativeClick}
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
+            />
           ) : (
             <EmptyState />
           )}

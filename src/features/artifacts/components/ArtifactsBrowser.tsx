@@ -85,16 +85,37 @@ interface FileTreeNodeProps {
   onRenameFile: (path: string) => void;
 }
 
-function FileTreeNode({ node, level, openTabs, onFileClick, expandedFolders, onToggleFolder, onDeleteFile, onRenameFile }: FileTreeNodeProps) {
+function FileTreeNode({
+  node,
+  level,
+  openTabs,
+  onFileClick,
+  expandedFolders,
+  onToggleFolder,
+  onDeleteFile,
+  onRenameFile,
+}: FileTreeNodeProps) {
   const isExpanded = expandedFolders.has(node.path);
 
   if (node.type === "folder") {
     return (
       <>
-        <div className="flex items-center gap-2 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0" style={{ marginLeft: `${level * 10}px` }} onClick={() => onToggleFolder(node.path)}>
+        <div
+          className="flex items-center gap-2 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0"
+          style={{ marginLeft: `${level * 10}px` }}
+          onClick={() => onToggleFolder(node.path)}
+        >
           <div className="flex items-center gap-1 min-w-0">
-            {isExpanded ? <ChevronDown size={14} className="text-neutral-500 shrink-0" /> : <ChevronRight size={14} className="text-neutral-500 shrink-0" />}
-            {isExpanded ? <FolderOpen size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" /> : <Folder size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />}
+            {isExpanded ? (
+              <ChevronDown size={14} className="text-neutral-500 shrink-0" />
+            ) : (
+              <ChevronRight size={14} className="text-neutral-500 shrink-0" />
+            )}
+            {isExpanded ? (
+              <FolderOpen size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+            ) : (
+              <Folder size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
+            )}
             <span className="text-sm text-neutral-700 dark:text-neutral-300 truncate">{node.name}</span>
           </div>
         </div>
@@ -123,10 +144,20 @@ function FileTreeNode({ node, level, openTabs, onFileClick, expandedFolders, onT
   const isTabOpen = openTabs.includes(node.path);
 
   return (
-    <div className="flex items-center gap-1 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors min-w-0 group relative" style={{ marginLeft: `${level * 10 + 14}px` }}>
-      <button type="button" onClick={() => onFileClick(node.path)} className="flex items-center gap-1 flex-1 min-w-0 text-left">
+    <div
+      className="flex items-center gap-1 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors min-w-0 group relative"
+      style={{ marginLeft: `${level * 10 + 14}px` }}
+    >
+      <button
+        type="button"
+        onClick={() => onFileClick(node.path)}
+        className="flex items-center gap-1 flex-1 min-w-0 text-left"
+      >
         <FileIcon name={node.path} contentType={node.file?.contentType} />
-        <span className={`text-sm truncate ${isTabOpen ? "font-medium text-neutral-900 dark:text-neutral-100" : "text-neutral-700 dark:text-neutral-300"}`} title={node.name}>
+        <span
+          className={`text-sm truncate ${isTabOpen ? "font-medium text-neutral-900 dark:text-neutral-100" : "text-neutral-700 dark:text-neutral-300"}`}
+          title={node.name}
+        >
           {node.name}
         </span>
       </button>
@@ -299,7 +330,10 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
       {/* Rename Dialog */}
       {renamingPath && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={handleRenameCancel}>
-          <div className="bg-white dark:bg-neutral-900 rounded-lg shadow-xl p-4 w-80 max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="bg-white dark:bg-neutral-900 rounded-lg shadow-xl p-4 w-80 max-w-[90vw]"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-3">Rename File</h3>
             <input
               type="text"
@@ -316,10 +350,18 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
               autoFocus
             />
             <div className="flex gap-2 mt-4 justify-end">
-              <button type="button" onClick={handleRenameCancel} className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors">
+              <button
+                type="button"
+                onClick={handleRenameCancel}
+                className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+              >
                 Cancel
               </button>
-              <button type="button" onClick={handleRenameSubmit} className="px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors">
+              <button
+                type="button"
+                onClick={handleRenameSubmit}
+                className="px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
+              >
                 Rename
               </button>
             </div>

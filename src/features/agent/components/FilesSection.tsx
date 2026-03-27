@@ -54,7 +54,11 @@ export function FilesSection({ agent }: FilesSectionProps) {
   };
 
   return (
-    <div className={`relative ${isDragOver ? "bg-slate-50/50 dark:bg-slate-900/50" : ""}`} onDrop={handleDrop} onDragOver={handleDragOver}>
+    <div
+      className={`relative ${isDragOver ? "bg-slate-50/50 dark:bg-slate-900/50" : ""}`}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+    >
       {isDragOver && (
         <div className="absolute inset-0 z-10 bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm border-2 border-dashed border-slate-400 dark:border-slate-500 rounded-lg flex items-center justify-center">
           <div className="text-center">
@@ -79,7 +83,13 @@ export function FilesSection({ agent }: FilesSectionProps) {
         }
       >
         <div className="space-y-2">
-          <input type="file" multiple onChange={handleFileSelect} className="hidden" id={`agent-file-upload-${agent.id}`} />
+          <input
+            type="file"
+            multiple
+            onChange={handleFileSelect}
+            className="hidden"
+            id={`agent-file-upload-${agent.id}`}
+          />
 
           {/* File grid */}
           {files.length > 0 && (
@@ -105,8 +115,15 @@ export function FilesSection({ agent }: FilesSectionProps) {
                         </div>
                       ) : (
                         <div className="flex flex-col items-center text-center w-full">
-                          <FileText size={14} className={`mb-0.5 shrink-0 ${file.status === "error" ? "text-red-600 dark:text-red-400" : "text-neutral-600 dark:text-neutral-300"}`} />
-                          <div className={`text-[10px] font-medium truncate w-full leading-tight ${file.status === "error" ? "text-red-700 dark:text-red-300" : "text-neutral-700 dark:text-neutral-200"}`}>{file.name}</div>
+                          <FileText
+                            size={14}
+                            className={`mb-0.5 shrink-0 ${file.status === "error" ? "text-red-600 dark:text-red-400" : "text-neutral-600 dark:text-neutral-300"}`}
+                          />
+                          <div
+                            className={`text-[10px] font-medium truncate w-full leading-tight ${file.status === "error" ? "text-red-700 dark:text-red-300" : "text-neutral-700 dark:text-neutral-200"}`}
+                          >
+                            {file.name}
+                          </div>
                         </div>
                       )}
                       <button

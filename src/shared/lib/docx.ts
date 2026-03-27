@@ -152,7 +152,12 @@ interface ListState {
   counters: Map<string, number[]>; // numId -> counter per level
 }
 
-function parseParagraph(p: Element, relationships: Relationships, numberingInfo: NumberingInfo, listState: ListState): string {
+function parseParagraph(
+  p: Element,
+  relationships: Relationships,
+  numberingInfo: NumberingInfo,
+  listState: ListState,
+): string {
   const pPr = p.getElementsByTagName("w:pPr")[0];
 
   // Check for heading style
@@ -265,9 +270,12 @@ function parseRun(r: Element): string {
   const rPr = r.getElementsByTagName("w:rPr")[0];
 
   // Check formatting
-  const isBold = rPr?.getElementsByTagName("w:b")[0] !== undefined || rPr?.getElementsByTagName("w:bCs")[0] !== undefined;
-  const isItalic = rPr?.getElementsByTagName("w:i")[0] !== undefined || rPr?.getElementsByTagName("w:iCs")[0] !== undefined;
-  const isStrike = rPr?.getElementsByTagName("w:strike")[0] !== undefined || rPr?.getElementsByTagName("w:dstrike")[0] !== undefined;
+  const isBold =
+    rPr?.getElementsByTagName("w:b")[0] !== undefined || rPr?.getElementsByTagName("w:bCs")[0] !== undefined;
+  const isItalic =
+    rPr?.getElementsByTagName("w:i")[0] !== undefined || rPr?.getElementsByTagName("w:iCs")[0] !== undefined;
+  const isStrike =
+    rPr?.getElementsByTagName("w:strike")[0] !== undefined || rPr?.getElementsByTagName("w:dstrike")[0] !== undefined;
   const isCode = isMonospaceFont(rPr);
 
   // Extract text from all <w:t> elements
@@ -319,7 +327,16 @@ function isMonospaceFont(rPr: Element | undefined): boolean {
   const ascii = rFonts.getAttribute("w:ascii")?.toLowerCase() || "";
   const hAnsi = rFonts.getAttribute("w:hAnsi")?.toLowerCase() || "";
 
-  const monospaceFonts = ["consolas", "courier", "courier new", "monaco", "menlo", "source code pro", "fira code", "jetbrains mono"];
+  const monospaceFonts = [
+    "consolas",
+    "courier",
+    "courier new",
+    "monaco",
+    "menlo",
+    "source code pro",
+    "fira code",
+    "jetbrains mono",
+  ];
 
   return monospaceFonts.some((font) => ascii.includes(font) || hAnsi.includes(font));
 }

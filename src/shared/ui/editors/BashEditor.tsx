@@ -1,7 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { BASH_HOME, createBashInstance, getBashCwd, getBashEnv, readFilesFromFs, resolveBashCwd } from "@/features/tools/lib/bash";
+import {
+  BASH_HOME,
+  createBashInstance,
+  getBashCwd,
+  getBashEnv,
+  readFilesFromFs,
+  resolveBashCwd,
+} from "@/features/tools/lib/bash";
 import type { BashInstance } from "@/features/tools/lib/bash";
 import type { OverlayFile } from "@/features/artifacts/lib/fs";
 
@@ -344,7 +351,10 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
   }, []);
 
   return (
-    <div className="h-full flex flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-200 font-mono text-xs cursor-text" onClick={handleTerminalClick}>
+    <div
+      className="h-full flex flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-200 font-mono text-xs cursor-text"
+      onClick={handleTerminalClick}
+    >
       {/* Output area */}
       <div ref={outputRef} className="flex-1 overflow-auto p-3" style={{ overflowAnchor: "none" }}>
         <div style={{ height: outputVirtualizer.getTotalSize(), width: "100%", position: "relative" }}>
@@ -363,13 +373,21 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
                 <div key={virtualRow.key} data-index={virtualRow.index} ref={outputVirtualizer.measureElement}>
                   {entry.type === "command" ? (
                     <div className="flex">
-                      <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">{formatPromptCwd(entry.cwd ?? cwd)} $</span>
-                      <span className="text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap break-all">{entry.text}</span>
+                      <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">
+                        {formatPromptCwd(entry.cwd ?? cwd)} $
+                      </span>
+                      <span className="text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap break-all">
+                        {entry.text}
+                      </span>
                     </div>
                   ) : entry.type === "stdout" ? (
-                    <pre className="text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap break-all leading-relaxed">{entry.text}</pre>
+                    <pre className="text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap break-all leading-relaxed">
+                      {entry.text}
+                    </pre>
                   ) : entry.type === "stderr" ? (
-                    <pre className="text-red-700 dark:text-red-400/80 whitespace-pre-wrap break-all leading-relaxed">{entry.text}</pre>
+                    <pre className="text-red-700 dark:text-red-400/80 whitespace-pre-wrap break-all leading-relaxed">
+                      {entry.text}
+                    </pre>
                   ) : (
                     <div className="text-neutral-500 dark:text-neutral-500 italic">{entry.text}</div>
                   )}
@@ -389,7 +407,9 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
 
       {/* Input line */}
       <div className="shrink-0 flex items-center border-t border-neutral-200/60 dark:border-neutral-800/60 px-3 py-2">
-        <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">{formatPromptCwd(cwd)} $ </span>
+        <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">
+          {formatPromptCwd(cwd)} ${" "}
+        </span>
         <input
           ref={inputRef}
           type="text"

@@ -62,8 +62,13 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
                   <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
                     <Sparkles size={24} className="text-neutral-400" />
                   </div>
-                  <p className="text-lg font-medium text-neutral-700 dark:text-neutral-300 mb-2">Start building your notebook</p>
-                  <p className="text-sm text-neutral-400 dark:text-neutral-500 mb-6 leading-relaxed">Add sources from the web or upload files, then chat with your sources or generate outputs in the studio.</p>
+                  <p className="text-lg font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                    Start building your notebook
+                  </p>
+                  <p className="text-sm text-neutral-400 dark:text-neutral-500 mb-6 leading-relaxed">
+                    Add sources from the web or upload files, then chat with your sources or generate outputs in the
+                    studio.
+                  </p>
                   <div className="flex items-center justify-center gap-6 text-xs text-neutral-400 dark:text-neutral-500">
                     <div className="flex items-center gap-1.5">
                       <Globe size={13} />
@@ -88,7 +93,9 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
               const text = getTextFromContent(msg.content);
               return (
                 <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[85%] rounded-xl px-4 py-2.5 ${msg.role === "user" ? "bg-neutral-200 dark:bg-neutral-900" : "bg-neutral-100 dark:bg-neutral-800"}`}>
+                  <div
+                    className={`max-w-[85%] rounded-xl px-4 py-2.5 ${msg.role === "user" ? "bg-neutral-200 dark:bg-neutral-900" : "bg-neutral-100 dark:bg-neutral-800"}`}
+                  >
                     {msg.role === "assistant" ? (
                       <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none">
                         <Markdown>{text}</Markdown>

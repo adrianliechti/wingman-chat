@@ -77,8 +77,28 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
   };
 
   return (
-    <WorkflowNode id={id} selected={selected} icon={FileText} title="File" color="orange" showInputHandle={false} showOutputHandle={true} error={data.error}>
-      <input ref={fileInputRef} type="file" accept={[...(config.text?.files ?? []), ...(config.vision?.files ?? []), ...(config.extractor?.files ?? [])].join(",")} onChange={handleFileUpload} className="hidden" disabled={isProcessing} />
+    <WorkflowNode
+      id={id}
+      selected={selected}
+      icon={FileText}
+      title="File"
+      color="orange"
+      showInputHandle={false}
+      showOutputHandle={true}
+      error={data.error}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={[
+          ...(config.text?.files ?? []),
+          ...(config.vision?.files ?? []),
+          ...(config.extractor?.files ?? []),
+        ].join(",")}
+        onChange={handleFileUpload}
+        className="hidden"
+        disabled={isProcessing}
+      />
 
       {isProcessing ? (
         <div className="flex-1 flex items-center justify-center">
@@ -88,7 +108,12 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
           </div>
         </div>
       ) : !data.output ? (
-        <div className="flex-1 flex items-center justify-center" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+        <div
+          className="flex-1 flex items-center justify-center"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           <button
             onClick={() => fileInputRef.current?.click()}
             className={`flex flex-col items-center gap-3 p-8 text-gray-400 dark:text-gray-600 hover:text-orange-500 dark:hover:text-orange-400 transition-colors nodrag group ${
@@ -100,7 +125,12 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
           </button>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col min-h-0 gap-2" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+        <div
+          className="flex-1 flex flex-col min-h-0 gap-2"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           <div className="shrink-0 px-2">
             <button
               onClick={() => fileInputRef.current?.click()}

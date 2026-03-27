@@ -243,7 +243,9 @@ export function ArtifactsDrawer() {
         <div className="h-full flex flex-col items-center justify-center p-8">
           <div className="w-full max-w-xl">
             <Code size={32} className="text-neutral-300 dark:text-neutral-600 mb-4" />
-            <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">{files.length === 0 ? "No files yet" : "Select a file"}</h3>
+            <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
+              {files.length === 0 ? "No files yet" : "Select a file"}
+            </h3>
             <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed mb-5">
               {files.length === 0
                 ? "Files you create in the chat appear here. Refine them with follow-up prompts and download when ready. Use the upload button to bring in your own files."
@@ -251,14 +253,19 @@ export function ArtifactsDrawer() {
             </p>
             {files.length === 0 && (
               <>
-                <p className="text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide mb-2">Try asking</p>
+                <p className="text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide mb-2">
+                  Try asking
+                </p>
                 <ul className="space-y-2">
                   {[
                     "Turn this dense policy document into a one-page cheat sheet for compliance officers.",
                     "Create a visually engaging overview document from these rough project notes.",
                     "Transform this bullet-point draft into a polished, client-ready email.",
                   ].map((example) => (
-                    <li key={example} className="text-xs text-neutral-500 dark:text-neutral-400 italic bg-black/5 dark:bg-white/5 rounded-md px-3 py-2 leading-relaxed">
+                    <li
+                      key={example}
+                      className="text-xs text-neutral-500 dark:text-neutral-400 italic bg-black/5 dark:bg-white/5 rounded-md px-3 py-2 leading-relaxed"
+                    >
                       &ldquo;{example}&rdquo;
                     </li>
                   ))}
@@ -280,7 +287,13 @@ export function ArtifactsDrawer() {
       case "image":
         return (
           <div className="h-full flex items-center justify-center bg-neutral-50 dark:bg-neutral-900/60 p-6 overflow-auto">
-            <img key={`${activeFile}-${editorVersion}`} src={activeFileData.content} alt={getFileName(activeFileData.path)} className="max-w-full max-h-full object-contain rounded-md shadow-sm" draggable={false} />
+            <img
+              key={`${activeFile}-${editorVersion}`}
+              src={activeFileData.content}
+              alt={getFileName(activeFileData.path)}
+              className="max-w-full max-h-full object-contain rounded-md shadow-sm"
+              draggable={false}
+            />
           </div>
         );
       case "binary":
@@ -289,31 +302,91 @@ export function ArtifactsDrawer() {
             <div className="max-w-md text-center">
               <FileIcon2 size={32} className="mx-auto mb-4 text-neutral-300 dark:text-neutral-600" />
               <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">Binary File</h3>
-              <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">This file is stored as binary data and cannot be edited as plain text here.</p>
-              <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">{activeFileData.contentType || "application/octet-stream"}</p>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                This file is stored as binary data and cannot be edited as plain text here.
+              </p>
+              <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
+                {activeFileData.contentType || "application/octet-stream"}
+              </p>
             </div>
           </div>
         );
       case "html":
-        return <HtmlEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return (
+          <HtmlEditor
+            key={`${activeFile}-${editorVersion}`}
+            content={activeFileData.content}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+          />
+        );
       case "svg":
-        return <SvgEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return (
+          <SvgEditor
+            key={`${activeFile}-${editorVersion}`}
+            content={activeFileData.content}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+          />
+        );
       case "csv":
-        return <CsvEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode === "preview" ? "table" : "code"} onViewModeChange={(mode) => setViewMode(mode === "table" ? "preview" : "code")} />;
+        return (
+          <CsvEditor
+            key={`${activeFile}-${editorVersion}`}
+            content={activeFileData.content}
+            viewMode={viewMode === "preview" ? "table" : "code"}
+            onViewModeChange={(mode) => setViewMode(mode === "table" ? "preview" : "code")}
+          />
+        );
       case "mermaid":
-        return <MermaidEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return (
+          <MermaidEditor
+            key={`${activeFile}-${editorVersion}`}
+            content={activeFileData.content}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+          />
+        );
       case "markdown":
-        return <MarkdownEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
+        return (
+          <MarkdownEditor
+            key={`${activeFile}-${editorVersion}`}
+            content={activeFileData.content}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+          />
+        );
       case "code": {
         const lang = artifactLanguage(activeFileData.path);
         if (lang === "py") {
-          return <PythonEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
+          return (
+            <PythonEditor
+              key={`${activeFile}-${editorVersion}`}
+              content={activeFileData.content}
+              onRunReady={onRunReady}
+              onRunningChange={setIsRunning}
+            />
+          );
         }
         if (lang === "js") {
-          return <JsEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
+          return (
+            <JsEditor
+              key={`${activeFile}-${editorVersion}`}
+              content={activeFileData.content}
+              onRunReady={onRunReady}
+              onRunningChange={setIsRunning}
+            />
+          );
         }
         if (lang === "sh" || lang === "bash") {
-          return <BashEditor key={`${activeFile}-${editorVersion}`} initialScript={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
+          return (
+            <BashEditor
+              key={`${activeFile}-${editorVersion}`}
+              initialScript={activeFileData.content}
+              onRunReady={onRunReady}
+              onRunningChange={setIsRunning}
+            />
+          );
         }
         return <CodeEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} language={lang} />;
       }
@@ -326,7 +399,9 @@ export function ArtifactsDrawer() {
   // Check if current file supports preview mode
   const supportsPreview = () => {
     if (!activeFile) return false;
-    const kind = activeFileData ? artifactKind(activeFileData.path, activeFileData.contentType) : artifactKind(activeFile);
+    const kind = activeFileData
+      ? artifactKind(activeFileData.path, activeFileData.contentType)
+      : artifactKind(activeFile);
     return ["html", "svg", "csv", "mermaid", "markdown"].includes(kind);
   };
 
@@ -338,7 +413,11 @@ export function ArtifactsDrawer() {
   };
 
   return (
-    <div className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md pt-2 md:pt-0" onDragOver={handleDragOver} onDrop={handleDrop}>
+    <div
+      className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md pt-2 md:pt-0"
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       {/* Drag overlay */}
       {isDragOver && (
         <div className="absolute inset-0 bg-blue-500/10 border-2 border-dashed border-blue-500 flex items-center justify-center z-50 backdrop-blur-sm">
@@ -388,11 +467,18 @@ export function ArtifactsDrawer() {
         <div className="flex-1 overflow-hidden">{renderEditor()}</div>
 
         {/* Right Side Panel - File Browser (full height) */}
-        <div className={`transition-all duration-500 ease-in-out relative ${files.length > 0 ? "w-48 opacity-100" : "w-0 opacity-0"} shrink-0 overflow-hidden`}>
+        <div
+          className={`transition-all duration-500 ease-in-out relative ${files.length > 0 ? "w-48 opacity-100" : "w-0 opacity-0"} shrink-0 overflow-hidden`}
+        >
           <div className="absolute inset-y-0 left-0 w-px bg-black/10 dark:bg-white/10"></div>
           {fs && (
             <div className={`h-full transition-opacity duration-500 ${files.length > 0 ? "opacity-100" : "opacity-0"}`}>
-              <ArtifactsBrowser fs={fs} files={files} openTabs={activeFile ? [activeFile] : []} onFileClick={openFile} />
+              <ArtifactsBrowser
+                fs={fs}
+                files={files}
+                openTabs={activeFile ? [activeFile] : []}
+                onFileClick={openFile}
+              />
             </div>
           )}
         </div>
@@ -405,7 +491,10 @@ export function ArtifactsDrawer() {
           {activeFile && (
             <>
               <FileIcon name={activeFile} />
-              <span className="text-sm font-medium truncate flex-1 text-left ml-1.5 text-neutral-700 dark:text-neutral-300" title={getFileName(activeFile)}>
+              <span
+                className="text-sm font-medium truncate flex-1 text-left ml-1.5 text-neutral-700 dark:text-neutral-300"
+                title={getFileName(activeFile)}
+              >
                 {getFileName(activeFile)}
               </span>
             </>

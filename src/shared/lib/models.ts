@@ -4,7 +4,14 @@ export function modelType(id: string): ModelType | undefined {
   const lowerId = id.toLowerCase();
 
   // Check for embedding models
-  if (lowerId.includes("embedding") || lowerId.includes("embed") || lowerId.includes("bge") || lowerId.includes("clip") || lowerId.includes("gte") || lowerId.includes("minilm")) {
+  if (
+    lowerId.includes("embedding") ||
+    lowerId.includes("embed") ||
+    lowerId.includes("bge") ||
+    lowerId.includes("clip") ||
+    lowerId.includes("gte") ||
+    lowerId.includes("minilm")
+  ) {
     return "embedder";
   }
 
@@ -24,7 +31,13 @@ export function modelType(id: string): ModelType | undefined {
   }
 
   // Check for image generation models (renderer)
-  if (lowerId.includes("image") || lowerId.includes("flux") || lowerId.includes("dall-e") || lowerId.includes("stable-diffusion") || lowerId.includes("midjourney")) {
+  if (
+    lowerId.includes("image") ||
+    lowerId.includes("flux") ||
+    lowerId.includes("dall-e") ||
+    lowerId.includes("stable-diffusion") ||
+    lowerId.includes("midjourney")
+  ) {
     return "renderer";
   }
 

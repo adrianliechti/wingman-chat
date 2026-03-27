@@ -10,9 +10,11 @@ if (typeof document !== "undefined") {
   const fontSet = (document as Document & { fonts?: FontFaceSet }).fonts;
 
   if (fontSet) {
-    void Promise.all(WARMUP_SAMPLES.map((sample) => fontSet.load(FONT_SPEC, sample).catch(() => undefined))).finally(() => {
-      document.documentElement.classList.add(READY_CLASS);
-    });
+    void Promise.all(WARMUP_SAMPLES.map((sample) => fontSet.load(FONT_SPEC, sample).catch(() => undefined))).finally(
+      () => {
+        document.documentElement.classList.add(READY_CLASS);
+      },
+    );
   } else {
     document.documentElement.classList.add(READY_CLASS);
   }

@@ -53,12 +53,16 @@ const STYLE_INSTRUCTIONS: Record<string, string> = {
     "as a cute die-cut sticker design with thick white border outline, vibrant flat colors, slightly glossy finish, kawaii-inspired simplified forms, clean vector-sharp edges, perfect for laptop or water bottle, transparent background ready",
   "Chibi Crochet":
     "as an adorable chibi-style crocheted amigurumi doll, handmade yarn texture with visible individual stitches, big cute head with small body proportions, kawaii embroidered eyes, soft pastel yarn colors, cozy handcrafted plushie aesthetic, photographed on light background",
-  Plushy: "as a cute plush toy with soft minky fabric texture, rounded puffy forms, embroidered eyes and details, visible seam stitching, huggable proportions with kawaii aesthetic, professional product photography lighting",
+  Plushy:
+    "as a cute plush toy with soft minky fabric texture, rounded puffy forms, embroidered eyes and details, visible seam stitching, huggable proportions with kawaii aesthetic, professional product photography lighting",
 
   // Digital & Tech styles
-  Isometric: "in isometric pixel art style with precise 30-degree angles, no perspective distortion, clean geometric shapes, vibrant limited color palette, tiny detailed elements, video game diorama aesthetic, satisfying visual tidiness",
-  "Pixel Art": "in retro pixel art style with strict limited 16-color palette, crisp hard-edged pixels, no anti-aliasing or smoothing, 16-bit SNES/Genesis video game aesthetic, dithering for gradients, nostalgic and charming",
-  "Low Poly": "in low poly 3D render style with flat shaded triangular faces, geometric simplification of organic forms, subtle gradient coloring across faces, modern digital art aesthetic, clean minimal lighting, slightly glossy material",
+  Isometric:
+    "in isometric pixel art style with precise 30-degree angles, no perspective distortion, clean geometric shapes, vibrant limited color palette, tiny detailed elements, video game diorama aesthetic, satisfying visual tidiness",
+  "Pixel Art":
+    "in retro pixel art style with strict limited 16-color palette, crisp hard-edged pixels, no anti-aliasing or smoothing, 16-bit SNES/Genesis video game aesthetic, dithering for gradients, nostalgic and charming",
+  "Low Poly":
+    "in low poly 3D render style with flat shaded triangular faces, geometric simplification of organic forms, subtle gradient coloring across faces, modern digital art aesthetic, clean minimal lighting, slightly glossy material",
   "3D Cartoon":
     "in Pixar/Disney 3D animation style, smooth subsurface scattering on skin, soft global illumination, appealing character proportions with slightly oversized head, rich detailed textures, vibrant color palette, professional studio render quality with subtle ambient occlusion",
   "Flat Vector":
@@ -81,10 +85,34 @@ const STYLE_INSTRUCTIONS: Record<string, string> = {
 const AVAILABLE_STYLES = Object.keys(STYLE_INSTRUCTIONS);
 
 const blobs = [
-  { bg: "radial-gradient(ellipse 80% 80% at center, rgba(120,119,198,0.18) 0%, transparent 70%)", top: "10%", left: "5%", w: "55%", h: "55%" },
-  { bg: "radial-gradient(ellipse 80% 80% at center, rgba(255,119,198,0.14) 0%, transparent 70%)", top: "15%", left: "45%", w: "50%", h: "50%" },
-  { bg: "radial-gradient(ellipse 80% 80% at center, rgba(78,205,196,0.14) 0%, transparent 70%)", top: "0%", left: "20%", w: "50%", h: "50%" },
-  { bg: "radial-gradient(ellipse 70% 70% at center, rgba(255,177,66,0.12) 0%, transparent 70%)", top: "45%", left: "25%", w: "45%", h: "45%" },
+  {
+    bg: "radial-gradient(ellipse 80% 80% at center, rgba(120,119,198,0.18) 0%, transparent 70%)",
+    top: "10%",
+    left: "5%",
+    w: "55%",
+    h: "55%",
+  },
+  {
+    bg: "radial-gradient(ellipse 80% 80% at center, rgba(255,119,198,0.14) 0%, transparent 70%)",
+    top: "15%",
+    left: "45%",
+    w: "50%",
+    h: "50%",
+  },
+  {
+    bg: "radial-gradient(ellipse 80% 80% at center, rgba(78,205,196,0.14) 0%, transparent 70%)",
+    top: "0%",
+    left: "20%",
+    w: "50%",
+    h: "50%",
+  },
+  {
+    bg: "radial-gradient(ellipse 70% 70% at center, rgba(255,177,66,0.12) 0%, transparent 70%)",
+    top: "45%",
+    left: "25%",
+    w: "45%",
+    h: "45%",
+  },
 ] as const;
 
 function CanvasBackground() {
@@ -125,7 +153,10 @@ const Disclaimer = () => {
     <div className="mb-6 mx-auto max-w-2xl">
       <div className="flex items-start justify-center gap-2 px-4 py-3">
         <Info size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-        <p className="text-xs text-neutral-600 dark:text-neutral-400 text-left" dangerouslySetInnerHTML={{ __html: disclaimer }} />
+        <p
+          className="text-xs text-neutral-600 dark:text-neutral-400 text-left"
+          dangerouslySetInnerHTML={{ __html: disclaimer }}
+        />
       </div>
     </div>
   );
@@ -181,7 +212,12 @@ export function RendererPage() {
   // Set up navigation actions
   useEffect(() => {
     setRightActions(
-      <button type="button" className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out" onClick={handleReset} title="Clear">
+      <button
+        type="button"
+        className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
+        onClick={handleReset}
+        title="Clear"
+      >
         <PlusIcon size={20} />
       </button>,
     );
@@ -285,7 +321,9 @@ export function RendererPage() {
       const model = selectedModel?.id || config.renderer?.model || "";
 
       // Build the full prompt with style if selected
-      const fullPrompt = selectedStyle ? `${activePrompt}${activePrompt.trim() ? ", " : ""}${STYLE_INSTRUCTIONS[selectedStyle]}` : activePrompt;
+      const fullPrompt = selectedStyle
+        ? `${activePrompt}${activePrompt.trim() ? ", " : ""}${STYLE_INSTRUCTIONS[selectedStyle]}`
+        : activePrompt;
 
       // Collect reference images: user-uploaded + optionally the source image for refinement
       const refImages: Blob[] = currentRefImages.map((img) => img.blob);
@@ -293,7 +331,11 @@ export function RendererPage() {
         refImages.push(decodeDataURL(sourceImageData));
       }
 
-      const resultBlob = await config.client.generateImage(model, fullPrompt, refImages.length > 0 ? refImages : undefined);
+      const resultBlob = await config.client.generateImage(
+        model,
+        fullPrompt,
+        refImages.length > 0 ? refImages : undefined,
+      );
 
       // Convert to data URL for persistence and display
       const dataUrl = await readAsDataURL(resultBlob);
@@ -346,7 +388,10 @@ export function RendererPage() {
   );
 
   // Derive the selected image object
-  const selectedImage = useMemo(() => (selectedImageId ? (images.find((img) => img.id === selectedImageId) ?? null) : null), [images, selectedImageId]);
+  const selectedImage = useMemo(
+    () => (selectedImageId ? (images.find((img) => img.id === selectedImageId) ?? null) : null),
+    [images, selectedImageId],
+  );
 
   // Auto-select first image if selected image was deleted
   useEffect(() => {
@@ -365,7 +410,9 @@ export function RendererPage() {
           <div className="absolute inset-0 flex items-center justify-center z-30 bg-slate-50/80 dark:bg-slate-900/40 backdrop-blur-sm">
             <div className="relative bg-neutral-50/60 dark:bg-neutral-900/50 backdrop-blur-lg p-10 rounded-2xl shadow-xl border-2 border-dashed border-slate-400 dark:border-slate-500 flex flex-col items-center gap-5">
               <ImagePlus size={64} className="text-neutral-400 dark:text-neutral-500" />
-              <span className="text-base font-medium text-neutral-500 dark:text-neutral-400 text-center">Drop images as reference</span>
+              <span className="text-base font-medium text-neutral-500 dark:text-neutral-400 text-center">
+                Drop images as reference
+              </span>
             </div>
           </div>
         )}
@@ -377,7 +424,11 @@ export function RendererPage() {
             <div className="flex items-center justify-center flex-1 min-h-0 pb-24 w-full">
               {/* Inner wrapper sized to the image — loader and buttons anchor to this */}
               <div className="relative rounded-2xl shadow-xl overflow-hidden">
-                <img src={selectedImage.data} alt={selectedImage.prompt || "Generated image"} className="block max-w-full max-h-[calc(100vh-14rem)]" />
+                <img
+                  src={selectedImage.data}
+                  alt={selectedImage.prompt || "Generated image"}
+                  className="block max-w-full max-h-[calc(100vh-14rem)]"
+                />
 
                 {/* Loader overlay — covers only the image */}
                 {isGenerating && (
@@ -397,7 +448,12 @@ export function RendererPage() {
                   >
                     <ImagePlus size={16} />
                   </button>
-                  <button type="button" onClick={() => handleDownload(selectedImage.data)} className="p-2 bg-black/40 hover:bg-black/60 backdrop-blur-lg text-white rounded-lg transition-all" title="Download">
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(selectedImage.data)}
+                    className="p-2 bg-black/40 hover:bg-black/60 backdrop-blur-lg text-white rounded-lg transition-all"
+                    title="Download"
+                  >
                     <Download size={16} />
                   </button>
                 </div>
@@ -494,7 +550,9 @@ export function RendererPage() {
                     setPrompt("");
                   }}
                   className={`relative size-16 md:size-20 rounded-xl overflow-hidden cursor-pointer group shrink-0 transition-all ${
-                    isActive ? "ring-2 ring-blue-500 dark:ring-blue-400 shadow-md" : "border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-500"
+                    isActive
+                      ? "ring-2 ring-blue-500 dark:ring-blue-400 shadow-md"
+                      : "border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-500"
                   }`}
                 >
                   <img src={img.data} alt={img.prompt || "Generated image"} className="size-full object-cover" />

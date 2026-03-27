@@ -142,7 +142,12 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
                     [
                       {
                         role: Role.User,
-                        content: [{ type: "text", text: `Instructions: ${instructions}\n\nContext to research:\n${item.text}\n\nGenerate the research query:` }],
+                        content: [
+                          {
+                            type: "text",
+                            text: `Instructions: ${instructions}\n\nContext to research:\n${item.text}\n\nGenerate the research query:`,
+                          },
+                        ],
                       },
                     ],
                     [],
@@ -206,7 +211,9 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
                 ? "Generate a concise and effective search query based on the user instructions and the provided context. Return only the search query, nothing else."
                 : "Generate a concise and effective search query based on the provided context. Return only the search query, nothing else.";
 
-              const userContent = instructions ? `Instructions: ${instructions}\n\nContext:\n${inputText}\n\nGenerate the search query:` : `Context:\n${inputText}\n\nGenerate the search query:`;
+              const userContent = instructions
+                ? `Instructions: ${instructions}\n\nContext:\n${inputText}\n\nGenerate the search query:`
+                : `Context:\n${inputText}\n\nGenerate the search query:`;
 
               const response = await client.complete(
                 workflowModel,
@@ -246,7 +253,10 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
           });
         }
       } catch (error) {
-        console.error(`Error ${mode === "fetch" ? "fetching" : mode === "research" ? "researching" : "searching"}:`, error);
+        console.error(
+          `Error ${mode === "fetch" ? "fetching" : mode === "research" ? "researching" : "searching"}:`,
+          error,
+        );
         updateNode(id, {
           data: { ...data, error: error instanceof Error ? error.message : "Unknown error" },
         });
@@ -285,7 +295,11 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
           </button>
         </MenuItem>
         <MenuItem>
-          <button type="button" onClick={() => setMode("fetch")} className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs">
+          <button
+            type="button"
+            onClick={() => setMode("fetch")}
+            className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors text-xs"
+          >
             Website
           </button>
         </MenuItem>
@@ -372,7 +386,9 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
               onChange={(e) => updateNode(id, { data: { ...data, instructions: e.target.value } })}
               onPointerDown={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
-              placeholder={hasConnections ? "Instructions (combined with each input via LLM)..." : "Enter research topic..."}
+              placeholder={
+                hasConnections ? "Instructions (combined with each input via LLM)..." : "Enter research topic..."
+              }
               rows={2}
               className="w-full px-3 py-2 text-sm border border-gray-200/50 dark:border-gray-700/50 rounded-lg bg-white/50 dark:bg-black/20 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 focus:outline-none transition-all resize-y min-h-[50px] nodrag"
             />
@@ -395,7 +411,11 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
         )}
 
         {/* Website mode with input: show hint that URLs will be extracted */}
-        {mode === "fetch" && hasConnections && <div className="shrink-0 px-3 py-2 text-xs text-gray-500 dark:text-gray-400 italic">URLs will be extracted from connected inputs</div>}
+        {mode === "fetch" && hasConnections && (
+          <div className="shrink-0 px-3 py-2 text-xs text-gray-500 dark:text-gray-400 italic">
+            URLs will be extracted from connected inputs
+          </div>
+        )}
 
         {data.output && data.output.items.length > 1 ? (
           // Multiple results: show with tabs
@@ -405,7 +425,11 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
             </div>
             {/* Tab navigation at bottom */}
             <div className="shrink-0 flex items-center justify-between px-2 py-1.5 bg-gray-200/50 dark:bg-black/20 rounded-b-lg border-t border-gray-200/50 dark:border-gray-700/50">
-              <button onClick={() => setActiveTab(Math.max(0, activeTab - 1))} disabled={activeTab === 0} className="p-1 rounded hover:bg-gray-300/50 dark:hover:bg-gray-700/50 disabled:opacity-30 transition-colors nodrag">
+              <button
+                onClick={() => setActiveTab(Math.max(0, activeTab - 1))}
+                disabled={activeTab === 0}
+                className="p-1 rounded hover:bg-gray-300/50 dark:hover:bg-gray-700/50 disabled:opacity-30 transition-colors nodrag"
+              >
                 <ChevronLeft size={14} />
               </button>
               <div className="flex items-center gap-1">
@@ -414,7 +438,9 @@ export const SearchNode = memo(({ id, data, selected }: NodeProps<SearchNodeType
                     key={idx}
                     onClick={() => setActiveTab(idx)}
                     className={`w-6 h-6 text-xs rounded transition-colors nodrag ${
-                      idx === activeTab ? "bg-blue-500 text-white" : "bg-gray-300/50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400 hover:bg-gray-400/50 dark:hover:bg-gray-600/50"
+                      idx === activeTab
+                        ? "bg-blue-500 text-white"
+                        : "bg-gray-300/50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400 hover:bg-gray-400/50 dark:hover:bg-gray-600/50"
                     }`}
                   >
                     {idx + 1}

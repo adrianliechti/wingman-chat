@@ -27,12 +27,18 @@ export async function convertFileToText(file: File, extractText?: (file: File) =
   }
 
   // DOCX → Markdown
-  if (name.endsWith(".docx") || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+  if (
+    name.endsWith(".docx") ||
+    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
     return docxToMarkdown(file);
   }
 
   // PPTX → Markdown
-  if (name.endsWith(".pptx") || file.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
+  if (
+    name.endsWith(".pptx") ||
+    file.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ) {
     return pptxToMarkdown(file);
   }
 

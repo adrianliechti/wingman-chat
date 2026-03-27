@@ -23,7 +23,8 @@ export async function processUploadedFile(file: File): Promise<ProcessedFile[]> 
   const extractText = (f: File) => getConfig().client.extractText(f);
 
   // XLSX needs special handling: artifacts wants separate files per sheet
-  const isXlsx = fileName.endsWith(".xlsx") || file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  const isXlsx =
+    fileName.endsWith(".xlsx") || file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
   if (isXlsx) {
     try {

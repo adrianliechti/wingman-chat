@@ -128,7 +128,9 @@ export const PODCAST_STYLES = [
 
 function buildSlideInstructions(styleId: string): string {
   const style = SLIDE_STYLES.find((s) => s.id === styleId) ?? SLIDE_STYLES[0];
-  return studioSlideInstructions.replace("{{COMMON_RULES}}", slideCommonRules).replace("{{STYLE_SECTION}}", style.prompt);
+  return studioSlideInstructions
+    .replace("{{COMMON_RULES}}", slideCommonRules)
+    .replace("{{STYLE_SECTION}}", style.prompt);
 }
 
 function buildAudioInstructions(styleId: string): string {
@@ -370,7 +372,9 @@ export function useNotebook(notebookId?: string) {
         // Build Message[] for the LLM (strip timestamps)
         const conversation = newMessages.map(({ timestamp, ...msg }) => msg);
 
-        const response = await runWithTools(client, getModel(), chatInstructions, conversation, tools, (content) => setStreamingContent(content));
+        const response = await runWithTools(client, getModel(), chatInstructions, conversation, tools, (content) =>
+          setStreamingContent(content),
+        );
 
         setStreamingContent(null);
 
@@ -443,7 +447,12 @@ export function useNotebook(notebookId?: string) {
 
       // Fire and forget
       const tools = createSourceTools(sourcesRef.current);
-      const instructions = type === "slide-deck" ? buildSlideInstructions(styleId ?? "whiteboard") : type === "audio-overview" ? buildAudioInstructions(styleId ?? "overview") : STUDIO_PROMPTS[type];
+      const instructions =
+        type === "slide-deck"
+          ? buildSlideInstructions(styleId ?? "whiteboard")
+          : type === "audio-overview"
+            ? buildAudioInstructions(styleId ?? "overview")
+            : STUDIO_PROMPTS[type];
       const userMessage = {
         role: "user" as const,
         content: [
@@ -587,7 +596,11 @@ export function useNotebook(notebookId?: string) {
                 const remaining = imagePrompts.slice(1);
                 for (let i = 0; i < remaining.length; i += 4) {
                   const batch = remaining.slice(i, i + 4);
-                  const results = await Promise.allSettled(batch.map((prompt) => client.generateImage(rendererModel, prompt, [firstBlob]).then((blob) => blobToDataUrl(blob))));
+                  const results = await Promise.allSettled(
+                    batch.map((prompt) =>
+                      client.generateImage(rendererModel, prompt, [firstBlob]).then((blob) => blobToDataUrl(blob)),
+                    ),
+                  );
                   for (let j = 0; j < results.length; j++) {
                     const result = results[j];
                     slideImages[1 + i + j] = result.status === "fulfilled" ? result.value : "";

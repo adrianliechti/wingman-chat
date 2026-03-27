@@ -3,7 +3,11 @@ import { getDataText } from "@/features/workflow/types/workflow";
 
 // Helper function to get connected node data as a single combined Data
 // Expands and merges all items from connected nodes
-export function getConnectedData(nodeId: string, nodes: Array<{ id: string; data: Record<string, unknown> }>, edges: Array<{ source: string; target: string }>): Data {
+export function getConnectedData(
+  nodeId: string,
+  nodes: Array<{ id: string; data: Record<string, unknown> }>,
+  edges: Array<{ source: string; target: string }>,
+): Data {
   const incomingEdges = edges.filter((edge) => edge.target === nodeId);
   const result: Data = { items: [] };
 
@@ -28,7 +32,12 @@ export function getConnectedData(nodeId: string, nodes: Array<{ id: string; data
 }
 
 // Helper function to get combined text from connected nodes
-export function getConnectedText(nodeId: string, nodes: Array<{ id: string; data: Record<string, unknown> }>, edges: Array<{ source: string; target: string }>, separator: string = "\n\n"): string {
+export function getConnectedText(
+  nodeId: string,
+  nodes: Array<{ id: string; data: Record<string, unknown> }>,
+  edges: Array<{ source: string; target: string }>,
+  separator: string = "\n\n",
+): string {
   const data = getConnectedData(nodeId, nodes, edges);
   return data.items.map((item) => item.text).join(separator);
 }

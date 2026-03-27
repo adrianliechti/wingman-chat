@@ -152,20 +152,36 @@ export function transformHtmlForPreview(html: string, files: FileSystem): Transf
   });
 
   // Transform static src attributes (img, script, video, audio, source, etc.)
-  transformed = transformed.replace(/(<(?:img|script|video|audio|source|embed|track)[^>]+)src=["']([^"']+)["']/gi, (match, prefix, path) => {
-    // Skip data URLs and absolute URLs
-    if (path.startsWith("data:") || path.startsWith("http://") || path.startsWith("https://") || path.startsWith("blob:")) {
-      return match;
-    }
-    const normalized = normalizeArtifactReferencePath(path);
-    const dataUrl = urls.get(normalized);
-    return dataUrl ? `${prefix}src="${dataUrl}"` : match;
-  });
+  transformed = transformed.replace(
+    /(<(?:img|script|video|audio|source|embed|track)[^>]+)src=["']([^"']+)["']/gi,
+    (match, prefix, path) => {
+      // Skip data URLs and absolute URLs
+      if (
+        path.startsWith("data:") ||
+        path.startsWith("http://") ||
+        path.startsWith("https://") ||
+        path.startsWith("blob:")
+      ) {
+        return match;
+      }
+      const normalized = normalizeArtifactReferencePath(path);
+      const dataUrl = urls.get(normalized);
+      return dataUrl ? `${prefix}src="${dataUrl}"` : match;
+    },
+  );
 
   // Transform href attributes for <a> tags (not <link> - those are handled above)
   transformed = transformed.replace(/(<a[^>]+)href=["']([^"']+)["']/gi, (match, prefix, path) => {
     // Skip anchors, data URLs, absolute URLs, and special links
-    if (path.startsWith("#") || path.startsWith("data:") || path.startsWith("http://") || path.startsWith("https://") || path.startsWith("mailto:") || path.startsWith("tel:") || path.startsWith("blob:")) {
+    if (
+      path.startsWith("#") ||
+      path.startsWith("data:") ||
+      path.startsWith("http://") ||
+      path.startsWith("https://") ||
+      path.startsWith("mailto:") ||
+      path.startsWith("tel:") ||
+      path.startsWith("blob:")
+    ) {
       return match;
     }
     const normalized = normalizeArtifactReferencePath(path);
@@ -180,10 +196,13 @@ export function transformHtmlForPreview(html: string, files: FileSystem): Transf
   });
 
   // Transform <style> block contents
-  transformed = transformed.replace(/(<style[^>]*>)([\s\S]*?)(<\/style>)/gi, (_match, openTag, cssContent, closeTag) => {
-    const transformedCss = transformCssUrls(cssContent, urls);
-    return `${openTag}${transformedCss}${closeTag}`;
-  });
+  transformed = transformed.replace(
+    /(<style[^>]*>)([\s\S]*?)(<\/style>)/gi,
+    (_match, openTag, cssContent, closeTag) => {
+      const transformedCss = transformCssUrls(cssContent, urls);
+      return `${openTag}${transformedCss}${closeTag}`;
+    },
+  );
 
   // Build the VFS script with URL mapping injected
   const vfsScript = `

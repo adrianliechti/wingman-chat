@@ -48,7 +48,10 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     const currentIds = new Set(clientsRef.current.map((c) => c.id));
     const newIds = new Set(enabledServers.map((s) => s.id));
 
-    const needsUpdate = currentIds.size !== newIds.size || enabledServers.some((s) => !currentIds.has(s.id)) || clientsRef.current.some((c) => !newIds.has(c.id));
+    const needsUpdate =
+      currentIds.size !== newIds.size ||
+      enabledServers.some((s) => !currentIds.has(s.id)) ||
+      clientsRef.current.some((c) => !newIds.has(c.id));
 
     if (needsUpdate) {
       // Disconnect removed clients
@@ -129,7 +132,12 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
             return [{ type: "text" as const, text: JSON.stringify({ error: `Skill "${skillName}" not found` }) }];
           }
           if (!agentSkillIds.has(skill.name)) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: `Skill "${skillName}" is not enabled for this agent` }) }];
+            return [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ error: `Skill "${skillName}" is not enabled for this agent` }),
+              },
+            ];
           }
           return [
             {
@@ -150,7 +158,12 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     if (enabledSkills.length === 0) return null;
 
     const tools = getSkillTools();
-    const skillsXml = enabledSkills.map((skill) => `  <skill>\n    <name>${skill.name}</name>\n    <description>${skill.description}</description>\n  </skill>`).join("\n");
+    const skillsXml = enabledSkills
+      .map(
+        (skill) =>
+          `  <skill>\n    <name>${skill.name}</name>\n    <description>${skill.description}</description>\n  </skill>`,
+      )
+      .join("\n");
 
     const instructions = skillsPrompt.replace("{skillsXml}", skillsXml);
 
@@ -235,7 +248,9 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     if (!memoryEnabled) return null;
 
     const tools = getMemoryTools();
-    const memorySection = memoryContent.trim() ? `\n\n<memory>\n${memoryContent.trim()}\n</memory>` : "\n\nNo memories yet.";
+    const memorySection = memoryContent.trim()
+      ? `\n\n<memory>\n${memoryContent.trim()}\n</memory>`
+      : "\n\nNo memories yet.";
 
     return {
       id: "memory",

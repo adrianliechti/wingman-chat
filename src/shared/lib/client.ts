@@ -4,7 +4,14 @@ import { zodTextFormat } from "openai/helpers/zod";
 import mime from "mime";
 
 import { Role } from "@/shared/types/chat";
-import type { Tool, Content, ImageContent, FileContent, ToolResultContent, ReasoningContent } from "@/shared/types/chat";
+import type {
+  Tool,
+  Content,
+  ImageContent,
+  FileContent,
+  ToolResultContent,
+  ReasoningContent,
+} from "@/shared/types/chat";
 import type { Message, Model, ModelType } from "@/shared/types/chat";
 import type { SearchResult } from "@/features/research/types/search";
 import { modelType, modelName } from "./models";
@@ -351,7 +358,8 @@ export class Client {
     try {
       const response = await this.oai.responses.parse({
         model: model,
-        instructions: "Extract a valid URL from the given text. If the text contains a URL, extract it. If no valid URL is found, return null.",
+        instructions:
+          "Extract a valid URL from the given text. If the text contains a URL, extract it. If no valid URL is found, return null.",
         input: text,
         text: {
           format: zodTextFormat(Schema, "extract_url"),
@@ -424,7 +432,12 @@ export class Client {
     }
   }
 
-  async rewriteSelection(model: string, text: string, selectionStart: number, selectionEnd: number): Promise<{ alternatives: string[]; contextToReplace: string; keyChanges: string[] }> {
+  async rewriteSelection(
+    model: string,
+    text: string,
+    selectionStart: number,
+    selectionEnd: number,
+  ): Promise<{ alternatives: string[]; contextToReplace: string; keyChanges: string[] }> {
     const Schema = z
       .object({
         alternatives: z
@@ -599,7 +612,9 @@ export class Client {
       const maxTextLength = 50000;
 
       if (input.length > maxTextLength) {
-        throw new Error(`Text length ${input.length.toLocaleString()} characters exceeds the maximum limit of ${maxTextLength.toLocaleString()} characters`);
+        throw new Error(
+          `Text length ${input.length.toLocaleString()} characters exceeds the maximum limit of ${maxTextLength.toLocaleString()} characters`,
+        );
       }
     }
 
@@ -636,7 +651,14 @@ export class Client {
     return resp.blob();
   }
 
-  async rewriteText(model: string, text: string, lang?: string, tone?: string, style?: string, userPrompt?: string): Promise<string> {
+  async rewriteText(
+    model: string,
+    text: string,
+    lang?: string,
+    tone?: string,
+    style?: string,
+    userPrompt?: string,
+  ): Promise<string> {
     const Schema = z
       .object({
         rewrittenText: z.string(),
@@ -688,12 +710,16 @@ export class Client {
     const finalInstructions = instructions.length > 0 ? instructions.join(" ") : "Maintain the original tone and style";
 
     // Language handling
-    const languageInstruction = lang ? `Ensure the text is in ${lang} language${lang !== "en" ? ", translating if necessary" : ""}.` : "Maintain the original language of the text.";
+    const languageInstruction = lang
+      ? `Ensure the text is in ${lang} language${lang !== "en" ? ", translating if necessary" : ""}.`
+      : "Maintain the original language of the text.";
 
     try {
       const response = await this.oai.responses.parse({
         model: model,
-        instructions: instructionsRewriteText.replace("{languageInstruction}", languageInstruction).replace("{finalInstructions}", finalInstructions),
+        instructions: instructionsRewriteText
+          .replace("{languageInstruction}", languageInstruction)
+          .replace("{finalInstructions}", finalInstructions),
         input: text,
         text: {
           format: zodTextFormat(Schema, "rewrite_text"),
@@ -795,7 +821,11 @@ export class Client {
     return result.text || "";
   }
 
-  async search(model: string, query: string, options?: { domains?: string[]; limit?: number }): Promise<SearchResult[]> {
+  async search(
+    model: string,
+    query: string,
+    options?: { domains?: string[]; limit?: number },
+  ): Promise<SearchResult[]> {
     const data = new FormData();
 
     if (model) {
@@ -920,10 +950,22 @@ export class Client {
 
   private sanitizeMessages(messages: Message[]): Message[] {
     // Extract tool result IDs from all messages
-    const toolResultIds = new Set(messages.flatMap((m) => m.content.filter((p): p is ToolResultContent => p.type === "tool_result").map((p) => p.id)));
+    const toolResultIds = new Set(
+      messages.flatMap((m) =>
+        m.content.filter((p): p is ToolResultContent => p.type === "tool_result").map((p) => p.id),
+      ),
+    );
 
     // Find tool calls that have matching results
-    const validToolCallIds = new Set(messages.flatMap((m) => m.content.filter((p): p is import("../types/chat").ToolCallContent => p.type === "tool_call" && toolResultIds.has(p.id)).map((p) => p.id)));
+    const validToolCallIds = new Set(
+      messages.flatMap((m) =>
+        m.content
+          .filter(
+            (p): p is import("../types/chat").ToolCallContent => p.type === "tool_call" && toolResultIds.has(p.id),
+          )
+          .map((p) => p.id),
+      ),
+    );
 
     return messages.filter((m) => {
       const toolCalls = m.content.filter((p): p is import("../types/chat").ToolCallContent => p.type === "tool_call");
@@ -940,12 +982,19 @@ export class Client {
       }
 
       // Keep messages with meaningful content (text, images, files)
-      const hasContent = m.content.some((p) => (p.type === "text" && p.text.trim()) || p.type === "image" || p.type === "file");
+      const hasContent = m.content.some(
+        (p) => (p.type === "text" && p.text.trim()) || p.type === "image" || p.type === "file",
+      );
       return hasContent;
     });
   }
 
-  async optimizeSkill(model: string, name: string, description: string, content: string): Promise<{ name: string; description: string; content: string }> {
+  async optimizeSkill(
+    model: string,
+    name: string,
+    description: string,
+    content: string,
+  ): Promise<{ name: string; description: string; content: string }> {
     const Schema = z
       .object({
         name: z.string(),

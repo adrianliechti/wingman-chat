@@ -66,7 +66,11 @@ const bootstrap = async () => {
     // Run migration from IndexedDB to OPFS (if needed)
     await runMigration();
   } catch (error) {
-    showFatalError("Migration Failed", "Failed to migrate your data to the new storage format. Your data has not been lost. Please try reloading the page or contact support if the issue persists.", error);
+    showFatalError(
+      "Migration Failed",
+      "Failed to migrate your data to the new storage format. Your data has not been lost. Please try reloading the page or contact support if the issue persists.",
+      error,
+    );
     return;
   }
 
@@ -83,7 +87,11 @@ const bootstrap = async () => {
       </StrictMode>,
     );
   } catch (error) {
-    showFatalError("Failed to Start", "Unable to load the application configuration. Please check your network connection and try again.", error);
+    showFatalError(
+      "Failed to Start",
+      "Unable to load the application configuration. Please check your network connection and try again.",
+      error,
+    );
   }
 };
 

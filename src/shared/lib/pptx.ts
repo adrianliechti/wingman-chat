@@ -91,7 +91,9 @@ async function getSlideOrder(zip: JSZip): Promise<string[]> {
 
   const slides: string[] = [];
   for (const sldId of sldIdList) {
-    const rId = sldId.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id") || sldId.getAttribute("r:id");
+    const rId =
+      sldId.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id") ||
+      sldId.getAttribute("r:id");
     if (rId && rIdToPath.has(rId)) {
       slides.push(rIdToPath.get(rId)!);
     }
@@ -296,7 +298,9 @@ function parseTextRun(r: Element, relationships: Relationships): string {
 
   // Check for hyperlink
   const hlinkClick = rPr?.getElementsByTagName("a:hlinkClick")[0];
-  const linkRId = hlinkClick?.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id") || hlinkClick?.getAttribute("r:id");
+  const linkRId =
+    hlinkClick?.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id") ||
+    hlinkClick?.getAttribute("r:id");
   const linkUrl = linkRId ? relationships[linkRId] : null;
 
   // Get text content

@@ -15,7 +15,13 @@ export function ChatSidebar() {
   const [showSearch, setShowSearch] = useState(false);
 
   // sort once per chats change
-  const sortedChats = useMemo(() => [...chats].sort((a, b) => new Date(b.updated || b.created || 0).getTime() - new Date(a.updated || a.created || 0).getTime()), [chats]);
+  const sortedChats = useMemo(
+    () =>
+      [...chats].sort(
+        (a, b) => new Date(b.updated || b.created || 0).getTime() - new Date(a.updated || a.created || 0).getTime(),
+      ),
+    [chats],
+  );
 
   // Filter chats based on search query
   const filteredChats = useMemo(() => {
@@ -108,7 +114,9 @@ export function ChatSidebar() {
   }, [filteredChats, getDateCategory]);
 
   // Flatten grouped chats into a single list for virtualization
-  type FlatSidebarItem = { type: "header"; group: (typeof groupedChats)[0]; groupIndex: number } | { type: "item"; chat: (typeof chats)[0] };
+  type FlatSidebarItem =
+    | { type: "header"; group: (typeof groupedChats)[0]; groupIndex: number }
+    | { type: "item"; chat: (typeof chats)[0] };
 
   const flatSidebarItems = useMemo<FlatSidebarItem[]>(() => {
     const items: FlatSidebarItem[] = [];
@@ -209,7 +217,10 @@ export function ChatSidebar() {
 
       {/* Scrollable content area */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden" ref={sidebarScrollRef}>
-        <div className="pt-2 pb-1 px-1" style={{ height: sidebarVirtualizer.getTotalSize(), width: "100%", position: "relative" }}>
+        <div
+          className="pt-2 pb-1 px-1"
+          style={{ height: sidebarVirtualizer.getTotalSize(), width: "100%", position: "relative" }}
+        >
           <div
             style={{
               position: "absolute",
@@ -224,7 +235,12 @@ export function ChatSidebar() {
               if (item.type === "header") {
                 const group = item.group;
                 return (
-                  <div key={virtualRow.key} data-index={virtualRow.index} ref={sidebarVirtualizer.measureElement} className={item.groupIndex > 0 ? "pt-2" : ""}>
+                  <div
+                    key={virtualRow.key}
+                    data-index={virtualRow.index}
+                    ref={sidebarVirtualizer.measureElement}
+                    className={item.groupIndex > 0 ? "pt-2" : ""}
+                  >
                     <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
                       <span>{group.category}</span>
                       <Menu>
@@ -272,10 +288,15 @@ export function ChatSidebar() {
                       }
                     }}
                     className={`flex items-center cursor-pointer relative shrink-0 group rounded transition-all duration-200 ${
-                      chatItem.id === chat?.id ? "py-2 md:py-1.5 px-2.5 md:px-2 text-neutral-900 dark:text-neutral-100 focus:outline-none" : "py-2 md:py-1.5 pl-2.5 md:pl-2.5 pr-1 md:pr-0.5 hover:text-neutral-600 dark:hover:text-neutral-300"
+                      chatItem.id === chat?.id
+                        ? "py-2 md:py-1.5 px-2.5 md:px-2 text-neutral-900 dark:text-neutral-100 focus:outline-none"
+                        : "py-2 md:py-1.5 pl-2.5 md:pl-2.5 pr-1 md:pr-0.5 hover:text-neutral-600 dark:hover:text-neutral-300"
                     }`}
                   >
-                    <div className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-base md:text-sm text-neutral-800 dark:text-neutral-200 pr-4" title={chatItem.title ?? "Untitled"}>
+                    <div
+                      className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-base md:text-sm text-neutral-800 dark:text-neutral-200 pr-4"
+                      title={chatItem.title ?? "Untitled"}
+                    >
                       {chatItem.title ?? "Untitled"}
                     </div>
                     <Menu>

@@ -44,7 +44,14 @@ function layoutTree(root: MindMapNode): { nodes: LayoutNode[]; edges: Edge[] } {
 
   const LAYER_SPACING = 200;
 
-  function traverse(node: MindMapNode, depth: number, angleStart: number, angleEnd: number, parentId: string | null, colorIndex: number) {
+  function traverse(
+    node: MindMapNode,
+    depth: number,
+    angleStart: number,
+    angleEnd: number,
+    parentId: string | null,
+    colorIndex: number,
+  ) {
     const id = `node-${idCounter++}`;
     const angleMid = (angleStart + angleEnd) / 2;
     const radius = depth * LAYER_SPACING;

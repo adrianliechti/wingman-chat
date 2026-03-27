@@ -136,7 +136,9 @@ export function RendererInput({
           <Menu>
             <MenuButton
               className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm transition-colors hover:bg-neutral-100/70 dark:hover:bg-white/5 ${
-                selectedStyle ? "text-blue-600 dark:text-blue-400" : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                selectedStyle
+                  ? "text-blue-600 dark:text-blue-400"
+                  : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
               }`}
             >
               <Paintbrush size={13} />
@@ -166,7 +168,9 @@ export function RendererInput({
                     type="button"
                     onClick={() => onSelectStyle(selectedStyle === style ? null : style)}
                     className={`group flex w-full items-center px-3 py-2 text-sm data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 transition-colors ${
-                      selectedStyle === style ? "text-blue-600 dark:text-blue-400" : "text-neutral-700 dark:text-neutral-300"
+                      selectedStyle === style
+                        ? "text-blue-600 dark:text-blue-400"
+                        : "text-neutral-700 dark:text-neutral-300"
                     }`}
                   >
                     {style}
@@ -201,7 +205,9 @@ export function RendererInput({
         </div>
       </div>
 
-      {helperText ? <div className="px-4 pb-4 text-center text-xs text-neutral-400 dark:text-neutral-500">{helperText}</div> : null}
+      {helperText ? (
+        <div className="px-4 pb-4 text-center text-xs text-neutral-400 dark:text-neutral-500">{helperText}</div>
+      ) : null}
     </div>
   );
 }

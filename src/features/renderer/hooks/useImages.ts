@@ -22,7 +22,9 @@ async function storeImage(image: Image): Promise<void> {
   try {
     const imagePath = `${COLLECTION}/${image.id}`;
 
-    const blob = opfs.isDataUrl(image.data) ? opfs.dataUrlToBlob(image.data) : new Blob([image.data], { type: "image/png" });
+    const blob = opfs.isDataUrl(image.data)
+      ? opfs.dataUrlToBlob(image.data)
+      : new Blob([image.data], { type: "image/png" });
 
     const meta: StoredImageMeta = {
       id: image.id,

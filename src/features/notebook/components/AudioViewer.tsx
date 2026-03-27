@@ -80,13 +80,19 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
       <div className="absolute bottom-4 left-4 right-4 z-10">
         <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-lg px-4 py-3 flex items-center gap-3">
           {/* Play/pause */}
-          <button type="button" onClick={togglePlay} className="shrink-0 w-9 h-9 rounded-full bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 flex items-center justify-center hover:opacity-80 transition-opacity">
+          <button
+            type="button"
+            onClick={togglePlay}
+            className="shrink-0 w-9 h-9 rounded-full bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 flex items-center justify-center hover:opacity-80 transition-opacity"
+          >
             {isPlaying ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
           </button>
 
           {/* Progress */}
           <div className="flex-1 flex items-center gap-2 min-w-0">
-            <span className="text-[11px] text-neutral-500 tabular-nums shrink-0 w-8 text-right">{formatTime(currentTime)}</span>
+            <span className="text-[11px] text-neutral-500 tabular-nums shrink-0 w-8 text-right">
+              {formatTime(currentTime)}
+            </span>
             <input
               type="range"
               min={0}
@@ -99,7 +105,11 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
           </div>
 
           {/* Restart */}
-          <button type="button" onClick={restart} className="shrink-0 p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
+          <button
+            type="button"
+            onClick={restart}
+            className="shrink-0 p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+          >
             <RotateCcw size={14} />
           </button>
         </div>
@@ -176,15 +186,25 @@ function Transcript({ content }: { content: string }) {
   const hasHosts = blocks.some((b) => b.speaker);
 
   if (!hasHosts) {
-    return <div className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">{content}</div>;
+    return (
+      <div className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
+        {content}
+      </div>
+    );
   }
 
   return (
     <div className="space-y-5">
       {blocks.map((block, i) => (
         <div key={i}>
-          {block.speaker && <p className="text-xs font-bold uppercase tracking-wider text-blue-500 dark:text-blue-400 mb-1.5">{block.speaker}</p>}
-          <p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">{block.text}</p>
+          {block.speaker && (
+            <p className="text-xs font-bold uppercase tracking-wider text-blue-500 dark:text-blue-400 mb-1.5">
+              {block.speaker}
+            </p>
+          )}
+          <p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
+            {block.text}
+          </p>
         </div>
       ))}
     </div>

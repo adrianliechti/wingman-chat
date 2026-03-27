@@ -304,4 +304,10 @@ const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererPr
   return null;
 };
 
-export const MermaidRenderer = memo(NonMemoizedMermaidRenderer, (prevProps, nextProps) => prevProps.chart === nextProps.chart && prevProps.language === nextProps.language && prevProps.name === nextProps.name);
+export const MermaidRenderer = memo(
+  NonMemoizedMermaidRenderer,
+  (prevProps, nextProps) =>
+    prevProps.chart === nextProps.chart &&
+    prevProps.language === nextProps.language &&
+    prevProps.name === nextProps.name,
+);

@@ -29,7 +29,8 @@ export function useRendererProvider(): ToolProvider | null {
           properties: {
             prompt: {
               type: "string",
-              description: "A detailed description of the image to generate. Describe the desired content, style, composition, and colors.",
+              description:
+                "A detailed description of the image to generate. Describe the desired content, style, composition, and colors.",
             },
           },
           required: ["prompt"],

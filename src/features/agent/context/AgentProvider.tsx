@@ -137,7 +137,8 @@ async function storeAgentFile(agentId: string, file: RepositoryFile): Promise<vo
     status: file.status,
     progress: file.progress,
     error: file.error,
-    uploadedAt: file.uploadedAt instanceof Date ? file.uploadedAt.toISOString() : (file.uploadedAt as unknown as string),
+    uploadedAt:
+      file.uploadedAt instanceof Date ? file.uploadedAt.toISOString() : (file.uploadedAt as unknown as string),
   };
 
   await opfs.writeJson(`${filePath}/metadata.json`, meta);
@@ -433,7 +434,10 @@ async function migrateFromLegacy(): Promise<Agent[]> {
                   status: (f.status as StoredFileMeta["status"]) || "completed",
                   progress: typeof f.progress === "number" ? f.progress : 100,
                   error: f.error,
-                  uploadedAt: typeof f.uploadedAt === "string" ? f.uploadedAt : new Date(f.uploadedAt || Date.now()).toISOString(),
+                  uploadedAt:
+                    typeof f.uploadedAt === "string"
+                      ? f.uploadedAt
+                      : new Date(f.uploadedAt || Date.now()).toISOString(),
                 };
 
                 await opfs.writeJson(`${dstBase}/metadata.json`, meta);

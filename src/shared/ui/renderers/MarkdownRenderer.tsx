@@ -68,4 +68,7 @@ const NonMemoizedMarkdownRenderer = ({ content, language }: MarkdownRendererProp
   );
 };
 
-export const MarkdownRenderer = memo(NonMemoizedMarkdownRenderer, (prevProps, nextProps) => prevProps.content === nextProps.content && prevProps.language === nextProps.language);
+export const MarkdownRenderer = memo(
+  NonMemoizedMarkdownRenderer,
+  (prevProps, nextProps) => prevProps.content === nextProps.content && prevProps.language === nextProps.language,
+);

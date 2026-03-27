@@ -1,4 +1,17 @@
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, BorderStyle, AlignmentType, ExternalHyperlink } from "docx";
+import {
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+  HeadingLevel,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  BorderStyle,
+  AlignmentType,
+  ExternalHyperlink,
+} from "docx";
 import { marked } from "marked";
 import type { Token, Tokens } from "marked";
 
@@ -34,7 +47,9 @@ function parseInlineTokens(tokens: Token[], style: TextStyle = {}): (TextRun | E
         runs.push(...parseInlineTokens((token as Tokens.Del).tokens, { ...style, strike: true }));
         break;
       case "codespan":
-        runs.push(new TextRun({ text: (token as Tokens.Codespan).text, font: "Courier New", shading: { fill: "f0f0f0" } }));
+        runs.push(
+          new TextRun({ text: (token as Tokens.Codespan).text, font: "Courier New", shading: { fill: "f0f0f0" } }),
+        );
         break;
       case "link": {
         const t = token as Tokens.Link;
@@ -119,7 +134,11 @@ function blockTokensToDocx(tokens: Token[]): DocxElement[] {
           const prefix = item.task ? (item.checked ? "☑ " : "☐ ") : "";
           elements.push(
             new Paragraph({
-              children: [new TextRun({ text: bullet }), ...(prefix ? [new TextRun({ text: prefix })] : []), ...parseInlineTokens(getListItemInlineTokens(item))],
+              children: [
+                new TextRun({ text: bullet }),
+                ...(prefix ? [new TextRun({ text: prefix })] : []),
+                ...parseInlineTokens(getListItemInlineTokens(item)),
+              ],
               indent: { left: 720 },
             }),
           );

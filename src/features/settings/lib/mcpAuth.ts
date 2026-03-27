@@ -1,4 +1,8 @@
-import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
+import type {
+  OAuthClientInformationMixed,
+  OAuthClientMetadata,
+  OAuthTokens,
+} from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { OAuthDiscoveryState, OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 
 const STORAGE_PREFIX = "mcp_oauth";
@@ -109,10 +113,16 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
     this._cleanup();
 
     return new Promise<void>((resolve) => {
-      const popup = window.open(authorizationUrl.toString(), "mcp_oauth", "popup,width=600,height=700,left=200,top=100");
+      const popup = window.open(
+        authorizationUrl.toString(),
+        "mcp_oauth",
+        "popup,width=600,height=700,left=200,top=100",
+      );
 
       if (!popup) {
-        this.authCodePromise = Promise.reject(new Error("Popup was blocked. Please allow popups for this site and try again."));
+        this.authCodePromise = Promise.reject(
+          new Error("Popup was blocked. Please allow popups for this site and try again."),
+        );
         resolve();
         return;
       }

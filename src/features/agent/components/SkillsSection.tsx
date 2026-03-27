@@ -19,7 +19,10 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
 
   const agentSkillIds = useMemo(() => new Set(agent.skills || []), [agent.skills]);
 
-  const enabledSkills = useMemo(() => allSkills.filter((s) => agentSkillIds.has(s.name)).sort((a, b) => a.name.localeCompare(b.name)), [allSkills, agentSkillIds]);
+  const enabledSkills = useMemo(
+    () => allSkills.filter((s) => agentSkillIds.has(s.name)).sort((a, b) => a.name.localeCompare(b.name)),
+    [allSkills, agentSkillIds],
+  );
 
   const toggleSkill = (skillName: string) => {
     const current = agent.skills || [];
@@ -48,7 +51,11 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
         isOpen={true}
         collapsible={false}
         headerAction={
-          <button type="button" onClick={() => setCatalogOpen(true)} className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
+          <button
+            type="button"
+            onClick={() => setCatalogOpen(true)}
+            className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+          >
             <BookOpen size={12} /> Catalog
           </button>
         }
@@ -59,8 +66,12 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
               <div key={skill.id} className="flex items-center gap-2 py-1.5">
                 <Zap size={14} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-xs text-neutral-900 dark:text-neutral-100 truncate">{skill.name}</div>
-                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">{skill.description}</div>
+                  <div className="font-medium text-xs text-neutral-900 dark:text-neutral-100 truncate">
+                    {skill.name}
+                  </div>
+                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                    {skill.description}
+                  </div>
                 </div>
                 <button
                   type="button"

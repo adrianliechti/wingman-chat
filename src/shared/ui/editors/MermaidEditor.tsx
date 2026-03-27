@@ -136,9 +136,18 @@ function MermaidPreview({ content }: { content: string }) {
 const NonMemoizedMermaidEditor = ({ content, viewMode = "preview" }: MermaidEditorProps) => {
   return (
     <div className="h-full flex flex-col overflow-hidden relative">
-      <div className="flex-1 overflow-auto min-h-0">{viewMode === "preview" ? <MermaidPreview content={content} /> : <CodeEditor content={content} language="mermaid" />}</div>
+      <div className="flex-1 overflow-auto min-h-0">
+        {viewMode === "preview" ? (
+          <MermaidPreview content={content} />
+        ) : (
+          <CodeEditor content={content} language="mermaid" />
+        )}
+      </div>
     </div>
   );
 };
 
-export const MermaidEditor = memo(NonMemoizedMermaidEditor, (prevProps, nextProps) => prevProps.content === nextProps.content && prevProps.viewMode === nextProps.viewMode);
+export const MermaidEditor = memo(
+  NonMemoizedMermaidEditor,
+  (prevProps, nextProps) => prevProps.content === nextProps.content && prevProps.viewMode === nextProps.viewMode,
+);

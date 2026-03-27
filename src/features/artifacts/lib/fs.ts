@@ -338,7 +338,10 @@ export class FileSystemManager {
    * Apply a full runtime snapshot to OPFS as overlay commit.
    * When deleteMissing=true, paths absent in snapshot are removed.
    */
-  async applyOverlaySnapshot(runtimeFiles: Record<string, string | OverlayFile>, options: OverlaySnapshotOptions = {}): Promise<OverlayCommitSummary> {
+  async applyOverlaySnapshot(
+    runtimeFiles: Record<string, string | OverlayFile>,
+    options: OverlaySnapshotOptions = {},
+  ): Promise<OverlayCommitSummary> {
     const { deleteMissing = false, defaultContentType } = options;
     const normalizedRuntimePaths = new Set<string>();
     const upserts: Record<string, OverlayFile> = {};
@@ -407,7 +410,10 @@ export class FileSystemManager {
   }
 }
 
-export async function downloadFilesystemAsZip(filesystem: Record<string, File>, filename: string = "filesystem.zip"): Promise<void> {
+export async function downloadFilesystemAsZip(
+  filesystem: Record<string, File>,
+  filename: string = "filesystem.zip",
+): Promise<void> {
   if (Object.keys(filesystem).length === 0) {
     throw new Error("No files to download");
   }

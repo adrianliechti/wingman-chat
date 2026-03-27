@@ -1,5 +1,18 @@
 import { useState, useRef, useEffect } from "react";
-import { AudioLines, Presentation, BarChart3, Table2, Loader2, X, AlertCircle, StickyNote, CircleHelp, Network, ChevronDown, Download } from "lucide-react";
+import {
+  AudioLines,
+  Presentation,
+  BarChart3,
+  Table2,
+  Loader2,
+  X,
+  AlertCircle,
+  StickyNote,
+  CircleHelp,
+  Network,
+  ChevronDown,
+  Download,
+} from "lucide-react";
 import type { NotebookOutput, NotebookSource, OutputType } from "../types/notebook";
 import { SLIDE_STYLES, PODCAST_STYLES } from "../hooks/useNotebook";
 
@@ -131,11 +144,25 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                   }}
                 >
                   <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
-                    {isGenerating ? <Loader2 size={13} className="text-neutral-400 animate-spin" /> : isError ? <AlertCircle size={13} className="text-red-400" /> : <Icon size={13} className="text-neutral-500" />}
+                    {isGenerating ? (
+                      <Loader2 size={13} className="text-neutral-400 animate-spin" />
+                    ) : isError ? (
+                      <AlertCircle size={13} className="text-red-400" />
+                    ) : (
+                      <Icon size={13} className="text-neutral-500" />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300 truncate">{output.title}</p>
-                    <p className="text-[10px] text-neutral-400">{isGenerating ? "Generating..." : isError ? output.error || "Failed" : new Date(output.createdAt).toLocaleString()}</p>
+                    <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300 truncate">
+                      {output.title}
+                    </p>
+                    <p className="text-[10px] text-neutral-400">
+                      {isGenerating
+                        ? "Generating..."
+                        : isError
+                          ? output.error || "Failed"
+                          : new Date(output.createdAt).toLocaleString()}
+                    </p>
                   </div>
                   {!isGenerating && (
                     <div className="invisible group-hover/output:visible flex items-center shrink-0">
@@ -175,7 +202,11 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
 }
 
 function canDownload(output: NotebookOutput): boolean {
-  return (output.type === "audio-overview" && !!output.audioUrl) || (output.type === "infographic" && !!output.imageUrl) || (output.type === "slide-deck" && !!output.slides?.length);
+  return (
+    (output.type === "audio-overview" && !!output.audioUrl) ||
+    (output.type === "infographic" && !!output.imageUrl) ||
+    (output.type === "slide-deck" && !!output.slides?.length)
+  );
 }
 
 function downloadDataUrl(dataUrl: string, filename: string) {

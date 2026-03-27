@@ -25,10 +25,16 @@ export const CopyButton = ({ text, markdown, html, className }: CopyButtonProps)
     }
   };
 
-  const buttonClasses = "text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors opacity-60 hover:opacity-100 p-1";
+  const buttonClasses =
+    "text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors opacity-60 hover:opacity-100 p-1";
 
   return (
-    <button onClick={handleCopy} className={buttonClasses} title="Copy message to clipboard (Alt+click for raw markdown)" type="button">
+    <button
+      onClick={handleCopy}
+      className={buttonClasses}
+      title="Copy message to clipboard (Alt+click for raw markdown)"
+      type="button"
+    >
       {copied ? <CopyCheckIcon className={className || "h-4 w-4"} /> : <CopyIcon className={className || "h-4 w-4"} />}
     </button>
   );

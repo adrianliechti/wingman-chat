@@ -21,7 +21,13 @@ interface MarkdownEditorProps {
 export function MarkdownEditor({ content, viewMode = "preview" }: MarkdownEditorProps) {
   return (
     <div className="h-full flex flex-col overflow-hidden relative">
-      <div className="flex-1 overflow-auto min-h-0">{viewMode === "preview" ? <MarkdownPreview content={content} /> : <CodeEditor content={content} language="markdown" />}</div>
+      <div className="flex-1 overflow-auto min-h-0">
+        {viewMode === "preview" ? (
+          <MarkdownPreview content={content} />
+        ) : (
+          <CodeEditor content={content} language="markdown" />
+        )}
+      </div>
     </div>
   );
 }

@@ -150,7 +150,10 @@ export function resetBash(): void {
  * Load artifact files into an InMemoryFs under /home/user/.
  * Existing files at those paths are overwritten.
  */
-export async function loadArtifactsIntoFs(memFs: InMemoryFs, files: { path: string; content: string; contentType?: string }[]): Promise<void> {
+export async function loadArtifactsIntoFs(
+  memFs: InMemoryFs,
+  files: { path: string; content: string; contentType?: string }[],
+): Promise<void> {
   for (const file of files) {
     const relativePath = file.path.startsWith("/") ? file.path.slice(1) : file.path;
     const fsPath = `${BASH_HOME}/${relativePath}`;

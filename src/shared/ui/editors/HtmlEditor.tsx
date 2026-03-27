@@ -75,5 +75,9 @@ interface HtmlEditorProps {
 }
 
 export function HtmlEditor({ content, viewMode = "preview" }: HtmlEditorProps) {
-  return <div className="h-full flex flex-col overflow-hidden relative">{viewMode === "preview" ? <HtmlPreview content={content} /> : <CodeEditor content={content} language="html" />}</div>;
+  return (
+    <div className="h-full flex flex-col overflow-hidden relative">
+      {viewMode === "preview" ? <HtmlPreview content={content} /> : <CodeEditor content={content} language="html" />}
+    </div>
+  );
 }

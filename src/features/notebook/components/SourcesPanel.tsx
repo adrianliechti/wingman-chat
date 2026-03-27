@@ -1,5 +1,18 @@
 import { useState, useRef, useCallback } from "react";
-import { Plus, Globe, FileText, X, Loader2, Upload, File, Search, Zap, ArrowRight, ChevronDown, Link } from "lucide-react";
+import {
+  Plus,
+  Globe,
+  FileText,
+  X,
+  Loader2,
+  Upload,
+  File,
+  Search,
+  Zap,
+  ArrowRight,
+  ChevronDown,
+  Link,
+} from "lucide-react";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { Markdown } from "@/shared/ui/Markdown";
 import type { NotebookSource } from "../types/notebook";
@@ -15,7 +28,16 @@ interface SourcesPanelProps {
   onDeleteSource: (sourceId: string) => void;
 }
 
-export function SourcesPanel({ sources, isSearching, searchWeb, addSearchResult, scrapeWeb, addScrapeResult, onFileAdd, onDeleteSource }: SourcesPanelProps) {
+export function SourcesPanel({
+  sources,
+  isSearching,
+  searchWeb,
+  addSearchResult,
+  scrapeWeb,
+  addScrapeResult,
+  onFileAdd,
+  onDeleteSource,
+}: SourcesPanelProps) {
   const [extracting, setExtracting] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -248,7 +270,11 @@ function WebSearchOverlay({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
           <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Search the web</h3>
-          <button type="button" onClick={onClose} className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+          >
             <X size={16} className="text-neutral-500" />
           </button>
         </div>
@@ -316,7 +342,9 @@ function WebSearchOverlay({
               )}
             </div>
 
-            <span className="text-xs text-neutral-400 flex-1">{mode === "research" ? "Deep research with synthesis" : "Quick web search"}</span>
+            <span className="text-xs text-neutral-400 flex-1">
+              {mode === "research" ? "Deep research with synthesis" : "Quick web search"}
+            </span>
           </div>
 
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/40 min-h-48 max-h-72 overflow-y-auto">
@@ -325,14 +353,20 @@ function WebSearchOverlay({
                 <Markdown>{preview}</Markdown>
               </div>
             ) : (
-              <div className="px-4 py-3 text-sm text-neutral-400 dark:text-neutral-500">Search results preview will appear here.</div>
+              <div className="px-4 py-3 text-sm text-neutral-400 dark:text-neutral-500">
+                Search results preview will appear here.
+              </div>
             )}
           </div>
         </div>
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-neutral-200 dark:border-neutral-800 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded-lg transition-colors">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded-lg transition-colors"
+          >
             Cancel
           </button>
           {preview && previewQuery === query.trim() && previewMode === mode ? (
@@ -373,7 +407,17 @@ function WebSearchOverlay({
 
 // ── Web Scrape Overlay ────────────────────────────────────────────────
 
-function WebScrapeOverlay({ isLoading, scrapeWeb, onAdd, onClose }: { isLoading: boolean; scrapeWeb: (url: string) => Promise<string>; onAdd: (url: string, content: string) => void; onClose: () => void }) {
+function WebScrapeOverlay({
+  isLoading,
+  scrapeWeb,
+  onAdd,
+  onClose,
+}: {
+  isLoading: boolean;
+  scrapeWeb: (url: string) => Promise<string>;
+  onAdd: (url: string, content: string) => void;
+  onClose: () => void;
+}) {
   const [url, setUrl] = useState("");
   const [preview, setPreview] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
@@ -397,7 +441,11 @@ function WebScrapeOverlay({ isLoading, scrapeWeb, onAdd, onClose }: { isLoading:
       <div className="relative z-10 w-full max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
           <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Add web page</h3>
-          <button type="button" onClick={onClose} className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+          >
             <X size={16} className="text-neutral-500" />
           </button>
         </div>
@@ -427,12 +475,18 @@ function WebScrapeOverlay({ isLoading, scrapeWeb, onAdd, onClose }: { isLoading:
                 <Markdown>{preview}</Markdown>
               </div>
             ) : (
-              <div className="px-4 py-3 text-sm text-neutral-400 dark:text-neutral-500">Page content preview will appear here.</div>
+              <div className="px-4 py-3 text-sm text-neutral-400 dark:text-neutral-500">
+                Page content preview will appear here.
+              </div>
             )}
           </div>
         </div>
         <div className="px-5 py-3 border-t border-neutral-200 dark:border-neutral-800 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded-lg transition-colors">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded-lg transition-colors"
+          >
             Cancel
           </button>
           {preview && previewUrl === url.trim() ? (
@@ -488,7 +542,11 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
         className="w-full flex items-center gap-2 py-1.5 text-left cursor-pointer"
       >
         <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
-          {source.type === "web" ? <Globe size={12} className="text-neutral-500" /> : <FileText size={12} className="text-neutral-500" />}
+          {source.type === "web" ? (
+            <Globe size={12} className="text-neutral-500" />
+          ) : (
+            <FileText size={12} className="text-neutral-500" />
+          )}
         </div>
         <span className="text-xs text-neutral-700 dark:text-neutral-300 truncate flex-1">{source.name}</span>
         <button

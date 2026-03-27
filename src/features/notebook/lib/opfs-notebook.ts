@@ -1,5 +1,27 @@
-import { readJson, writeJson, readText, writeText, readBlob, writeBlob, deleteDirectory, deleteFile, listDirectories, readIndex, upsertIndexEntry, removeIndexEntry, blobToDataUrl, dataUrlToBlob } from "@/shared/lib/opfs-core";
-import type { Notebook, NotebookSource, NotebookOutput, NotebookMessage, QuizQuestion, MindMapNode } from "../types/notebook";
+import {
+  readJson,
+  writeJson,
+  readText,
+  writeText,
+  readBlob,
+  writeBlob,
+  deleteDirectory,
+  deleteFile,
+  listDirectories,
+  readIndex,
+  upsertIndexEntry,
+  removeIndexEntry,
+  blobToDataUrl,
+  dataUrlToBlob,
+} from "@/shared/lib/opfs-core";
+import type {
+  Notebook,
+  NotebookSource,
+  NotebookOutput,
+  NotebookMessage,
+  QuizQuestion,
+  MindMapNode,
+} from "../types/notebook";
 
 const COLLECTION = "notebooks";
 
@@ -249,7 +271,9 @@ async function readOutput(notebookId: string, outputId: string): Promise<Noteboo
     const slides: string[] = [];
     for (let i = 0; i < meta.slideCount; i++) {
       // Try padded name first (000.png), fall back to unpadded (0.png) for older data
-      const blob = (await readBlob(`${base}/slides/${String(i).padStart(3, "0")}.png`)) ?? (await readBlob(`${base}/slides/${i}.png`));
+      const blob =
+        (await readBlob(`${base}/slides/${String(i).padStart(3, "0")}.png`)) ??
+        (await readBlob(`${base}/slides/${i}.png`));
       slides.push(blob ? await blobToDataUrl(blob) : "");
     }
     output.slides = slides;

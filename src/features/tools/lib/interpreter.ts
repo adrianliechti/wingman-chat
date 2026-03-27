@@ -70,7 +70,9 @@ async function getWheelManifest(): Promise<Record<string, string>> {
     wheelManifest = (await res.json()) as Record<string, string>;
     return wheelManifest;
   } catch (error) {
-    throw new Error(`Bundled Python package manifest is unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Bundled Python package manifest is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -79,11 +81,17 @@ async function getStandardLibraryModules(pyodide: PyodideInterface): Promise<Set
     return standardLibraryModules;
   }
 
-  const modules = pyodide.runPython("import sys\nsorted(set(sys.stdlib_module_names) | set(sys.builtin_module_names))") as PyodideProxy<unknown>;
+  const modules = pyodide.runPython(
+    "import sys\nsorted(set(sys.stdlib_module_names) | set(sys.builtin_module_names))",
+  ) as PyodideProxy<unknown>;
 
   try {
     const values = modules.toJs ? modules.toJs() : modules;
-    standardLibraryModules = new Set(Array.isArray(values) ? values.filter((value): value is string => typeof value === "string").map((value) => value.toLowerCase()) : []);
+    standardLibraryModules = new Set(
+      Array.isArray(values)
+        ? values.filter((value): value is string => typeof value === "string").map((value) => value.toLowerCase())
+        : [],
+    );
     return standardLibraryModules;
   } finally {
     modules.destroy?.();
@@ -99,13 +107,19 @@ async function findImportedPackages(pyodide: PyodideInterface, code: string): Pr
   const globals = pyodide.toPy({ source_code: code });
 
   try {
-    const imports = pyodide.runPython(`from pyodide.code import find_imports\nfind_imports(source_code)`, { globals }) as PyodideProxy<unknown>;
+    const imports = pyodide.runPython(`from pyodide.code import find_imports\nfind_imports(source_code)`, {
+      globals,
+    }) as PyodideProxy<unknown>;
 
     try {
       const values = imports.toJs ? imports.toJs() : imports;
       if (Array.isArray(values)) {
         const stdlibModules = await getStandardLibraryModules(pyodide);
-        return uniquePackages(values.filter((value): value is string => typeof value === "string").filter((value) => !isStandardLibraryModule(value, stdlibModules)));
+        return uniquePackages(
+          values
+            .filter((value): value is string => typeof value === "string")
+            .filter((value) => !isStandardLibraryModule(value, stdlibModules)),
+        );
       }
 
       return [];
@@ -223,7 +237,8 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
             continue;
           }
 
-          const priorContentType = sourceFiles[`/${relativePath}`]?.contentType ?? sourceFiles[relativePath]?.contentType;
+          const priorContentType =
+            sourceFiles[`/${relativePath}`]?.contentType ?? sourceFiles[relativePath]?.contentType;
           const contentType = priorContentType ?? inferContentTypeFromPath(relativePath);
 
           if (isTextContentType(contentType)) {

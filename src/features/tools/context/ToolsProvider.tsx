@@ -7,7 +7,14 @@ import { useInternetProvider } from "@/features/research/hooks/useInternetProvid
 import { useRendererProvider } from "@/features/renderer/hooks/useRendererProvider";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import { ToolsContext } from "./ToolsContext";
-import type { ToolProvider, TextContent, ImageContent, AudioContent, FileContent, ToolContext } from "@/shared/types/chat";
+import type {
+  ToolProvider,
+  TextContent,
+  ImageContent,
+  AudioContent,
+  FileContent,
+  ToolContext,
+} from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 
 export function ToolsProvider({ children }: { children: React.ReactNode }) {
@@ -26,11 +33,17 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   }, [mcpStates]);
 
   // Config MCP clients (created once)
-  const [configMcpClients] = useState<MCPClient[]>(() => (config.mcps || []).map((mcp) => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers, mcp.icon)));
+  const [configMcpClients] = useState<MCPClient[]>(() =>
+    (config.mcps || []).map((mcp) => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers, mcp.icon)),
+  );
 
   // Agent
   const { currentAgent } = useAgents();
-  const { providers: agentProviders, enabledTools: agentTools, mcpClients: agentMcpClients } = useAgentProviders(currentAgent);
+  const {
+    providers: agentProviders,
+    enabledTools: agentTools,
+    mcpClients: agentMcpClients,
+  } = useAgentProviders(currentAgent);
 
   // Built-in providers
   const internetProvider = useInternetProvider();
@@ -87,7 +100,13 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       if (!client) return;
 
       const current = mcpStatesRef.current.get(id);
-      if (enabled && (current === ProviderState.Connected || current === ProviderState.Initializing || current === ProviderState.Authenticating)) return;
+      if (
+        enabled &&
+        (current === ProviderState.Connected ||
+          current === ProviderState.Initializing ||
+          current === ProviderState.Authenticating)
+      )
+        return;
       if (!enabled && (!current || current === ProviderState.Disconnected)) return;
 
       if (enabled) {
@@ -176,7 +195,14 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Restore an MCP app UI from persisted chat data
   const restoreToolUI = useCallback(
-    async (providerId: string, toolName: string, resourceUri: string, args: Record<string, unknown>, result: (TextContent | ImageContent | AudioContent | FileContent)[], context: ToolContext) => {
+    async (
+      providerId: string,
+      toolName: string,
+      resourceUri: string,
+      args: Record<string, unknown>,
+      result: (TextContent | ImageContent | AudioContent | FileContent)[],
+      context: ToolContext,
+    ) => {
       const client = allMcpClients.find((c) => c.id === providerId);
       if (!client || !client.isConnected()) {
         console.warn(`Cannot restore tool UI: MCP client ${providerId} not connected`);

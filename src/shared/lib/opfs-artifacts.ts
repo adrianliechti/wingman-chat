@@ -5,7 +5,17 @@
 import { artifactContentToBlob, normalizeArtifactPath } from "./artifactFiles";
 import { isBinaryContentType } from "./fileTypes";
 
-import { writeText, writeBlob, readBlob, deleteFile, deleteDirectory, listFiles, listDirectories, inferContentType, readFileMetadata } from "./opfs-core";
+import {
+  writeText,
+  writeBlob,
+  readBlob,
+  deleteFile,
+  deleteDirectory,
+  listFiles,
+  listDirectories,
+  inferContentType,
+  readFileMetadata,
+} from "./opfs-core";
 import { readAsDataURL } from "./utils";
 
 export interface ArtifactEntry {
@@ -21,7 +31,12 @@ export interface ArtifactEntry {
 /**
  * Write an artifact file to a chat's artifacts folder.
  */
-export async function writeArtifact(chatId: string, path: string, content: string, contentType?: string): Promise<void> {
+export async function writeArtifact(
+  chatId: string,
+  path: string,
+  content: string,
+  contentType?: string,
+): Promise<void> {
   const normalizedPath = normalizeArtifactPath(path)?.slice(1);
   if (!normalizedPath) {
     throw new Error("Artifact path is required");
@@ -44,7 +59,10 @@ export async function writeArtifact(chatId: string, path: string, content: strin
 /**
  * Read an artifact file from a chat's artifacts folder.
  */
-export async function readArtifact(chatId: string, path: string): Promise<{ content: string; contentType?: string } | undefined> {
+export async function readArtifact(
+  chatId: string,
+  path: string,
+): Promise<{ content: string; contentType?: string } | undefined> {
   const normalizedPath = normalizeArtifactPath(path)?.slice(1);
   if (!normalizedPath) {
     return undefined;
@@ -159,7 +177,9 @@ export async function listArtifactEntries(chatId: string): Promise<ArtifactEntry
 /**
  * Load all artifacts for a chat as a FileSystem object.
  */
-export async function loadArtifacts(chatId: string): Promise<Record<string, { path: string; content: string; contentType?: string }>> {
+export async function loadArtifacts(
+  chatId: string,
+): Promise<Record<string, { path: string; content: string; contentType?: string }>> {
   const paths = await listArtifacts(chatId);
   const artifacts: Record<string, { path: string; content: string; contentType?: string }> = {};
 
@@ -176,7 +196,10 @@ export async function loadArtifacts(chatId: string): Promise<Record<string, { pa
 /**
  * Save all artifacts from a FileSystem object to OPFS.
  */
-export async function saveArtifacts(chatId: string, artifacts: Record<string, { path: string; content: string; contentType?: string }>): Promise<void> {
+export async function saveArtifacts(
+  chatId: string,
+  artifacts: Record<string, { path: string; content: string; contentType?: string }>,
+): Promise<void> {
   for (const [path, file] of Object.entries(artifacts)) {
     await writeArtifact(chatId, path, file.content, file.contentType);
   }

@@ -60,7 +60,10 @@ export type Tool = {
 
   parameters: Record<string, unknown>;
 
-  function: (args: Record<string, unknown>, context?: ToolContext) => Promise<(TextContent | ImageContent | AudioContent | FileContent)[]>;
+  function: (
+    args: Record<string, unknown>,
+    context?: ToolContext,
+  ) => Promise<(TextContent | ImageContent | AudioContent | FileContent)[]>;
 };
 
 export type Elicitation = {
@@ -118,7 +121,14 @@ export type ToolResultContent = {
 };
 
 // Content is the union of all content types used in messages
-export type Content = TextContent | ImageContent | AudioContent | FileContent | ReasoningContent | ToolCallContent | ToolResultContent;
+export type Content =
+  | TextContent
+  | ImageContent
+  | AudioContent
+  | FileContent
+  | ReasoningContent
+  | ToolCallContent
+  | ToolResultContent;
 
 export type TextContent = {
   type: "text";

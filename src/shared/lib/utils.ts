@@ -205,7 +205,10 @@ export function markdownToHtml(markdown: string): string {
 
     // Add Word-compatible styling for tables
     html = html
-      .replace(/<table>/g, '<table border="1" cellspacing="0" cellpadding="4" style="border-collapse: collapse; border: 1px solid black;">')
+      .replace(
+        /<table>/g,
+        '<table border="1" cellspacing="0" cellpadding="4" style="border-collapse: collapse; border: 1px solid black;">',
+      )
       .replace(/<td>/g, '<td style="border: 1px solid black; padding: 4px;">')
       .replace(/<th>/g, '<th style="border: 1px solid black; padding: 4px; font-weight: bold;">');
 
@@ -219,7 +222,13 @@ export function markdownToHtml(markdown: string): string {
 export function markdownToText(markdown: string): string {
   if (!markdown) return "";
 
-  const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  const escapeHtml = (text: string) =>
+    text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
 
   const unescapeHtml = (text: string) =>
     text

@@ -71,21 +71,39 @@ function TreeItem({ node, depth, onDelete }: { node: TreeNode; depth: number; on
   return (
     <div>
       {/* Row */}
-      <div className="group flex items-center gap-1 py-1 pr-2 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 rounded-md transition-colors" style={{ paddingLeft: `${depth * 16 + 8}px` }}>
+      <div
+        className="group flex items-center gap-1 py-1 pr-2 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 rounded-md transition-colors"
+        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+      >
         {/* Expand toggle */}
-        <button type="button" onClick={() => isDir && setExpanded(!expanded)} className={`p-0.5 rounded transition-transform ${isDir ? "cursor-pointer" : "invisible"}`}>
-          <ChevronRight size={14} className={`text-neutral-400 transition-transform duration-150 ${expanded ? "rotate-90" : ""}`} />
+        <button
+          type="button"
+          onClick={() => isDir && setExpanded(!expanded)}
+          className={`p-0.5 rounded transition-transform ${isDir ? "cursor-pointer" : "invisible"}`}
+        >
+          <ChevronRight
+            size={14}
+            className={`text-neutral-400 transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
+          />
         </button>
 
         {/* Icon */}
-        {isDir ? <Folder size={15} className="shrink-0 text-amber-500 dark:text-amber-400" /> : <File size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />}
+        {isDir ? (
+          <Folder size={15} className="shrink-0 text-amber-500 dark:text-amber-400" />
+        ) : (
+          <File size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+        )}
 
         {/* Name */}
-        <span className="ml-1 text-sm text-neutral-800 dark:text-neutral-200 truncate select-text flex-1">{node.name}</span>
+        <span className="ml-1 text-sm text-neutral-800 dark:text-neutral-200 truncate select-text flex-1">
+          {node.name}
+        </span>
 
         {/* Meta */}
         <span className="text-[11px] text-neutral-400 dark:text-neutral-500 whitespace-nowrap tabular-nums mr-1">
-          {isDir ? `${stats!.files} file${stats!.files === 1 ? "" : "s"} · ${formatBytes(stats!.size)}` : formatBytes(node.size ?? 0)}
+          {isDir
+            ? `${stats!.files} file${stats!.files === 1 ? "" : "s"} · ${formatBytes(stats!.size)}`
+            : formatBytes(node.size ?? 0)}
         </span>
 
         {/* Delete */}
@@ -179,19 +197,37 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-80" onClose={onClose}>
-        <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
           <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
         </Transition.Child>
 
         <div className="fixed inset-0 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
-            <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
               <Dialog.Panel className="w-full max-w-2xl transform overflow-hidden rounded-2xl bg-white dark:bg-neutral-900 shadow-xl transition-all flex flex-col max-h-[80vh]">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
                   <div className="flex items-center gap-2.5">
                     <HardDrive size={18} className="text-neutral-500 dark:text-neutral-400" />
-                    <Dialog.Title className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">OPFS Browser</Dialog.Title>
+                    <Dialog.Title className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+                      OPFS Browser
+                    </Dialog.Title>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -203,7 +239,11 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
                     >
                       <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
                     </button>
-                    <button type="button" onClick={onClose} className="p-1.5 rounded-full text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="p-1.5 rounded-full text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                    >
                       <X size={18} />
                     </button>
                   </div>
@@ -235,7 +275,11 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
 
                 {/* Footer */}
                 <div className="flex items-center justify-end px-6 py-3 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/50 shrink-0">
-                  <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium rounded-lg text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2 text-sm font-medium rounded-lg text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  >
                     Close
                   </button>
                 </div>

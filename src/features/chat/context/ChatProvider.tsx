@@ -1,6 +1,15 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Role } from "@/shared/types/chat";
-import type { Message, Model, ToolContext, PendingElicitation, ElicitationResult, Elicitation, Content, ToolResultContent } from "@/shared/types/chat";
+import type {
+  Message,
+  Model,
+  ToolContext,
+  PendingElicitation,
+  ElicitationResult,
+  Elicitation,
+  Content,
+  ToolResultContent,
+} from "@/shared/types/chat";
 import { useModels } from "@/features/chat/hooks/useModels";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
@@ -106,7 +115,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
       if (chatData?.messages?.length) {
         const lastAppResult = chatData.messages
           .flatMap((m) => m.content)
-          .filter((c): c is ToolResultContent => c.type === "tool_result" && !!c.meta?.toolProvider && !!c.meta?.toolResource)
+          .filter(
+            (c): c is ToolResultContent => c.type === "tool_result" && !!c.meta?.toolProvider && !!c.meta?.toolResource,
+          )
           .pop();
 
         if (lastAppResult) {
@@ -197,11 +208,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
       setIsResponding(true);
 
       // Create tool context with current message content and elicitation support
-      const createToolContext = (currentToolCall: { id: string; name: string }): { context: ToolContext; getResultMeta: () => Record<string, unknown> | undefined } => {
+      const createToolContext = (currentToolCall: {
+        id: string;
+        name: string;
+      }): { context: ToolContext; getResultMeta: () => Record<string, unknown> | undefined } => {
         let resultMeta: Record<string, unknown> | undefined;
         return {
           context: {
-            content: () => outgoingMessage.content.filter((p: Content) => p.type === "text" || p.type === "image" || p.type === "file") as Content[],
+            content: () =>
+              outgoingMessage.content.filter(
+                (p: Content) => p.type === "text" || p.type === "image" || p.type === "file",
+              ) as Content[],
             sendMessage: async (appMessage: Message) => {
               await run(id, appMessage, conversation, initialTitle);
             },
@@ -354,7 +371,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 ],
                 error: {
                   code: "TOOL_EXECUTION_ERROR",
-                  message: "The tool could not complete the requested action. Please try again or use a different approach.",
+                  message:
+                    "The tool could not complete the requested action. Please try again or use a different approach.",
                 },
               };
               conversation = [...conversation, toolErrorMessage];

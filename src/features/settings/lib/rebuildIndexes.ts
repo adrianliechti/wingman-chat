@@ -245,7 +245,13 @@ async function rebuildRepositoriesIndex(): Promise<{ count: number; cleaned: num
 }
 
 export async function rebuildAllIndexes(): Promise<RebuildIndexesResult> {
-  const [chatsResult, agentsResult, imagesResult, skillsResult, repositoriesResult] = await Promise.all([rebuildChatsIndex(), rebuildAgentsIndex(), rebuildImagesIndex(), rebuildSkillsIndex(), rebuildRepositoriesIndex()]);
+  const [chatsResult, agentsResult, imagesResult, skillsResult, repositoriesResult] = await Promise.all([
+    rebuildChatsIndex(),
+    rebuildAgentsIndex(),
+    rebuildImagesIndex(),
+    rebuildSkillsIndex(),
+    rebuildRepositoriesIndex(),
+  ]);
 
   return {
     chats: chatsResult.count,

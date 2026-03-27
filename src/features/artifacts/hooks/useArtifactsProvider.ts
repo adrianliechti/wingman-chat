@@ -15,13 +15,15 @@ export function useArtifactsProvider(): ToolProvider | null {
     return [
       {
         name: "create_file",
-        description: "Create a new file or update an existing file in the virtual filesystem with the specified path and content.",
+        description:
+          "Create a new file or update an existing file in the virtual filesystem with the specified path and content.",
         parameters: {
           type: "object",
           properties: {
             path: {
               type: "string",
-              description: "The file path (e.g., /projects/test.go, /src/index.js). Should start with / and include the full directory structure.",
+              description:
+                "The file path (e.g., /projects/test.go, /src/index.js). Should start with / and include the full directory structure.",
             },
             content: {
               type: "string",
@@ -66,7 +68,8 @@ export function useArtifactsProvider(): ToolProvider | null {
           properties: {
             directory: {
               type: "string",
-              description: "Optional directory path to filter files (e.g., /src, /components). If not provided, lists all files.",
+              description:
+                "Optional directory path to filter files (e.g., /src, /components). If not provided, lists all files.",
             },
           },
           required: [],
@@ -80,7 +83,8 @@ export function useArtifactsProvider(): ToolProvider | null {
 
           try {
             const allFiles = await fs.listEntries();
-            const filteredFiles = !path || path === "/" ? allFiles : allFiles.filter((file) => file.path.startsWith(path));
+            const filteredFiles =
+              !path || path === "/" ? allFiles : allFiles.filter((file) => file.path.startsWith(path));
 
             const fileList = filteredFiles.map((file) => ({
               path: file.path,
@@ -105,7 +109,8 @@ export function useArtifactsProvider(): ToolProvider | null {
       },
       {
         name: "delete_file",
-        description: "Delete a file or folder from the virtual filesystem. When deleting a folder, all files within it will be deleted.",
+        description:
+          "Delete a file or folder from the virtual filesystem. When deleting a folder, all files within it will be deleted.",
         parameters: {
           type: "object",
           properties: {
@@ -193,7 +198,9 @@ export function useArtifactsProvider(): ToolProvider | null {
 
           const destFile = await fs.getFile(toPath);
           if (destFile) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: `Destination file already exists: ${toPath}` }) }];
+            return [
+              { type: "text" as const, text: JSON.stringify({ error: `Destination file already exists: ${toPath}` }) },
+            ];
           }
 
           try {
@@ -389,16 +396,19 @@ export function useArtifactsProvider(): ToolProvider | null {
           properties: {
             code: {
               type: "string",
-              description: "Inline Python code to execute. Prefer this for short snippets; use `path` for existing scripts in artifacts.",
+              description:
+                "Inline Python code to execute. Prefer this for short snippets; use `path` for existing scripts in artifacts.",
             },
             path: {
               type: "string",
-              description: "Path to a Python script in the artifacts filesystem to execute, such as `/analysis.py`. Prefer this for existing or longer scripts.",
+              description:
+                "Path to a Python script in the artifacts filesystem to execute, such as `/analysis.py`. Prefer this for existing or longer scripts.",
             },
             packages: {
               type: "array",
               items: { type: "string" },
-              description: "Optional list of Python packages required (e.g., ['numpy', 'pandas']). These will be available for import.",
+              description:
+                "Optional list of Python packages required (e.g., ['numpy', 'pandas']). These will be available for import.",
             },
           },
           required: [],
@@ -461,7 +471,12 @@ export function useArtifactsProvider(): ToolProvider | null {
 
             return [{ type: "text" as const, text: result.output }];
           } catch (error) {
-            return [{ type: "text" as const, text: `Code execution failed: ${error instanceof Error ? error.message : "Unknown error"}` }];
+            return [
+              {
+                type: "text" as const,
+                text: `Code execution failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+              },
+            ];
           }
         },
       },
@@ -474,7 +489,8 @@ export function useArtifactsProvider(): ToolProvider | null {
           properties: {
             command: {
               type: "string",
-              description: "The bash command or script to execute. Supports full shell syntax: pipes (|), redirections (>, >>), chaining (&&, ||, ;), variables, loops, functions, and glob patterns.",
+              description:
+                "The bash command or script to execute. Supports full shell syntax: pipes (|), redirections (>, >>), chaining (&&, ||, ;), variables, loops, functions, and glob patterns.",
             },
           },
           required: ["command"],
@@ -520,7 +536,12 @@ export function useArtifactsProvider(): ToolProvider | null {
 
             return [{ type: "text" as const, text: output }];
           } catch (error) {
-            return [{ type: "text" as const, text: `Bash execution failed: ${error instanceof Error ? error.message : "Unknown error"}` }];
+            return [
+              {
+                type: "text" as const,
+                text: `Bash execution failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+              },
+            ];
           }
         },
       },

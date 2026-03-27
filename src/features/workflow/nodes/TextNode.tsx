@@ -47,7 +47,16 @@ export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) =
   }, []);
 
   return (
-    <WorkflowNode id={id} selected={selected} icon={StickyNote} title="Text" color="orange" showInputHandle={false} showOutputHandle={true} error={data.error}>
+    <WorkflowNode
+      id={id}
+      selected={selected}
+      icon={StickyNote}
+      title="Text"
+      color="orange"
+      showInputHandle={false}
+      showOutputHandle={true}
+      error={data.error}
+    >
       <div className="flex-1 flex flex-col min-h-0">
         <textarea
           value={localValue}

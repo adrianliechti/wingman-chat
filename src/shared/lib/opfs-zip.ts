@@ -115,7 +115,8 @@ export async function rebuildFolderIndex(collection: string): Promise<void> {
 
         // Try AGENTS.md / AGENT.md
         try {
-          const agentMd = (await readText(`${collection}/${id}/AGENTS.md`)) || (await readText(`${collection}/${id}/AGENT.md`));
+          const agentMd =
+            (await readText(`${collection}/${id}/AGENTS.md`)) || (await readText(`${collection}/${id}/AGENT.md`));
           if (agentMd) {
             const nameMatch = agentMd.match(/^name:\s*(.+)$/m);
             if (nameMatch) title = nameMatch[1].trim();
@@ -127,7 +128,12 @@ export async function rebuildFolderIndex(collection: string): Promise<void> {
         }
 
         // Try JSON metadata files
-        const metadataFiles = [`${collection}/${id}/chat.json`, `${collection}/${id}/agent.json`, `${collection}/${id}/repository.json`, `${collection}/${id}/metadata.json`];
+        const metadataFiles = [
+          `${collection}/${id}/chat.json`,
+          `${collection}/${id}/agent.json`,
+          `${collection}/${id}/repository.json`,
+          `${collection}/${id}/metadata.json`,
+        ];
 
         for (const metaPath of metadataFiles) {
           try {

@@ -9,7 +9,16 @@ import { Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil, ChevronRight } 
 import { useState, useRef, useEffect, memo } from "react";
 
 import { Role } from "@/shared/types/chat";
-import type { Message, ElicitationResult, Content, ToolResultContent, ImageContent, AudioContent, FileContent, TextContent } from "@/shared/types/chat";
+import type {
+  Message,
+  ElicitationResult,
+  Content,
+  ToolResultContent,
+  ImageContent,
+  AudioContent,
+  FileContent,
+  TextContent,
+} from "@/shared/types/chat";
 import { getConfig } from "@/shared/config";
 import { useChat } from "@/features/chat/hooks/useChat";
 
@@ -155,7 +164,9 @@ function ElicitationPrompt({ toolName, message, onResolve }: ElicitationPromptPr
         <ShieldQuestion className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <div className="mb-1">
-            <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{getToolDisplayName(toolName)}</span>
+            <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+              {getToolDisplayName(toolName)}
+            </span>
             <div className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">{message}</div>
           </div>
           <div className="flex items-center gap-2 mt-2">
@@ -243,7 +254,10 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
   const additionalTextContent = textParts.slice(1);
   const [editAdditionalTextContent, setEditAdditionalTextContent] = useState<TextContent[]>(additionalTextContent);
   // Get media content (images, audio, files) for editing
-  const mediaContent = message.content.filter((p): p is ImageContent | AudioContent | FileContent => p.type === "image" || p.type === "audio" || p.type === "file");
+  const mediaContent = message.content.filter(
+    (p): p is ImageContent | AudioContent | FileContent =>
+      p.type === "image" || p.type === "audio" || p.type === "file",
+  );
   const [editMediaContent, setEditMediaContent] = useState<(ImageContent | AudioContent | FileContent)[]>(mediaContent);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { pendingElicitation, resolveElicitation, sendMessage, chat } = useChat();
@@ -261,7 +275,9 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
   const hasTextContent = message.content.some((p) => p.type === "text" && p.text);
 
   // Check for images and files in content
-  const mediaParts = message.content.filter((p) => p.type === "image" || p.type === "file" || p.type === "audio") as Content[];
+  const mediaParts = message.content.filter(
+    (p) => p.type === "image" || p.type === "file" || p.type === "audio",
+  ) as Content[];
   const hasMedia = mediaParts.length > 0;
 
   // Reasoning is actively streaming only if we're responding and no text/tool content has arrived yet
@@ -313,7 +329,8 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
 
   const handleConfirmEdit = async () => {
     // Allow edit if there's text content OR attachments
-    if ((editContent.trim() === "" && editAdditionalTextContent.length === 0 && editMediaContent.length === 0) || !chat) return;
+    if ((editContent.trim() === "" && editAdditionalTextContent.length === 0 && editMediaContent.length === 0) || !chat)
+      return;
     setIsEditing(false);
 
     // Truncate history and send edited message, preserving additional text content (file attachments) and media
@@ -343,7 +360,8 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
     const toolResult = toolResultParts[0]; // Usually just one
     const isToolError = !!message.error;
     const codeData = toolResult?.arguments ? extractCodeFromArguments(toolResult.arguments) : null;
-    const queryPreview = !codeData && toolResult?.arguments ? getToolCallPreview(toolResult.name || "", toolResult.arguments) : null;
+    const queryPreview =
+      !codeData && toolResult?.arguments ? getToolCallPreview(toolResult.name || "", toolResult.arguments) : null;
 
     // Helper to replace long data URLs with placeholder for display
     const sanitizeForDisplay = (obj: unknown): unknown => {
@@ -401,32 +419,53 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
     return (
       <div className="pb-2 max-w-full">
         <div className={`${isToolError ? "bg-red-50/30 dark:bg-red-950/5" : ""} rounded-lg overflow-hidden max-w-full`}>
-          <button onClick={() => setToolResultExpanded(!toolResultExpanded)} className="w-full text-left transition-colors">
+          <button
+            onClick={() => setToolResultExpanded(!toolResultExpanded)}
+            className="w-full text-left transition-colors"
+          >
             <div className="grid grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 min-w-0">
-              <ChevronRight className={`w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 transition-transform ${toolResultExpanded ? "rotate-90" : ""}`} />
+              <ChevronRight
+                className={`w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 transition-transform ${toolResultExpanded ? "rotate-90" : ""}`}
+              />
               <div className="flex items-center gap-2 min-w-0">
                 {isToolError && <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 shrink-0" />}
-                <span className={`text-xs font-medium whitespace-nowrap ${isToolError ? "text-red-500 dark:text-red-400" : "text-neutral-500 dark:text-neutral-400"}`}>
+                <span
+                  className={`text-xs font-medium whitespace-nowrap ${isToolError ? "text-red-500 dark:text-red-400" : "text-neutral-500 dark:text-neutral-400"}`}
+                >
                   {isToolError ? "Tool Error" : `${toolResult?.name ? getToolDisplayName(toolResult.name) : "Tool"}`}
                 </span>
-                {!toolResultExpanded && getPreviewText() && <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">{getPreviewText()}</span>}
+                {!toolResultExpanded && getPreviewText() && (
+                  <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
+                    {getPreviewText()}
+                  </span>
+                )}
               </div>
             </div>
           </button>
 
           {toolResultExpanded && (
             <div className="ml-[18px] mt-2">
-              {codeData ? <CodeRenderer code={codeData.code} language="python" /> : toolResult?.arguments && renderContent([{ type: "text", text: toolResult.arguments }], "Arguments")}
-              {(message.error || toolResult?.result) && (message.error ? <CodeRenderer code={message.error.message} language="text" name="Error" /> : renderContent(toolResult?.result || [], "Result"))}
+              {codeData ? (
+                <CodeRenderer code={codeData.code} language="python" />
+              ) : (
+                toolResult?.arguments && renderContent([{ type: "text", text: toolResult.arguments }], "Arguments")
+              )}
+              {(message.error || toolResult?.result) &&
+                (message.error ? (
+                  <CodeRenderer code={message.error.message} language="text" name="Error" />
+                ) : (
+                  renderContent(toolResult?.result || [], "Result")
+                ))}
             </div>
           )}
 
           {/* Always render media content (images, audio, files) from tool results */}
-          {toolResult?.result && toolResult.result.some((c) => c.type === "image" || c.type === "audio" || c.type === "file") && (
-            <div className="ml-[18px] mt-2">
-              <RenderContents contents={toolResult.result} />
-            </div>
-          )}
+          {toolResult?.result &&
+            toolResult.result.some((c) => c.type === "image" || c.type === "audio" || c.type === "file") && (
+              <div className="ml-[18px] mt-2">
+                <RenderContents contents={toolResult.result} />
+              </div>
+            )}
         </div>
       </div>
     );
@@ -444,11 +483,25 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
         return null;
       }
       // Show just the reasoning block for completed messages with reasoning
-      return <div className="pb-2">{reasoningParts.map((part, index) => part.type === "reasoning" && <ReasoningDisplay key={index} reasoning={part.text || part.summary || ""} isStreaming={false} />)}</div>;
+      return (
+        <div className="pb-2">
+          {reasoningParts.map(
+            (part, index) =>
+              part.type === "reasoning" && (
+                <ReasoningDisplay key={index} reasoning={part.text || part.summary || ""} isStreaming={false} />
+              ),
+          )}
+        </div>
+      );
     }
 
     // Check if there's a pending elicitation for any of the tool calls
-    const hasPendingElicitation = hasToolCalls && toolCallParts.some((toolCall) => toolCall.type === "tool_call" && pendingElicitation && pendingElicitation.toolCallId === toolCall.id);
+    const hasPendingElicitation =
+      hasToolCalls &&
+      toolCallParts.some(
+        (toolCall) =>
+          toolCall.type === "tool_call" && pendingElicitation && pendingElicitation.toolCallId === toolCall.id,
+      );
 
     // Show loading indicators for the last message when actively responding,
     // has pending elicitation, or has reasoning content to display
@@ -461,7 +514,17 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
       return (
         <div className="pb-2">
           {/* Show reasoning above tool calls */}
-          {hasReasoning && reasoningParts.map((part, index) => part.type === "reasoning" && <ReasoningDisplay key={index} reasoning={part.text || part.summary || ""} isStreaming={isReasoningActive} />)}
+          {hasReasoning &&
+            reasoningParts.map(
+              (part, index) =>
+                part.type === "reasoning" && (
+                  <ReasoningDisplay
+                    key={index}
+                    reasoning={part.text || part.summary || ""}
+                    isStreaming={isReasoningActive}
+                  />
+                ),
+            )}
           <div className="mt-0 space-y-0">
             {toolCallParts.map((part, index) => {
               if (part.type !== "tool_call") return null;
@@ -471,15 +534,28 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
 
               // Show elicitation prompt if this tool call has a pending elicitation
               if (isPendingElicitation) {
-                return <ElicitationPrompt key={`${toolCall.id || "tool"}-${index}`} toolName={pendingElicitation.toolName} message={pendingElicitation.elicitation.message} onResolve={resolveElicitation} />;
+                return (
+                  <ElicitationPrompt
+                    key={`${toolCall.id || "tool"}-${index}`}
+                    toolName={pendingElicitation.toolName}
+                    message={pendingElicitation.elicitation.message}
+                    onResolve={resolveElicitation}
+                  />
+                );
               }
 
               return (
                 <div key={`${toolCall.id || "tool"}-${index}`} className="rounded-lg overflow-hidden max-w-full">
                   <div className="flex items-center gap-2 min-w-0">
                     <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
-                    <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">{getToolDisplayName(toolCall.name)}</span>
-                    {preview && <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">{preview}</span>}
+                    <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
+                      {getToolDisplayName(toolCall.name)}
+                    </span>
+                    {preview && (
+                      <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
+                        {preview}
+                      </span>
+                    )}
                   </div>
                 </div>
               );
@@ -496,13 +572,31 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
       <div className="pb-4">
         {/* Show reasoning while thinking, even before content arrives */}
         {hasReasoning ? (
-          reasoningParts.map((part, index) => part.type === "reasoning" && <ReasoningDisplay key={index} reasoning={part.text || part.summary || ""} isStreaming={isReasoningActive} />)
+          reasoningParts.map(
+            (part, index) =>
+              part.type === "reasoning" && (
+                <ReasoningDisplay
+                  key={index}
+                  reasoning={part.text || part.summary || ""}
+                  isStreaming={isReasoningActive}
+                />
+              ),
+          )
         ) : (
           <div className="space-y-2">
             <div className="flex space-x-1">
-              <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
-              <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
-              <div className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+              <div
+                className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce"
+                style={{ animationDelay: "0ms" }}
+              ></div>
+              <div
+                className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce"
+                style={{ animationDelay: "150ms" }}
+              ></div>
+              <div
+                className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce"
+                style={{ animationDelay: "300ms" }}
+              ></div>
             </div>
           </div>
         )}
@@ -518,7 +612,9 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
     }
 
     return (
-      <div className={`flex ${isUser ? "justify-end" : "justify-start"} pb-4 ${!isUser && isResponding && props.isLast ? "" : "group"} text-neutral-900 dark:text-neutral-200`}>
+      <div
+        className={`flex ${isUser ? "justify-end" : "justify-start"} pb-4 ${!isUser && isResponding && props.isLast ? "" : "group"} text-neutral-900 dark:text-neutral-200`}
+      >
         {/* Edit button for user messages - positioned to the left of the bubble */}
         {isUser && !isEditing && !isResponding && (
           <button
@@ -531,7 +627,9 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
           </button>
         )}
 
-        <div className={`${isUser ? "rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200" : "flex-1 py-3"} wrap-break-words overflow-x-auto`}>
+        <div
+          className={`${isUser ? "rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200" : "flex-1 py-3"} wrap-break-words overflow-x-auto`}
+        >
           {isUser ? (
             isEditing ? (
               <div className="flex flex-col gap-2">
@@ -544,14 +642,36 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
                   rows={1}
                 />
                 {/* Show additional text attachments (file attachments) with ability to remove */}
-                {editAdditionalTextContent.length > 0 && <ChatInputAttachments attachments={editAdditionalTextContent} extractingAttachments={new Set()} onRemove={handleRemoveAdditionalText} />}
+                {editAdditionalTextContent.length > 0 && (
+                  <ChatInputAttachments
+                    attachments={editAdditionalTextContent}
+                    extractingAttachments={new Set()}
+                    onRemove={handleRemoveAdditionalText}
+                  />
+                )}
                 {/* Show media attachments with ability to remove */}
-                {editMediaContent.length > 0 && <ChatInputAttachments attachments={editMediaContent} extractingAttachments={new Set()} onRemove={handleRemoveMedia} />}
+                {editMediaContent.length > 0 && (
+                  <ChatInputAttachments
+                    attachments={editMediaContent}
+                    extractingAttachments={new Set()}
+                    onRemove={handleRemoveMedia}
+                  />
+                )}
                 <div className="flex items-center gap-1 justify-end">
-                  <button onClick={handleCancelEdit} className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors p-1" title="Cancel (Esc)" type="button">
+                  <button
+                    onClick={handleCancelEdit}
+                    className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors p-1"
+                    title="Cancel (Esc)"
+                    type="button"
+                  >
                     <X className="h-4 w-4" />
                   </button>
-                  <button onClick={handleConfirmEdit} className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors p-1" title="Save (Enter)" type="button">
+                  <button
+                    onClick={handleConfirmEdit}
+                    className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors p-1"
+                    title="Save (Enter)"
+                    type="button"
+                  >
                     <Check className="h-4 w-4" />
                   </button>
                 </div>
@@ -572,10 +692,18 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
               {/* Render content parts in order */}
               {message.content.map((part, index) => {
                 if (part.type === "reasoning") {
-                  return <ReasoningDisplay key={index} reasoning={part.text || part.summary || ""} isStreaming={isReasoningActive} />;
+                  return (
+                    <ReasoningDisplay
+                      key={index}
+                      reasoning={part.text || part.summary || ""}
+                      isStreaming={isReasoningActive}
+                    />
+                  );
                 }
                 if (part.type === "text") {
-                  const hasPrecedingItems = message.content.slice(0, index).some((p) => p.type === "reasoning" || p.type === "tool_call");
+                  const hasPrecedingItems = message.content
+                    .slice(0, index)
+                    .some((p) => p.type === "reasoning" || p.type === "tool_call");
                   return (
                     <div key={index} className={hasPrecedingItems ? "mt-2" : ""}>
                       <Markdown isStreaming={!!(props.isLast && isResponding)}>{part.text}</Markdown>
@@ -590,8 +718,14 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
                     <div key={index} className="mt-0.5 mb-0 rounded-lg overflow-hidden max-w-full">
                       <div className="flex items-center gap-2 min-w-0">
                         <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
-                        <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">{getToolDisplayName(part.name)}</span>
-                        {preview && <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">{preview}</span>}
+                        <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
+                          {getToolDisplayName(part.name)}
+                        </span>
+                        {preview && (
+                          <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
+                            {preview}
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
@@ -609,7 +743,9 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
           )}
 
           {!isUser && (
-            <div className={`flex justify-between items-center mt-2 transition-opacity duration-200 ${props.isLast && !isResponding ? "opacity-100!" : "opacity-0 group-hover:opacity-100"}`}>
+            <div
+              className={`flex justify-between items-center mt-2 transition-opacity duration-200 ${props.isLast && !isResponding ? "opacity-100!" : "opacity-0 group-hover:opacity-100"}`}
+            >
               <div className="flex items-center gap-2">
                 <CopyButton markdown={textContent} className="h-4 w-4" />
                 <ConvertButton markdown={textContent} className="h-4 w-4" />

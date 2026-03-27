@@ -87,5 +87,9 @@ export function ProfileProvider({ children }: ProfileProviderProps) {
     return sections.join("\n\n");
   };
 
-  return <ProfileContext.Provider value={{ settings, updateSettings, generateInstructions, isLoaded }}>{children}</ProfileContext.Provider>;
+  return (
+    <ProfileContext.Provider value={{ settings, updateSettings, generateInstructions, isLoaded }}>
+      {children}
+    </ProfileContext.Provider>
+  );
 }

@@ -80,7 +80,10 @@ export async function getRoot(): Promise<FileSystemDirectoryHandle> {
  * Get a directory handle at the given path.
  * Creates parent directories only when create=true.
  */
-export async function getDirectory(path: string, options: { create?: boolean } = {}): Promise<FileSystemDirectoryHandle> {
+export async function getDirectory(
+  path: string,
+  options: { create?: boolean } = {},
+): Promise<FileSystemDirectoryHandle> {
   const { create = false } = options;
   const root = await getRoot();
   const parts = path.split("/").filter(Boolean);
@@ -104,7 +107,11 @@ export async function writeJson<T>(path: string, data: T): Promise<void> {
 /**
  * Write text data to a file.
  */
-export async function writeText(path: string, content: string, contentType: string = "text/plain;charset=utf-8"): Promise<void> {
+export async function writeText(
+  path: string,
+  content: string,
+  contentType: string = "text/plain;charset=utf-8",
+): Promise<void> {
   await writeBlob(path, artifactContentToBlob(content, contentType));
 }
 

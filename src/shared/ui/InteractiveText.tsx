@@ -4,7 +4,12 @@ interface InteractiveTextProps {
   text: string;
   placeholder?: string;
   className?: string;
-  onTextSelect?: (selectedText: string, position: { x: number; y: number }, positionStart: number, positionEnd: number) => void;
+  onTextSelect?: (
+    selectedText: string,
+    position: { x: number; y: number },
+    positionStart: number,
+    positionEnd: number,
+  ) => void;
   previewText?: string | null;
 }
 
@@ -15,7 +20,13 @@ interface WordInfo {
   end: number;
 }
 
-export function InteractiveText({ text, placeholder, className = "", onTextSelect, previewText }: InteractiveTextProps) {
+export function InteractiveText({
+  text,
+  placeholder,
+  className = "",
+  onTextSelect,
+  previewText,
+}: InteractiveTextProps) {
   const [hoveredWord, setHoveredWord] = useState<string | null>(null);
   const [selectedWord, setSelectedWord] = useState<WordInfo | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);

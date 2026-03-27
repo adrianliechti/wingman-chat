@@ -25,7 +25,13 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
     onAssistantRef.current = onAssistant;
   }, [onUser, onAssistant]);
 
-  const start = async (realtimeModel: string = "gpt-realtime-1.5", transcribeModel: string = "gpt-4o-mini-transcribe", instructions?: string, messages?: Message[], tools?: Tool[]) => {
+  const start = async (
+    realtimeModel: string = "gpt-realtime-1.5",
+    transcribeModel: string = "gpt-4o-mini-transcribe",
+    instructions?: string,
+    messages?: Message[],
+    tools?: Tool[],
+  ) => {
     if (isActiveRef.current) return;
     isActiveRef.current = true;
 
@@ -233,7 +239,12 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
                   const args = JSON.parse(msg.item.arguments);
                   const result = await tool.function(args);
                   // Serialize result, stripping binary data from images/audio/files
-                  output = typeof result === "string" ? result : serializeToolResultForApi(result as (TextContent | ImageContent | AudioContent | FileContent)[]);
+                  output =
+                    typeof result === "string"
+                      ? result
+                      : serializeToolResultForApi(
+                          result as (TextContent | ImageContent | AudioContent | FileContent)[],
+                        );
                   console.log("Function result:", result);
                 } catch (error) {
                   console.error("Error executing tool:", error);

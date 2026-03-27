@@ -2,7 +2,23 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 
-import { Send, Paperclip, ScreenShare, Sparkles, Loader2, Lightbulb, Mic, Square, Bot, Check, LoaderCircle, Rocket, Sliders, TriangleAlert, X } from "lucide-react";
+import {
+  Send,
+  Paperclip,
+  ScreenShare,
+  Sparkles,
+  Loader2,
+  Lightbulb,
+  Mic,
+  Square,
+  Bot,
+  Check,
+  LoaderCircle,
+  Rocket,
+  Sliders,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSuggestions } from "./ChatInputSuggestions";
@@ -28,7 +44,13 @@ export function ChatInput() {
   const { sendMessage, models, model, setModel: onModelChange, messages, isResponding } = useChat();
   const { currentAgent, setCurrentAgent } = useAgents();
   const { profile } = useSettings();
-  const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
+  const {
+    isAvailable: isScreenCaptureAvailable,
+    isActive: isContinuousCaptureActive,
+    startCapture,
+    stopCapture,
+    captureFrame,
+  } = useScreenCapture();
   const { providers, getProviderState, setProviderEnabled, setModelOverrides } = useToolsContext();
   const { isAvailable: voiceAvailable, isListening, startVoice, stopVoice } = useVoice();
 
@@ -63,9 +85,21 @@ export function ChatInput() {
   // Only recalculate when starting a new chat, not on every profile change
   const isNewChat = messages.length === 0;
   const randomPlaceholder = useMemo(() => {
-    const personalizedVariations = ["Hi [Name], ready to get started?", "Hello [Name], what's on your mind?", "Welcome, [Name]! How can I help?", "Hi [Name], what can I do for you?", "[Name], how can I support you?"];
+    const personalizedVariations = [
+      "Hi [Name], ready to get started?",
+      "Hello [Name], what's on your mind?",
+      "Welcome, [Name]! How can I help?",
+      "Hi [Name], what can I do for you?",
+      "[Name], how can I support you?",
+    ];
 
-    const genericVariations = ["Ready to get started?", "What's on your mind?", "How can I help you today?", "What can I do for you?", "How can I support you?"];
+    const genericVariations = [
+      "Ready to get started?",
+      "What's on your mind?",
+      "How can I help you today?",
+      "What can I do for you?",
+      "How can I support you?",
+    ];
 
     const variations = profile?.name ? personalizedVariations : genericVariations;
     const randomIndex = Math.floor(Math.random() * variations.length);
@@ -90,15 +124,22 @@ export function ChatInput() {
   }, [model?.tools]);
 
   // Providers visible in the UI: exclude model-configured and artifacts; hidden entirely when agent active
-  const visibleProviders = useMemo(() => (currentAgent ? [] : providers.filter((p: ToolProvider) => p.id !== "artifacts" && !modelTools.has(p.id))), [currentAgent, providers, modelTools]);
+  const visibleProviders = useMemo(
+    () => (currentAgent ? [] : providers.filter((p: ToolProvider) => p.id !== "artifacts" && !modelTools.has(p.id))),
+    [currentAgent, providers, modelTools],
+  );
 
   // Tool providers indicator logic
   const toolIndicator = useMemo(() => {
     // Check if any providers are connected
-    const hasConnectedProviders = visibleProviders.some((provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Connected);
+    const hasConnectedProviders = visibleProviders.some(
+      (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Connected,
+    );
 
     // Check if any providers are initializing
-    const hasInitializingProviders = visibleProviders.some((provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Initializing);
+    const hasInitializingProviders = visibleProviders.some(
+      (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Initializing,
+    );
 
     if (hasInitializingProviders) {
       // At least one provider initializing - show loading spinner
@@ -157,7 +198,10 @@ export function ChatInput() {
 
       // Batch state updates
       const validContents = processedContents
-        .filter((result): result is PromiseFulfilledResult<{ fileId: string; content: TextContent | ImageContent }> => result.status === "fulfilled" && result.value.content !== null)
+        .filter(
+          (result): result is PromiseFulfilledResult<{ fileId: string; content: TextContent | ImageContent }> =>
+            result.status === "fulfilled" && result.value.content !== null,
+        )
         .map((result) => result.value.content);
 
       setAttachments((prev) => [...prev, ...validContents]);
@@ -402,25 +446,47 @@ export function ChatInput() {
               } rounded-t-2xl md:rounded-2xl`
         } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 transition-all duration-200`}
       >
-        <input type="file" multiple accept={[...(config.text?.files ?? []), ...(config.vision?.files ?? []), ...(config.extractor?.files ?? [])].join(",")} ref={fileInputRef} className="hidden" onChange={handleFileChange} />
+        <input
+          type="file"
+          multiple
+          accept={[
+            ...(config.text?.files ?? []),
+            ...(config.vision?.files ?? []),
+            ...(config.extractor?.files ?? []),
+          ].join(",")}
+          ref={fileInputRef}
+          className="hidden"
+          onChange={handleFileChange}
+        />
 
         {/* Drop zone overlay */}
         {isDragging && (
           <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 rounded-t-2xl md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-sm">
             <div className="text-slate-700 dark:text-slate-300 font-semibold text-lg text-center">Drop files here</div>
-            <div className="text-slate-600 dark:text-slate-400 text-sm mt-1 text-center">Images, documents, and text files supported</div>
+            <div className="text-slate-600 dark:text-slate-400 text-sm mt-1 text-center">
+              Images, documents, and text files supported
+            </div>
           </div>
         )}
 
         {/* Attachments display */}
         {(attachments.length > 0 || extractingAttachments.size > 0) && (
           <div className="p-3">
-            <ChatInputAttachments attachments={attachments} extractingAttachments={extractingAttachments} onRemove={handleRemoveAttachment} />
+            <ChatInputAttachments
+              attachments={attachments}
+              extractingAttachments={extractingAttachments}
+              onRemove={handleRemoveAttachment}
+            />
           </div>
         )}
 
         {/* Prompt suggestions */}
-        <ChatInputSuggestions show={showPromptSuggestions} loading={loadingPrompts} suggestions={promptSuggestions} onSelect={handlePromptSelect} />
+        <ChatInputSuggestions
+          show={showPromptSuggestions}
+          loading={loadingPrompts}
+          suggestions={promptSuggestions}
+          onSelect={handlePromptSelect}
+        />
 
         {/* Input area */}
         <div className="relative flex-1">
@@ -486,7 +552,12 @@ export function ChatInput() {
         {/* Controls */}
         <div className="flex items-center justify-between p-3 pt-0 pb-8 md:pb-3">
           <div className="flex items-center gap-2">
-            <button type="button" className="text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200" onClick={handlePromptSuggestionsClick} title="Show prompt suggestions">
+            <button
+              type="button"
+              className="text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+              onClick={handlePromptSuggestionsClick}
+              title="Show prompt suggestions"
+            >
               {loadingPrompts ? <Loader2 size={16} className="animate-spin" /> : <Lightbulb size={16} />}
             </button>
 
@@ -500,7 +571,10 @@ export function ChatInput() {
               >
                 <span className="shrink-0 w-3.5 flex justify-center relative">
                   <Bot size={14} className="transition-opacity group-hover:opacity-0" />
-                  <X size={14} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100" />
+                  <X
+                    size={14}
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
+                  />
                 </span>
                 <span className="truncate min-w-0">{currentAgent.name}</span>
               </button>
@@ -527,10 +601,20 @@ export function ChatInput() {
                             className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                           >
                             <div className="flex items-center gap-2.5 w-full">
-                              <div className="shrink-0 w-3.5 flex justify-center">{model?.id === modelItem.id && <Check size={14} className="text-neutral-600 dark:text-neutral-400" />}</div>
+                              <div className="shrink-0 w-3.5 flex justify-center">
+                                {model?.id === modelItem.id && (
+                                  <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
+                                )}
+                              </div>
                               <div className="flex flex-col items-start flex-1 min-w-0">
-                                <div className="font-semibold text-sm leading-tight whitespace-nowrap">{modelItem.name ?? modelItem.id}</div>
-                                {modelItem.description && <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">{modelItem.description}</div>}
+                                <div className="font-semibold text-sm leading-tight whitespace-nowrap">
+                                  {modelItem.name ?? modelItem.id}
+                                </div>
+                                {modelItem.description && (
+                                  <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
+                                    {modelItem.description}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </button>
@@ -540,14 +624,26 @@ export function ChatInput() {
                         <MenuItem>
                           <button
                             type="button"
-                            onClick={() => onModelChange(isRealtimeSelected ? models[0] : { id: "realtime", name: "Voice Mode", description: "Real-time voice conversation" })}
+                            onClick={() =>
+                              onModelChange(
+                                isRealtimeSelected
+                                  ? models[0]
+                                  : { id: "realtime", name: "Voice Mode", description: "Real-time voice conversation" },
+                              )
+                            }
                             className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                           >
                             <div className="flex items-center gap-2.5 w-full">
-                              <div className="shrink-0 w-3.5 flex justify-center">{isRealtimeSelected && <Check size={14} className="text-neutral-600 dark:text-neutral-400" />}</div>
+                              <div className="shrink-0 w-3.5 flex justify-center">
+                                {isRealtimeSelected && (
+                                  <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
+                                )}
+                              </div>
                               <div className="flex flex-col items-start flex-1 min-w-0">
                                 <div className="font-semibold text-sm leading-tight whitespace-nowrap">Voice Mode</div>
-                                <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">Real-time voice conversation</div>
+                                <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
+                                  Real-time voice conversation
+                                </div>
                               </div>
                             </div>
                           </button>
@@ -566,7 +662,10 @@ export function ChatInput() {
                   >
                     <span className="shrink-0 w-3.5 flex justify-center relative">
                       <Bot size={14} className="transition-opacity group-hover:opacity-0" />
-                      <X size={14} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100" />
+                      <X
+                        size={14}
+                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
+                      />
                     </span>
                     <span className="max-w-20 truncate">{currentAgent.name}</span>
                   </button>
@@ -596,7 +695,15 @@ export function ChatInput() {
                         return (
                           <span
                             className="shrink-0 bg-current inline-block"
-                            style={{ width: 14, height: 14, maskImage: `url(${icon})`, WebkitMaskImage: `url(${icon})`, maskSize: "contain", maskRepeat: "no-repeat", maskPosition: "center" }}
+                            style={{
+                              width: 14,
+                              height: 14,
+                              maskImage: `url(${icon})`,
+                              WebkitMaskImage: `url(${icon})`,
+                              maskSize: "contain",
+                              maskRepeat: "no-repeat",
+                              maskPosition: "center",
+                            }}
                           />
                         );
                       const Icon = icon;
@@ -623,7 +730,13 @@ export function ChatInput() {
                           }
                         }}
                         disabled={providerInitializing}
-                        title={providerFailed ? `${provider.name} - Failed to connect (click to retry)` : providerEnabled ? `${provider.name} - Click to disable` : `${provider.name} - Click to enable`}
+                        title={
+                          providerFailed
+                            ? `${provider.name} - Failed to connect (click to retry)`
+                            : providerEnabled
+                              ? `${provider.name} - Click to disable`
+                              : `${provider.name} - Click to enable`
+                        }
                       >
                         {renderIcon()}
                       </button>
@@ -632,7 +745,10 @@ export function ChatInput() {
                 ) : visibleProviders.length > 2 ? (
                   // Menu for more than 2 providers
                   <Menu>
-                    <MenuButton className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200" title="Features">
+                    <MenuButton
+                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      title="Features"
+                    >
                       <Sliders size={16} />
                     </MenuButton>
                     <MenuItems
@@ -653,7 +769,15 @@ export function ChatInput() {
                             return (
                               <span
                                 className="shrink-0 bg-current inline-block"
-                                style={{ width: 16, height: 16, maskImage: `url(${icon})`, WebkitMaskImage: `url(${icon})`, maskSize: "contain", maskRepeat: "no-repeat", maskPosition: "center" }}
+                                style={{
+                                  width: 16,
+                                  height: 16,
+                                  maskImage: `url(${icon})`,
+                                  WebkitMaskImage: `url(${icon})`,
+                                  maskSize: "contain",
+                                  maskRepeat: "no-repeat",
+                                  maskPosition: "center",
+                                }}
                               />
                             );
                           const Icon = icon;
@@ -680,16 +804,31 @@ export function ChatInput() {
                                 {renderIcon()}
                                 <div className="flex flex-col items-start">
                                   <span className="font-medium text-sm">{provider.name}</span>
-                                  {provider.description && <span className="text-xs text-neutral-600 dark:text-neutral-400">{provider.description}</span>}
+                                  {provider.description && (
+                                    <span className="text-xs text-neutral-600 dark:text-neutral-400">
+                                      {provider.description}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                               <div className="flex items-center gap-2 pl-2">
                                 {providerInitializing ? (
-                                  <LoaderCircle size={16} className="animate-spin text-neutral-600 dark:text-neutral-400" />
+                                  <LoaderCircle
+                                    size={16}
+                                    className="animate-spin text-neutral-600 dark:text-neutral-400"
+                                  />
                                 ) : providerFailed ? (
-                                  <TriangleAlert size={16} className="text-neutral-600 dark:text-neutral-400" strokeWidth={2.5} />
+                                  <TriangleAlert
+                                    size={16}
+                                    className="text-neutral-600 dark:text-neutral-400"
+                                    strokeWidth={2.5}
+                                  />
                                 ) : providerEnabled ? (
-                                  <Check size={16} className="text-neutral-800 dark:text-neutral-200" strokeWidth={2.5} />
+                                  <Check
+                                    size={16}
+                                    className="text-neutral-800 dark:text-neutral-200"
+                                    strokeWidth={2.5}
+                                  />
                                 ) : (
                                   <div className="w-4 h-4" />
                                 )}
@@ -711,7 +850,9 @@ export function ChatInput() {
                         : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                     }`}
                     onClick={handleContinuousCaptureToggle}
-                    title={isContinuousCaptureActive ? "Stop continuous screen capture" : "Start continuous screen capture"}
+                    title={
+                      isContinuousCaptureActive ? "Stop continuous screen capture" : "Start continuous screen capture"
+                    }
                   >
                     <ScreenShare size={14} />
                     {isContinuousCaptureActive && <span className="hidden sm:inline">Capturing</span>}
@@ -719,7 +860,11 @@ export function ChatInput() {
                 )}
 
                 {!isRealtimeSelected && (
-                  <button type="button" className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200" onClick={handleAttachmentClick}>
+                  <button
+                    type="button"
+                    className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    onClick={handleAttachmentClick}
+                  >
                     <Paperclip size={16} />
                   </button>
                 )}
@@ -742,23 +887,38 @@ export function ChatInput() {
                 <Square size={16} />
               </button>
             ) : isResponding ? (
-              <button type="button" className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400" disabled title="Generating response...">
+              <button
+                type="button"
+                className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
+                disabled
+                title="Generating response..."
+              >
                 <LoaderCircle size={16} className="animate-spin" />
               </button>
             ) : content.trim() ? (
-              <button className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200" type="submit">
+              <button
+                className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                type="submit"
+              >
                 <Send size={16} />
               </button>
             ) : canTranscribe ? (
               transcribingContent ? (
-                <button type="button" className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400" disabled title="Processing audio...">
+                <button
+                  type="button"
+                  className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
+                  disabled
+                  title="Processing audio..."
+                >
                   <Loader2 size={16} className="animate-spin" />
                 </button>
               ) : (
                 <button
                   type="button"
                   className={`p-2.5 md:p-1.5 transition-colors ${
-                    isTranscribing ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200" : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    isTranscribing
+                      ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                      : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                   }`}
                   onClick={handleTranscriptionClick}
                   title={isTranscribing ? "Stop recording" : "Start recording"}
@@ -768,7 +928,11 @@ export function ChatInput() {
                 </button>
               )
             ) : (
-              <button className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200" type="submit" disabled={isResponding}>
+              <button
+                className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                type="submit"
+                disabled={isResponding}
+              >
                 <Send size={16} />
               </button>
             )}

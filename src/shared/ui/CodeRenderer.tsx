@@ -69,7 +69,9 @@ const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
           <CopyButton text={code} className="h-4 w-4" />
         </div>
       </div>
-      <div className="bg-white dark:bg-neutral-900 rounded-b-md overflow-hidden border-l border-r border-b border-gray-100 dark:border-neutral-800">{content}</div>
+      <div className="bg-white dark:bg-neutral-900 rounded-b-md overflow-hidden border-l border-r border-b border-gray-100 dark:border-neutral-800">
+        {content}
+      </div>
     </div>
   );
 
@@ -81,7 +83,13 @@ const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
     );
   }
 
-  return renderCodeBlock(<div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: effectiveHtml }} style={highlightedCodeStyle} />);
+  return renderCodeBlock(
+    <div
+      className="overflow-x-auto"
+      dangerouslySetInnerHTML={{ __html: effectiveHtml }}
+      style={highlightedCodeStyle}
+    />,
+  );
 });
 
 CodeRenderer.displayName = "CodeRenderer";

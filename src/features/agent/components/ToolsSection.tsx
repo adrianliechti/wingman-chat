@@ -70,14 +70,24 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
 
   return (
     <>
-      <BridgeEditor isOpen={bridgeEditorOpen} onClose={() => setBridgeEditorOpen(false)} onSave={handleSaveBridge} onDelete={editingBridge ? () => handleDeleteBridge(editingBridge) : undefined} bridge={editingBridge} />
+      <BridgeEditor
+        isOpen={bridgeEditorOpen}
+        onClose={() => setBridgeEditorOpen(false)}
+        onSave={handleSaveBridge}
+        onDelete={editingBridge ? () => handleDeleteBridge(editingBridge) : undefined}
+        bridge={editingBridge}
+      />
 
       <Section
         title="Tools"
         isOpen={true}
         collapsible={false}
         headerAction={
-          <button type="button" onClick={handleNewBridge} className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
+          <button
+            type="button"
+            onClick={handleNewBridge}
+            className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+          >
             <Plus size={12} /> Add MCP
           </button>
         }
@@ -89,14 +99,29 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                 {!tool.Icon ? (
                   <Wrench size={16} />
                 ) : typeof tool.Icon === "string" ? (
-                  <span className="bg-current inline-block" style={{ width: 16, height: 16, maskImage: `url(${tool.Icon})`, WebkitMaskImage: `url(${tool.Icon})`, maskSize: "contain", maskRepeat: "no-repeat", maskPosition: "center" }} />
+                  <span
+                    className="bg-current inline-block"
+                    style={{
+                      width: 16,
+                      height: 16,
+                      maskImage: `url(${tool.Icon})`,
+                      WebkitMaskImage: `url(${tool.Icon})`,
+                      maskSize: "contain",
+                      maskRepeat: "no-repeat",
+                      maskPosition: "center",
+                    }}
+                  />
                 ) : (
                   <tool.Icon width={16} height={16} />
                 )}
               </span>
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{tool.label}</div>
-                {tool.description && <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">{tool.description}</div>}
+                {tool.description && (
+                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                    {tool.description}
+                  </div>
+                )}
               </div>
               <button
                 type="button"
@@ -112,7 +137,11 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
           {agent.servers.map((server) => {
             const state = server.enabled ? getProviderState(server.id) : ProviderState.Disconnected;
             return (
-              <div key={server.id} className="flex items-center gap-2 py-1.5 cursor-pointer" onClick={() => handleEditBridge(server)}>
+              <div
+                key={server.id}
+                className="flex items-center gap-2 py-1.5 cursor-pointer"
+                onClick={() => handleEditBridge(server)}
+              >
                 {state === ProviderState.Failed ? (
                   <button
                     type="button"
@@ -130,13 +159,23 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                 ) : server.icon ? (
                   <span
                     className="shrink-0 text-neutral-600 dark:text-neutral-400 bg-current inline-block"
-                    style={{ width: 14, height: 14, maskImage: `url(${server.icon})`, WebkitMaskImage: `url(${server.icon})`, maskSize: "contain", maskRepeat: "no-repeat", maskPosition: "center" }}
+                    style={{
+                      width: 14,
+                      height: 14,
+                      maskImage: `url(${server.icon})`,
+                      WebkitMaskImage: `url(${server.icon})`,
+                      maskSize: "contain",
+                      maskRepeat: "no-repeat",
+                      maskPosition: "center",
+                    }}
                   />
                 ) : (
                   <Server size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{server.name}</div>
+                  <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                    {server.name}
+                  </div>
                   <div className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">{server.url}</div>
                 </div>
                 <button

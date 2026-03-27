@@ -16,7 +16,14 @@ interface SkillCatalogProps {
   onImported: (names: string[]) => void;
 }
 
-export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onSkillSaved, onImported }: SkillCatalogProps) {
+export function SkillCatalog({
+  isOpen,
+  onClose,
+  enabledSkillNames,
+  onToggle,
+  onSkillSaved,
+  onImported,
+}: SkillCatalogProps) {
   const { skills: allSkills, addSkill, updateSkill, removeSkill } = useSkills();
   const [search, setSearch] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
@@ -174,7 +181,9 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
       clearTimeout(dragTimeoutRef.current);
       dragTimeoutRef.current = null;
     }
-    const droppedFiles = Array.from(e.dataTransfer.files).filter((f) => f.name.endsWith(".md") || f.name.endsWith(".zip"));
+    const droppedFiles = Array.from(e.dataTransfer.files).filter(
+      (f) => f.name.endsWith(".md") || f.name.endsWith(".zip"),
+    );
     if (droppedFiles.length > 0) {
       await importSkillFiles(droppedFiles);
     }
@@ -194,13 +203,29 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-80" onClose={onClose}>
-        <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
           <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
         </Transition.Child>
 
         <div className="fixed inset-0 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
-            <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
               <Dialog.Panel
                 className="relative w-full max-w-lg rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl border border-neutral-200/50 dark:border-neutral-700/50"
                 onDrop={handleDrop}
@@ -211,7 +236,9 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                   <div className="absolute inset-0 z-10 bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm border-2 border-dashed border-slate-400 dark:border-slate-500 rounded-xl flex items-center justify-center">
                     <div className="text-center">
                       <Plus size={24} className="mx-auto text-neutral-600 dark:text-neutral-400 mb-1" />
-                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Drop skills to import</p>
+                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        Drop skills to import
+                      </p>
                     </div>
                   </div>
                 )}
@@ -228,10 +255,16 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                         <ArrowLeft size={16} />
                       </button>
                     )}
-                    <Dialog.Title className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{editing ? (editing === "new" ? "New Skill" : "Edit Skill") : "Skill Catalog"}</Dialog.Title>
+                    <Dialog.Title className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                      {editing ? (editing === "new" ? "New Skill" : "Edit Skill") : "Skill Catalog"}
+                    </Dialog.Title>
                   </div>
                   {!editing && (
-                    <button type="button" onClick={onClose} className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                    >
                       <X size={16} />
                     </button>
                   )}
@@ -242,22 +275,30 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                   <>
                     <div className="px-5 py-3.5 space-y-3.5">
                       <div>
-                        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">Name </label>
+                        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                          Name{" "}
+                        </label>
                         <input
                           type="text"
                           value={edName}
                           onChange={(e) => setEdName(e.target.value.toLowerCase())}
                           className={`w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border ${
-                            nameError ? "border-red-400/70 focus:ring-red-500/60" : "border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60"
+                            nameError
+                              ? "border-red-400/70 focus:ring-red-500/60"
+                              : "border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60"
                           } focus:ring-2 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors`}
                           placeholder="my-skill-name"
                           autoFocus={editing === "new"}
                         />
                         {nameError && <p className="mt-1 text-xs text-red-500">{nameError}</p>}
-                        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Lowercase alphanumeric characters and hyphens only.</p>
+                        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                          Lowercase alphanumeric characters and hyphens only.
+                        </p>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">Description </label>
+                        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                          Description{" "}
+                        </label>
                         <textarea
                           value={edDescription}
                           onChange={(e) => setEdDescription(e.target.value)}
@@ -267,7 +308,9 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">Instructions</label>
+                        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                          Instructions
+                        </label>
                         <textarea
                           value={edContent}
                           onChange={(e) => setEdContent(e.target.value)}
@@ -321,7 +364,11 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                         autoFocus
                       />
                       {search && (
-                        <button type="button" onClick={() => setSearch("")} className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300">
+                        <button
+                          type="button"
+                          onClick={() => setSearch("")}
+                          className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                        >
                           <X size={12} />
                         </button>
                       )}
@@ -365,12 +412,18 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                               }}
                               className="flex items-center gap-2.5 px-5 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-800/40 transition-colors group cursor-pointer select-none"
                             >
-                              <span className={`shrink-0 rounded p-0.5 flex items-center justify-center transition-colors ${enabled ? "text-blue-600 dark:text-blue-400" : "text-neutral-400 dark:text-neutral-500"}`}>
+                              <span
+                                className={`shrink-0 rounded p-0.5 flex items-center justify-center transition-colors ${enabled ? "text-blue-600 dark:text-blue-400" : "text-neutral-400 dark:text-neutral-500"}`}
+                              >
                                 {enabled ? <Minus size={14} strokeWidth={3} /> : <Plus size={14} strokeWidth={3} />}
                               </span>
                               <div className="min-w-0 flex-1">
-                                <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{skill.name}</div>
-                                <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">{skill.description}</div>
+                                <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                                  {skill.name}
+                                </div>
+                                <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                                  {skill.description}
+                                </div>
                               </div>
                               <div className="w-0 overflow-hidden group-hover:w-16 flex items-center gap-0.5 shrink-0">
                                 <button
@@ -411,7 +464,11 @@ export function SkillCatalog({ isOpen, onClose, enabledSkillNames, onToggle, onS
                           );
                         })
                       ) : (
-                        <p className="text-xs text-neutral-400 text-center py-6">{allSkills.length === 0 ? "No skills yet. Create or import one to get started." : "No skills match your search."}</p>
+                        <p className="text-xs text-neutral-400 text-center py-6">
+                          {allSkills.length === 0
+                            ? "No skills yet. Create or import one to get started."
+                            : "No skills match your search."}
+                        </p>
                       )}
                     </div>
                   </>

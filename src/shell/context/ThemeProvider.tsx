@@ -12,7 +12,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   });
 
   // Track real system preference
-  const [systemPref, setSystemPref] = useState<boolean>(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [systemPref, setSystemPref] = useState<boolean>(
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
 
   // Listen for system preference changes
   useEffect(() => {

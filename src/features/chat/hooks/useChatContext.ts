@@ -101,7 +101,17 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
         return instructionsList.join("\n\n");
       },
     };
-  }, [mode, model, generateInstructions, providers, getProviderState, artifactsEnabled, showArtifactsDrawer, artifactsProvider, currentAgent]);
+  }, [
+    mode,
+    model,
+    generateInstructions,
+    providers,
+    getProviderState,
+    artifactsEnabled,
+    showArtifactsDrawer,
+    artifactsProvider,
+    currentAgent,
+  ]);
 
   return context;
 }

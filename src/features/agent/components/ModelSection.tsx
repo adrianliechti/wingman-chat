@@ -42,7 +42,10 @@ export function ModelSection({ agent }: ModelSectionProps) {
             </option>
           ))}
         </select>
-        <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+        <ChevronDown
+          size={14}
+          className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400"
+        />
       </div>
     </Section>
   );

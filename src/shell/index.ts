@@ -7,7 +7,12 @@ export { AppContext } from "./context/AppContext";
 export type { AppContextType } from "./context/AppContext";
 export { AppProvider } from "./context/AppProvider";
 export { BackgroundContext } from "./context/BackgroundContext";
-export type { BackgroundItem, BackgroundPack, BackgroundSetting, BackgroundContextValue } from "./context/BackgroundContext";
+export type {
+  BackgroundItem,
+  BackgroundPack,
+  BackgroundSetting,
+  BackgroundContextValue,
+} from "./context/BackgroundContext";
 export { BackgroundProvider } from "./context/BackgroundProvider";
 export { LayoutContext } from "./context/LayoutContext";
 export type { LayoutMode, LayoutContextType } from "./context/LayoutContext";

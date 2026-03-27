@@ -1,7 +1,25 @@
 import { useState, useRef, useEffect } from "react";
-import { Plus, Folder, X, ChevronDown, Check, Edit, Trash2, PenLine, MessageSquare, Sparkles, Bot, Download, Upload } from "lucide-react";
+import {
+  Plus,
+  Folder,
+  X,
+  ChevronDown,
+  Check,
+  Edit,
+  Trash2,
+  PenLine,
+  MessageSquare,
+  Sparkles,
+  Bot,
+  Download,
+  Upload,
+} from "lucide-react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import { exportSingleAgentAsZip, importAgentsFromZip, importAgentsFromLegacyJson } from "@/features/settings/lib/agentImportExport";
+import {
+  exportSingleAgentAsZip,
+  importAgentsFromZip,
+  importAgentsFromLegacyJson,
+} from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
 import type { Agent } from "@/features/agent/types/agent";
 import { InstructionsSection } from "./InstructionsSection";
@@ -37,7 +55,8 @@ function AgentDetails({ agent }: AgentDetailsProps) {
 // ─── Main AgentDrawer component ───
 
 export function AgentDrawer() {
-  const { agents, currentAgent, createAgent, setCurrentAgent, updateAgent, deleteAgent, setShowAgentDrawer } = useAgents();
+  const { agents, currentAgent, createAgent, setCurrentAgent, updateAgent, deleteAgent, setShowAgentDrawer } =
+    useAgents();
 
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -133,10 +152,15 @@ export function AgentDrawer() {
           >
             <span className="flex items-center gap-2">
               <Bot size={16} className="text-neutral-600 dark:text-neutral-300" />
-              <span className="block truncate text-neutral-900 dark:text-neutral-100 font-medium">{currentAgent?.name || "None"}</span>
+              <span className="block truncate text-neutral-900 dark:text-neutral-100 font-medium">
+                {currentAgent?.name || "None"}
+              </span>
             </span>
             <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-              <ChevronDown size={16} className={`text-neutral-400 dark:text-neutral-300 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`} />
+              <ChevronDown
+                size={16}
+                className={`text-neutral-400 dark:text-neutral-300 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
+              />
             </span>
           </button>
 
@@ -148,11 +172,15 @@ export function AgentDrawer() {
                 onClick={() => handleAgentSelect(null)}
               >
                 <X size={16} className="text-neutral-600 dark:text-neutral-300 shrink-0" />
-                <span className={`block truncate text-sm ${!currentAgent ? "font-semibold" : "font-normal"}`}>None</span>
+                <span className={`block truncate text-sm ${!currentAgent ? "font-semibold" : "font-normal"}`}>
+                  None
+                </span>
               </div>
 
               {/* Create New */}
-              <div className={`group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 ${!isCreatingNew ? "hover:bg-neutral-200 dark:hover:bg-neutral-700/80" : ""}`}>
+              <div
+                className={`group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 ${!isCreatingNew ? "hover:bg-neutral-200 dark:hover:bg-neutral-700/80" : ""}`}
+              >
                 {isCreatingNew ? (
                   <div className="flex items-center gap-1 flex-1">
                     <Plus size={16} className="text-neutral-600 dark:text-neutral-400 shrink-0" />
@@ -253,8 +281,14 @@ export function AgentDrawer() {
                             </button>
                           </div>
                         ) : (
-                          <button type="button" onClick={() => handleAgentSelect(agent)} className="flex items-center gap-2 flex-1 text-left min-w-0">
-                            <span className={`block truncate text-sm ${isCurrent ? "font-semibold" : "font-normal"}`}>{agent.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleAgentSelect(agent)}
+                            className="flex items-center gap-2 flex-1 text-left min-w-0"
+                          >
+                            <span className={`block truncate text-sm ${isCurrent ? "font-semibold" : "font-normal"}`}>
+                              {agent.name}
+                            </span>
                           </button>
                         )}
                       </div>
@@ -312,9 +346,13 @@ export function AgentDrawer() {
       ) : (
         <div className="flex flex-col items-center justify-center h-full p-6 text-center">
           <Bot size={48} className="text-neutral-300 dark:text-neutral-600 mb-4" />
-          <h3 className="text-lg font-medium text-neutral-900 dark:text-neutral-100 mb-2">{agents.length === 0 ? "Create an Agent" : "No Agent Selected"}</h3>
+          <h3 className="text-lg font-medium text-neutral-900 dark:text-neutral-100 mb-2">
+            {agents.length === 0 ? "Create an Agent" : "No Agent Selected"}
+          </h3>
           <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4 max-w-xs">
-            {agents.length === 0 ? "Agents bundle instructions, files, skills, and tools into a reusable configuration." : "Select an agent from the dropdown above to configure it."}
+            {agents.length === 0
+              ? "Agents bundle instructions, files, skills, and tools into a reusable configuration."
+              : "Select an agent from the dropdown above to configure it."}
           </p>
           {agents.length === 0 && (
             <div className="text-xs text-neutral-500 dark:text-neutral-500 space-y-2">
@@ -361,7 +399,10 @@ export function AgentDrawer() {
                   if (!file) return;
                   const isZip = file.name.endsWith(".zip");
                   if (isZip) {
-                    if (!window.confirm("Import agents from ZIP? This will merge with your existing agents and skills.")) return;
+                    if (
+                      !window.confirm("Import agents from ZIP? This will merge with your existing agents and skills.")
+                    )
+                      return;
                     try {
                       await importAgentsFromZip(file);
                       alert("Agents imported successfully! Please refresh the page to see the changes.");
@@ -379,9 +420,12 @@ export function AgentDrawer() {
                         alert("Invalid import file.");
                         return;
                       }
-                      if (!window.confirm(`Import ${count} legacy repositor${count === 1 ? "y" : "ies"} as agents?`)) return;
+                      if (!window.confirm(`Import ${count} legacy repositor${count === 1 ? "y" : "ies"} as agents?`))
+                        return;
                       const result = await importAgentsFromLegacyJson(jsonData);
-                      alert(`Imported ${result.imported} agent${result.imported === 1 ? "" : "s"}. Please refresh to see changes.`);
+                      alert(
+                        `Imported ${result.imported} agent${result.imported === 1 ? "" : "s"}. Please refresh to see changes.`,
+                      );
                       window.location.reload();
                     } catch (error) {
                       console.error("Failed to import agents:", error);

@@ -76,7 +76,12 @@ export function WorkflowCanvas() {
         defaultEdgeOptions={defaultEdgeOptions}
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} className="bg-gray-50 dark:bg-gray-900" />
-        <Controls orientation="horizontal" showInteractive={false} position="bottom-right" className="bg-white/90 dark:bg-black/40 backdrop-blur-lg border border-white/40 dark:border-white/20 rounded-lg" />
+        <Controls
+          orientation="horizontal"
+          showInteractive={false}
+          position="bottom-right"
+          className="bg-white/90 dark:bg-black/40 backdrop-blur-lg border border-white/40 dark:border-white/20 rounded-lg"
+        />
       </ReactFlow>
     </div>
   );

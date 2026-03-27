@@ -27,7 +27,9 @@
   // Check if URL is a virtual file (not absolute http/https/blob/data)
   function isVirtualPath(url) {
     if (typeof url !== "string") return false;
-    return !url.startsWith("http://") && !url.startsWith("https://") && !url.startsWith("blob:") && !url.startsWith("data:");
+    return (
+      !url.startsWith("http://") && !url.startsWith("https://") && !url.startsWith("blob:") && !url.startsWith("data:")
+    );
   }
 
   // Override native fetch to intercept virtual file requests

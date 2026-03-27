@@ -1,5 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Languages, PanelLeftOpen, ChevronDown, Settings, Image, Globe, GraduationCap } from "lucide-react";
+import {
+  MessageCircle,
+  Languages,
+  PanelLeftOpen,
+  ChevronDown,
+  Settings,
+  Image,
+  Globe,
+  GraduationCap,
+} from "lucide-react";
 import { Transition } from "@headlessui/react";
 import { Outlet, Link, useRouterState } from "@tanstack/react-router";
 import { getConfig } from "@/shared/config";
@@ -160,8 +169,19 @@ export function AppLayout() {
       )}
 
       {/* Backdrop for overlay sidebar when panels are open */}
-      <Transition show={!!(sidebarContent && hasPanelOpen && showSidebar)} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
-        <div className="fixed inset-0 z-40 bg-black/40 dark:bg-black/60 hidden md:block" onClick={() => setShowSidebar(false)} />
+      <Transition
+        show={!!(sidebarContent && hasPanelOpen && showSidebar)}
+        enter="ease-out duration-300"
+        enterFrom="opacity-0"
+        enterTo="opacity-100"
+        leave="ease-in duration-200"
+        leaveFrom="opacity-100"
+        leaveTo="opacity-0"
+      >
+        <div
+          className="fixed inset-0 z-40 bg-black/40 dark:bg-black/60 hidden md:block"
+          onClick={() => setShowSidebar(false)}
+        />
       </Transition>
 
       {/* Generic sidebar - pushes content normally, becomes overlay when panels are open */}
@@ -185,7 +205,9 @@ export function AppLayout() {
       <SettingsDrawer isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} showAdvanced={settingsAdvanced} />
 
       {/* Main app content */}
-      <div className={`flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? "md:ml-59" : "ml-0"}`}>
+      <div
+        className={`flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? "md:ml-59" : "ml-0"}`}
+      >
         {/* Fixed navigation bar with glass effect */}
         <nav
           className={`fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 shadow-sm transition-all duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? "md:left-59" : ""}`}
@@ -218,7 +240,10 @@ export function AppLayout() {
                     >
                       {pages.find((p) => p.key === currentPage)?.icon}
                       <span>{pages.find((p) => p.key === currentPage)?.label}</span>
-                      <ChevronDown size={14} className={`transition-transform duration-200 ${mobileMenuOpen ? "rotate-180" : ""}`} />
+                      <ChevronDown
+                        size={14}
+                        className={`transition-transform duration-200 ${mobileMenuOpen ? "rotate-180" : ""}`}
+                      />
                     </button>
                   </div>
                 </div>
@@ -230,7 +255,10 @@ export function AppLayout() {
             {/* Center section - Modern pill navigation for desktop */}
             {showNavigation && (
               <div className="hidden md:flex items-center justify-center">
-                <div ref={desktopRef} className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20">
+                <div
+                  ref={desktopRef}
+                  className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
+                >
                   {/* Animated slider background */}
                   {pages.some((p) => p.key === currentPage) && (
                     <div
@@ -300,7 +328,9 @@ export function AppLayout() {
                   to={to}
                   onClick={() => setMobileMenuOpen(false)}
                   className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${
-                    currentPage === key ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    currentPage === key
+                      ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100"
+                      : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
                   }`}
                 >
                   {icon}

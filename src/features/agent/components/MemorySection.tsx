@@ -105,17 +105,39 @@ export function MemorySection({ agent }: MemorySectionProps) {
       {/* Memory Dialog */}
       <Transition appear show={isDialogOpen} as={Fragment}>
         <Dialog as="div" className="relative z-80" onClose={closeDialog}>
-          <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
             <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
           </Transition.Child>
           <div className="fixed inset-0 overflow-y-auto">
             <div className="flex min-h-full items-center justify-center p-4">
-              <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0 scale-95"
+                enterTo="opacity-100 scale-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100 scale-100"
+                leaveTo="opacity-0 scale-95"
+              >
                 <Dialog.Panel className="w-full max-w-2xl transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all">
                   {/* Header */}
                   <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
-                    <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">Memory</Dialog.Title>
-                    <button type="button" onClick={closeDialog} className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
+                    <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+                      Memory
+                    </Dialog.Title>
+                    <button
+                      type="button"
+                      onClick={closeDialog}
+                      className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                    >
                       <X size={16} />
                     </button>
                   </div>
@@ -133,7 +155,9 @@ export function MemorySection({ agent }: MemorySectionProps) {
                           placeholder="No memories yet. The agent will write here as you chat."
                           autoFocus
                         />
-                        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Memory is written by the agent during conversations. You can also edit it manually.</p>
+                        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                          Memory is written by the agent during conversations. You can also edit it manually.
+                        </p>
                       </>
                     ) : (
                       <div className="max-h-96 overflow-auto">
@@ -142,7 +166,9 @@ export function MemorySection({ agent }: MemorySectionProps) {
                             <Markdown>{content}</Markdown>
                           </div>
                         ) : (
-                          <p className="text-sm text-neutral-400 dark:text-neutral-500 italic text-center py-8">No memories yet. The agent will write here as you chat.</p>
+                          <p className="text-sm text-neutral-400 dark:text-neutral-500 italic text-center py-8">
+                            No memories yet. The agent will write here as you chat.
+                          </p>
                         )}
                       </div>
                     )}
@@ -161,10 +187,18 @@ export function MemorySection({ agent }: MemorySectionProps) {
                           <Trash2 size={13} /> Clear
                         </button>
                         <div className="flex items-center gap-2.5">
-                          <button type="button" onClick={cancelEditing} className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
+                          <button
+                            type="button"
+                            onClick={cancelEditing}
+                            className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                          >
                             Cancel
                           </button>
-                          <button type="button" onClick={save} className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600/90 text-white hover:bg-blue-600 transition-colors">
+                          <button
+                            type="button"
+                            onClick={save}
+                            className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600/90 text-white hover:bg-blue-600 transition-colors"
+                          >
                             Save
                           </button>
                         </div>
@@ -178,7 +212,11 @@ export function MemorySection({ agent }: MemorySectionProps) {
                         >
                           <Pencil size={13} /> Edit
                         </button>
-                        <button type="button" onClick={closeDialog} className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
+                        <button
+                          type="button"
+                          onClick={closeDialog}
+                          className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                        >
                           Close
                         </button>
                       </>
@@ -245,7 +283,9 @@ export function MemorySection({ agent }: MemorySectionProps) {
             )}
           </div>
         ) : (
-          <p className="text-[10px] text-neutral-400 dark:text-neutral-500">Enable to let this agent remember context across conversations.</p>
+          <p className="text-[10px] text-neutral-400 dark:text-neutral-500">
+            Enable to let this agent remember context across conversations.
+          </p>
         )}
       </Section>
     </>

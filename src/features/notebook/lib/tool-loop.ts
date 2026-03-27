@@ -10,7 +10,14 @@ import type { Message, Content, Tool } from "@/shared/types/chat";
  * Run an LLM completion with tool support.
  * Loops until the model stops calling tools.
  */
-export async function runWithTools(client: Client, model: string, instructions: string, messages: Message[], tools: Tool[], onStream?: (content: Content[]) => void): Promise<Message> {
+export async function runWithTools(
+  client: Client,
+  model: string,
+  instructions: string,
+  messages: Message[],
+  tools: Tool[],
+  onStream?: (content: Content[]) => void,
+): Promise<Message> {
   let conversation = [...messages];
 
   while (true) {

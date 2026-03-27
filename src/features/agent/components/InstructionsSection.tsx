@@ -70,17 +70,39 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
       {/* Edit Dialog */}
       <Transition appear show={isDialogOpen} as={Fragment}>
         <Dialog as="div" className="relative z-80" onClose={closeDialog}>
-          <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
             <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
           </Transition.Child>
           <div className="fixed inset-0 overflow-y-auto">
             <div className="flex min-h-full items-center justify-center p-4">
-              <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0 scale-95"
+                enterTo="opacity-100 scale-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100 scale-100"
+                leaveTo="opacity-0 scale-95"
+              >
                 <Dialog.Panel className="w-full max-w-lg transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all">
                   {/* Header */}
                   <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
-                    <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">Instructions</Dialog.Title>
-                    <button type="button" onClick={closeDialog} className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
+                    <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+                      Instructions
+                    </Dialog.Title>
+                    <button
+                      type="button"
+                      onClick={closeDialog}
+                      className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                    >
                       <X size={16} />
                     </button>
                   </div>
@@ -98,7 +120,9 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
                           placeholder="Enter instructions for this agent..."
                           autoFocus
                         />
-                        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Instructions help the AI understand how to behave and what context to use.</p>
+                        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                          Instructions help the AI understand how to behave and what context to use.
+                        </p>
                       </>
                     ) : (
                       <div className="max-h-96 overflow-auto">
@@ -107,7 +131,9 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
                             <Markdown>{agent.instructions}</Markdown>
                           </div>
                         ) : (
-                          <p className="text-sm text-neutral-400 dark:text-neutral-500 italic text-center py-8">No instructions yet.</p>
+                          <p className="text-sm text-neutral-400 dark:text-neutral-500 italic text-center py-8">
+                            No instructions yet.
+                          </p>
                         )}
                       </div>
                     )}
@@ -117,19 +143,35 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
                   <div className="flex items-center justify-end gap-2.5 px-5 py-3 border-t border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/30">
                     {isEditing ? (
                       <>
-                        <button type="button" onClick={cancelEditing} className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
+                        <button
+                          type="button"
+                          onClick={cancelEditing}
+                          className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                        >
                           Cancel
                         </button>
-                        <button type="button" onClick={save} className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600/90 text-white hover:bg-blue-600 transition-colors">
+                        <button
+                          type="button"
+                          onClick={save}
+                          className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600/90 text-white hover:bg-blue-600 transition-colors"
+                        >
                           Save
                         </button>
                       </>
                     ) : (
                       <>
-                        <button type="button" onClick={startEditing} className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
+                        <button
+                          type="button"
+                          onClick={startEditing}
+                          className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                        >
                           Edit
                         </button>
-                        <button type="button" onClick={closeDialog} className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
+                        <button
+                          type="button"
+                          onClick={closeDialog}
+                          className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                        >
                           Close
                         </button>
                       </>

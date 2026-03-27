@@ -141,7 +141,15 @@ export function NotebookPage() {
   // Sidebar content
   const sidebarContent = useMemo(() => {
     if (notebooks.length === 0 && !loaded) return null;
-    return <NotebookSidebar notebooks={notebooks} activeId={notebookId} onSelect={handleSelect} onDelete={handleDelete} onNew={handleNew} />;
+    return (
+      <NotebookSidebar
+        notebooks={notebooks}
+        activeId={notebookId}
+        onSelect={handleSelect}
+        onDelete={handleDelete}
+        onNew={handleNew}
+      />
+    );
   }, [notebooks, notebookId, handleSelect, handleDelete, handleNew, loaded]);
 
   useEffect(() => {
@@ -153,7 +161,12 @@ export function NotebookPage() {
   useEffect(() => {
     setRightActions(
       <div className="flex items-center gap-1">
-        <button type="button" className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out" onClick={handleNew} title="New notebook">
+        <button
+          type="button"
+          className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
+          onClick={handleNew}
+          title="New notebook"
+        >
           <PlusIcon size={20} />
         </button>
       </div>,
@@ -177,7 +190,16 @@ export function NotebookPage() {
           {loading ? (
             <div className="h-full" />
           ) : (
-            <SourcesPanel sources={sources} isSearching={isSearching} searchWeb={searchWeb} addSearchResult={addSearchResult} scrapeWeb={scrapeWeb} addScrapeResult={addScrapeResult} onFileAdd={addFileSource} onDeleteSource={deleteSource} />
+            <SourcesPanel
+              sources={sources}
+              isSearching={isSearching}
+              searchWeb={searchWeb}
+              addSearchResult={addSearchResult}
+              scrapeWeb={scrapeWeb}
+              addScrapeResult={addScrapeResult}
+              onFileAdd={addFileSource}
+              onDeleteSource={deleteSource}
+            />
           )}
         </div>
 
@@ -195,7 +217,12 @@ export function NotebookPage() {
               {/* Output buttons */}
               <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
                 {!viewingOutput.imageUrl && !viewingOutput.audioUrl && <CopyButton text={viewingOutput.content} />}
-                <button type="button" onClick={() => setViewingOutput(null)} className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors" title="Back to chat">
+                <button
+                  type="button"
+                  onClick={() => setViewingOutput(null)}
+                  className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  title="Back to chat"
+                >
                   <X size={16} className="text-neutral-500" />
                 </button>
               </div>
@@ -213,7 +240,11 @@ export function NotebookPage() {
                 ) : viewingOutput.imageUrl ? (
                   <div className="h-full overflow-y-auto p-6">
                     <div className="flex flex-col items-center gap-4">
-                      <img src={viewingOutput.imageUrl} alt={viewingOutput.title} className="max-w-full rounded-lg shadow-md" />
+                      <img
+                        src={viewingOutput.imageUrl}
+                        alt={viewingOutput.title}
+                        className="max-w-full rounded-lg shadow-md"
+                      />
                     </div>
                   </div>
                 ) : (
@@ -226,7 +257,13 @@ export function NotebookPage() {
               </div>
             </div>
           ) : (
-            <NotebookChat messages={messages} sources={sources} isChatting={isChatting} streamingContent={streamingContent} onSend={sendMessage} />
+            <NotebookChat
+              messages={messages}
+              sources={sources}
+              isChatting={isChatting}
+              streamingContent={streamingContent}
+              onSend={sendMessage}
+            />
           )}
         </div>
 
@@ -237,7 +274,17 @@ export function NotebookPage() {
 
         {/* Right: Studio */}
         <div className="w-72 shrink-0 h-full overflow-hidden">
-          {loading ? <div className="h-full" /> : <StudioPanel sources={sources} outputs={outputs} onGenerate={generateOutput} onDeleteOutput={deleteOutput} onSelectOutput={setViewingOutput} />}
+          {loading ? (
+            <div className="h-full" />
+          ) : (
+            <StudioPanel
+              sources={sources}
+              outputs={outputs}
+              onGenerate={generateOutput}
+              onDeleteOutput={deleteOutput}
+              onSelectOutput={setViewingOutput}
+            />
+          )}
         </div>
       </main>
     </div>

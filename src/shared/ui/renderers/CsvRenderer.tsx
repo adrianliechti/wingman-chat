@@ -238,4 +238,8 @@ const NonMemoizedCsvRenderer = ({ csv, language, name }: CsvRendererProps) => {
   );
 };
 
-export const CsvRenderer = memo(NonMemoizedCsvRenderer, (prevProps, nextProps) => prevProps.csv === nextProps.csv && prevProps.language === nextProps.language && prevProps.name === nextProps.name);
+export const CsvRenderer = memo(
+  NonMemoizedCsvRenderer,
+  (prevProps, nextProps) =>
+    prevProps.csv === nextProps.csv && prevProps.language === nextProps.language && prevProps.name === nextProps.name,
+);
