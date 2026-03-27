@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from "react";
 
 export function useDropZone<T extends HTMLElement = HTMLElement>(
   ref: React.RefObject<T | null>,
-  onFiles: (files: File[]) => void
+  onFiles: (files: File[]) => void,
 ): boolean {
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
@@ -41,21 +41,21 @@ export function useDropZone<T extends HTMLElement = HTMLElement>(
         onFiles(Array.from(dt.files));
       }
     },
-    [onFiles]
+    [onFiles],
   );
 
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
-    node.addEventListener('dragenter', handleDragEnter);
-    node.addEventListener('dragover', handleDragOver);
-    node.addEventListener('dragleave', handleDragLeave);
-    node.addEventListener('drop', handleDrop);
+    node.addEventListener("dragenter", handleDragEnter);
+    node.addEventListener("dragover", handleDragOver);
+    node.addEventListener("dragleave", handleDragLeave);
+    node.addEventListener("drop", handleDrop);
     return () => {
-      node.removeEventListener('dragenter', handleDragEnter);
-      node.removeEventListener('dragover', handleDragOver);
-      node.removeEventListener('dragleave', handleDragLeave);
-      node.removeEventListener('drop', handleDrop);
+      node.removeEventListener("dragenter", handleDragEnter);
+      node.removeEventListener("dragover", handleDragOver);
+      node.removeEventListener("dragleave", handleDragLeave);
+      node.removeEventListener("drop", handleDrop);
     };
   }, [ref, handleDragEnter, handleDragOver, handleDragLeave, handleDrop]);
 

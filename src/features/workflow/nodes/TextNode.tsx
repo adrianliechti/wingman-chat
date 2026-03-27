@@ -1,21 +1,21 @@
-import { memo, useState, useRef, useEffect } from 'react';
-import { StickyNote } from 'lucide-react';
-import type { Node, NodeProps } from '@xyflow/react';
-import type { BaseNodeData } from '@/features/workflow/types/workflow';
-import { createData } from '@/features/workflow/types/workflow';
-import { useWorkflow } from '@/features/workflow/hooks/useWorkflow';
-import { WorkflowNode } from '@/features/workflow/components/WorkflowNode';
+import { memo, useState, useRef, useEffect } from "react";
+import { StickyNote } from "lucide-react";
+import type { Node, NodeProps } from "@xyflow/react";
+import type { BaseNodeData } from "@/features/workflow/types/workflow";
+import { createData } from "@/features/workflow/types/workflow";
+import { useWorkflow } from "@/features/workflow/hooks/useWorkflow";
+import { WorkflowNode } from "@/features/workflow/components/WorkflowNode";
 
 // TextNode data interface
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface TextNodeData extends BaseNodeData {}
 
 // TextNode type
-export type TextNodeType = Node<TextNodeData, 'text'>;
+export type TextNodeType = Node<TextNodeData, "text">;
 
 export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) => {
   const { updateNode } = useWorkflow();
-  const currentText = data.output?.items?.[0]?.text ?? '';
+  const currentText = data.output?.items?.[0]?.text ?? "";
   const [localValue, setLocalValue] = useState(currentText);
   const isLocalChangeRef = useRef(false);
 

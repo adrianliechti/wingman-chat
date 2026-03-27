@@ -1,14 +1,14 @@
-import { useState, useCallback } from 'react';
-import type { ReactNode } from 'react';
-import { SidebarContext } from './SidebarContext';
-import type { SidebarContextType } from './SidebarContext';
+import { useState, useCallback } from "react";
+import type { ReactNode } from "react";
+import { SidebarContext } from "./SidebarContext";
+import type { SidebarContextType } from "./SidebarContext";
 
 export function SidebarProvider({ children }: { children: ReactNode }) {
   const [showSidebar, setShowSidebar] = useState(false);
   const [sidebarContent, setSidebarContent] = useState<ReactNode>(null);
 
   const toggleSidebar = useCallback(() => {
-    setShowSidebar(prev => !prev);
+    setShowSidebar((prev) => !prev);
   }, []);
 
   const value: SidebarContextType = {
@@ -19,9 +19,5 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
     setSidebarContent,
   };
 
-  return (
-    <SidebarContext.Provider value={value}>
-      {children}
-    </SidebarContext.Provider>
-  );
+  return <SidebarContext.Provider value={value}>{children}</SidebarContext.Provider>;
 }

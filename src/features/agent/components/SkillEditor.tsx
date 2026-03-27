@@ -1,21 +1,21 @@
-import { useState, useMemo, Fragment } from 'react';
-import { Dialog, Transition } from '@headlessui/react';
-import { X, Sparkles, Loader2 } from 'lucide-react';
-import { validateSkillName } from '@/features/skills/lib/skillParser';
-import type { Skill } from '@/features/skills/lib/skillParser';
-import { getConfig } from '@/shared/config';
+import { useState, useMemo, Fragment } from "react";
+import { Dialog, Transition } from "@headlessui/react";
+import { X, Sparkles, Loader2 } from "lucide-react";
+import { validateSkillName } from "@/features/skills/lib/skillParser";
+import type { Skill } from "@/features/skills/lib/skillParser";
+import { getConfig } from "@/shared/config";
 
 interface SkillEditorProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (skill: Omit<Skill, 'id'>) => void;
+  onSave: (skill: Omit<Skill, "id">) => void;
   skill?: Skill | null;
 }
 
 export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [content, setContent] = useState('');
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [content, setContent] = useState("");
   const [hasOpened, setHasOpened] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
 
@@ -27,9 +27,9 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
       setDescription(skill.description);
       setContent(skill.content);
     } else {
-      setName('');
-      setDescription('');
-      setContent('');
+      setName("");
+      setDescription("");
+      setContent("");
     }
   } else if (!isOpen && hasOpened) {
     setHasOpened(false);
@@ -38,7 +38,7 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
   // Derive name error from current name value
   // Skip showing error while user is still typing after a hyphen
   const nameError = useMemo(() => {
-    if (!name || name.endsWith('-')) return null;
+    if (!name || name.endsWith("-")) return null;
     const validation = validateSkillName(name);
     return validation.valid ? null : validation.error || null;
   }, [name]);
@@ -67,12 +67,12 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
     setIsOptimizing(true);
     try {
       const config = getConfig();
-      const result = await config.client.optimizeSkill('', name, description, content);
+      const result = await config.client.optimizeSkill("", name, description, content);
       setName(result.name);
       setDescription(result.description);
       setContent(result.content);
     } catch (error) {
-      console.error('Failed to optimize skill:', error);
+      console.error("Failed to optimize skill:", error);
     } finally {
       setIsOptimizing(false);
     }
@@ -111,7 +111,7 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
                   <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-                    {skill ? 'Edit Skill' : 'New Skill'}
+                    {skill ? "Edit Skill" : "New Skill"}
                   </Dialog.Title>
                   <button
                     type="button"
@@ -127,21 +127,20 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                   {/* Name field */}
                   <div>
                     <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-                      Name                    </label>
+                      Name{" "}
+                    </label>
                     <input
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value.toLowerCase())}
                       className={`w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border ${
-                        nameError 
-                          ? 'border-red-400/70 focus:ring-red-500/60' 
-                          : 'border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60'
+                        nameError
+                          ? "border-red-400/70 focus:ring-red-500/60"
+                          : "border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60"
                       } focus:ring-2 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors`}
                       placeholder="my-skill-name"
                     />
-                    {nameError && (
-                      <p className="mt-1 text-xs text-red-500">{nameError}</p>
-                    )}
+                    {nameError && <p className="mt-1 text-xs text-red-500">{nameError}</p>}
                     <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
                       Lowercase alphanumeric characters and hyphens only. No leading/trailing or consecutive hyphens.
                     </p>
@@ -150,7 +149,8 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                   {/* Description field */}
                   <div>
                     <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-                      Description                    </label>
+                      Description{" "}
+                    </label>
                     <textarea
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
@@ -189,12 +189,8 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                     disabled={!canOptimize}
                     className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium rounded-md border border-neutral-300/60 dark:border-neutral-700/60 text-neutral-500 dark:text-neutral-400 hover:text-amber-600 dark:hover:text-amber-400 hover:border-amber-300/60 dark:hover:border-amber-700/60 hover:bg-amber-50/40 dark:hover:bg-amber-950/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
-                    {isOptimizing ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : (
-                      <Sparkles size={12} />
-                    )}
-                    {isOptimizing ? 'Optimizing…' : 'Optimize'}
+                    {isOptimizing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                    {isOptimizing ? "Optimizing…" : "Optimize"}
                   </button>
                   <div className="flex items-center gap-2.5">
                     <button

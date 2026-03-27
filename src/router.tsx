@@ -1,20 +1,20 @@
-import { createRootRoute, createRoute, createRouter, Outlet, redirect } from '@tanstack/react-router';
-import { getConfig } from './shared/config';
-import { AppLayout } from './shell/AppLayout';
-import { ChatPage } from './features/chat/pages/ChatPage';
-import { WorkflowPage } from './features/workflow/pages/WorkflowPage';
-import { TranslatePage } from './features/translate/pages/TranslatePage';
-import { RendererPage } from './features/renderer/pages/RendererPage';
-import { NotebookPage } from './features/notebook/pages/NotebookPage';
-import { OAuthCallbackPage } from './features/settings/pages/OAuthCallbackPage';
+import { createRootRoute, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
+import { getConfig } from "./shared/config";
+import { AppLayout } from "./shell/AppLayout";
+import { ChatPage } from "./features/chat/pages/ChatPage";
+import { WorkflowPage } from "./features/workflow/pages/WorkflowPage";
+import { TranslatePage } from "./features/translate/pages/TranslatePage";
+import { RendererPage } from "./features/renderer/pages/RendererPage";
+import { NotebookPage } from "./features/notebook/pages/NotebookPage";
+import { OAuthCallbackPage } from "./features/settings/pages/OAuthCallbackPage";
 
 const hashToRoute: Record<string, string> = {
-  chat: '/chat',
-  flow: '/flow',
-  translate: '/translate',
-  renderer: '/renderer',
-  research: '/notebook',
-  notebook: '/notebook',
+  chat: "/chat",
+  flow: "/flow",
+  translate: "/translate",
+  renderer: "/renderer",
+  research: "/notebook",
+  notebook: "/notebook",
 };
 
 // Root route — bare outlet, no shell
@@ -23,15 +23,15 @@ const rootRoute = createRootRoute({ component: Outlet });
 // Pathless layout route — main app shell + hash-to-path redirect for backwards compatibility
 const appLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
-  id: 'app',
+  id: "app",
   component: AppLayout,
   beforeLoad: () => {
     const hash = window.location.hash;
-    if (hash && hash.startsWith('#')) {
+    if (hash && hash.startsWith("#")) {
       const page = hash.slice(1);
-      const to = hashToRoute[page] ?? '/chat';
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-      throw redirect({ to: to as '/chat' });
+      const to = hashToRoute[page] ?? "/chat";
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+      throw redirect({ to: to as "/chat" });
     }
   },
 });
@@ -39,74 +39,74 @@ const appLayoutRoute = createRoute({
 // Pathless layout route — bare shell for OAuth popup (no app providers or navigation)
 const oauthLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
-  id: 'oauth',
+  id: "oauth",
   component: Outlet,
 });
 
 // Index route — redirect / to /chat
 const indexRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
-  path: '/',
+  path: "/",
   beforeLoad: () => {
-    throw redirect({ to: '/chat' });
+    throw redirect({ to: "/chat" });
   },
 });
 
 // Chat routes
 const chatRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
-  path: '/chat',
+  path: "/chat",
   component: ChatPage,
 });
 
 const chatIdRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
-  path: '/chat/$chatId',
+  path: "/chat/$chatId",
   component: ChatPage,
 });
 
 // Feature routes with config guards
 const flowRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
-  path: '/flow',
+  path: "/flow",
   beforeLoad: () => {
-    if (!getConfig().workflow) throw redirect({ to: '/chat' });
+    if (!getConfig().workflow) throw redirect({ to: "/chat" });
   },
   component: WorkflowPage,
 });
 
 const translateRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
-  path: '/translate',
+  path: "/translate",
   beforeLoad: () => {
-    if (!getConfig().translator) throw redirect({ to: '/chat' });
+    if (!getConfig().translator) throw redirect({ to: "/chat" });
   },
   component: TranslatePage,
 });
 
 const rendererRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
-  path: '/renderer',
+  path: "/renderer",
   beforeLoad: () => {
-    if (!getConfig().renderer) throw redirect({ to: '/chat' });
+    if (!getConfig().renderer) throw redirect({ to: "/chat" });
   },
   component: RendererPage,
 });
 
 const notebookRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
-  path: '/notebook',
+  path: "/notebook",
   beforeLoad: () => {
-    if (!getConfig().notebook) throw redirect({ to: '/chat' });
+    if (!getConfig().notebook) throw redirect({ to: "/chat" });
   },
   component: NotebookPage,
 });
 
 const notebookIdRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
-  path: '/notebook/$notebookId',
+  path: "/notebook/$notebookId",
   beforeLoad: () => {
-    if (!getConfig().notebook) throw redirect({ to: '/chat' });
+    if (!getConfig().notebook) throw redirect({ to: "/chat" });
   },
   component: NotebookPage,
 });
@@ -114,7 +114,7 @@ const notebookIdRoute = createRoute({
 // OAuth callback route — rendered under bare layout (no app shell)
 const oauthCallbackRoute = createRoute({
   getParentRoute: () => oauthLayoutRoute,
-  path: '/oauth/callback',
+  path: "/oauth/callback",
   component: OAuthCallbackPage,
 });
 
@@ -137,7 +137,7 @@ const routeTree = rootRoute.addChildren([
 export const router = createRouter({ routeTree });
 
 // Register router type for type safety
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router;
   }

@@ -9,11 +9,11 @@ export const constants = {
 };
 
 export function gunzipSync() {
-  throw new Error('node:zlib is not available in the browser');
+  throw new Error("node:zlib is not available in the browser");
 }
 
 export function gzipSync() {
-  throw new Error('node:zlib is not available in the browser');
+  throw new Error("node:zlib is not available in the browser");
 }
 
 export default {};

@@ -1,10 +1,10 @@
-import { useState, Fragment } from 'react';
-import { Edit, X } from 'lucide-react';
-import { Dialog, Transition } from '@headlessui/react';
-import { useAgents } from '@/features/agent/hooks/useAgents';
-import type { Agent } from '@/features/agent/types/agent';
-import { Section } from './Section';
-import { Markdown } from '@/shared/ui/Markdown';
+import { useState, Fragment } from "react";
+import { Edit, X } from "lucide-react";
+import { Dialog, Transition } from "@headlessui/react";
+import { useAgents } from "@/features/agent/hooks/useAgents";
+import type { Agent } from "@/features/agent/types/agent";
+import { Section } from "./Section";
+import { Markdown } from "@/shared/ui/Markdown";
 
 interface InstructionsSectionProps {
   agent: Agent;
@@ -14,22 +14,22 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
   const { updateAgent } = useAgents();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState("");
 
   const openDialog = () => {
-    const existing = agent.instructions || '';
+    const existing = agent.instructions || "";
     setIsDialogOpen(true);
     if (existing.trim()) {
       setIsEditing(false);
-      setValue('');
+      setValue("");
     } else {
-      setValue('');
+      setValue("");
       setIsEditing(true);
     }
   };
 
   const startEditing = () => {
-    setValue(agent.instructions || '');
+    setValue(agent.instructions || "");
     setIsEditing(true);
   };
 
@@ -42,24 +42,24 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
   const closeDialog = () => {
     setIsDialogOpen(false);
     setIsEditing(false);
-    setValue('');
+    setValue("");
   };
 
   const cancelEditing = () => {
     if (agent.instructions?.trim()) {
       setIsEditing(false);
-      setValue('');
+      setValue("");
     } else {
       closeDialog();
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
+    if (e.key === "Escape") {
       e.preventDefault();
       if (isEditing) cancelEditing();
       else closeDialog();
-    } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       save();
     }
@@ -70,12 +70,28 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
       {/* Edit Dialog */}
       <Transition appear show={isDialogOpen} as={Fragment}>
         <Dialog as="div" className="relative z-80" onClose={closeDialog}>
-          <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
             <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
           </Transition.Child>
           <div className="fixed inset-0 overflow-y-auto">
             <div className="flex min-h-full items-center justify-center p-4">
-              <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0 scale-95"
+                enterTo="opacity-100 scale-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100 scale-100"
+                leaveTo="opacity-0 scale-95"
+              >
                 <Dialog.Panel className="w-full max-w-lg transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all">
                   {/* Header */}
                   <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
@@ -97,7 +113,7 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
                       <>
                         <textarea
                           value={value}
-                          onChange={e => setValue(e.target.value)}
+                          onChange={(e) => setValue(e.target.value)}
                           onKeyDown={handleKeyDown}
                           rows={12}
                           className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-y min-h-50 backdrop-blur-sm transition-colors"
@@ -127,19 +143,35 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
                   <div className="flex items-center justify-end gap-2.5 px-5 py-3 border-t border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/30">
                     {isEditing ? (
                       <>
-                        <button type="button" onClick={cancelEditing} className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
+                        <button
+                          type="button"
+                          onClick={cancelEditing}
+                          className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                        >
                           Cancel
                         </button>
-                        <button type="button" onClick={save} className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600/90 text-white hover:bg-blue-600 transition-colors">
+                        <button
+                          type="button"
+                          onClick={save}
+                          className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600/90 text-white hover:bg-blue-600 transition-colors"
+                        >
                           Save
                         </button>
                       </>
                     ) : (
                       <>
-                        <button type="button" onClick={startEditing} className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
+                        <button
+                          type="button"
+                          onClick={startEditing}
+                          className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                        >
                           Edit
                         </button>
-                        <button type="button" onClick={closeDialog} className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
+                        <button
+                          type="button"
+                          onClick={closeDialog}
+                          className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                        >
                           Close
                         </button>
                       </>
@@ -152,11 +184,7 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
         </Dialog>
       </Transition>
 
-      <Section
-        title="Instructions"
-        isOpen={true}
-        collapsible={false}
-      >
+      <Section title="Instructions" isOpen={true} collapsible={false}>
         <div className="space-y-2">
           {agent.instructions?.trim() && (
             <div className="relative rounded-lg border border-neutral-200/60 dark:border-neutral-700/60 bg-white/40 dark:bg-neutral-900/30 backdrop-blur-sm p-2 overflow-hidden">

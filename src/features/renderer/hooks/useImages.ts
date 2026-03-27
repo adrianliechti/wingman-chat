@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from "react";
 
-import type { Image } from '@/features/renderer/types/renderer';
-import * as opfs from '@/shared/lib/opfs';
+import type { Image } from "@/features/renderer/types/renderer";
+import * as opfs from "@/shared/lib/opfs";
 
-const COLLECTION = 'images';
+const COLLECTION = "images";
 
 interface StoredImageMeta {
   id: string;
@@ -21,10 +21,10 @@ interface StoredImageMeta {
 async function storeImage(image: Image): Promise<void> {
   try {
     const imagePath = `${COLLECTION}/${image.id}`;
-    
+
     const blob = opfs.isDataUrl(image.data)
       ? opfs.dataUrlToBlob(image.data)
-      : new Blob([image.data], { type: 'image/png' });
+      : new Blob([image.data], { type: "image/png" });
 
     const meta: StoredImageMeta = {
       id: image.id,
@@ -34,12 +34,16 @@ async function storeImage(image: Image): Promise<void> {
       model: image.model,
       prompt: image.prompt,
     };
-    
+
     await opfs.writeJson(`${imagePath}/metadata.json`, meta);
     await opfs.writeBlob(`${imagePath}/image.png`, blob);
     // Clean up legacy file if present
-    try { await opfs.deleteFile(`${imagePath}/image.bin`); } catch { /* ignore */ }
-    
+    try {
+      await opfs.deleteFile(`${imagePath}/image.bin`);
+    } catch {
+      /* ignore */
+    }
+
     // Update index
     await opfs.upsertIndexEntry(COLLECTION, {
       id: image.id,
@@ -47,7 +51,7 @@ async function storeImage(image: Image): Promise<void> {
       updated: meta.updated || meta.created || new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Error saving image to OPFS:', error);
+    console.error("Error saving image to OPFS:", error);
     throw error;
   }
 }
@@ -55,17 +59,16 @@ async function storeImage(image: Image): Promise<void> {
 async function loadImage(id: string): Promise<Image | undefined> {
   try {
     const imagePath = `${COLLECTION}/${id}`;
-    
+
     // Try new folder structure first
     const meta = await opfs.readJson<StoredImageMeta>(`${imagePath}/metadata.json`);
-    
+
     if (!meta) return undefined;
 
     // Load image (legacy files used .bin instead of .png)
-    const blob = await opfs.readBlob(`${imagePath}/image.png`)
-      ?? await opfs.readBlob(`${imagePath}/image.bin`);
-    const data = blob ? await opfs.blobToDataUrl(blob) : '';
-    
+    const blob = (await opfs.readBlob(`${imagePath}/image.png`)) ?? (await opfs.readBlob(`${imagePath}/image.bin`));
+    const data = blob ? await opfs.blobToDataUrl(blob) : "";
+
     return {
       ...meta,
       data,
@@ -82,7 +85,7 @@ async function removeImage(id: string): Promise<void> {
   try {
     // Delete entire folder (includes metadata.json and image.bin)
     await opfs.deleteDirectory(`${COLLECTION}/${id}`);
-    
+
     // Update index
     await opfs.removeIndexEntry(COLLECTION, id);
   } catch (error) {
@@ -95,7 +98,7 @@ async function loadImageIndex(): Promise<opfs.IndexEntry[]> {
   try {
     return await opfs.readIndex(COLLECTION);
   } catch (error) {
-    console.error('Error loading image index from OPFS:', error);
+    console.error("Error loading image index from OPFS:", error);
     return [];
   }
 }
@@ -103,7 +106,7 @@ async function loadImageIndex(): Promise<opfs.IndexEntry[]> {
 export function useImages() {
   const [images, setImages] = useState<Image[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
-  
+
   // Keep a ref to current images for use in async callbacks
   const imagesRef = useRef<Image[]>(images);
   useEffect(() => {
@@ -116,24 +119,24 @@ export function useImages() {
       try {
         const index = await loadImageIndex();
         const loadedImages: Image[] = [];
-        
+
         for (const entry of index) {
           const image = await loadImage(entry.id);
           if (image) {
             loadedImages.push(image);
           }
         }
-        
+
         // Sort by created date (newest first)
         loadedImages.sort((a, b) => {
           const aTime = a.created?.getTime() || 0;
           const bTime = b.created?.getTime() || 0;
           return bTime - aTime;
         });
-        
+
         setImages(loadedImages);
       } catch (error) {
-        console.error('Error loading images:', error);
+        console.error("Error loading images:", error);
       } finally {
         setIsLoaded(true);
       }
@@ -142,7 +145,7 @@ export function useImages() {
     load();
   }, []);
 
-  const createImage = useCallback(async (image: Omit<Image, 'id' | 'created' | 'updated'>) => {
+  const createImage = useCallback(async (image: Omit<Image, "id" | "created" | "updated">) => {
     const newImage: Image = {
       ...image,
       id: crypto.randomUUID(),
@@ -152,22 +155,22 @@ export function useImages() {
 
     // Keep newest images first.
     setImages((prev) => [newImage, ...prev]);
-    
+
     // Await save to ensure persistence before returning
     try {
       await storeImage(newImage);
     } catch (error) {
-      console.error('Error saving new image:', error);
+      console.error("Error saving new image:", error);
     }
-    
+
     return newImage;
   }, []);
 
   const deleteImage = useCallback((imageId: string) => {
     setImages((prev) => prev.filter((img) => img.id !== imageId));
-    
+
     // Remove from OPFS
-    removeImage(imageId).catch(error => {
+    removeImage(imageId).catch((error) => {
       console.error(`Error deleting image ${imageId}:`, error);
     });
   }, []);

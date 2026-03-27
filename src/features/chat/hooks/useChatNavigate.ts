@@ -1,6 +1,6 @@
-import { useCallback } from 'react';
-import { useNavigate } from '@tanstack/react-router';
-import { useChat } from '@/features/chat/hooks/useChat';
+import { useCallback } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { useChat } from "@/features/chat/hooks/useChat";
 
 export function useChatNavigate() {
   const navigate = useNavigate();
@@ -8,13 +8,16 @@ export function useChatNavigate() {
 
   const newChat = useCallback(() => {
     selectChat(null);
-    navigate({ to: '/chat' });
+    navigate({ to: "/chat" });
   }, [navigate, selectChat]);
 
-  const openChat = useCallback((chatId: string) => {
-    selectChat(chatId);
-    navigate({ to: '/chat/$chatId', params: { chatId } });
-  }, [navigate, selectChat]);
+  const openChat = useCallback(
+    (chatId: string) => {
+      selectChat(chatId);
+      navigate({ to: "/chat/$chatId", params: { chatId } });
+    },
+    [navigate, selectChat],
+  );
 
   return { newChat, openChat };
 }

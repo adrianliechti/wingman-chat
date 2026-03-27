@@ -1,15 +1,15 @@
-import type { ReactNode } from 'react';
-import { Trash2, Play, Loader2, AlertCircle } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import { Handle, Position, NodeResizer } from '@xyflow/react';
-import { useWorkflow } from '@/features/workflow/hooks/useWorkflow';
+import type { ReactNode } from "react";
+import { Trash2, Play, Loader2, AlertCircle } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { Handle, Position, NodeResizer } from "@xyflow/react";
+import { useWorkflow } from "@/features/workflow/hooks/useWorkflow";
 
 export interface WorkflowNodeProps {
   id: string;
   selected: boolean;
   icon: LucideIcon;
   title: string;
-  color: 'blue' | 'purple' | 'green' | 'orange' | 'red';
+  color: "blue" | "purple" | "green" | "orange" | "red";
   children: ReactNode;
   onExecute?: () => void | Promise<void>;
   isProcessing?: boolean;
@@ -24,30 +24,30 @@ export interface WorkflowNodeProps {
 
 const colorStyles = {
   blue: {
-    border: 'border-blue-500/50',
-    icon: 'text-blue-500 dark:text-blue-400',
-    button: 'text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300'
+    border: "border-blue-500/50",
+    icon: "text-blue-500 dark:text-blue-400",
+    button: "text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300",
   },
   purple: {
-    border: 'border-purple-500/50',
-    icon: 'text-purple-500 dark:text-purple-400',
-    button: 'text-purple-500 hover:text-purple-600 dark:text-purple-400 dark:hover:text-purple-300'
+    border: "border-purple-500/50",
+    icon: "text-purple-500 dark:text-purple-400",
+    button: "text-purple-500 hover:text-purple-600 dark:text-purple-400 dark:hover:text-purple-300",
   },
   green: {
-    border: 'border-green-500/50',
-    icon: 'text-green-500 dark:text-green-400',
-    button: 'text-green-500 hover:text-green-600 dark:text-green-400 dark:hover:text-green-300'
+    border: "border-green-500/50",
+    icon: "text-green-500 dark:text-green-400",
+    button: "text-green-500 hover:text-green-600 dark:text-green-400 dark:hover:text-green-300",
   },
   orange: {
-    border: 'border-orange-500/50',
-    icon: 'text-orange-500 dark:text-orange-400',
-    button: 'text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300'
+    border: "border-orange-500/50",
+    icon: "text-orange-500 dark:text-orange-400",
+    button: "text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300",
   },
   red: {
-    border: 'border-red-500/50',
-    icon: 'text-red-500 dark:text-red-400',
-    button: 'text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300'
-  }
+    border: "border-red-500/50",
+    icon: "text-red-500 dark:text-red-400",
+    button: "text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300",
+  },
 };
 
 export function WorkflowNode({
@@ -65,7 +65,7 @@ export function WorkflowNode({
   minWidth = 280,
   minHeight = 200,
   headerActions,
-  error
+  error,
 }: WorkflowNodeProps) {
   const { deleteNode } = useWorkflow();
   const styles = colorStyles[color];
@@ -73,17 +73,17 @@ export function WorkflowNode({
   return (
     <div
       className={`bg-white/90 dark:bg-black/40 backdrop-blur-lg rounded-2xl shadow-lg border ${
-        error ? 'border-red-500/70' : selected ? styles.border : 'border-white/40 dark:border-white/20'
+        error ? "border-red-500/70" : selected ? styles.border : "border-white/40 dark:border-white/20"
       } p-4 flex flex-col w-full h-full overflow-hidden nowheel`}
     >
-      <NodeResizer 
-        minWidth={minWidth} 
+      <NodeResizer
+        minWidth={minWidth}
         minHeight={minHeight}
         isVisible={selected}
-        lineStyle={{ borderColor: 'transparent', borderWidth: 10 }}
-        handleStyle={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'transparent' }}
+        lineStyle={{ borderColor: "transparent", borderWidth: 10 }}
+        handleStyle={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "transparent" }}
       />
-      
+
       {/* Input Handle */}
       {showInputHandle && (
         <Handle
@@ -92,7 +92,7 @@ export function WorkflowNode({
           className="w-3! h-3! bg-green-500! border-2! border-white! dark:border-gray-800!"
         />
       )}
-      
+
       {/* Output Handle */}
       {showOutputHandle && (
         <Handle

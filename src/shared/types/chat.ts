@@ -1,14 +1,6 @@
-export type ToolIcon =
-  | React.ComponentType<React.SVGProps<SVGSVGElement>>
-  | string;
+export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
-export type ModelType =
-  | "completer"
-  | "embedder"
-  | "renderer"
-  | "reranker"
-  | "synthesizer"
-  | "transcriber";
+export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "synthesizer" | "transcriber";
 
 export type Model = {
   id: string;
@@ -203,4 +195,3 @@ export function getTextFromContent(content: Content[]): string {
     .map((p) => p.text)
     .join("");
 }
- 

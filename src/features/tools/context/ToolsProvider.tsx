@@ -22,17 +22,11 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // User-selected tools (session-only, reset on new chat)
   const [userTools, setUserTools] = useState<Set<string>>(new Set());
-  const [modelEnabledTools, setModelEnabledTools] = useState<Set<string>>(
-    new Set(),
-  );
-  const [modelDisabledTools, setModelDisabledTools] = useState<Set<string>>(
-    new Set(),
-  );
+  const [modelEnabledTools, setModelEnabledTools] = useState<Set<string>>(new Set());
+  const [modelDisabledTools, setModelDisabledTools] = useState<Set<string>>(new Set());
 
   // MCP connection lifecycle (only MCP clients need Initializing/Failed states)
-  const [mcpStates, setMcpStates] = useState<Map<string, ProviderState>>(
-    new Map(),
-  );
+  const [mcpStates, setMcpStates] = useState<Map<string, ProviderState>>(new Map());
   const mcpStatesRef = useRef(mcpStates);
   useEffect(() => {
     mcpStatesRef.current = mcpStates;
@@ -40,17 +34,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Config MCP clients (created once)
   const [configMcpClients] = useState<MCPClient[]>(() =>
-    (config.mcps || []).map(
-      (mcp) =>
-        new MCPClient(
-          mcp.id,
-          mcp.url,
-          mcp.name,
-          mcp.description,
-          mcp.headers,
-          mcp.icon,
-        ),
-    ),
+    (config.mcps || []).map((mcp) => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers, mcp.icon)),
   );
 
   // Agent
@@ -67,14 +51,8 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const artifactsProvider = useArtifactsProvider();
 
   // All MCP clients & lookup set
-  const allMcpClients = useMemo(
-    () => [...configMcpClients, ...agentMcpClients],
-    [configMcpClients, agentMcpClients],
-  );
-  const mcpIds = useMemo(
-    () => new Set(allMcpClients.map((c) => c.id)),
-    [allMcpClients],
-  );
+  const allMcpClients = useMemo(() => [...configMcpClients, ...agentMcpClients], [configMcpClients, agentMcpClients]);
+  const mcpIds = useMemo(() => new Set(allMcpClients.map((c) => c.id)), [allMcpClients]);
 
   // Agent-required: built-in tools + assembled providers (repo, skills, memory, bridges)
   const agentRequired = useMemo(() => {
@@ -104,22 +82,13 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     if (artifactsProvider) list.push(artifactsProvider);
     list.push(...configMcpClients, ...agentProviders);
     return list;
-  }, [
-    internetProvider,
-    rendererProvider,
-    artifactsProvider,
-    configMcpClients,
-    agentProviders,
-  ]);
+  }, [internetProvider, rendererProvider, artifactsProvider, configMcpClients, agentProviders]);
 
   // State: MCP clients use lifecycle state, local providers derive from desiredTools
   const getProviderState = useCallback(
     (id: string): ProviderState => {
-      if (mcpIds.has(id))
-        return mcpStates.get(id) ?? ProviderState.Disconnected;
-      return desiredTools.has(id)
-        ? ProviderState.Connected
-        : ProviderState.Disconnected;
+      if (mcpIds.has(id)) return mcpStates.get(id) ?? ProviderState.Disconnected;
+      return desiredTools.has(id) ? ProviderState.Connected : ProviderState.Disconnected;
     },
     [mcpIds, mcpStates, desiredTools],
   );
@@ -138,27 +107,20 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
           current === ProviderState.Authenticating)
       )
         return;
-      if (!enabled && (!current || current === ProviderState.Disconnected))
-        return;
+      if (!enabled && (!current || current === ProviderState.Disconnected)) return;
 
       if (enabled) {
-        setMcpStates((prev) =>
-          new Map(prev).set(id, ProviderState.Initializing),
-        );
+        setMcpStates((prev) => new Map(prev).set(id, ProviderState.Initializing));
         try {
           await client.connect();
-          setMcpStates((prev) =>
-            new Map(prev).set(id, ProviderState.Connected),
-          );
+          setMcpStates((prev) => new Map(prev).set(id, ProviderState.Connected));
         } catch (error) {
           console.error(`Failed to connect MCP ${id}:`, error);
           setMcpStates((prev) => new Map(prev).set(id, ProviderState.Failed));
         }
       } else {
         await client.disconnect();
-        setMcpStates((prev) =>
-          new Map(prev).set(id, ProviderState.Disconnected),
-        );
+        setMcpStates((prev) => new Map(prev).set(id, ProviderState.Disconnected));
       }
     },
     [allMcpClients],
@@ -170,22 +132,16 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     for (const client of allMcpClients) {
       // eslint-disable-next-line react-hooks/immutability -- setting callbacks on external MCP client objects is the purpose of this effect
       client.onDisconnected = () => {
-        setMcpStates((prev) =>
-          new Map(prev).set(client.id, ProviderState.Failed),
-        );
+        setMcpStates((prev) => new Map(prev).set(client.id, ProviderState.Failed));
       };
       // eslint-disable-next-line react-hooks/immutability
       client.onAuthenticating = () => {
-        setMcpStates((prev) =>
-          new Map(prev).set(client.id, ProviderState.Authenticating),
-        );
+        setMcpStates((prev) => new Map(prev).set(client.id, ProviderState.Authenticating));
       };
       // eslint-disable-next-line react-hooks/immutability
       client.onAuthComplete = () => {
         // Transition back to Initializing while the reconnection is in flight
-        setMcpStates((prev) =>
-          new Map(prev).set(client.id, ProviderState.Initializing),
-        );
+        setMcpStates((prev) => new Map(prev).set(client.id, ProviderState.Initializing));
       };
     }
   }, [allMcpClients]);
@@ -249,9 +205,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     ) => {
       const client = allMcpClients.find((c) => c.id === providerId);
       if (!client || !client.isConnected()) {
-        console.warn(
-          `Cannot restore tool UI: MCP client ${providerId} not connected`,
-        );
+        console.warn(`Cannot restore tool UI: MCP client ${providerId} not connected`);
         return;
       }
       await client.restoreToolUI(toolName, resourceUri, args, result, context);
@@ -259,13 +213,10 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     [allMcpClients],
   );
 
-  const setModelOverrides = useCallback(
-    (enabled: string[], disabled: string[]) => {
-      setModelEnabledTools(new Set(enabled));
-      setModelDisabledTools(new Set(disabled));
-    },
-    [],
-  );
+  const setModelOverrides = useCallback((enabled: string[], disabled: string[]) => {
+    setModelEnabledTools(new Set(enabled));
+    setModelDisabledTools(new Set(disabled));
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -290,4 +241,3 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     </ToolsContext.Provider>
   );
 }
- 

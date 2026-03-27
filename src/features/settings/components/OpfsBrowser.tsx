@@ -1,15 +1,15 @@
-import { useState, useEffect, useCallback, Fragment } from 'react';
-import { Dialog, Transition } from '@headlessui/react';
-import { X, Folder, File, ChevronRight, Trash2, RefreshCw, Loader2, HardDrive } from 'lucide-react';
-import { getRoot, deleteFile, deleteDirectory } from '@/shared/lib/opfs';
-import { formatBytes } from '@/shared/lib/utils';
+import { useState, useEffect, useCallback, Fragment } from "react";
+import { Dialog, Transition } from "@headlessui/react";
+import { X, Folder, File, ChevronRight, Trash2, RefreshCw, Loader2, HardDrive } from "lucide-react";
+import { getRoot, deleteFile, deleteDirectory } from "@/shared/lib/opfs";
+import { formatBytes } from "@/shared/lib/utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface TreeNode {
   name: string;
   path: string;
-  kind: 'file' | 'directory';
+  kind: "file" | "directory";
   size?: number;
   children?: TreeNode[];
 }
@@ -21,29 +21,26 @@ interface OpfsBrowserProps {
 
 // ── Tree building ──────────────────────────────────────────────────────────────
 
-async function buildTree(
-  handle: FileSystemDirectoryHandle,
-  path: string,
-): Promise<TreeNode[]> {
+async function buildTree(handle: FileSystemDirectoryHandle, path: string): Promise<TreeNode[]> {
   const nodes: TreeNode[] = [];
 
   for await (const [name, entryHandle] of handle.entries()) {
     const entryPath = path ? `${path}/${name}` : name;
 
-    if (entryHandle.kind === 'file') {
+    if (entryHandle.kind === "file") {
       const fileHandle = entryHandle as FileSystemFileHandle;
       const file = await fileHandle.getFile();
-      nodes.push({ name, path: entryPath, kind: 'file', size: file.size });
+      nodes.push({ name, path: entryPath, kind: "file", size: file.size });
     } else {
       const dirHandle = entryHandle as FileSystemDirectoryHandle;
       const children = await buildTree(dirHandle, entryPath);
-      nodes.push({ name, path: entryPath, kind: 'directory', children });
+      nodes.push({ name, path: entryPath, kind: "directory", children });
     }
   }
 
   // Sort: directories first, then alphabetical
   nodes.sort((a, b) => {
-    if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+    if (a.kind !== b.kind) return a.kind === "directory" ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
 
@@ -51,7 +48,7 @@ async function buildTree(
 }
 
 function countDescendants(node: TreeNode): { files: number; size: number } {
-  if (node.kind === 'file') return { files: 1, size: node.size ?? 0 };
+  if (node.kind === "file") return { files: 1, size: node.size ?? 0 };
   let files = 0;
   let size = 0;
   for (const child of node.children ?? []) {
@@ -64,17 +61,9 @@ function countDescendants(node: TreeNode): { files: number; size: number } {
 
 // ── Tree node component ────────────────────────────────────────────────────────
 
-function TreeItem({
-  node,
-  depth,
-  onDelete,
-}: {
-  node: TreeNode;
-  depth: number;
-  onDelete: (node: TreeNode) => void;
-}) {
+function TreeItem({ node, depth, onDelete }: { node: TreeNode; depth: number; onDelete: (node: TreeNode) => void }) {
   const [expanded, setExpanded] = useState(false);
-  const isDir = node.kind === 'directory';
+  const isDir = node.kind === "directory";
   const hasChildren = isDir && (node.children?.length ?? 0) > 0;
 
   const stats = isDir ? countDescendants(node) : null;
@@ -90,11 +79,11 @@ function TreeItem({
         <button
           type="button"
           onClick={() => isDir && setExpanded(!expanded)}
-          className={`p-0.5 rounded transition-transform ${isDir ? 'cursor-pointer' : 'invisible'}`}
+          className={`p-0.5 rounded transition-transform ${isDir ? "cursor-pointer" : "invisible"}`}
         >
           <ChevronRight
             size={14}
-            className={`text-neutral-400 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
+            className={`text-neutral-400 transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
           />
         </button>
 
@@ -113,7 +102,7 @@ function TreeItem({
         {/* Meta */}
         <span className="text-[11px] text-neutral-400 dark:text-neutral-500 whitespace-nowrap tabular-nums mr-1">
           {isDir
-            ? `${stats!.files} file${stats!.files === 1 ? '' : 's'} · ${formatBytes(stats!.size)}`
+            ? `${stats!.files} file${stats!.files === 1 ? "" : "s"} · ${formatBytes(stats!.size)}`
             : formatBytes(node.size ?? 0)}
         </span>
 
@@ -157,14 +146,14 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
     setError(null);
     try {
       const root = await getRoot();
-      const nodes = await buildTree(root, '');
+      const nodes = await buildTree(root, "");
       setTree(nodes);
 
       // Calculate totals
       let size = 0;
       let files = 0;
       const walk = (n: TreeNode) => {
-        if (n.kind === 'file') {
+        if (n.kind === "file") {
           files++;
           size += n.size ?? 0;
         }
@@ -174,7 +163,7 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
       setTotalSize(size);
       setTotalFiles(files);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to read OPFS');
+      setError(err instanceof Error ? err.message : "Failed to read OPFS");
     } finally {
       setLoading(false);
     }
@@ -186,11 +175,11 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
 
   const handleDelete = useCallback(
     async (node: TreeNode) => {
-      const label = node.kind === 'directory' ? 'directory' : 'file';
+      const label = node.kind === "directory" ? "directory" : "file";
       if (!window.confirm(`Delete ${label} "${node.path}"? This cannot be undone.`)) return;
 
       try {
-        if (node.kind === 'directory') {
+        if (node.kind === "directory") {
           await deleteDirectory(node.path);
         } else {
           await deleteFile(node.path);
@@ -198,7 +187,7 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
         // Reload tree
         await loadTree();
       } catch (err) {
-        console.error('Failed to delete:', err);
+        console.error("Failed to delete:", err);
         alert(`Failed to delete ${node.path}`);
       }
     },
@@ -248,7 +237,7 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
                       className="p-1.5 rounded-full text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50"
                       title="Refresh"
                     >
-                      <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                      <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
                     </button>
                     <button
                       type="button"
@@ -262,7 +251,9 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
 
                 {/* Summary bar */}
                 <div className="px-6 py-2 border-b border-neutral-100 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/50 text-xs text-neutral-500 dark:text-neutral-400 flex items-center gap-3 shrink-0">
-                  <span>{totalFiles} file{totalFiles === 1 ? '' : 's'}</span>
+                  <span>
+                    {totalFiles} file{totalFiles === 1 ? "" : "s"}
+                  </span>
                   <span>·</span>
                   <span>{formatBytes(totalSize)}</span>
                 </div>
@@ -274,17 +265,11 @@ export function OpfsBrowser({ isOpen, onClose }: OpfsBrowserProps) {
                       <Loader2 size={20} className="animate-spin" />
                     </div>
                   ) : error ? (
-                    <div className="flex items-center justify-center h-32 text-red-500 text-sm">
-                      {error}
-                    </div>
+                    <div className="flex items-center justify-center h-32 text-red-500 text-sm">{error}</div>
                   ) : tree.length === 0 ? (
-                    <div className="flex items-center justify-center h-32 text-neutral-400 text-sm">
-                      OPFS is empty
-                    </div>
+                    <div className="flex items-center justify-center h-32 text-neutral-400 text-sm">OPFS is empty</div>
                   ) : (
-                    tree.map((node) => (
-                      <TreeItem key={node.path} node={node} depth={0} onDelete={handleDelete} />
-                    ))
+                    tree.map((node) => <TreeItem key={node.path} node={node} depth={0} onDelete={handleDelete} />)
                   )}
                 </div>
 

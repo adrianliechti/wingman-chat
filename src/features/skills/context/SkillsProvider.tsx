@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import type { ReactNode } from 'react';
-import { SkillsContext } from './SkillsContext';
-import type { Skill } from './SkillsContext';
-import * as opfs from '@/shared/lib/opfs';
+import { useState, useEffect, useCallback, useRef } from "react";
+import type { ReactNode } from "react";
+import { SkillsContext } from "./SkillsContext";
+import type { Skill } from "./SkillsContext";
+import * as opfs from "@/shared/lib/opfs";
 
 interface SkillsProviderProps {
   children: ReactNode;
@@ -11,7 +11,7 @@ interface SkillsProviderProps {
 export function SkillsProvider({ children }: SkillsProviderProps) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
-  
+
   // Track pending saves for debouncing
   const pendingSaves = useRef<Set<string>>(new Set());
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -27,7 +27,7 @@ export function SkillsProvider({ children }: SkillsProviderProps) {
           setSkills(loaded);
         } else {
           // Fall back to legacy skills.json for migration
-          const legacy = await opfs.readJson<Skill[]>('skills.json');
+          const legacy = await opfs.readJson<Skill[]>("skills.json");
           if (legacy && Array.isArray(legacy)) {
             setSkills(legacy);
             // Migrate legacy skills to new structure
@@ -35,35 +35,35 @@ export function SkillsProvider({ children }: SkillsProviderProps) {
               await opfs.saveSkill(skill);
             }
             // Remove legacy file after migration
-            await opfs.deleteFile('skills.json');
+            await opfs.deleteFile("skills.json");
           }
         }
       } catch (error) {
-        console.warn('Failed to load skills:', error);
+        console.warn("Failed to load skills:", error);
       } finally {
         setIsLoaded(true);
       }
     };
-    
+
     loadSkills();
   }, []);
 
   // Debounced save function
   const scheduleSave = useCallback((skillName: string) => {
     pendingSaves.current.add(skillName);
-    
+
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
-    
+
     saveTimeoutRef.current = setTimeout(async () => {
       const namesToSave = Array.from(pendingSaves.current);
       pendingSaves.current.clear();
-      
+
       // Process pending deletes first
       const namesToDelete = Array.from(pendingDeletes.current);
       pendingDeletes.current.clear();
-      
+
       for (const name of namesToDelete) {
         try {
           await opfs.deleteSkill(name);
@@ -71,14 +71,14 @@ export function SkillsProvider({ children }: SkillsProviderProps) {
           console.error(`Error deleting skill ${name}:`, error);
         }
       }
-      
+
       // Get current skills state for saving
-      setSkills(currentSkills => {
+      setSkills((currentSkills) => {
         // Save each pending skill
         for (const name of namesToSave) {
-          const skill = currentSkills.find(s => s.name === name);
+          const skill = currentSkills.find((s) => s.name === name);
           if (skill) {
-            opfs.saveSkill(skill).catch(error => {
+            opfs.saveSkill(skill).catch((error) => {
               console.error(`Error saving skill ${name}:`, error);
             });
           }
@@ -88,72 +88,82 @@ export function SkillsProvider({ children }: SkillsProviderProps) {
     }, 300);
   }, []);
 
-  const addSkill = useCallback((skillData: Omit<Skill, 'id'>): Skill => {
-    const newSkill: Skill = {
-      ...skillData,
-      id: crypto.randomUUID(),
-    };
-    
-    setSkills(prev => {
-      const existingIndex = prev.findIndex(s => s.name === skillData.name);
-      if (existingIndex >= 0) {
-        // Update existing skill
-        const updated = [...prev];
-        updated[existingIndex] = { ...newSkill, id: prev[existingIndex].id };
-        return updated;
-      }
-      return [...prev, newSkill];
-    });
-    
-    // Schedule save
-    if (isLoaded) {
-      scheduleSave(skillData.name);
-    }
-    
-    return newSkill;
-  }, [isLoaded, scheduleSave]);
+  const addSkill = useCallback(
+    (skillData: Omit<Skill, "id">): Skill => {
+      const newSkill: Skill = {
+        ...skillData,
+        id: crypto.randomUUID(),
+      };
 
-  const updateSkill = useCallback((id: string, updates: Partial<Omit<Skill, 'id'>>) => {
-    setSkills(prev => {
-      const skill = prev.find(s => s.id === id);
-      if (!skill) return prev;
-      
-      const oldName = skill.name;
-      const newName = updates.name || oldName;
-      
-      // If name changed, schedule delete of old name
-      if (updates.name && updates.name !== oldName && isLoaded) {
-        pendingDeletes.current.add(oldName);
-      }
-      
-      const updated = prev.map(s => 
-        s.id === id ? { ...s, ...updates } : s
-      );
-      
-      // Schedule save with new name
+      setSkills((prev) => {
+        const existingIndex = prev.findIndex((s) => s.name === skillData.name);
+        if (existingIndex >= 0) {
+          // Update existing skill
+          const updated = [...prev];
+          updated[existingIndex] = { ...newSkill, id: prev[existingIndex].id };
+          return updated;
+        }
+        return [...prev, newSkill];
+      });
+
+      // Schedule save
       if (isLoaded) {
-        scheduleSave(newName);
+        scheduleSave(skillData.name);
       }
-      
-      return updated;
-    });
-  }, [isLoaded, scheduleSave]);
 
-  const removeSkill = useCallback((id: string) => {
-    setSkills(prev => {
-      const skill = prev.find(s => s.id === id);
-      if (skill && isLoaded) {
-        pendingDeletes.current.add(skill.name);
-        // Trigger save timeout to process deletes
-        scheduleSave('__trigger__');
-      }
-      return prev.filter(s => s.id !== id);
-    });
-  }, [isLoaded, scheduleSave]);
+      return newSkill;
+    },
+    [isLoaded, scheduleSave],
+  );
 
-  const getSkill = useCallback((name: string): Skill | undefined => {
-    return skills.find(skill => skill.name === name);
-  }, [skills]);
+  const updateSkill = useCallback(
+    (id: string, updates: Partial<Omit<Skill, "id">>) => {
+      setSkills((prev) => {
+        const skill = prev.find((s) => s.id === id);
+        if (!skill) return prev;
+
+        const oldName = skill.name;
+        const newName = updates.name || oldName;
+
+        // If name changed, schedule delete of old name
+        if (updates.name && updates.name !== oldName && isLoaded) {
+          pendingDeletes.current.add(oldName);
+        }
+
+        const updated = prev.map((s) => (s.id === id ? { ...s, ...updates } : s));
+
+        // Schedule save with new name
+        if (isLoaded) {
+          scheduleSave(newName);
+        }
+
+        return updated;
+      });
+    },
+    [isLoaded, scheduleSave],
+  );
+
+  const removeSkill = useCallback(
+    (id: string) => {
+      setSkills((prev) => {
+        const skill = prev.find((s) => s.id === id);
+        if (skill && isLoaded) {
+          pendingDeletes.current.add(skill.name);
+          // Trigger save timeout to process deletes
+          scheduleSave("__trigger__");
+        }
+        return prev.filter((s) => s.id !== id);
+      });
+    },
+    [isLoaded, scheduleSave],
+  );
+
+  const getSkill = useCallback(
+    (name: string): Skill | undefined => {
+      return skills.find((skill) => skill.name === name);
+    },
+    [skills],
+  );
 
   // Cleanup timeout on unmount
   useEffect(() => {

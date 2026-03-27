@@ -7,15 +7,11 @@ interface ChatInputSuggestionsProps {
   onSelect: (suggestion: string) => void;
 }
 
-export const ChatInputSuggestions = memo(({ 
-  show, 
-  suggestions, 
-  onSelect 
-}: ChatInputSuggestionsProps) => {
+export const ChatInputSuggestions = memo(({ show, suggestions, onSelect }: ChatInputSuggestionsProps) => {
   if (!show || suggestions.length === 0) {
     return null;
   }
-  
+
   return (
     <div className="p-3">
       <div className="space-y-2">
@@ -34,4 +30,4 @@ export const ChatInputSuggestions = memo(({
   );
 });
 
-ChatInputSuggestions.displayName = 'ChatInputSuggestions';
+ChatInputSuggestions.displayName = "ChatInputSuggestions";

@@ -10,11 +10,7 @@ interface UseAutoScrollOptions {
   bottomThreshold?: number;
 }
 
-export function useAutoScroll({
-  scrollElement,
-  virtualizer,
-  bottomThreshold = 48,
-}: UseAutoScrollOptions) {
+export function useAutoScroll({ scrollElement, virtualizer, bottomThreshold = 48 }: UseAutoScrollOptions) {
   const pinnedRef = useRef(true);
   const [isPinned, setIsPinned] = useState(true);
   const unpinTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -27,12 +23,15 @@ export function useAutoScroll({
 
   // Scroll to the last virtual item (sentinel). Reading count at call-time
   // avoids a dependency on it and prevents stale closures.
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
-    if (!scrollElement) return;
-    const count = virtualizer.options.count;
-    if (count === 0) return;
-    virtualizer.scrollToIndex(count - 1, { align: "end", behavior });
-  }, [scrollElement, virtualizer]);
+  const scrollToBottom = useCallback(
+    (behavior: ScrollBehavior = "auto") => {
+      if (!scrollElement) return;
+      const count = virtualizer.options.count;
+      if (count === 0) return;
+      virtualizer.scrollToIndex(count - 1, { align: "end", behavior });
+    },
+    [scrollElement, virtualizer],
+  );
 
   // Debounced unpin UI: pinnedRef is set immediately (gates ResizeObserver
   // scrolling), but the React state that shows "Latest" is debounced so the

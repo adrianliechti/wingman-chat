@@ -1,7 +1,7 @@
-import { createContext } from 'react';
+import { createContext } from "react";
 
 // Support light, dark, or system preference modes
-export type Theme = 'light' | 'dark' | 'system';
+export type Theme = "light" | "dark" | "system";
 
 export type ThemeContextType = {
   theme: Theme;

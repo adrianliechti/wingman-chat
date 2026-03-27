@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import type { Model } from "@/shared/types/chat";
 import { getConfig } from "@/shared/config";
+import type { Model } from "@/shared/types/chat";
 
 const STORAGE_KEY = "app_model";
 
@@ -40,9 +40,7 @@ export function useModels() {
         if (resolvedModels.length > 0) {
           const savedModelId = getSavedModelId();
           if (savedModelId) {
-            const savedModel = resolvedModels.find(
-              (model) => model.id === savedModelId,
-            );
+            const savedModel = resolvedModels.find((model) => model.id === savedModelId);
             if (savedModel) {
               setSelectedModelState(savedModel);
               return;
@@ -61,7 +59,7 @@ export function useModels() {
   // Function to update selected model and save to localStorage
   const setSelectedModel = (model: Model | null) => {
     setSelectedModelState(model);
-    
+
     try {
       if (model) {
         localStorage.setItem(STORAGE_KEY, model.id);
@@ -73,9 +71,9 @@ export function useModels() {
     }
   };
 
-  return { 
-    models, 
-    selectedModel, 
-    setSelectedModel 
+  return {
+    models,
+    selectedModel,
+    setSelectedModel,
   };
 }

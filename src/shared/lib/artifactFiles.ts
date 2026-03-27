@@ -1,4 +1,4 @@
-import { parseDataUrl } from './utils';
+import { parseDataUrl } from "./utils";
 
 export interface ArtifactContent {
   content: string;
@@ -15,13 +15,13 @@ export function normalizeArtifactPath(path: string | undefined): string | undefi
     return undefined;
   }
 
-  if (!normalized.startsWith('/')) {
+  if (!normalized.startsWith("/")) {
     normalized = `/${normalized}`;
   }
 
-  normalized = normalized.replace(/\/+/g, '/');
+  normalized = normalized.replace(/\/+/g, "/");
 
-  if (normalized.length > 1 && normalized.endsWith('/')) {
+  if (normalized.length > 1 && normalized.endsWith("/")) {
     normalized = normalized.slice(0, -1);
   }
 
@@ -29,11 +29,11 @@ export function normalizeArtifactPath(path: string | undefined): string | undefi
 }
 
 export function normalizeArtifactReferencePath(path: string): string {
-  return path.replace(/^\.\//, '').replace(/^\//, '');
+  return path.replace(/^\.\//, "").replace(/^\//, "");
 }
 
 export function isDataUrlContent(content: string): boolean {
-  return content.startsWith('data:');
+  return content.startsWith("data:");
 }
 
 export function decodeBase64(base64: string): Uint8Array {
@@ -48,7 +48,7 @@ export function decodeBase64(base64: string): Uint8Array {
 }
 
 export function encodeBase64(bytes: Uint8Array): string {
-  let binaryString = '';
+  let binaryString = "";
 
   for (const byte of bytes) {
     binaryString += String.fromCharCode(byte);
@@ -69,11 +69,11 @@ export function dataUrlToBytes(dataUrl: string): { mimeType: string; bytes: Uint
   };
 }
 
-export function bytesToDataUrl(bytes: Uint8Array, contentType: string = 'application/octet-stream'): string {
+export function bytesToDataUrl(bytes: Uint8Array, contentType: string = "application/octet-stream"): string {
   return `data:${contentType};base64,${encodeBase64(bytes)}`;
 }
 
-export function textToDataUrl(content: string, contentType: string = 'text/plain;charset=utf-8'): string {
+export function textToDataUrl(content: string, contentType: string = "text/plain;charset=utf-8"): string {
   return bytesToDataUrl(new TextEncoder().encode(content), contentType);
 }
 
@@ -83,7 +83,7 @@ export function artifactContentToBlob(content: string, contentType?: string): Bl
     return new Blob([new Uint8Array(parsed.bytes)], { type: parsed.mimeType });
   }
 
-  return new Blob([content], { type: contentType ?? 'text/plain;charset=utf-8' });
+  return new Blob([content], { type: contentType ?? "text/plain;charset=utf-8" });
 }
 
 export function artifactContentToZipValue(file: ArtifactContent): string | Uint8Array {

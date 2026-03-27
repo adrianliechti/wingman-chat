@@ -1,4 +1,4 @@
-import JSZip from 'jszip';
+import JSZip from "jszip";
 
 /**
  * Converts a DOCX file to GitHub-flavored Markdown
@@ -13,18 +13,18 @@ export async function docxToMarkdown(file: File): Promise<string> {
   const numberingInfo = await parseNumbering(zip);
 
   // Parse main document
-  const documentXml = await zip.file('word/document.xml')?.async('string');
+  const documentXml = await zip.file("word/document.xml")?.async("string");
   if (!documentXml) {
-    throw new Error('Invalid DOCX: missing word/document.xml');
+    throw new Error("Invalid DOCX: missing word/document.xml");
   }
 
   const parser = new DOMParser();
-  const doc = parser.parseFromString(documentXml, 'application/xml');
+  const doc = parser.parseFromString(documentXml, "application/xml");
 
   // Get the document body
-  const body = doc.getElementsByTagName('w:body')[0];
+  const body = doc.getElementsByTagName("w:body")[0];
   if (!body) {
-    throw new Error('Invalid DOCX: missing document body');
+    throw new Error("Invalid DOCX: missing document body");
   }
 
   const lines: string[] = [];
@@ -34,18 +34,18 @@ export async function docxToMarkdown(file: File): Promise<string> {
   for (const child of body.children) {
     const tagName = child.tagName;
 
-    if (tagName === 'w:p') {
+    if (tagName === "w:p") {
       const line = parseParagraph(child as Element, relationships, numberingInfo, listState);
       lines.push(line);
-    } else if (tagName === 'w:tbl') {
+    } else if (tagName === "w:tbl") {
       const tableLines = parseTable(child as Element, relationships);
       lines.push(...tableLines);
-      lines.push(''); // Empty line after table
+      lines.push(""); // Empty line after table
     }
   }
 
   // Clean up output: collapse multiple empty lines
-  return cleanupMarkdown(lines.join('\n'));
+  return cleanupMarkdown(lines.join("\n"));
 }
 
 // ============================================================================
@@ -57,23 +57,23 @@ interface Relationships {
 }
 
 async function parseRelationships(zip: JSZip): Promise<Relationships> {
-  const content = await zip.file('word/_rels/document.xml.rels')?.async('string');
+  const content = await zip.file("word/_rels/document.xml.rels")?.async("string");
   if (!content) {
     return {};
   }
 
   const parser = new DOMParser();
-  const doc = parser.parseFromString(content, 'application/xml');
+  const doc = parser.parseFromString(content, "application/xml");
   const rels: Relationships = {};
 
-  const relationships = doc.getElementsByTagName('Relationship');
+  const relationships = doc.getElementsByTagName("Relationship");
   for (const rel of relationships) {
-    const id = rel.getAttribute('Id');
-    const target = rel.getAttribute('Target');
-    const targetMode = rel.getAttribute('TargetMode');
+    const id = rel.getAttribute("Id");
+    const target = rel.getAttribute("Target");
+    const targetMode = rel.getAttribute("TargetMode");
 
     // Only include external hyperlinks
-    if (id && target && targetMode === 'External') {
+    if (id && target && targetMode === "External") {
       rels[id] = target;
     }
   }
@@ -91,7 +91,7 @@ interface NumberingInfo {
 }
 
 async function parseNumbering(zip: JSZip): Promise<NumberingInfo> {
-  const content = await zip.file('word/numbering.xml')?.async('string');
+  const content = await zip.file("word/numbering.xml")?.async("string");
   const info: NumberingInfo = { definitions: new Map() };
 
   if (!content) {
@@ -99,29 +99,29 @@ async function parseNumbering(zip: JSZip): Promise<NumberingInfo> {
   }
 
   const parser = new DOMParser();
-  const doc = parser.parseFromString(content, 'application/xml');
+  const doc = parser.parseFromString(content, "application/xml");
 
   // Parse abstract numbering definitions
   const abstractNums = new Map<string, Map<string, { isOrdered: boolean; start: number }>>();
-  const abstractNumEls = doc.getElementsByTagName('w:abstractNum');
+  const abstractNumEls = doc.getElementsByTagName("w:abstractNum");
 
   for (const abstractNum of abstractNumEls) {
-    const abstractNumId = abstractNum.getAttribute('w:abstractNumId');
+    const abstractNumId = abstractNum.getAttribute("w:abstractNumId");
     if (!abstractNumId) continue;
 
     const levels = new Map<string, { isOrdered: boolean; start: number }>();
-    const lvlEls = abstractNum.getElementsByTagName('w:lvl');
+    const lvlEls = abstractNum.getElementsByTagName("w:lvl");
 
     for (const lvl of lvlEls) {
-      const ilvl = lvl.getAttribute('w:ilvl') || '0';
-      const numFmtEl = lvl.getElementsByTagName('w:numFmt')[0];
-      const startEl = lvl.getElementsByTagName('w:start')[0];
+      const ilvl = lvl.getAttribute("w:ilvl") || "0";
+      const numFmtEl = lvl.getElementsByTagName("w:numFmt")[0];
+      const startEl = lvl.getElementsByTagName("w:start")[0];
 
-      const numFmt = numFmtEl?.getAttribute('w:val') || 'bullet';
-      const start = parseInt(startEl?.getAttribute('w:val') || '1', 10);
+      const numFmt = numFmtEl?.getAttribute("w:val") || "bullet";
+      const start = parseInt(startEl?.getAttribute("w:val") || "1", 10);
 
       // Ordered formats: decimal, lowerLetter, upperLetter, lowerRoman, upperRoman
-      const isOrdered = ['decimal', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman'].includes(numFmt);
+      const isOrdered = ["decimal", "lowerLetter", "upperLetter", "lowerRoman", "upperRoman"].includes(numFmt);
 
       levels.set(ilvl, { isOrdered, start });
     }
@@ -130,11 +130,11 @@ async function parseNumbering(zip: JSZip): Promise<NumberingInfo> {
   }
 
   // Map numId to abstractNumId
-  const numEls = doc.getElementsByTagName('w:num');
+  const numEls = doc.getElementsByTagName("w:num");
   for (const num of numEls) {
-    const numId = num.getAttribute('w:numId');
-    const abstractNumIdEl = num.getElementsByTagName('w:abstractNumId')[0];
-    const abstractNumId = abstractNumIdEl?.getAttribute('w:val');
+    const numId = num.getAttribute("w:numId");
+    const abstractNumIdEl = num.getElementsByTagName("w:abstractNumId")[0];
+    const abstractNumId = abstractNumIdEl?.getAttribute("w:val");
 
     if (numId && abstractNumId && abstractNums.has(abstractNumId)) {
       info.definitions.set(numId, abstractNums.get(abstractNumId)!);
@@ -156,31 +156,31 @@ function parseParagraph(
   p: Element,
   relationships: Relationships,
   numberingInfo: NumberingInfo,
-  listState: ListState
+  listState: ListState,
 ): string {
-  const pPr = p.getElementsByTagName('w:pPr')[0];
+  const pPr = p.getElementsByTagName("w:pPr")[0];
 
   // Check for heading style
-  const pStyle = pPr?.getElementsByTagName('w:pStyle')[0];
-  const styleVal = pStyle?.getAttribute('w:val') || '';
+  const pStyle = pPr?.getElementsByTagName("w:pStyle")[0];
+  const styleVal = pStyle?.getAttribute("w:val") || "";
 
   // Detect heading level from style name
   const headingMatch = styleVal.match(/^Heading(\d+)$/i) || styleVal.match(/^heading\s*(\d+)$/i);
   const headingLevel = headingMatch ? parseInt(headingMatch[1], 10) : 0;
 
   // Check for list formatting
-  const numPr = pPr?.getElementsByTagName('w:numPr')[0];
-  let listPrefix = '';
-  let listIndent = '';
+  const numPr = pPr?.getElementsByTagName("w:numPr")[0];
+  let listPrefix = "";
+  let listIndent = "";
 
   if (numPr) {
-    const ilvlEl = numPr.getElementsByTagName('w:ilvl')[0];
-    const numIdEl = numPr.getElementsByTagName('w:numId')[0];
+    const ilvlEl = numPr.getElementsByTagName("w:ilvl")[0];
+    const numIdEl = numPr.getElementsByTagName("w:numId")[0];
 
-    const ilvl = parseInt(ilvlEl?.getAttribute('w:val') || '0', 10);
-    const numId = numIdEl?.getAttribute('w:val') || '';
+    const ilvl = parseInt(ilvlEl?.getAttribute("w:val") || "0", 10);
+    const numId = numIdEl?.getAttribute("w:val") || "";
 
-    if (numId && numId !== '0') {
+    if (numId && numId !== "0") {
       const levelDefs = numberingInfo.definitions.get(numId);
       const levelDef = levelDefs?.get(String(ilvl));
 
@@ -200,13 +200,13 @@ function parseParagraph(
         counters[i] = levelDef?.start || 1;
       }
 
-      listIndent = '  '.repeat(ilvl);
+      listIndent = "  ".repeat(ilvl);
 
       if (levelDef?.isOrdered) {
         listPrefix = `${counters[ilvl]}. `;
         counters[ilvl]++;
       } else {
-        listPrefix = '- ';
+        listPrefix = "- ";
       }
     }
   } else {
@@ -218,12 +218,12 @@ function parseParagraph(
   const textContent = extractTextContent(p, relationships);
 
   if (!textContent.trim()) {
-    return '';
+    return "";
   }
 
   // Apply heading prefix
   if (headingLevel > 0 && headingLevel <= 6) {
-    return '#'.repeat(headingLevel) + ' ' + textContent;
+    return "#".repeat(headingLevel) + " " + textContent;
   }
 
   // Apply list formatting
@@ -240,12 +240,12 @@ function extractTextContent(element: Element, relationships: Relationships): str
   for (const child of element.children) {
     const tagName = child.tagName;
 
-    if (tagName === 'w:r') {
+    if (tagName === "w:r") {
       // Regular run
       parts.push(parseRun(child as Element));
-    } else if (tagName === 'w:hyperlink') {
+    } else if (tagName === "w:hyperlink") {
       // Hyperlink
-      const rId = child.getAttribute('r:id');
+      const rId = child.getAttribute("r:id");
       const url = rId ? relationships[rId] : null;
       const linkText = extractTextContent(child, relationships);
 
@@ -254,7 +254,7 @@ function extractTextContent(element: Element, relationships: Relationships): str
       } else {
         parts.push(linkText);
       }
-    } else if (tagName === 'w:bookmarkStart' || tagName === 'w:bookmarkEnd') {
+    } else if (tagName === "w:bookmarkStart" || tagName === "w:bookmarkEnd") {
       // Skip bookmarks
       continue;
     } else if (child.children.length > 0) {
@@ -263,56 +263,56 @@ function extractTextContent(element: Element, relationships: Relationships): str
     }
   }
 
-  return parts.join('');
+  return parts.join("");
 }
 
 function parseRun(r: Element): string {
-  const rPr = r.getElementsByTagName('w:rPr')[0];
+  const rPr = r.getElementsByTagName("w:rPr")[0];
 
   // Check formatting
-  const isBold = rPr?.getElementsByTagName('w:b')[0] !== undefined ||
-    rPr?.getElementsByTagName('w:bCs')[0] !== undefined;
-  const isItalic = rPr?.getElementsByTagName('w:i')[0] !== undefined ||
-    rPr?.getElementsByTagName('w:iCs')[0] !== undefined;
-  const isStrike = rPr?.getElementsByTagName('w:strike')[0] !== undefined ||
-    rPr?.getElementsByTagName('w:dstrike')[0] !== undefined;
+  const isBold =
+    rPr?.getElementsByTagName("w:b")[0] !== undefined || rPr?.getElementsByTagName("w:bCs")[0] !== undefined;
+  const isItalic =
+    rPr?.getElementsByTagName("w:i")[0] !== undefined || rPr?.getElementsByTagName("w:iCs")[0] !== undefined;
+  const isStrike =
+    rPr?.getElementsByTagName("w:strike")[0] !== undefined || rPr?.getElementsByTagName("w:dstrike")[0] !== undefined;
   const isCode = isMonospaceFont(rPr);
 
   // Extract text from all <w:t> elements
-  const textEls = r.getElementsByTagName('w:t');
-  let text = '';
+  const textEls = r.getElementsByTagName("w:t");
+  let text = "";
   for (const t of textEls) {
-    text += t.textContent ?? '';
+    text += t.textContent ?? "";
   }
 
   // Handle line breaks
-  const brEls = r.getElementsByTagName('w:br');
+  const brEls = r.getElementsByTagName("w:br");
   if (brEls.length > 0) {
-    text += '\n';
+    text += "\n";
   }
 
   // Handle tabs
-  const tabEls = r.getElementsByTagName('w:tab');
+  const tabEls = r.getElementsByTagName("w:tab");
   if (tabEls.length > 0) {
-    text += '\t';
+    text += "\t";
   }
 
   if (!text) {
-    return '';
+    return "";
   }
 
   // Apply formatting (innermost to outermost)
   if (isCode) {
-    text = '`' + text + '`';
+    text = "`" + text + "`";
   }
   if (isStrike) {
-    text = '~~' + text + '~~';
+    text = "~~" + text + "~~";
   }
   if (isItalic) {
-    text = '*' + text + '*';
+    text = "*" + text + "*";
   }
   if (isBold) {
-    text = '**' + text + '**';
+    text = "**" + text + "**";
   }
 
   return text;
@@ -321,15 +321,24 @@ function parseRun(r: Element): string {
 function isMonospaceFont(rPr: Element | undefined): boolean {
   if (!rPr) return false;
 
-  const rFonts = rPr.getElementsByTagName('w:rFonts')[0];
+  const rFonts = rPr.getElementsByTagName("w:rFonts")[0];
   if (!rFonts) return false;
 
-  const ascii = rFonts.getAttribute('w:ascii')?.toLowerCase() || '';
-  const hAnsi = rFonts.getAttribute('w:hAnsi')?.toLowerCase() || '';
+  const ascii = rFonts.getAttribute("w:ascii")?.toLowerCase() || "";
+  const hAnsi = rFonts.getAttribute("w:hAnsi")?.toLowerCase() || "";
 
-  const monospaceFonts = ['consolas', 'courier', 'courier new', 'monaco', 'menlo', 'source code pro', 'fira code', 'jetbrains mono'];
+  const monospaceFonts = [
+    "consolas",
+    "courier",
+    "courier new",
+    "monaco",
+    "menlo",
+    "source code pro",
+    "fira code",
+    "jetbrains mono",
+  ];
 
-  return monospaceFonts.some(font => ascii.includes(font) || hAnsi.includes(font));
+  return monospaceFonts.some((font) => ascii.includes(font) || hAnsi.includes(font));
 }
 
 // ============================================================================
@@ -337,16 +346,16 @@ function isMonospaceFont(rPr: Element | undefined): boolean {
 // ============================================================================
 
 function parseTable(tbl: Element, relationships: Relationships): string[] {
-  const rows = tbl.getElementsByTagName('w:tr');
+  const rows = tbl.getElementsByTagName("w:tr");
   const tableData: string[][] = [];
 
   for (const row of rows) {
-    const cells = row.getElementsByTagName('w:tc');
+    const cells = row.getElementsByTagName("w:tc");
     const rowData: string[] = [];
 
     for (const cell of cells) {
       // Extract text from all paragraphs in the cell
-      const paragraphs = cell.getElementsByTagName('w:p');
+      const paragraphs = cell.getElementsByTagName("w:p");
       const cellTexts: string[] = [];
 
       for (const p of paragraphs) {
@@ -357,7 +366,7 @@ function parseTable(tbl: Element, relationships: Relationships): string[] {
       }
 
       // Join multiple paragraphs with <br> for GFM compatibility
-      rowData.push(cellTexts.join('<br>'));
+      rowData.push(cellTexts.join("<br>"));
     }
 
     tableData.push(rowData);
@@ -368,12 +377,12 @@ function parseTable(tbl: Element, relationships: Relationships): string[] {
   }
 
   // Determine column count (max cells in any row)
-  const colCount = Math.max(...tableData.map(row => row.length));
+  const colCount = Math.max(...tableData.map((row) => row.length));
 
   // Normalize rows to have same number of columns
   for (const row of tableData) {
     while (row.length < colCount) {
-      row.push('');
+      row.push("");
     }
   }
 
@@ -382,15 +391,15 @@ function parseTable(tbl: Element, relationships: Relationships): string[] {
 
   // Header row (first row)
   const headerRow = tableData[0];
-  lines.push('| ' + headerRow.map(cell => escapeTableCell(cell)).join(' | ') + ' |');
+  lines.push("| " + headerRow.map((cell) => escapeTableCell(cell)).join(" | ") + " |");
 
   // Separator row
-  lines.push('| ' + headerRow.map(() => '---').join(' | ') + ' |');
+  lines.push("| " + headerRow.map(() => "---").join(" | ") + " |");
 
   // Data rows
   for (let i = 1; i < tableData.length; i++) {
     const row = tableData[i];
-    lines.push('| ' + row.map(cell => escapeTableCell(cell)).join(' | ') + ' |');
+    lines.push("| " + row.map((cell) => escapeTableCell(cell)).join(" | ") + " |");
   }
 
   return lines;
@@ -398,7 +407,7 @@ function parseTable(tbl: Element, relationships: Relationships): string[] {
 
 function escapeTableCell(text: string): string {
   // Escape pipe characters in table cells
-  return text.replace(/\|/g, '\\|').replace(/\n/g, '<br>');
+  return text.replace(/\|/g, "\\|").replace(/\n/g, "<br>");
 }
 
 // ============================================================================
@@ -407,10 +416,13 @@ function escapeTableCell(text: string): string {
 
 function cleanupMarkdown(markdown: string): string {
   // Collapse 3+ consecutive empty lines into 2
-  let result = markdown.replace(/\n{3,}/g, '\n\n');
+  let result = markdown.replace(/\n{3,}/g, "\n\n");
 
   // Remove trailing whitespace from each line
-  result = result.split('\n').map(line => line.trimEnd()).join('\n');
+  result = result
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n");
 
   // Trim leading/trailing whitespace from entire document
   result = result.trim();

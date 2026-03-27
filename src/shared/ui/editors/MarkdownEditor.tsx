@@ -1,5 +1,5 @@
-import { CodeEditor } from './CodeEditor';
-import { Markdown } from '@/shared/ui/Markdown';
+import { CodeEditor } from "./CodeEditor";
+import { Markdown } from "@/shared/ui/Markdown";
 
 // Component to display Markdown content as rendered HTML
 function MarkdownPreview({ content }: { content: string }) {
@@ -14,15 +14,15 @@ function MarkdownPreview({ content }: { content: string }) {
 
 interface MarkdownEditorProps {
   content: string;
-  viewMode?: 'code' | 'preview';
-  onViewModeChange?: (mode: 'code' | 'preview') => void;
+  viewMode?: "code" | "preview";
+  onViewModeChange?: (mode: "code" | "preview") => void;
 }
 
-export function MarkdownEditor({ content, viewMode = 'preview' }: MarkdownEditorProps) {
+export function MarkdownEditor({ content, viewMode = "preview" }: MarkdownEditorProps) {
   return (
     <div className="h-full flex flex-col overflow-hidden relative">
       <div className="flex-1 overflow-auto min-h-0">
-        {viewMode === 'preview' ? (
+        {viewMode === "preview" ? (
           <MarkdownPreview content={content} />
         ) : (
           <CodeEditor content={content} language="markdown" />

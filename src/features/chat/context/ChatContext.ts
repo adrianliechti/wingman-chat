@@ -1,5 +1,12 @@
 import { createContext } from "react";
-import type { Chat, Message, Model, PendingElicitation, ElicitationResult, ToolResultContent } from "@/shared/types/chat";
+import type {
+  Chat,
+  Message,
+  Model,
+  PendingElicitation,
+  ElicitationResult,
+  ToolResultContent,
+} from "@/shared/types/chat";
 
 export interface ChatContextType {
   // Models

@@ -1,18 +1,18 @@
 import { useCallback, useMemo } from "react";
-import { Palette } from 'lucide-react';
+import { Palette } from "lucide-react";
 import { getConfig } from "@/shared/config";
 import type { Tool, ToolContext, ToolProvider, ImageContent } from "@/shared/types/chat";
 import { readAsDataURL } from "@/shared/lib/utils";
-import rendererInstructionsText from '@/features/renderer/prompts/renderer.txt?raw';
+import rendererInstructionsText from "@/features/renderer/prompts/renderer.txt?raw";
 
 export function useRendererProvider(): ToolProvider | null {
   const config = getConfig();
-  
+
   const isAvailable = useMemo(() => {
     try {
       return !!config.renderer;
     } catch (error) {
-      console.warn('Failed to get image generation config:', error);
+      console.warn("Failed to get image generation config:", error);
       return false;
     }
   }, [config.renderer]);
@@ -29,53 +29,56 @@ export function useRendererProvider(): ToolProvider | null {
           properties: {
             prompt: {
               type: "string",
-              description: "A detailed description of the image to generate. Describe the desired content, style, composition, and colors."
-            }
+              description:
+                "A detailed description of the image to generate. Describe the desired content, style, composition, and colors.",
+            },
           },
-          required: ["prompt"]
+          required: ["prompt"],
         },
         function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const { prompt } = args;
 
           if (config.renderer?.elicitation && context?.elicit) {
             const result = await context.elicit({
-              message: `Generate an image: ${prompt}`
+              message: `Generate an image: ${prompt}`,
             });
 
             if (result.action !== "accept") {
-              return [{
-                type: 'text' as const,
-                text: JSON.stringify({
-                  success: false,
-                  error: "Image creation cancelled by user."
-                })
-              }];
+              return [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify({
+                    success: false,
+                    error: "Image creation cancelled by user.",
+                  }),
+                },
+              ];
             }
           }
 
           try {
-            const imageBlob = await client.generateImage(
-              config.renderer?.model || "",
-              prompt as string,
-              []
-            );
+            const imageBlob = await client.generateImage(config.renderer?.model || "", prompt as string, []);
 
             const dataUrl = await readAsDataURL(imageBlob);
 
-            return [{
-              type: "image" as const,
-              data: dataUrl,
-            }];
+            return [
+              {
+                type: "image" as const,
+                data: dataUrl,
+              },
+            ];
           } catch (error) {
-            return [{
-              type: 'text' as const,
-              text: JSON.stringify({
-                success: false,
-                error: `Image creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-              })
-            }];
+            return [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  success: false,
+                  error: `Image creation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                }),
+              },
+            ];
           }
-        }
+        },
       },
       {
         name: "edit_image",
@@ -85,27 +88,29 @@ export function useRendererProvider(): ToolProvider | null {
           properties: {
             prompt: {
               type: "string",
-              description: "A description of the changes or modifications you want to make to the existing image."
-            }
+              description: "A description of the changes or modifications you want to make to the existing image.",
+            },
           },
-          required: ["prompt"]
+          required: ["prompt"],
         },
         function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const { prompt } = args;
 
           if (config.renderer?.elicitation && context?.elicit) {
             const result = await context.elicit({
-              message: `Edit the attached image(s): ${prompt}`
+              message: `Edit the attached image(s): ${prompt}`,
             });
 
             if (result.action !== "accept") {
-              return [{
-                type: 'text' as const,
-                text: JSON.stringify({
-                  success: false,
-                  error: "Image editing cancelled by user."
-                })
-              }];
+              return [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify({
+                    success: false,
+                    error: "Image editing cancelled by user.",
+                  }),
+                },
+              ];
             }
           }
 
@@ -114,8 +119,8 @@ export function useRendererProvider(): ToolProvider | null {
           // Extract image content from context
           if (context?.content) {
             const contents = context.content();
-            const imageContents = contents.filter((c): c is ImageContent => c.type === 'image');
-            
+            const imageContents = contents.filter((c): c is ImageContent => c.type === "image");
+
             for (const imageContent of imageContents) {
               try {
                 const response = await fetch(imageContent.data);
@@ -128,39 +133,41 @@ export function useRendererProvider(): ToolProvider | null {
           }
 
           if (images.length === 0) {
-            return [{
-              type: 'text' as const,
-              text: JSON.stringify({
-                success: false,
-                error: 'No image attachments found. Please attach an image to edit.'
-              })
-            }];
+            return [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  success: false,
+                  error: "No image attachments found. Please attach an image to edit.",
+                }),
+              },
+            ];
           }
 
           try {
-            const imageBlob = await client.generateImage(
-              config.renderer?.model || "",
-              prompt as string,
-              images
-            );
+            const imageBlob = await client.generateImage(config.renderer?.model || "", prompt as string, images);
 
             const dataUrl = await readAsDataURL(imageBlob);
 
-            return [{
-              type: "image" as const,
-              data: dataUrl,
-            }];
+            return [
+              {
+                type: "image" as const,
+                data: dataUrl,
+              },
+            ];
           } catch (error) {
-            return [{
-              type: 'text' as const,
-              text: JSON.stringify({
-                success: false,
-                error: `Image editing failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-              })
-            }];
+            return [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  success: false,
+                  error: `Image editing failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                }),
+              },
+            ];
           }
-        }
-      }
+        },
+      },
     ];
   }, [client, config.renderer?.elicitation, config.renderer?.model]);
 

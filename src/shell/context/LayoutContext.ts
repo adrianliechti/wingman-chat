@@ -1,6 +1,6 @@
-import { createContext } from 'react';
+import { createContext } from "react";
 
-export type LayoutMode = 'normal' | 'wide';
+export type LayoutMode = "normal" | "wide";
 
 export type LayoutContextType = {
   layoutMode: LayoutMode;

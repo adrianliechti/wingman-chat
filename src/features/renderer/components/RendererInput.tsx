@@ -1,11 +1,5 @@
 import { useRef } from "react";
-import {
-  X,
-  ImagePlus,
-  ArrowRight,
-  Paintbrush,
-  Sparkles,
-} from "lucide-react";
+import { X, ImagePlus, ArrowRight, Paintbrush, Sparkles } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import type { Model } from "@/shared/types/chat";
 
@@ -66,11 +60,7 @@ export function RendererInput({
               key={index}
               className="relative size-14 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all overflow-hidden"
             >
-              <img
-                src={img.preview}
-                alt={`Reference ${index + 1}`}
-                className="size-full object-cover"
-              />
+              <img src={img.preview} alt={`Reference ${index + 1}`} className="size-full object-cover" />
               <button
                 type="button"
                 className="absolute top-0.5 right-0.5 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
@@ -125,9 +115,7 @@ export function RendererInput({
               className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 shadow-2xl shadow-black/40 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 z-50 overflow-y-auto"
             >
               {models.length === 0 ? (
-                <div className="px-3 py-2 text-neutral-500 dark:text-neutral-400 text-sm">
-                  Loading models...
-                </div>
+                <div className="px-3 py-2 text-neutral-500 dark:text-neutral-400 text-sm">Loading models...</div>
               ) : (
                 models.map((model) => (
                   <MenuItem key={model.id}>
@@ -178,9 +166,7 @@ export function RendererInput({
                 <MenuItem key={style}>
                   <button
                     type="button"
-                    onClick={() =>
-                      onSelectStyle(selectedStyle === style ? null : style)
-                    }
+                    onClick={() => onSelectStyle(selectedStyle === style ? null : style)}
                     className={`group flex w-full items-center px-3 py-2 text-sm data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 transition-colors ${
                       selectedStyle === style
                         ? "text-blue-600 dark:text-blue-400"
@@ -193,7 +179,6 @@ export function RendererInput({
               ))}
             </MenuItems>
           </Menu>
-
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
@@ -221,9 +206,7 @@ export function RendererInput({
       </div>
 
       {helperText ? (
-        <div className="px-4 pb-4 text-center text-xs text-neutral-400 dark:text-neutral-500">
-          {helperText}
-        </div>
+        <div className="px-4 pb-4 text-center text-xs text-neutral-400 dark:text-neutral-500">{helperText}</div>
       ) : null}
     </div>
   );

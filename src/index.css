@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 .noto-emoji {
-  font-family: 'Noto Emoji', sans-serif;
+  font-family: "Noto Emoji", sans-serif;
   font-size: 0.9em;
   vertical-align: -0.05em;
   visibility: hidden;
@@ -23,7 +23,7 @@ html.emoji-native .noto-emoji {
   list-style: disc outside;
 }
 
-.custom-list>li::marker {
+.custom-list > li::marker {
   font-family: system-ui, sans-serif;
   font-size: 1.1em;
   line-height: 1;
@@ -176,12 +176,11 @@ button[data-headlessui-state]:disabled,
   overflow: hidden;
   white-space: nowrap;
   margin: 0;
-  animation:
-    typing var(--animation-duration, 2.5s) steps(var(--text-length, 20), end) 0.5s 1 normal both;
+  animation: typing var(--animation-duration, 2.5s) steps(var(--text-length, 20), end) 0.5s 1 normal both;
 }
 
 .typewriter-text::after {
-  content: '';
+  content: "";
 }
 
 @keyframes typing {

@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect } from 'react';
-import { X } from 'lucide-react';
-import { CodeEditor } from './CodeEditor';
-import { executeCode } from '@/features/tools/lib/interpreter';
-import { useArtifacts } from '@/features/artifacts/hooks/useArtifacts';
+import { useState, useCallback, useEffect } from "react";
+import { X } from "lucide-react";
+import { CodeEditor } from "./CodeEditor";
+import { executeCode } from "@/features/tools/lib/interpreter";
+import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 
 interface PythonEditorProps {
   content: string;
@@ -39,10 +39,10 @@ export function PythonEditor({ content, onRunReady, onRunningChange }: PythonEdi
       if (result.success) {
         setOutput(result.output);
       } else {
-        setError(result.error || 'Unknown error occurred');
+        setError(result.error || "Unknown error occurred");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to execute code');
+      setError(err instanceof Error ? err.message : "Failed to execute code");
     } finally {
       setIsRunning(false);
     }
@@ -64,7 +64,7 @@ export function PythonEditor({ content, onRunReady, onRunningChange }: PythonEdi
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Code Editor */}
-      <div className={hasOutput ? 'h-1/2 overflow-hidden' : 'flex-1 overflow-hidden'}>
+      <div className={hasOutput ? "h-1/2 overflow-hidden" : "flex-1 overflow-hidden"}>
         <CodeEditor content={content} language="python" />
       </div>
 
@@ -72,9 +72,7 @@ export function PythonEditor({ content, onRunReady, onRunningChange }: PythonEdi
       {hasOutput && (
         <div className="h-1/2 flex flex-col border-t border-black/5 dark:border-white/5">
           <div className="flex items-center justify-between px-3 py-1">
-            <span className="text-[10px] uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-              Output
-            </span>
+            <span className="text-[10px] uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Output</span>
             <button
               onClick={handleClear}
               className="p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-neutral-400 dark:text-neutral-500"

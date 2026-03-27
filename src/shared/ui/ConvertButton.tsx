@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState } from "react";
 import { FileDown, Loader2 } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { markdownToDocx } from "@/shared/lib/markdownToDocx";
@@ -12,7 +12,7 @@ type ConvertButtonProps = {
 function generateFilename(extension: string): string {
   const now = new Date();
   const date = now.toISOString().slice(0, 10); // YYYY-MM-DD
-  const time = now.toTimeString().slice(0, 5).replace(':', '-'); // HH-MM
+  const time = now.toTimeString().slice(0, 5).replace(":", "-"); // HH-MM
   return `message-${date}-${time}.${extension}`;
 }
 
@@ -20,15 +20,15 @@ export const ConvertButton = ({ markdown, className }: ConvertButtonProps) => {
   const [isConverting, setIsConverting] = useState(false);
 
   const handleDownloadMarkdown = () => {
-    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
-    downloadBlob(blob, generateFilename('md'));
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    downloadBlob(blob, generateFilename("md"));
   };
 
   const handleDownloadWord = async () => {
     setIsConverting(true);
     try {
       const blob = await markdownToDocx(markdown);
-      downloadBlob(blob, generateFilename('docx'));
+      downloadBlob(blob, generateFilename("docx"));
     } catch (error) {
       console.error("Failed to convert to Word:", error);
     } finally {
@@ -36,15 +36,12 @@ export const ConvertButton = ({ markdown, className }: ConvertButtonProps) => {
     }
   };
 
-  const buttonClasses = "text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors opacity-60 hover:opacity-100 p-1";
+  const buttonClasses =
+    "text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors opacity-60 hover:opacity-100 p-1";
 
   return (
     <Menu as="div" className="relative">
-      <MenuButton
-        className={buttonClasses}
-        title="Download message"
-        disabled={isConverting}
-      >
+      <MenuButton className={buttonClasses} title="Download message" disabled={isConverting}>
         {isConverting ? (
           <Loader2 className={`${className || "h-4 w-4"} animate-spin`} />
         ) : (
@@ -75,7 +72,6 @@ export const ConvertButton = ({ markdown, className }: ConvertButtonProps) => {
             Markdown (.md)
           </button>
         </MenuItem>
-        
       </MenuItems>
     </Menu>
   );

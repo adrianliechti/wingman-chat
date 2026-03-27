@@ -1,4 +1,4 @@
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight } from "lucide-react";
 
 interface SectionProps {
   title: string;
@@ -24,7 +24,7 @@ export function Section({ title, isOpen, onOpenToggle, collapsible = true, heade
             </div>
             <ChevronRight
               size={14}
-              className={`text-neutral-400 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}
+              className={`text-neutral-400 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
             />
           </button>
         ) : (
@@ -33,16 +33,16 @@ export function Section({ title, isOpen, onOpenToggle, collapsible = true, heade
           </div>
         )}
         {headerAction && (
-          <div className="shrink-0" onClick={e => e.stopPropagation()}>
+          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
             {headerAction}
           </div>
         )}
       </div>
-      <div className={`grid transition-all duration-200 ease-out ${isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+      <div
+        className={`grid transition-all duration-200 ease-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
+      >
         <div className="overflow-hidden">
-          <div className="px-3 pb-3 pt-1">
-            {children}
-          </div>
+          <div className="px-3 pb-3 pt-1">{children}</div>
         </div>
       </div>
     </div>

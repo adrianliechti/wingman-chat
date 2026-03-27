@@ -1,8 +1,8 @@
-import { useMemo, useCallback, useState } from 'react';
-import { Trash, PanelRightOpen, MoreVertical, Search, X } from 'lucide-react';
-import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
-import { useSidebar } from '@/shell/hooks/useSidebar';
-import type { Notebook } from '../types/notebook';
+import { useMemo, useCallback, useState } from "react";
+import { Trash, PanelRightOpen, MoreVertical, Search, X } from "lucide-react";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { useSidebar } from "@/shell/hooks/useSidebar";
+import type { Notebook } from "../types/notebook";
 
 interface NotebookSidebarProps {
   notebooks: Notebook[];
@@ -12,23 +12,13 @@ interface NotebookSidebarProps {
   onNew: () => void;
 }
 
-export function NotebookSidebar({
-  notebooks,
-  activeId,
-  onSelect,
-  onDelete,
-  onNew,
-}: NotebookSidebarProps) {
+export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onNew }: NotebookSidebarProps) {
   const { setShowSidebar } = useSidebar();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
 
   const sorted = useMemo(
-    () =>
-      [...notebooks].sort(
-        (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-      ),
+    () => [...notebooks].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
     [notebooks],
   );
 
@@ -44,29 +34,29 @@ export function NotebookSidebar({
     const date = new Date(dateStr);
     const chatDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-    if (chatDate.getTime() === today.getTime()) return 'Today';
+    if (chatDate.getTime() === today.getTime()) return "Today";
 
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-    if (chatDate.getTime() === yesterday.getTime()) return 'Yesterday';
+    if (chatDate.getTime() === yesterday.getTime()) return "Yesterday";
 
     const weekAgo = new Date(today);
     weekAgo.setDate(weekAgo.getDate() - 7);
-    if (chatDate > weekAgo) return 'This Week';
+    if (chatDate > weekAgo) return "This Week";
 
     const twoWeeksAgo = new Date(today);
     twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-    if (chatDate > twoWeeksAgo) return 'Last Week';
+    if (chatDate > twoWeeksAgo) return "Last Week";
 
     const monthAgo = new Date(today);
     monthAgo.setDate(monthAgo.getDate() - 30);
-    if (chatDate > monthAgo) return 'Last Month';
+    if (chatDate > monthAgo) return "Last Month";
 
-    return 'Older';
+    return "Older";
   }, []);
 
   const grouped = useMemo(() => {
-    const categoryOrder = ['Today', 'Yesterday', 'This Week', 'Last Week', 'Last Month', 'Older'];
+    const categoryOrder = ["Today", "Yesterday", "This Week", "Last Week", "Last Month", "Older"];
     const map = new Map<string, Notebook[]>();
 
     filtered.forEach((n) => {
@@ -75,9 +65,7 @@ export function NotebookSidebar({
       map.get(cat)!.push(n);
     });
 
-    return categoryOrder
-      .filter((c) => map.has(c))
-      .map((category) => ({ category, items: map.get(category)! }));
+    return categoryOrder.filter((c) => map.has(c)).map((category) => ({ category, items: map.get(category)! }));
   }, [filtered, getDateCategory]);
 
   const handleSelect = (id: string) => {
@@ -105,7 +93,7 @@ export function NotebookSidebar({
               type="button"
               onClick={() => {
                 setShowSearch(false);
-                setSearchQuery('');
+                setSearchQuery("");
               }}
               className="p-2 md:p-1.5 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
             >
@@ -139,7 +127,7 @@ export function NotebookSidebar({
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
         <div className="pt-2 pb-1 px-1">
           {grouped.map((group, gi) => (
-            <div key={group.category} className={gi > 0 ? 'pt-2' : ''}>
+            <div key={group.category} className={gi > 0 ? "pt-2" : ""}>
               {/* Category header */}
               <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
                 <span>{group.category}</span>
@@ -181,8 +169,8 @@ export function NotebookSidebar({
                   onClick={() => handleSelect(notebook.id)}
                   className={`flex items-center cursor-pointer relative shrink-0 group rounded transition-all duration-200 ${
                     notebook.id === activeId
-                      ? 'py-2 md:py-1.5 px-2.5 md:px-2 text-neutral-900 dark:text-neutral-100'
-                      : 'py-2 md:py-1.5 pl-2.5 md:pl-2.5 pr-1 md:pr-0.5 hover:text-neutral-600 dark:hover:text-neutral-300'
+                      ? "py-2 md:py-1.5 px-2.5 md:px-2 text-neutral-900 dark:text-neutral-100"
+                      : "py-2 md:py-1.5 pl-2.5 md:pl-2.5 pr-1 md:pr-0.5 hover:text-neutral-600 dark:hover:text-neutral-300"
                   }`}
                 >
                   <div
@@ -227,7 +215,7 @@ export function NotebookSidebar({
 
           {filtered.length === 0 && (
             <div className="px-3 py-6 text-center text-sm text-neutral-400">
-              {searchQuery ? 'No notebooks found' : 'No notebooks yet'}
+              {searchQuery ? "No notebooks found" : "No notebooks yet"}
             </div>
           )}
         </div>
