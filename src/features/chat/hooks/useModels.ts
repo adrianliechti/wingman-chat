@@ -15,43 +15,40 @@ function getSavedModelId(): string | null {
 
 export function useModels() {
   const config = getConfig();
-  const [models, setModels] = useState<Model[]>(() => {
-    // Initialize with config models if available
-    return config.models.length > 0 ? config.models : [];
-  });
-  
-  // Initialize selected model from localStorage if models are already available
-  const [selectedModel, setSelectedModelState] = useState<Model | null>(() => {
-    if (config.models.length === 0) return null;
-    
-    const savedModelId = getSavedModelId();
-    if (savedModelId) {
-      const savedModel = config.models.find(model => model.id === savedModelId);
-      if (savedModel) return savedModel;
-    }
-    return config.models[0] || null;
-  });
+  const [models, setModels] = useState<Model[]>([]);
+  const [selectedModel, setSelectedModelState] = useState<Model | null>(null);
 
-  // Load models from API if not in config
+  // Load models from API, filtering config models to only those that exist
   useEffect(() => {
-    if (config.models.length > 0) return;
-
     const loadModels = async () => {
       try {
-        const loadedModels = await config.client.listModels("completer");
-        setModels(loadedModels);
-        
-        // Set selected model after loading
-        if (loadedModels.length > 0) {
+        const apiModels = await config.client.listModels("completer");
+        const apiModelIds = new Set(apiModels.map((m) => m.id));
+
+        let resolvedModels: Model[];
+
+        if (config.models.length > 0) {
+          // Filter config models to only those that exist in the API
+          resolvedModels = config.models.filter((m) => apiModelIds.has(m.id));
+        } else {
+          resolvedModels = apiModels;
+        }
+
+        setModels(resolvedModels);
+
+        // Restore selected model from localStorage or default to first
+        if (resolvedModels.length > 0) {
           const savedModelId = getSavedModelId();
           if (savedModelId) {
-            const savedModel = loadedModels.find(model => model.id === savedModelId);
+            const savedModel = resolvedModels.find(
+              (model) => model.id === savedModelId,
+            );
             if (savedModel) {
               setSelectedModelState(savedModel);
               return;
             }
           }
-          setSelectedModelState(loadedModels[0]);
+          setSelectedModelState(resolvedModels[0]);
         }
       } catch (error) {
         console.error("error loading models", error);
@@ -59,7 +56,7 @@ export function useModels() {
     };
 
     loadModels();
-  }, [config.client, config.models.length]);
+  }, [config.client, config.models]);
 
   // Function to update selected model and save to localStorage
   const setSelectedModel = (model: Model | null) => {
