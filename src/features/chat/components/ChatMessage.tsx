@@ -5,6 +5,7 @@ import { PlayButton } from "@/shared/ui/PlayButton";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { CodeRenderer } from "@/shared/ui/CodeRenderer";
 import { ChatInputAttachments } from "./ChatInputAttachments";
+import { InlineMcpApp } from "./InlineMcpApp";
 import { Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil, ChevronRight } from "lucide-react";
 import { useState, useRef, useEffect, memo } from "react";
 
@@ -466,6 +467,11 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
                 <RenderContents contents={toolResult.result} />
               </div>
             )}
+
+          {/* Render inline MCP app for tool results with UI metadata */}
+          {typeof toolResult?.meta?.toolProvider === "string" && typeof toolResult?.meta?.toolResource === "string" && (
+            <InlineMcpApp key={`${chat?.id}-${index}`} toolResult={toolResult} />
+          )}
         </div>
       </div>
     );

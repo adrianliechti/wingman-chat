@@ -32,7 +32,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { isAvailable: artifactsEnabled, setChatId: setArtifactsChatId } = useArtifacts();
-  const { renderApp } = useApp();
+  const { renderApp, closeApp } = useApp();
   const { currentAgent } = useAgents();
   const { resetTools, setProviderEnabled, restoreToolUI } = useToolsContext();
   const [chatId, setChatId] = useState<string | null>(null);
@@ -107,6 +107,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
       setChatId(id);
       resetTools();
+      closeApp();
 
       if (!id) return;
 
@@ -127,7 +128,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         }
       }
     },
-    [chats, resetTools, restoreToolApp],
+    [chats, resetTools, closeApp, restoreToolApp],
   );
 
   const deleteChat = useCallback(
@@ -495,7 +496,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     sendMessage,
 
     isResponding,
-    restoreToolApp,
     // Elicitation
     pendingElicitation,
     resolveElicitation,

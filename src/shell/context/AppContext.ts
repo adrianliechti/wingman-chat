@@ -9,6 +9,8 @@ export interface AppContextType {
   registerIframe: (iframe: HTMLIFrameElement | null) => void;
   getIframe: () => HTMLIFrameElement | null;
   renderApp: () => Promise<RenderedAppHandle>;
+  renderAppInto: (iframe: HTMLIFrameElement) => Promise<RenderedAppHandle>;
+  closeApp: () => Promise<void>;
   hasAppContent: boolean;
   showDrawer: () => void;
 }

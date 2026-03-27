@@ -5,7 +5,6 @@ import type {
   Model,
   PendingElicitation,
   ElicitationResult,
-  ToolResultContent,
 } from "@/shared/types/chat";
 
 export interface ChatContextType {
@@ -28,9 +27,6 @@ export interface ChatContextType {
 
   addMessage: (message: Message) => Promise<void>;
   sendMessage: (message: Message, historyOverride?: Message[]) => Promise<void>;
-
-  // App restore
-  restoreToolApp: (toolResult: ToolResultContent) => Promise<void>;
 
   // Elicitation state
   pendingElicitation: PendingElicitation | null;

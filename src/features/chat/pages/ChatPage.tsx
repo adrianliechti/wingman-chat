@@ -114,6 +114,7 @@ export function ChatPage() {
   const { showAgentDrawer, toggleAgentDrawer } = useAgents();
   const { showAppDrawer, toggleAppDrawer, hasAppContent } = useApp();
 
+
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
 
