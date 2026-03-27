@@ -56,10 +56,10 @@ export class Client {
     tools: Tool[],
     handler?: (content: Content[]) => void,
     options?: {
-      effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
-      summary?: 'auto' | 'concise' | 'detailed';
-      verbosity?: 'low' | 'medium' | 'high';
-    }
+      effort?: "none" | "minimal" | "low" | "medium" | "high";
+      summary?: "auto" | "concise" | "detailed";
+      verbosity?: "low" | "medium" | "high";
+    },
   ): Promise<Message> {
     input = this.sanitizeMessages(input);
 
@@ -72,9 +72,9 @@ export class Client {
 
           // Process all content parts
           for (const part of m.content) {
-            if (part.type === 'text') {
+            if (part.type === "text") {
               content.push({ type: "input_text", text: part.text });
-            } else if (part.type === 'image') {
+            } else if (part.type === "image") {
               const imgPart = part as ImageContent;
               // data is already a full data URL
               content.push({
@@ -82,14 +82,14 @@ export class Client {
                 image_url: imgPart.data,
                 detail: "auto",
               });
-            } else if (part.type === 'file') {
+            } else if (part.type === "file") {
               const filePart = part as FileContent;
               // data is already a full data URL
               content.push({
                 type: "input_file",
                 file_data: filePart.data,
               });
-            } else if (part.type === 'tool_result') {
+            } else if (part.type === "tool_result") {
               // Tool results in user messages go as function_call_output
               // Binary data (images, audio, files) is stripped and replaced with descriptions
               // since the model cannot process base64 data in text output
@@ -124,22 +124,22 @@ export class Client {
           //   const reasoningItem: Record<string, unknown> = {
           //     id: rp.id,
           //     type: "reasoning",
-          //     
+          //
           //     encrypted_content: rp.signature,
           //   };
           //
           //   if (rp.summary) {
           //     reasoningItem.summary = [{ type: "summary_text", text: rp.summary }];
           //   }
-          //   
+          //
           //   if (rp.text) {
           //     reasoningItem.content = [{ type: "reasoning_text", text: rp.text }];
           //   }
-          //   
+          //
           //   items.push(reasoningItem as unknown as OpenAI.Responses.ResponseInputItem);
           // }
 
-          let bufferedText = '';
+          let bufferedText = "";
 
           const flushAssistantText = () => {
             if (!bufferedText) {
@@ -152,16 +152,16 @@ export class Client {
               content: bufferedText,
             });
 
-            bufferedText = '';
+            bufferedText = "";
           };
 
           for (const part of m.content) {
-            if (part.type === 'text') {
+            if (part.type === "text") {
               bufferedText += part.text;
               continue;
             }
 
-            if (part.type === 'tool_call') {
+            if (part.type === "tool_call") {
               flushAssistantText();
               items.push({
                 type: "function_call",
@@ -181,36 +181,36 @@ export class Client {
 
     // Track streaming content parts
     const contentParts: Content[] = [];
-    let currentType: 'reasoning' | 'text' | null = null;
+    let currentType: "reasoning" | "text" | null = null;
 
     // Helper to append text content
     const appendText = (delta: string) => {
-      if (currentType === 'text' && contentParts.length > 0) {
+      if (currentType === "text" && contentParts.length > 0) {
         const lastPart = contentParts[contentParts.length - 1];
-        if (lastPart.type === 'text') {
+        if (lastPart.type === "text") {
           lastPart.text += delta;
         }
       } else {
-        contentParts.push({ type: 'text', text: delta });
-        currentType = 'text';
+        contentParts.push({ type: "text", text: delta });
+        currentType = "text";
       }
       handler?.([...contentParts]);
     };
 
     // Helper to append reasoning content (text or summary)
     const appendReasoning = (id: string, delta: string, summary?: string) => {
-      let reasoningPart = contentParts.find((p): p is ReasoningContent => p.type === 'reasoning');
+      let reasoningPart = contentParts.find((p): p is ReasoningContent => p.type === "reasoning");
       if (!reasoningPart) {
-        reasoningPart = { type: 'reasoning', id, text: '' };
+        reasoningPart = { type: "reasoning", id, text: "" };
         contentParts.unshift(reasoningPart); // Reasoning goes first
       }
       if (summary) {
-        reasoningPart.summary = (reasoningPart.summary || '') + summary;
+        reasoningPart.summary = (reasoningPart.summary || "") + summary;
       }
       if (delta) {
         reasoningPart.text += delta;
       }
-      currentType = 'reasoning';
+      currentType = "reasoning";
       handler?.([...contentParts]);
     };
 
@@ -220,43 +220,47 @@ export class Client {
         tools: this.toTools(tools),
         input: items,
         instructions: instructions,
-        ...(options?.effort ? {
-          include: ['reasoning.encrypted_content'],
-          reasoning: {
-            effort: options.effort,
-            summary: options.summary ?? 'auto',
-          }
-        } : {}),
-        ...(options?.verbosity ? {
-          text: { verbosity: options.verbosity }
-        } : {}),
+        ...(options?.effort
+          ? {
+              include: ["reasoning.encrypted_content"],
+              reasoning: {
+                effort: options.effort,
+                summary: options.summary ?? "auto",
+              },
+            }
+          : {}),
+        ...(options?.verbosity
+          ? {
+              text: { verbosity: options.verbosity },
+            }
+          : {}),
       })
-      .on('response.reasoning_summary_text.delta', (event) => {
-        appendReasoning(event.item_id, '', event.delta);
+      .on("response.reasoning_summary_text.delta", (event) => {
+        appendReasoning(event.item_id, "", event.delta);
       })
-      .on('response.reasoning_text.delta', (event) => {
+      .on("response.reasoning_text.delta", (event) => {
         appendReasoning(event.item_id, event.delta);
       })
-      .on('response.output_text.delta', (event) => {
+      .on("response.output_text.delta", (event) => {
         appendText(event.delta);
       })
-      .on('response.output_item.done', (event) => {
-        if (event.item.type === 'function_call') {
+      .on("response.output_item.done", (event) => {
+        if (event.item.type === "function_call") {
           contentParts.push({
-            type: 'tool_call',
+            type: "tool_call",
             id: event.item.call_id,
             name: event.item.name,
             arguments: event.item.arguments,
           });
           currentType = null;
           handler?.([...contentParts]);
-        } else if (event.item.type === 'reasoning') {
+        } else if (event.item.type === "reasoning") {
           // Capture encrypted_content signature for multi-turn conversations
           const encryptedContent = (event.item as { encrypted_content?: string }).encrypted_content;
           if (encryptedContent) {
             // Find the reasoning part and add the signature
-            const reasoningPart = contentParts.find(p => p.type === 'reasoning');
-            if (reasoningPart && reasoningPart.type === 'reasoning') {
+            const reasoningPart = contentParts.find((p) => p.type === "reasoning");
+            if (reasoningPart && reasoningPart.type === "reasoning") {
               reasoningPart.signature = encryptedContent;
               handler?.([...contentParts]);
             }
@@ -273,13 +277,13 @@ export class Client {
   }
 
   async summarizeTitle(model: string, input: Message[]): Promise<string | null> {
-    const Schema = z.object({
-      title: z.string(),
-    }).strict();
+    const Schema = z
+      .object({
+        title: z.string(),
+      })
+      .strict();
 
-    const history = input
-      .slice(-6)
-      .map((m) => ({ role: m.role, content: m.content }));
+    const history = input.slice(-6).map((m) => ({ role: m.role, content: m.content }));
 
     try {
       const response = await this.oai.responses.parse({
@@ -300,11 +304,20 @@ export class Client {
   }
 
   async relatedPrompts(model: string, prompt: string): Promise<string[]> {
-    const Schema = z.object({
-      prompts: z.array(z.object({
-        prompt: z.string(),
-      }).strict()).min(3).max(10),
-    }).strict();
+    const Schema = z
+      .object({
+        prompts: z
+          .array(
+            z
+              .object({
+                prompt: z.string(),
+              })
+              .strict(),
+          )
+          .min(3)
+          .max(10),
+      })
+      .strict();
 
     try {
       const response = await this.oai.responses.parse({
@@ -325,9 +338,11 @@ export class Client {
   }
 
   async extractUrl(model: string, text: string): Promise<string | null> {
-    const Schema = z.object({
-      url: z.string().nullable(),
-    }).strict();
+    const Schema = z
+      .object({
+        url: z.string().nullable(),
+      })
+      .strict();
 
     if (!text.trim()) {
       return null;
@@ -352,9 +367,11 @@ export class Client {
   }
 
   async convertCSV(model: string, text: string): Promise<string> {
-    const Schema = z.object({
-      csvData: z.string(),
-    }).strict();
+    const Schema = z
+      .object({
+        csvData: z.string(),
+      })
+      .strict();
 
     if (!text.trim()) {
       return "";
@@ -379,9 +396,11 @@ export class Client {
   }
 
   async convertMD(model: string, text: string): Promise<string> {
-    const Schema = z.object({
-      mdData: z.string(),
-    }).strict();
+    const Schema = z
+      .object({
+        mdData: z.string(),
+      })
+      .strict();
 
     if (!text.trim()) {
       return "";
@@ -405,20 +424,29 @@ export class Client {
     }
   }
 
-  async rewriteSelection(model: string, text: string, selectionStart: number, selectionEnd: number): Promise<{ alternatives: string[], contextToReplace: string, keyChanges: string[] }> {
-    const Schema = z.object({
-      alternatives: z.array(z.object({
-        text: z.string(),
-        keyChange: z.string(),
-      }).strict()).min(3).max(6),
-    }).strict();
+  async rewriteSelection(model: string, text: string, selectionStart: number, selectionEnd: number): Promise<{ alternatives: string[]; contextToReplace: string; keyChanges: string[] }> {
+    const Schema = z
+      .object({
+        alternatives: z
+          .array(
+            z
+              .object({
+                text: z.string(),
+                keyChange: z.string(),
+              })
+              .strict(),
+          )
+          .min(3)
+          .max(6),
+      })
+      .strict();
 
     // Validate input
     if (!text.trim() || selectionStart < 0 || selectionEnd <= selectionStart || selectionStart >= text.length) {
       return {
         alternatives: [],
         contextToReplace: text.substring(selectionStart, selectionEnd),
-        keyChanges: []
+        keyChanges: [],
       };
     }
 
@@ -460,7 +488,7 @@ export class Client {
         instructions: instructionsRewriteSelection,
         input: JSON.stringify({
           context: contextToRewrite,
-          selection: selectedText
+          selection: selectedText,
         }),
         text: {
           format: zodTextFormat(Schema, "rewrite_selection"),
@@ -469,16 +497,16 @@ export class Client {
 
       const result = response.output_parsed;
       return {
-        alternatives: result?.alternatives.map(a => a.text) ?? [],
+        alternatives: result?.alternatives.map((a) => a.text) ?? [],
         contextToReplace: contextToRewrite,
-        keyChanges: result?.alternatives.map(a => a.keyChange) ?? []
+        keyChanges: result?.alternatives.map((a) => a.keyChange) ?? [],
       };
     } catch (error) {
       console.error("Error generating text alternatives:", error);
       return {
         alternatives: [],
         contextToReplace: contextToRewrite,
-        keyChanges: []
+        keyChanges: [],
       };
     }
   }
@@ -500,11 +528,11 @@ export class Client {
     return resp.text();
   }
 
-  async scrape(model:string, url: string): Promise<string> {
+  async scrape(model: string, url: string): Promise<string> {
     const data = new FormData();
-    
+
     if (model) {
-      data.append('model', model);
+      data.append("model", model);
     }
 
     data.append("url", url);
@@ -542,8 +570,8 @@ export class Client {
     }
 
     return result.map((item: { text?: string } | string) => {
-      if (typeof item === 'string') return item;
-      return item.text || '';
+      if (typeof item === "string") return item;
+      return item.text || "";
     });
   }
 
@@ -602,43 +630,48 @@ export class Client {
     if (contentType.includes("text/plain") || contentType.includes("text/markdown")) {
       const translatedText = await resp.text();
       // Replace German ß with ss automatically
-      return translatedText.replace(/ß/g, 'ss');
+      return translatedText.replace(/ß/g, "ss");
     }
 
     return resp.blob();
   }
 
-  async rewriteText(
-    model: string,
-    text: string,
-    lang?: string,
-    tone?: string,
-    style?: string,
-    userPrompt?: string
-  ): Promise<string> {
-    const Schema = z.object({
-      rewrittenText: z.string(),
-    }).strict();
+  async rewriteText(model: string, text: string, lang?: string, tone?: string, style?: string, userPrompt?: string): Promise<string> {
+    const Schema = z
+      .object({
+        rewrittenText: z.string(),
+      })
+      .strict();
 
     if (!text.trim()) {
       return text;
     }
 
     // Build tone instruction
-    const toneInstruction = !tone ? '' :
-      tone === 'enthusiastic' ? 'Use an enthusiastic and energetic tone.' :
-        tone === 'friendly' ? 'Use a warm and friendly tone.' :
-          tone === 'confident' ? 'Use a confident and assertive tone.' :
-            tone === 'diplomatic' ? 'Use a diplomatic and tactful tone.' :
-              '';
+    const toneInstruction = !tone
+      ? ""
+      : tone === "enthusiastic"
+        ? "Use an enthusiastic and energetic tone."
+        : tone === "friendly"
+          ? "Use a warm and friendly tone."
+          : tone === "confident"
+            ? "Use a confident and assertive tone."
+            : tone === "diplomatic"
+              ? "Use a diplomatic and tactful tone."
+              : "";
 
     // Build style instruction
-    const styleInstruction = !style ? '' :
-      style === 'simple' ? 'Use simple and clear language.' :
-        style === 'business' ? 'Use professional business language.' :
-          style === 'academic' ? 'Use formal academic language.' :
-            style === 'casual' ? 'Use casual and informal language.' :
-              '';
+    const styleInstruction = !style
+      ? ""
+      : style === "simple"
+        ? "Use simple and clear language."
+        : style === "business"
+          ? "Use professional business language."
+          : style === "academic"
+            ? "Use formal academic language."
+            : style === "casual"
+              ? "Use casual and informal language."
+              : "";
 
     // Combine predefined instructions
     const predefinedInstructions = [toneInstruction, styleInstruction].filter(Boolean);
@@ -646,27 +679,21 @@ export class Client {
     // Build the complete instruction set
     const instructions = [];
     if (predefinedInstructions.length > 0) {
-      instructions.push(predefinedInstructions.join(' '));
+      instructions.push(predefinedInstructions.join(" "));
     }
     if (userPrompt?.trim()) {
       instructions.push(`Custom instruction: ${userPrompt.trim()}`);
     }
 
-    const finalInstructions = instructions.length > 0
-      ? instructions.join(' ')
-      : 'Maintain the original tone and style';
+    const finalInstructions = instructions.length > 0 ? instructions.join(" ") : "Maintain the original tone and style";
 
     // Language handling
-    const languageInstruction = lang
-      ? `Ensure the text is in ${lang} language${lang !== 'en' ? ', translating if necessary' : ''}.`
-      : 'Maintain the original language of the text.';
+    const languageInstruction = lang ? `Ensure the text is in ${lang} language${lang !== "en" ? ", translating if necessary" : ""}.` : "Maintain the original language of the text.";
 
     try {
       const response = await this.oai.responses.parse({
         model: model,
-        instructions: instructionsRewriteText
-          .replace('{languageInstruction}', languageInstruction)
-          .replace('{finalInstructions}', finalInstructions),
+        instructions: instructionsRewriteText.replace("{languageInstruction}", languageInstruction).replace("{finalInstructions}", finalInstructions),
         input: text,
         text: {
           format: zodTextFormat(Schema, "rewrite_text"),
@@ -677,7 +704,7 @@ export class Client {
       let rewrittenText = result?.rewrittenText ?? text;
 
       // Replace German ß with ss automatically
-      rewrittenText = rewrittenText.replace(/ß/g, 'ss');
+      rewrittenText = rewrittenText.replace(/ß/g, "ss");
 
       return rewrittenText;
     } catch (error) {
@@ -702,7 +729,7 @@ export class Client {
     });
 
     const audioBuffer = await response.arrayBuffer();
-    return new Blob([audioBuffer], { type: 'audio/wav' });
+    return new Blob([audioBuffer], { type: "audio/wav" });
   }
 
   async speakText(model: string, input: string, voice?: string): Promise<void> {
@@ -730,29 +757,29 @@ export class Client {
     const data = new FormData();
 
     // Get file extension - handle common audio types explicitly
-    let extension = 'audio';
-    if (blob.type.includes('webm')) {
-      extension = 'webm';
-    } else if (blob.type.includes('mp3') || blob.type.includes('mpeg')) {
-      extension = 'mp3';
-    } else if (blob.type.includes('wav')) {
-      extension = 'wav';
-    } else if (blob.type.includes('ogg')) {
-      extension = 'ogg';
-    } else if (blob.type.includes('m4a') || blob.type.includes('mp4')) {
-      extension = 'm4a';
-    } else if (blob.type.includes('flac')) {
-      extension = 'flac';
+    let extension = "audio";
+    if (blob.type.includes("webm")) {
+      extension = "webm";
+    } else if (blob.type.includes("mp3") || blob.type.includes("mpeg")) {
+      extension = "mp3";
+    } else if (blob.type.includes("wav")) {
+      extension = "wav";
+    } else if (blob.type.includes("ogg")) {
+      extension = "ogg";
+    } else if (blob.type.includes("m4a") || blob.type.includes("mp4")) {
+      extension = "m4a";
+    } else if (blob.type.includes("flac")) {
+      extension = "flac";
     } else {
-      extension = mime.getExtension(blob.type) || 'audio';
+      extension = mime.getExtension(blob.type) || "audio";
     }
 
     const filename = `audio_recording.${extension}`;
 
-    data.append('file', blob, filename);
+    data.append("file", blob, filename);
 
     if (model) {
-      data.append('model', model);
+      data.append("model", model);
     }
 
     const response = await fetch(new URL("/api/v1/audio/transcriptions", window.location.origin), {
@@ -765,22 +792,22 @@ export class Client {
     }
 
     const result = await response.json();
-    return result.text || '';
+    return result.text || "";
   }
 
   async search(model: string, query: string, options?: { domains?: string[]; limit?: number }): Promise<SearchResult[]> {
     const data = new FormData();
 
     if (model) {
-      data.append('model', model);
+      data.append("model", model);
     }
 
-    data.append('query', query);
-    data.append('limit', String(options?.limit ?? 10));
+    data.append("query", query);
+    data.append("limit", String(options?.limit ?? 10));
 
     if (options?.domains) {
       for (const domain of options.domains) {
-        data.append('domain', domain);
+        data.append("domain", domain);
       }
     }
 
@@ -800,13 +827,13 @@ export class Client {
     }
 
     return results.map((result: SearchResult) => {
-      let content = result.content || '';
+      let content = result.content || "";
 
       // Simplify markdown content before truncating
       content = simplifyMarkdown(content);
 
       if (content.length > 10000) {
-        content = content.slice(0, 10000) + '... [truncated]';
+        content = content.slice(0, 10000) + "... [truncated]";
       }
 
       return {
@@ -822,10 +849,10 @@ export class Client {
     const data = new FormData();
 
     if (model) {
-      data.append('model', model);
+      data.append("model", model);
     }
 
-    data.append('instructions', instructions);
+    data.append("instructions", instructions);
 
     const response = await fetch(new URL(`/api/v1/research`, window.location.origin), {
       method: "POST",
@@ -837,29 +864,25 @@ export class Client {
     }
 
     const result = await response.json();
-    return result.content || '';
+    return result.content || "";
   }
 
-  async generateImage(
-    model: string,
-    prompt: string,
-    images?: Blob[]
-  ): Promise<Blob> {
+  async generateImage(model: string, prompt: string, images?: Blob[]): Promise<Blob> {
     try {
       const data = new FormData();
-      data.append('input', prompt);
+      data.append("input", prompt);
 
       if (model) {
-        data.append('model', model);
+        data.append("model", model);
       }
 
       // Add optional image blobs as files
       if (images && images.length > 0) {
         images.forEach((blob, index) => {
-          const extension = mime.getExtension(blob.type) || 'image';
+          const extension = mime.getExtension(blob.type) || "image";
           const filename = `image_${index}.${extension}`;
 
-          data.append('file', blob, filename);
+          data.append("file", blob, filename);
         });
       }
 
@@ -885,7 +908,7 @@ export class Client {
     }
 
     return tools.map((tool) => ({
-      type: 'function',
+      type: "function",
 
       name: tool.name,
       description: tool.description,
@@ -897,60 +920,44 @@ export class Client {
 
   private sanitizeMessages(messages: Message[]): Message[] {
     // Extract tool result IDs from all messages
-    const toolResultIds = new Set(
-      messages.flatMap(m => 
-        m.content
-          .filter((p): p is ToolResultContent => p.type === 'tool_result')
-          .map(p => p.id)
-      )
-    );
-    
+    const toolResultIds = new Set(messages.flatMap((m) => m.content.filter((p): p is ToolResultContent => p.type === "tool_result").map((p) => p.id)));
+
     // Find tool calls that have matching results
-    const validToolCallIds = new Set(
-      messages.flatMap(m =>
-        m.content
-          .filter((p): p is import('../types/chat').ToolCallContent => 
-            p.type === 'tool_call' && toolResultIds.has(p.id)
-          )
-          .map(p => p.id)
-      )
-    );
+    const validToolCallIds = new Set(messages.flatMap((m) => m.content.filter((p): p is import("../types/chat").ToolCallContent => p.type === "tool_call" && toolResultIds.has(p.id)).map((p) => p.id)));
 
     return messages.filter((m) => {
-      const toolCalls = m.content.filter((p): p is import('../types/chat').ToolCallContent => p.type === 'tool_call');
-      const toolResults = m.content.filter((p): p is ToolResultContent => p.type === 'tool_result');
-      
+      const toolCalls = m.content.filter((p): p is import("../types/chat").ToolCallContent => p.type === "tool_call");
+      const toolResults = m.content.filter((p): p is ToolResultContent => p.type === "tool_result");
+
       // If message has tool calls, all must have valid results
       if (toolCalls.length > 0) {
-        return toolCalls.every(tc => validToolCallIds.has(tc.id));
+        return toolCalls.every((tc) => validToolCallIds.has(tc.id));
       }
 
       // If message has tool results, all must match valid tool calls
       if (toolResults.length > 0) {
-        return toolResults.every(tr => validToolCallIds.has(tr.id));
+        return toolResults.every((tr) => validToolCallIds.has(tr.id));
       }
 
       // Keep messages with meaningful content (text, images, files)
-      const hasContent = m.content.some(p => 
-        (p.type === 'text' && p.text.trim()) || 
-        p.type === 'image' || 
-        p.type === 'file'
-      );
+      const hasContent = m.content.some((p) => (p.type === "text" && p.text.trim()) || p.type === "image" || p.type === "file");
       return hasContent;
     });
   }
 
   async optimizeSkill(model: string, name: string, description: string, content: string): Promise<{ name: string; description: string; content: string }> {
-    const Schema = z.object({
-      name: z.string(),
-      description: z.string(),
-      content: z.string(),
-    }).strict();
+    const Schema = z
+      .object({
+        name: z.string(),
+        description: z.string(),
+        content: z.string(),
+      })
+      .strict();
 
     const instructions = instructionsOptimizeSkill
-      .replace('{name}', name || '')
-      .replace('{description}', description || '')
-      .replace('{content}', content || '');
+      .replace("{name}", name || "")
+      .replace("{description}", description || "")
+      .replace("{content}", content || "");
 
     try {
       const response = await this.oai.responses.parse({

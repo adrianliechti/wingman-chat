@@ -1,17 +1,17 @@
-import { memo, useState, useEffect, useRef } from 'react';
-import { codeToHtml } from 'shiki';
-import { CopyButton } from './CopyButton';
-import { useTheme } from '@/shell/hooks/useTheme';
+import { memo, useState, useEffect, useRef } from "react";
+import { codeToHtml } from "shiki";
+import { CopyButton } from "./CopyButton";
+import { useTheme } from "@/shell/hooks/useTheme";
 
 const HIGHLIGHT_DEBOUNCE_MS = 150;
 
 const highlightedCodeStyle: React.CSSProperties = {
   margin: 0,
-  padding: '1rem',
-  fontSize: '0.875rem',
-  lineHeight: '1.25rem',
-  fontFamily: 'Fira Code, Monaco, Cascadia Code, Roboto Mono, monospace',
-  background: 'transparent',
+  padding: "1rem",
+  fontSize: "0.875rem",
+  lineHeight: "1.25rem",
+  fontFamily: "Fira Code, Monaco, Cascadia Code, Roboto Mono, monospace",
+  background: "transparent",
 };
 
 interface CodeRendererProps {
@@ -22,7 +22,7 @@ interface CodeRendererProps {
 
 const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
   const { isDark } = useTheme();
-  const [html, setHtml] = useState<string>('');
+  const [html, setHtml] = useState<string>("");
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
@@ -37,16 +37,16 @@ const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
       try {
         const highlighted = await codeToHtml(code, {
           lang: language.toLowerCase(),
-          theme: isDark ? 'one-dark-pro' : 'one-light',
+          theme: isDark ? "one-dark-pro" : "one-light",
           colorReplacements: {
-            '#fafafa': 'transparent',
-            '#282c34': 'transparent',
+            "#fafafa": "transparent",
+            "#282c34": "transparent",
           },
         });
         if (!cancelled) setHtml(highlighted);
       } catch (error) {
-        console.error('Failed to highlight code:', error);
-        if (!cancelled) setHtml('');
+        console.error("Failed to highlight code:", error);
+        if (!cancelled) setHtml("");
       }
     }, HIGHLIGHT_DEBOUNCE_MS);
 
@@ -56,7 +56,7 @@ const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
     };
   }, [code, language, isDark]);
 
-  const effectiveHtml = code ? html : '';
+  const effectiveHtml = code ? html : "";
 
   const renderCodeBlock = (content: React.ReactNode) => (
     <div className="relative my-4">
@@ -69,9 +69,7 @@ const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
           <CopyButton text={code} className="h-4 w-4" />
         </div>
       </div>
-      <div className="bg-white dark:bg-neutral-900 rounded-b-md overflow-hidden border-l border-r border-b border-gray-100 dark:border-neutral-800">
-        {content}
-      </div>
+      <div className="bg-white dark:bg-neutral-900 rounded-b-md overflow-hidden border-l border-r border-b border-gray-100 dark:border-neutral-800">{content}</div>
     </div>
   );
 
@@ -79,19 +77,13 @@ const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
     return renderCodeBlock(
       <pre className="p-4 text-gray-800 dark:text-neutral-300 text-sm whitespace-pre overflow-x-auto">
         <code>{code}</code>
-      </pre>
+      </pre>,
     );
   }
 
-  return renderCodeBlock(
-    <div 
-      className="overflow-x-auto"
-      dangerouslySetInnerHTML={{ __html: effectiveHtml }}
-      style={highlightedCodeStyle}
-    />
-  );
+  return renderCodeBlock(<div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: effectiveHtml }} style={highlightedCodeStyle} />);
 });
 
-CodeRenderer.displayName = 'CodeRenderer';
+CodeRenderer.displayName = "CodeRenderer";
 
 export { CodeRenderer };

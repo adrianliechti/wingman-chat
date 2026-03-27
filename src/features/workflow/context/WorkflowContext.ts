@@ -1,6 +1,6 @@
-import { createContext } from 'react';
-import type { Node, NodeChange, EdgeChange, Connection } from '@xyflow/react';
-import type { WorkflowEdge } from '@/features/workflow/types/workflow';
+import { createContext } from "react";
+import type { Node, NodeChange, EdgeChange, Connection } from "@xyflow/react";
+import type { WorkflowEdge } from "@/features/workflow/types/workflow";
 
 export interface WorkflowContextType {
   nodes: Node[];

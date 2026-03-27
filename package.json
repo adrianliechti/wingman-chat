@@ -9,7 +9,8 @@
     "bundle:pyodide": "node scripts/bundle-pyodide-packages.mjs",
     "prebuild": "npm run bundle:pyodide",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "format": "npx biome format --fix",
+    "lint": "npx biome lint --fix",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -52,20 +53,17 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@eslint/js": "^9.22.0",
+    "@babel/core": "^7.29.0",
+    "@biomejs/biome": "2.4.9",
     "@rolldown/plugin-babel": "^0.2.2",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "babel-plugin-react-compiler": "^1.0.0",
-    "eslint": "^9.39.4",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^16.5.0",
     "tailwindcss": "^4.0.12",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.57.2",
     "vite": "^8.0.3"
   }
 }

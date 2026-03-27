@@ -14,16 +14,15 @@ export interface QueryResult {
 export class VectorDB {
   private documents: Map<string, Document> = new Map();
 
-  constructor() {
-  }
+  constructor() {}
 
   addDocument(document: Document): void {
     this.documents.set(document.id, document);
   }
-  
+
   private cosineSimilarity(vector1: number[], vector2: number[]): number {
     if (vector1.length !== vector2.length) {
-      throw new Error('Vectors must have the same length');
+      throw new Error("Vectors must have the same length");
     }
 
     let dotProduct = 0;
@@ -46,10 +45,10 @@ export class VectorDB {
 
     return dotProduct / (norm1 * norm2);
   }
-  
+
   queryDocuments(vector: number[], topK?: number): QueryResult[] {
     const k = topK || 10;
-    
+
     const similarities: QueryResult[] = [];
 
     for (const document of this.documents.values()) {
@@ -65,32 +64,32 @@ export class VectorDB {
     similarities.sort((a, b) => b.similarity - a.similarity);
     return similarities.slice(0, k);
   }
-  
+
   getDocument(docId: string): Document | undefined {
     return this.documents.get(docId);
   }
-  
+
   listDocuments(): Document[] {
     return Array.from(this.documents.values());
   }
-  
+
   deleteDocument(docId: string): boolean {
     return this.documents.delete(docId);
   }
-  
+
   clear(): void {
     this.documents.clear();
   }
-  
+
   export(): string {
     const data = Object.fromEntries(this.documents.entries());
     return JSON.stringify(data);
   }
-  
+
   import(jsonData: string): void {
     try {
       const data = JSON.parse(jsonData) as Record<string, Document>;
-      
+
       this.clear();
 
       for (const doc of Object.values(data)) {

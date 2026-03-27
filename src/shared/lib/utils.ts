@@ -1,6 +1,6 @@
-import mime from 'mime';
-import { marked } from 'marked';
-import type { TextContent, ImageContent, AudioContent, FileContent } from '@/shared/types/chat';
+import mime from "mime";
+import { marked } from "marked";
+import type { TextContent, ImageContent, AudioContent, FileContent } from "@/shared/types/chat";
 
 // Parse a data URL to extract mimeType and base64 data
 export function parseDataUrl(dataUrl: string): { mimeType: string; data: string } | null {
@@ -17,26 +17,26 @@ export function parseDataUrl(dataUrl: string): { mimeType: string; data: string 
  * to avoid sending large base64 data URLs to the model which it cannot process.
  */
 export function serializeToolResultForApi(result: (TextContent | ImageContent | AudioContent | FileContent)[]): string {
-  const serialized = result.map(item => {
-    if (item.type === 'text') {
+  const serialized = result.map((item) => {
+    if (item.type === "text") {
       return item;
     }
-    if (item.type === 'image') {
-      return { 
-        type: 'text', 
-        text: `[Image${item.name ? `: ${item.name}` : ''} - displayed to user]` 
+    if (item.type === "image") {
+      return {
+        type: "text",
+        text: `[Image${item.name ? `: ${item.name}` : ""} - displayed to user]`,
       };
     }
-    if (item.type === 'audio') {
-      return { 
-        type: 'text', 
-        text: `[Audio${item.name ? `: ${item.name}` : ''} - displayed to user]` 
+    if (item.type === "audio") {
+      return {
+        type: "text",
+        text: `[Audio${item.name ? `: ${item.name}` : ""} - displayed to user]`,
       };
     }
-    if (item.type === 'file') {
-      return { 
-        type: 'text', 
-        text: `[File: ${item.name} - displayed to user]` 
+    if (item.type === "file") {
+      return {
+        type: "text",
+        text: `[File: ${item.name} - displayed to user]`,
       };
     }
     return item;
@@ -45,7 +45,7 @@ export function serializeToolResultForApi(result: (TextContent | ImageContent | 
 }
 
 export function lookupContentType(ext: string): string | undefined {
-  const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+  const normalizedExt = ext.startsWith(".") ? ext : `.${ext}`;
   return mime.getType(normalizedExt) ?? undefined;
 }
 
@@ -84,8 +84,8 @@ export function readAsDataURL(blob: Blob): Promise<string> {
 }
 
 export function decodeDataURL(dataURL: string): Blob {
-  const [header, base64] = dataURL.split(',');
-  const mimeType = header.match(/:(.*?);/)?.[1] || 'application/octet-stream';
+  const [header, base64] = dataURL.split(",");
+  const mimeType = header.match(/:(.*?);/)?.[1] || "application/octet-stream";
   const byteCharacters = atob(base64);
   const byteNumbers = new Array(byteCharacters.length);
   for (let i = 0; i < byteCharacters.length; i++) {
@@ -95,11 +95,7 @@ export function decodeDataURL(dataURL: string): Blob {
   return new Blob([byteArray], { type: mimeType });
 }
 
-export async function resizeImageBlob(
-  blob: Blob,
-  maxWidth: number,
-  maxHeight: number
-): Promise<Blob> {
+export async function resizeImageBlob(blob: Blob, maxWidth: number, maxHeight: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.src = URL.createObjectURL(blob);
@@ -142,7 +138,7 @@ export async function resizeImageBlob(
           }
         },
         blob.type,
-        0.9
+        0.9,
       );
     };
 
@@ -154,94 +150,90 @@ export async function resizeImageBlob(
 }
 
 export function getFileName(path: string): string {
-  return path.split('/').pop() || path;
+  return path.split("/").pop() || path;
 }
 
 export function getFileExt(path: string): string {
   const filename = getFileName(path);
-  const parts = filename.split('.');
+  const parts = filename.split(".");
   return parts.length > 1 ? "." + parts.pop() || "" : "";
 }
 
 export function isAudioUrl(url: string): boolean {
-  const audioExtensions = ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac'];
-  
+  const audioExtensions = [".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac"];
+
   try {
     const urlObj = new URL(url);
     const pathname = urlObj.pathname.toLowerCase();
-    
+
     // Check file extensions
-    return audioExtensions.some(ext => pathname.endsWith(ext));
+    return audioExtensions.some((ext) => pathname.endsWith(ext));
   } catch {
     return false;
   }
 }
 
 export function isVideoUrl(url: string): boolean {
-  const videoExtensions = ['.mp4', '.webm', '.avi', '.mov', '.wmv', '.flv', '.mkv'];
-  
+  const videoExtensions = [".mp4", ".webm", ".avi", ".mov", ".wmv", ".flv", ".mkv"];
+
   try {
     const urlObj = new URL(url);
     const pathname = urlObj.pathname.toLowerCase();
-    
+
     // Check file extensions
-    return videoExtensions.some(ext => pathname.endsWith(ext));
+    return videoExtensions.some((ext) => pathname.endsWith(ext));
   } catch {
     return false;
   }
 }
 
 export function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  
+  if (bytes === 0) return "0 B";
+
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
 export function markdownToHtml(markdown: string): string {
-  if (!markdown) return '';
-  
+  if (!markdown) return "";
+
   try {
     let html = marked.parse(markdown, { gfm: true, breaks: false }) as string;
-    
+
     // Add Word-compatible styling for tables
     html = html
       .replace(/<table>/g, '<table border="1" cellspacing="0" cellpadding="4" style="border-collapse: collapse; border: 1px solid black;">')
       .replace(/<td>/g, '<td style="border: 1px solid black; padding: 4px;">')
       .replace(/<th>/g, '<th style="border: 1px solid black; padding: 4px; font-weight: bold;">');
-    
+
     return html;
   } catch (error) {
-    console.error('Failed to convert markdown to HTML:', error);
+    console.error("Failed to convert markdown to HTML:", error);
     return markdown;
   }
 }
 
 export function markdownToText(markdown: string): string {
-  if (!markdown) return '';
+  if (!markdown) return "";
 
-  const escapeHtml = (text: string) => text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
-  const unescapeHtml = (text: string) => text
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
+  const unescapeHtml = (text: string) =>
+    text
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&");
 
   // Extract code blocks and inline code first to protect them from transformations
   const codeBlocks: string[] = [];
   const inlineCodes: string[] = [];
-  const CODE_BLOCK_PLACEHOLDER = '\u0000CB\u0000';
-  const INLINE_CODE_PLACEHOLDER = '\u0000IC\u0000';
+  const CODE_BLOCK_PLACEHOLDER = "\u0000CB\u0000";
+  const INLINE_CODE_PLACEHOLDER = "\u0000IC\u0000";
 
   // Extract fenced code blocks first
   let processed = markdown.replace(/```[\s\S]*?\n([\s\S]*?)```/g, (_, code) => {
@@ -258,51 +250,51 @@ export function markdownToText(markdown: string): string {
   // Simple markdown patterns to plain text (now safe from code content)
   const text = processed
     // Remove HTML tags
-    .replace(/<[^>]*>/g, '')
+    .replace(/<[^>]*>/g, "")
     // Headers - just the text with double newline
-    .replace(/^#{1,6}\s+(.+)$/gm, '$1\n')
+    .replace(/^#{1,6}\s+(.+)$/gm, "$1\n")
     // Bold/italic - keep text only (using word boundaries to avoid breaking identifiers)
-    .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/__(.+?)__/g, '$1')
-    .replace(/(?<!\w)\*(.+?)\*(?!\w)/g, '$1')
-    .replace(/(?<!\w)_(.+?)_(?!\w)/g, '$1')
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/(?<!\w)\*(.+?)\*(?!\w)/g, "$1")
+    .replace(/(?<!\w)_(.+?)_(?!\w)/g, "$1")
     // Strikethrough
-    .replace(/~~(.*?)~~/g, '$1')
+    .replace(/~~(.*?)~~/g, "$1")
     // Links - keep text only
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/\[([^\]]+)\]\[[^\]]*\]/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\[[^\]]*\]/g, "$1")
     // Images - keep alt text
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
     // Lists - keep items with newlines
-    .replace(/^\s*[-*+]\s+/gm, '')
-    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
     // Blockquotes
-    .replace(/^\s*>\s+/gm, '')
+    .replace(/^\s*>\s+/gm, "")
     // Horizontal rules
-    .replace(/^[\s]*[-*_]{3,}[\s]*$/gm, '')
+    .replace(/^[\s]*[-*_]{3,}[\s]*$/gm, "")
     // Tables - preserve structure roughly
-    .replace(/\|/g, ' ')
-    .replace(/^[\s]*:?-+:?[\s]*$/gm, '')
+    .replace(/\|/g, " ")
+    .replace(/^[\s]*:?-+:?[\s]*$/gm, "")
     // Restore code blocks
-    .replace(new RegExp(CODE_BLOCK_PLACEHOLDER, 'g'), () => {
-      const code = codeBlocks.shift() || '';
-      return escapeHtml(code) + '\n\n';
+    .replace(new RegExp(CODE_BLOCK_PLACEHOLDER, "g"), () => {
+      const code = codeBlocks.shift() || "";
+      return escapeHtml(code) + "\n\n";
     })
     // Restore inline code
-    .replace(new RegExp(INLINE_CODE_PLACEHOLDER, 'g'), () => {
-      const code = inlineCodes.shift() || '';
+    .replace(new RegExp(INLINE_CODE_PLACEHOLDER, "g"), () => {
+      const code = inlineCodes.shift() || "";
       return escapeHtml(code);
     })
     // Multiple blank lines to double newline
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\n{3,}/g, "\n\n")
     // Trim
     .trim();
 
   return unescapeHtml(text);
 }
 
-export function downloadFromUrl(url: string, filename: string = ''): void {
-  const link = document.createElement('a');
+export function downloadFromUrl(url: string, filename: string = ""): void {
+  const link = document.createElement("a");
   link.href = url;
   link.download = filename || filenameFromUrl(url);
   document.body.appendChild(link);
@@ -318,55 +310,55 @@ export function downloadBlob(blob: Blob, filename: string): void {
 
 export function filenameFromUrl(src: string): string {
   // If it's a data URL, extract the MIME type and derive a simple filename
-  if (src.startsWith('data:')) {
+  if (src.startsWith("data:")) {
     const mimeMatch = src.match(/^data:([^;]+)[;,]/);
     if (mimeMatch) {
       const mimeType = mimeMatch[1];
       const ext = mime.getExtension(mimeType);
       if (ext) {
-        const base = mimeType.startsWith('image/') ? 'image' : 'file';
-        const cleanExt = ext.startsWith('.') ? ext.slice(1) : ext;
+        const base = mimeType.startsWith("image/") ? "image" : "file";
+        const cleanExt = ext.startsWith(".") ? ext.slice(1) : ext;
         return `${base}.${cleanExt}`;
       }
     }
     // No recognized extension
-    return '';
+    return "";
   }
   // For non-data URLs, don't attempt to infer; let the browser decide
-  return '';
+  return "";
 }
 
 export function simplifyMarkdown(content: string): string {
   // Remove markdown images: ![alt](url) or ![alt][ref]
-  content = content.replace(/!\[[^\]]*\]\([^)]+\)/g, '');
-  content = content.replace(/!\[[^\]]*\]\[[^\]]*\]/g, '');
+  content = content.replace(/!\[[^\]]*\]\([^)]+\)/g, "");
+  content = content.replace(/!\[[^\]]*\]\[[^\]]*\]/g, "");
 
   // Remove HTML img tags
-  content = content.replace(/<img[^>]*>/gi, '');
+  content = content.replace(/<img[^>]*>/gi, "");
 
   // Remove data URLs (base64 embedded content)
-  content = content.replace(/data:[a-zA-Z0-9]+\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g, '[data-url]');
+  content = content.replace(/data:[a-zA-Z0-9]+\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g, "[data-url]");
 
   // Remove other embedded data URLs (non-base64)
-  content = content.replace(/data:[a-zA-Z0-9]+\/[a-zA-Z0-9.+-]+,[^\s)"']+/g, '[data-url]');
+  content = content.replace(/data:[a-zA-Z0-9]+\/[a-zA-Z0-9.+-]+,[^\s)"']+/g, "[data-url]");
 
   // Remove SVG content (often very long)
-  content = content.replace(/<svg[\s\S]*?<\/svg>/gi, '[svg]');
+  content = content.replace(/<svg[\s\S]*?<\/svg>/gi, "[svg]");
 
   // Remove style blocks
-  content = content.replace(/<style[\s\S]*?<\/style>/gi, '');
+  content = content.replace(/<style[\s\S]*?<\/style>/gi, "");
 
   // Remove script blocks
-  content = content.replace(/<script[\s\S]*?<\/script>/gi, '');
+  content = content.replace(/<script[\s\S]*?<\/script>/gi, "");
 
   // Remove HTML comments
-  content = content.replace(/<!--[\s\S]*?-->/g, '');
+  content = content.replace(/<!--[\s\S]*?-->/g, "");
 
   // Remove long hex color codes or hashes (more than 32 chars)
-  content = content.replace(/[a-f0-9]{32,}/gi, '[hash]');
+  content = content.replace(/[a-f0-9]{32,}/gi, "[hash]");
 
   // Collapse multiple consecutive blank lines into one
-  content = content.replace(/\n{3,}/g, '\n\n');
+  content = content.replace(/\n{3,}/g, "\n\n");
 
   // Trim whitespace
   content = content.trim();

@@ -1,17 +1,17 @@
-import { Globe, Sparkles, FileText, FileType, Volume2, Image, StickyNote, Languages, Table } from 'lucide-react';
-import { useWorkflow } from '@/features/workflow/hooks/useWorkflow';
-import type { Node } from '@xyflow/react';
-import { useState, useEffect, useRef } from 'react';
-import { getConfig } from '@/shared/config';
-import { createSearchNode } from '@/features/workflow/nodes/SearchNode.factory';
-import { createPromptNode } from '@/features/workflow/nodes/PromptNode.factory';
-import { createTextNode } from '@/features/workflow/nodes/TextNode.factory';
-import { createFileNode } from '@/features/workflow/nodes/FileNode.factory';
-import { createTranslateNode } from '@/features/workflow/nodes/TranslateNode.factory';
-import { createMarkdownNode } from '@/features/workflow/nodes/MarkdownNode.factory';
-import { createAudioNode } from '@/features/workflow/nodes/AudioNode.factory';
-import { createImageNode } from '@/features/workflow/nodes/ImageNode.factory';
-import { createCsvNode } from '@/features/workflow/nodes/CsvNode.factory';
+import { Globe, Sparkles, FileText, FileType, Volume2, Image, StickyNote, Languages, Table } from "lucide-react";
+import { useWorkflow } from "@/features/workflow/hooks/useWorkflow";
+import type { Node } from "@xyflow/react";
+import { useState, useEffect, useRef } from "react";
+import { getConfig } from "@/shared/config";
+import { createSearchNode } from "@/features/workflow/nodes/SearchNode.factory";
+import { createPromptNode } from "@/features/workflow/nodes/PromptNode.factory";
+import { createTextNode } from "@/features/workflow/nodes/TextNode.factory";
+import { createFileNode } from "@/features/workflow/nodes/FileNode.factory";
+import { createTranslateNode } from "@/features/workflow/nodes/TranslateNode.factory";
+import { createMarkdownNode } from "@/features/workflow/nodes/MarkdownNode.factory";
+import { createAudioNode } from "@/features/workflow/nodes/AudioNode.factory";
+import { createImageNode } from "@/features/workflow/nodes/ImageNode.factory";
+import { createCsvNode } from "@/features/workflow/nodes/CsvNode.factory";
 
 type NodeFactory = (position: { x: number; y: number }) => Node;
 
@@ -30,17 +30,17 @@ function WorkflowPaletteItem({ label, icon, createNode }: WorkflowPaletteItemPro
     const viewportHeight = window.innerHeight;
     const nodeWidth = 400;
     const nodeHeight = 300;
-    
+
     // Center position minus half the node size to center the node itself
     const x = (viewportWidth - nodeWidth) / 2;
     const y = (viewportHeight - nodeHeight) / 2;
-    
+
     const newNode = createNode({ x, y });
-    
+
     // Apply standard dimensions
     newNode.style = {
       width: nodeWidth,
-      height: nodeHeight
+      height: nodeHeight,
     };
 
     addNode(newNode);
@@ -70,75 +70,31 @@ export function WorkflowPalette() {
     };
 
     checkHeight();
-    window.addEventListener('resize', checkHeight);
-    return () => window.removeEventListener('resize', checkHeight);
+    window.addEventListener("resize", checkHeight);
+    return () => window.removeEventListener("resize", checkHeight);
   }, []);
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className="absolute left-4 top-[calc(50%+1rem)] -translate-y-1/2 z-10 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-lg p-2 max-h-[calc(100vh-8rem)] overflow-y-auto"
     >
-      <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
-        <WorkflowPaletteItem
-          label="Text"
-          icon={<StickyNote size={20} />}
-          createNode={createTextNode}
-        />
-        <WorkflowPaletteItem
-          label="File"
-          icon={<FileText size={20} />}
-          createNode={createFileNode}
-        />
-        {config.internet && (
-          <WorkflowPaletteItem
-            label="Search"
-            icon={<Globe size={20} />}
-            createNode={createSearchNode}
-          />
-        )}
+      <div className={`grid ${useDoubleColumn ? "grid-cols-2" : "grid-cols-1"} gap-2`}>
+        <WorkflowPaletteItem label="Text" icon={<StickyNote size={20} />} createNode={createTextNode} />
+        <WorkflowPaletteItem label="File" icon={<FileText size={20} />} createNode={createFileNode} />
+        {config.internet && <WorkflowPaletteItem label="Search" icon={<Globe size={20} />} createNode={createSearchNode} />}
       </div>
       <div className="w-full h-px bg-gray-300/50 dark:bg-gray-600/50 my-1" />
-      <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
-        <WorkflowPaletteItem
-          label="Prompt"
-          icon={<Sparkles size={20} />}
-          createNode={createPromptNode}
-        />
-        {config.translator && (
-          <WorkflowPaletteItem
-            label="Translate"
-            icon={<Languages size={20} />}
-            createNode={createTranslateNode}
-          />
-        )}
+      <div className={`grid ${useDoubleColumn ? "grid-cols-2" : "grid-cols-1"} gap-2`}>
+        <WorkflowPaletteItem label="Prompt" icon={<Sparkles size={20} />} createNode={createPromptNode} />
+        {config.translator && <WorkflowPaletteItem label="Translate" icon={<Languages size={20} />} createNode={createTranslateNode} />}
       </div>
       <div className="w-full h-px bg-gray-300/50 dark:bg-gray-600/50 my-1" />
-      <div className={`grid ${useDoubleColumn ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
-        <WorkflowPaletteItem
-          label="Markdown"
-          icon={<FileType size={20} />}
-          createNode={createMarkdownNode}
-        />
-        {config.tts && (
-          <WorkflowPaletteItem
-            label="Audio"
-            icon={<Volume2 size={20} />}
-            createNode={createAudioNode}
-          />
-        )}
-        {config.renderer && (
-          <WorkflowPaletteItem
-            label="Image"
-            icon={<Image size={20} />}
-            createNode={createImageNode}
-          />
-        )}
-        <WorkflowPaletteItem
-          label="CSV"
-          icon={<Table size={20} />}
-          createNode={createCsvNode}
-        />
+      <div className={`grid ${useDoubleColumn ? "grid-cols-2" : "grid-cols-1"} gap-2`}>
+        <WorkflowPaletteItem label="Markdown" icon={<FileType size={20} />} createNode={createMarkdownNode} />
+        {config.tts && <WorkflowPaletteItem label="Audio" icon={<Volume2 size={20} />} createNode={createAudioNode} />}
+        {config.renderer && <WorkflowPaletteItem label="Image" icon={<Image size={20} />} createNode={createImageNode} />}
+        <WorkflowPaletteItem label="CSV" icon={<Table size={20} />} createNode={createCsvNode} />
       </div>
     </div>
   );

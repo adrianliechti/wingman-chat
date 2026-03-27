@@ -1,9 +1,9 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useArtifacts } from '@/features/artifacts/hooks/useArtifacts';
-import { BASH_HOME, createBashInstance, getBashCwd, getBashEnv, readFilesFromFs, resolveBashCwd } from '@/features/tools/lib/bash';
-import type { BashInstance } from '@/features/tools/lib/bash';
-import type { OverlayFile } from '@/features/artifacts/lib/fs';
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { BASH_HOME, createBashInstance, getBashCwd, getBashEnv, readFilesFromFs, resolveBashCwd } from "@/features/tools/lib/bash";
+import type { BashInstance } from "@/features/tools/lib/bash";
+import type { OverlayFile } from "@/features/artifacts/lib/fs";
 
 interface BashEditorProps {
   /** If provided, this script content is shown as the initial command (for .sh files) */
@@ -15,14 +15,14 @@ interface BashEditorProps {
 }
 
 interface OutputEntry {
-  type: 'command' | 'stdout' | 'stderr' | 'info';
+  type: "command" | "stdout" | "stderr" | "info";
   text: string;
   cwd?: string;
 }
 
 function formatPromptCwd(cwd: string): string {
   if (cwd === BASH_HOME) {
-    return '~';
+    return "~";
   }
 
   if (cwd.startsWith(`${BASH_HOME}/`)) {
@@ -36,7 +36,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
   const { fs } = useArtifacts();
   const instanceRef = useRef<BashInstance | null>(null);
   const [entries, setEntries] = useState<OutputEntry[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [cwd, setCwd] = useState(BASH_HOME);
@@ -52,7 +52,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     HOME: BASH_HOME,
     PWD: BASH_HOME,
     OLDPWD: BASH_HOME,
-    PATH: '/usr/bin:/bin',
+    PATH: "/usr/bin:/bin",
   });
 
   useEffect(() => {
@@ -96,13 +96,15 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
         setCwd(getBashCwd(instance));
         setHistory([]);
         setIsReady(true);
-        setEntries([{ type: 'info', text: 'Bash shell ready. Type commands below.' }]);
+        setEntries([{ type: "info", text: "Bash shell ready. Type commands below." }]);
       }
     };
 
     init();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [fs]);
 
   // Run initial script once when bash is ready
@@ -157,7 +159,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
 
       previousFilesRef.current = currentFiles;
     } catch (error) {
-      console.error('Error syncing bash FS to artifacts:', error);
+      console.error("Error syncing bash FS to artifacts:", error);
     } finally {
       isApplyingLocalSyncRef.current = false;
     }
@@ -196,10 +198,10 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
       }
     };
 
-    const unsubCreate = fs.subscribe('fileCreated', syncFromArtifacts);
-    const unsubUpdate = fs.subscribe('fileUpdated', syncFromArtifacts);
-    const unsubDelete = fs.subscribe('fileDeleted', syncFromArtifacts);
-    const unsubRename = fs.subscribe('fileRenamed', syncFromArtifacts);
+    const unsubCreate = fs.subscribe("fileCreated", syncFromArtifacts);
+    const unsubUpdate = fs.subscribe("fileUpdated", syncFromArtifacts);
+    const unsubDelete = fs.subscribe("fileDeleted", syncFromArtifacts);
+    const unsubRename = fs.subscribe("fileRenamed", syncFromArtifacts);
 
     return () => {
       unsubCreate();
@@ -209,64 +211,70 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     };
   }, [fs, isReady]);
 
-  const executeCommand = useCallback(async (command: string) => {
-    if (!instanceRef.current || !command.trim()) return;
+  const executeCommand = useCallback(
+    async (command: string) => {
+      if (!instanceRef.current || !command.trim()) return;
 
-    const trimmed = command.trim();
-    
-    // Handle clear command locally
-    if (trimmed === 'clear') {
-      setEntries([]);
-      return;
-    }
+      const trimmed = command.trim();
 
-    setIsRunning(true);
-    setEntries(prev => [...prev, { type: 'command', text: trimmed, cwd }]);
+      // Handle clear command locally
+      if (trimmed === "clear") {
+        setEntries([]);
+        return;
+      }
 
-    // Add to history
-    setHistory(prev => {
-      const newHistory = prev.filter(h => h !== trimmed);
-      newHistory.push(trimmed);
-      return newHistory.slice(-100); // Keep last 100 commands
-    });
-    setHistoryIndex(-1);
+      setIsRunning(true);
+      setEntries((prev) => [...prev, { type: "command", text: trimmed, cwd }]);
 
-    try {
-      const result = await instanceRef.current.bash.exec(trimmed, {
-        cwd,
-        env: shellEnvRef.current,
-        replaceEnv: true,
+      // Add to history
+      setHistory((prev) => {
+        const newHistory = prev.filter((h) => h !== trimmed);
+        newHistory.push(trimmed);
+        return newHistory.slice(-100); // Keep last 100 commands
       });
+      setHistoryIndex(-1);
 
-      const nextEnv = (result as { env?: Record<string, string> }).env ?? shellEnvRef.current;
-      shellEnvRef.current = nextEnv;
-      setCwd(nextEnv.PWD ?? cwd);
+      try {
+        const result = await instanceRef.current.bash.exec(trimmed, {
+          cwd,
+          env: shellEnvRef.current,
+          replaceEnv: true,
+        });
 
-      setEntries(prev => {
-        const newEntries = [...prev];
-        if (result.stdout) {
-          newEntries.push({ type: 'stdout', text: result.stdout });
-        }
-        if (result.stderr) {
-          newEntries.push({ type: 'stderr', text: result.stderr });
-        }
-        if (result.exitCode !== 0 && !result.stderr) {
-          newEntries.push({ type: 'info', text: `exit code: ${result.exitCode}` });
-        }
-        return newEntries;
-      });
+        const nextEnv = (result as { env?: Record<string, string> }).env ?? shellEnvRef.current;
+        shellEnvRef.current = nextEnv;
+        setCwd(nextEnv.PWD ?? cwd);
 
-      // Sync filesystem changes back to artifacts
-      await syncToArtifacts();
-    } catch (error) {
-      setEntries(prev => [...prev, {
-        type: 'stderr',
-        text: error instanceof Error ? error.message : String(error)
-      }]);
-    } finally {
-      setIsRunning(false);
-    }
-  }, [cwd, syncToArtifacts]);
+        setEntries((prev) => {
+          const newEntries = [...prev];
+          if (result.stdout) {
+            newEntries.push({ type: "stdout", text: result.stdout });
+          }
+          if (result.stderr) {
+            newEntries.push({ type: "stderr", text: result.stderr });
+          }
+          if (result.exitCode !== 0 && !result.stderr) {
+            newEntries.push({ type: "info", text: `exit code: ${result.exitCode}` });
+          }
+          return newEntries;
+        });
+
+        // Sync filesystem changes back to artifacts
+        await syncToArtifacts();
+      } catch (error) {
+        setEntries((prev) => [
+          ...prev,
+          {
+            type: "stderr",
+            text: error instanceof Error ? error.message : String(error),
+          },
+        ]);
+      } finally {
+        setIsRunning(false);
+      }
+    },
+    [cwd, syncToArtifacts],
+  );
 
   // Register run handler — for .sh files, execute the script content
   useEffect(() => {
@@ -283,34 +291,37 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     return () => onRunReady?.(null);
   }, [initialScript, executeCommand, onRunReady]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !isRunning) {
-      e.preventDefault();
-      const cmd = input;
-      setInput('');
-      executeCommand(cmd);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (history.length === 0) return;
-      const newIndex = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1);
-      setHistoryIndex(newIndex);
-      setInput(history[newIndex]);
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (historyIndex === -1) return;
-      const newIndex = historyIndex + 1;
-      if (newIndex >= history.length) {
-        setHistoryIndex(-1);
-        setInput('');
-      } else {
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter" && !isRunning) {
+        e.preventDefault();
+        const cmd = input;
+        setInput("");
+        executeCommand(cmd);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (history.length === 0) return;
+        const newIndex = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1);
         setHistoryIndex(newIndex);
         setInput(history[newIndex]);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (historyIndex === -1) return;
+        const newIndex = historyIndex + 1;
+        if (newIndex >= history.length) {
+          setHistoryIndex(-1);
+          setInput("");
+        } else {
+          setHistoryIndex(newIndex);
+          setInput(history[newIndex]);
+        }
+      } else if (e.key === "l" && e.ctrlKey) {
+        e.preventDefault();
+        setEntries([]);
       }
-    } else if (e.key === 'l' && e.ctrlKey) {
-      e.preventDefault();
-      setEntries([]);
-    }
-  }, [input, isRunning, history, historyIndex, executeCommand]);
+    },
+    [input, isRunning, history, historyIndex, executeCommand],
+  );
 
   // Focus input when terminal becomes visible
   useEffect(() => {
@@ -333,36 +344,31 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
   }, []);
 
   return (
-    <div
-      className="h-full flex flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-200 font-mono text-xs cursor-text"
-      onClick={handleTerminalClick}
-    >
+    <div className="h-full flex flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-200 font-mono text-xs cursor-text" onClick={handleTerminalClick}>
       {/* Output area */}
-      <div ref={outputRef} className="flex-1 overflow-auto p-3" style={{ overflowAnchor: 'none' }}>
-        <div style={{ height: outputVirtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
-          <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            transform: `translateY(${virtualOutputItems[0]?.start ?? 0}px)`,
-          }}>
+      <div ref={outputRef} className="flex-1 overflow-auto p-3" style={{ overflowAnchor: "none" }}>
+        <div style={{ height: outputVirtualizer.getTotalSize(), width: "100%", position: "relative" }}>
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              transform: `translateY(${virtualOutputItems[0]?.start ?? 0}px)`,
+            }}
+          >
             {virtualOutputItems.map((virtualRow) => {
               const entry = entries[virtualRow.index];
               return (
-                <div
-                  key={virtualRow.key}
-                  data-index={virtualRow.index}
-                  ref={outputVirtualizer.measureElement}
-                >
-                  {entry.type === 'command' ? (
+                <div key={virtualRow.key} data-index={virtualRow.index} ref={outputVirtualizer.measureElement}>
+                  {entry.type === "command" ? (
                     <div className="flex">
                       <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">{formatPromptCwd(entry.cwd ?? cwd)} $</span>
                       <span className="text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap break-all">{entry.text}</span>
                     </div>
-                  ) : entry.type === 'stdout' ? (
+                  ) : entry.type === "stdout" ? (
                     <pre className="text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap break-all leading-relaxed">{entry.text}</pre>
-                  ) : entry.type === 'stderr' ? (
+                  ) : entry.type === "stderr" ? (
                     <pre className="text-red-700 dark:text-red-400/80 whitespace-pre-wrap break-all leading-relaxed">{entry.text}</pre>
                   ) : (
                     <div className="text-neutral-500 dark:text-neutral-500 italic">{entry.text}</div>
@@ -394,7 +400,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
           readOnly={isRunning}
           aria-busy={isRunning}
           className="flex-1 bg-transparent text-neutral-900 dark:text-neutral-100 outline-none placeholder-neutral-400 dark:placeholder-neutral-600 caret-emerald-600 dark:caret-green-400 disabled:opacity-50 read-only:opacity-75"
-          placeholder={isReady ? 'Enter a command...' : 'Initializing...'}
+          placeholder={isReady ? "Enter a command..." : "Initializing..."}
           autoFocus
           spellCheck={false}
           autoComplete="off"

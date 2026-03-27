@@ -1,4 +1,4 @@
-import type { Message } from '@/shared/types/chat';
+import type { Message } from "@/shared/types/chat";
 
 export interface Notebook {
   id: string;
@@ -9,7 +9,7 @@ export interface Notebook {
 
 export interface NotebookSource {
   id: string;
-  type: 'web' | 'file';
+  type: "web" | "file";
   name: string;
   content: string;
   metadata?: {
@@ -21,13 +21,7 @@ export interface NotebookSource {
   addedAt: string;
 }
 
-export type OutputType =
-  | 'audio-overview'
-  | 'slide-deck'
-  | 'infographic'
-  | 'data-table'
-  | 'quiz'
-  | 'mind-map';
+export type OutputType = "audio-overview" | "slide-deck" | "infographic" | "data-table" | "quiz" | "mind-map";
 
 export interface QuizQuestion {
   question: string;
@@ -51,7 +45,7 @@ export interface NotebookOutput {
   audioUrl?: string;
   quiz?: QuizQuestion[];
   mindMap?: MindMapNode;
-  status: 'generating' | 'completed' | 'error';
+  status: "generating" | "completed" | "error";
   error?: string;
   createdAt: string;
 }

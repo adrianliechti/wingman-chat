@@ -13,7 +13,7 @@ import { runMigration } from "./features/settings/lib/migration.ts";
  */
 const showFatalError = (title: string, message: string, error?: unknown) => {
   console.error(title, message, error);
-  
+
   const root = document.getElementById("root");
   if (root) {
     root.innerHTML = `
@@ -31,7 +31,9 @@ const showFatalError = (title: string, message: string, error?: unknown) => {
       ">
         <h1 style="margin: 0 0 1rem; color: #ef4444;">${title}</h1>
         <p style="margin: 0 0 1rem; max-width: 500px; color: #a1a1aa;">${message}</p>
-        ${error ? `<pre style="
+        ${
+          error
+            ? `<pre style="
           margin: 1rem 0;
           padding: 1rem;
           background: #27272a;
@@ -41,7 +43,9 @@ const showFatalError = (title: string, message: string, error?: unknown) => {
           max-width: 600px;
           overflow: auto;
           text-align: left;
-        ">${error instanceof Error ? error.message : String(error)}</pre>` : ''}
+        ">${error instanceof Error ? error.message : String(error)}</pre>`
+            : ""
+        }
         <button onclick="location.reload()" style="
           margin-top: 1rem;
           padding: 0.75rem 1.5rem;
@@ -62,14 +66,10 @@ const bootstrap = async () => {
     // Run migration from IndexedDB to OPFS (if needed)
     await runMigration();
   } catch (error) {
-    showFatalError(
-      "Migration Failed",
-      "Failed to migrate your data to the new storage format. Your data has not been lost. Please try reloading the page or contact support if the issue persists.",
-      error
-    );
+    showFatalError("Migration Failed", "Failed to migrate your data to the new storage format. Your data has not been lost. Please try reloading the page or contact support if the issue persists.", error);
     return;
   }
-  
+
   try {
     const config = await loadConfig();
 
@@ -80,14 +80,10 @@ const bootstrap = async () => {
     createRoot(document.getElementById("root")!).render(
       <StrictMode>
         <App />
-      </StrictMode>
+      </StrictMode>,
     );
   } catch (error) {
-    showFatalError(
-      "Failed to Start",
-      "Unable to load the application configuration. Please check your network connection and try again.",
-      error
-    );
+    showFatalError("Failed to Start", "Unable to load the application configuration. Please check your network connection and try again.", error);
   }
 };
 

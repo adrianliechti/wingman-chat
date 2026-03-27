@@ -1,15 +1,15 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import type { ReactNode } from 'react';
+import { useState, useCallback, useRef, useEffect } from "react";
+import type { ReactNode } from "react";
 
-import type { RenderedAppHandle } from '@/shared/types/chat';
+import type { RenderedAppHandle } from "@/shared/types/chat";
 
-import { AppContext } from './AppContext';
+import { AppContext } from "./AppContext";
 
 interface AppProviderProps {
   children: ReactNode;
 }
 
-const SANDBOX_PROXY_PATH = '/mcp-app-sandbox-proxy.html';
+const SANDBOX_PROXY_PATH = "/mcp-app-sandbox-proxy.html";
 
 export function AppProvider({ children }: AppProviderProps) {
   const [showAppDrawer, setShowAppDrawer] = useState(false);
@@ -28,12 +28,12 @@ export function AppProvider({ children }: AppProviderProps) {
     try {
       await cleanup();
     } catch (error) {
-      console.error('Failed to clean up active MCP app session:', error);
+      console.error("Failed to clean up active MCP app session:", error);
     }
   }, []);
 
   const toggleAppDrawer = useCallback(() => {
-    setShowAppDrawer(prev => !prev);
+    setShowAppDrawer((prev) => !prev);
   }, []);
 
   const registerIframe = useCallback((iframe: HTMLIFrameElement | null) => {
@@ -48,7 +48,7 @@ export function AppProvider({ children }: AppProviderProps) {
     const iframe = iframeRef.current;
 
     if (!iframe) {
-      throw new Error('App drawer iframe not available. Make sure the drawer is mounted.');
+      throw new Error("App drawer iframe not available. Make sure the drawer is mounted.");
     }
 
     await runActiveCleanup();
@@ -56,9 +56,7 @@ export function AppProvider({ children }: AppProviderProps) {
     setShowAppDrawer(true);
     setHasAppContent(true);
 
-    const sessionId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}`;
+    const sessionId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}`;
 
     await new Promise<void>((resolve, reject) => {
       const handleLoad = () => {
@@ -68,16 +66,16 @@ export function AppProvider({ children }: AppProviderProps) {
 
       const handleError = () => {
         cleanup();
-        reject(new Error('Failed to load MCP app sandbox proxy.'));
+        reject(new Error("Failed to load MCP app sandbox proxy."));
       };
 
       const cleanup = () => {
-        iframe.removeEventListener('load', handleLoad);
-        iframe.removeEventListener('error', handleError);
+        iframe.removeEventListener("load", handleLoad);
+        iframe.removeEventListener("error", handleError);
       };
 
-      iframe.addEventListener('load', handleLoad);
-      iframe.addEventListener('error', handleError);
+      iframe.addEventListener("load", handleLoad);
+      iframe.addEventListener("error", handleError);
       iframe.src = `${SANDBOX_PROXY_PATH}?session=${encodeURIComponent(sessionId)}`;
     });
 
@@ -111,9 +109,5 @@ export function AppProvider({ children }: AppProviderProps) {
     showDrawer,
   };
 
-  return (
-    <AppContext.Provider value={value}>
-      {children}
-    </AppContext.Provider>
-  );
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { TranslateContext } from '@/features/translate/context/TranslateContext';
+import { TranslateContext } from "@/features/translate/context/TranslateContext";
 
 export function useTranslate() {
   const context = useContext(TranslateContext);

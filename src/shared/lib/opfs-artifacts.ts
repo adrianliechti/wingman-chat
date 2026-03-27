@@ -2,15 +2,11 @@
  * OPFS Artifacts — Artifact file CRUD within chat folders.
  */
 
-import { artifactContentToBlob, normalizeArtifactPath } from './artifactFiles';
-import { isBinaryContentType } from './fileTypes';
+import { artifactContentToBlob, normalizeArtifactPath } from "./artifactFiles";
+import { isBinaryContentType } from "./fileTypes";
 
-import {
-  writeText, writeBlob, readBlob, deleteFile, deleteDirectory,
-  listFiles, listDirectories,
-  inferContentType, readFileMetadata,
-} from './opfs-core';
-import { readAsDataURL } from './utils';
+import { writeText, writeBlob, readBlob, deleteFile, deleteDirectory, listFiles, listDirectories, inferContentType, readFileMetadata } from "./opfs-core";
+import { readAsDataURL } from "./utils";
 
 export interface ArtifactEntry {
   path: string;
@@ -28,11 +24,11 @@ export interface ArtifactEntry {
 export async function writeArtifact(chatId: string, path: string, content: string, contentType?: string): Promise<void> {
   const normalizedPath = normalizeArtifactPath(path)?.slice(1);
   if (!normalizedPath) {
-    throw new Error('Artifact path is required');
+    throw new Error("Artifact path is required");
   }
   const fullPath = `chats/${chatId}/artifacts/${normalizedPath}`;
 
-  if (content.startsWith('data:')) {
+  if (content.startsWith("data:")) {
     await writeBlob(fullPath, artifactContentToBlob(content, contentType));
     return;
   }
@@ -42,7 +38,7 @@ export async function writeArtifact(chatId: string, path: string, content: strin
     return;
   }
 
-  await writeText(fullPath, content, contentType ?? inferContentType(path) ?? 'text/plain;charset=utf-8');
+  await writeText(fullPath, content, contentType ?? inferContentType(path) ?? "text/plain;charset=utf-8");
 }
 
 /**
@@ -97,17 +93,17 @@ export async function deleteArtifactFolder(chatId: string, path: string): Promis
  */
 export async function listArtifacts(chatId: string): Promise<string[]> {
   const artifacts: string[] = [];
-  
+
   async function scanDirectory(dirPath: string): Promise<void> {
-    const fullDirPath = `chats/${chatId}/artifacts${dirPath ? '/' + dirPath : ''}`;
-    
+    const fullDirPath = `chats/${chatId}/artifacts${dirPath ? "/" + dirPath : ""}`;
+
     try {
       const files = await listFiles(fullDirPath);
       for (const file of files) {
         const relativePath = dirPath ? `${dirPath}/${file}` : file;
-        artifacts.push('/' + relativePath);
+        artifacts.push("/" + relativePath);
       }
-      
+
       const dirs = await listDirectories(fullDirPath);
       for (const dir of dirs) {
         const relativePath = dirPath ? `${dirPath}/${dir}` : dir;
@@ -117,8 +113,8 @@ export async function listArtifacts(chatId: string): Promise<string[]> {
       // Directory doesn't exist
     }
   }
-  
-  await scanDirectory('');
+
+  await scanDirectory("");
   return artifacts;
 }
 
@@ -130,13 +126,13 @@ export async function listArtifactEntries(chatId: string): Promise<ArtifactEntry
   const artifacts: ArtifactEntry[] = [];
 
   async function scanDirectory(dirPath: string): Promise<void> {
-    const fullDirPath = `chats/${chatId}/artifacts${dirPath ? '/' + dirPath : ''}`;
+    const fullDirPath = `chats/${chatId}/artifacts${dirPath ? "/" + dirPath : ""}`;
 
     try {
       const files = await listFiles(fullDirPath);
       for (const file of files) {
         const relativePath = dirPath ? `${dirPath}/${file}` : file;
-        const path = '/' + relativePath;
+        const path = "/" + relativePath;
         const metadata = await readFileMetadata(`chats/${chatId}/artifacts/${relativePath}`);
 
         artifacts.push({
@@ -156,7 +152,7 @@ export async function listArtifactEntries(chatId: string): Promise<ArtifactEntry
     }
   }
 
-  await scanDirectory('');
+  await scanDirectory("");
   return artifacts;
 }
 
@@ -166,24 +162,21 @@ export async function listArtifactEntries(chatId: string): Promise<ArtifactEntry
 export async function loadArtifacts(chatId: string): Promise<Record<string, { path: string; content: string; contentType?: string }>> {
   const paths = await listArtifacts(chatId);
   const artifacts: Record<string, { path: string; content: string; contentType?: string }> = {};
-  
+
   for (const path of paths) {
     const data = await readArtifact(chatId, path);
     if (data) {
       artifacts[path] = { path, content: data.content, contentType: data.contentType };
     }
   }
-  
+
   return artifacts;
 }
 
 /**
  * Save all artifacts from a FileSystem object to OPFS.
  */
-export async function saveArtifacts(
-  chatId: string, 
-  artifacts: Record<string, { path: string; content: string; contentType?: string }>
-): Promise<void> {
+export async function saveArtifacts(chatId: string, artifacts: Record<string, { path: string; content: string; contentType?: string }>): Promise<void> {
   for (const [path, file] of Object.entries(artifacts)) {
     await writeArtifact(chatId, path, file.content, file.contentType);
   }

@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, Fragment } from 'react';
-import { ToggleLeft, ToggleRight, Edit, Trash2, Pencil, X } from 'lucide-react';
-import { Dialog, Transition } from '@headlessui/react';
-import { useAgents } from '@/features/agent/hooks/useAgents';
-import * as opfs from '@/shared/lib/opfs';
-import type { Agent } from '@/features/agent/types/agent';
-import { Section } from './Section';
-import { Markdown } from '@/shared/ui/Markdown';
+import { useState, useEffect, useCallback, Fragment } from "react";
+import { ToggleLeft, ToggleRight, Edit, Trash2, Pencil, X } from "lucide-react";
+import { Dialog, Transition } from "@headlessui/react";
+import { useAgents } from "@/features/agent/hooks/useAgents";
+import * as opfs from "@/shared/lib/opfs";
+import type { Agent } from "@/features/agent/types/agent";
+import { Section } from "./Section";
+import { Markdown } from "@/shared/ui/Markdown";
 
 interface MemorySectionProps {
   agent: Agent;
@@ -16,7 +16,7 @@ export function MemorySection({ agent }: MemorySectionProps) {
   const [content, setContent] = useState<string | undefined>();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState('');
+  const [editValue, setEditValue] = useState("");
 
   const memoryPath = `agents/${agent.id}/MEMORY.md`;
 
@@ -26,7 +26,7 @@ export function MemorySection({ agent }: MemorySectionProps) {
       return;
     }
     const text = await opfs.readText(memoryPath);
-    setContent(text || '');
+    setContent(text || "");
   }, [agent.memory, memoryPath]);
 
   useEffect(() => {
@@ -41,8 +41,8 @@ export function MemorySection({ agent }: MemorySectionProps) {
       const detail = (e as CustomEvent).detail;
       if (detail?.agentId === agent.id) loadMemory();
     };
-    window.addEventListener('memory-updated', handler);
-    return () => window.removeEventListener('memory-updated', handler);
+    window.addEventListener("memory-updated", handler);
+    return () => window.removeEventListener("memory-updated", handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.memory, agent.id]);
 
@@ -56,13 +56,13 @@ export function MemorySection({ agent }: MemorySectionProps) {
   };
 
   const startEditing = () => {
-    setEditValue(content || '');
+    setEditValue(content || "");
     setIsEditing(true);
   };
 
   const cancelEditing = () => {
     setIsEditing(false);
-    setEditValue('');
+    setEditValue("");
   };
 
   const save = async () => {
@@ -78,23 +78,23 @@ export function MemorySection({ agent }: MemorySectionProps) {
 
   const clearMemory = async () => {
     await opfs.deleteFile(memoryPath);
-    setContent('');
-    setEditValue('');
+    setContent("");
+    setEditValue("");
     setIsEditing(false);
   };
 
   const closeDialog = () => {
     setIsDialogOpen(false);
     setIsEditing(false);
-    setEditValue('');
+    setEditValue("");
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
+    if (e.key === "Escape") {
       e.preventDefault();
       if (isEditing) cancelEditing();
       else closeDialog();
-    } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       save();
     }
@@ -114,14 +114,8 @@ export function MemorySection({ agent }: MemorySectionProps) {
                 <Dialog.Panel className="w-full max-w-2xl transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all">
                   {/* Header */}
                   <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
-                    <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-                      Memory
-                    </Dialog.Title>
-                    <button
-                      type="button"
-                      onClick={closeDialog}
-                      className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
-                    >
+                    <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">Memory</Dialog.Title>
+                    <button type="button" onClick={closeDialog} className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
                       <X size={16} />
                     </button>
                   </div>
@@ -132,16 +126,14 @@ export function MemorySection({ agent }: MemorySectionProps) {
                       <>
                         <textarea
                           value={editValue}
-                          onChange={e => setEditValue(e.target.value)}
+                          onChange={(e) => setEditValue(e.target.value)}
                           onKeyDown={handleKeyDown}
                           rows={14}
                           className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-y min-h-50 backdrop-blur-sm transition-colors"
                           placeholder="No memories yet. The agent will write here as you chat."
                           autoFocus
                         />
-                        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                          Memory is written by the agent during conversations. You can also edit it manually.
-                        </p>
+                        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Memory is written by the agent during conversations. You can also edit it manually.</p>
                       </>
                     ) : (
                       <div className="max-h-96 overflow-auto">
@@ -150,9 +142,7 @@ export function MemorySection({ agent }: MemorySectionProps) {
                             <Markdown>{content}</Markdown>
                           </div>
                         ) : (
-                          <p className="text-sm text-neutral-400 dark:text-neutral-500 italic text-center py-8">
-                            No memories yet. The agent will write here as you chat.
-                          </p>
+                          <p className="text-sm text-neutral-400 dark:text-neutral-500 italic text-center py-8">No memories yet. The agent will write here as you chat.</p>
                         )}
                       </div>
                     )}
@@ -209,8 +199,8 @@ export function MemorySection({ agent }: MemorySectionProps) {
           <button
             type="button"
             onClick={toggleMemory}
-            className={`shrink-0 ${agent.memory ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-400 dark:text-neutral-500'}`}
-            title={agent.memory ? 'Memory enabled (click to disable)' : 'Memory disabled (click to enable)'}
+            className={`shrink-0 ${agent.memory ? "text-blue-600 dark:text-blue-400" : "text-neutral-400 dark:text-neutral-500"}`}
+            title={agent.memory ? "Memory enabled (click to disable)" : "Memory disabled (click to enable)"}
           >
             {agent.memory ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
           </button>
@@ -255,9 +245,7 @@ export function MemorySection({ agent }: MemorySectionProps) {
             )}
           </div>
         ) : (
-          <p className="text-[10px] text-neutral-400 dark:text-neutral-500">
-            Enable to let this agent remember context across conversations.
-          </p>
+          <p className="text-[10px] text-neutral-400 dark:text-neutral-500">Enable to let this agent remember context across conversations.</p>
         )}
       </Section>
     </>

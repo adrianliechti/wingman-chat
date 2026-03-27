@@ -9,7 +9,7 @@ export function float32ToPcm16(samples: Float32Array): Int16Array {
   const pcm16 = new Int16Array(samples.length);
   for (let i = 0; i < samples.length; i++) {
     const s = Math.max(-1, Math.min(1, samples[i]));
-    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
   }
   return pcm16;
 }
@@ -28,12 +28,12 @@ export function pcm16ToWav(samples: Int16Array, sampleRate: number): Blob {
   const view = new DataView(buffer);
 
   // RIFF header
-  writeString(view, 0, 'RIFF');
+  writeString(view, 0, "RIFF");
   view.setUint32(4, totalLength - 8, true);
-  writeString(view, 8, 'WAVE');
+  writeString(view, 8, "WAVE");
 
   // fmt chunk
-  writeString(view, 12, 'fmt ');
+  writeString(view, 12, "fmt ");
   view.setUint32(16, 16, true); // chunk size
   view.setUint16(20, 1, true); // PCM format
   view.setUint16(22, numChannels, true);
@@ -43,7 +43,7 @@ export function pcm16ToWav(samples: Int16Array, sampleRate: number): Blob {
   view.setUint16(34, bitDepth, true);
 
   // data chunk
-  writeString(view, 36, 'data');
+  writeString(view, 36, "data");
   view.setUint32(40, dataLength, true);
 
   // Write PCM samples
@@ -53,7 +53,7 @@ export function pcm16ToWav(samples: Int16Array, sampleRate: number): Blob {
     offset += 2;
   }
 
-  return new Blob([buffer], { type: 'audio/wav' });
+  return new Blob([buffer], { type: "audio/wav" });
 }
 
 /**

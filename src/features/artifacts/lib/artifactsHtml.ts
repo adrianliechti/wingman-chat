@@ -1,15 +1,15 @@
 /**
  * HTML transformation utilities for artifact preview
- * 
+ *
  * Transforms HTML content to use data URLs for virtual file references,
  * enabling iframes to access files from the artifact filesystem.
  */
-import { isDataUrlContent, normalizeArtifactReferencePath, textToDataUrl } from '@/shared/lib/artifactFiles';
-import { lookupContentType, getFileExt } from '@/shared/lib/utils';
-import type { FileSystem } from '@/features/artifacts/types/file';
+import { isDataUrlContent, normalizeArtifactReferencePath, textToDataUrl } from "@/shared/lib/artifactFiles";
+import { lookupContentType, getFileExt } from "@/shared/lib/utils";
+import type { FileSystem } from "@/features/artifacts/types/file";
 
 // Import the VFS runtime script as raw text
-import vfsRuntimeScript from './vfs-runtime.js?raw';
+import vfsRuntimeScript from "./vfs-runtime.js?raw";
 
 // Result type for HTML transformation
 export interface TransformResult {
@@ -27,7 +27,7 @@ function contentToDataUrl(content: string, contentType?: string): string {
     return content;
   }
 
-  return textToDataUrl(content, contentType || 'text/plain;charset=utf-8');
+  return textToDataUrl(content, contentType || "text/plain;charset=utf-8");
 }
 
 /**
@@ -40,13 +40,13 @@ function generateDataUrls(files: FileSystem): Map<string, string> {
 
   for (const [path, file] of Object.entries(files)) {
     const normalized = normalizeArtifactReferencePath(path);
-    
+
     // Determine content type from file extension if not provided
     const ext = getFileExt(path);
     const contentType = file.contentType || (ext ? lookupContentType(ext) : undefined);
-    
+
     const dataUrl = contentToDataUrl(file.content, contentType);
-    
+
     // Store under normalized path (without leading /)
     urls.set(normalized, dataUrl);
     // Also store under original path in case it's referenced that way
@@ -64,9 +64,9 @@ function generateDataUrls(files: FileSystem): Map<string, string> {
 function getFileContent(file: { content: string }): string {
   if (isDataUrlContent(file.content)) {
     // Decode base64 data URL to get raw content
-    const [header, base64] = file.content.split(',');
+    const [header, base64] = file.content.split(",");
     // Check if it's base64 encoded
-    if (header.includes('base64')) {
+    if (header.includes("base64")) {
       try {
         return decodeURIComponent(escape(atob(base64)));
       } catch {
@@ -85,7 +85,7 @@ function getFileContent(file: { content: string }): string {
 function transformCssUrls(css: string, urls: Map<string, string>): string {
   return css.replace(/url\(["']?([^"')]+)["']?\)/g, (match, path) => {
     // Skip data URLs and absolute URLs
-    if (path.startsWith('data:') || path.startsWith('http://') || path.startsWith('https://')) {
+    if (path.startsWith("data:") || path.startsWith("http://") || path.startsWith("https://")) {
       return match;
     }
     const normalized = normalizeArtifactReferencePath(path);
@@ -107,7 +107,7 @@ export function transformHtmlForPreview(html: string, files: FileSystem): Transf
 
   // Generate data URLs for all files (no cleanup needed for data URLs)
   const urls = generateDataUrls(files);
-  
+
   // Build URL mapping object for injection
   const urlMapping: Record<string, string> = {};
   urls.forEach((url: string, path: string) => {
@@ -118,90 +118,72 @@ export function transformHtmlForPreview(html: string, files: FileSystem): Transf
 
   // Inline CSS files from <link> tags with rel="stylesheet"
   // Use a flexible regex that matches any <link> tag (including self-closing)
-  transformed = transformed.replace(
-    /<link\s+([^>]*?)\s*\/?>/gi,
-    (match, attributes) => {
-      // Check if this is a stylesheet link
-      if (!/rel\s*=\s*["']?stylesheet["']?/i.test(attributes)) {
-        return match;
-      }
-      
-      // Extract href value (handles both quoted and unquoted)
-      const hrefMatch = attributes.match(/href\s*=\s*["']?([^"'\s>]+)["']?/i);
-      if (!hrefMatch) {
-        return match;
-      }
-      
-      const href = hrefMatch[1];
-      
-      // Skip absolute URLs
-      if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('data:')) {
-        return match;
-      }
-      
-      const normalized = normalizeArtifactReferencePath(href);
-      // Also try with leading slash since artifacts may be stored that way
-      const withSlash = '/' + normalized;
-      const file = files[normalized] || files[href] || files[withSlash];
-      
-      if (file) {
-        // Get raw CSS content and transform url() references within it
-        const cssContent = getFileContent(file);
-        const transformedCss = transformCssUrls(cssContent, urls);
-        return `<style>/* Inlined from ${href} */\n${transformedCss}</style>`;
-      }
+  transformed = transformed.replace(/<link\s+([^>]*?)\s*\/?>/gi, (match, attributes) => {
+    // Check if this is a stylesheet link
+    if (!/rel\s*=\s*["']?stylesheet["']?/i.test(attributes)) {
       return match;
     }
-  );
+
+    // Extract href value (handles both quoted and unquoted)
+    const hrefMatch = attributes.match(/href\s*=\s*["']?([^"'\s>]+)["']?/i);
+    if (!hrefMatch) {
+      return match;
+    }
+
+    const href = hrefMatch[1];
+
+    // Skip absolute URLs
+    if (href.startsWith("http://") || href.startsWith("https://") || href.startsWith("data:")) {
+      return match;
+    }
+
+    const normalized = normalizeArtifactReferencePath(href);
+    // Also try with leading slash since artifacts may be stored that way
+    const withSlash = "/" + normalized;
+    const file = files[normalized] || files[href] || files[withSlash];
+
+    if (file) {
+      // Get raw CSS content and transform url() references within it
+      const cssContent = getFileContent(file);
+      const transformedCss = transformCssUrls(cssContent, urls);
+      return `<style>/* Inlined from ${href} */\n${transformedCss}</style>`;
+    }
+    return match;
+  });
 
   // Transform static src attributes (img, script, video, audio, source, etc.)
-  transformed = transformed.replace(
-    /(<(?:img|script|video|audio|source|embed|track)[^>]+)src=["']([^"']+)["']/gi,
-    (match, prefix, path) => {
-      // Skip data URLs and absolute URLs
-      if (path.startsWith('data:') || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('blob:')) {
-        return match;
-      }
-      const normalized = normalizeArtifactReferencePath(path);
-      const dataUrl = urls.get(normalized);
-      return dataUrl ? `${prefix}src="${dataUrl}"` : match;
+  transformed = transformed.replace(/(<(?:img|script|video|audio|source|embed|track)[^>]+)src=["']([^"']+)["']/gi, (match, prefix, path) => {
+    // Skip data URLs and absolute URLs
+    if (path.startsWith("data:") || path.startsWith("http://") || path.startsWith("https://") || path.startsWith("blob:")) {
+      return match;
     }
-  );
+    const normalized = normalizeArtifactReferencePath(path);
+    const dataUrl = urls.get(normalized);
+    return dataUrl ? `${prefix}src="${dataUrl}"` : match;
+  });
 
   // Transform href attributes for <a> tags (not <link> - those are handled above)
-  transformed = transformed.replace(
-    /(<a[^>]+)href=["']([^"']+)["']/gi,
-    (match, prefix, path) => {
-      // Skip anchors, data URLs, absolute URLs, and special links
-      if (path.startsWith('#') || path.startsWith('data:') || 
-          path.startsWith('http://') || path.startsWith('https://') ||
-          path.startsWith('mailto:') || path.startsWith('tel:') ||
-          path.startsWith('blob:')) {
-        return match;
-      }
-      const normalized = normalizeArtifactReferencePath(path);
-      const dataUrl = urls.get(normalized);
-      return dataUrl ? `${prefix}href="${dataUrl}"` : match;
+  transformed = transformed.replace(/(<a[^>]+)href=["']([^"']+)["']/gi, (match, prefix, path) => {
+    // Skip anchors, data URLs, absolute URLs, and special links
+    if (path.startsWith("#") || path.startsWith("data:") || path.startsWith("http://") || path.startsWith("https://") || path.startsWith("mailto:") || path.startsWith("tel:") || path.startsWith("blob:")) {
+      return match;
     }
-  );
+    const normalized = normalizeArtifactReferencePath(path);
+    const dataUrl = urls.get(normalized);
+    return dataUrl ? `${prefix}href="${dataUrl}"` : match;
+  });
 
   // Transform inline style url() references
-  transformed = transformed.replace(
-    /style=["']([^"']*)["']/gi,
-    (_match, styleContent) => {
-      const transformedStyle = transformCssUrls(styleContent, urls);
-      return `style="${transformedStyle}"`;
-    }
-  );
+  transformed = transformed.replace(/style=["']([^"']*)["']/gi, (_match, styleContent) => {
+    const transformedStyle = transformCssUrls(styleContent, urls);
+    return `style="${transformedStyle}"`;
+  });
 
   // Transform <style> block contents
-  transformed = transformed.replace(
-    /(<style[^>]*>)([\s\S]*?)(<\/style>)/gi,
-    (_match, openTag, cssContent, closeTag) => {
-      const transformedCss = transformCssUrls(cssContent, urls);
-      return `${openTag}${transformedCss}${closeTag}`;
-    }
-  );
+  transformed = transformed.replace(/(<style[^>]*>)([\s\S]*?)(<\/style>)/gi, (_match, openTag, cssContent, closeTag) => {
+    const transformedCss = transformCssUrls(cssContent, urls);
+    return `${openTag}${transformedCss}${closeTag}`;
+  });
 
   // Build the VFS script with URL mapping injected
   const vfsScript = `
@@ -212,15 +194,15 @@ ${vfsRuntimeScript}
 `;
 
   // Inject script after <head> or at start of document
-  if (transformed.includes('<head>')) {
-    transformed = transformed.replace('<head>', '<head>' + vfsScript);
-  } else if (transformed.includes('<head ')) {
+  if (transformed.includes("<head>")) {
+    transformed = transformed.replace("<head>", "<head>" + vfsScript);
+  } else if (transformed.includes("<head ")) {
     transformed = transformed.replace(/<head\s[^>]*>/, (match) => match + vfsScript);
-  } else if (transformed.includes('<body>')) {
-    transformed = transformed.replace('<body>', '<body>' + vfsScript);
-  } else if (transformed.includes('<body ')) {
+  } else if (transformed.includes("<body>")) {
+    transformed = transformed.replace("<body>", "<body>" + vfsScript);
+  } else if (transformed.includes("<body ")) {
     transformed = transformed.replace(/<body\s[^>]*>/, (match) => match + vfsScript);
-  } else if (transformed.includes('<html>') || transformed.includes('<html ')) {
+  } else if (transformed.includes("<html>") || transformed.includes("<html ")) {
     // Insert after <html> tag
     transformed = transformed.replace(/<html[^>]*>/, (match) => match + vfsScript);
   } else {

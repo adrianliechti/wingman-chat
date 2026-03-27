@@ -1,7 +1,7 @@
-import { memo, useState } from 'react';
-import { CopyButton } from '@/shared/ui/CopyButton';
-import { PreviewButton } from '@/shared/ui/PreviewButton';
-import { Markdown } from '@/shared/ui/Markdown';
+import { memo, useState } from "react";
+import { CopyButton } from "@/shared/ui/CopyButton";
+import { PreviewButton } from "@/shared/ui/PreviewButton";
+import { Markdown } from "@/shared/ui/Markdown";
 
 interface MarkdownRendererProps {
   content: string;
@@ -17,11 +17,7 @@ const NonMemoizedMarkdownRenderer = ({ content, language }: MarkdownRendererProp
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
           <span>{language}</span>
           <div className="flex items-center gap-2">
-            <PreviewButton
-              showCode={showCode}
-              onToggle={() => setShowCode(!showCode)}
-              className="h-4 w-4"
-            />
+            <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
             <CopyButton text={content} className="h-4 w-4" />
           </div>
         </div>
@@ -50,11 +46,7 @@ const NonMemoizedMarkdownRenderer = ({ content, language }: MarkdownRendererProp
       <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
         <span>{language}</span>
         <div className="flex items-center gap-2">
-          <PreviewButton
-            showCode={showCode}
-            onToggle={() => setShowCode(!showCode)}
-            className="h-4 w-4"
-          />
+          <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
           <CopyButton text={content} className="h-4 w-4" />
         </div>
       </div>
@@ -76,8 +68,4 @@ const NonMemoizedMarkdownRenderer = ({ content, language }: MarkdownRendererProp
   );
 };
 
-export const MarkdownRenderer = memo(
-  NonMemoizedMarkdownRenderer,
-  (prevProps, nextProps) =>
-    prevProps.content === nextProps.content && prevProps.language === nextProps.language
-);
+export const MarkdownRenderer = memo(NonMemoizedMarkdownRenderer, (prevProps, nextProps) => prevProps.content === nextProps.content && prevProps.language === nextProps.language);

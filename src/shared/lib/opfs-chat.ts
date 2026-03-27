@@ -2,12 +2,8 @@
  * OPFS Chat — Chat-scoped blob storage, extraction/rehydration pipeline, and stored types.
  */
 
-import type { Content, Message, Chat, ImageContent, AudioContent, FileContent, ToolResultContent } from '@/shared/types/chat';
-import {
-  writeBlob, readBlob, deleteFile, listFiles,
-  dataUrlToBlob, blobToDataUrl, isDataUrl,
-  createBlobRef, parseBlobRef,
-} from './opfs-core';
+import type { Content, Message, Chat, ImageContent, AudioContent, FileContent, ToolResultContent } from "@/shared/types/chat";
+import { writeBlob, readBlob, deleteFile, listFiles, dataUrlToBlob, blobToDataUrl, isDataUrl, createBlobRef, parseBlobRef } from "./opfs-core";
 
 // ============================================================================
 // Co-located Blob Storage (blobs stored within their parent entity folder)
@@ -41,7 +37,7 @@ export async function deleteChatBlob(chatId: string, blobId: string): Promise<vo
  */
 export async function listChatBlobs(chatId: string): Promise<string[]> {
   const files = await listFiles(`chats/${chatId}/blobs`);
-  return files.map(f => f.replace(/\.bin$/, ''));
+  return files.map((f) => f.replace(/\.bin$/, ""));
 }
 
 // ============================================================================
@@ -49,19 +45,19 @@ export async function listChatBlobs(chatId: string): Promise<string[]> {
 // ============================================================================
 
 /** Content part with blob reference instead of data URL */
-export type BlobRefImageContent = Omit<ImageContent, 'data'> & { data: string }; // data is blob:id
-export type BlobRefAudioContent = Omit<AudioContent, 'data'> & { data: string };
-export type BlobRefFileContent = Omit<FileContent, 'data'> & { data: string };
+export type BlobRefImageContent = Omit<ImageContent, "data"> & { data: string }; // data is blob:id
+export type BlobRefAudioContent = Omit<AudioContent, "data"> & { data: string };
+export type BlobRefFileContent = Omit<FileContent, "data"> & { data: string };
 
-export type StoredContent = 
+export type StoredContent =
   | Exclude<Content, ImageContent | AudioContent | FileContent | ToolResultContent>
-  | BlobRefImageContent 
-  | BlobRefAudioContent 
+  | BlobRefImageContent
+  | BlobRefAudioContent
   | BlobRefFileContent
-  | (Omit<ToolResultContent, 'result'> & { result: StoredContent[] });
+  | (Omit<ToolResultContent, "result"> & { result: StoredContent[] });
 
 export interface StoredMessage {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: StoredContent[];
   error?: { code: string; message: string } | null;
 }
@@ -71,7 +67,7 @@ export interface StoredChat {
   title?: string;
   created: string | null;
   updated: string | null;
-  model: Chat['model'];
+  model: Chat["model"];
   messages: StoredMessage[];
 }
 
@@ -80,7 +76,7 @@ export interface StoredChat {
  * Returns the content with data URL replaced by blob reference.
  */
 async function extractContentBlobForChat(chatId: string, content: Content): Promise<StoredContent> {
-  if (content.type === 'image' || content.type === 'audio' || content.type === 'file') {
+  if (content.type === "image" || content.type === "audio" || content.type === "file") {
     if (isDataUrl(content.data)) {
       const blob = dataUrlToBlob(content.data);
       const blobId = await storeChatBlob(chatId, blob);
@@ -89,14 +85,12 @@ async function extractContentBlobForChat(chatId: string, content: Content): Prom
     // Already a blob ref or other format, keep as-is
     return content as StoredContent;
   }
-  
-  if (content.type === 'tool_result') {
-    const extractedResult = await Promise.all(
-      content.result.map(r => extractContentBlobForChat(chatId, r as Content))
-    );
+
+  if (content.type === "tool_result") {
+    const extractedResult = await Promise.all(content.result.map((r) => extractContentBlobForChat(chatId, r as Content)));
     return { ...content, result: extractedResult } as StoredContent;
   }
-  
+
   return content as StoredContent;
 }
 
@@ -104,30 +98,28 @@ async function extractContentBlobForChat(chatId: string, content: Content): Prom
  * Rehydrate a content part by loading blob data from chat folder and converting to data URL.
  */
 async function rehydrateContentBlobForChat(chatId: string, content: StoredContent): Promise<Content> {
-  if (content.type === 'image' || content.type === 'audio' || content.type === 'file') {
+  if (content.type === "image" || content.type === "audio" || content.type === "file") {
     const blobId = parseBlobRef(content.data);
     if (blobId) {
       const blob = await getChatBlob(chatId, blobId);
-      
+
       if (blob) {
         const dataUrl = await blobToDataUrl(blob);
         return { ...content, data: dataUrl };
       }
       // Blob not found, return with empty data or placeholder
       console.warn(`Blob not found: ${blobId}`);
-      return { ...content, data: '' };
+      return { ...content, data: "" };
     }
     // Not a blob ref, return as-is
     return content as Content;
   }
-  
-  if (content.type === 'tool_result') {
-    const rehydratedResult = await Promise.all(
-      content.result.map(r => rehydrateContentBlobForChat(chatId, r as StoredContent))
-    );
+
+  if (content.type === "tool_result") {
+    const rehydratedResult = await Promise.all(content.result.map((r) => rehydrateContentBlobForChat(chatId, r as StoredContent)));
     return { ...content, result: rehydratedResult } as Content;
   }
-  
+
   return content as Content;
 }
 
@@ -135,10 +127,8 @@ async function rehydrateContentBlobForChat(chatId: string, content: StoredConten
  * Extract all binary data from a message and store as blobs in chat folder.
  */
 export async function extractMessageBlobsForChat(chatId: string, message: Message): Promise<StoredMessage> {
-  const extractedContent = await Promise.all(
-    message.content.map(c => extractContentBlobForChat(chatId, c))
-  );
-  
+  const extractedContent = await Promise.all(message.content.map((c) => extractContentBlobForChat(chatId, c)));
+
   return {
     role: message.role,
     content: extractedContent,
@@ -150,10 +140,8 @@ export async function extractMessageBlobsForChat(chatId: string, message: Messag
  * Rehydrate all blob references in a message from chat folder.
  */
 export async function rehydrateMessageBlobsForChat(chatId: string, message: StoredMessage): Promise<Message> {
-  const rehydratedContent = await Promise.all(
-    message.content.map(c => rehydrateContentBlobForChat(chatId, c))
-  );
-  
+  const rehydratedContent = await Promise.all(message.content.map((c) => rehydrateContentBlobForChat(chatId, c)));
+
   return {
     role: message.role,
     content: rehydratedContent,
@@ -167,15 +155,13 @@ export async function rehydrateMessageBlobsForChat(chatId: string, message: Stor
  * Note: Artifacts should be saved separately via saveArtifacts().
  */
 export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
-  const extractedMessages = await Promise.all(
-    chat.messages.map(m => extractMessageBlobsForChat(chat.id, m))
-  );
-  
+  const extractedMessages = await Promise.all(chat.messages.map((m) => extractMessageBlobsForChat(chat.id, m)));
+
   return {
     id: chat.id,
     title: chat.title,
-    created: chat.created instanceof Date ? chat.created.toISOString() : (chat.created as unknown as string || null),
-    updated: chat.updated instanceof Date ? chat.updated.toISOString() : (chat.updated as unknown as string || null),
+    created: chat.created instanceof Date ? chat.created.toISOString() : (chat.created as unknown as string) || null,
+    updated: chat.updated instanceof Date ? chat.updated.toISOString() : (chat.updated as unknown as string) || null,
     model: chat.model,
     messages: extractedMessages,
   };
@@ -187,10 +173,8 @@ export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
  * Note: Artifacts should be loaded separately via loadArtifacts().
  */
 export async function rehydrateChatBlobs(stored: StoredChat): Promise<Chat> {
-  const rehydratedMessages = await Promise.all(
-    stored.messages.map(m => rehydrateMessageBlobsForChat(stored.id, m))
-  );
-  
+  const rehydratedMessages = await Promise.all(stored.messages.map((m) => rehydrateMessageBlobsForChat(stored.id, m)));
+
   return {
     id: stored.id,
     title: stored.title,
@@ -206,18 +190,18 @@ export async function rehydrateChatBlobs(stored: StoredChat): Promise<Chat> {
  */
 function collectMessageBlobIds(message: StoredMessage): string[] {
   const ids: string[] = [];
-  
+
   function collectFromContent(content: StoredContent): void {
-    if (content.type === 'image' || content.type === 'audio' || content.type === 'file') {
+    if (content.type === "image" || content.type === "audio" || content.type === "file") {
       const blobId = parseBlobRef(content.data);
       if (blobId) {
         ids.push(blobId);
       }
-    } else if (content.type === 'tool_result') {
+    } else if (content.type === "tool_result") {
       content.result.forEach(collectFromContent);
     }
   }
-  
+
   message.content.forEach(collectFromContent);
   return ids;
 }

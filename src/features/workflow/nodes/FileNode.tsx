@@ -1,12 +1,12 @@
-import { memo, useState, useRef } from 'react';
-import { FileText, Upload, Loader2 } from 'lucide-react';
-import type { Node, NodeProps } from '@xyflow/react';
-import type { BaseNodeData } from '@/features/workflow/types/workflow';
-import { createData, getDataText } from '@/features/workflow/types/workflow';
-import { useWorkflow } from '@/features/workflow/hooks/useWorkflow';
-import { useWorkflowNode } from '@/features/workflow/hooks/useWorkflowNode';
-import { getConfig } from '@/shared/config';
-import { WorkflowNode } from '@/features/workflow/components/WorkflowNode';
+import { memo, useState, useRef } from "react";
+import { FileText, Upload, Loader2 } from "lucide-react";
+import type { Node, NodeProps } from "@xyflow/react";
+import type { BaseNodeData } from "@/features/workflow/types/workflow";
+import { createData, getDataText } from "@/features/workflow/types/workflow";
+import { useWorkflow } from "@/features/workflow/hooks/useWorkflow";
+import { useWorkflowNode } from "@/features/workflow/hooks/useWorkflowNode";
+import { getConfig } from "@/shared/config";
+import { WorkflowNode } from "@/features/workflow/components/WorkflowNode";
 
 // FileNode data interface
 export interface FileNodeData extends BaseNodeData {
@@ -14,7 +14,7 @@ export interface FileNodeData extends BaseNodeData {
 }
 
 // FileNode type
-export type FileNodeType = Node<FileNodeData, 'file'>;
+export type FileNodeType = Node<FileNodeData, "file">;
 
 export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) => {
   const { updateNode } = useWorkflow();
@@ -32,17 +32,17 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
           data: {
             ...data,
             fileName: file.name,
-            output: createData(content)
-          }
+            output: createData(content),
+          },
         });
       } catch (error) {
-        console.error('Error extracting text from file:', error);
+        console.error("Error extracting text from file:", error);
         updateNode(id, {
           data: {
             ...data,
             fileName: file.name,
-            output: createData('Error extracting text from file')
-          }
+            output: createData("Error extracting text from file"),
+          },
         });
       }
     });
@@ -77,25 +77,9 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
   };
 
   return (
-    <WorkflowNode
-      id={id}
-      selected={selected}
-      icon={FileText}
-      title="File"
-      color="orange"
-      showInputHandle={false}
-      showOutputHandle={true}
-      error={data.error}
-    >
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept={[...(config.text?.files ?? []), ...(config.vision?.files ?? []), ...(config.extractor?.files ?? [])].join(",")}
-        onChange={handleFileUpload}
-        className="hidden"
-        disabled={isProcessing}
-      />
-      
+    <WorkflowNode id={id} selected={selected} icon={FileText} title="File" color="orange" showInputHandle={false} showOutputHandle={true} error={data.error}>
+      <input ref={fileInputRef} type="file" accept={[...(config.text?.files ?? []), ...(config.vision?.files ?? []), ...(config.extractor?.files ?? [])].join(",")} onChange={handleFileUpload} className="hidden" disabled={isProcessing} />
+
       {isProcessing ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3 text-gray-500 dark:text-gray-400">
@@ -104,31 +88,19 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
           </div>
         </div>
       ) : !data.output ? (
-        <div 
-          className="flex-1 flex items-center justify-center"
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
+        <div className="flex-1 flex items-center justify-center" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
           <button
             onClick={() => fileInputRef.current?.click()}
             className={`flex flex-col items-center gap-3 p-8 text-gray-400 dark:text-gray-600 hover:text-orange-500 dark:hover:text-orange-400 transition-colors nodrag group ${
-              isDragging ? 'text-orange-500 dark:text-orange-400 scale-105' : ''
+              isDragging ? "text-orange-500 dark:text-orange-400 scale-105" : ""
             }`}
           >
             <Upload size={56} strokeWidth={1.5} className="group-hover:scale-110 transition-transform" />
-            <span className="text-sm font-medium">
-              {isDragging ? 'Drop file here' : 'Click to upload file'}
-            </span>
+            <span className="text-sm font-medium">{isDragging ? "Drop file here" : "Click to upload file"}</span>
           </button>
         </div>
       ) : (
-        <div 
-          className="flex-1 flex flex-col min-h-0 gap-2"
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
+        <div className="flex-1 flex flex-col min-h-0 gap-2" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
           <div className="shrink-0 px-2">
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -138,9 +110,7 @@ export const FileNode = memo(({ id, data, selected }: NodeProps<FileNodeType>) =
               Replace file
             </button>
           </div>
-          <div className={`flex-1 flex flex-col min-h-0 px-2 pb-2 transition-all ${
-            isDragging ? 'opacity-50' : ''
-          }`}>
+          <div className={`flex-1 flex flex-col min-h-0 px-2 pb-2 transition-all ${isDragging ? "opacity-50" : ""}`}>
             <textarea
               value={getDataText(data.output)}
               readOnly

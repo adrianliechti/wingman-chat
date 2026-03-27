@@ -1,8 +1,6 @@
-import JSZip from 'jszip';
-import {
-  getDirectory, writeJson, writeText, writeBlob, readText, readIndex,
-} from '@/shared/lib/opfs-core';
-import { addDirectoryToZip, rebuildFolderIndex } from '@/shared/lib/opfs-zip';
+import JSZip from "jszip";
+import { getDirectory, writeJson, writeText, writeBlob, readText, readIndex } from "@/shared/lib/opfs-core";
+import { addDirectoryToZip, rebuildFolderIndex } from "@/shared/lib/opfs-zip";
 
 // ============================================================================
 // Export
@@ -17,8 +15,8 @@ export async function exportAgentsAsZip(): Promise<void> {
   const zip = new JSZip();
 
   try {
-    const agentIndex = await readIndex('agents');
-    const agentsZip = zip.folder('agents')!;
+    const agentIndex = await readIndex("agents");
+    const agentsZip = zip.folder("agents")!;
 
     for (const entry of agentIndex) {
       const agentFolder = agentsZip.folder(entry.id)!;
@@ -32,9 +30,7 @@ export async function exportAgentsAsZip(): Promise<void> {
       }
 
       // Parse skill names from AGENTS.md and bundle referenced skills
-      const md =
-        (await readText(`agents/${entry.id}/AGENTS.md`)) ||
-        (await readText(`agents/${entry.id}/AGENT.md`));
+      const md = (await readText(`agents/${entry.id}/AGENTS.md`)) || (await readText(`agents/${entry.id}/AGENT.md`));
       if (!md) continue;
 
       const skillsMatch = md.match(/^skills:\s*(.+)$/m);
@@ -45,14 +41,17 @@ export async function exportAgentsAsZip(): Promise<void> {
       const bracketMatch = raw.match(/^\[(.*)\]$/);
       if (bracketMatch) {
         skillNames = bracketMatch[1]
-          .split(',')
-          .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+          .split(",")
+          .map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
           .filter(Boolean);
       } else {
-        skillNames = raw.split(',').map((s) => s.trim()).filter(Boolean);
+        skillNames = raw
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
       }
 
-      const skillsFolder = agentFolder.folder('skills')!;
+      const skillsFolder = agentFolder.folder("skills")!;
 
       for (const skillName of skillNames) {
         try {
@@ -68,11 +67,11 @@ export async function exportAgentsAsZip(): Promise<void> {
     /* no agents */
   }
 
-  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
-  a.download = `wingman-agents-${new Date().toISOString().split('T')[0]}.zip`;
+  a.download = `wingman-agents-${new Date().toISOString().split("T")[0]}.zip`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -82,10 +81,7 @@ export async function exportAgentsAsZip(): Promise<void> {
 /**
  * Export a single agent (with referenced skills) as a ZIP.
  */
-export async function exportSingleAgentAsZip(
-  agentId: string,
-  { includeMemory = false }: { includeMemory?: boolean } = {},
-): Promise<void> {
+export async function exportSingleAgentAsZip(agentId: string, { includeMemory = false }: { includeMemory?: boolean } = {}): Promise<void> {
   const zip = new JSZip();
 
   // Add agent's own files (AGENTS.md, servers.json, files/, etc.) at the root
@@ -94,13 +90,11 @@ export async function exportSingleAgentAsZip(
 
   // Strip MEMORY.md unless explicitly requested
   if (!includeMemory) {
-    zip.remove('MEMORY.md');
+    zip.remove("MEMORY.md");
   }
 
   // Parse skill names from AGENTS.md and bundle referenced skills
-  const md =
-    (await readText(`agents/${agentId}/AGENTS.md`)) ||
-    (await readText(`agents/${agentId}/AGENT.md`));
+  const md = (await readText(`agents/${agentId}/AGENTS.md`)) || (await readText(`agents/${agentId}/AGENT.md`));
 
   if (md) {
     const skillsMatch = md.match(/^skills:\s*(.+)$/m);
@@ -110,14 +104,17 @@ export async function exportSingleAgentAsZip(
       const bracketMatch = raw.match(/^\[(.*)\]$/);
       if (bracketMatch) {
         skillNames = bracketMatch[1]
-          .split(',')
-          .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+          .split(",")
+          .map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
           .filter(Boolean);
       } else {
-        skillNames = raw.split(',').map((s) => s.trim()).filter(Boolean);
+        skillNames = raw
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
       }
 
-      const skillsFolder = zip.folder('skills')!;
+      const skillsFolder = zip.folder("skills")!;
       for (const skillName of skillNames) {
         try {
           const skillHandle = await getDirectory(`skills/${skillName}`);
@@ -131,19 +128,22 @@ export async function exportSingleAgentAsZip(
   }
 
   // Derive a filename-safe agent name from AGENTS.md frontmatter
-  let agentName = 'agent';
+  let agentName = "agent";
   if (md) {
     const nameMatch = md.match(/^name:\s*(.+)$/m);
     if (nameMatch) {
-      agentName = nameMatch[1].trim().replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+      agentName = nameMatch[1]
+        .trim()
+        .replace(/[^a-zA-Z0-9_-]/g, "-")
+        .toLowerCase();
     }
   }
 
-  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
-  a.download = `wingman-agent-${agentName}-${new Date().toISOString().split('T')[0]}.zip`;
+  a.download = `wingman-agent-${agentName}-${new Date().toISOString().split("T")[0]}.zip`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -169,12 +169,9 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
 
   // Detect format
   const paths = Object.keys(zip.files);
-  const isNewFormat = paths.some((p) => p.startsWith('agents/'));
-  const isFlatFormat =
-    !isNewFormat &&
-    paths.some((p) => p === 'AGENTS.md' || p === 'AGENT.md');
-  const isLegacyRepo =
-    !isNewFormat && !isFlatFormat && paths.some((p) => /^[^/]+\/repository\.json$/.test(p));
+  const isNewFormat = paths.some((p) => p.startsWith("agents/"));
+  const isFlatFormat = !isNewFormat && paths.some((p) => p === "AGENTS.md" || p === "AGENT.md");
+  const isLegacyRepo = !isNewFormat && !isFlatFormat && paths.some((p) => /^[^/]+\/repository\.json$/.test(p));
 
   if (isFlatFormat) {
     await importFlatAgentFromZip(zip);
@@ -190,9 +187,9 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
   let hasSkills = false;
 
   for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
-    if (!relativePath.startsWith('agents/')) continue;
+    if (!relativePath.startsWith("agents/")) continue;
 
-    const afterAgents = relativePath.slice('agents/'.length);
+    const afterAgents = relativePath.slice("agents/".length);
 
     // skills entry: {uuid}/skills/{name}/…
     const skillsMatch = afterAgents.match(/^[^/]+\/skills\/(.+)$/);
@@ -201,9 +198,9 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
       hasSkills = true;
 
       if (zipEntry.dir) {
-        await getDirectory(targetPath.replace(/\/$/, ''), { create: true });
+        await getDirectory(targetPath.replace(/\/$/, ""), { create: true });
       } else {
-        const content = await zipEntry.async('arraybuffer');
+        const content = await zipEntry.async("arraybuffer");
         await writeBlob(targetPath, new Blob([content]));
       }
     } else {
@@ -211,16 +208,16 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
       hasAgents = true;
 
       if (zipEntry.dir) {
-        await getDirectory(targetPath.replace(/\/$/, ''), { create: true });
+        await getDirectory(targetPath.replace(/\/$/, ""), { create: true });
       } else {
-        const content = await zipEntry.async('arraybuffer');
+        const content = await zipEntry.async("arraybuffer");
         await writeBlob(targetPath, new Blob([content]));
       }
     }
   }
 
-  if (hasAgents) await rebuildFolderIndex('agents');
-  if (hasSkills) await rebuildFolderIndex('skills');
+  if (hasAgents) await rebuildFolderIndex("agents");
+  if (hasSkills) await rebuildFolderIndex("skills");
 }
 
 // ============================================================================
@@ -234,13 +231,11 @@ export async function importAgentsFromZip(file: Blob): Promise<void> {
  *
  * @returns The number of successfully imported agents and failures.
  */
-export async function importAgentsFromLegacyJson(
-  jsonData: string,
-): Promise<{ total: number; imported: number; failed: number }> {
+export async function importAgentsFromLegacyJson(jsonData: string): Promise<{ total: number; imported: number; failed: number }> {
   const importData = JSON.parse(jsonData);
 
   if (!importData.repositories || !Array.isArray(importData.repositories)) {
-    throw new Error('Invalid import file: Expected repositories array not found.');
+    throw new Error("Invalid import file: Expected repositories array not found.");
   }
 
   const total = importData.repositories.length;
@@ -249,18 +244,18 @@ export async function importAgentsFromLegacyJson(
   for (const repoData of importData.repositories) {
     try {
       const agentId = crypto.randomUUID();
-      const name = repoData.name || 'Imported Repository';
+      const name = repoData.name || "Imported Repository";
       const instructions = repoData.instructions;
 
       // Generate AGENTS.md
-      const mdLines: string[] = ['---'];
+      const mdLines: string[] = ["---"];
       mdLines.push(`name: ${name}`);
-      mdLines.push('---');
+      mdLines.push("---");
       if (instructions) {
-        mdLines.push('');
+        mdLines.push("");
         mdLines.push(instructions);
       }
-      await writeText(`agents/${agentId}/AGENTS.md`, mdLines.join('\n'));
+      await writeText(`agents/${agentId}/AGENTS.md`, mdLines.join("\n"));
 
       // Store files if present (old JSON format embeds text/vectors inline)
       if (repoData.files && Array.isArray(repoData.files)) {
@@ -270,9 +265,9 @@ export async function importAgentsFromLegacyJson(
 
           const meta = {
             id: fileId,
-            name: fileData.name || 'Unknown File',
-            status: fileData.status || 'completed',
-            progress: typeof fileData.progress === 'number' ? fileData.progress : 100,
+            name: fileData.name || "Unknown File",
+            status: fileData.status || "completed",
+            progress: typeof fileData.progress === "number" ? fileData.progress : 100,
             error: fileData.error,
             uploadedAt: fileData.uploadedAt || new Date().toISOString(),
           };
@@ -296,7 +291,7 @@ export async function importAgentsFromLegacyJson(
               buffer.set(segment.vector, offset);
               offset += vectorDim;
             }
-            const blob = new Blob([buffer.buffer], { type: 'application/octet-stream' });
+            const blob = new Blob([buffer.buffer], { type: "application/octet-stream" });
             await writeBlob(`${filePath}/embeddings.bin`, blob);
           }
         }
@@ -304,12 +299,12 @@ export async function importAgentsFromLegacyJson(
 
       imported++;
     } catch (error) {
-      console.error('Failed to import repository as agent:', repoData, error);
+      console.error("Failed to import repository as agent:", repoData, error);
     }
   }
 
   if (imported > 0) {
-    await rebuildFolderIndex('agents');
+    await rebuildFolderIndex("agents");
   }
 
   return { total, imported, failed: total - imported };
@@ -330,13 +325,13 @@ async function importFlatAgentFromZip(zip: JSZip): Promise<void> {
 
   for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
     // skills/{name}/… → upsert to global skills store
-    if (relativePath.startsWith('skills/')) {
+    if (relativePath.startsWith("skills/")) {
       const targetPath = relativePath;
       hasSkills = true;
       if (zipEntry.dir) {
-        await getDirectory(targetPath.replace(/\/$/, ''), { create: true });
+        await getDirectory(targetPath.replace(/\/$/, ""), { create: true });
       } else {
-        const content = await zipEntry.async('arraybuffer');
+        const content = await zipEntry.async("arraybuffer");
         await writeBlob(targetPath, new Blob([content]));
       }
       continue;
@@ -345,15 +340,15 @@ async function importFlatAgentFromZip(zip: JSZip): Promise<void> {
     // Everything else (AGENTS.md, servers.json, MEMORY.md, files/…)
     // goes under agents/{newId}/
     if (zipEntry.dir) {
-      await getDirectory(`agents/${newId}/${relativePath}`.replace(/\/$/, ''), { create: true });
+      await getDirectory(`agents/${newId}/${relativePath}`.replace(/\/$/, ""), { create: true });
     } else {
-      const content = await zipEntry.async('arraybuffer');
+      const content = await zipEntry.async("arraybuffer");
       await writeBlob(`agents/${newId}/${relativePath}`, new Blob([content]));
     }
   }
 
-  await rebuildFolderIndex('agents');
-  if (hasSkills) await rebuildFolderIndex('skills');
+  await rebuildFolderIndex("agents");
+  if (hasSkills) await rebuildFolderIndex("skills");
 }
 
 // ============================================================================
@@ -383,7 +378,7 @@ async function importLegacyRepositoriesFromZip(zip: JSZip): Promise<void> {
     const repoEntry = zip.file(`${oldId}/repository.json`);
     if (!repoEntry) continue;
 
-    const repoJson = JSON.parse(await repoEntry.async('text')) as {
+    const repoJson = JSON.parse(await repoEntry.async("text")) as {
       id: string;
       name: string;
       embedder?: string;
@@ -392,14 +387,14 @@ async function importLegacyRepositoriesFromZip(zip: JSZip): Promise<void> {
       updatedAt?: string;
     };
 
-    const mdLines: string[] = ['---'];
-    mdLines.push(`name: ${repoJson.name || 'Imported Repository'}`);
-    mdLines.push('---');
+    const mdLines: string[] = ["---"];
+    mdLines.push(`name: ${repoJson.name || "Imported Repository"}`);
+    mdLines.push("---");
     if (repoJson.instructions) {
-      mdLines.push('');
+      mdLines.push("");
       mdLines.push(repoJson.instructions);
     }
-    await writeText(`agents/${newId}/AGENTS.md`, mdLines.join('\n'));
+    await writeText(`agents/${newId}/AGENTS.md`, mdLines.join("\n"));
 
     for (const [path, zipEntry] of Object.entries(zip.files)) {
       if (!path.startsWith(`${oldId}/files/`)) continue;
@@ -407,13 +402,13 @@ async function importLegacyRepositoriesFromZip(zip: JSZip): Promise<void> {
       const targetPath = `agents/${newId}/${relPath}`;
 
       if (zipEntry.dir) {
-        await getDirectory(targetPath.replace(/\/$/, ''), { create: true });
+        await getDirectory(targetPath.replace(/\/$/, ""), { create: true });
       } else {
-        const content = await zipEntry.async('arraybuffer');
+        const content = await zipEntry.async("arraybuffer");
         await writeBlob(targetPath, new Blob([content]));
       }
     }
   }
 
-  await rebuildFolderIndex('agents');
+  await rebuildFolderIndex("agents");
 }

@@ -3,7 +3,7 @@ export interface Repository {
   name: string;
 
   embedder: string;
-  
+
   instructions?: string; // instruction for this repository
   createdAt: Date;
   updatedAt: Date;
@@ -13,7 +13,7 @@ export interface Repository {
 export interface RepositoryFile {
   id: string;
   name: string;
-  status: 'pending' | 'processing' | 'completed' | 'error';
+  status: "pending" | "processing" | "completed" | "error";
   progress: number;
   text?: string;
   segments?: Array<{

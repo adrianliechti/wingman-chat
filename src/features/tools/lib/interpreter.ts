@@ -1,6 +1,6 @@
-import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from 'pyodide';
-import { bytesToDataUrl, dataUrlToBytes, isDataUrlContent } from '@/shared/lib/artifactFiles';
-import { inferContentTypeFromPath, isTextContentType } from '@/shared/lib/fileTypes';
+import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodide";
+import { bytesToDataUrl, dataUrlToBytes, isDataUrlContent } from "@/shared/lib/artifactFiles";
+import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 
 interface ArtifactFile {
   content: string;
@@ -20,20 +20,20 @@ interface MicropipModule {
 }
 
 const PACKAGE_ALIASES: Record<string, string> = {
-  'matplotlib.pyplot': 'matplotlib',
-  'matplotlib.ticker': 'matplotlib',
-  'docx': 'python-docx',
-  'pptx': 'python-pptx',
-  'pil': 'pillow',
-  'bs4': 'beautifulsoup4',
-  'sklearn': 'scikit-learn',
-  'dateutil': 'python-dateutil',
-  'typing_extensions': 'typing-extensions',
+  "matplotlib.pyplot": "matplotlib",
+  "matplotlib.ticker": "matplotlib",
+  docx: "python-docx",
+  pptx: "python-pptx",
+  pil: "pillow",
+  bs4: "beautifulsoup4",
+  sklearn: "scikit-learn",
+  dateutil: "python-dateutil",
+  typing_extensions: "typing-extensions",
 };
 
 let standardLibraryModules: Set<string> | null = null;
-const PYODIDE_BASE_DIR = '/home/pyodide';
-const NO_OUTPUT_MESSAGE = 'Code executed successfully (no output)';
+const PYODIDE_BASE_DIR = "/home/pyodide";
+const NO_OUTPUT_MESSAGE = "Code executed successfully (no output)";
 
 function normalizePackageName(name: string): string {
   const trimmed = name.trim();
@@ -46,7 +46,7 @@ function normalizePackageName(name: string): string {
     return PACKAGE_ALIASES[lower];
   }
 
-  const rootModule = lower.split('.')[0];
+  const rootModule = lower.split(".")[0];
   return PACKAGE_ALIASES[rootModule] ?? rootModule;
 }
 
@@ -62,17 +62,15 @@ async function getWheelManifest(): Promise<Record<string, string>> {
   }
 
   try {
-    const res = await fetch('/pyodide/pypi-manifest.json');
+    const res = await fetch("/pyodide/pypi-manifest.json");
     if (!res.ok) {
       throw new Error(`Failed to load bundled package manifest: ${res.status}`);
     }
 
-    wheelManifest = await res.json() as Record<string, string>;
+    wheelManifest = (await res.json()) as Record<string, string>;
     return wheelManifest;
   } catch (error) {
-    throw new Error(
-      `Bundled Python package manifest is unavailable: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new Error(`Bundled Python package manifest is unavailable: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -81,17 +79,11 @@ async function getStandardLibraryModules(pyodide: PyodideInterface): Promise<Set
     return standardLibraryModules;
   }
 
-  const modules = pyodide.runPython(
-    'import sys\nsorted(set(sys.stdlib_module_names) | set(sys.builtin_module_names))',
-  ) as PyodideProxy<unknown>;
+  const modules = pyodide.runPython("import sys\nsorted(set(sys.stdlib_module_names) | set(sys.builtin_module_names))") as PyodideProxy<unknown>;
 
   try {
     const values = modules.toJs ? modules.toJs() : modules;
-    standardLibraryModules = new Set(
-      Array.isArray(values)
-        ? values.filter((value): value is string => typeof value === 'string').map((value) => value.toLowerCase())
-        : [],
-    );
+    standardLibraryModules = new Set(Array.isArray(values) ? values.filter((value): value is string => typeof value === "string").map((value) => value.toLowerCase()) : []);
     return standardLibraryModules;
   } finally {
     modules.destroy?.();
@@ -99,7 +91,7 @@ async function getStandardLibraryModules(pyodide: PyodideInterface): Promise<Set
 }
 
 function isStandardLibraryModule(name: string, stdlibModules: Set<string>): boolean {
-  const rootModule = name.trim().toLowerCase().split('.')[0];
+  const rootModule = name.trim().toLowerCase().split(".")[0];
   return stdlibModules.has(rootModule);
 }
 
@@ -107,20 +99,13 @@ async function findImportedPackages(pyodide: PyodideInterface, code: string): Pr
   const globals = pyodide.toPy({ source_code: code });
 
   try {
-    const imports = pyodide.runPython(
-      `from pyodide.code import find_imports\nfind_imports(source_code)`,
-      { globals },
-    ) as PyodideProxy<unknown>;
+    const imports = pyodide.runPython(`from pyodide.code import find_imports\nfind_imports(source_code)`, { globals }) as PyodideProxy<unknown>;
 
     try {
       const values = imports.toJs ? imports.toJs() : imports;
       if (Array.isArray(values)) {
         const stdlibModules = await getStandardLibraryModules(pyodide);
-        return uniquePackages(
-          values
-            .filter((value): value is string => typeof value === 'string')
-            .filter((value) => !isStandardLibraryModule(value, stdlibModules)),
-        );
+        return uniquePackages(values.filter((value): value is string => typeof value === "string").filter((value) => !isStandardLibraryModule(value, stdlibModules)));
       }
 
       return [];
@@ -158,7 +143,7 @@ function ensureDirectory(pyodide: PyodideInterface, dir: string): void {
 }
 
 function toFsPath(path: string): string {
-  const relativePath = path.startsWith('/') ? path.slice(1) : path;
+  const relativePath = path.startsWith("/") ? path.slice(1) : path;
   return `${PYODIDE_BASE_DIR}/${relativePath}`;
 }
 
@@ -177,10 +162,10 @@ function toBinaryBytes(file: ArtifactFile): Uint8Array {
 
 function clearPyodideDirectory(pyodide: PyodideInterface, dir: string): void {
   try {
-    const entries = pyodide.FS.readdir(dir).filter((entry: string) => entry !== '.' && entry !== '..');
+    const entries = pyodide.FS.readdir(dir).filter((entry: string) => entry !== "." && entry !== "..");
 
     for (const entry of entries) {
-      const fullPath = dir === '/' ? `/${entry}` : `${dir}/${entry}`;
+      const fullPath = dir === "/" ? `/${entry}` : `${dir}/${entry}`;
       const stat = pyodide.FS.stat(fullPath);
 
       if (pyodide.FS.isDir(stat.mode)) {
@@ -202,7 +187,7 @@ function syncFilesToPyodide(pyodide: PyodideInterface, files: ArtifactFiles): vo
 
   for (const [path, file] of Object.entries(files)) {
     const fsPath = toFsPath(path);
-    const dir = fsPath.substring(0, fsPath.lastIndexOf('/'));
+    const dir = fsPath.substring(0, fsPath.lastIndexOf("/"));
 
     if (dir) {
       ensureDirectory(pyodide, dir);
@@ -221,10 +206,10 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
 
   const walkDir = (dir: string) => {
     try {
-      const entries = pyodide.FS.readdir(dir).filter((entry: string) => entry !== '.' && entry !== '..');
+      const entries = pyodide.FS.readdir(dir).filter((entry: string) => entry !== "." && entry !== "..");
 
       for (const entry of entries) {
-        const fullPath = dir === '/' ? `/${entry}` : `${dir}/${entry}`;
+        const fullPath = dir === "/" ? `/${entry}` : `${dir}/${entry}`;
 
         try {
           const stat = pyodide.FS.stat(fullPath);
@@ -243,7 +228,7 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
 
           if (isTextContentType(contentType)) {
             files[relativePath] = {
-              content: pyodide.FS.readFile(fullPath, { encoding: 'utf8' }) as string,
+              content: pyodide.FS.readFile(fullPath, { encoding: "utf8" }) as string,
               contentType,
             };
             continue;
@@ -251,8 +236,8 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
 
           const bytes = pyodide.FS.readFile(fullPath) as Uint8Array;
           files[relativePath] = {
-            content: bytesToDataUrl(bytes, contentType ?? 'application/octet-stream'),
-            contentType: contentType ?? 'application/octet-stream',
+            content: bytesToDataUrl(bytes, contentType ?? "application/octet-stream"),
+            contentType: contentType ?? "application/octet-stream",
           };
         } catch {
           // Skip files that can't be read.
@@ -293,8 +278,8 @@ async function ensurePackagesLoaded(pyodide: PyodideInterface, packages: string[
   }
 
   if (pypiPackages.length > 0) {
-    await pyodide.loadPackage('micropip');
-    const micropip = pyodide.pyimport('micropip') as MicropipModule;
+    await pyodide.loadPackage("micropip");
+    const micropip = pyodide.pyimport("micropip") as MicropipModule;
 
     try {
       for (const pkg of pypiPackages) {
@@ -308,7 +293,7 @@ async function ensurePackagesLoaded(pyodide: PyodideInterface, packages: string[
 }
 
 async function runPythonCode(pyodide: PyodideInterface, code: string): Promise<string> {
-  let output = '';
+  let output = "";
 
   pyodide.setStdout({
     batched: (text: string) => {
@@ -343,13 +328,13 @@ async function loadPyodide(): Promise<PyodideInterface> {
   pyodideLoading = (async () => {
     try {
       pyodideInstance = await loadPyodideRuntime({
-        indexURL: '/pyodide/',
+        indexURL: "/pyodide/",
       });
 
-      console.log('Pyodide loaded successfully');
+      console.log("Pyodide loaded successfully");
       return pyodideInstance;
     } catch (error) {
-      console.error('Failed to load Pyodide:', error);
+      console.error("Failed to load Pyodide:", error);
       pyodideLoading = null;
       throw error;
     }
@@ -375,11 +360,11 @@ export async function executeCode(request: CodeExecutionRequest): Promise<CodeEx
       files: collectPyodideFiles(pyodide, files),
     };
   } catch (error) {
-    console.error('Code execution error:', error);
+    console.error("Code execution error:", error);
 
     return {
       success: false,
-      output: '',
+      output: "",
       error: error instanceof Error ? error.message : String(error),
     };
   }

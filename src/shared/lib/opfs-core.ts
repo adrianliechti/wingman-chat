@@ -1,5 +1,5 @@
-import { artifactContentToBlob } from './artifactFiles';
-import { inferContentTypeFromPath } from './fileTypes';
+import { artifactContentToBlob } from "./artifactFiles";
+import { inferContentTypeFromPath } from "./fileTypes";
 
 /**
  * OPFS Core — File/folder CRUD, index management, storage usage, and shared utilities.
@@ -80,19 +80,16 @@ export async function getRoot(): Promise<FileSystemDirectoryHandle> {
  * Get a directory handle at the given path.
  * Creates parent directories only when create=true.
  */
-export async function getDirectory(
-  path: string,
-  options: { create?: boolean } = {}
-): Promise<FileSystemDirectoryHandle> {
+export async function getDirectory(path: string, options: { create?: boolean } = {}): Promise<FileSystemDirectoryHandle> {
   const { create = false } = options;
   const root = await getRoot();
-  const parts = path.split('/').filter(Boolean);
-  
+  const parts = path.split("/").filter(Boolean);
+
   let current = root;
   for (const part of parts) {
     current = await current.getDirectoryHandle(part, { create });
   }
-  
+
   return current;
 }
 
@@ -101,13 +98,13 @@ export async function getDirectory(
  */
 export async function writeJson<T>(path: string, data: T): Promise<void> {
   const json = JSON.stringify(data);
-  await writeText(path, json, 'application/json');
+  await writeText(path, json, "application/json");
 }
 
 /**
  * Write text data to a file.
  */
-export async function writeText(path: string, content: string, contentType: string = 'text/plain;charset=utf-8'): Promise<void> {
+export async function writeText(path: string, content: string, contentType: string = "text/plain;charset=utf-8"): Promise<void> {
   await writeBlob(path, artifactContentToBlob(content, contentType));
 }
 
@@ -119,7 +116,7 @@ export async function writeBlob(path: string, blob: Blob): Promise<void> {
   const { dir, name } = parsePath(path);
   const directory = await getDirectory(dir, { create: true });
   const fileHandle = await directory.getFileHandle(name, { create: true });
-  
+
   const writable = await fileHandle.createWritable();
   try {
     await writable.write(blob);
@@ -170,7 +167,7 @@ export async function readBlob(path: string): Promise<Blob | undefined> {
     return file;
   } catch (error) {
     // NotFoundError is expected for missing files
-    if (error instanceof DOMException && error.name === 'NotFoundError') {
+    if (error instanceof DOMException && error.name === "NotFoundError") {
       return undefined;
     }
     throw error;
@@ -204,7 +201,7 @@ export async function deleteFile(path: string): Promise<void> {
     await directory.removeEntry(name);
   } catch (error) {
     // NotFoundError is fine - file already doesn't exist
-    if (error instanceof DOMException && error.name === 'NotFoundError') {
+    if (error instanceof DOMException && error.name === "NotFoundError") {
       return;
     }
     throw error;
@@ -221,7 +218,7 @@ export async function fileExists(path: string): Promise<boolean> {
     await directory.getFileHandle(name);
     return true;
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'NotFoundError') {
+    if (error instanceof DOMException && error.name === "NotFoundError") {
       return false;
     }
     throw error;
@@ -236,16 +233,16 @@ export async function listFiles(dirPath: string): Promise<string[]> {
   try {
     const directory = await getDirectory(dirPath);
     const files: string[] = [];
-    
+
     for await (const [name, handle] of directory.entries()) {
-      if (handle.kind === 'file') {
+      if (handle.kind === "file") {
         files.push(name);
       }
     }
-    
+
     return files;
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'NotFoundError') {
+    if (error instanceof DOMException && error.name === "NotFoundError") {
       return [];
     }
     throw error;
@@ -260,16 +257,16 @@ export async function listDirectories(dirPath: string): Promise<string[]> {
   try {
     const directory = await getDirectory(dirPath);
     const dirs: string[] = [];
-    
+
     for await (const [name, handle] of directory.entries()) {
-      if (handle.kind === 'directory') {
+      if (handle.kind === "directory") {
         dirs.push(name);
       }
     }
-    
+
     return dirs;
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'NotFoundError') {
+    if (error instanceof DOMException && error.name === "NotFoundError") {
       return [];
     }
     throw error;
@@ -281,21 +278,19 @@ export async function listDirectories(dirPath: string): Promise<string[]> {
  */
 export async function deleteDirectory(path: string): Promise<void> {
   try {
-    const parts = path.split('/').filter(Boolean);
+    const parts = path.split("/").filter(Boolean);
     if (parts.length === 0) {
       // Can't delete root
       return;
     }
-    
-    const parentPath = parts.slice(0, -1).join('/');
+
+    const parentPath = parts.slice(0, -1).join("/");
     const dirName = parts[parts.length - 1];
-    
-    const parent = parentPath
-      ? await getDirectory(parentPath)
-      : await getRoot();
+
+    const parent = parentPath ? await getDirectory(parentPath) : await getRoot();
     await parent.removeEntry(dirName, { recursive: true });
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'NotFoundError') {
+    if (error instanceof DOMException && error.name === "NotFoundError") {
       return;
     }
     throw error;
@@ -307,7 +302,7 @@ export async function deleteDirectory(path: string): Promise<void> {
  */
 export async function clearAll(): Promise<void> {
   const root = await getRoot();
-  
+
   for await (const [name] of root.entries()) {
     await root.removeEntry(name, { recursive: true });
   }
@@ -341,19 +336,16 @@ export async function writeIndex(collection: string, entries: IndexEntry[]): Pro
 /**
  * Add or update an entry in the collection index.
  */
-export async function upsertIndexEntry(
-  collection: string, 
-  entry: IndexEntry
-): Promise<void> {
+export async function upsertIndexEntry(collection: string, entry: IndexEntry): Promise<void> {
   const index = await readIndex(collection);
-  const existingIdx = index.findIndex(e => e.id === entry.id);
-  
+  const existingIdx = index.findIndex((e) => e.id === entry.id);
+
   if (existingIdx >= 0) {
     index[existingIdx] = entry;
   } else {
     index.push(entry);
   }
-  
+
   await writeIndex(collection, index);
 }
 
@@ -362,7 +354,7 @@ export async function upsertIndexEntry(
  */
 export async function removeIndexEntry(collection: string, id: string): Promise<void> {
   const index = await readIndex(collection);
-  const filtered = index.filter(e => e.id !== id);
+  const filtered = index.filter((e) => e.id !== id);
   await writeIndex(collection, filtered);
 }
 
@@ -370,22 +362,19 @@ export async function removeIndexEntry(collection: string, id: string): Promise<
  * Rebuild an index by scanning all files in the collection.
  * The extractMeta function should extract id, title, and updated from the data.
  */
-export async function rebuildIndex<T>(
-  collection: string,
-  extractMeta: (data: T) => IndexEntry
-): Promise<IndexEntry[]> {
+export async function rebuildIndex<T>(collection: string, extractMeta: (data: T) => IndexEntry): Promise<IndexEntry[]> {
   const files = await listFiles(collection);
   const entries: IndexEntry[] = [];
-  
+
   for (const file of files) {
-    if (file === 'index.json') continue;
-    
+    if (file === "index.json") continue;
+
     const data = await readJson<T>(`${collection}/${file}`);
     if (data) {
       entries.push(extractMeta(data));
     }
   }
-  
+
   await writeIndex(collection, entries);
   return entries;
 }
@@ -410,12 +399,12 @@ export interface StorageUsage {
 export async function getStorageUsage(): Promise<StorageUsage> {
   const entries: StorageEntry[] = [];
   let totalSize = 0;
-  
+
   async function scanDirectory(dirPath: string, handle: FileSystemDirectoryHandle): Promise<void> {
     for await (const [name, entryHandle] of handle.entries()) {
       const entryPath = dirPath ? `${dirPath}/${name}` : name;
-      
-      if (entryHandle.kind === 'file') {
+
+      if (entryHandle.kind === "file") {
         const fileHandle = entryHandle as FileSystemFileHandle;
         const file = await fileHandle.getFile();
         entries.push({ path: entryPath, size: file.size });
@@ -425,10 +414,10 @@ export async function getStorageUsage(): Promise<StorageUsage> {
       }
     }
   }
-  
+
   const root = await getRoot();
-  await scanDirectory('', root);
-  
+  await scanDirectory("", root);
+
   return { totalSize, entries };
 }
 
@@ -440,8 +429,8 @@ export async function getStorageUsage(): Promise<StorageUsage> {
  * Convert a data URL to a Blob.
  */
 export function dataUrlToBlob(dataUrl: string): Blob {
-  const [header, base64] = dataUrl.split(',');
-  const mimeType = header.match(/:(.*?);/)?.[1] || 'application/octet-stream';
+  const [header, base64] = dataUrl.split(",");
+  const mimeType = header.match(/:(.*?);/)?.[1] || "application/octet-stream";
   const byteCharacters = atob(base64);
   const byteNumbers = new Uint8Array(byteCharacters.length);
   for (let i = 0; i < byteCharacters.length; i++) {
@@ -466,14 +455,14 @@ export function blobToDataUrl(blob: Blob): Promise<string> {
  * Check if a string is a data URL.
  */
 export function isDataUrl(str: string): boolean {
-  return str.startsWith('data:');
+  return str.startsWith("data:");
 }
 
 /**
  * Check if a string is a blob reference (path to blob storage).
  */
 export function isBlobRef(str: string): boolean {
-  return str.startsWith('blob:');
+  return str.startsWith("blob:");
 }
 
 /**
@@ -487,7 +476,7 @@ export function createBlobRef(id: string): string {
  * Extract blob ID from a blob reference.
  */
 export function parseBlobRef(ref: string): string | null {
-  if (!ref.startsWith('blob:')) {
+  if (!ref.startsWith("blob:")) {
     return null;
   }
   return ref.slice(5);
@@ -501,14 +490,14 @@ export function parseBlobRef(ref: string): string | null {
  * Parse a path into directory and filename.
  */
 export function parsePath(path: string): { dir: string; name: string } {
-  const parts = path.split('/').filter(Boolean);
+  const parts = path.split("/").filter(Boolean);
   if (parts.length === 0) {
-    throw new Error('Invalid path: empty');
+    throw new Error("Invalid path: empty");
   }
-  
+
   const name = parts.pop()!;
-  const dir = parts.join('/');
-  
+  const dir = parts.join("/");
+
   return { dir, name };
 }
 

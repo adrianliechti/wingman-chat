@@ -1,5 +1,5 @@
-import { useRef, useState, useEffect, useMemo } from 'react';
-import { Play, Pause, RotateCcw } from 'lucide-react';
+import { useRef, useState, useEffect, useMemo } from "react";
+import { Play, Pause, RotateCcw } from "lucide-react";
 
 interface AudioViewerProps {
   content: string;
@@ -22,18 +22,18 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
 
-    audio.addEventListener('timeupdate', onTimeUpdate);
-    audio.addEventListener('durationchange', onDurationChange);
-    audio.addEventListener('ended', onEnded);
-    audio.addEventListener('play', onPlay);
-    audio.addEventListener('pause', onPause);
+    audio.addEventListener("timeupdate", onTimeUpdate);
+    audio.addEventListener("durationchange", onDurationChange);
+    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
 
     return () => {
-      audio.removeEventListener('timeupdate', onTimeUpdate);
-      audio.removeEventListener('durationchange', onDurationChange);
-      audio.removeEventListener('ended', onEnded);
-      audio.removeEventListener('play', onPlay);
-      audio.removeEventListener('pause', onPause);
+      audio.removeEventListener("timeupdate", onTimeUpdate);
+      audio.removeEventListener("durationchange", onDurationChange);
+      audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
     };
   }, []);
 
@@ -61,10 +61,10 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
   };
 
   const formatTime = (seconds: number) => {
-    if (!isFinite(seconds)) return '0:00';
+    if (!isFinite(seconds)) return "0:00";
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
-    return `${m}:${s.toString().padStart(2, '0')}`;
+    return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
   return (
@@ -80,19 +80,13 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
       <div className="absolute bottom-4 left-4 right-4 z-10">
         <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-lg px-4 py-3 flex items-center gap-3">
           {/* Play/pause */}
-          <button
-            type="button"
-            onClick={togglePlay}
-            className="shrink-0 w-9 h-9 rounded-full bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 flex items-center justify-center hover:opacity-80 transition-opacity"
-          >
+          <button type="button" onClick={togglePlay} className="shrink-0 w-9 h-9 rounded-full bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 flex items-center justify-center hover:opacity-80 transition-opacity">
             {isPlaying ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
           </button>
 
           {/* Progress */}
           <div className="flex-1 flex items-center gap-2 min-w-0">
-            <span className="text-[11px] text-neutral-500 tabular-nums shrink-0 w-8 text-right">
-              {formatTime(currentTime)}
-            </span>
+            <span className="text-[11px] text-neutral-500 tabular-nums shrink-0 w-8 text-right">{formatTime(currentTime)}</span>
             <input
               type="range"
               min={0}
@@ -101,17 +95,11 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
               onChange={seek}
               className="flex-1 h-1 appearance-none bg-neutral-200 dark:bg-neutral-700 rounded-full outline-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neutral-800 dark:[&::-webkit-slider-thumb]:bg-neutral-200"
             />
-            <span className="text-[11px] text-neutral-500 tabular-nums shrink-0 w-8">
-              {formatTime(duration)}
-            </span>
+            <span className="text-[11px] text-neutral-500 tabular-nums shrink-0 w-8">{formatTime(duration)}</span>
           </div>
 
           {/* Restart */}
-          <button
-            type="button"
-            onClick={restart}
-            className="shrink-0 p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-          >
+          <button type="button" onClick={restart} className="shrink-0 p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
             <RotateCcw size={14} />
           </button>
         </div>
@@ -128,14 +116,14 @@ interface TranscriptBlock {
 }
 
 function parseTranscript(content: string): TranscriptBlock[] {
-  const lines = content.split('\n');
+  const lines = content.split("\n");
   const blocks: TranscriptBlock[] = [];
 
   let currentSpeaker: string | null = null;
   let currentLines: string[] = [];
 
   const flush = () => {
-    const text = currentLines.join('\n').trim();
+    const text = currentLines.join("\n").trim();
     if (text) {
       blocks.push({ speaker: currentSpeaker, text });
     }
@@ -188,25 +176,15 @@ function Transcript({ content }: { content: string }) {
   const hasHosts = blocks.some((b) => b.speaker);
 
   if (!hasHosts) {
-    return (
-      <div className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
-        {content}
-      </div>
-    );
+    return <div className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">{content}</div>;
   }
 
   return (
     <div className="space-y-5">
       {blocks.map((block, i) => (
         <div key={i}>
-          {block.speaker && (
-            <p className="text-xs font-bold uppercase tracking-wider text-blue-500 dark:text-blue-400 mb-1.5">
-              {block.speaker}
-            </p>
-          )}
-          <p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
-            {block.text}
-          </p>
+          {block.speaker && <p className="text-xs font-bold uppercase tracking-wider text-blue-500 dark:text-blue-400 mb-1.5">{block.speaker}</p>}
+          <p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">{block.text}</p>
         </div>
       ))}
     </div>

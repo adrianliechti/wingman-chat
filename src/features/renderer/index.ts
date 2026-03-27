@@ -1,9 +1,9 @@
 // Hooks
-export { useImages } from './hooks/useImages';
-export { useRendererProvider } from './hooks/useRendererProvider';
+export { useImages } from "./hooks/useImages";
+export { useRendererProvider } from "./hooks/useRendererProvider";
 
 // Types
-export type { Image } from './types/renderer';
+export type { Image } from "./types/renderer";
 
 // Pages
-export { RendererPage } from './pages/RendererPage';
+export { RendererPage } from "./pages/RendererPage";

@@ -1,43 +1,21 @@
-import { useState, useRef, useCallback } from 'react';
-import {
-  Plus,
-  Globe,
-  FileText,
-  X,
-  Loader2,
-  Upload,
-  File,
-  Search,
-  Zap,
-  ArrowRight,
-  ChevronDown,
-  Link,
-} from 'lucide-react';
-import { useDropZone } from '@/shared/hooks/useDropZone';
-import { Markdown } from '@/shared/ui/Markdown';
-import type { NotebookSource } from '../types/notebook';
+import { useState, useRef, useCallback } from "react";
+import { Plus, Globe, FileText, X, Loader2, Upload, File, Search, Zap, ArrowRight, ChevronDown, Link } from "lucide-react";
+import { useDropZone } from "@/shared/hooks/useDropZone";
+import { Markdown } from "@/shared/ui/Markdown";
+import type { NotebookSource } from "../types/notebook";
 
 interface SourcesPanelProps {
   sources: NotebookSource[];
   isSearching: boolean;
-  searchWeb: (query: string, mode: 'web' | 'research') => Promise<string>;
-  addSearchResult: (query: string, mode: 'web' | 'research', content: string) => Promise<void>;
+  searchWeb: (query: string, mode: "web" | "research") => Promise<string>;
+  addSearchResult: (query: string, mode: "web" | "research", content: string) => Promise<void>;
   scrapeWeb: (url: string) => Promise<string>;
   addScrapeResult: (url: string, content: string) => Promise<void>;
   onFileAdd: (file: File) => Promise<void>;
   onDeleteSource: (sourceId: string) => void;
 }
 
-export function SourcesPanel({
-  sources,
-  isSearching,
-  searchWeb,
-  addSearchResult,
-  scrapeWeb,
-  addScrapeResult,
-  onFileAdd,
-  onDeleteSource,
-}: SourcesPanelProps) {
+export function SourcesPanel({ sources, isSearching, searchWeb, addSearchResult, scrapeWeb, addScrapeResult, onFileAdd, onDeleteSource }: SourcesPanelProps) {
   const [extracting, setExtracting] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -55,9 +33,7 @@ export function SourcesPanel({
         try {
           await onFileAdd(file);
         } catch (err) {
-          setError(
-            `Failed to add ${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`,
-          );
+          setError(`Failed to add ${file.name}: ${err instanceof Error ? err.message : "Unknown error"}`);
         } finally {
           setExtracting((prev) => {
             const next = new Set(prev);
@@ -73,12 +49,7 @@ export function SourcesPanel({
   const isDragging = useDropZone(containerRef, handleFiles);
 
   return (
-    <div
-      ref={containerRef}
-      className="h-full flex flex-col relative"
-    >
-
-
+    <div ref={containerRef} className="h-full flex flex-col relative">
       {/* Error */}
       {error && (
         <div className="px-3 pt-2">
@@ -97,10 +68,7 @@ export function SourcesPanel({
           <div className="space-y-1">
             {/* Extracting indicators */}
             {Array.from(extracting).map((fileId) => (
-              <div
-                key={fileId}
-                className="flex items-center gap-2 px-3 py-2 animate-pulse"
-              >
+              <div key={fileId} className="flex items-center gap-2 px-3 py-2 animate-pulse">
                 <Loader2 size={14} className="text-neutral-400 animate-spin shrink-0" />
                 <span className="text-xs text-neutral-500 truncate">{fileId}</span>
               </div>
@@ -108,11 +76,7 @@ export function SourcesPanel({
 
             {/* Source items */}
             {sources.map((source) => (
-              <SourceItem
-                key={source.id}
-                source={source}
-                onDelete={() => onDeleteSource(source.id)}
-              />
+              <SourceItem key={source.id} source={source} onDelete={() => onDeleteSource(source.id)} />
             ))}
           </div>
         )}
@@ -131,10 +95,7 @@ export function SourcesPanel({
 
         {showAddMenu && (
           <>
-            <div
-              className="fixed inset-0 z-40"
-              onClick={() => setShowAddMenu(false)}
-            />
+            <div className="fixed inset-0 z-40" onClick={() => setShowAddMenu(false)} />
             <div className="absolute bottom-full left-3 right-3 mb-1 z-50 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg py-1">
               <button
                 type="button"
@@ -181,7 +142,7 @@ export function SourcesPanel({
           onChange={(e) => {
             if (e.target.files) {
               handleFiles(Array.from(e.target.files));
-              e.target.value = '';
+              e.target.value = "";
             }
           }}
         />
@@ -192,9 +153,7 @@ export function SourcesPanel({
         <div className="absolute inset-0 z-50 bg-blue-500/10 border-2 border-dashed border-blue-500 rounded-lg flex items-center justify-center backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2">
             <Upload size={24} className="text-blue-500" />
-            <span className="text-sm font-medium text-blue-600 dark:text-blue-400">
-              Drop files to add as sources
-            </span>
+            <span className="text-sm font-medium text-blue-600 dark:text-blue-400">Drop files to add as sources</span>
           </div>
         </div>
       )}
@@ -210,7 +169,7 @@ export function SourcesPanel({
               await addSearchResult(query, mode, content);
               setShowSearchOverlay(false);
             } catch (err) {
-              setError(err instanceof Error ? err.message : 'Failed to add search result');
+              setError(err instanceof Error ? err.message : "Failed to add search result");
             }
           }}
           onClose={() => setShowSearchOverlay(false)}
@@ -228,7 +187,7 @@ export function SourcesPanel({
               await addScrapeResult(url, content);
               setShowScrapeOverlay(false);
             } catch (err) {
-              setError(err instanceof Error ? err.message : 'Failed to add page');
+              setError(err instanceof Error ? err.message : "Failed to add page");
             }
           }}
           onClose={() => setShowScrapeOverlay(false)}
@@ -247,20 +206,20 @@ function WebSearchOverlay({
   onClose,
 }: {
   isSearching: boolean;
-  searchWeb: (query: string, mode: 'web' | 'research') => Promise<string>;
-  onAdd: (query: string, mode: 'web' | 'research', content: string) => void;
+  searchWeb: (query: string, mode: "web" | "research") => Promise<string>;
+  onAdd: (query: string, mode: "web" | "research", content: string) => void;
   onClose: () => void;
 }) {
-  const [query, setQuery] = useState('');
-  const [mode, setMode] = useState<'web' | 'research'>('web');
+  const [query, setQuery] = useState("");
+  const [mode, setMode] = useState<"web" | "research">("web");
   const [showModeMenu, setShowModeMenu] = useState(false);
-  const [preview, setPreview] = useState('');
-  const [previewQuery, setPreviewQuery] = useState('');
-  const [previewMode, setPreviewMode] = useState<'web' | 'research'>('web');
+  const [preview, setPreview] = useState("");
+  const [previewQuery, setPreviewQuery] = useState("");
+  const [previewMode, setPreviewMode] = useState<"web" | "research">("web");
 
   const modes = {
-    web: { label: 'Web', icon: Globe },
-    research: { label: 'Research', icon: Zap },
+    web: { label: "Web", icon: Globe },
+    research: { label: "Research", icon: Zap },
   };
 
   const ModeIcon = modes[mode].icon;
@@ -282,23 +241,14 @@ function WebSearchOverlay({
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Panel */}
       <div className="relative z-10 w-full max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
-          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
-            Search the web
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-          >
+          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Search the web</h3>
+          <button type="button" onClick={onClose} className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
             <X size={16} className="text-neutral-500" />
           </button>
         </div>
@@ -313,7 +263,7 @@ function WebSearchOverlay({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === "Enter") {
                   e.preventDefault();
                   handleSearch();
                 }
@@ -340,12 +290,9 @@ function WebSearchOverlay({
 
               {showModeMenu && (
                 <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setShowModeMenu(false)}
-                  />
+                  <div className="fixed inset-0 z-40" onClick={() => setShowModeMenu(false)} />
                   <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg py-1 min-w-32.5">
-                    {(Object.keys(modes) as Array<'web' | 'research'>).map((m) => {
+                    {(Object.keys(modes) as Array<"web" | "research">).map((m) => {
                       const Icon = modes[m].icon;
                       return (
                         <button
@@ -356,9 +303,7 @@ function WebSearchOverlay({
                             setShowModeMenu(false);
                           }}
                           className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors ${
-                            mode === m
-                              ? 'text-neutral-900 dark:text-white'
-                              : 'text-neutral-600 dark:text-neutral-400'
+                            mode === m ? "text-neutral-900 dark:text-white" : "text-neutral-600 dark:text-neutral-400"
                           }`}
                         >
                           <Icon size={12} />
@@ -371,11 +316,7 @@ function WebSearchOverlay({
               )}
             </div>
 
-            <span className="text-xs text-neutral-400 flex-1">
-              {mode === 'research'
-                ? 'Deep research with synthesis'
-                : 'Quick web search'}
-            </span>
+            <span className="text-xs text-neutral-400 flex-1">{mode === "research" ? "Deep research with synthesis" : "Quick web search"}</span>
           </div>
 
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/40 min-h-48 max-h-72 overflow-y-auto">
@@ -384,20 +325,14 @@ function WebSearchOverlay({
                 <Markdown>{preview}</Markdown>
               </div>
             ) : (
-              <div className="px-4 py-3 text-sm text-neutral-400 dark:text-neutral-500">
-                Search results preview will appear here.
-              </div>
+              <div className="px-4 py-3 text-sm text-neutral-400 dark:text-neutral-500">Search results preview will appear here.</div>
             )}
           </div>
         </div>
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-neutral-200 dark:border-neutral-800 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded-lg transition-colors"
-          >
+          <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded-lg transition-colors">
             Cancel
           </button>
           {preview && previewQuery === query.trim() && previewMode === mode ? (
@@ -438,20 +373,10 @@ function WebSearchOverlay({
 
 // ── Web Scrape Overlay ────────────────────────────────────────────────
 
-function WebScrapeOverlay({
-  isLoading,
-  scrapeWeb,
-  onAdd,
-  onClose,
-}: {
-  isLoading: boolean;
-  scrapeWeb: (url: string) => Promise<string>;
-  onAdd: (url: string, content: string) => void;
-  onClose: () => void;
-}) {
-  const [url, setUrl] = useState('');
-  const [preview, setPreview] = useState('');
-  const [previewUrl, setPreviewUrl] = useState('');
+function WebScrapeOverlay({ isLoading, scrapeWeb, onAdd, onClose }: { isLoading: boolean; scrapeWeb: (url: string) => Promise<string>; onAdd: (url: string, content: string) => void; onClose: () => void }) {
+  const [url, setUrl] = useState("");
+  const [preview, setPreview] = useState("");
+  const [previewUrl, setPreviewUrl] = useState("");
 
   const handleFetch = async () => {
     if (!url.trim() || isLoading) return;
@@ -468,18 +393,11 @@ function WebScrapeOverlay({
 
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 w-full max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
           <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Add web page</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-          >
+          <button type="button" onClick={onClose} className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
             <X size={16} className="text-neutral-500" />
           </button>
         </div>
@@ -491,7 +409,7 @@ function WebScrapeOverlay({
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === "Enter") {
                   e.preventDefault();
                   handleFetch();
                 }
@@ -509,18 +427,12 @@ function WebScrapeOverlay({
                 <Markdown>{preview}</Markdown>
               </div>
             ) : (
-              <div className="px-4 py-3 text-sm text-neutral-400 dark:text-neutral-500">
-                Page content preview will appear here.
-              </div>
+              <div className="px-4 py-3 text-sm text-neutral-400 dark:text-neutral-500">Page content preview will appear here.</div>
             )}
           </div>
         </div>
         <div className="px-5 py-3 border-t border-neutral-200 dark:border-neutral-800 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded-lg transition-colors"
-          >
+          <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded-lg transition-colors">
             Cancel
           </button>
           {preview && previewUrl === url.trim() ? (
@@ -561,13 +473,7 @@ function WebScrapeOverlay({
 
 // ── Source Item ─────────────────────────────────────────────────────────
 
-function SourceItem({
-  source,
-  onDelete,
-}: {
-  source: NotebookSource;
-  onDelete: () => void;
-}) {
+function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: () => void }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -576,19 +482,15 @@ function SourceItem({
         role="button"
         tabIndex={0}
         onClick={() => setExpanded(!expanded)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded(!expanded); }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") setExpanded(!expanded);
+        }}
         className="w-full flex items-center gap-2 py-1.5 text-left cursor-pointer"
       >
         <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
-          {source.type === 'web' ? (
-            <Globe size={12} className="text-neutral-500" />
-          ) : (
-            <FileText size={12} className="text-neutral-500" />
-          )}
+          {source.type === "web" ? <Globe size={12} className="text-neutral-500" /> : <FileText size={12} className="text-neutral-500" />}
         </div>
-        <span className="text-xs text-neutral-700 dark:text-neutral-300 truncate flex-1">
-          {source.name}
-        </span>
+        <span className="text-xs text-neutral-700 dark:text-neutral-300 truncate flex-1">{source.name}</span>
         <button
           type="button"
           onClick={(e) => {
@@ -605,7 +507,7 @@ function SourceItem({
         <div className="px-3 pb-2 max-h-80 overflow-y-auto">
           <p className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap">
             {source.content.slice(0, 2000)}
-            {source.content.length > 2000 && '...'}
+            {source.content.length > 2000 && "..."}
           </p>
         </div>
       )}

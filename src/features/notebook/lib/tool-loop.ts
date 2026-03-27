@@ -3,37 +3,22 @@
  * Calls client.complete(), executes any tool calls, re-calls until done.
  */
 
-import type { Client } from '@/shared/lib/client';
-import type { Message, Content, Tool } from '@/shared/types/chat';
+import type { Client } from "@/shared/lib/client";
+import type { Message, Content, Tool } from "@/shared/types/chat";
 
 /**
  * Run an LLM completion with tool support.
  * Loops until the model stops calling tools.
  */
-export async function runWithTools(
-  client: Client,
-  model: string,
-  instructions: string,
-  messages: Message[],
-  tools: Tool[],
-  onStream?: (content: Content[]) => void,
-): Promise<Message> {
+export async function runWithTools(client: Client, model: string, instructions: string, messages: Message[], tools: Tool[], onStream?: (content: Content[]) => void): Promise<Message> {
   let conversation = [...messages];
 
   while (true) {
-    const assistantMessage = await client.complete(
-      model,
-      instructions,
-      conversation,
-      tools,
-      onStream,
-    );
+    const assistantMessage = await client.complete(model, instructions, conversation, tools, onStream);
 
     conversation = [...conversation, assistantMessage];
 
-    const toolCalls = assistantMessage.content.filter(
-      (p) => p.type === 'tool_call',
-    );
+    const toolCalls = assistantMessage.content.filter((p) => p.type === "tool_call");
 
     if (toolCalls.length === 0) {
       return assistantMessage;
@@ -41,7 +26,7 @@ export async function runWithTools(
 
     // Execute each tool call
     for (const toolCall of toolCalls) {
-      if (toolCall.type !== 'tool_call') continue;
+      if (toolCall.type !== "tool_call") continue;
 
       const tool = tools.find((t) => t.name === toolCall.name);
 
@@ -49,16 +34,16 @@ export async function runWithTools(
         conversation = [
           ...conversation,
           {
-            role: 'user' as const,
+            role: "user" as const,
             content: [
               {
-                type: 'tool_result' as const,
+                type: "tool_result" as const,
                 id: toolCall.id,
                 name: toolCall.name,
                 arguments: toolCall.arguments,
                 result: [
                   {
-                    type: 'text' as const,
+                    type: "text" as const,
                     text: `Error: Tool "${toolCall.name}" not found.`,
                   },
                 ],
@@ -70,16 +55,16 @@ export async function runWithTools(
       }
 
       try {
-        const args = JSON.parse(toolCall.arguments || '{}');
+        const args = JSON.parse(toolCall.arguments || "{}");
         const result = await tool.function(args);
 
         conversation = [
           ...conversation,
           {
-            role: 'user' as const,
+            role: "user" as const,
             content: [
               {
-                type: 'tool_result' as const,
+                type: "tool_result" as const,
                 id: toolCall.id,
                 name: toolCall.name,
                 arguments: toolCall.arguments,
@@ -92,17 +77,17 @@ export async function runWithTools(
         conversation = [
           ...conversation,
           {
-            role: 'user' as const,
+            role: "user" as const,
             content: [
               {
-                type: 'tool_result' as const,
+                type: "tool_result" as const,
                 id: toolCall.id,
                 name: toolCall.name,
                 arguments: toolCall.arguments,
                 result: [
                   {
-                    type: 'text' as const,
-                    text: `Error: ${error instanceof Error ? error.message : 'Tool execution failed.'}`,
+                    type: "text" as const,
+                    text: `Error: ${error instanceof Error ? error.message : "Tool execution failed."}`,
                   },
                 ],
               },

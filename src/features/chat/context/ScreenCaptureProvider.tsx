@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import type { ReactNode } from 'react';
-import { ScreenCaptureContext } from './ScreenCaptureContext';
-import type { ScreenCaptureContextType } from './ScreenCaptureContext';
-import { getConfig } from '@/shared/config';
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import type { ReactNode } from "react";
+import { ScreenCaptureContext } from "./ScreenCaptureContext";
+import type { ScreenCaptureContextType } from "./ScreenCaptureContext";
+import { getConfig } from "@/shared/config";
 
 interface ScreenCaptureProviderProps {
   children: ReactNode;
@@ -17,7 +17,7 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
   const [isActive, setIsActive] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  
+
   // Check if screen capture is available (both supported by browser and enabled in config)
   // This combines browser capability check with config.vision setting
   const isAvailable = useMemo(() => {
@@ -28,18 +28,18 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
   // Helper to clean up resources
   const cleanupResources = useCallback(() => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => {
+      streamRef.current.getTracks().forEach((track) => {
         track.stop();
         track.enabled = false;
       });
       streamRef.current = null;
     }
-    
+
     if (videoRef.current) {
       videoRef.current.srcObject = null;
       videoRef.current = null;
     }
-    
+
     setIsActive(false);
   }, []);
 
@@ -55,8 +55,8 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
       // Request screen capture permission
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
-          displaySurface: 'monitor',
-          cursor: 'always'
+          displaySurface: "monitor",
+          cursor: "always",
         } as MediaTrackConstraints,
         audio: false,
       });
@@ -64,18 +64,19 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
       streamRef.current = stream;
 
       // Create video element for capturing frames
-      const video = document.createElement('video');
+      const video = document.createElement("video");
       video.srcObject = stream;
       video.muted = true;
-      
+
       // Wait for video to be ready
       await new Promise<void>((resolve, reject) => {
         video.onloadedmetadata = () => {
-          video.play()
+          video
+            .play()
             .then(() => resolve())
             .catch(reject);
         };
-        video.onerror = () => reject(new Error('Failed to load video stream'));
+        video.onerror = () => reject(new Error("Failed to load video stream"));
       });
 
       videoRef.current = video;
@@ -84,20 +85,20 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
       // Handle user stopping the share via browser UI
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) {
-        videoTrack.addEventListener('ended', () => {
+        videoTrack.addEventListener("ended", () => {
           cleanupResources();
         });
       }
     } catch (error) {
-      console.error('Failed to start screen capture:', error);
+      console.error("Failed to start screen capture:", error);
       cleanupResources();
-      
+
       // Provide user-friendly error messages
       if (error instanceof DOMException) {
-        if (error.name === 'NotAllowedError') {
-          throw new Error('Screen capture permission was denied');
-        } else if (error.name === 'NotFoundError') {
-          throw new Error('No screen capture source was selected');
+        if (error.name === "NotAllowedError") {
+          throw new Error("Screen capture permission was denied");
+        } else if (error.name === "NotFoundError") {
+          throw new Error("No screen capture source was selected");
         }
       }
       throw error;
@@ -106,7 +107,7 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
 
   const captureFrame = useCallback(async (): Promise<Blob | null> => {
     if (!streamRef.current || !videoRef.current) {
-      console.warn('No active screen capture stream');
+      console.warn("No active screen capture stream");
       return null;
     }
 
@@ -115,21 +116,21 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
 
     // Check if stream is still active
     const videoTrack = stream.getVideoTracks()[0];
-    if (!videoTrack || videoTrack.readyState !== 'live') {
-      console.warn('Screen capture stream is not active');
+    if (!videoTrack || videoTrack.readyState !== "live") {
+      console.warn("Screen capture stream is not active");
       cleanupResources();
       return null;
     }
 
     try {
       // Create canvas with video dimensions
-      const canvas = document.createElement('canvas');
+      const canvas = document.createElement("canvas");
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
 
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       if (!ctx) {
-        throw new Error('Failed to get canvas context');
+        throw new Error("Failed to get canvas context");
       }
 
       // Draw current video frame to canvas
@@ -139,12 +140,12 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
       return new Promise<Blob | null>((resolve) => {
         canvas.toBlob(
           (blob) => resolve(blob),
-          'image/png',
-          1.0 // Maximum quality
+          "image/png",
+          1.0, // Maximum quality
         );
       });
     } catch (error) {
-      console.error('Failed to capture frame:', error);
+      console.error("Failed to capture frame:", error);
       return null;
     }
   }, [cleanupResources]);
@@ -164,9 +165,5 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
     captureFrame,
   };
 
-  return (
-    <ScreenCaptureContext.Provider value={value}>
-      {children}
-    </ScreenCaptureContext.Provider>
-  );
+  return <ScreenCaptureContext.Provider value={value}>{children}</ScreenCaptureContext.Provider>;
 }

@@ -35,14 +35,14 @@ export interface TranslateContextType {
   translatedFileUrl: string | null;
   translatedFileName: string | null;
   error: string | null;
-  
+
   // Data
   selectedLanguage: Language | undefined;
   supportedFiles: SupportedFile[];
   supportedLanguages: Language[];
   toneOptions: ToneOption[];
   styleOptions: StyleOption[];
-  
+
   // Actions
   setSourceText: (text: string) => void;
   setTargetLang: (langCode: string) => void;
@@ -60,11 +60,11 @@ export const supportedLanguages = (): Language[] => {
   try {
     const config = getConfig();
     if (!config.translator) return [];
-    const displayNames = new Intl.DisplayNames(['en'], { type: 'language' });
-    
-    return config.translator.languages.map(code => ({
+    const displayNames = new Intl.DisplayNames(["en"], { type: "language" });
+
+    return config.translator.languages.map((code) => ({
       code,
-      name: displayNames.of(code) || code.toUpperCase()
+      name: displayNames.of(code) || code.toUpperCase(),
     }));
   } catch {
     // Return empty array if config is not loaded yet
@@ -77,7 +77,7 @@ export const supportedFiles = (): SupportedFile[] => {
     const config = getConfig();
     if (!config.translator) return [];
     const fileExtensions = config.translator.files || [];
-    return fileExtensions.flatMap(ext => {
+    return fileExtensions.flatMap((ext) => {
       const mime = lookupContentType(ext);
       return mime ? [{ ext, mime }] : [];
     });
@@ -88,17 +88,17 @@ export const supportedFiles = (): SupportedFile[] => {
 };
 
 export const toneOptions = (): ToneOption[] => [
-  { value: '', label: 'Default' },
-  { value: 'enthusiastic', label: 'Enthusiastic' },
-  { value: 'friendly', label: 'Friendly' },
-  { value: 'confident', label: 'Confident' },
-  { value: 'diplomatic', label: 'Diplomatic' },
+  { value: "", label: "Default" },
+  { value: "enthusiastic", label: "Enthusiastic" },
+  { value: "friendly", label: "Friendly" },
+  { value: "confident", label: "Confident" },
+  { value: "diplomatic", label: "Diplomatic" },
 ];
 
 export const styleOptions = (): StyleOption[] => [
-  { value: '', label: 'Default' },
-  { value: 'simple', label: 'Simple' },
-  { value: 'business', label: 'Business' },
-  { value: 'academic', label: 'Academic' },
-  { value: 'casual', label: 'Casual' },
+  { value: "", label: "Default" },
+  { value: "simple", label: "Simple" },
+  { value: "business", label: "Business" },
+  { value: "academic", label: "Academic" },
+  { value: "casual", label: "Casual" },
 ];

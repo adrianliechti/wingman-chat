@@ -1,28 +1,28 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { PlusIcon, X } from 'lucide-react';
-import { useNavigate, useMatch } from '@tanstack/react-router';
-import { useNavigation } from '@/shell/hooks/useNavigation';
-import { useSidebar } from '@/shell/hooks/useSidebar';
-import { Markdown } from '@/shared/ui/Markdown';
-import { CopyButton } from '@/shared/ui/CopyButton';
-import { useNotebook } from '../hooks/useNotebook';
-import { SourcesPanel } from '../components/SourcesPanel';
-import { NotebookChat } from '../components/NotebookChat';
-import { StudioPanel } from '../components/StudioPanel';
-import { SlideViewer } from '../components/SlideViewer';
-import { AudioViewer } from '../components/AudioViewer';
-import { QuizViewer } from '../components/QuizViewer';
-import { MindMapViewer } from '../components/MindMapViewer';
-import { NotebookSidebar } from '../components/NotebookSidebar';
-import * as store from '../lib/opfs-notebook';
-import type { Notebook, NotebookOutput } from '../types/notebook';
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { PlusIcon, X } from "lucide-react";
+import { useNavigate, useMatch } from "@tanstack/react-router";
+import { useNavigation } from "@/shell/hooks/useNavigation";
+import { useSidebar } from "@/shell/hooks/useSidebar";
+import { Markdown } from "@/shared/ui/Markdown";
+import { CopyButton } from "@/shared/ui/CopyButton";
+import { useNotebook } from "../hooks/useNotebook";
+import { SourcesPanel } from "../components/SourcesPanel";
+import { NotebookChat } from "../components/NotebookChat";
+import { StudioPanel } from "../components/StudioPanel";
+import { SlideViewer } from "../components/SlideViewer";
+import { AudioViewer } from "../components/AudioViewer";
+import { QuizViewer } from "../components/QuizViewer";
+import { MindMapViewer } from "../components/MindMapViewer";
+import { NotebookSidebar } from "../components/NotebookSidebar";
+import * as store from "../lib/opfs-notebook";
+import type { Notebook, NotebookOutput } from "../types/notebook";
 
 export function NotebookPage() {
   const { setRightActions } = useNavigation();
   const { setSidebarContent } = useSidebar();
   const navigate = useNavigate();
 
-  const notebookIdMatch = useMatch({ from: '/app/notebook/$notebookId', shouldThrow: false });
+  const notebookIdMatch = useMatch({ from: "/app/notebook/$notebookId", shouldThrow: false });
   const routeNotebookId = notebookIdMatch?.params.notebookId;
 
   const [notebookId, setNotebookId] = useState<string | undefined>();
@@ -75,7 +75,7 @@ export function NotebookPage() {
     const id = await initNotebook();
     setNotebookId(id);
     setViewingOutput(null);
-    navigate({ to: '/notebook/$notebookId', params: { notebookId: id } });
+    navigate({ to: "/notebook/$notebookId", params: { notebookId: id } });
     await loadNotebooks();
   }, [initNotebook, loadNotebooks, navigate, notebook, sources, messages, outputs]);
 
@@ -88,16 +88,14 @@ export function NotebookPage() {
       if (id === notebookId) {
         // Select next available, or leave empty
         if (list.length > 0) {
-          const sorted = [...list].sort(
-            (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-          );
+          const sorted = [...list].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
           setNotebookId(sorted[0].id);
-          navigate({ to: '/notebook/$notebookId', params: { notebookId: sorted[0].id } });
+          navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id } });
         } else {
           // Truly no notebooks left — create one
           const newId = await initNotebook();
           setNotebookId(newId);
-          navigate({ to: '/notebook/$notebookId', params: { notebookId: newId } });
+          navigate({ to: "/notebook/$notebookId", params: { notebookId: newId } });
           await loadNotebooks();
         }
         setViewingOutput(null);
@@ -112,7 +110,7 @@ export function NotebookPage() {
       if (id !== notebookId) {
         setNotebookId(id);
         setViewingOutput(null);
-        navigate({ to: '/notebook/$notebookId', params: { notebookId: id } });
+        navigate({ to: "/notebook/$notebookId", params: { notebookId: id } });
       }
     },
     [notebookId, navigate],
@@ -133,11 +131,9 @@ export function NotebookPage() {
       if (list.length === 0) {
         handleNew();
       } else {
-        const sorted = [...list].sort(
-          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-        );
+        const sorted = [...list].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
         setNotebookId(sorted[0].id);
-        navigate({ to: '/notebook/$notebookId', params: { notebookId: sorted[0].id }, replace: true });
+        navigate({ to: "/notebook/$notebookId", params: { notebookId: sorted[0].id }, replace: true });
       }
     });
   }, [loaded, loadNotebooks, handleNew, routeNotebookId, navigate]);
@@ -145,15 +141,7 @@ export function NotebookPage() {
   // Sidebar content
   const sidebarContent = useMemo(() => {
     if (notebooks.length === 0 && !loaded) return null;
-    return (
-      <NotebookSidebar
-        notebooks={notebooks}
-        activeId={notebookId}
-        onSelect={handleSelect}
-        onDelete={handleDelete}
-        onNew={handleNew}
-      />
-    );
+    return <NotebookSidebar notebooks={notebooks} activeId={notebookId} onSelect={handleSelect} onDelete={handleDelete} onNew={handleNew} />;
   }, [notebooks, notebookId, handleSelect, handleDelete, handleNew, loaded]);
 
   useEffect(() => {
@@ -165,12 +153,7 @@ export function NotebookPage() {
   useEffect(() => {
     setRightActions(
       <div className="flex items-center gap-1">
-        <button
-          type="button"
-          className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
-          onClick={handleNew}
-          title="New notebook"
-        >
+        <button type="button" className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out" onClick={handleNew} title="New notebook">
           <PlusIcon size={20} />
         </button>
       </div>,
@@ -194,16 +177,7 @@ export function NotebookPage() {
           {loading ? (
             <div className="h-full" />
           ) : (
-            <SourcesPanel
-              sources={sources}
-              isSearching={isSearching}
-              searchWeb={searchWeb}
-              addSearchResult={addSearchResult}
-              scrapeWeb={scrapeWeb}
-              addScrapeResult={addScrapeResult}
-              onFileAdd={addFileSource}
-              onDeleteSource={deleteSource}
-            />
+            <SourcesPanel sources={sources} isSearching={isSearching} searchWeb={searchWeb} addSearchResult={addSearchResult} scrapeWeb={scrapeWeb} addScrapeResult={addScrapeResult} onFileAdd={addFileSource} onDeleteSource={deleteSource} />
           )}
         </div>
 
@@ -220,15 +194,8 @@ export function NotebookPage() {
             <div className="h-full flex flex-col relative">
               {/* Output buttons */}
               <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-                {!viewingOutput.imageUrl && !viewingOutput.audioUrl && (
-                  <CopyButton text={viewingOutput.content} />
-                )}
-                <button
-                  type="button"
-                  onClick={() => setViewingOutput(null)}
-                  className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                  title="Back to chat"
-                >
+                {!viewingOutput.imageUrl && !viewingOutput.audioUrl && <CopyButton text={viewingOutput.content} />}
+                <button type="button" onClick={() => setViewingOutput(null)} className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors" title="Back to chat">
                   <X size={16} className="text-neutral-500" />
                 </button>
               </div>
@@ -240,23 +207,13 @@ export function NotebookPage() {
                 ) : viewingOutput.mindMap ? (
                   <MindMapViewer root={viewingOutput.mindMap} />
                 ) : viewingOutput.audioUrl ? (
-                  <AudioViewer
-                    content={viewingOutput.content}
-                    audioUrl={viewingOutput.audioUrl}
-                  />
+                  <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
                 ) : viewingOutput.slides && viewingOutput.slides.length > 0 ? (
-                  <SlideViewer
-                    content={viewingOutput.content}
-                    slides={viewingOutput.slides}
-                  />
+                  <SlideViewer content={viewingOutput.content} slides={viewingOutput.slides} />
                 ) : viewingOutput.imageUrl ? (
                   <div className="h-full overflow-y-auto p-6">
                     <div className="flex flex-col items-center gap-4">
-                      <img
-                        src={viewingOutput.imageUrl}
-                        alt={viewingOutput.title}
-                        className="max-w-full rounded-lg shadow-md"
-                      />
+                      <img src={viewingOutput.imageUrl} alt={viewingOutput.title} className="max-w-full rounded-lg shadow-md" />
                     </div>
                   </div>
                 ) : (
@@ -269,13 +226,7 @@ export function NotebookPage() {
               </div>
             </div>
           ) : (
-            <NotebookChat
-              messages={messages}
-              sources={sources}
-              isChatting={isChatting}
-              streamingContent={streamingContent}
-              onSend={sendMessage}
-            />
+            <NotebookChat messages={messages} sources={sources} isChatting={isChatting} streamingContent={streamingContent} onSend={sendMessage} />
           )}
         </div>
 
@@ -286,17 +237,7 @@ export function NotebookPage() {
 
         {/* Right: Studio */}
         <div className="w-72 shrink-0 h-full overflow-hidden">
-          {loading ? (
-            <div className="h-full" />
-          ) : (
-            <StudioPanel
-              sources={sources}
-              outputs={outputs}
-              onGenerate={generateOutput}
-              onDeleteOutput={deleteOutput}
-              onSelectOutput={setViewingOutput}
-            />
-          )}
+          {loading ? <div className="h-full" /> : <StudioPanel sources={sources} outputs={outputs} onGenerate={generateOutput} onDeleteOutput={deleteOutput} onSelectOutput={setViewingOutput} />}
         </div>
       </main>
     </div>

@@ -16,15 +16,7 @@ interface SelectorMenuProps {
   scrollable?: boolean;
 }
 
-export function SelectorMenu({
-  icon,
-  label,
-  options,
-  onSelect,
-  anchor = "bottom start",
-  variant = "text",
-  scrollable = false,
-}: SelectorMenuProps) {
+export function SelectorMenu({ icon, label, options, onSelect, anchor = "bottom start", variant = "text", scrollable = false }: SelectorMenuProps) {
   const buttonClass =
     variant === "pill"
       ? "inline-flex items-center gap-2 px-4 py-2 bg-white/60 dark:bg-neutral-900/50 backdrop-blur-lg rounded-full border border-neutral-200/60 dark:border-neutral-700/50 text-neutral-700 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100 text-sm font-medium transition-all hover:bg-white/80 dark:hover:bg-neutral-900/70 shadow-sm"
@@ -41,11 +33,7 @@ export function SelectorMenu({
       <MenuItems modal={false} transition anchor={anchor} className={itemsClass}>
         {options.map((option) => (
           <MenuItem key={option.value}>
-            <button
-              type="button"
-              onClick={() => onSelect(option.value)}
-              className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors"
-            >
+            <button type="button" onClick={() => onSelect(option.value)} className="group flex w-full items-center px-4 py-2 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors">
               {option.label}
             </button>
           </MenuItem>

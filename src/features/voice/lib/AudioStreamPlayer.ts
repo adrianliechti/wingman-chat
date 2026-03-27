@@ -109,14 +109,14 @@ export class AudioStreamPlayer {
   async connect(): Promise<void> {
     // Create AudioContext with specified sample rate
     this.context = new AudioContext({ sampleRate: this.sampleRate });
-    
+
     // Resume context if suspended (browser autoplay policy)
-    if (this.context.state === 'suspended') {
+    if (this.context.state === "suspended") {
       await this.context.resume();
     }
 
     // Create Blob URL for worklet code
-    const blob = new Blob([streamProcessorCode], { type: 'application/javascript' });
+    const blob = new Blob([streamProcessorCode], { type: "application/javascript" });
     const workletUrl = URL.createObjectURL(blob);
 
     try {
@@ -128,7 +128,7 @@ export class AudioStreamPlayer {
     }
 
     // Create and connect the worklet node
-    this.workletNode = new AudioWorkletNode(this.context, 'stream-processor');
+    this.workletNode = new AudioWorkletNode(this.context, "stream-processor");
     this.workletNode.connect(this.context.destination);
   }
 
@@ -137,7 +137,7 @@ export class AudioStreamPlayer {
    */
   add16BitPCM(samples: Int16Array, trackId: string): void {
     if (!this.workletNode) {
-      console.warn('AudioStreamPlayer not connected');
+      console.warn("AudioStreamPlayer not connected");
       return;
     }
 
@@ -148,9 +148,9 @@ export class AudioStreamPlayer {
 
     // Send samples to worklet
     this.workletNode.port.postMessage({
-      event: 'write',
+      event: "write",
       buffer: samples,
-      trackId
+      trackId,
     });
   }
 
@@ -159,7 +159,7 @@ export class AudioStreamPlayer {
    */
   interrupt(): void {
     if (this.workletNode) {
-      this.workletNode.port.postMessage({ event: 'interrupt' });
+      this.workletNode.port.postMessage({ event: "interrupt" });
     }
   }
 
@@ -169,7 +169,7 @@ export class AudioStreamPlayer {
   clearInterrupts(): void {
     this.interruptedTrackIds.clear();
     if (this.workletNode) {
-      this.workletNode.port.postMessage({ event: 'clear' });
+      this.workletNode.port.postMessage({ event: "clear" });
     }
   }
 

@@ -1,12 +1,12 @@
-import { useState, useMemo, Fragment } from 'react';
-import { Dialog, Transition } from '@headlessui/react';
-import { X, Plus, Trash2 } from 'lucide-react';
-import type { BridgeServer } from '@/features/settings/context/BridgeContext';
+import { useState, useMemo, Fragment } from "react";
+import { Dialog, Transition } from "@headlessui/react";
+import { X, Plus, Trash2 } from "lucide-react";
+import type { BridgeServer } from "@/features/settings/context/BridgeContext";
 
 interface BridgeEditorProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (bridge: Omit<BridgeServer, 'id'>) => void;
+  onSave: (bridge: Omit<BridgeServer, "id">) => void;
   onDelete?: () => void;
   bridge?: BridgeServer | null;
 }
@@ -18,9 +18,9 @@ interface HeaderEntry {
 }
 
 export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: BridgeEditorProps) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [url, setUrl] = useState('');
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [url, setUrl] = useState("");
   const [headers, setHeaders] = useState<HeaderEntry[]>([]);
   const [hasOpened, setHasOpened] = useState(false);
 
@@ -32,7 +32,7 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
       setDescription(bridge.description);
       setUrl(bridge.url);
       // Convert headers object to array
-      const headerEntries = bridge.headers 
+      const headerEntries = bridge.headers
         ? Object.entries(bridge.headers).map(([key, value]) => ({
             id: crypto.randomUUID(),
             key,
@@ -41,9 +41,9 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
         : [];
       setHeaders(headerEntries);
     } else {
-      setName('');
-      setDescription('');
-      setUrl('');
+      setName("");
+      setDescription("");
+      setUrl("");
       setHeaders([]);
     }
   } else if (!isOpen && hasOpened) {
@@ -57,24 +57,20 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
       new URL(url);
       return null;
     } catch {
-      return 'Please enter a valid URL';
+      return "Please enter a valid URL";
     }
   }, [url]);
 
   const handleAddHeader = () => {
-    setHeaders(prev => [...prev, { id: crypto.randomUUID(), key: '', value: '' }]);
+    setHeaders((prev) => [...prev, { id: crypto.randomUUID(), key: "", value: "" }]);
   };
 
-  const handleUpdateHeader = (id: string, field: 'key' | 'value', value: string) => {
-    setHeaders(prev => 
-      prev.map(header => 
-        header.id === id ? { ...header, [field]: value } : header
-      )
-    );
+  const handleUpdateHeader = (id: string, field: "key" | "value", value: string) => {
+    setHeaders((prev) => prev.map((header) => (header.id === id ? { ...header, [field]: value } : header)));
   };
 
   const handleRemoveHeader = (id: string) => {
-    setHeaders(prev => prev.filter(header => header.id !== id));
+    setHeaders((prev) => prev.filter((header) => header.id !== id));
   };
 
   const handleSave = () => {
@@ -84,11 +80,14 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
 
     // Convert headers array back to object, filtering empty entries
     const headersObject = headers
-      .filter(h => h.key.trim() && h.value.trim())
-      .reduce((acc, h) => {
-        acc[h.key.trim()] = h.value.trim();
-        return acc;
-      }, {} as Record<string, string>);
+      .filter((h) => h.key.trim() && h.value.trim())
+      .reduce(
+        (acc, h) => {
+          acc[h.key.trim()] = h.value.trim();
+          return acc;
+        },
+        {} as Record<string, string>,
+      );
 
     onSave({
       name: name.trim(),
@@ -105,40 +104,18 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-80" onClose={onClose}>
-        <Transition.Child
-          as={Fragment}
-          enter="ease-out duration-300"
-          enterFrom="opacity-0"
-          enterTo="opacity-100"
-          leave="ease-in duration-200"
-          leaveFrom="opacity-100"
-          leaveTo="opacity-0"
-        >
+        <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
           <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
         </Transition.Child>
 
         <div className="fixed inset-0 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
-            <Transition.Child
-              as={Fragment}
-              enter="ease-out duration-300"
-              enterFrom="opacity-0 scale-95"
-              enterTo="opacity-100 scale-100"
-              leave="ease-in duration-200"
-              leaveFrom="opacity-100 scale-100"
-              leaveTo="opacity-0 scale-95"
-            >
+            <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
               <Dialog.Panel className="w-full max-w-lg transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all">
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
-                  <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-                    {bridge ? 'Edit MCP Server' : 'Add MCP Server'}
-                  </Dialog.Title>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
-                  >
+                  <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{bridge ? "Edit MCP Server" : "Add MCP Server"}</Dialog.Title>
+                  <button type="button" onClick={onClose} className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
                     <X size={16} />
                   </button>
                 </div>
@@ -169,25 +146,17 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       className={`w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border ${
-                        urlError 
-                          ? 'border-red-400/70 focus:ring-red-500/60' 
-                          : 'border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60'
+                        urlError ? "border-red-400/70 focus:ring-red-500/60" : "border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60"
                       } focus:ring-2 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors`}
                       placeholder="https://example.com/mcp"
                     />
-                    {urlError && (
-                      <p className="mt-1 text-xs text-red-500">{urlError}</p>
-                    )}
-                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                      The MCP server endpoint URL
-                    </p>
+                    {urlError && <p className="mt-1 text-xs text-red-500">{urlError}</p>}
+                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">The MCP server endpoint URL</p>
                   </div>
 
                   {/* Description field */}
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-                      Description
-                    </label>
+                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">Description</label>
                     <textarea
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
@@ -200,9 +169,7 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                   {/* Headers section */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                        Headers
-                      </label>
+                      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Headers</label>
                       <button
                         type="button"
                         onClick={handleAddHeader}
@@ -219,14 +186,14 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                             <input
                               type="text"
                               value={header.key}
-                              onChange={(e) => handleUpdateHeader(header.id, 'key', e.target.value)}
+                              onChange={(e) => handleUpdateHeader(header.id, "key", e.target.value)}
                               className="flex-1 px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
                               placeholder="Header name"
                             />
                             <input
                               type="text"
                               value={header.value}
-                              onChange={(e) => handleUpdateHeader(header.id, 'value', e.target.value)}
+                              onChange={(e) => handleUpdateHeader(header.id, "value", e.target.value)}
                               className="flex-1 px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
                               placeholder="Header value"
                             />
@@ -241,9 +208,7 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                         ))}
                       </div>
                     )}
-                    <p className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">
-                      Optional HTTP headers to include with requests (e.g., Authorization)
-                    </p>
+                    <p className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">Optional HTTP headers to include with requests (e.g., Authorization)</p>
                   </div>
                 </div>
 
@@ -252,28 +217,29 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                   {bridge && onDelete ? (
                     <button
                       type="button"
-                      onClick={() => { onDelete(); onClose(); }}
+                      onClick={() => {
+                        onDelete();
+                        onClose();
+                      }}
                       className="px-3 py-1.5 text-xs font-medium rounded-md text-red-600 dark:text-red-400 hover:bg-red-100/60 dark:hover:bg-red-950/40 transition-colors"
                     >
                       Delete
                     </button>
-                  ) : <span />}
+                  ) : (
+                    <span />
+                  )}
                   <div className="flex items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSave}
-                    disabled={!isValid}
-                    className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600/90 text-white hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Save
-                  </button>
+                    <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors">
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSave}
+                      disabled={!isValid}
+                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600/90 text-white hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Save
+                    </button>
                   </div>
                 </div>
               </Dialog.Panel>

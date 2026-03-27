@@ -1,50 +1,46 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { File as FileIcon2, Code, Eye, Play, Loader2, TerminalSquare, Upload, Download } from 'lucide-react';
-import { useArtifacts } from '@/features/artifacts/hooks/useArtifacts';
-import { useChat } from '@/features/chat/hooks/useChat';
-import { HtmlEditor } from '@/shared/ui/editors/HtmlEditor';
-import { SvgEditor } from '@/shared/ui/editors/SvgEditor';
-import { TextEditor } from '@/shared/ui/editors/TextEditor';
-import { CodeEditor } from '@/shared/ui/editors/CodeEditor';
-import { CsvEditor } from '@/shared/ui/editors/CsvEditor';
-import { MermaidEditor } from '@/shared/ui/editors/MermaidEditor';
-import { MarkdownEditor } from '@/shared/ui/editors/MarkdownEditor';
-import { PythonEditor } from '@/shared/ui/editors/PythonEditor';
-import { JsEditor } from '@/shared/ui/editors/JsEditor';
-import { BashEditor } from '@/shared/ui/editors/BashEditor';
-import { ArtifactsBrowser } from './ArtifactsBrowser';
-import { artifactKind, artifactLanguage, processUploadedFile } from '@/features/artifacts/lib/artifacts';
-import { FileIcon } from '@/shared/ui/FileIcon';
-import { getFileName, downloadBlob } from '@/shared/lib/utils';
-import { markdownToDocx } from '@/shared/lib/markdownToDocx';
-import type { File, FileEntry } from '@/features/artifacts/types/file';
+import { useState, useEffect, useRef, useCallback } from "react";
+import { File as FileIcon2, Code, Eye, Play, Loader2, TerminalSquare, Upload, Download } from "lucide-react";
+import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { useChat } from "@/features/chat/hooks/useChat";
+import { HtmlEditor } from "@/shared/ui/editors/HtmlEditor";
+import { SvgEditor } from "@/shared/ui/editors/SvgEditor";
+import { TextEditor } from "@/shared/ui/editors/TextEditor";
+import { CodeEditor } from "@/shared/ui/editors/CodeEditor";
+import { CsvEditor } from "@/shared/ui/editors/CsvEditor";
+import { MermaidEditor } from "@/shared/ui/editors/MermaidEditor";
+import { MarkdownEditor } from "@/shared/ui/editors/MarkdownEditor";
+import { PythonEditor } from "@/shared/ui/editors/PythonEditor";
+import { JsEditor } from "@/shared/ui/editors/JsEditor";
+import { BashEditor } from "@/shared/ui/editors/BashEditor";
+import { ArtifactsBrowser } from "./ArtifactsBrowser";
+import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
+import { FileIcon } from "@/shared/ui/FileIcon";
+import { getFileName, downloadBlob } from "@/shared/lib/utils";
+import { markdownToDocx } from "@/shared/lib/markdownToDocx";
+import type { File, FileEntry } from "@/features/artifacts/types/file";
 
 export function ArtifactsDrawer() {
-  const {
-    fs,
-    activeFile,
-    openFile,
-  } = useArtifacts();
+  const { fs, activeFile, openFile } = useArtifacts();
   const { chat, createChat } = useChat();
 
   const [isDragOver, setIsDragOver] = useState(false);
-  const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
+  const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
   const [isRunning, setIsRunning] = useState(false);
   const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
   const [terminalMounted, setTerminalMounted] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // State for files list (loaded from async fs.listFiles)
   const [files, setFiles] = useState<FileEntry[]>([]);
-  
+
   // State for active file content (loaded from async fs.getFile)
   const [activeFileData, setActiveFileData] = useState<File | null>(null);
-  
+
   // Local version counter for forcing editor remounts when file content changes
   const [editorVersion, setEditorVersion] = useState(0);
-  
+
   // Processing state for file uploads
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -56,7 +52,7 @@ export function ArtifactsDrawer() {
     if (fs && !fs.isReady) {
       let attempts = 0;
       while (!fs.isReady && attempts < 10) {
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
         attempts++;
       }
     }
@@ -87,14 +83,14 @@ export function ArtifactsDrawer() {
         setFiles([]);
         return;
       }
-      
+
       try {
         const fileList = await fs.listEntries();
         if (!cancelled) {
           setFiles(fileList);
         }
       } catch (error) {
-        console.error('Error loading files:', error);
+        console.error("Error loading files:", error);
         if (!cancelled) {
           setFiles([]);
         }
@@ -109,14 +105,14 @@ export function ArtifactsDrawer() {
         }
         return;
       }
-      
+
       try {
         const file = await fs.getFile(activeFile);
         if (!cancelled) {
           setActiveFileData(file ?? null);
         }
       } catch (error) {
-        console.error('Error loading active file:', error);
+        console.error("Error loading active file:", error);
         if (!cancelled) {
           setActiveFileData(null);
         }
@@ -131,13 +127,13 @@ export function ArtifactsDrawer() {
     const handleFileChange = () => {
       loadFiles();
       loadActiveFile();
-      setEditorVersion(v => v + 1);
+      setEditorVersion((v) => v + 1);
     };
 
-    const unsubscribeCreated = fs.subscribe('fileCreated', handleFileChange);
-    const unsubscribeDeleted = fs.subscribe('fileDeleted', handleFileChange);
-    const unsubscribeRenamed = fs.subscribe('fileRenamed', handleFileChange);
-    const unsubscribeUpdated = fs.subscribe('fileUpdated', handleFileChange);
+    const unsubscribeCreated = fs.subscribe("fileCreated", handleFileChange);
+    const unsubscribeDeleted = fs.subscribe("fileDeleted", handleFileChange);
+    const unsubscribeRenamed = fs.subscribe("fileRenamed", handleFileChange);
+    const unsubscribeUpdated = fs.subscribe("fileUpdated", handleFileChange);
 
     return () => {
       cancelled = true;
@@ -247,9 +243,7 @@ export function ArtifactsDrawer() {
         <div className="h-full flex flex-col items-center justify-center p-8">
           <div className="w-full max-w-xl">
             <Code size={32} className="text-neutral-300 dark:text-neutral-600 mb-4" />
-            <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
-              {files.length === 0 ? "No files yet" : "Select a file"}
-            </h3>
+            <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">{files.length === 0 ? "No files yet" : "Select a file"}</h3>
             <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed mb-5">
               {files.length === 0
                 ? "Files you create in the chat appear here. Refine them with follow-up prompts and download when ready. Use the upload button to bring in your own files."
@@ -283,65 +277,47 @@ export function ArtifactsDrawer() {
     const kind = artifactKind(activeFileData.path, activeFileData.contentType);
 
     switch (kind) {
-      case 'image':
+      case "image":
         return (
           <div className="h-full flex items-center justify-center bg-neutral-50 dark:bg-neutral-900/60 p-6 overflow-auto">
-            <img
-              key={`${activeFile}-${editorVersion}`}
-              src={activeFileData.content}
-              alt={getFileName(activeFileData.path)}
-              className="max-w-full max-h-full object-contain rounded-md shadow-sm"
-              draggable={false}
-            />
+            <img key={`${activeFile}-${editorVersion}`} src={activeFileData.content} alt={getFileName(activeFileData.path)} className="max-w-full max-h-full object-contain rounded-md shadow-sm" draggable={false} />
           </div>
         );
-      case 'binary':
+      case "binary":
         return (
           <div className="h-full flex items-center justify-center p-8 bg-neutral-50 dark:bg-neutral-900/60">
             <div className="max-w-md text-center">
               <FileIcon2 size={32} className="mx-auto mb-4 text-neutral-300 dark:text-neutral-600" />
-              <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
-                Binary File
-              </h3>
-              <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
-                This file is stored as binary data and cannot be edited as plain text here.
-              </p>
-              <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
-                {activeFileData.contentType || 'application/octet-stream'}
-              </p>
+              <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">Binary File</h3>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">This file is stored as binary data and cannot be edited as plain text here.</p>
+              <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">{activeFileData.contentType || "application/octet-stream"}</p>
             </div>
           </div>
         );
-      case 'html':
+      case "html":
         return <HtmlEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
-      case 'svg':
+      case "svg":
         return <SvgEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
-      case 'csv':
-        return <CsvEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode === 'preview' ? 'table' : 'code'} onViewModeChange={(mode) => setViewMode(mode === 'table' ? 'preview' : 'code')} />;
-      case 'mermaid':
+      case "csv":
+        return <CsvEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode === "preview" ? "table" : "code"} onViewModeChange={(mode) => setViewMode(mode === "table" ? "preview" : "code")} />;
+      case "mermaid":
         return <MermaidEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
-      case 'markdown':
+      case "markdown":
         return <MarkdownEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} viewMode={viewMode} onViewModeChange={setViewMode} />;
-      case 'code': {
+      case "code": {
         const lang = artifactLanguage(activeFileData.path);
-        if (lang === 'py') {
+        if (lang === "py") {
           return <PythonEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
         }
-        if (lang === 'js') {
+        if (lang === "js") {
           return <JsEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
         }
-        if (lang === 'sh' || lang === 'bash') {
+        if (lang === "sh" || lang === "bash") {
           return <BashEditor key={`${activeFile}-${editorVersion}`} initialScript={activeFileData.content} onRunReady={onRunReady} onRunningChange={setIsRunning} />;
         }
-        return (
-          <CodeEditor
-            key={`${activeFile}-${editorVersion}`}
-            content={activeFileData.content}
-            language={lang}
-          />
-        );
+        return <CodeEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} language={lang} />;
       }
-      case 'text':
+      case "text":
       default:
         return <TextEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} />;
     }
@@ -351,7 +327,7 @@ export function ArtifactsDrawer() {
   const supportsPreview = () => {
     if (!activeFile) return false;
     const kind = activeFileData ? artifactKind(activeFileData.path, activeFileData.contentType) : artifactKind(activeFile);
-    return ['html', 'svg', 'csv', 'mermaid', 'markdown'].includes(kind);
+    return ["html", "svg", "csv", "mermaid", "markdown"].includes(kind);
   };
 
   // Handle run button click
@@ -362,22 +338,14 @@ export function ArtifactsDrawer() {
   };
 
   return (
-    <div
-      className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md pt-2 md:pt-0"
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
-    >
+    <div className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md pt-2 md:pt-0" onDragOver={handleDragOver} onDrop={handleDrop}>
       {/* Drag overlay */}
       {isDragOver && (
         <div className="absolute inset-0 bg-blue-500/10 border-2 border-dashed border-blue-500 flex items-center justify-center z-50 backdrop-blur-sm">
           <div className="text-center">
             <FileIcon2 size={48} className="text-blue-500 mx-auto mb-3" />
-            <p className="text-lg font-medium text-blue-700 dark:text-blue-300 mb-1">
-              Drop files here
-            </p>
-            <p className="text-sm text-blue-600 dark:text-blue-400">
-              Files will be added to the project
-            </p>
+            <p className="text-lg font-medium text-blue-700 dark:text-blue-300 mb-1">Drop files here</p>
+            <p className="text-sm text-blue-600 dark:text-blue-400">Files will be added to the project</p>
           </div>
         </div>
       )}
@@ -391,7 +359,7 @@ export function ArtifactsDrawer() {
         onChange={async (e) => {
           if (!e.target.files || e.target.files.length === 0) return;
           const selectedFiles = Array.from(e.target.files);
-          e.target.value = ''; // Reset to allow re-uploading same file
+          e.target.value = ""; // Reset to allow re-uploading same file
           await ensureFs();
           setIsProcessing(true);
           try {
@@ -417,22 +385,14 @@ export function ArtifactsDrawer() {
       {/* Main Content Area with Right Sidebar */}
       <div className="flex-1 flex overflow-hidden">
         {/* Editor area */}
-        <div className="flex-1 overflow-hidden">
-          {renderEditor()}
-        </div>
+        <div className="flex-1 overflow-hidden">{renderEditor()}</div>
 
         {/* Right Side Panel - File Browser (full height) */}
-        <div className={`transition-all duration-500 ease-in-out relative ${files.length > 0 ? 'w-48 opacity-100' : 'w-0 opacity-0'
-          } shrink-0 overflow-hidden`}>
+        <div className={`transition-all duration-500 ease-in-out relative ${files.length > 0 ? "w-48 opacity-100" : "w-0 opacity-0"} shrink-0 overflow-hidden`}>
           <div className="absolute inset-y-0 left-0 w-px bg-black/10 dark:bg-white/10"></div>
           {fs && (
-            <div className={`h-full transition-opacity duration-500 ${files.length > 0 ? 'opacity-100' : 'opacity-0'}`}>
-              <ArtifactsBrowser
-                fs={fs}
-                files={files}
-                openTabs={activeFile ? [activeFile] : []}
-                onFileClick={openFile}
-              />
+            <div className={`h-full transition-opacity duration-500 ${files.length > 0 ? "opacity-100" : "opacity-0"}`}>
+              <ArtifactsBrowser fs={fs} files={files} openTabs={activeFile ? [activeFile] : []} onFileClick={openFile} />
             </div>
           )}
         </div>
@@ -461,7 +421,7 @@ export function ArtifactsDrawer() {
               onClick={handleRun}
               disabled={isRunning}
               className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 disabled:opacity-50"
-              title={isRunning ? 'Running...' : 'Run'}
+              title={isRunning ? "Running..." : "Run"}
             >
               {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
             </button>
@@ -471,25 +431,25 @@ export function ArtifactsDrawer() {
           {supportsPreview() && (
             <button
               type="button"
-              onClick={() => setViewMode(viewMode === 'preview' ? 'code' : 'preview')}
+              onClick={() => setViewMode(viewMode === "preview" ? "code" : "preview")}
               className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-              title={viewMode === 'preview' ? 'Switch to code' : 'Switch to preview'}
+              title={viewMode === "preview" ? "Switch to code" : "Switch to preview"}
             >
-              {viewMode === 'preview' ? <Code size={16} /> : <Eye size={16} />}
+              {viewMode === "preview" ? <Code size={16} /> : <Eye size={16} />}
             </button>
           )}
 
           {/* Word download button — only for markdown files */}
-          {activeFileData && artifactKind(activeFileData.path, activeFileData.contentType) === 'markdown' && (
+          {activeFileData && artifactKind(activeFileData.path, activeFileData.contentType) === "markdown" && (
             <button
               type="button"
               onClick={async () => {
                 try {
                   const blob = await markdownToDocx(activeFileData.content);
-                  const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, '');
+                  const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, "");
                   downloadBlob(blob, `${baseName}.docx`);
                 } catch (error) {
-                  console.error('Failed to convert to Word:', error);
+                  console.error("Failed to convert to Word:", error);
                 }
               }}
               className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
@@ -503,12 +463,8 @@ export function ArtifactsDrawer() {
           <button
             type="button"
             onClick={toggleTerminal}
-            className={`p-2 rounded transition-all duration-150 ease-out ${
-              showTerminal
-                ? 'text-green-500 dark:text-green-400 bg-green-500/10'
-                : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
-            }`}
-            title={showTerminal ? 'Close terminal' : 'Open terminal'}
+            className={`p-2 rounded transition-all duration-150 ease-out ${showTerminal ? "text-green-500 dark:text-green-400 bg-green-500/10" : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"}`}
+            title={showTerminal ? "Close terminal" : "Open terminal"}
           >
             <TerminalSquare size={16} />
           </button>
@@ -519,7 +475,7 @@ export function ArtifactsDrawer() {
             onClick={() => fileInputRef.current?.click()}
             disabled={isProcessing}
             className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-            title={isProcessing ? 'Processing files...' : 'Upload files'}
+            title={isProcessing ? "Processing files..." : "Upload files"}
           >
             {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
           </button>
@@ -532,12 +488,12 @@ export function ArtifactsDrawer() {
                 try {
                   await fs.downloadAsZip();
                 } catch (error) {
-                  console.error('Failed to download files:', error);
-                  alert('Failed to download files. Please try again.');
+                  console.error("Failed to download files:", error);
+                  alert("Failed to download files. Please try again.");
                 }
               }}
               className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-              title={`Download all files as zip (${files.length} file${files.length !== 1 ? 's' : ''})`}
+              title={`Download all files as zip (${files.length} file${files.length !== 1 ? "s" : ""})`}
             >
               <Download size={16} />
             </button>
@@ -547,7 +503,7 @@ export function ArtifactsDrawer() {
 
       {/* Terminal panel — below the controls bar, stays mounted once opened */}
       {terminalMounted && (
-        <div className={`shrink-0 border-t border-black/10 dark:border-white/10 ${showTerminal ? 'h-1/3' : 'hidden'}`}>
+        <div className={`shrink-0 border-t border-black/10 dark:border-white/10 ${showTerminal ? "h-1/3" : "hidden"}`}>
           <BashEditor key="terminal" visible={showTerminal} />
         </div>
       )}

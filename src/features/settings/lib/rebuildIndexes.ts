@@ -1,4 +1,4 @@
-import * as opfs from '@/shared/lib/opfs';
+import * as opfs from "@/shared/lib/opfs";
 
 interface ChatMeta {
   title?: string;
@@ -37,10 +37,7 @@ export interface RebuildIndexesResult {
 }
 
 async function isDirectoryEmpty(path: string): Promise<boolean> {
-  const [files, dirs] = await Promise.all([
-    opfs.listFiles(path),
-    opfs.listDirectories(path),
-  ]);
+  const [files, dirs] = await Promise.all([opfs.listFiles(path), opfs.listDirectories(path)]);
 
   return files.length === 0 && dirs.length === 0;
 }
@@ -49,7 +46,7 @@ async function rebuildChatsIndex(): Promise<{ count: number; cleaned: number }> 
   const entriesById = new Map<string, opfs.IndexEntry>();
   let cleaned = 0;
 
-  const chatDirs = await opfs.listDirectories('chats');
+  const chatDirs = await opfs.listDirectories("chats");
   for (const id of chatDirs) {
     const chat = await opfs.readJson<ChatMeta>(`chats/${id}/chat.json`);
     if (!chat) {
@@ -69,11 +66,11 @@ async function rebuildChatsIndex(): Promise<{ count: number; cleaned: number }> 
     });
   }
 
-  const chatFiles = await opfs.listFiles('chats');
+  const chatFiles = await opfs.listFiles("chats");
   for (const file of chatFiles) {
-    if (file === 'index.json' || !file.endsWith('.json')) continue;
+    if (file === "index.json" || !file.endsWith(".json")) continue;
 
-    const id = file.replace(/\.json$/, '');
+    const id = file.replace(/\.json$/, "");
     if (entriesById.has(id)) continue;
 
     const chat = await opfs.readJson<ChatMeta>(`chats/${file}`);
@@ -87,18 +84,17 @@ async function rebuildChatsIndex(): Promise<{ count: number; cleaned: number }> 
   }
 
   const entries = Array.from(entriesById.values());
-  await opfs.writeIndex('chats', entries);
+  await opfs.writeIndex("chats", entries);
   return { count: entries.length, cleaned };
 }
 
 async function rebuildAgentsIndex(): Promise<{ count: number; cleaned: number }> {
   const entries: opfs.IndexEntry[] = [];
-  const agentDirs = await opfs.listDirectories('agents');
+  const agentDirs = await opfs.listDirectories("agents");
   let cleaned = 0;
 
   for (const id of agentDirs) {
-    const content = (await opfs.readText(`agents/${id}/AGENTS.md`))
-      || (await opfs.readText(`agents/${id}/AGENT.md`));
+    const content = (await opfs.readText(`agents/${id}/AGENTS.md`)) || (await opfs.readText(`agents/${id}/AGENT.md`));
 
     let title = id;
     let hasMetadata = Boolean(content);
@@ -132,13 +128,13 @@ async function rebuildAgentsIndex(): Promise<{ count: number; cleaned: number }>
     });
   }
 
-  await opfs.writeIndex('agents', entries);
+  await opfs.writeIndex("agents", entries);
   return { count: entries.length, cleaned };
 }
 
 async function rebuildImagesIndex(): Promise<{ count: number; cleaned: number }> {
   const entries: opfs.IndexEntry[] = [];
-  const imageDirs = await opfs.listDirectories('images');
+  const imageDirs = await opfs.listDirectories("images");
   let cleaned = 0;
 
   for (const id of imageDirs) {
@@ -160,12 +156,12 @@ async function rebuildImagesIndex(): Promise<{ count: number; cleaned: number }>
     });
   }
 
-  await opfs.writeIndex('images', entries);
+  await opfs.writeIndex("images", entries);
   return { count: entries.length, cleaned };
 }
 
 async function rebuildSkillsIndex(): Promise<{ count: number; cleaned: number }> {
-  const existing = await opfs.readIndex('skills');
+  const existing = await opfs.readIndex("skills");
   const existingIdByTitle = new Map<string, string>();
   for (const entry of existing) {
     if (entry.title) {
@@ -174,7 +170,7 @@ async function rebuildSkillsIndex(): Promise<{ count: number; cleaned: number }>
   }
 
   const entries: opfs.IndexEntry[] = [];
-  const skillDirs = await opfs.listDirectories('skills');
+  const skillDirs = await opfs.listDirectories("skills");
   let cleaned = 0;
 
   for (const skillName of skillDirs) {
@@ -198,7 +194,7 @@ async function rebuildSkillsIndex(): Promise<{ count: number; cleaned: number }>
     });
   }
 
-  await opfs.writeIndex('skills', entries);
+  await opfs.writeIndex("skills", entries);
   return { count: entries.length, cleaned };
 }
 
@@ -206,7 +202,7 @@ async function rebuildRepositoriesIndex(): Promise<{ count: number; cleaned: num
   const entriesById = new Map<string, opfs.IndexEntry>();
   let cleaned = 0;
 
-  const repoDirs = await opfs.listDirectories('repositories');
+  const repoDirs = await opfs.listDirectories("repositories");
   for (const id of repoDirs) {
     const meta = await opfs.readJson<RepositoryMeta>(`repositories/${id}/repository.json`);
     if (!meta) {
@@ -226,11 +222,11 @@ async function rebuildRepositoriesIndex(): Promise<{ count: number; cleaned: num
     });
   }
 
-  const repoFiles = await opfs.listFiles('repositories');
+  const repoFiles = await opfs.listFiles("repositories");
   for (const file of repoFiles) {
-    if (file === 'index.json' || !file.endsWith('.json')) continue;
+    if (file === "index.json" || !file.endsWith(".json")) continue;
 
-    const id = file.replace(/\.json$/, '');
+    const id = file.replace(/\.json$/, "");
     if (entriesById.has(id)) continue;
 
     const meta = await opfs.readJson<RepositoryMeta>(`repositories/${file}`);
@@ -244,18 +240,12 @@ async function rebuildRepositoriesIndex(): Promise<{ count: number; cleaned: num
   }
 
   const entries = Array.from(entriesById.values());
-  await opfs.writeIndex('repositories', entries);
+  await opfs.writeIndex("repositories", entries);
   return { count: entries.length, cleaned };
 }
 
 export async function rebuildAllIndexes(): Promise<RebuildIndexesResult> {
-  const [chatsResult, agentsResult, imagesResult, skillsResult, repositoriesResult] = await Promise.all([
-    rebuildChatsIndex(),
-    rebuildAgentsIndex(),
-    rebuildImagesIndex(),
-    rebuildSkillsIndex(),
-    rebuildRepositoriesIndex(),
-  ]);
+  const [chatsResult, agentsResult, imagesResult, skillsResult, repositoriesResult] = await Promise.all([rebuildChatsIndex(), rebuildAgentsIndex(), rebuildImagesIndex(), rebuildSkillsIndex(), rebuildRepositoriesIndex()]);
 
   return {
     chats: chatsResult.count,

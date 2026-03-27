@@ -1,5 +1,5 @@
 // Hooks
-export { useInternetProvider } from './hooks/useInternetProvider';
+export { useInternetProvider } from "./hooks/useInternetProvider";
 
 // Types
-export type { SearchResult } from './types/search';
+export type { SearchResult } from "./types/search";

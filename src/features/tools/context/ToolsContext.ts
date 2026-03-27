@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { ToolProvider, ProviderState, TextContent, ImageContent, AudioContent, FileContent, ToolContext } from '@/shared/types/chat';
+import type { ToolProvider, ProviderState, TextContent, ImageContent, AudioContent, FileContent, ToolContext } from "@/shared/types/chat";
 
 export interface ToolsContextValue {
   providers: ToolProvider[];

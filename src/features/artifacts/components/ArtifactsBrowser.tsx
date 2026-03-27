@@ -1,15 +1,15 @@
-import { useState, useEffect } from 'react';
-import { Folder, FolderOpen, ChevronRight, ChevronDown, MoreVertical, Trash, Edit2 } from 'lucide-react';
-import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
-import { FileIcon } from '@/shared/ui/FileIcon';
-import { FileSystemManager } from '@/features/artifacts/lib/fs';
-import type { FileEntry } from '@/features/artifacts/types/file';
+import { useState, useEffect } from "react";
+import { Folder, FolderOpen, ChevronRight, ChevronDown, MoreVertical, Trash, Edit2 } from "lucide-react";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { FileIcon } from "@/shared/ui/FileIcon";
+import { FileSystemManager } from "@/features/artifacts/lib/fs";
+import type { FileEntry } from "@/features/artifacts/types/file";
 
 // Helper function to build folder tree structure
 interface FileNode {
   name: string;
   path: string;
-  type: 'file' | 'folder';
+  type: "file" | "folder";
   children?: FileNode[];
   file?: FileEntry;
 }
@@ -22,34 +22,34 @@ function buildFileTree(files: FileEntry[]): FileNode[] {
   const sortedFiles = [...files].sort((a, b) => a.path.localeCompare(b.path));
 
   for (const file of sortedFiles) {
-    const pathParts = file.path.split('/').filter((part: string) => part.length > 0);
-    let currentPath = '';
+    const pathParts = file.path.split("/").filter((part: string) => part.length > 0);
+    let currentPath = "";
     let currentLevel = tree;
 
     // Create folder structure
     for (let i = 0; i < pathParts.length - 1; i++) {
       const folderName = pathParts[i];
-      currentPath += '/' + folderName;
-      
+      currentPath += "/" + folderName;
+
       let folderNode = folderMap.get(currentPath);
       if (!folderNode) {
         folderNode = {
           name: folderName,
           path: currentPath,
-          type: 'folder',
-          children: []
+          type: "folder",
+          children: [],
         };
         folderMap.set(currentPath, folderNode);
         currentLevel.push(folderNode);
-        
+
         // Sort folders before files
         currentLevel.sort((a, b) => {
-          if (a.type === 'folder' && b.type === 'file') return -1;
-          if (a.type === 'file' && b.type === 'folder') return 1;
+          if (a.type === "folder" && b.type === "file") return -1;
+          if (a.type === "file" && b.type === "folder") return 1;
           return a.name.localeCompare(b.name);
         });
       }
-      
+
       currentLevel = folderNode.children!;
     }
 
@@ -58,14 +58,14 @@ function buildFileTree(files: FileEntry[]): FileNode[] {
     currentLevel.push({
       name: fileName,
       path: file.path,
-      type: 'file',
-      file: file
+      type: "file",
+      file: file,
     });
 
     // Sort the current level again
     currentLevel.sort((a, b) => {
-      if (a.type === 'folder' && b.type === 'file') return -1;
-      if (a.type === 'file' && b.type === 'folder') return 1;
+      if (a.type === "folder" && b.type === "file") return -1;
+      if (a.type === "file" && b.type === "folder") return 1;
       return a.name.localeCompare(b.name);
     });
   }
@@ -85,40 +85,17 @@ interface FileTreeNodeProps {
   onRenameFile: (path: string) => void;
 }
 
-function FileTreeNode({ 
-  node, 
-  level, 
-  openTabs, 
-  onFileClick, 
-  expandedFolders, 
-  onToggleFolder,
-  onDeleteFile,
-  onRenameFile
-}: FileTreeNodeProps) {
+function FileTreeNode({ node, level, openTabs, onFileClick, expandedFolders, onToggleFolder, onDeleteFile, onRenameFile }: FileTreeNodeProps) {
   const isExpanded = expandedFolders.has(node.path);
 
-  if (node.type === 'folder') {
+  if (node.type === "folder") {
     return (
       <>
-        <div
-          className="flex items-center gap-2 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0"
-          style={{ marginLeft: `${level * 10}px` }}
-          onClick={() => onToggleFolder(node.path)}
-        >
+        <div className="flex items-center gap-2 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0" style={{ marginLeft: `${level * 10}px` }} onClick={() => onToggleFolder(node.path)}>
           <div className="flex items-center gap-1 min-w-0">
-            {isExpanded ? (
-              <ChevronDown size={14} className="text-neutral-500 shrink-0" />
-            ) : (
-              <ChevronRight size={14} className="text-neutral-500 shrink-0" />
-            )}
-            {isExpanded ? (
-              <FolderOpen size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-            ) : (
-              <Folder size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-            )}
-            <span className="text-sm text-neutral-700 dark:text-neutral-300 truncate">
-              {node.name}
-            </span>
+            {isExpanded ? <ChevronDown size={14} className="text-neutral-500 shrink-0" /> : <ChevronRight size={14} className="text-neutral-500 shrink-0" />}
+            {isExpanded ? <FolderOpen size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" /> : <Folder size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />}
+            <span className="text-sm text-neutral-700 dark:text-neutral-300 truncate">{node.name}</span>
           </div>
         </div>
         {isExpanded && node.children && (
@@ -146,24 +123,10 @@ function FileTreeNode({
   const isTabOpen = openTabs.includes(node.path);
 
   return (
-    <div
-      className="flex items-center gap-1 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors min-w-0 group relative"
-      style={{ marginLeft: `${level * 10 + 14}px` }}
-    >
-      <button
-        type="button"
-        onClick={() => onFileClick(node.path)}
-        className="flex items-center gap-1 flex-1 min-w-0 text-left"
-      >
+    <div className="flex items-center gap-1 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors min-w-0 group relative" style={{ marginLeft: `${level * 10 + 14}px` }}>
+      <button type="button" onClick={() => onFileClick(node.path)} className="flex items-center gap-1 flex-1 min-w-0 text-left">
         <FileIcon name={node.path} contentType={node.file?.contentType} />
-        <span 
-          className={`text-sm truncate ${
-            isTabOpen 
-              ? 'font-medium text-neutral-900 dark:text-neutral-100' 
-              : 'text-neutral-700 dark:text-neutral-300'
-          }`}
-          title={node.name}
-        >
+        <span className={`text-sm truncate ${isTabOpen ? "font-medium text-neutral-900 dark:text-neutral-100" : "text-neutral-700 dark:text-neutral-300"}`} title={node.name}>
           {node.name}
         </span>
       </button>
@@ -213,49 +176,44 @@ interface ArtifactsBrowserProps {
   onFileClick: (path: string) => void;
 }
 
-export function ArtifactsBrowser({
-  fs,
-  files,
-  openTabs,
-  onFileClick,
-}: ArtifactsBrowserProps) {
+export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: ArtifactsBrowserProps) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState('');
+  const [renameValue, setRenameValue] = useState("");
 
   // Subscribe to filesystem events for folder expansion/collapse UI
   useEffect(() => {
-    const unsubscribeCreated = fs.subscribe('fileCreated', (path: string) => {
+    const unsubscribeCreated = fs.subscribe("fileCreated", (path: string) => {
       // Auto-expand parent folders when new files are created
-      const pathParts = path.split('/').filter(part => part.length > 0);
-      setExpandedFolders(prev => {
+      const pathParts = path.split("/").filter((part) => part.length > 0);
+      setExpandedFolders((prev) => {
         const newExpanded = new Set(prev);
-        let currentPath = '';
-        
+        let currentPath = "";
+
         // Expand all parent folders up to the file
         for (let i = 0; i < pathParts.length - 1; i++) {
-          currentPath += '/' + pathParts[i];
+          currentPath += "/" + pathParts[i];
           newExpanded.add(currentPath);
         }
-        
+
         return newExpanded;
       });
     });
 
-    const unsubscribeDeleted = fs.subscribe('fileDeleted', (path: string) => {
+    const unsubscribeDeleted = fs.subscribe("fileDeleted", (path: string) => {
       // If a folder is deleted, remove it from expanded folders
-      setExpandedFolders(prev => {
+      setExpandedFolders((prev) => {
         const newExpanded = new Set(prev);
         newExpanded.delete(path);
-        
+
         // Also remove any nested expanded folders
         const expandedArray = Array.from(newExpanded);
         for (const expandedPath of expandedArray) {
-          if (expandedPath.startsWith(path + '/')) {
+          if (expandedPath.startsWith(path + "/")) {
             newExpanded.delete(expandedPath);
           }
         }
-        
+
         return newExpanded;
       });
     });
@@ -286,32 +244,32 @@ export function ArtifactsBrowser({
   };
 
   const handleRenameFile = (path: string) => {
-    const fileName = path.split('/').pop() || '';
+    const fileName = path.split("/").pop() || "";
     setRenamingPath(path);
     setRenameValue(fileName);
   };
 
   const handleRenameSubmit = async () => {
     if (!renamingPath || !renameValue.trim()) return;
-    
-    const pathParts = renamingPath.split('/');
+
+    const pathParts = renamingPath.split("/");
     pathParts[pathParts.length - 1] = renameValue.trim();
-    const newPath = pathParts.join('/');
-    
+    const newPath = pathParts.join("/");
+
     if (newPath !== renamingPath) {
       const success = await fs.renameFile(renamingPath, newPath);
       if (!success) {
-        alert('Failed to rename file. A file with that name may already exist.');
+        alert("Failed to rename file. A file with that name may already exist.");
       }
     }
-    
+
     setRenamingPath(null);
-    setRenameValue('');
+    setRenameValue("");
   };
 
   const handleRenameCancel = () => {
     setRenamingPath(null);
-    setRenameValue('');
+    setRenameValue("");
   };
 
   return (
@@ -348,9 +306,9 @@ export function ArtifactsBrowser({
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === "Enter") {
                   handleRenameSubmit();
-                } else if (e.key === 'Escape') {
+                } else if (e.key === "Escape") {
                   handleRenameCancel();
                 }
               }}
@@ -358,18 +316,10 @@ export function ArtifactsBrowser({
               autoFocus
             />
             <div className="flex gap-2 mt-4 justify-end">
-              <button
-                type="button"
-                onClick={handleRenameCancel}
-                className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
-              >
+              <button type="button" onClick={handleRenameCancel} className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors">
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={handleRenameSubmit}
-                className="px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
-              >
+              <button type="button" onClick={handleRenameSubmit} className="px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors">
                 Rename
               </button>
             </div>

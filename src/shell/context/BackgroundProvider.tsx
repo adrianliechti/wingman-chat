@@ -1,9 +1,9 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { getConfig } from '@/shared/config';
-import { BackgroundContext } from './BackgroundContext';
-import type { BackgroundPack, BackgroundSetting, BackgroundContextValue } from './BackgroundContext';
+import React, { useState, useMemo, useCallback } from "react";
+import { getConfig } from "@/shared/config";
+import { BackgroundContext } from "./BackgroundContext";
+import type { BackgroundPack, BackgroundSetting, BackgroundContextValue } from "./BackgroundContext";
 
-const STORAGE_KEY = 'app_background';
+const STORAGE_KEY = "app_background";
 
 /**
  * Provides background packs and current background selection across the app.
@@ -14,7 +14,7 @@ export const BackgroundProvider: React.FC<React.PropsWithChildren<unknown>> = ({
       const cfg = getConfig();
       return Object.entries(cfg.backgrounds || {}).map(([name, items]) => ({ name, items }));
     } catch (error) {
-      console.warn('Failed to load background packs:', error);
+      console.warn("Failed to load background packs:", error);
       return [];
     }
   }, []);
@@ -45,7 +45,7 @@ export const BackgroundProvider: React.FC<React.PropsWithChildren<unknown>> = ({
   }, []);
 
   const backgroundImage = useMemo<string>(() => {
-    if (!backgroundSetting) return '';
+    if (!backgroundSetting) return "";
     const pack = backgroundPacks.find((p) => p.name === backgroundSetting);
     if (!pack || pack.items.length === 0) {
       // Invalid setting detected during render - schedule cleanup
@@ -59,7 +59,7 @@ export const BackgroundProvider: React.FC<React.PropsWithChildren<unknown>> = ({
           }
         });
       }
-      return '';
+      return "";
     }
     const dayIndex = (new Date().getDate() - 1) % pack.items.length;
     return pack.items[dayIndex].url;
@@ -72,9 +72,5 @@ export const BackgroundProvider: React.FC<React.PropsWithChildren<unknown>> = ({
     backgroundImage,
   };
 
-  return (
-    <BackgroundContext.Provider value={value}>
-      {children}
-    </BackgroundContext.Provider>
-  );
+  return <BackgroundContext.Provider value={value}>{children}</BackgroundContext.Provider>;
 };

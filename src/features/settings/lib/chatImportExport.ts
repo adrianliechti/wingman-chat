@@ -1,12 +1,12 @@
-import * as opfs from '@/shared/lib/opfs';
-import { migrateChat } from './v1Migration';
+import * as opfs from "@/shared/lib/opfs";
+import { migrateChat } from "./v1Migration";
 
 /**
  * Import chats from a ZIP file into the OPFS chats folder.
  * Merges with existing chats.
  */
 export async function importChatsFromZip(file: File): Promise<void> {
-  await opfs.importFolderFromZip('chats', file);
+  await opfs.importFolderFromZip("chats", file);
 }
 
 /**
@@ -15,13 +15,11 @@ export async function importChatsFromZip(file: File): Promise<void> {
  *
  * @returns The number of successfully imported chats and failures.
  */
-export async function importChatsFromLegacyJson(
-  jsonData: string,
-): Promise<{ total: number; imported: number; failed: number }> {
+export async function importChatsFromLegacyJson(jsonData: string): Promise<{ total: number; imported: number; failed: number }> {
   const importData = JSON.parse(jsonData);
 
   if (!importData.chats || !Array.isArray(importData.chats)) {
-    throw new Error('Invalid import file: Expected chats array not found.');
+    throw new Error("Invalid import file: Expected chats array not found.");
   }
 
   const total = importData.chats.length;
@@ -39,11 +37,11 @@ export async function importChatsFromLegacyJson(
 
       await opfs.writeJson(`chats/${stored.id}/chat.json`, stored);
 
-      if (chatData.artifacts && typeof chatData.artifacts === 'object') {
+      if (chatData.artifacts && typeof chatData.artifacts === "object") {
         await opfs.saveArtifacts(newChatId, chatData.artifacts);
       }
 
-      await opfs.upsertIndexEntry('chats', {
+      await opfs.upsertIndexEntry("chats", {
         id: stored.id,
         title: stored.title,
         updated: stored.updated || new Date().toISOString(),
@@ -51,7 +49,7 @@ export async function importChatsFromLegacyJson(
 
       imported++;
     } catch (error) {
-      console.error('Failed to import chat:', chatData, error);
+      console.error("Failed to import chat:", chatData, error);
     }
   }
 
@@ -62,6 +60,6 @@ export async function importChatsFromLegacyJson(
  * Export all chats as a ZIP download.
  */
 export async function exportChatsAsZip(): Promise<void> {
-  const filename = `wingman-chats-${new Date().toISOString().split('T')[0]}.zip`;
-  await opfs.downloadFolderAsZip('chats', filename);
+  const filename = `wingman-chats-${new Date().toISOString().split("T")[0]}.zip`;
+  await opfs.downloadFolderAsZip("chats", filename);
 }

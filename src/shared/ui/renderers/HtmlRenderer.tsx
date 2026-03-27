@@ -1,6 +1,6 @@
-import { memo, useState } from 'react';
-import { CopyButton } from '@/shared/ui/CopyButton';
-import { PreviewButton } from '@/shared/ui/PreviewButton';
+import { memo, useState } from "react";
+import { CopyButton } from "@/shared/ui/CopyButton";
+import { PreviewButton } from "@/shared/ui/PreviewButton";
 
 interface HtmlRendererProps {
   html: string;
@@ -31,11 +31,7 @@ const NonMemoizedHtmlRenderer = ({ html, language, name }: HtmlRendererProps) =>
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
           <span>{extractedTitle || name || language}</span>
           <div className="flex items-center gap-2">
-            <PreviewButton 
-              showCode={showCode} 
-              onToggle={() => setShowCode(!showCode)} 
-              className="h-4 w-4" 
-            />
+            <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
             <CopyButton text={html} className="h-4 w-4" />
           </div>
         </div>
@@ -64,11 +60,7 @@ const NonMemoizedHtmlRenderer = ({ html, language, name }: HtmlRendererProps) =>
       <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
         <span>{extractedTitle || name || language}</span>
         <div className="flex items-center gap-2">
-          <PreviewButton 
-            showCode={showCode} 
-            onToggle={() => setShowCode(!showCode)} 
-            className="h-4 w-4" 
-          />
+          <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
           <CopyButton text={html} className="h-4 w-4" />
         </div>
       </div>
@@ -81,20 +73,11 @@ const NonMemoizedHtmlRenderer = ({ html, language, name }: HtmlRendererProps) =>
             </pre>
           </div>
         ) : (
-          <iframe
-            srcDoc={html}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-            className="w-full rounded-b-md"
-            style={{ height: '400px' }}
-          />
+          <iframe srcDoc={html} sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals" className="w-full rounded-b-md" style={{ height: "400px" }} />
         )}
       </div>
     </div>
   );
 };
 
-export const HtmlRenderer = memo(
-  NonMemoizedHtmlRenderer,
-  (prevProps, nextProps) =>
-    prevProps.html === nextProps.html && prevProps.language === nextProps.language && prevProps.name === nextProps.name
-);
+export const HtmlRenderer = memo(NonMemoizedHtmlRenderer, (prevProps, nextProps) => prevProps.html === nextProps.html && prevProps.language === nextProps.language && prevProps.name === nextProps.name);

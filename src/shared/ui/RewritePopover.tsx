@@ -20,20 +20,11 @@ interface AlternativeData {
   contextToReplace: string;
 }
 
-export function RewritePopover({ 
-  selectedText, 
-  fullText, 
-  selectionStart,
-  selectionEnd,
-  position, 
-  onClose, 
-  onSelect,
-  onPreview
-}: RewritePopoverProps) {
+export function RewritePopover({ selectedText, fullText, selectionStart, selectionEnd, position, onClose, onSelect, onPreview }: RewritePopoverProps) {
   const [data, setData] = useState<AlternativeData>({
     alternatives: [],
     keyChanges: [],
-    contextToReplace: ''
+    contextToReplace: "",
   });
   const [isLoading, setIsLoading] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -47,22 +38,17 @@ export function RewritePopover({
     const loadAlternatives = async () => {
       setIsLoading(true);
       try {
-        const result = await config.client.rewriteSelection(
-          config.translator?.model || '',
-          fullText,
-          selectionStart,
-          selectionEnd
-        );
-        
+        const result = await config.client.rewriteSelection(config.translator?.model || "", fullText, selectionStart, selectionEnd);
+
         if (result) {
           setData({
             alternatives: result.alternatives,
             keyChanges: result.keyChanges,
-            contextToReplace: result.contextToReplace
+            contextToReplace: result.contextToReplace,
           });
         }
       } catch (error) {
-        console.error('Error loading alternatives:', error);
+        console.error("Error loading alternatives:", error);
       } finally {
         setIsLoading(false);
         setHasLoaded(true);
@@ -75,7 +61,7 @@ export function RewritePopover({
   // Handle escape key and click outside
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === "Escape") onClose();
     };
 
     const handleClickOutside = (e: MouseEvent) => {
@@ -84,11 +70,11 @@ export function RewritePopover({
       }
     };
 
-    document.addEventListener('keydown', handleEscape);
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.removeEventListener('keydown', handleEscape);
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [onClose]);
 
@@ -113,8 +99,8 @@ export function RewritePopover({
   // Calculate optimal width based on content
   const calculateWidth = () => {
     if (data.keyChanges.length === 0) return 200; // fallback for loading/empty states
-    
-    const maxLength = Math.max(...data.keyChanges.map(change => change.length));
+
+    const maxLength = Math.max(...data.keyChanges.map((change) => change.length));
     const baseWidth = Math.max(200, Math.min(400, maxLength * 8 + 80)); // 8px per char + padding
     return baseWidth;
   };
@@ -131,21 +117,15 @@ export function RewritePopover({
           left: `clamp(10px, ${position.x}px, calc(100vw - ${popoverWidth + 20}px))`,
           top: `clamp(10px, ${position.y + 10}px, calc(100vh - 280px))`,
           width: `min(${popoverWidth}px, calc(100vw - 20px))`,
-          maxHeight: 'min(270px, calc(100vh - 20px))',
+          maxHeight: "min(270px, calc(100vh - 20px))",
         }}
       >
         {/* Content */}
-        <div className="overflow-y-auto" style={{ maxHeight: 'min(270px, calc(100vh - 20px))' }}>
+        <div className="overflow-y-auto" style={{ maxHeight: "min(270px, calc(100vh - 20px))" }}>
           {isLoading ? (
             <LoadingState />
           ) : data.alternatives.length > 0 ? (
-            <AlternativesList
-              alternatives={data.alternatives}
-              keyChanges={data.keyChanges}
-              onSelect={handleAlternativeClick}
-              onMouseEnter={handleMouseEnter}
-              onMouseLeave={handleMouseLeave}
-            />
+            <AlternativesList alternatives={data.alternatives} keyChanges={data.keyChanges} onSelect={handleAlternativeClick} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} />
           ) : (
             <EmptyState />
           )}
@@ -166,11 +146,7 @@ function LoadingState() {
 }
 
 function EmptyState() {
-  return (
-    <div className="px-3 py-6 text-sm text-neutral-500 text-center">
-      No alternatives found for this text.
-    </div>
-  );
+  return <div className="px-3 py-6 text-sm text-neutral-500 text-center">No alternatives found for this text.</div>;
 }
 
 interface AlternativesListProps {
@@ -181,13 +157,7 @@ interface AlternativesListProps {
   onMouseLeave: () => void;
 }
 
-function AlternativesList({ 
-  alternatives, 
-  keyChanges, 
-  onSelect, 
-  onMouseEnter, 
-  onMouseLeave 
-}: AlternativesListProps) {
+function AlternativesList({ alternatives, keyChanges, onSelect, onMouseEnter, onMouseLeave }: AlternativesListProps) {
   return (
     <div className="py-1">
       {alternatives.map((alternative, index) => {

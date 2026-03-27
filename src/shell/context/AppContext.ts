@@ -1,6 +1,6 @@
-import { createContext } from 'react';
+import { createContext } from "react";
 
-import type { RenderedAppHandle } from '@/shared/types/chat';
+import type { RenderedAppHandle } from "@/shared/types/chat";
 
 export interface AppContextType {
   showAppDrawer: boolean;

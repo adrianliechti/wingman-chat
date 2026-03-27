@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
-import { FileText, X, Plus, Loader2, Upload } from 'lucide-react';
-import { useAgentFiles } from '@/features/agent/hooks/useAgentFiles';
-import type { Agent } from '@/features/agent/types/agent';
-import type { RepositoryFile } from '@/features/repository/types/repository';
-import { Section } from './Section';
+import { useState, useRef, useEffect } from "react";
+import { FileText, X, Plus, Loader2, Upload } from "lucide-react";
+import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
+import type { Agent } from "@/features/agent/types/agent";
+import type { RepositoryFile } from "@/features/repository/types/repository";
+import { Section } from "./Section";
 
 interface FilesSectionProps {
   agent: Agent;
@@ -50,15 +50,11 @@ export function FilesSection({ agent }: FilesSectionProps) {
     for (const file of selectedFiles) {
       await addFile(file);
     }
-    e.target.value = '';
+    e.target.value = "";
   };
 
   return (
-    <div
-      className={`relative ${isDragOver ? 'bg-slate-50/50 dark:bg-slate-900/50' : ''}`}
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-    >
+    <div className={`relative ${isDragOver ? "bg-slate-50/50 dark:bg-slate-900/50" : ""}`} onDrop={handleDrop} onDragOver={handleDragOver}>
       {isDragOver && (
         <div className="absolute inset-0 z-10 bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm border-2 border-dashed border-slate-400 dark:border-slate-500 rounded-lg flex items-center justify-center">
           <div className="text-center">
@@ -82,14 +78,8 @@ export function FilesSection({ agent }: FilesSectionProps) {
           </button>
         }
       >
-      <div className="space-y-2">
-        <input
-          type="file"
-          multiple
-          onChange={handleFileSelect}
-          className="hidden"
-          id={`agent-file-upload-${agent.id}`}
-        />
+        <div className="space-y-2">
+          <input type="file" multiple onChange={handleFileSelect} className="hidden" id={`agent-file-upload-${agent.id}`} />
 
           {/* File grid */}
           {files.length > 0 && (
@@ -99,22 +89,24 @@ export function FilesSection({ agent }: FilesSectionProps) {
                 .sort((a, b) => a.name.localeCompare(b.name))
                 .map((file: RepositoryFile) => (
                   <div key={file.id} className="relative group" title={file.name}>
-                    <div className={`relative w-16 h-16 ${
-                      file.status === 'processing'
-                        ? 'bg-white/30 dark:bg-neutral-900/80 backdrop-blur-lg border-2 border-dashed border-white/50 dark:border-neutral-600/60'
-                        : file.status === 'error'
-                        ? 'bg-red-100/40 dark:bg-red-900/25 backdrop-blur-lg border border-red-300/40 dark:border-red-600/25'
-                        : 'bg-white/40 dark:bg-neutral-900/80 backdrop-blur-lg border border-white/40 dark:border-neutral-600/60'
-                    } rounded-xl shadow-sm flex flex-col items-center justify-center p-1.5 hover:shadow-md transition-all`}>
-                      {file.status === 'processing' ? (
+                    <div
+                      className={`relative w-16 h-16 ${
+                        file.status === "processing"
+                          ? "bg-white/30 dark:bg-neutral-900/80 backdrop-blur-lg border-2 border-dashed border-white/50 dark:border-neutral-600/60"
+                          : file.status === "error"
+                            ? "bg-red-100/40 dark:bg-red-900/25 backdrop-blur-lg border border-red-300/40 dark:border-red-600/25"
+                            : "bg-white/40 dark:bg-neutral-900/80 backdrop-blur-lg border border-white/40 dark:border-neutral-600/60"
+                      } rounded-xl shadow-sm flex flex-col items-center justify-center p-1.5 hover:shadow-md transition-all`}
+                    >
+                      {file.status === "processing" ? (
                         <div className="flex flex-col items-center">
                           <Loader2 size={16} className="animate-spin text-neutral-500 dark:text-neutral-400 mb-0.5" />
                           <div className="text-[10px] text-neutral-600 dark:text-neutral-400">{file.progress}%</div>
                         </div>
                       ) : (
                         <div className="flex flex-col items-center text-center w-full">
-                          <FileText size={14} className={`mb-0.5 shrink-0 ${file.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-neutral-600 dark:text-neutral-300'}`} />
-                          <div className={`text-[10px] font-medium truncate w-full leading-tight ${file.status === 'error' ? 'text-red-700 dark:text-red-300' : 'text-neutral-700 dark:text-neutral-200'}`}>{file.name}</div>
+                          <FileText size={14} className={`mb-0.5 shrink-0 ${file.status === "error" ? "text-red-600 dark:text-red-400" : "text-neutral-600 dark:text-neutral-300"}`} />
+                          <div className={`text-[10px] font-medium truncate w-full leading-tight ${file.status === "error" ? "text-red-700 dark:text-red-300" : "text-neutral-700 dark:text-neutral-200"}`}>{file.name}</div>
                         </div>
                       )}
                       <button

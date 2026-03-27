@@ -1,29 +1,7 @@
-import {
-  readJson,
-  writeJson,
-  readText,
-  writeText,
-  readBlob,
-  writeBlob,
-  deleteDirectory,
-  deleteFile,
-  listDirectories,
-  readIndex,
-  upsertIndexEntry,
-  removeIndexEntry,
-  blobToDataUrl,
-  dataUrlToBlob,
-} from '@/shared/lib/opfs-core';
-import type {
-  Notebook,
-  NotebookSource,
-  NotebookOutput,
-  NotebookMessage,
-  QuizQuestion,
-  MindMapNode,
-} from '../types/notebook';
+import { readJson, writeJson, readText, writeText, readBlob, writeBlob, deleteDirectory, deleteFile, listDirectories, readIndex, upsertIndexEntry, removeIndexEntry, blobToDataUrl, dataUrlToBlob } from "@/shared/lib/opfs-core";
+import type { Notebook, NotebookSource, NotebookOutput, NotebookMessage, QuizQuestion, MindMapNode } from "../types/notebook";
 
-const COLLECTION = 'notebooks';
+const COLLECTION = "notebooks";
 
 function notebookPath(id: string) {
   return `${COLLECTION}/${id}`;
@@ -35,7 +13,7 @@ export async function listNotebooks(): Promise<Notebook[]> {
   const index = await readIndex(COLLECTION);
   return index.map((e) => ({
     id: e.id,
-    title: e.title || 'Untitled',
+    title: e.title || "Untitled",
     createdAt: e.updated,
     updatedAt: e.updated,
   }));
@@ -73,9 +51,9 @@ const migrating = new Set<string>();
 
 interface SourceMeta {
   id: string;
-  type: 'web' | 'file';
+  type: "web" | "file";
   name: string;
-  metadata?: NotebookSource['metadata'];
+  metadata?: NotebookSource["metadata"];
   addedAt: string;
 }
 
@@ -110,7 +88,7 @@ async function readSource(notebookId: string, sourceId: string): Promise<Noteboo
   const meta = await readJson<SourceMeta>(`${base}/metadata.json`);
   if (!meta) return undefined;
 
-  const content = (await readText(`${base}/content.txt`)) || '';
+  const content = (await readText(`${base}/content.txt`)) || "";
   return { ...meta, content };
 }
 
@@ -129,16 +107,11 @@ export async function getSources(notebookId: string): Promise<NotebookSource[]> 
     }
   }
 
-  const sources = await Promise.all(
-    ids.map((id) => readSource(notebookId, id)),
-  );
+  const sources = await Promise.all(ids.map((id) => readSource(notebookId, id)));
   return sources.filter((s): s is NotebookSource => s !== undefined);
 }
 
-export async function addSource(
-  notebookId: string,
-  source: NotebookSource,
-): Promise<void> {
+export async function addSource(notebookId: string, source: NotebookSource): Promise<void> {
   const { content, ...meta } = source;
   const base = sourcePath(notebookId, source.id);
 
@@ -146,10 +119,7 @@ export async function addSource(
   await writeText(`${base}/content.txt`, content);
 }
 
-export async function removeSource(
-  notebookId: string,
-  sourceId: string,
-): Promise<void> {
+export async function removeSource(notebookId: string, sourceId: string): Promise<void> {
   await deleteDirectory(sourcePath(notebookId, sourceId));
 }
 
@@ -172,9 +142,9 @@ export async function removeSource(
 
 interface OutputMeta {
   id: string;
-  type: NotebookOutput['type'];
+  type: NotebookOutput["type"];
   title: string;
-  status: NotebookOutput['status'];
+  status: NotebookOutput["status"];
   error?: string;
   createdAt: string;
   slideCount?: number;
@@ -225,7 +195,7 @@ async function writeOutput(notebookId: string, output: NotebookOutput): Promise<
     await Promise.all(
       output.slides.map(async (dataUrl, i) => {
         if (dataUrl) {
-          await writeBlob(`${base}/slides/${String(i).padStart(3, '0')}.png`, dataUrlToBlob(dataUrl));
+          await writeBlob(`${base}/slides/${String(i).padStart(3, "0")}.png`, dataUrlToBlob(dataUrl));
         }
       }),
     );
@@ -256,7 +226,7 @@ async function readOutput(notebookId: string, outputId: string): Promise<Noteboo
   const meta = await readJson<OutputMeta>(`${base}/metadata.json`);
   if (!meta) return undefined;
 
-  const content = (await readText(`${base}/content.txt`)) || '';
+  const content = (await readText(`${base}/content.txt`)) || "";
 
   const output: NotebookOutput = {
     id: meta.id,
@@ -269,26 +239,24 @@ async function readOutput(notebookId: string, outputId: string): Promise<Noteboo
   };
 
   // Load type-specific data
-  if (meta.type === 'audio-overview') {
+  if (meta.type === "audio-overview") {
     const blob = await readBlob(`${base}/audio.wav`);
     if (blob) output.audioUrl = await blobToDataUrl(blob);
-  } else if (meta.type === 'infographic') {
+  } else if (meta.type === "infographic") {
     const blob = await readBlob(`${base}/image.png`);
     if (blob) output.imageUrl = await blobToDataUrl(blob);
-  } else if (meta.type === 'slide-deck' && meta.slideCount) {
+  } else if (meta.type === "slide-deck" && meta.slideCount) {
     const slides: string[] = [];
     for (let i = 0; i < meta.slideCount; i++) {
       // Try padded name first (000.png), fall back to unpadded (0.png) for older data
-      const blob =
-        await readBlob(`${base}/slides/${String(i).padStart(3, '0')}.png`) ??
-        await readBlob(`${base}/slides/${i}.png`);
-      slides.push(blob ? await blobToDataUrl(blob) : '');
+      const blob = (await readBlob(`${base}/slides/${String(i).padStart(3, "0")}.png`)) ?? (await readBlob(`${base}/slides/${i}.png`));
+      slides.push(blob ? await blobToDataUrl(blob) : "");
     }
     output.slides = slides;
-  } else if (meta.type === 'quiz') {
+  } else if (meta.type === "quiz") {
     const quiz = await readJson<QuizQuestion[]>(`${base}/quiz.json`);
     if (quiz) output.quiz = quiz;
-  } else if (meta.type === 'mind-map') {
+  } else if (meta.type === "mind-map") {
     const mindMap = await readJson<MindMapNode>(`${base}/mindmap.json`);
     if (mindMap) output.mindMap = mindMap;
   }
@@ -311,38 +279,25 @@ export async function getOutputs(notebookId: string): Promise<NotebookOutput[]> 
     }
   }
 
-  const outputs = await Promise.all(
-    ids.map((id) => readOutput(notebookId, id)),
-  );
+  const outputs = await Promise.all(ids.map((id) => readOutput(notebookId, id)));
   return outputs.filter((o): o is NotebookOutput => o !== undefined);
 }
 
-export async function addOutput(
-  notebookId: string,
-  output: NotebookOutput,
-): Promise<void> {
+export async function addOutput(notebookId: string, output: NotebookOutput): Promise<void> {
   await writeOutput(notebookId, output);
 }
 
-export async function removeOutput(
-  notebookId: string,
-  outputId: string,
-): Promise<void> {
+export async function removeOutput(notebookId: string, outputId: string): Promise<void> {
   await deleteDirectory(outputPath(notebookId, outputId));
 }
 
 // ── Messages ───────────────────────────────────────────────────────────
 
 export async function getMessages(notebookId: string): Promise<NotebookMessage[]> {
-  const data = await readJson<NotebookMessage[]>(
-    `${notebookPath(notebookId)}/messages.json`,
-  );
+  const data = await readJson<NotebookMessage[]>(`${notebookPath(notebookId)}/messages.json`);
   return data || [];
 }
 
-export async function saveMessages(
-  notebookId: string,
-  messages: NotebookMessage[],
-): Promise<void> {
+export async function saveMessages(notebookId: string, messages: NotebookMessage[]): Promise<void> {
   await writeJson(`${notebookPath(notebookId)}/messages.json`, messages);
 }

@@ -37,12 +37,8 @@ const providers = [
   TranslateProvider,
 ];
 
-function App() {  
-  return providers.reduceRight(
-    (acc, Provider) => <Provider>{acc}</Provider>,
-    <RouterProvider router={router} />,
-  );
+function App() {
+  return providers.reduceRight((acc, Provider) => <Provider>{acc}</Provider>, <RouterProvider router={router} />);
 }
 
 export default App;
- 

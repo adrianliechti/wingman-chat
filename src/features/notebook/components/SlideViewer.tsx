@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { FileText } from 'lucide-react';
-import { Markdown } from '@/shared/ui/Markdown';
+import { useState } from "react";
+import { FileText } from "lucide-react";
+import { Markdown } from "@/shared/ui/Markdown";
 
 interface SlideViewerProps {
   content: string;
@@ -23,11 +23,7 @@ export function SlideViewer({ content, slides }: SlideViewerProps) {
           </div>
         ) : (
           <div className="h-full flex items-center justify-center p-6">
-            <img
-              src={slides[activeIndex - 1]}
-              alt={`Slide ${activeIndex}`}
-              className="max-w-full max-h-full rounded-lg shadow-lg"
-            />
+            <img src={slides[activeIndex - 1]} alt={`Slide ${activeIndex}`} className="max-w-full max-h-full rounded-lg shadow-lg" />
           </div>
         )}
       </div>
@@ -40,15 +36,10 @@ export function SlideViewer({ content, slides }: SlideViewerProps) {
             type="button"
             onClick={() => setActiveIndex(0)}
             className={`shrink-0 w-20 aspect-[16/10] rounded-lg border-2 flex items-center justify-center transition-colors ${
-              activeIndex === 0
-                ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
-                : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 bg-neutral-50 dark:bg-neutral-800/50'
+              activeIndex === 0 ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 bg-neutral-50 dark:bg-neutral-800/50"
             }`}
           >
-            <FileText
-              size={14}
-              className={activeIndex === 0 ? 'text-blue-500' : 'text-neutral-400'}
-            />
+            <FileText size={14} className={activeIndex === 0 ? "text-blue-500" : "text-neutral-400"} />
           </button>
 
           {/* Slide thumbnails */}
@@ -58,16 +49,10 @@ export function SlideViewer({ content, slides }: SlideViewerProps) {
               type="button"
               onClick={() => setActiveIndex(i + 1)}
               className={`shrink-0 w-20 aspect-[16/10] rounded-lg border-2 overflow-hidden transition-colors ${
-                activeIndex === i + 1
-                  ? 'border-blue-500'
-                  : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600'
+                activeIndex === i + 1 ? "border-blue-500" : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
               }`}
             >
-              <img
-                src={slideUrl}
-                alt={`Slide ${i + 1}`}
-                className="w-full h-full object-cover"
-              />
+              <img src={slideUrl} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />
             </button>
           ))}
         </div>
