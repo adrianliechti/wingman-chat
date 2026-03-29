@@ -31,6 +31,7 @@ function pruneAtCompaction(messages: Message[]): Message[] {
     }
   }
   if (lastCompactionIndex <= 0) return [...messages];
+  console.log(`[Compaction] Pruning ${lastCompactionIndex} messages before compaction item`);
   return messages.slice(lastCompactionIndex);
 }
 
