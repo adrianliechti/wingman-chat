@@ -1,0 +1,74 @@
+import { memo, useState } from "react";
+import { CopyButton } from "@/shared/ui/CopyButton";
+import { PreviewButton } from "@/shared/ui/PreviewButton";
+import { Markdown } from "@/shared/ui/Markdown";
+
+interface MarkdownRendererProps {
+  content: string;
+  language: string;
+}
+
+const NonMemoizedMarkdownRenderer = ({ content, language }: MarkdownRendererProps) => {
+  const [showCode, setShowCode] = useState(false);
+
+  if (!content.trim()) {
+    return (
+      <div className="relative my-4">
+        <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
+          <span>{language}</span>
+          <div className="flex items-center gap-2">
+            <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
+            <CopyButton text={content} className="h-4 w-4" />
+          </div>
+        </div>
+        <div className="bg-white dark:bg-neutral-900 rounded-b-md border-l border-r border-b border-gray-100 dark:border-neutral-800">
+          {showCode ? (
+            <div className="p-4">
+              <pre className="text-gray-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto">
+                <code>{content}</code>
+              </pre>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-24 text-gray-500 dark:text-neutral-500">
+              <div className="flex items-center space-x-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-gray-600 dark:border-neutral-600 dark:border-t-neutral-400"></div>
+                <span>Generating Content...</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative my-4">
+      <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
+        <span>{language}</span>
+        <div className="flex items-center gap-2">
+          <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
+          <CopyButton text={content} className="h-4 w-4" />
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-neutral-900 rounded-b-md border-l border-r border-b border-gray-100 dark:border-neutral-800">
+        {showCode ? (
+          <div className="p-4">
+            <pre className="text-gray-800 dark:text-neutral-300 text-sm whitespace-pre-wrap overflow-x-auto">
+              <code>{content}</code>
+            </pre>
+          </div>
+        ) : (
+          <div className="p-4">
+            <Markdown>{content}</Markdown>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export const MarkdownRenderer = memo(
+  NonMemoizedMarkdownRenderer,
+  (prevProps, nextProps) => prevProps.content === nextProps.content && prevProps.language === nextProps.language,
+);

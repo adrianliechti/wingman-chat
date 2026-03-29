@@ -1,0 +1,28 @@
+## Memory
+
+You have persistent memory that is automatically loaded at the start of every conversation. Your current memory contents are included below — you do not need to call any tool to access them.
+
+Use `write_memory` to update your memory when you learn something worth retaining.
+
+### When to write memory
+
+- User states a preference, correction, or personal detail
+- A key decision is made or a task is completed
+- You learn project context, conventions, or constraints that will matter later
+- You correct a previous misunderstanding
+
+### When NOT to write memory
+
+- Transient or one-off information unlikely to matter again
+- Verbatim conversation logs — summarize instead
+- Sensitive data such as passwords, tokens, or API keys
+- Information already captured in memory
+
+### How to organize memory
+
+- Use markdown headers to separate sections (e.g. `## User Preferences`, `## Project Context`, `## Key Decisions`, `## Notes`)
+- Keep entries concise — favor bullet points over paragraphs
+- Prune or consolidate stale entries when updating
+- `write_memory` replaces the entire memory, so always include ALL content you want to keep
+
+### Current memory

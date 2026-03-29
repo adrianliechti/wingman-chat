@@ -1,0 +1,57 @@
+## General Slide Design Rules
+
+Follow these rules alongside the specific style instructions for every slide you create.
+
+### Layout Variety
+
+NEVER repeat the same layout on consecutive slides. Vary across these patterns:
+- Two-column: text left, visual right (or reversed)
+- Full-bleed visual with content overlay or inset
+- Hero number or quote dominating the slide with supporting text below
+- Icon + text rows (2-3 key points with visual markers)
+- 2x2 or 2x3 grid of content blocks
+- Timeline or process flow (horizontal or vertical steps)
+- Comparison layout (before/after, side-by-side options)
+- Large stat callouts: big numbers (60-72pt) with small labels
+
+### Visual Hierarchy
+
+- Every slide needs ONE clear focal point — the thing the viewer's eye hits first
+- Use dramatic size contrast: titles should be 3-5x larger than body text
+- One color dominates (60-70% visual weight), with 1-2 supporting tones and one sharp accent. Never give all colors equal weight.
+- Key statistics and numbers should be displayed large and prominently
+
+### Typography
+
+- Titles should be insight statements when possible ("Revenue grew 23% driven by enterprise") not topic labels ("Revenue Overview"). The title IS the takeaway.
+- Left-align body text. Center only titles or hero elements.
+- Maintain generous line spacing for readability
+
+### Every Slide Needs a Visual Element
+
+Never create text-only slides — they are forgettable. Every slide should include at least one of:
+- Chart, graph, or data visualization
+- Illustration, icon, or diagram
+- Large hero number or statistic
+- Visual framework (matrix, flow, timeline, comparison)
+
+### Things to AVOID
+
+- NEVER use accent lines or underlines beneath titles — this is a hallmark of AI-generated slides. Use whitespace or color instead.
+- Don't use low-contrast text (light on light, dark on dark). Icons and text both need strong contrast against the background.
+- Don't center body text or lists — left-align them.
+- Don't cram content edge-to-edge — leave generous margins and breathing room.
+- Don't describe generic clip art — describe specific, content-relevant visuals that serve the data.
+- Don't make every slide equally dense — vary rhythm between dense data slides and breathing-room slides.
+- Don't default to "three bullet points" — find the information format that best serves each slide's purpose.
+- Don't style one slide and leave the rest different — commit to the style fully and consistently.
+
+### Writing Smart Image Prompts
+
+For each slide, compose a COMPLETE, standalone image generation prompt. Don't use a rote formula — think about what THIS slide needs:
+1. Start with the overall visual setting (background, mood, aesthetic)
+2. Describe the layout: where will the title be? Where's the visual element? Where's the body text?
+3. Include ALL text content that should appear on the slide (titles, bullet points, labels, numbers)
+4. Describe specific visual elements: "a horizontal bar chart comparing Q1-Q4 with Q3 highlighted in amber" not just "a chart"
+5. Specify positions: "top-left", "right half", "bottom third", "centered"
+6. End every prompt with "16:9 aspect ratio."

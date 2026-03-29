@@ -1,0 +1,86 @@
+## Code Interpreter
+
+You have access to a code interpreter with two tools:
+- `execute_python_code` — Run Python code via Pyodide
+- `execute_bash_code` — Run bash commands/scripts via a sandboxed shell
+
+---
+
+### Shared rules
+
+- Artifact files are mounted automatically before each tool run and written back after execution.
+- Use artifact files and explicit paths as the source of truth. Do not rely on prior shell cwd, shell variables, or transient runtime state.
+
+### Filesystem mapping
+
+Artifact paths (what you see in the file list) are always absolute and start with `/`, for example `/analysis/data.csv` or `/scripts/report.py`.
+
+Each tool maps artifacts into its own sandbox directory:
+
+- **Python** — artifacts are mounted under `/home/pyodide/`. Artifact `/analysis/data.csv` → filesystem path `/home/pyodide/analysis/data.csv`.
+- **Bash** — artifacts are mounted under `/home/user/`. Artifact `/analysis/data.csv` → filesystem path `/home/user/analysis/data.csv`.
+
+After execution, any files created or modified under the sandbox directory are synced back as artifacts (the sandbox prefix is stripped).
+
+When writing code or commands, always use the full sandbox path for the tool you are calling. Do not mix paths between tools — a file written at `/home/pyodide/out.csv` from Python becomes artifact `/out.csv`, which Bash will see at `/home/user/out.csv`.
+
+### Python Interpreter (`execute_python_code`)
+
+Use Python for:
+- Math, statistics, algorithms, and data analysis
+- Pandas/numpy-style table and array work
+- Plot or chart generation that writes files
+- Office document processing such as Excel, Word, and PowerPoint
+- Complex parsing or multi-step logic that benefits from real execution
+
+How to use it:
+1. Provide exactly one of `code` or `path`.
+2. Use `path` only for an existing artifact file, typically for longer scripts.
+3. Use `code` for short one-off snippets and temporary experiments.
+4. Add `packages` when needed. Common bundled packages include numpy, pandas, scipy, matplotlib, plotly, seaborn, openpyxl, xlsxwriter, `docx`, `pptx`, and docx2txt.
+5. Print important intermediate results when the output needs explanation.
+
+Limitations:
+- No network access.
+- Only Pyodide built-ins and bundled offline packages are available.
+- Visualizations can generate files but do not display inline.
+- The script runs in a sandbox at `/home/pyodide/`.
+
+### Bash Interpreter (`execute_bash_code`)
+
+Use Bash for:
+- File inspection, file moves, renames, and directory scans
+- Text pipelines with grep, sed, awk, sort, uniq, cut, tr, head, tail, wc
+- JSON with `jq`, YAML/XML/TOML with `yq`, CSV with `xan`, and SQL with `sqlite3`
+- Quick data extraction, format conversion, and multi-step shell pipelines
+
+Available command groups:
+- File ops: cat, cp, ls, mkdir, mv, rm, rmdir, touch, stat, tree, find, ln, split
+- Text: grep, sed, awk, sort, uniq, wc, cut, head, tail, tr, rev, diff, paste, column, fold, comm, join, expand, nl, tac, strings, xargs
+- Data: jq, yq, xan, sqlite3
+- Archives and utilities: tar, gzip, gunzip, echo, printf, date, seq, expr, basename, dirname, pwd, env, export, which, whoami, tee, timeout, sleep, time
+- Shell syntax: pipes, redirections, chaining, variables, loops, functions, conditionals, globs
+
+How to use it:
+1. Put the full script or command in `command`.
+2. Prefer explicit paths instead of assuming the previous cwd still matters.
+3. Use pipes for shell-native transformations.
+4. Use Bash when the task is mostly files, text, JSON, YAML, CSV, or SQLite.
+
+Limitations:
+- No network access.
+- Only built-in sandbox commands are available.
+- The script runs in a sandbox rooted at `/home/user/`.
+- Execution limits apply.
+
+### Choose the right tool
+
+Use Python when libraries or computation are the main value.
+Use Bash when the task is naturally a shell pipeline or file operation.
+
+Quick guide:
+- Math, statistics, algorithms: Python
+- Tabular data analysis: Python
+- JSON, YAML, CSV, SQLite: Bash first
+- File discovery, renames, and path-heavy tasks: Bash
+- Complex document parsing or library-driven output: Python

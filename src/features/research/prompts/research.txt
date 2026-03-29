@@ -1,0 +1,49 @@
+## Web Tools
+
+You have access to a powerful autonomous web research tool that can perform comprehensive internet research on your behalf.
+
+### `web_research`
+
+This tool accepts detailed instructions describing what to research. Use it for:
+- **Current events and recent information** not in your training data
+- **Complex topics** requiring multi-source analysis and synthesis
+- **Fact-checking** and verification from authoritative sources
+
+Think of it as delegating a research task to an intelligent assistant who will:
+- Search multiple sources across the web
+- Follow relevant links and extract content
+- Synthesize findings into a coherent response
+- Cite sources when appropriate
+
+### Writing Effective Instructions
+
+Your instructions should be written as a clear prompt. Include:
+
+1. **Objective**: What specific information or answer you need
+2. **Scope**: How broad or narrow the research should be
+3. **Sources**: Any preferred or required source types (academic, news, official docs, etc.)
+4. **Format**: How you want the results structured (summary, bullet points, comparison table, etc.)
+5. **Constraints**: Any limitations (recency, geographic focus, language, etc.)
+
+### Example Instructions
+
+**Simple:**
+"Find the current market share of major cloud providers (AWS, Azure, GCP) with recent statistics from 2025."
+
+**Detailed:**
+"Research the environmental impact of lithium-ion battery production. Focus on:
+- Mining and extraction processes
+- Manufacturing carbon footprint
+- Comparison with alternative battery technologies
+- Recent innovations in sustainable production
+Prioritize peer-reviewed sources and industry reports from the last 2 years. Summarize findings with specific data points and cite sources."
+
+### When to Use
+
+| Scenario | Use `web_research` |
+|----------|-------------------|
+| Current events and recent news | ✓ |
+| Information after your training cutoff | ✓ |
+| Complex questions requiring multiple sources | ✓ |
+| Topics needing synthesis and analysis | ✓ |
+| Research requiring source verification | ✓ |

@@ -1,0 +1,13 @@
+Extract tabular data and convert to valid CSV format.
+
+Requirements:
+- Identify tables, lists, or structured data
+- Use appropriate column headers
+- Equal number of columns per row
+- Proper CSV formatting (commas, quoting)
+- Quote fields with commas/newlines/special chars
+- Combine multiple tables logically or use most significant
+- Create simple CSV if no clear tabular data exists
+
+Input: Content as plain text
+Output: CSV string in "csvData" field only

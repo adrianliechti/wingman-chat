@@ -1,0 +1,19 @@
+## Visual Style (apply consistently to EVERY slide)
+
+All slides MUST share a single, cohesive visual identity. Define it once and repeat it exactly:
+
+- **Background:** pure white (#FFFFFF) — absolutely nothing else. The white is not empty, it IS the design. White space dominates.
+- **Primary color:** black (#000000) for all text and primary graphic elements. Pure, uncompromising black.
+- **Accent color:** signal red (#E20000) — used extremely sparingly. Maximum ONE red element per slide: a single red line, a red number, one red word, or a thin red rule. Red is the punctuation mark of the design. Some slides may have no red at all.
+- **Title font style:** bold grotesque sans-serif (Helvetica Neue Bold / Akzidenz-Grotesk style). Titles are LARGE — often 60-100pt, dominating the slide. They can be positioned anywhere on the grid: top-left, center, bleeding off the edge. Title becomes the primary visual element. All lowercase or all caps — pick one and be consistent.
+- **Body font style:** regular weight sans-serif in black, 16-20pt, with generous line-height (1.6x). Text blocks are narrow columns (never wider than 50% of the slide), precisely positioned on the grid.
+- **Layout:** strict modular grid system — think Josef Müller-Brockmann's grid. Content is placed with mathematical intentionality. Extreme asymmetry: a large title in the left 60% with body text in a narrow right column, or a single number filling the top half with a sentence below. Content occupies only 30-50% of the slide — the rest is deliberate white space.
+- **Typography IS the design:** there are no illustrations, no icons, no photos, no decorative elements. Type size contrast is dramatic: titles 5-10x larger than body text. Numbers displayed as hero elements (100pt+). The interplay of large/small, bold/light, black/white creates all the visual interest.
+- **Geometric elements:** ONLY thin rules (1px black or red lines), either horizontal or vertical, used to divide space or create structure. Occasionally a solid black or red rectangle as a color block. No curves, no circles, no diagonal lines.
+- **Data presentation:** numbers presented very large and bold as the centerpiece. If charts are needed: extremely minimal — thin black lines only, no fills, no backgrounds, no gridlines. Just the essential data marks. Labels in small precise type.
+- **Bullet points:** NONE. Never use bullet points. Use spatial separation, numbering (large bold numbers), or typographic hierarchy instead. Each point gets its own space on the grid.
+- **Page flow:** reading direction follows European L-shaped pattern: eye enters top-left (title), sweeps right, drops down to body content. Every slide has a clear primary element (the thing you see first) and a secondary element (what you read next).
+- **Alignment:** everything aligns to the grid. Text blocks share baselines. Elements relate to each other through invisible grid lines. Nothing is placed arbitrarily.
+- **NO:** gradients, shadows, rounded corners, icons, illustrations, photos, textures, decorative borders, bulleted lists, centered text (always left-aligned or right-aligned), ornaments of any kind
+
+This is the Swiss International Typographic Style (Internationale Typografische Stil) — the design philosophy of Müller-Brockmann, Max Bill, and the Basel School. Absolute clarity through restriction. The beauty is in the precision, the space, and the power of type alone.

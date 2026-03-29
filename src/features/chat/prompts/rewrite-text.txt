@@ -1,0 +1,20 @@
+Rewrite text while preserving core meaning and essential information.
+
+Requirements:
+- {languageInstruction}
+- Maintain factual accuracy
+- Natural, fluent, grammatically correct
+- Use "ss" instead of "ß" for German text
+- Return only rewritten text
+
+Instructions:
+{finalInstructions}
+
+Quality:
+- Natural and engaging
+- Preserve original intent
+- Adapt complexity while maintaining clarity
+- Prioritize custom instructions over predefined styles
+
+Input: Text as plain string
+Output: Rewritten string in "rewrittenText" field only
