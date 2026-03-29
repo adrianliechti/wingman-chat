@@ -1,22 +1,21 @@
-import { memo } from 'react';
-import { FileText } from 'lucide-react';
-import type { Node, NodeProps } from '@xyflow/react';
-import type { BaseNodeData } from '@/features/workflow/types/workflow';
-import { createData, getDataText } from '@/features/workflow/types/workflow';
-import { useWorkflow } from '@/features/workflow/hooks/useWorkflow';
-import { useWorkflowNode } from '@/features/workflow/hooks/useWorkflowNode';
-import { getConfig } from '@/shared/config';
-import { WorkflowNode } from '@/features/workflow/components/WorkflowNode';
-import { Markdown } from '@/shared/ui/Markdown';
-import { CopyButton } from '@/shared/ui/CopyButton';
+import { memo } from "react";
+import { FileText } from "lucide-react";
+import type { Node, NodeProps } from "@xyflow/react";
+import type { BaseNodeData } from "@/features/workflow/types/workflow";
+import { createData, getDataText } from "@/features/workflow/types/workflow";
+import { useWorkflow } from "@/features/workflow/hooks/useWorkflow";
+import { useWorkflowNode } from "@/features/workflow/hooks/useWorkflowNode";
+import { getConfig } from "@/shared/config";
+import { WorkflowNode } from "@/features/workflow/components/WorkflowNode";
+import { Markdown } from "@/shared/ui/Markdown";
+import { CopyButton } from "@/shared/ui/CopyButton";
 
 // MarkdownNode data interface
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface MarkdownNodeData extends BaseNodeData {
-}
+export interface MarkdownNodeData extends BaseNodeData {}
 
 // MarkdownNode type
-export type MarkdownNodeType = Node<MarkdownNodeData, 'markdown'>;
+export type MarkdownNodeType = Node<MarkdownNodeData, "markdown">;
 
 export const MarkdownNode = memo(({ id, data, selected }: NodeProps<MarkdownNodeType>) => {
   const { updateNode } = useWorkflow();
@@ -27,27 +26,27 @@ export const MarkdownNode = memo(({ id, data, selected }: NodeProps<MarkdownNode
   const handleExecute = async () => {
     // Get input from connected nodes only
     const inputContent = getText();
-    
+
     if (!inputContent) return;
-    
+
     await executeAsync(async () => {
       // Clear any previous error when starting a new execution
       updateNode(id, {
-        data: { ...data, error: undefined }
+        data: { ...data, error: undefined },
       });
-      
+
       try {
         // Call the convertMD method to format as markdown
-        const markdownOutput = await client.convertMD('', inputContent);
+        const markdownOutput = await client.convertMD("", inputContent);
 
         // Set final output
         updateNode(id, {
-          data: { ...data, output: createData(markdownOutput), error: undefined }
+          data: { ...data, output: createData(markdownOutput), error: undefined },
         });
       } catch (error) {
-        console.error('Error formatting markdown:', error);
+        console.error("Error formatting markdown:", error);
         updateNode(id, {
-          data: { ...data, error: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
+          data: { ...data, error: `Error: ${error instanceof Error ? error.message : "Unknown error"}` },
         });
       }
     });
@@ -67,9 +66,7 @@ export const MarkdownNode = memo(({ id, data, selected }: NodeProps<MarkdownNode
       showOutputHandle={true}
       minWidth={400}
       error={data.error}
-      headerActions={
-        data.output && <CopyButton markdown={getDataText(data.output)} />
-      }
+      headerActions={data.output && <CopyButton markdown={getDataText(data.output)} />}
     >
       {data.error ? (
         <div className="flex-1 flex items-center justify-center min-h-0 p-4">

@@ -1,14 +1,14 @@
-import { memo, useState, useEffect } from 'react';
-import { ImageIcon, ChevronDown } from 'lucide-react';
-import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
-import type { Node, NodeProps } from '@xyflow/react';
-import type { BaseNodeData } from '@/features/workflow/types/workflow';
-import type { Model } from '@/shared/types/chat';
-import { useWorkflow } from '@/features/workflow/hooks/useWorkflow';
-import { useWorkflowNode } from '@/features/workflow/hooks/useWorkflowNode';
-import { getConfig } from '@/shared/config';
-import { WorkflowNode } from '@/features/workflow/components/WorkflowNode';
-import { DownloadButton } from '@/shared/ui/DownloadButton';
+import { memo, useState, useEffect } from "react";
+import { ImageIcon, ChevronDown } from "lucide-react";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import type { Node, NodeProps } from "@xyflow/react";
+import type { BaseNodeData } from "@/features/workflow/types/workflow";
+import type { Model } from "@/shared/types/chat";
+import { useWorkflow } from "@/features/workflow/hooks/useWorkflow";
+import { useWorkflowNode } from "@/features/workflow/hooks/useWorkflowNode";
+import { getConfig } from "@/shared/config";
+import { WorkflowNode } from "@/features/workflow/components/WorkflowNode";
+import { DownloadButton } from "@/shared/ui/DownloadButton";
 
 // ImageNode data interface
 export interface ImageNodeData extends BaseNodeData {
@@ -17,7 +17,7 @@ export interface ImageNodeData extends BaseNodeData {
 }
 
 // ImageNode type
-export type ImageNodeType = Node<ImageNodeData, 'image'>;
+export type ImageNodeType = Node<ImageNodeData, "image">;
 
 export const ImageNode = memo(({ id, data, selected }: NodeProps<ImageNodeType>) => {
   const { updateNode } = useWorkflow();
@@ -32,7 +32,7 @@ export const ImageNode = memo(({ id, data, selected }: NodeProps<ImageNodeType>)
         const modelList = await client.listModels("renderer");
         setModels(modelList);
       } catch (error) {
-        console.error('Error loading models:', error);
+        console.error("Error loading models:", error);
       }
     };
     loadModels();
@@ -41,49 +41,47 @@ export const ImageNode = memo(({ id, data, selected }: NodeProps<ImageNodeType>)
   const handleExecute = async () => {
     // Get input from connected nodes
     const inputContent = getText();
-    
+
     if (!inputContent) return;
-    
+
     await executeAsync(async () => {
       // Clear any previous error when starting a new execution
       updateNode(id, {
-        data: { ...data, error: undefined }
+        data: { ...data, error: undefined },
       });
-      
+
       try {
         // Generate image from the input text (prompt)
-        const model = data.model || config.renderer?.model || '';
+        const model = data.model || config.renderer?.model || "";
         const imageBlob = await client.generateImage(model, inputContent);
-        
+
         // Create a URL for the image blob
         const imageUrl = URL.createObjectURL(imageBlob);
-        
+
         // Update node with the image URL (and clear error)
         updateNode(id, {
-          data: { ...data, imageUrl, error: undefined }
+          data: { ...data, imageUrl, error: undefined },
         });
       } catch (error) {
-        console.error('Error generating image:', error);
+        console.error("Error generating image:", error);
         updateNode(id, {
-          data: { 
-            ...data, 
+          data: {
+            ...data,
             imageUrl: undefined,
-            error: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` 
-          }
+            error: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+          },
         });
       }
     });
   };
 
-  const currentModel = models.find(m => m.id === data.model);
+  const currentModel = models.find((m) => m.id === data.model);
 
   const modelSelector = (
     <Menu>
       <MenuButton className="nodrag inline-flex items-center gap-1 px-2 py-1 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-xs transition-colors rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800">
         <ChevronDown size={12} className="opacity-50" />
-        <span>
-          {currentModel?.name || 'Default'}
-        </span>
+        <span>{currentModel?.name || "Default"}</span>
       </MenuButton>
       <MenuItems
         modal={false}
@@ -92,9 +90,7 @@ export const ImageNode = memo(({ id, data, selected }: NodeProps<ImageNodeType>)
         className="max-h-[50vh]! mt-1 rounded-lg bg-neutral-50/90 dark:bg-neutral-900/90 backdrop-blur-lg border border-neutral-200 dark:border-neutral-700 overflow-y-auto shadow-lg z-50 min-w-[200px]"
       >
         {models.length === 0 ? (
-          <div className="px-4 py-3 text-xs text-neutral-500 dark:text-neutral-400">
-            No models available
-          </div>
+          <div className="px-4 py-3 text-xs text-neutral-500 dark:text-neutral-400">No models available</div>
         ) : (
           models.map((model) => (
             <MenuItem key={model.id}>
@@ -140,13 +136,13 @@ export const ImageNode = memo(({ id, data, selected }: NodeProps<ImageNodeType>)
           </div>
         ) : data.imageUrl ? (
           <div className="flex-1 rounded-lg overflow-hidden bg-white dark:bg-black/20">
-            <img 
-              src={data.imageUrl} 
+            <img
+              src={data.imageUrl}
               alt="Generated output"
               className="w-full h-full object-contain"
               onError={() => {
                 updateNode(id, {
-                  data: { ...data, error: 'Failed to load image' }
+                  data: { ...data, error: "Failed to load image" },
                 });
               }}
             />

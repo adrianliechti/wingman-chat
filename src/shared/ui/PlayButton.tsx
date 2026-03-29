@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Play, Square, Loader2 } from 'lucide-react';
-import { getConfig } from '@/shared/config';
+import { useState } from "react";
+import { Play, Square, Loader2 } from "lucide-react";
+import { getConfig } from "@/shared/config";
 
 type PlayButtonProps = {
   text: string;
@@ -25,14 +25,15 @@ export function PlayButton({ text, voice, className }: PlayButtonProps) {
       const model = config.tts?.model ?? "";
       await config.client.speakText(model, text, voice);
     } catch (error) {
-      console.error('Failed to play text:', error);
+      console.error("Failed to play text:", error);
     } finally {
       setIsLoading(false);
       setIsPlaying(false);
     }
   };
 
-  const buttonClasses = "text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors opacity-60 hover:opacity-100 disabled:opacity-30 p-1";
+  const buttonClasses =
+    "text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors opacity-60 hover:opacity-100 disabled:opacity-30 p-1";
 
   return (
     <button

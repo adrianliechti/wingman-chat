@@ -1,16 +1,16 @@
-import type { TranslateNodeType } from './TranslateNode';
+import type { TranslateNodeType } from "./TranslateNode";
 
 // Factory function to create a new TranslateNode
 export function createTranslateNode(position: { x: number; y: number }): TranslateNodeType {
   return {
     id: crypto.randomUUID(),
-    type: 'translate',
+    type: "translate",
     position,
     data: {
       useInput: false,
-      language: 'en',
-      tone: '',
-      style: ''
-    }
+      language: "en",
+      tone: "",
+      style: "",
+    },
   };
 }

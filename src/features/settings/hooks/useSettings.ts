@@ -1,8 +1,8 @@
-import { useLayout } from '@/shell/hooks/useLayout';
-import { useTheme } from '@/shell/hooks/useTheme';
-import { useBackground } from '@/shell/hooks/useBackground';
-import { useEmoji } from '@/shell/hooks/useEmoji';
-import { useProfile } from './useProfile';
+import { useLayout } from "@/shell/hooks/useLayout";
+import { useTheme } from "@/shell/hooks/useTheme";
+import { useBackground } from "@/shell/hooks/useBackground";
+import { useEmoji } from "@/shell/hooks/useEmoji";
+import { useProfile } from "./useProfile";
 
 export const useSettings = () => {
   const layoutContext = useLayout();

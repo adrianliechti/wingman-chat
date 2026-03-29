@@ -95,18 +95,18 @@ export class AudioRecorder {
         channelCount: 1,
         echoCancellation: true,
         noiseSuppression: true,
-      }
+      },
     });
 
     // Create AudioContext
     this.context = new AudioContext({ sampleRate: this.sampleRate });
-    
-    if (this.context.state === 'suspended') {
+
+    if (this.context.state === "suspended") {
       await this.context.resume();
     }
 
     // Create Blob URL for worklet code
-    const blob = new Blob([audioProcessorCode], { type: 'application/javascript' });
+    const blob = new Blob([audioProcessorCode], { type: "application/javascript" });
     const workletUrl = URL.createObjectURL(blob);
 
     try {
@@ -119,12 +119,12 @@ export class AudioRecorder {
     this.source = this.context.createMediaStreamSource(this.stream);
 
     // Create worklet node
-    this.workletNode = new AudioWorkletNode(this.context, 'audio-processor');
-    
+    this.workletNode = new AudioWorkletNode(this.context, "audio-processor");
+
     // Handle chunks from worklet
     this.workletNode.port.onmessage = (e) => {
       const { event, mono } = e.data;
-      if (event === 'chunk' && this.chunkCallback && this.recording) {
+      if (event === "chunk" && this.chunkCallback && this.recording) {
         this.chunkCallback({ mono });
       }
     };
@@ -138,12 +138,12 @@ export class AudioRecorder {
    */
   async record(callback: ChunkCallback): Promise<void> {
     if (!this.workletNode) {
-      throw new Error('AudioRecorder not initialized. Call begin() first.');
+      throw new Error("AudioRecorder not initialized. Call begin() first.");
     }
 
     this.chunkCallback = callback;
     this.recording = true;
-    this.workletNode.port.postMessage({ event: 'start' });
+    this.workletNode.port.postMessage({ event: "start" });
   }
 
   /**
@@ -152,7 +152,7 @@ export class AudioRecorder {
   async pause(): Promise<void> {
     if (this.workletNode && this.recording) {
       this.recording = false;
-      this.workletNode.port.postMessage({ event: 'stop' });
+      this.workletNode.port.postMessage({ event: "stop" });
     }
   }
 
@@ -165,7 +165,7 @@ export class AudioRecorder {
 
     // Stop worklet
     if (this.workletNode) {
-      this.workletNode.port.postMessage({ event: 'stop' });
+      this.workletNode.port.postMessage({ event: "stop" });
       this.workletNode.disconnect();
       this.workletNode = null;
     }
@@ -178,7 +178,7 @@ export class AudioRecorder {
 
     // Stop all tracks
     if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
+      this.stream.getTracks().forEach((track) => track.stop());
       this.stream = null;
     }
 

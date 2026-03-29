@@ -9,8 +9,8 @@
  * - opfs-zip.ts       — ZIP export/import, agent/skill bundling
  */
 
-export * from './opfs-core';
-export * from './opfs-chat';
-export * from './opfs-artifacts';
-export * from './opfs-skills';
-export * from './opfs-zip';
+export * from "./opfs-core";
+export * from "./opfs-chat";
+export * from "./opfs-artifacts";
+export * from "./opfs-skills";
+export * from "./opfs-zip";

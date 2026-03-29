@@ -1,4 +1,4 @@
-import { RouterProvider } from '@tanstack/react-router';
+import { RouterProvider } from "@tanstack/react-router";
 import { ThemeProvider } from "./shell/context/ThemeProvider";
 import { LayoutProvider } from "./shell/context/LayoutProvider";
 import { EmojiProvider } from "./shell/context/EmojiProvider";
@@ -38,10 +38,7 @@ const providers = [
 ];
 
 function App() {
-  return providers.reduceRight(
-    (acc, Provider) => <Provider>{acc}</Provider>,
-    <RouterProvider router={router} />
-  );
+  return providers.reduceRight((acc, Provider) => <Provider>{acc}</Provider>, <RouterProvider router={router} />);
 }
 
 export default App;

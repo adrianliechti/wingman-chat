@@ -1,7 +1,7 @@
-import { memo, useEffect, useRef, useState } from 'react';
-import { useTheme } from '@/shell/hooks/useTheme';
-import { CopyButton } from '@/shared/ui/CopyButton';
-import { PreviewButton } from '@/shared/ui/PreviewButton';
+import { memo, useEffect, useRef, useState } from "react";
+import { useTheme } from "@/shell/hooks/useTheme";
+import { CopyButton } from "@/shared/ui/CopyButton";
+import { PreviewButton } from "@/shared/ui/PreviewButton";
 
 interface MermaidRendererProps {
   chart: string;
@@ -19,15 +19,15 @@ const extractTitle = (chart: string): string | null => {
   // Extract title field from Mermaid diagram
   const titleMatch = chart.match(/title\s*[:]?\s*(.+)/i);
   if (titleMatch && titleMatch[1].trim()) {
-    return titleMatch[1].trim().replace(/["']/g, ''); // Remove quotes if present
+    return titleMatch[1].trim().replace(/["']/g, ""); // Remove quotes if present
   }
-  
+
   return null;
 };
 
 const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererProps) => {
-  const [svg, setSvg] = useState<string>('');
-  const [error, setError] = useState<string>('');
+  const [svg, setSvg] = useState<string>("");
+  const [error, setError] = useState<string>("");
   const [isComplete, setIsComplete] = useState(false);
   const [showCode, setShowCode] = useState(false);
   const elementId = useRef(`mermaid-${Math.random().toString(36).substr(2, 9)}`);
@@ -41,12 +41,12 @@ const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererPr
     const loadMermaid = async () => {
       if (!mermaidRef.current) {
         try {
-          const mermaidModule = await import('mermaid');
+          const mermaidModule = await import("mermaid");
           mermaidRef.current = mermaidModule.default;
           setIsComplete(true);
         } catch (error) {
-          console.error('Failed to load Mermaid:', error);
-          setError('Failed to load diagram renderer');
+          console.error("Failed to load Mermaid:", error);
+          setError("Failed to load diagram renderer");
         }
       }
     };
@@ -60,80 +60,82 @@ const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererPr
 
     const themeConfig = {
       startOnLoad: false,
-      securityLevel: 'loose' as const,
+      securityLevel: "loose" as const,
       suppressErrorRendering: true,
-      theme: 'base' as const,
-      themeVariables: isDark ? {
-        // Dark mode configuration
-        primaryColor: '#64748b',        // Slate-500
-        primaryBorderColor: '#475569',  // Slate-600
-        lineColor: '#94a3b8',          // Slate-400
-        secondaryColor: '#1e293b',     // Slate-800
-        tertiaryColor: '#334155',      // Slate-700
-        background: '#1f2937',         // Gray-800 (dark background)
-        mainBkg: '#1f2937',           // Gray-800
-        secondBkg: '#374151',         // Gray-700
-        tertiaryBkg: '#4b5563',       // Gray-600
-        // Pie chart specific colors - slate palette for dark mode
-        pie1: '#f8fafc',              // Slate-50 (brightest)
-        pie2: '#f1f5f9',              // Slate-100 (very bright)
-        pie3: '#e2e8f0',              // Slate-200 (bright)
-        pie4: '#cbd5e1',              // Slate-300 (bright)
-        pie5: '#94a3b8',              // Slate-400 (medium bright)
-        pie6: '#64748b',              // Slate-500 (medium)
-        pie7: '#475569',              // Slate-600 (medium dark)
-        pie8: '#334155',              // Slate-700 (dark)
-        pie9: '#1e293b',              // Slate-800 (darker)
-        pie10: '#0f172a',             // Slate-900 (darkest)
-        pie11: '#f3f4f6',             // Gray-100 (light variant)
-        pie12: '#9ca3af',             // Gray-400 (medium variant)
-        // Text colors - white/light for dark mode
-        pieTitleTextSize: '24px',
-        pieTitleTextColor: '#ffffff',  // White
-        pieSectionTextSize: '16px',
-        pieSectionTextColor: '#ffffff', // White
-        pieLegendTextSize: '14px',
-        pieLegendTextColor: '#e5e7eb', // Gray-200 (light)
-        // Node colors - white/light for dark mode
-        primaryTextColor: '#ffffff',   // White
-        secondaryTextColor: '#e5e7eb', // Gray-200 (light)
-        tertiaryTextColor: '#d1d5db',  // Gray-300 (light)
-      } : {
-        // Light mode configuration
-        primaryColor: '#64748b',        // Slate-500
-        primaryBorderColor: '#475569',  // Slate-600
-        lineColor: '#94a3b8',          // Slate-400
-        secondaryColor: '#1e293b',     // Slate-800
-        tertiaryColor: '#334155',      // Slate-700
-        background: '#ffffff',         // White background (matching main container)
-        mainBkg: '#ffffff',           // White
-        secondBkg: '#f8fafc',         // Slate-50
-        tertiaryBkg: '#f1f5f9',       // Slate-100
-        // Pie chart specific colors - slate palette for light mode
-        pie1: '#0f172a',              // Slate-900 (darkest)
-        pie2: '#1e293b',              // Slate-800 (darker)
-        pie3: '#334155',              // Slate-700 (dark)
-        pie4: '#475569',              // Slate-600 (medium dark)
-        pie5: '#64748b',              // Slate-500 (medium)
-        pie6: '#94a3b8',              // Slate-400 (medium bright)
-        pie7: '#cbd5e1',              // Slate-300 (bright)
-        pie8: '#e2e8f0',              // Slate-200 (very bright)
-        pie9: '#f1f5f9',              // Slate-100 (brightest)
-        pie10: '#f8fafc',             // Slate-50 (very bright)
-        pie11: '#374151',             // Gray-700 (dark variant)
-        pie12: '#6b7280',             // Gray-500 (medium variant)
-        // Text colors - darker for better contrast
-        pieTitleTextSize: '24px',
-        pieTitleTextColor: '#0f172a',  // Slate-900 (very dark)
-        pieSectionTextSize: '16px',
-        pieSectionTextColor: '#0f172a', // Slate-900 (very dark)
-        pieLegendTextSize: '14px',
-        pieLegendTextColor: '#1f2937', // Gray-800 (darker)
-        // Node colors - darker for better contrast
-        primaryTextColor: '#0f172a',   // Slate-900 (very dark)
-        secondaryTextColor: '#1f2937', // Gray-800 (darker)
-        tertiaryTextColor: '#374151',  // Gray-700 (darker)
-      }
+      theme: "base" as const,
+      themeVariables: isDark
+        ? {
+            // Dark mode configuration
+            primaryColor: "#64748b", // Slate-500
+            primaryBorderColor: "#475569", // Slate-600
+            lineColor: "#94a3b8", // Slate-400
+            secondaryColor: "#1e293b", // Slate-800
+            tertiaryColor: "#334155", // Slate-700
+            background: "#1f2937", // Gray-800 (dark background)
+            mainBkg: "#1f2937", // Gray-800
+            secondBkg: "#374151", // Gray-700
+            tertiaryBkg: "#4b5563", // Gray-600
+            // Pie chart specific colors - slate palette for dark mode
+            pie1: "#f8fafc", // Slate-50 (brightest)
+            pie2: "#f1f5f9", // Slate-100 (very bright)
+            pie3: "#e2e8f0", // Slate-200 (bright)
+            pie4: "#cbd5e1", // Slate-300 (bright)
+            pie5: "#94a3b8", // Slate-400 (medium bright)
+            pie6: "#64748b", // Slate-500 (medium)
+            pie7: "#475569", // Slate-600 (medium dark)
+            pie8: "#334155", // Slate-700 (dark)
+            pie9: "#1e293b", // Slate-800 (darker)
+            pie10: "#0f172a", // Slate-900 (darkest)
+            pie11: "#f3f4f6", // Gray-100 (light variant)
+            pie12: "#9ca3af", // Gray-400 (medium variant)
+            // Text colors - white/light for dark mode
+            pieTitleTextSize: "24px",
+            pieTitleTextColor: "#ffffff", // White
+            pieSectionTextSize: "16px",
+            pieSectionTextColor: "#ffffff", // White
+            pieLegendTextSize: "14px",
+            pieLegendTextColor: "#e5e7eb", // Gray-200 (light)
+            // Node colors - white/light for dark mode
+            primaryTextColor: "#ffffff", // White
+            secondaryTextColor: "#e5e7eb", // Gray-200 (light)
+            tertiaryTextColor: "#d1d5db", // Gray-300 (light)
+          }
+        : {
+            // Light mode configuration
+            primaryColor: "#64748b", // Slate-500
+            primaryBorderColor: "#475569", // Slate-600
+            lineColor: "#94a3b8", // Slate-400
+            secondaryColor: "#1e293b", // Slate-800
+            tertiaryColor: "#334155", // Slate-700
+            background: "#ffffff", // White background (matching main container)
+            mainBkg: "#ffffff", // White
+            secondBkg: "#f8fafc", // Slate-50
+            tertiaryBkg: "#f1f5f9", // Slate-100
+            // Pie chart specific colors - slate palette for light mode
+            pie1: "#0f172a", // Slate-900 (darkest)
+            pie2: "#1e293b", // Slate-800 (darker)
+            pie3: "#334155", // Slate-700 (dark)
+            pie4: "#475569", // Slate-600 (medium dark)
+            pie5: "#64748b", // Slate-500 (medium)
+            pie6: "#94a3b8", // Slate-400 (medium bright)
+            pie7: "#cbd5e1", // Slate-300 (bright)
+            pie8: "#e2e8f0", // Slate-200 (very bright)
+            pie9: "#f1f5f9", // Slate-100 (brightest)
+            pie10: "#f8fafc", // Slate-50 (very bright)
+            pie11: "#374151", // Gray-700 (dark variant)
+            pie12: "#6b7280", // Gray-500 (medium variant)
+            // Text colors - darker for better contrast
+            pieTitleTextSize: "24px",
+            pieTitleTextColor: "#0f172a", // Slate-900 (very dark)
+            pieSectionTextSize: "16px",
+            pieSectionTextColor: "#0f172a", // Slate-900 (very dark)
+            pieLegendTextSize: "14px",
+            pieLegendTextColor: "#1f2937", // Gray-800 (darker)
+            // Node colors - darker for better contrast
+            primaryTextColor: "#0f172a", // Slate-900 (very dark)
+            secondaryTextColor: "#1f2937", // Gray-800 (darker)
+            tertiaryTextColor: "#374151", // Gray-700 (darker)
+          },
     };
 
     mermaidRef.current.initialize(themeConfig);
@@ -143,8 +145,8 @@ const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererPr
     if (!mermaidRef.current || !isComplete) return;
 
     if (!chart.trim() || chart.trim().length < 3) {
-      setError('');
-      setSvg('');
+      setError("");
+      setSvg("");
       return;
     }
 
@@ -153,14 +155,14 @@ const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererPr
     // Debounce rendering to avoid excessive re-renders during streaming
     const timeoutId = setTimeout(async () => {
       try {
-        setError('');
+        setError("");
         elementId.current = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
         const { svg: renderedSvg } = await mermaidRef.current!.render(elementId.current, chart);
         if (!cancelled) setSvg(renderedSvg);
       } catch {
         if (!cancelled) {
-          setError('silent');
-          setSvg('');
+          setError("silent");
+          setSvg("");
         }
       }
     }, 300);
@@ -178,11 +180,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererPr
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
           <span>{extractedTitle || name || language}</span>
           <div className="flex items-center gap-2">
-            <PreviewButton 
-              showCode={showCode} 
-              onToggle={() => setShowCode(!showCode)} 
-              className="h-4 w-4" 
-            />
+            <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
             <CopyButton text={chart} className="h-4 w-4" />
           </div>
         </div>
@@ -211,11 +209,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererPr
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
           <span>{extractedTitle || name || language}</span>
           <div className="flex items-center gap-2">
-            <PreviewButton 
-              showCode={showCode} 
-              onToggle={() => setShowCode(!showCode)} 
-              className="h-4 w-4" 
-            />
+            <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
             <CopyButton text={chart} className="h-4 w-4" />
           </div>
         </div>
@@ -246,11 +240,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererPr
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
           <span>{extractedTitle || name || language}</span>
           <div className="flex items-center gap-2">
-            <PreviewButton 
-              showCode={showCode} 
-              onToggle={() => setShowCode(!showCode)} 
-              className="h-4 w-4" 
-            />
+            <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
             <CopyButton text={chart} className="h-4 w-4" />
           </div>
         </div>
@@ -290,11 +280,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererPr
         <div className="flex justify-between items-center bg-gray-100 dark:bg-neutral-800 pl-4 pr-2 py-1.5 rounded-t-md text-xs text-gray-700 dark:text-neutral-300">
           <span>{extractedTitle || name || language}</span>
           <div className="flex items-center gap-2">
-            <PreviewButton 
-              showCode={showCode} 
-              onToggle={() => setShowCode(!showCode)} 
-              className="h-4 w-4" 
-            />
+            <PreviewButton showCode={showCode} onToggle={() => setShowCode(!showCode)} className="h-4 w-4" />
             <CopyButton text={chart} className="h-4 w-4" />
           </div>
         </div>
@@ -307,10 +293,7 @@ const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererPr
             </div>
           ) : (
             <div className="p-4 overflow-x-auto">
-              <div 
-                className="mermaid-diagram flex justify-center"
-                dangerouslySetInnerHTML={{ __html: svg }}
-              />
+              <div className="mermaid-diagram flex justify-center" dangerouslySetInnerHTML={{ __html: svg }} />
             </div>
           )}
         </div>
@@ -323,8 +306,8 @@ const NonMemoizedMermaidRenderer = ({ chart, language, name }: MermaidRendererPr
 
 export const MermaidRenderer = memo(
   NonMemoizedMermaidRenderer,
-  (prevProps, nextProps) => 
-    prevProps.chart === nextProps.chart && 
+  (prevProps, nextProps) =>
+    prevProps.chart === nextProps.chart &&
     prevProps.language === nextProps.language &&
-    prevProps.name === nextProps.name
+    prevProps.name === nextProps.name,
 );

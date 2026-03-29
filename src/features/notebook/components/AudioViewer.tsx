@@ -1,5 +1,5 @@
-import { useRef, useState, useEffect, useMemo } from 'react';
-import { Play, Pause, RotateCcw } from 'lucide-react';
+import { useRef, useState, useEffect, useMemo } from "react";
+import { Play, Pause, RotateCcw } from "lucide-react";
 
 interface AudioViewerProps {
   content: string;
@@ -22,18 +22,18 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
 
-    audio.addEventListener('timeupdate', onTimeUpdate);
-    audio.addEventListener('durationchange', onDurationChange);
-    audio.addEventListener('ended', onEnded);
-    audio.addEventListener('play', onPlay);
-    audio.addEventListener('pause', onPause);
+    audio.addEventListener("timeupdate", onTimeUpdate);
+    audio.addEventListener("durationchange", onDurationChange);
+    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
 
     return () => {
-      audio.removeEventListener('timeupdate', onTimeUpdate);
-      audio.removeEventListener('durationchange', onDurationChange);
-      audio.removeEventListener('ended', onEnded);
-      audio.removeEventListener('play', onPlay);
-      audio.removeEventListener('pause', onPause);
+      audio.removeEventListener("timeupdate", onTimeUpdate);
+      audio.removeEventListener("durationchange", onDurationChange);
+      audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
     };
   }, []);
 
@@ -61,10 +61,10 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
   };
 
   const formatTime = (seconds: number) => {
-    if (!isFinite(seconds)) return '0:00';
+    if (!isFinite(seconds)) return "0:00";
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
-    return `${m}:${s.toString().padStart(2, '0')}`;
+    return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
   return (
@@ -101,9 +101,7 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
               onChange={seek}
               className="flex-1 h-1 appearance-none bg-neutral-200 dark:bg-neutral-700 rounded-full outline-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neutral-800 dark:[&::-webkit-slider-thumb]:bg-neutral-200"
             />
-            <span className="text-[11px] text-neutral-500 tabular-nums shrink-0 w-8">
-              {formatTime(duration)}
-            </span>
+            <span className="text-[11px] text-neutral-500 tabular-nums shrink-0 w-8">{formatTime(duration)}</span>
           </div>
 
           {/* Restart */}
@@ -128,14 +126,14 @@ interface TranscriptBlock {
 }
 
 function parseTranscript(content: string): TranscriptBlock[] {
-  const lines = content.split('\n');
+  const lines = content.split("\n");
   const blocks: TranscriptBlock[] = [];
 
   let currentSpeaker: string | null = null;
   let currentLines: string[] = [];
 
   const flush = () => {
-    const text = currentLines.join('\n').trim();
+    const text = currentLines.join("\n").trim();
     if (text) {
       blocks.push({ speaker: currentSpeaker, text });
     }

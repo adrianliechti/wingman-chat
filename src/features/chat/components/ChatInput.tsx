@@ -1,8 +1,24 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 
-import { Send, Paperclip, ScreenShare, Sparkles, Loader2, Lightbulb, Mic, Square, Bot, Check, LoaderCircle, Rocket, Sliders, TriangleAlert, X } from "lucide-react";
+import {
+  Send,
+  Paperclip,
+  ScreenShare,
+  Sparkles,
+  Loader2,
+  Lightbulb,
+  Mic,
+  Square,
+  Bot,
+  Check,
+  LoaderCircle,
+  Rocket,
+  Sliders,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSuggestions } from "./ChatInputSuggestions";
@@ -10,12 +26,7 @@ import { VoiceWaves } from "@/features/voice/components/VoiceWaves";
 
 import { Role, ProviderState } from "@/shared/types/chat";
 import type { Message, ToolProvider, Content, ImageContent, TextContent } from "@/shared/types/chat";
-import {
-  getFileExt,
-  readAsDataURL,
-  readAsText,
-  resizeImageBlob,
-} from "@/shared/lib/utils";
+import { getFileExt, readAsDataURL, readAsText, resizeImageBlob } from "@/shared/lib/utils";
 import { getConfig } from "@/shared/config";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useAgents } from "@/features/agent/hooks/useAgents";
@@ -26,7 +37,6 @@ import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 
-
 export function ChatInput() {
   const config = getConfig();
   const client = config.client;
@@ -34,12 +44,18 @@ export function ChatInput() {
   const { sendMessage, models, model, setModel: onModelChange, messages, isResponding } = useChat();
   const { currentAgent, setCurrentAgent } = useAgents();
   const { profile } = useSettings();
-  const { isAvailable: isScreenCaptureAvailable, isActive: isContinuousCaptureActive, startCapture, stopCapture, captureFrame } = useScreenCapture();
+  const {
+    isAvailable: isScreenCaptureAvailable,
+    isActive: isContinuousCaptureActive,
+    startCapture,
+    stopCapture,
+    captureFrame,
+  } = useScreenCapture();
   const { providers, getProviderState, setProviderEnabled, setModelOverrides } = useToolsContext();
   const { isAvailable: voiceAvailable, isListening, startVoice, stopVoice } = useVoice();
 
   // Track if realtime mode model is selected
-  const isRealtimeSelected = model?.id === 'realtime';
+  const isRealtimeSelected = model?.id === "realtime";
 
   // Start/stop voice when realtime mode model is selected/deselected
   useEffect(() => {
@@ -74,7 +90,7 @@ export function ChatInput() {
       "Hello [Name], what's on your mind?",
       "Welcome, [Name]! How can I help?",
       "Hi [Name], what can I do for you?",
-      "[Name], how can I support you?"
+      "[Name], how can I support you?",
     ];
 
     const genericVariations = [
@@ -82,15 +98,13 @@ export function ChatInput() {
       "What's on your mind?",
       "How can I help you today?",
       "What can I do for you?",
-      "How can I support you?"
+      "How can I support you?",
     ];
 
     const variations = profile?.name ? personalizedVariations : genericVariations;
     const randomIndex = Math.floor(Math.random() * variations.length);
 
-    return profile?.name
-      ? variations[randomIndex].replace('[Name]', profile.name)
-      : variations[randomIndex];
+    return profile?.name ? variations[randomIndex].replace("[Name]", profile.name) : variations[randomIndex];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNewChat ? profile?.name : null]);
 
@@ -104,27 +118,27 @@ export function ChatInput() {
 
   const modelTools = useMemo(() => {
     const ids = new Set<string>();
-    (model?.tools?.enabled || []).forEach(id => ids.add(id));
-    (model?.tools?.disabled || []).forEach(id => ids.add(id));
+    (model?.tools?.enabled || []).forEach((id) => ids.add(id));
+    (model?.tools?.disabled || []).forEach((id) => ids.add(id));
     return ids;
   }, [model?.tools]);
 
   // Providers visible in the UI: exclude model-configured and artifacts; hidden entirely when agent active
   const visibleProviders = useMemo(
-    () => currentAgent ? [] : providers.filter((p: ToolProvider) => p.id !== 'artifacts' && !modelTools.has(p.id)),
-    [currentAgent, providers, modelTools]
+    () => (currentAgent ? [] : providers.filter((p: ToolProvider) => p.id !== "artifacts" && !modelTools.has(p.id))),
+    [currentAgent, providers, modelTools],
   );
 
   // Tool providers indicator logic
   const toolIndicator = useMemo(() => {
     // Check if any providers are connected
     const hasConnectedProviders = visibleProviders.some(
-      (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Connected
+      (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Connected,
     );
 
     // Check if any providers are initializing
     const hasInitializingProviders = visibleProviders.some(
-      (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Initializing
+      (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Initializing,
     );
 
     if (hasInitializingProviders) {
@@ -144,55 +158,57 @@ export function ChatInput() {
     setModelOverrides(model?.tools?.enabled || [], model?.tools?.disabled || []);
   }, [model?.tools?.enabled, model?.tools?.disabled, setModelOverrides]);
 
+  const handleFiles = useCallback(
+    async (files: File[]) => {
+      const fileIds = files.map((file, index) => `${file.name}-${index}`);
 
+      // Set all extracting states at once
+      setExtractingAttachments((prev) => new Set([...prev, ...fileIds]));
 
-  const handleFiles = useCallback(async (files: File[]) => {
-    const fileIds = files.map((file, index) => `${file.name}-${index}`);
+      const textFiles = config.text?.files ?? [];
+      const visionFiles = config.vision?.files ?? [];
+      const extractorFiles = config.extractor?.files ?? [];
 
-    // Set all extracting states at once
-    setExtractingAttachments(prev => new Set([...prev, ...fileIds]));
+      const processedContents = await Promise.allSettled(
+        files.map(async (file, index) => {
+          const fileId = fileIds[index];
+          try {
+            let content: Content | null = null;
+            const fileType = file.type || getFileExt(file.name);
 
-    const textFiles = config.text?.files ?? [];
-    const visionFiles = config.vision?.files ?? [];
-    const extractorFiles = config.extractor?.files ?? [];
+            if (textFiles.includes(fileType)) {
+              const text = await readAsText(file);
+              content = { type: "text", text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
+            } else if (visionFiles.includes(fileType)) {
+              const blob = await resizeImageBlob(file, 1920, 1920);
+              const dataUrl = await readAsDataURL(blob);
+              content = { type: "image", name: file.name, data: dataUrl } as ImageContent;
+            } else if (extractorFiles.includes(fileType)) {
+              const text = await client.extractText(file);
+              content = { type: "text", text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
+            }
 
-    const processedContents = await Promise.allSettled(
-      files.map(async (file, index) => {
-        const fileId = fileIds[index];
-        try {
-          let content: Content | null = null;
-          const fileType = file.type || getFileExt(file.name);
-
-          if (textFiles.includes(fileType)) {
-            const text = await readAsText(file);
-            content = { type: 'text', text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
-          } else if (visionFiles.includes(fileType)) {
-            const blob = await resizeImageBlob(file, 1920, 1920);
-            const dataUrl = await readAsDataURL(blob);
-            content = { type: 'image', name: file.name, data: dataUrl } as ImageContent;
-          } else if (extractorFiles.includes(fileType)) {
-            const text = await client.extractText(file);
-            content = { type: 'text', text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
+            return { fileId, content };
+          } catch (error) {
+            console.error(`Error processing file ${file.name}:`, error);
+            return { fileId, content: null };
           }
+        }),
+      );
 
-          return { fileId, content };
-        } catch (error) {
-          console.error(`Error processing file ${file.name}:`, error);
-          return { fileId, content: null };
-        }
-      })
-    );
+      // Batch state updates
+      const validContents = processedContents
+        .filter(
+          (result): result is PromiseFulfilledResult<{ fileId: string; content: TextContent | ImageContent }> =>
+            result.status === "fulfilled" && result.value.content !== null,
+        )
+        .map((result) => result.value.content);
 
-    // Batch state updates
-    const validContents = processedContents
-      .filter((result): result is PromiseFulfilledResult<{ fileId: string; content: TextContent | ImageContent }> =>
-        result.status === 'fulfilled' && result.value.content !== null
-      )
-      .map(result => result.value.content);
-
-    setAttachments(prev => [...prev, ...validContents]);
-    setExtractingAttachments(new Set()); // Clear all at once
-  }, [client, config.text?.files, config.vision?.files, config.extractor?.files]);
+      setAttachments((prev) => [...prev, ...validContents]);
+      setExtractingAttachments(new Set()); // Clear all at once
+    },
+    [client, config.text?.files, config.vision?.files, config.extractor?.files],
+  );
 
   const isDragging = useDropZone(containerRef, handleFiles);
 
@@ -222,9 +238,7 @@ export function ChatInput() {
       } else {
         // Get the last few messages for context
         const contextMessages = messages.slice(-6);
-        const contextText = contextMessages
-          .map(msg => `${msg.role}: ${msg.content}`)
-          .join('\n');
+        const contextText = contextMessages.map((msg) => `${msg.role}: ${msg.content}`).join("\n");
 
         suggestions = await client.relatedPrompts(model.id, contextText);
       }
@@ -241,10 +255,7 @@ export function ChatInput() {
   // Handle selecting a prompt suggestion
   const handlePromptSelect = (suggestion: string) => {
     // Create and send message immediately
-    const messageContent: Content[] = [
-      { type: 'text', text: suggestion },
-      ...attachments
-    ];
+    const messageContent: Content[] = [{ type: "text", text: suggestion }, ...attachments];
     const message: Message = {
       role: Role.User,
       content: messageContent,
@@ -275,7 +286,7 @@ export function ChatInput() {
   useEffect(() => {
     if (messages.length === 0) {
       // Check if this is a touch device
-      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
 
       if (!isTouchDevice && contentEditableRef.current) {
         // Small delay to ensure DOM is ready
@@ -288,55 +299,55 @@ export function ChatInput() {
     }
   }, [messages.length]);
 
-  const handleSubmit = useCallback(async (e: FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
 
-    // Prevent submission while responding
-    if (isResponding) {
-      return;
-    }
+      // Prevent submission while responding
+      if (isResponding) {
+        return;
+      }
 
-    if (content.trim()) {
-      let finalAttachments: Content[] = [...attachments];
+      if (content.trim()) {
+        let finalAttachments: Content[] = [...attachments];
 
-      // If continuous capture is active, automatically capture current screen
-      if (isContinuousCaptureActive) {
-        try {
-          const blob = await captureFrame();
-          if (blob) {
-            const dataUrl = await readAsDataURL(blob);
-            const screenContent: ImageContent = {
-              type: 'image',
-              name: `screen-capture-${Date.now()}.png`,
-              data: dataUrl,
-            };
-            // Add screen capture as the first attachment
-            finalAttachments = [screenContent, ...finalAttachments];
+        // If continuous capture is active, automatically capture current screen
+        if (isContinuousCaptureActive) {
+          try {
+            const blob = await captureFrame();
+            if (blob) {
+              const dataUrl = await readAsDataURL(blob);
+              const screenContent: ImageContent = {
+                type: "image",
+                name: `screen-capture-${Date.now()}.png`,
+                data: dataUrl,
+              };
+              // Add screen capture as the first attachment
+              finalAttachments = [screenContent, ...finalAttachments];
+            }
+          } catch (error) {
+            console.error("Error capturing screen during message send:", error);
           }
-        } catch (error) {
-          console.error("Error capturing screen during message send:", error);
+        }
+
+        const messageContent: Content[] = [{ type: "text", text: content }, ...finalAttachments];
+
+        const message: Message = {
+          role: Role.User,
+          content: messageContent,
+        };
+
+        sendMessage(message);
+        setContent("");
+        setAttachments([]);
+
+        if (contentEditableRef.current) {
+          contentEditableRef.current.innerHTML = "";
         }
       }
-
-      const messageContent: Content[] = [
-        { type: 'text', text: content },
-        ...finalAttachments
-      ];
-
-      const message: Message = {
-        role: Role.User,
-        content: messageContent,
-      };
-
-      sendMessage(message);
-      setContent("");
-      setAttachments([]);
-
-      if (contentEditableRef.current) {
-        contentEditableRef.current.innerHTML = "";
-      }
-    }
-  }, [isResponding, content, attachments, isContinuousCaptureActive, captureFrame, sendMessage]);
+    },
+    [isResponding, content, attachments, isContinuousCaptureActive, captureFrame, sendMessage],
+  );
 
   const handleAttachmentClick = useCallback(() => {
     if (fileInputRef.current) {
@@ -356,34 +367,43 @@ export function ChatInput() {
     }
   }, [isContinuousCaptureActive, stopCapture, startCapture]);
 
-  const handleFileChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      handleFiles(Array.from(files));
-      e.target.value = "";
-    }
-  }, [handleFiles]);
+  const handleFileChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files) {
+        handleFiles(Array.from(files));
+        e.target.value = "";
+      }
+    },
+    [handleFiles],
+  );
 
   const handleRemoveAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const handleContentChange = useCallback((e: React.FormEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLDivElement;
-    const input = target.innerText || target.textContent || '';
-    setContent(input);
+  const handleContentChange = useCallback(
+    (e: React.FormEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLDivElement;
+      const input = target.innerText || target.textContent || "";
+      setContent(input);
 
-    if (input.trim() && showPromptSuggestions) {
-      setShowPromptSuggestions(false);
-    }
-  }, [showPromptSuggestions]);
+      if (input.trim() && showPromptSuggestions) {
+        setShowPromptSuggestions(false);
+      }
+    },
+    [showPromptSuggestions],
+  );
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e as unknown as FormEvent);
-    }
-  }, [handleSubmit]);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleSubmit(e as unknown as FormEvent);
+      }
+    },
+    [handleSubmit],
+  );
 
   // Handle transcription button click
   const handleTranscriptionClick = useCallback(async () => {
@@ -396,12 +416,12 @@ export function ChatInput() {
 
           if (contentEditableRef.current) {
             // Convert newlines to <br> tags for proper display in contentEditable
-            const htmlText = text.replace(/\n/g, '<br>');
+            const htmlText = text.replace(/\n/g, "<br>");
             contentEditableRef.current.innerHTML = htmlText;
           }
         }
       } catch (error) {
-        console.error('Transcription failed:', error);
+        console.error("Transcription failed:", error);
       } finally {
         setTranscribingContent(false);
       }
@@ -409,7 +429,7 @@ export function ChatInput() {
       try {
         await startTranscription();
       } catch (error) {
-        console.error('Failed to start transcription:', error);
+        console.error("Failed to start transcription:", error);
       }
     }
   }, [isTranscribing, stopTranscription, startTranscription]);
@@ -418,21 +438,22 @@ export function ChatInput() {
     <form onSubmit={handleSubmit}>
       <div
         ref={containerRef}
-        className={`contain-[layout_style] will-change-[height] ${isDragging
-          ? 'border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl'
-          : `border-0 md:border-2 border-t-2 border-solid ${messages.length === 0
-            ? 'border-neutral-200/50'
-            : 'border-neutral-200'
-          } dark:border-neutral-900 ${messages.length === 0
-            ? 'bg-white/60 dark:bg-neutral-950/70'
-            : 'bg-white/30 dark:bg-neutral-950/50'
-          } rounded-t-2xl md:rounded-2xl`
-          } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 transition-all duration-200`}
+        className={`contain-[layout_style] will-change-[height] ${
+          isDragging
+            ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl"
+            : `border-0 md:border-2 border-t-2 border-solid ${messages.length === 0 ? "border-neutral-200/50" : "border-neutral-200"} dark:border-neutral-900 ${
+                messages.length === 0 ? "bg-white/60 dark:bg-neutral-950/70" : "bg-white/30 dark:bg-neutral-950/50"
+              } rounded-t-2xl md:rounded-2xl`
+        } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 transition-all duration-200`}
       >
         <input
           type="file"
           multiple
-          accept={[...(config.text?.files ?? []), ...(config.vision?.files ?? []), ...(config.extractor?.files ?? [])].join(",")}
+          accept={[
+            ...(config.text?.files ?? []),
+            ...(config.vision?.files ?? []),
+            ...(config.extractor?.files ?? []),
+          ].join(",")}
           ref={fileInputRef}
           className="hidden"
           onChange={handleFileChange}
@@ -441,9 +462,7 @@ export function ChatInput() {
         {/* Drop zone overlay */}
         {isDragging && (
           <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 rounded-t-2xl md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-sm">
-            <div className="text-slate-700 dark:text-slate-300 font-semibold text-lg text-center">
-              Drop files here
-            </div>
+            <div className="text-slate-700 dark:text-slate-300 font-semibold text-lg text-center">Drop files here</div>
             <div className="text-slate-600 dark:text-slate-400 text-sm mt-1 text-center">
               Images, documents, and text files supported
             </div>
@@ -483,7 +502,7 @@ export function ChatInput() {
                 style={{
                   scrollbarWidth: "thin",
                   minHeight: "2.5rem",
-                  height: "auto"
+                  height: "auto",
                 }}
                 role="textbox"
                 contentEditable
@@ -493,15 +512,15 @@ export function ChatInput() {
                 onPaste={async (e) => {
                   e.preventDefault();
 
-                  const text = e.clipboardData.getData('text/plain');
+                  const text = e.clipboardData.getData("text/plain");
 
                   const imageItems = Array.from(e.clipboardData.items)
-                    .filter(item => item.type.startsWith('image/'))
-                    .map(item => item.getAsFile())
+                    .filter((item) => item.type.startsWith("image/"))
+                    .map((item) => item.getAsFile())
                     .filter(Boolean) as File[];
 
                   if (text.trim()) {
-                    document.execCommand('insertText', false, text);
+                    document.execCommand("insertText", false, text);
                   }
 
                   if (imageItems.length > 0) {
@@ -513,12 +532,15 @@ export function ChatInput() {
               {/* CSS-animated placeholder */}
               {shouldShowPlaceholder && (
                 <div
-                  className={`absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200 ${messages.length === 0 ? 'typewriter-text' : ''
-                    }`}
-                  style={messages.length === 0 ? {
-                    '--text-length': placeholderText.length,
-                    '--animation-duration': `${Math.max(1.5, placeholderText.length * 0.1)}s`
-                  } as React.CSSProperties & { '--text-length': number; '--animation-duration': string } : {}}
+                  className={`absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200 ${messages.length === 0 ? "typewriter-text" : ""}`}
+                  style={
+                    messages.length === 0
+                      ? ({
+                          "--text-length": placeholderText.length,
+                          "--animation-duration": `${Math.max(1.5, placeholderText.length * 0.1)}s`,
+                        } as React.CSSProperties & { "--text-length": number; "--animation-duration": string })
+                      : {}
+                  }
                 >
                   {placeholderText}
                 </div>
@@ -536,11 +558,7 @@ export function ChatInput() {
               onClick={handlePromptSuggestionsClick}
               title="Show prompt suggestions"
             >
-              {loadingPrompts ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Lightbulb size={16} />
-              )}
+              {loadingPrompts ? <Loader2 size={16} className="animate-spin" /> : <Lightbulb size={16} />}
             </button>
 
             {currentAgent?.model ? (
@@ -553,11 +571,12 @@ export function ChatInput() {
               >
                 <span className="shrink-0 w-3.5 flex justify-center relative">
                   <Bot size={14} className="transition-opacity group-hover:opacity-0" />
-                  <X size={14} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100" />
+                  <X
+                    size={14}
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
+                  />
                 </span>
-                <span className="truncate min-w-0">
-                  {currentAgent.name}
-                </span>
+                <span className="truncate min-w-0">{currentAgent.name}</span>
               </button>
             ) : (
               <>
@@ -565,9 +584,7 @@ export function ChatInput() {
                   <Menu>
                     <MenuButton className="flex items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm max-w-48">
                       <span className="shrink-0 w-3.5 flex justify-center">{toolIndicator}</span>
-                      <span className="truncate min-w-0">
-                        {model?.name ?? model?.id ?? "Select Model"}
-                      </span>
+                      <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
                     </MenuButton>
                     <MenuItems
                       modal={false}
@@ -607,7 +624,13 @@ export function ChatInput() {
                         <MenuItem>
                           <button
                             type="button"
-                            onClick={() => onModelChange(isRealtimeSelected ? models[0] : { id: 'realtime', name: 'Voice Mode', description: 'Real-time voice conversation' })}
+                            onClick={() =>
+                              onModelChange(
+                                isRealtimeSelected
+                                  ? models[0]
+                                  : { id: "realtime", name: "Voice Mode", description: "Real-time voice conversation" },
+                              )
+                            }
                             className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                           >
                             <div className="flex items-center gap-2.5 w-full">
@@ -617,9 +640,7 @@ export function ChatInput() {
                                 )}
                               </div>
                               <div className="flex flex-col items-start flex-1 min-w-0">
-                                <div className="font-semibold text-sm leading-tight whitespace-nowrap">
-                                  Voice Mode
-                                </div>
+                                <div className="font-semibold text-sm leading-tight whitespace-nowrap">Voice Mode</div>
                                 <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
                                   Real-time voice conversation
                                 </div>
@@ -641,16 +662,16 @@ export function ChatInput() {
                   >
                     <span className="shrink-0 w-3.5 flex justify-center relative">
                       <Bot size={14} className="transition-opacity group-hover:opacity-0" />
-                      <X size={14} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100" />
+                      <X
+                        size={14}
+                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
+                      />
                     </span>
-                    <span className="max-w-20 truncate">
-                      {currentAgent.name}
-                    </span>
+                    <span className="max-w-20 truncate">{currentAgent.name}</span>
                   </button>
                 )}
               </>
             )}
-
           </div>
 
           <div className="flex items-center gap-2 md:gap-1">
@@ -659,69 +680,8 @@ export function ChatInput() {
               <>
                 {/* Features - Show inline buttons for 2 or fewer providers, otherwise show menu */}
                 {visibleProviders.length > 0 && visibleProviders.length <= 2 ? (
-              // Inline toggle buttons for 2 or fewer providers
-              visibleProviders.map((provider: ToolProvider) => {
-                const icon = provider.icon || Sparkles;
-                const state = getProviderState(provider.id);
-                const providerEnabled = state === ProviderState.Connected;
-                const providerInitializing = state === ProviderState.Initializing;
-                const providerFailed = state === ProviderState.Failed;
-
-                const renderIcon = () => {
-                  if (providerInitializing) return <LoaderCircle size={14} className="animate-spin" />;
-                  if (providerFailed) return <TriangleAlert size={14} />;
-                  if (typeof icon === 'string') return <span className="shrink-0 bg-current inline-block" style={{ width: 14, height: 14, maskImage: `url(${icon})`, WebkitMaskImage: `url(${icon})`, maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }} />;
-                  const Icon = icon; return <Icon size={14} />;
-                };
-
-                return (
-                  <button
-                    key={provider.id}
-                    type="button"
-                    className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${
-                      providerEnabled
-                        ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg'
-                        : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-                    }`}
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (providerInitializing) return;
-                      try {
-                        await setProviderEnabled(provider.id, !providerEnabled);
-                      } catch (error) {
-                        console.error(`Failed to toggle provider ${provider.name}:`, error);
-                      }
-                    }}
-                    disabled={providerInitializing}
-                    title={
-                      providerFailed
-                        ? `${provider.name} - Failed to connect (click to retry)`
-                        : providerEnabled
-                          ? `${provider.name} - Click to disable`
-                          : `${provider.name} - Click to enable`
-                    }
-                  >
-                    {renderIcon()}
-                  </button>
-                );
-              })
-            ) : visibleProviders.length > 2 ? (
-              // Menu for more than 2 providers
-              <Menu>
-                <MenuButton
-                  className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  title="Features"
-                >
-                  <Sliders size={16} />
-                </MenuButton>
-                <MenuItems
-                  modal={false}
-                  transition
-                  anchor="bottom end"
-                  className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto"
-                >
-                  {visibleProviders.map((provider: ToolProvider) => {
+                  // Inline toggle buttons for 2 or fewer providers
+                  visibleProviders.map((provider: ToolProvider) => {
                     const icon = provider.icon || Sparkles;
                     const state = getProviderState(provider.id);
                     const providerEnabled = state === ProviderState.Connected;
@@ -729,82 +689,185 @@ export function ChatInput() {
                     const providerFailed = state === ProviderState.Failed;
 
                     const renderIcon = () => {
-                      if (typeof icon === 'string') return <span className="shrink-0 bg-current inline-block" style={{ width: 16, height: 16, maskImage: `url(${icon})`, WebkitMaskImage: `url(${icon})`, maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }} />;
-                      const Icon = icon; return <Icon size={16} />;
+                      if (providerInitializing) return <LoaderCircle size={14} className="animate-spin" />;
+                      if (providerFailed) return <TriangleAlert size={14} />;
+                      if (typeof icon === "string")
+                        return (
+                          <span
+                            className="shrink-0 bg-current inline-block"
+                            style={{
+                              width: 14,
+                              height: 14,
+                              maskImage: `url(${icon})`,
+                              WebkitMaskImage: `url(${icon})`,
+                              maskSize: "contain",
+                              maskRepeat: "no-repeat",
+                              maskPosition: "center",
+                            }}
+                          />
+                        );
+                      const Icon = icon;
+                      return <Icon size={14} />;
                     };
 
                     return (
-                      <MenuItem key={provider.id}>
-                        <button
-                          type="button"
-                          onClick={async (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            try {
-                              await setProviderEnabled(provider.id, !providerEnabled);
-                            } catch (error) {
-                              console.error(`Failed to toggle provider ${provider.name}:`, error);
-                            }
-                          }}
-                          disabled={providerInitializing}
-                          className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50`}
-                        >
-                          <div className="flex items-center gap-3">
-                            {renderIcon()}
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium text-sm">{provider.name}</span>
-                              {provider.description && (
-                                <span className="text-xs text-neutral-600 dark:text-neutral-400">{provider.description}</span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 pl-2">
-                            {providerInitializing ? (
-                              <LoaderCircle size={16} className="animate-spin text-neutral-600 dark:text-neutral-400" />
-                            ) : providerFailed ? (
-                              <TriangleAlert size={16} className="text-neutral-600 dark:text-neutral-400" strokeWidth={2.5} />
-                            ) : providerEnabled ? (
-                              <Check size={16} className="text-neutral-800 dark:text-neutral-200" strokeWidth={2.5} />
-                            ) : (
-                              <div className="w-4 h-4" />
-                            )}
-                          </div>
-                        </button>
-                      </MenuItem>
+                      <button
+                        key={provider.id}
+                        type="button"
+                        className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${
+                          providerEnabled
+                            ? "text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg"
+                            : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        }`}
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (providerInitializing) return;
+                          try {
+                            await setProviderEnabled(provider.id, !providerEnabled);
+                          } catch (error) {
+                            console.error(`Failed to toggle provider ${provider.name}:`, error);
+                          }
+                        }}
+                        disabled={providerInitializing}
+                        title={
+                          providerFailed
+                            ? `${provider.name} - Failed to connect (click to retry)`
+                            : providerEnabled
+                              ? `${provider.name} - Click to disable`
+                              : `${provider.name} - Click to enable`
+                        }
+                      >
+                        {renderIcon()}
+                      </button>
                     );
-                  })}
-                </MenuItems>
-              </Menu>
-            ) : null}
+                  })
+                ) : visibleProviders.length > 2 ? (
+                  // Menu for more than 2 providers
+                  <Menu>
+                    <MenuButton
+                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      title="Features"
+                    >
+                      <Sliders size={16} />
+                    </MenuButton>
+                    <MenuItems
+                      modal={false}
+                      transition
+                      anchor="bottom end"
+                      className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto"
+                    >
+                      {visibleProviders.map((provider: ToolProvider) => {
+                        const icon = provider.icon || Sparkles;
+                        const state = getProviderState(provider.id);
+                        const providerEnabled = state === ProviderState.Connected;
+                        const providerInitializing = state === ProviderState.Initializing;
+                        const providerFailed = state === ProviderState.Failed;
 
-            {!isRealtimeSelected && isScreenCaptureAvailable && (
-              <button
-                type="button"
-                className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isContinuousCaptureActive
-                  ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg'
-                  : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-                  }`}
-                onClick={handleContinuousCaptureToggle}
-                title={isContinuousCaptureActive ? 'Stop continuous screen capture' : 'Start continuous screen capture'}
-              >
-                <ScreenShare size={14} />
-                {isContinuousCaptureActive && (
-                  <span className="hidden sm:inline">
-                    Capturing
-                  </span>
+                        const renderIcon = () => {
+                          if (typeof icon === "string")
+                            return (
+                              <span
+                                className="shrink-0 bg-current inline-block"
+                                style={{
+                                  width: 16,
+                                  height: 16,
+                                  maskImage: `url(${icon})`,
+                                  WebkitMaskImage: `url(${icon})`,
+                                  maskSize: "contain",
+                                  maskRepeat: "no-repeat",
+                                  maskPosition: "center",
+                                }}
+                              />
+                            );
+                          const Icon = icon;
+                          return <Icon size={16} />;
+                        };
+
+                        return (
+                          <MenuItem key={provider.id}>
+                            <button
+                              type="button"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                try {
+                                  await setProviderEnabled(provider.id, !providerEnabled);
+                                } catch (error) {
+                                  console.error(`Failed to toggle provider ${provider.name}:`, error);
+                                }
+                              }}
+                              disabled={providerInitializing}
+                              className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50`}
+                            >
+                              <div className="flex items-center gap-3">
+                                {renderIcon()}
+                                <div className="flex flex-col items-start">
+                                  <span className="font-medium text-sm">{provider.name}</span>
+                                  {provider.description && (
+                                    <span className="text-xs text-neutral-600 dark:text-neutral-400">
+                                      {provider.description}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 pl-2">
+                                {providerInitializing ? (
+                                  <LoaderCircle
+                                    size={16}
+                                    className="animate-spin text-neutral-600 dark:text-neutral-400"
+                                  />
+                                ) : providerFailed ? (
+                                  <TriangleAlert
+                                    size={16}
+                                    className="text-neutral-600 dark:text-neutral-400"
+                                    strokeWidth={2.5}
+                                  />
+                                ) : providerEnabled ? (
+                                  <Check
+                                    size={16}
+                                    className="text-neutral-800 dark:text-neutral-200"
+                                    strokeWidth={2.5}
+                                  />
+                                ) : (
+                                  <div className="w-4 h-4" />
+                                )}
+                              </div>
+                            </button>
+                          </MenuItem>
+                        );
+                      })}
+                    </MenuItems>
+                  </Menu>
+                ) : null}
+
+                {!isRealtimeSelected && isScreenCaptureAvailable && (
+                  <button
+                    type="button"
+                    className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
+                      isContinuousCaptureActive
+                        ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg"
+                        : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    }`}
+                    onClick={handleContinuousCaptureToggle}
+                    title={
+                      isContinuousCaptureActive ? "Stop continuous screen capture" : "Start continuous screen capture"
+                    }
+                  >
+                    <ScreenShare size={14} />
+                    {isContinuousCaptureActive && <span className="hidden sm:inline">Capturing</span>}
+                  </button>
                 )}
-              </button>
-            )}
 
-            {!isRealtimeSelected && (
-              <button
-                type="button"
-                className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                onClick={handleAttachmentClick}
-              >
-                <Paperclip size={16} />
-              </button>
-            )}
+                {!isRealtimeSelected && (
+                  <button
+                    type="button"
+                    className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    onClick={handleAttachmentClick}
+                  >
+                    <Paperclip size={16} />
+                  </button>
+                )}
               </>
             )}
 
@@ -854,11 +917,11 @@ export function ChatInput() {
                   type="button"
                   className={`p-2.5 md:p-1.5 transition-colors ${
                     isTranscribing
-                      ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200'
-                      : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                      ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                      : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                   }`}
                   onClick={handleTranscriptionClick}
-                  title={isTranscribing ? 'Stop recording' : 'Start recording'}
+                  title={isTranscribing ? "Stop recording" : "Start recording"}
                   disabled={isResponding}
                 >
                   {isTranscribing ? <Square size={16} /> : <Mic size={16} />}

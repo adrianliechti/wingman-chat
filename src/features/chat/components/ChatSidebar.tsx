@@ -1,7 +1,7 @@
 import { Trash, PanelRightOpen, MoreVertical, GitBranch, Search, X } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { useMemo, useCallback, useState, useRef } from "react";
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { useSidebar } from "@/shell/hooks/useSidebar";
@@ -13,11 +13,14 @@ export function ChatSidebar() {
   const { newChat, openChat } = useChatNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
-  
+
   // sort once per chats change
   const sortedChats = useMemo(
-    () => [...chats].sort((a, b) => new Date(b.updated || b.created || 0).getTime() - new Date(a.updated || a.created || 0).getTime()),
-    [chats]
+    () =>
+      [...chats].sort(
+        (a, b) => new Date(b.updated || b.created || 0).getTime() - new Date(a.updated || a.created || 0).getTime(),
+      ),
+    [chats],
   );
 
   // Filter chats based on search query
@@ -25,19 +28,17 @@ export function ChatSidebar() {
     if (!searchQuery.trim()) {
       return sortedChats;
     }
-    
+
     const query = searchQuery.toLowerCase();
-    
+
     return sortedChats.filter((chatItem) => {
       // Search in title
       if (chatItem.title?.toLowerCase().includes(query)) {
         return true;
       }
-      
+
       // Search in message content
-      return chatItem.messages.some((message) => 
-        getTextFromContent(message.content).toLowerCase().includes(query)
-      );
+      return chatItem.messages.some((message) => getTextFromContent(message.content).toLowerCase().includes(query));
     });
   }, [sortedChats, searchQuery]);
 
@@ -47,40 +48,40 @@ export function ChatSidebar() {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-    
+
     const chatDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    
+
     // Today
     if (chatDate.getTime() === today.getTime()) {
       return "Today";
     }
-    
+
     // Yesterday
     if (chatDate.getTime() === yesterday.getTime()) {
       return "Yesterday";
     }
-    
+
     // This week (within last 7 days)
     const weekAgo = new Date(today);
     weekAgo.setDate(weekAgo.getDate() - 7);
     if (chatDate > weekAgo) {
       return "This Week";
     }
-    
+
     // Last week (7-14 days ago)
     const twoWeeksAgo = new Date(today);
     twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
     if (chatDate > twoWeeksAgo) {
       return "Last Week";
     }
-    
+
     // Last month (within 30 days)
     const monthAgo = new Date(today);
     monthAgo.setDate(monthAgo.getDate() - 30);
     if (chatDate > monthAgo) {
       return "Last Month";
     }
-    
+
     // Older
     return "Older";
   }, []);
@@ -90,17 +91,17 @@ export function ChatSidebar() {
     const groups: { category: string; chats: typeof filteredChats }[] = [];
     const categoryOrder = ["Today", "Yesterday", "This Week", "Last Week", "Last Month", "Older"];
     const categoryMap = new Map<string, typeof filteredChats>();
-    
+
     filteredChats.forEach((chatItem) => {
       const date = new Date(chatItem.updated || chatItem.created || 0);
       const category = getDateCategory(date);
-      
+
       if (!categoryMap.has(category)) {
         categoryMap.set(category, []);
       }
       categoryMap.get(category)!.push(chatItem);
     });
-    
+
     // Build groups in order
     categoryOrder.forEach((category) => {
       const chats = categoryMap.get(category);
@@ -108,21 +109,21 @@ export function ChatSidebar() {
         groups.push({ category, chats });
       }
     });
-    
+
     return groups;
   }, [filteredChats, getDateCategory]);
 
   // Flatten grouped chats into a single list for virtualization
-  type FlatSidebarItem = 
-    | { type: 'header'; group: typeof groupedChats[0]; groupIndex: number }
-    | { type: 'item'; chat: typeof chats[0] };
+  type FlatSidebarItem =
+    | { type: "header"; group: (typeof groupedChats)[0]; groupIndex: number }
+    | { type: "item"; chat: (typeof chats)[0] };
 
   const flatSidebarItems = useMemo<FlatSidebarItem[]>(() => {
     const items: FlatSidebarItem[] = [];
     groupedChats.forEach((group, groupIndex) => {
-      items.push({ type: 'header', group, groupIndex });
+      items.push({ type: "header", group, groupIndex });
       group.chats.forEach((chatItem) => {
-        items.push({ type: 'item', chat: chatItem });
+        items.push({ type: "item", chat: chatItem });
       });
     });
     return items;
@@ -133,41 +134,40 @@ export function ChatSidebar() {
   const sidebarVirtualizer = useVirtualizer({
     count: flatSidebarItems.length,
     getScrollElement: () => sidebarScrollRef.current,
-    estimateSize: (i) => flatSidebarItems[i].type === 'header' ? 28 : 34,
+    estimateSize: (i) => (flatSidebarItems[i].type === "header" ? 28 : 34),
     overscan: 15,
   });
 
   const sidebarVirtualItems = sidebarVirtualizer.getVirtualItems();
 
   // Function to fork a chat (create a new chat with copied messages)
-  const forkChat = useCallback(async (chatToFork: typeof chats[0]) => {
-    const newChat = await createChat();
+  const forkChat = useCallback(
+    async (chatToFork: (typeof chats)[0]) => {
+      const newChat = await createChat();
 
-    // Copy all the properties from the original chat
-    updateChat(newChat.id, () => ({
-      title: chatToFork.title ? `${chatToFork.title} (Fork)` : "Forked Chat",
-      model: chatToFork.model,
-      messages: [...chatToFork.messages], // Create a copy of the messages array
-    }));
+      // Copy all the properties from the original chat
+      updateChat(newChat.id, () => ({
+        title: chatToFork.title ? `${chatToFork.title} (Fork)` : "Forked Chat",
+        model: chatToFork.model,
+        messages: [...chatToFork.messages], // Create a copy of the messages array
+      }));
 
-    // Navigate to the new forked chat
-    openChat(newChat.id);
+      // Navigate to the new forked chat
+      openChat(newChat.id);
 
-    requestAnimationFrame(() => {
-      if (window.innerWidth < 768) {
-        setShowSidebar(false);
-      }
-    });
-  }, [createChat, updateChat, openChat, setShowSidebar]);
+      requestAnimationFrame(() => {
+        if (window.innerWidth < 768) {
+          setShowSidebar(false);
+        }
+      });
+    },
+    [createChat, updateChat, openChat, setShowSidebar],
+  );
 
   return (
-    <div
-      className="flex flex-col h-full w-full bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md"
-    >
+    <div className="flex flex-col h-full w-full bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md">
       {/* Static header with buttons */}
-      <div 
-        className="flex items-center px-2 py-2 md:px-1 md:py-1 shrink-0 h-14 md:h-10 gap-1"
-      >
+      <div className="flex items-center px-2 py-2 md:px-1 md:py-1 shrink-0 h-14 md:h-10 gap-1">
         {showSearch ? (
           <div className="flex-1 flex items-center gap-1">
             <input
@@ -214,20 +214,25 @@ export function ChatSidebar() {
           </>
         )}
       </div>
-      
+
       {/* Scrollable content area */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden" ref={sidebarScrollRef}>
-        <div className="pt-2 pb-1 px-1" style={{ height: sidebarVirtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
-          <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            transform: `translateY(${sidebarVirtualItems[0]?.start ?? 0}px)`,
-          }}>
+        <div
+          className="pt-2 pb-1 px-1"
+          style={{ height: sidebarVirtualizer.getTotalSize(), width: "100%", position: "relative" }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              transform: `translateY(${sidebarVirtualItems[0]?.start ?? 0}px)`,
+            }}
+          >
             {sidebarVirtualItems.map((virtualRow) => {
               const item = flatSidebarItems[virtualRow.index];
-              if (item.type === 'header') {
+              if (item.type === "header") {
                 const group = item.group;
                 return (
                   <div
@@ -255,7 +260,7 @@ export function ChatSidebar() {
                             <button
                               type="button"
                               onClick={() => {
-                                const hasActive = group.chats.some(c => c.id === chat?.id);
+                                const hasActive = group.chats.some((c) => c.id === chat?.id);
                                 group.chats.forEach((chatItem) => deleteChat(chatItem.id));
                                 if (hasActive) newChat();
                               }}
@@ -274,11 +279,7 @@ export function ChatSidebar() {
 
               const chatItem = item.chat;
               return (
-                <div
-                  key={virtualRow.key}
-                  data-index={virtualRow.index}
-                  ref={sidebarVirtualizer.measureElement}
-                >
+                <div key={virtualRow.key} data-index={virtualRow.index} ref={sidebarVirtualizer.measureElement}>
                   <div
                     onClick={() => {
                       openChat(chatItem.id);
@@ -287,8 +288,8 @@ export function ChatSidebar() {
                       }
                     }}
                     className={`flex items-center cursor-pointer relative shrink-0 group rounded transition-all duration-200 ${
-                      chatItem.id === chat?.id 
-                        ? "py-2 md:py-1.5 px-2.5 md:px-2 text-neutral-900 dark:text-neutral-100 focus:outline-none" 
+                      chatItem.id === chat?.id
+                        ? "py-2 md:py-1.5 px-2.5 md:px-2 text-neutral-900 dark:text-neutral-100 focus:outline-none"
                         : "py-2 md:py-1.5 pl-2.5 md:pl-2.5 pr-1 md:pr-0.5 hover:text-neutral-600 dark:hover:text-neutral-300"
                     }`}
                   >

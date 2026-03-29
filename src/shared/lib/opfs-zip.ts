@@ -5,23 +5,17 @@
  * the respective feature modules (e.g. features/settings/lib/agentImportExport).
  */
 
-import JSZip from 'jszip';
-import {
-  getRoot, getDirectory, writeJson, writeBlob, readJson, readText,
-  type IndexEntry,
-} from './opfs-core';
+import JSZip from "jszip";
+import { getRoot, getDirectory, writeJson, writeBlob, readJson, readText, type IndexEntry } from "./opfs-core";
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
 /** Recursively add a directory handle's contents to a JSZip folder. */
-export async function addDirectoryToZip(
-  handle: FileSystemDirectoryHandle,
-  zipFolder: JSZip,
-): Promise<void> {
+export async function addDirectoryToZip(handle: FileSystemDirectoryHandle, zipFolder: JSZip): Promise<void> {
   for await (const [name, entryHandle] of handle.entries()) {
-    if (entryHandle.kind === 'file') {
+    if (entryHandle.kind === "file") {
       const file = await (entryHandle as FileSystemFileHandle).getFile();
       zipFolder.file(name, await file.arrayBuffer());
     } else {
@@ -43,14 +37,14 @@ export async function exportFolderAsZip(folderPath: string): Promise<Blob> {
   const zip = new JSZip();
 
   try {
-    const isRoot = !folderPath || folderPath === '/';
+    const isRoot = !folderPath || folderPath === "/";
     const folderHandle = isRoot ? await getRoot() : await getDirectory(folderPath);
     await addDirectoryToZip(folderHandle, zip);
   } catch {
     // Folder doesn't exist, return empty zip
   }
 
-  return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
 }
 
 /**
@@ -67,9 +61,9 @@ export async function importFolderFromZip(folderPath: string, zipBlob: Blob): Pr
     const fullPath = `${folderPath}/${relativePath}`;
 
     if (zipEntry.dir) {
-      await getDirectory(fullPath.replace(/\/$/, ''), { create: true });
+      await getDirectory(fullPath.replace(/\/$/, ""), { create: true });
     } else {
-      const content = await zipEntry.async('arraybuffer');
+      const content = await zipEntry.async("arraybuffer");
       await writeBlob(fullPath, new Blob([content]));
     }
   }
@@ -83,7 +77,7 @@ export async function importFolderFromZip(folderPath: string, zipBlob: Blob): Pr
 export async function downloadFolderAsZip(folderPath: string, filename: string): Promise<void> {
   const blob = await exportFolderAsZip(folderPath);
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);
@@ -112,9 +106,9 @@ export async function rebuildFolderIndex(collection: string): Promise<void> {
     const folderHandle = await getDirectory(collection);
 
     for await (const [name, entryHandle] of folderHandle.entries()) {
-      if (name === 'index.json') continue;
+      if (name === "index.json") continue;
 
-      if (entryHandle.kind === 'directory') {
+      if (entryHandle.kind === "directory") {
         const id = name;
         let title = name;
         let updated = new Date().toISOString();
@@ -122,8 +116,7 @@ export async function rebuildFolderIndex(collection: string): Promise<void> {
         // Try AGENTS.md / AGENT.md
         try {
           const agentMd =
-            (await readText(`${collection}/${id}/AGENTS.md`)) ||
-            (await readText(`${collection}/${id}/AGENT.md`));
+            (await readText(`${collection}/${id}/AGENTS.md`)) || (await readText(`${collection}/${id}/AGENT.md`));
           if (agentMd) {
             const nameMatch = agentMd.match(/^name:\s*(.+)$/m);
             if (nameMatch) title = nameMatch[1].trim();

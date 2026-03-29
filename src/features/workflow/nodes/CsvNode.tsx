@@ -1,28 +1,28 @@
-import { memo, useMemo } from 'react';
-import { Table } from 'lucide-react';
-import type { Node, NodeProps } from '@xyflow/react';
-import type { BaseNodeData, Data } from '@/features/workflow/types/workflow';
-import { getDataText } from '@/features/workflow/types/workflow';
-import { useWorkflow } from '@/features/workflow/hooks/useWorkflow';
-import { useWorkflowNode } from '@/features/workflow/hooks/useWorkflowNode';
-import { getConfig } from '@/shared/config';
-import { WorkflowNode } from '@/features/workflow/components/WorkflowNode';
-import { CopyButton } from '@/shared/ui/CopyButton';
+import { memo, useMemo } from "react";
+import { Table } from "lucide-react";
+import type { Node, NodeProps } from "@xyflow/react";
+import type { BaseNodeData, Data } from "@/features/workflow/types/workflow";
+import { getDataText } from "@/features/workflow/types/workflow";
+import { useWorkflow } from "@/features/workflow/hooks/useWorkflow";
+import { useWorkflowNode } from "@/features/workflow/hooks/useWorkflowNode";
+import { getConfig } from "@/shared/config";
+import { WorkflowNode } from "@/features/workflow/components/WorkflowNode";
+import { CopyButton } from "@/shared/ui/CopyButton";
 
 // Utility function to detect separator (comma, semicolon, or tab)
 const detectSeparator = (csv: string): string => {
-  if (!csv.trim()) return ',';
-  
-  const firstLine = csv.trim().split('\n')[0];
+  if (!csv.trim()) return ",";
+
+  const firstLine = csv.trim().split("\n")[0];
   let commaCount = 0;
   let semicolonCount = 0;
   let tabCount = 0;
   let inQuotes = false;
-  
+
   for (let i = 0; i < firstLine.length; i++) {
     const char = firstLine[i];
     const nextChar = firstLine[i + 1];
-    
+
     if (char === '"') {
       if (inQuotes && nextChar === '"') {
         i++;
@@ -30,34 +30,34 @@ const detectSeparator = (csv: string): string => {
         inQuotes = !inQuotes;
       }
     } else if (!inQuotes) {
-      if (char === ',') commaCount++;
-      if (char === ';') semicolonCount++;
-      if (char === '\t') tabCount++;
+      if (char === ",") commaCount++;
+      if (char === ";") semicolonCount++;
+      if (char === "\t") tabCount++;
     }
   }
-  
-  if (tabCount > 0 && tabCount >= commaCount && tabCount >= semicolonCount) return '\t';
-  if (semicolonCount > commaCount) return ';';
-  return ',';
+
+  if (tabCount > 0 && tabCount >= commaCount && tabCount >= semicolonCount) return "\t";
+  if (semicolonCount > commaCount) return ";";
+  return ",";
 };
 
 // Utility function to parse CSV content
 const parseCSV = (csv: string): string[][] => {
   if (!csv.trim()) return [];
-  
+
   const separator = detectSeparator(csv);
-  const lines = csv.trim().split('\n');
+  const lines = csv.trim().split("\n");
   const result: string[][] = [];
-  
+
   for (const line of lines) {
     const row: string[] = [];
-    let current = '';
+    let current = "";
     let inQuotes = false;
-    
+
     for (let i = 0; i < line.length; i++) {
       const char = line[i];
       const nextChar = line[i + 1];
-      
+
       if (char === '"') {
         if (inQuotes && nextChar === '"') {
           current += '"';
@@ -67,26 +67,25 @@ const parseCSV = (csv: string): string[][] => {
         }
       } else if (char === separator && !inQuotes) {
         row.push(current.trim());
-        current = '';
+        current = "";
       } else {
         current += char;
       }
     }
-    
+
     row.push(current.trim());
     result.push(row);
   }
-  
+
   return result;
 };
 
 // CsvNode data interface
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface CsvNodeData extends BaseNodeData {
-}
+export interface CsvNodeData extends BaseNodeData {}
 
 // CsvNode type
-export type CsvNodeType = Node<CsvNodeData, 'csv'>;
+export type CsvNodeType = Node<CsvNodeData, "csv">;
 
 export const CsvNode = memo(({ id, data, selected }: NodeProps<CsvNodeType>) => {
   const { updateNode } = useWorkflow();
@@ -94,7 +93,7 @@ export const CsvNode = memo(({ id, data, selected }: NodeProps<CsvNodeType>) => 
   const config = getConfig();
   const client = config.client;
 
-  const csvText = data.output ? getDataText(data.output) : '';
+  const csvText = data.output ? getDataText(data.output) : "";
   const parsedData = useMemo(() => parseCSV(csvText), [csvText]);
   const headers = parsedData.length > 0 ? parsedData[0] : [];
   const rows = parsedData.slice(1);
@@ -102,41 +101,41 @@ export const CsvNode = memo(({ id, data, selected }: NodeProps<CsvNodeType>) => 
   const handleExecute = async () => {
     // Get input from connected nodes only
     const inputContent = getText();
-    
+
     if (!inputContent) return;
-    
+
     await executeAsync(async () => {
       // Clear any previous error when starting a new execution
       updateNode(id, {
-        data: { ...data, error: undefined }
+        data: { ...data, error: undefined },
       });
-      
+
       try {
         // Use the convertCSV method from the client
-        const csvData = await client.convertCSV('', inputContent);
+        const csvData = await client.convertCSV("", inputContent);
 
         // Parse CSV into rows (skip empty lines)
-        const lines = csvData.split('\n').filter(line => line.trim());
-        const headerLine = lines[0] || '';
+        const lines = csvData.split("\n").filter((line) => line.trim());
+        const headerLine = lines[0] || "";
         const dataLines = lines.slice(1);
 
         // Create data with each row as a separate item
         const result: Data<string> = {
-          text: csvData,  // Full CSV for getDataText
-          items: dataLines.map(line => ({
+          text: csvData, // Full CSV for getDataText
+          items: dataLines.map((line) => ({
             value: line,
-            text: `${headerLine}\n${line}`  // Each item includes header + row
-          }))
+            text: `${headerLine}\n${line}`, // Each item includes header + row
+          })),
         };
 
         // Set final data
         updateNode(id, {
-          data: { ...data, output: result, error: undefined }
+          data: { ...data, output: result, error: undefined },
         });
       } catch (error) {
-        console.error('Error extracting CSV:', error);
+        console.error("Error extracting CSV:", error);
         updateNode(id, {
-          data: { ...data, error: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }
+          data: { ...data, error: `Error: ${error instanceof Error ? error.message : "Unknown error"}` },
         });
       }
     });
@@ -156,9 +155,7 @@ export const CsvNode = memo(({ id, data, selected }: NodeProps<CsvNodeType>) => 
       showOutputHandle={true}
       minWidth={500}
       error={data.error}
-      headerActions={
-        data.output && <CopyButton text={getDataText(data.output)} />
-      }
+      headerActions={data.output && <CopyButton text={getDataText(data.output)} />}
     >
       <div className="flex-1 flex items-center justify-center min-h-0 p-4">
         {data.output ? (

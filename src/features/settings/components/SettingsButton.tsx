@@ -1,4 +1,4 @@
-import { Settings } from 'lucide-react';
+import { Settings } from "lucide-react";
 
 interface SettingsButtonProps {
   onClick?: (e: React.MouseEvent) => void;

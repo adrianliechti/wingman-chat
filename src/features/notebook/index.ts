@@ -1,8 +1,8 @@
 // Hooks
-export { useNotebook } from './hooks/useNotebook';
+export { useNotebook } from "./hooks/useNotebook";
 
 // Types
-export type { Notebook, NotebookSource, NotebookOutput, OutputType } from './types/notebook';
+export type { Notebook, NotebookSource, NotebookOutput, OutputType } from "./types/notebook";
 
 // Pages
-export { NotebookPage } from './pages/NotebookPage';
+export { NotebookPage } from "./pages/NotebookPage";

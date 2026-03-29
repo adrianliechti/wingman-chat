@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import * as opfs from '@/shared/lib/opfs';
+import { useState, useEffect, useRef, useCallback } from "react";
+import * as opfs from "@/shared/lib/opfs";
 
 /**
  * Options for usePersistedState hook
@@ -7,19 +7,19 @@ import * as opfs from '@/shared/lib/opfs';
 export interface UsePersistedStateOptions<T> {
   /** File path in OPFS (e.g., 'profile.json') */
   key: string;
-  
+
   /** Default value when no persisted data exists */
   defaultValue: T;
-  
+
   /** Debounce delay in ms before saving (default: 0 = immediate) */
   debounceMs?: number;
-  
+
   /** Optional migration function from localStorage or other sources */
   migrate?: () => T | undefined;
-  
+
   /** Optional validation/transformation on load */
   onLoad?: (data: T) => T;
-  
+
   /** Optional transformation before save (return undefined to delete) */
   onSave?: (data: T) => T | undefined;
 }
@@ -27,13 +27,13 @@ export interface UsePersistedStateOptions<T> {
 export interface UsePersistedStateReturn<T> {
   /** Current state value */
   value: T;
-  
+
   /** Update the state */
   setValue: React.Dispatch<React.SetStateAction<T>>;
-  
+
   /** Whether initial load from OPFS has completed */
   isLoaded: boolean;
-  
+
   /** Force an immediate save (bypasses debounce) */
   flush: () => Promise<void>;
 }
@@ -42,22 +42,20 @@ export interface UsePersistedStateReturn<T> {
  * Hook for persisting simple key-value state to OPFS.
  * Handles loading, saving, debouncing, and migration automatically.
  */
-export function usePersistedState<T>(
-  options: UsePersistedStateOptions<T>
-): UsePersistedStateReturn<T> {
+export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UsePersistedStateReturn<T> {
   const { key, defaultValue, debounceMs = 0, migrate, onLoad, onSave } = options;
-  
+
   const [value, setValueInternal] = useState<T>(defaultValue);
   const [isLoaded, setIsLoaded] = useState(false);
-  
+
   // Refs to avoid stale closures in async callbacks
   const valueRef = useRef<T>(value);
   valueRef.current = value;
-  
+
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSaveRef = useRef(false);
   const isLoadedRef = useRef(false);
-  
+
   // Store callbacks in refs to avoid re-triggering effects
   const onLoadRef = useRef(onLoad);
   const onSaveRef = useRef(onSave);
@@ -65,14 +63,14 @@ export function usePersistedState<T>(
   onLoadRef.current = onLoad;
   onSaveRef.current = onSave;
   migrateRef.current = migrate;
-  
+
   // Save function using refs
   const save = useCallback(async () => {
     if (!isLoadedRef.current) return;
-    
+
     try {
       const dataToSave = onSaveRef.current ? onSaveRef.current(valueRef.current) : valueRef.current;
-      
+
       if (dataToSave === undefined) {
         await opfs.deleteFile(key);
       } else {
@@ -83,15 +81,15 @@ export function usePersistedState<T>(
       console.warn(`Failed to save ${key}:`, error);
     }
   }, [key]);
-  
+
   // Load from OPFS on mount
   useEffect(() => {
     let cancelled = false;
-    
+
     const load = async () => {
       try {
         let data: T | undefined = await opfs.readJson<T>(key);
-        
+
         // Try migration if no data found
         if (data === undefined && migrateRef.current) {
           data = migrateRef.current();
@@ -102,7 +100,7 @@ export function usePersistedState<T>(
             }
           }
         }
-        
+
         if (!cancelled && data !== undefined) {
           const processed = onLoadRef.current ? onLoadRef.current(data) : data;
           setValueInternal(processed);
@@ -116,20 +114,20 @@ export function usePersistedState<T>(
         }
       }
     };
-    
+
     load();
-    
+
     return () => {
       cancelled = true;
     };
   }, [key]);
-  
+
   // Debounced save effect
   useEffect(() => {
     if (!isLoaded) return;
-    
+
     pendingSaveRef.current = true;
-    
+
     if (debounceMs > 0) {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
@@ -139,7 +137,7 @@ export function usePersistedState<T>(
       save();
     }
   }, [value, isLoaded, debounceMs, save]);
-  
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -154,7 +152,7 @@ export function usePersistedState<T>(
       }
     };
   }, [key]);
-  
+
   const flush = useCallback(async () => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -162,6 +160,6 @@ export function usePersistedState<T>(
     }
     await save();
   }, [save]);
-  
+
   return { value, setValue: setValueInternal, isLoaded, flush };
 }

@@ -1,7 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageCircle, Languages, PanelLeftOpen, ChevronDown, Settings, Image, Globe, GraduationCap } from "lucide-react";
+import {
+  MessageCircle,
+  Languages,
+  PanelLeftOpen,
+  ChevronDown,
+  Settings,
+  Image,
+  Globe,
+  GraduationCap,
+} from "lucide-react";
 import { Transition } from "@headlessui/react";
-import { Outlet, Link, useRouterState } from '@tanstack/react-router';
+import { Outlet, Link, useRouterState } from "@tanstack/react-router";
 import { getConfig } from "@/shared/config";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 import { useNavigation } from "@/shell/hooks/useNavigation";
@@ -14,13 +23,18 @@ import { useApp } from "@/shell/hooks/useApp";
 type Page = "chat" | "translate" | "notebook" | "renderer";
 
 function getPageFromPath(pathname: string): Page {
-  const segment = pathname.split('/')[1] || 'chat';
+  const segment = pathname.split("/")[1] || "chat";
   switch (segment) {
-    case 'chat': return 'chat';
-    case 'translate': return 'translate';
-    case 'notebook': return 'notebook';
-    case 'renderer': return 'renderer';
-    default: return 'chat';
+    case "chat":
+      return "chat";
+    case "translate":
+      return "translate";
+    case "notebook":
+      return "notebook";
+    case "renderer":
+      return "renderer";
+    default:
+      return "chat";
   }
 }
 
@@ -56,33 +70,36 @@ export function AppLayout() {
   const desktopRef = useRef<HTMLDivElement>(null);
   const [sliderStyles, setSliderStyles] = useState({
     tablet: { left: 0, width: 0 },
-    desktop: { left: 0, width: 0 }
+    desktop: { left: 0, width: 0 },
   });
 
   // Shared function to update slider positions
-  const updateSlider = useCallback((containerRef: React.RefObject<HTMLDivElement | null>, key: 'tablet' | 'desktop') => {
-    if (containerRef.current) {
-      const activeButton = containerRef.current.querySelector(`[data-page="${currentPage}"]`) as HTMLElement;
-      if (activeButton) {
-        const containerRect = containerRef.current.getBoundingClientRect();
-        const buttonRect = activeButton.getBoundingClientRect();
+  const updateSlider = useCallback(
+    (containerRef: React.RefObject<HTMLDivElement | null>, key: "tablet" | "desktop") => {
+      if (containerRef.current) {
+        const activeButton = containerRef.current.querySelector(`[data-page="${currentPage}"]`) as HTMLElement;
+        if (activeButton) {
+          const containerRect = containerRef.current.getBoundingClientRect();
+          const buttonRect = activeButton.getBoundingClientRect();
 
-        setSliderStyles(prev => ({
-          ...prev,
-          [key]: {
-            left: buttonRect.left - containerRect.left,
-            width: buttonRect.width
-          }
-        }));
+          setSliderStyles((prev) => ({
+            ...prev,
+            [key]: {
+              left: buttonRect.left - containerRect.left,
+              width: buttonRect.width,
+            },
+          }));
+        }
       }
-    }
-  }, [currentPage]);
+    },
+    [currentPage],
+  );
 
   // Update slider positions for all breakpoints
   useEffect(() => {
     setTimeout(() => {
-      updateSlider(tabletRef, 'tablet');
-      updateSlider(desktopRef, 'desktop');
+      updateSlider(tabletRef, "tablet");
+      updateSlider(desktopRef, "desktop");
     }, 0);
   }, [currentPage, updateSlider]);
 
@@ -96,14 +113,14 @@ export function AppLayout() {
         setMobileMenuOpen(false);
       }
       setTimeout(() => {
-        updateSlider(tabletRef, 'tablet');
-        updateSlider(desktopRef, 'desktop');
+        updateSlider(tabletRef, "tablet");
+        updateSlider(desktopRef, "desktop");
       }, 100);
     };
 
     handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, [setShowSidebar, currentPage, updateSlider]);
 
   // Prevent default file-drop behavior on the rest of the page (avoid navigation)
@@ -112,11 +129,11 @@ export function AppLayout() {
       e.preventDefault();
       e.stopPropagation();
     };
-    window.addEventListener('dragover', preventDrop);
-    window.addEventListener('drop', preventDrop);
+    window.addEventListener("dragover", preventDrop);
+    window.addEventListener("drop", preventDrop);
     return () => {
-      window.removeEventListener('dragover', preventDrop);
-      window.removeEventListener('drop', preventDrop);
+      window.removeEventListener("dragover", preventDrop);
+      window.removeEventListener("drop", preventDrop);
     };
   }, []);
 
@@ -126,7 +143,7 @@ export function AppLayout() {
     { key: "notebook" as const, label: "Notebook", icon: <Globe size={20} />, to: "/notebook" },
     { key: "translate" as const, label: "Translate", icon: <Languages size={20} />, to: "/translate" },
     { key: "renderer" as const, label: "Canvas", icon: <Image size={20} />, to: "/renderer" },
-  ].filter(page => {
+  ].filter((page) => {
     if (page.key === "chat") return true;
     if (page.key === "translate") return !!config.translator;
     if (page.key === "notebook") return !!config.notebook;
@@ -173,7 +190,7 @@ export function AppLayout() {
           className={`
             fixed z-50
             transition-transform duration-500 ease-in-out
-            ${showSidebar ? 'translate-x-0' : '-translate-x-[calc(100%+0.5rem)]'}
+            ${showSidebar ? "translate-x-0" : "-translate-x-[calc(100%+0.5rem)]"}
             left-0 top-0 bottom-0 right-0 w-full h-full
             md:w-56 md:left-2 md:top-2 md:bottom-2 md:right-auto md:h-auto
             md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm
@@ -188,9 +205,13 @@ export function AppLayout() {
       <SettingsDrawer isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} showAdvanced={settingsAdvanced} />
 
       {/* Main app content */}
-      <div className={`flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? 'md:ml-59' : 'ml-0'}`}>
+      <div
+        className={`flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? "md:ml-59" : "ml-0"}`}
+      >
         {/* Fixed navigation bar with glass effect */}
-        <nav className={`fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 shadow-sm transition-all duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? 'md:left-59' : ''}`}>
+        <nav
+          className={`fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 shadow-sm transition-all duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? "md:left-59" : ""}`}
+        >
           <div className="flex items-center justify-between">
             {/* Left section */}
             <div className="flex items-center gap-1 flex-1">
@@ -199,7 +220,7 @@ export function AppLayout() {
                 {sidebarContent && (
                   <button
                     type="button"
-                    className={`p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-500 ease-in-out hidden md:flex ${showSidebar ? 'opacity-0 pointer-events-none' : 'opacity-100 delay-500'}`}
+                    className={`p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-500 ease-in-out hidden md:flex ${showSidebar ? "opacity-0 pointer-events-none" : "opacity-100 delay-500"}`}
                     onClick={toggleSidebar}
                     aria-label="Open sidebar"
                   >
@@ -217,11 +238,11 @@ export function AppLayout() {
                       onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                       className="relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out flex items-center gap-1.5 text-sm bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 shadow-sm"
                     >
-                      {pages.find(p => p.key === currentPage)?.icon}
-                      <span>{pages.find(p => p.key === currentPage)?.label}</span>
+                      {pages.find((p) => p.key === currentPage)?.icon}
+                      <span>{pages.find((p) => p.key === currentPage)?.label}</span>
                       <ChevronDown
                         size={14}
-                        className={`transition-transform duration-200 ${mobileMenuOpen ? 'rotate-180' : ''}`}
+                        className={`transition-transform duration-200 ${mobileMenuOpen ? "rotate-180" : ""}`}
                       />
                     </button>
                   </div>
@@ -239,14 +260,14 @@ export function AppLayout() {
                   className="relative flex items-center bg-neutral-200/30 dark:bg-neutral-800/40 backdrop-blur-sm rounded-full p-1 shadow-sm border border-neutral-300/20 dark:border-neutral-700/20"
                 >
                   {/* Animated slider background */}
-                  {pages.some(p => p.key === currentPage) && (
+                  {pages.some((p) => p.key === currentPage) && (
                     <div
                       className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm transition-all duration-300 ease-out"
                       style={{
                         left: `${sliderStyles.desktop.left}px`,
                         width: `${sliderStyles.desktop.width}px`,
-                        height: 'calc(100% - 8px)',
-                        top: '4px',
+                        height: "calc(100% - 8px)",
+                        top: "4px",
                       }}
                     />
                   )}
@@ -260,10 +281,7 @@ export function AppLayout() {
                       className={`
                         relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out
                         flex items-center gap-2 text-sm cursor-pointer
-                        ${currentPage === key
-                          ? "text-neutral-900 dark:text-neutral-100"
-                          : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                        }
+                        ${currentPage === key ? "text-neutral-900 dark:text-neutral-100" : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"}
                       `}
                     >
                       {icon}
@@ -288,10 +306,12 @@ export function AppLayout() {
                 </a>
               )}
               <div className="hidden md:block">
-                <SettingsButton onClick={(e) => {
-                  setSettingsAdvanced(e.altKey);
-                  setSettingsOpen(true);
-                }} />
+                <SettingsButton
+                  onClick={(e) => {
+                    setSettingsAdvanced(e.altKey);
+                    setSettingsOpen(true);
+                  }}
+                />
               </div>
               {rightActions}
             </div>
@@ -307,10 +327,11 @@ export function AppLayout() {
                   key={key}
                   to={to}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${currentPage === key
-                      ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
-                      : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
-                    }`}
+                  className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${
+                    currentPage === key
+                      ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100"
+                      : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  }`}
                 >
                   {icon}
                   <span className="font-medium text-sm">{label}</span>
@@ -335,12 +356,7 @@ export function AppLayout() {
         )}
 
         {/* Mobile menu backdrop */}
-        {mobileMenuOpen && (
-          <div
-            className="fixed inset-0 z-20 md:hidden"
-            onClick={() => setMobileMenuOpen(false)}
-          />
-        )}
+        {mobileMenuOpen && <div className="fixed inset-0 z-20 md:hidden" onClick={() => setMobileMenuOpen(false)} />}
 
         {/* Content area */}
         <div className="flex-1 overflow-hidden flex">

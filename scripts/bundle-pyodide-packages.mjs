@@ -76,8 +76,7 @@ async function getLatestWheel(packageName) {
   const wheel = data.urls.find(
     (u) =>
       u.packagetype === "bdist_wheel" &&
-      (u.filename.endsWith("-py3-none-any.whl") ||
-        u.filename.endsWith("-py2.py3-none-any.whl"))
+      (u.filename.endsWith("-py3-none-any.whl") || u.filename.endsWith("-py2.py3-none-any.whl")),
   );
   if (!wheel) throw new Error(`No pure-Python wheel found for ${packageName}`);
   return { url: wheel.url, filename: wheel.filename, version: data.info.version };
@@ -119,9 +118,7 @@ function parseCoreRequires(requiresDist) {
  * — packages that need to be bundled but aren't already listed.
  */
 async function resolveTransitiveDeps(pypiPackages, pyodideLock, alreadyBundled) {
-  const pyodidePkgNames = new Set(
-    Object.keys(pyodideLock.packages).map(normalizePkgName)
-  );
+  const pyodidePkgNames = new Set(Object.keys(pyodideLock.packages).map(normalizePkgName));
 
   const visited = new Set(pypiPackages.map(normalizePkgName));
   for (const name of alreadyBundled) visited.add(normalizePkgName(name));
@@ -148,9 +145,7 @@ async function resolveTransitiveDeps(pypiPackages, pyodideLock, alreadyBundled) 
 
       if (pyodidePkgNames.has(dep)) {
         // Available as a Pyodide built-in — make sure it gets bundled
-        const originalName = Object.keys(pyodideLock.packages).find(
-          (k) => normalizePkgName(k) === dep
-        );
+        const originalName = Object.keys(pyodideLock.packages).find((k) => normalizePkgName(k) === dep);
         if (originalName) {
           extraPyodideBuiltins.push(originalName);
           console.log(`  + ${originalName} (Pyodide built-in, needed by ${pkg})`);
@@ -177,7 +172,7 @@ async function bundlePyodideBuiltins() {
   const lockPath = path.resolve("node_modules/pyodide/pyodide-lock.json");
   const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
   const pyodideNpmVersion = JSON.parse(
-    fs.readFileSync(path.resolve("node_modules/pyodide/package.json"), "utf8")
+    fs.readFileSync(path.resolve("node_modules/pyodide/package.json"), "utf8"),
   ).version;
   const cdnBase = `https://cdn.jsdelivr.net/pyodide/v${pyodideNpmVersion}/full/`;
 
@@ -215,9 +210,7 @@ async function bundlePyodideBuiltins() {
     downloaded++;
   }
 
-  console.log(
-    `  ${allPkgs.size} packages resolved (${downloaded} downloaded, ${cached} cached)`
-  );
+  console.log(`  ${allPkgs.size} packages resolved (${downloaded} downloaded, ${cached} cached)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -245,10 +238,7 @@ async function bundlePypiPackages() {
     manifest[pkg] = filename;
   }
 
-  fs.writeFileSync(
-    path.join(PYPI_OUTPUT_DIR, "pypi-manifest.json"),
-    JSON.stringify(manifest, null, 2) + "\n"
-  );
+  fs.writeFileSync(path.join(PYPI_OUTPUT_DIR, "pypi-manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 
   console.log("  Manifest written to", path.join(PYPI_OUTPUT_DIR, "pypi-manifest.json"));
 }
@@ -283,7 +273,7 @@ async function main() {
   const { extraPyodideBuiltins, extraPypiPackages } = await resolveTransitiveDeps(
     PYPI_PACKAGES,
     lock,
-    PYODIDE_BUILTIN_TARGETS
+    PYODIDE_BUILTIN_TARGETS,
   );
 
   // Extend the target lists with discovered transitive deps

@@ -1,7 +1,22 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { SelectorMenu } from "@/shared/ui/SelectorMenu";
-import { PilcrowRightIcon, Loader2, PlusIcon, GlobeIcon, FileIcon, UploadIcon, XIcon, DownloadIcon, ThermometerIcon, SwatchBookIcon, AlertCircle, ChevronDown, ChevronRight, SparklesIcon } from "lucide-react";
+import {
+  PilcrowRightIcon,
+  Loader2,
+  PlusIcon,
+  GlobeIcon,
+  FileIcon,
+  UploadIcon,
+  XIcon,
+  DownloadIcon,
+  ThermometerIcon,
+  SwatchBookIcon,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  SparklesIcon,
+} from "lucide-react";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useLayout } from "@/shell/hooks/useLayout";
 import { useTranslate } from "@/features/translate/hooks/useTranslate";
@@ -17,7 +32,7 @@ export function TranslatePage() {
   const { layoutMode } = useLayout();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
   // Rewrite menu state
   const [rewriteMenu, setRewriteMenu] = useState<{
     selectedText: string;
@@ -30,10 +45,10 @@ export function TranslatePage() {
   const [promptText, setPromptText] = useState("");
   const [isPromptLoading, setIsPromptLoading] = useState(false);
   const [promptError, setPromptError] = useState<string | null>(null);
-  
+
   const config = getConfig();
   const enableTTS = !!config.tts;
-  
+
   // Use translate context
   const {
     sourceText,
@@ -57,14 +72,14 @@ export function TranslatePage() {
     performTranslate,
     handleReset,
     selectFile,
-    clearFile
+    clearFile,
   } = useTranslate();
 
   // Local state for editable translated text (to allow rewriting)
   const [currentText, setCurrentText] = useState(translatedText);
   const [previewText, setPreviewText] = useState<string | null>(null);
   const [errorExpanded, setErrorExpanded] = useState(false);
-  const lastSelectionRef = useRef<string>('');
+  const lastSelectionRef = useRef<string>("");
 
   // Sync currentText when a new translation arrives from the API.
   // Using useEffect (not render-time assignment) so local refinement edits
@@ -77,17 +92,17 @@ export function TranslatePage() {
     const file = event.target.files?.[0];
     if (file) {
       // Get allowed MIME types from supported files
-      const allowedMimeTypes = supportedFiles.map(sf => sf.mime);
-      
+      const allowedMimeTypes = supportedFiles.map((sf) => sf.mime);
+
       if (allowedMimeTypes.length === 0) {
         // If no supported files, don't allow file selection
         return;
       }
-      
+
       if (allowedMimeTypes.includes(file.type)) {
         selectFile(file);
       } else {
-        const supportedExtensions = supportedFiles.map(sf => sf.ext).join(', ');
+        const supportedExtensions = supportedFiles.map((sf) => sf.ext).join(", ");
         alert(`Please select a valid file type: ${supportedExtensions}`);
       }
     }
@@ -100,23 +115,23 @@ export function TranslatePage() {
   const handleFileClear = () => {
     clearFile();
     if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      fileInputRef.current.value = "";
     }
   };
 
   const handleDropFiles = (files: File[]) => {
-    const allowedMimeTypes = supportedFiles.map(sf => sf.mime);
-    
+    const allowedMimeTypes = supportedFiles.map((sf) => sf.mime);
+
     if (allowedMimeTypes.length === 0) {
       // If no supported files, don't allow file drop
       return;
     }
-    
-    const file = files.find(f => allowedMimeTypes.includes(f.type));
+
+    const file = files.find((f) => allowedMimeTypes.includes(f.type));
     if (file) {
       selectFile(file);
     } else {
-      const supportedExtensions = supportedFiles.map(sf => sf.ext).join(', ');
+      const supportedExtensions = supportedFiles.map((sf) => sf.ext).join(", ");
       alert(`Please drop a valid file type: ${supportedExtensions}`);
     }
   };
@@ -130,27 +145,30 @@ export function TranslatePage() {
   };
 
   // Handle text selection for rewriting
-  const handleTextSelect = useCallback((selectedText: string, position: { x: number; y: number }, positionStart: number, positionEnd: number) => {
-    if (!selectedText.trim() || selectedText.length < 1) return;
-    
-    // Prevent duplicate selections
-    const selectionKey = `${selectedText}-${positionStart}-${positionEnd}`;
-    if (lastSelectionRef.current === selectionKey) return;
-    lastSelectionRef.current = selectionKey;
-    
-    // Close existing menu first
-    setRewriteMenu(null);
-    
-    // Short delay to prevent visual glitches
-    setTimeout(() => {
-      setRewriteMenu({
-        selectedText: selectedText.trim(),
-        selectionStart: positionStart,
-        selectionEnd: positionEnd,
-        position: position
-      });
-    }, 50);
-  }, []);
+  const handleTextSelect = useCallback(
+    (selectedText: string, position: { x: number; y: number }, positionStart: number, positionEnd: number) => {
+      if (!selectedText.trim() || selectedText.length < 1) return;
+
+      // Prevent duplicate selections
+      const selectionKey = `${selectedText}-${positionStart}-${positionEnd}`;
+      if (lastSelectionRef.current === selectionKey) return;
+      lastSelectionRef.current = selectionKey;
+
+      // Close existing menu first
+      setRewriteMenu(null);
+
+      // Short delay to prevent visual glitches
+      setTimeout(() => {
+        setRewriteMenu({
+          selectedText: selectedText.trim(),
+          selectionStart: positionStart,
+          selectionEnd: positionEnd,
+          position: position,
+        });
+      }, 50);
+    },
+    [],
+  );
 
   const handleSelect = (alternative: string, contextToReplace: string) => {
     if (rewriteMenu && currentText) {
@@ -164,7 +182,7 @@ export function TranslatePage() {
   const closeRewriteMenu = () => {
     setRewriteMenu(null);
     setPreviewText(null); // Clear preview when closing menu
-    lastSelectionRef.current = ''; // Clear last selection to allow clicking the same word again
+    lastSelectionRef.current = ""; // Clear last selection to allow clicking the same word again
   };
 
   const handlePreview = (previewText: string | null) => {
@@ -181,12 +199,12 @@ export function TranslatePage() {
 
     try {
       const result = await config.client.rewriteText(
-        config.translator?.model || '',
+        config.translator?.model || "",
         currentText,
         selectedLanguage.code,
         undefined, // tone
         undefined, // style
-        promptText.trim() // userPrompt
+        promptText.trim(), // userPrompt
       );
 
       if (result) {
@@ -203,11 +221,11 @@ export function TranslatePage() {
 
   // Generate candidate filename for display
   const getCandidateFileName = () => {
-    if (!selectedFile || !selectedLanguage) return '';
+    if (!selectedFile || !selectedLanguage) return "";
     const originalName = selectedFile.name;
-    const lastDotIndex = originalName.lastIndexOf('.');
+    const lastDotIndex = originalName.lastIndexOf(".");
     const nameWithoutExt = lastDotIndex !== -1 ? originalName.substring(0, lastDotIndex) : originalName;
-    const extension = lastDotIndex !== -1 ? originalName.substring(lastDotIndex) : '';
+    const extension = lastDotIndex !== -1 ? originalName.substring(lastDotIndex) : "";
     return `${nameWithoutExt}_${selectedLanguage.code}${extension}`;
   };
 
@@ -221,7 +239,7 @@ export function TranslatePage() {
         title="Clear translation"
       >
         <PlusIcon size={20} />
-      </button>
+      </button>,
     );
 
     // Cleanup when component unmounts
@@ -233,16 +251,11 @@ export function TranslatePage() {
   return (
     <div className="h-full w-full flex flex-col overflow-hidden relative">
       <main className="flex-1 flex flex-col overflow-hidden relative">
-        
         {/* File Translation Mode - Single centered file */}
         {selectedFile ? (
-          <div 
+          <div
             ref={containerRef}
-            className={`flex-1 flex items-center justify-center p-4 pt-20 ${
-              isDragging 
-                ? 'bg-slate-50/80 dark:bg-slate-900/40' 
-                : ''
-            } transition-all duration-200`}
+            className={`flex-1 flex items-center justify-center p-4 pt-20 ${isDragging ? "bg-slate-50/80 dark:bg-slate-900/40" : ""} transition-all duration-200`}
           >
             {/* Drop zone overlay - show placeholder file card */}
             {isDragging && supportedFiles.length > 0 ? (
@@ -260,138 +273,129 @@ export function TranslatePage() {
                 </div>
               </div>
             ) : (
-            <div className="flex flex-col items-center gap-6">
-              {/* Main file card */}
-              <div 
-                className={`relative bg-neutral-50/60 dark:bg-neutral-900/50 backdrop-blur-lg p-10 rounded-2xl shadow-xl border border-neutral-200/60 dark:border-neutral-700/50 flex flex-col items-center gap-5 transition-all ${
-                  translatedFileUrl 
-                    ? 'hover:bg-neutral-50/80 dark:hover:bg-neutral-900/70 hover:scale-[1.02] hover:shadow-2xl' 
-                    : ''
-                }`}
-                onClick={() => {
-                  if (translatedFileUrl && translatedFileName) {
-                    handleDownload();
-                  }
-                }}
-                title={translatedFileUrl ? 'Click to download' : undefined}
-              >
-                {/* Delete button */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleFileClear();
-                  }}
-                  className="absolute -top-3 -right-3 p-2 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-lg hover:bg-neutral-200/90 dark:hover:bg-neutral-700/90 rounded-full transition-all border border-neutral-200/70 dark:border-neutral-700/60 shadow-md hover:shadow-lg"
-                  title="Remove file"
-                >
-                  <XIcon size={14} />
-                </button>
-
-                {/* File icon with status overlay */}
-                <div className="relative">
-                  <FileIcon size={96} className="text-neutral-700 dark:text-neutral-300" />
-                  
-                  {/* Status icon overlay */}
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    {isLoading ? (
-                      <Loader2 size={32} className="animate-spin text-neutral-800 dark:text-neutral-200" />
-                    ) : translatedFileUrl ? (
-                      <DownloadIcon size={32} className="text-neutral-800 dark:text-neutral-200" />
-                    ) : null}
-                  </div>
-                </div>
-
-                {/* File name */}
-                <span className="text-base font-medium text-neutral-800 dark:text-neutral-200 text-center max-w-[280px] truncate">
-                  {translatedFileName || getCandidateFileName() || selectedFile.name}
-                </span>
-
-                {/* Status text */}
-                {(isLoading || translatedFileUrl) && (
-                  <span className="text-sm text-neutral-500 dark:text-neutral-400">
-                    {isLoading 
-                      ? 'Translating...' 
-                      : 'Click to download'
+              <div className="flex flex-col items-center gap-6">
+                {/* Main file card */}
+                <div
+                  className={`relative bg-neutral-50/60 dark:bg-neutral-900/50 backdrop-blur-lg p-10 rounded-2xl shadow-xl border border-neutral-200/60 dark:border-neutral-700/50 flex flex-col items-center gap-5 transition-all ${
+                    translatedFileUrl
+                      ? "hover:bg-neutral-50/80 dark:hover:bg-neutral-900/70 hover:scale-[1.02] hover:shadow-2xl"
+                      : ""
+                  }`}
+                  onClick={() => {
+                    if (translatedFileUrl && translatedFileName) {
+                      handleDownload();
                     }
-                  </span>
-                )}
-              </div>
-
-              {/* Language selector and translate button */}
-              <div className="flex items-center gap-3">
-                <SelectorMenu
-                  icon={<GlobeIcon size={16} />}
-                  label={selectedLanguage?.name || 'Select Language'}
-                  options={supportedLanguages.map(l => ({ value: l.code, label: l.name }))}
-                  onSelect={setTargetLang}
-                  anchor="bottom"
-                  variant="pill"
-                  scrollable
-                />
-
-                {/* Translate button - only show when not yet translated */}
-                {!translatedFileUrl && !isLoading && (
+                  }}
+                  title={translatedFileUrl ? "Click to download" : undefined}
+                >
+                  {/* Delete button */}
                   <button
                     type="button"
-                    onClick={() => performTranslate()}
-                    disabled={!selectedLanguage}
-                    className="inline-flex items-center gap-2 px-5 py-2 bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 rounded-full text-sm font-medium transition-all hover:bg-neutral-900 dark:hover:bg-white disabled:opacity-50 shadow-lg hover:shadow-xl hover:scale-[1.02]"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleFileClear();
+                    }}
+                    className="absolute -top-3 -right-3 p-2 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-lg hover:bg-neutral-200/90 dark:hover:bg-neutral-700/90 rounded-full transition-all border border-neutral-200/70 dark:border-neutral-700/60 shadow-md hover:shadow-lg"
+                    title="Remove file"
                   >
-                    <PilcrowRightIcon size={16} />
-                    <span>Translate</span>
+                    <XIcon size={14} />
                   </button>
+
+                  {/* File icon with status overlay */}
+                  <div className="relative">
+                    <FileIcon size={96} className="text-neutral-700 dark:text-neutral-300" />
+
+                    {/* Status icon overlay */}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      {isLoading ? (
+                        <Loader2 size={32} className="animate-spin text-neutral-800 dark:text-neutral-200" />
+                      ) : translatedFileUrl ? (
+                        <DownloadIcon size={32} className="text-neutral-800 dark:text-neutral-200" />
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* File name */}
+                  <span className="text-base font-medium text-neutral-800 dark:text-neutral-200 text-center max-w-[280px] truncate">
+                    {translatedFileName || getCandidateFileName() || selectedFile.name}
+                  </span>
+
+                  {/* Status text */}
+                  {(isLoading || translatedFileUrl) && (
+                    <span className="text-sm text-neutral-500 dark:text-neutral-400">
+                      {isLoading ? "Translating..." : "Click to download"}
+                    </span>
+                  )}
+                </div>
+
+                {/* Language selector and translate button */}
+                <div className="flex items-center gap-3">
+                  <SelectorMenu
+                    icon={<GlobeIcon size={16} />}
+                    label={selectedLanguage?.name || "Select Language"}
+                    options={supportedLanguages.map((l) => ({ value: l.code, label: l.name }))}
+                    onSelect={setTargetLang}
+                    anchor="bottom"
+                    variant="pill"
+                    scrollable
+                  />
+
+                  {/* Translate button - only show when not yet translated */}
+                  {!translatedFileUrl && !isLoading && (
+                    <button
+                      type="button"
+                      onClick={() => performTranslate()}
+                      disabled={!selectedLanguage}
+                      className="inline-flex items-center gap-2 px-5 py-2 bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 rounded-full text-sm font-medium transition-all hover:bg-neutral-900 dark:hover:bg-white disabled:opacity-50 shadow-lg hover:shadow-xl hover:scale-[1.02]"
+                    >
+                      <PilcrowRightIcon size={16} />
+                      <span>Translate</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Error message */}
+                {error && (
+                  <div className="max-w-md">
+                    <div className="border border-red-200 dark:border-red-800 bg-red-50/95 dark:bg-red-950/20 backdrop-blur-lg rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => setErrorExpanded(!errorExpanded)}
+                        className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-red-100/50 dark:hover:bg-red-900/20 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                          <span className="text-sm font-medium text-red-600 dark:text-red-400">Translation failed</span>
+                        </div>
+                        {errorExpanded ? (
+                          <ChevronDown className="w-4 h-4 text-red-500" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-red-500" />
+                        )}
+                      </button>
+
+                      {errorExpanded && (
+                        <div className="px-4 pb-3 border-t border-red-200/50 dark:border-red-800/50">
+                          <div className="mt-2 text-sm text-red-700 dark:text-red-300 wrap-break-word">{error}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
-
-              {/* Error message */}
-              {error && (
-                <div className="max-w-md">
-                  <div className="border border-red-200 dark:border-red-800 bg-red-50/95 dark:bg-red-950/20 backdrop-blur-lg rounded-lg overflow-hidden">
-                    <button 
-                      onClick={() => setErrorExpanded(!errorExpanded)}
-                      className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-red-100/50 dark:hover:bg-red-900/20 transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-                        <span className="text-sm font-medium text-red-600 dark:text-red-400">
-                          Translation failed
-                        </span>
-                      </div>
-                      {errorExpanded ? 
-                        <ChevronDown className="w-4 h-4 text-red-500" /> : 
-                        <ChevronRight className="w-4 h-4 text-red-500" />
-                      }
-                    </button>
-                    
-                    {errorExpanded && (
-                      <div className="px-4 pb-3 border-t border-red-200/50 dark:border-red-800/50">
-                        <div className="mt-2 text-sm text-red-700 dark:text-red-300 wrap-break-word">
-                          {error}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
             )}
 
             {/* Hidden file input */}
             <input
               ref={fileInputRef}
               type="file"
-              accept={supportedFiles.map(sf => sf.ext).join(',')}
+              accept={supportedFiles.map((sf) => sf.ext).join(",")}
               onChange={handleFileSelect}
               className="hidden"
             />
           </div>
         ) : (
           /* Text Translation Section - Original split screen layout */
-          <div 
-            ref={containerRef}
-            className="w-full grow overflow-hidden flex p-4 pt-20 relative"
-          >
+          <div ref={containerRef} className="w-full grow overflow-hidden flex p-4 pt-20 relative">
             {/* Full-screen drop zone overlay with centered file placeholder */}
             {isDragging && supportedFiles.length > 0 && (
               <div className="absolute inset-0 flex items-center justify-center z-30 bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm">
@@ -407,25 +411,19 @@ export function TranslatePage() {
                       Drop file to translate
                     </span>
                     <span className="text-sm text-neutral-400 dark:text-neutral-500">
-                      {supportedFiles.map(sf => sf.ext).join(', ')} supported
+                      {supportedFiles.map((sf) => sf.ext).join(", ")} supported
                     </span>
                   </div>
                 </div>
               </div>
             )}
 
-            <div className={`w-full h-full ${
-              layoutMode === 'wide' 
-                ? 'max-w-full mx-auto' 
-                : 'max-w-[1200px] mx-auto'
-            }`}>
+            <div className={`w-full h-full ${layoutMode === "wide" ? "max-w-full mx-auto" : "max-w-[1200px] mx-auto"}`}>
               <div className="relative h-full w-full overflow-hidden">
                 {/* Responsive layout: vertical stack on mobile/narrow screens, horizontal on wide screens */}
                 <div className="h-full flex flex-col md:flex-row min-h-0 transition-all duration-200">
                   {/* Source section */}
-                  <div
-                    className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden"
-                  >
+                  <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
                     {/* File upload controls */}
                     <div className="absolute top-2 left-3 z-10">
                       {supportedFiles.length > 0 && (
@@ -433,19 +431,17 @@ export function TranslatePage() {
                           type="button"
                           onClick={handleFileUploadClick}
                           className="inline-flex items-center gap-1 pl-0.5 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors"
-                          title={`Select a file to translate (${supportedFiles.map(sf => sf.ext).join(', ')})`}
+                          title={`Select a file to translate (${supportedFiles.map((sf) => sf.ext).join(", ")})`}
                         >
                           <UploadIcon size={14} />
                           <span>Upload file</span>
                         </button>
                       )}
-                      {supportedFiles.length === 0 && (
-                        <div className="h-8"></div>
-                      )}
+                      {supportedFiles.length === 0 && <div className="h-8"></div>}
                       <input
                         ref={fileInputRef}
                         type="file"
-                        accept={supportedFiles.map(sf => sf.ext).join(',')}
+                        accept={supportedFiles.map((sf) => sf.ext).join(",")}
                         onChange={handleFileSelect}
                         className="hidden"
                       />
@@ -469,25 +465,25 @@ export function TranslatePage() {
                     <div className="absolute top-2 left-3 z-10 flex items-center gap-2">
                       <SelectorMenu
                         icon={<GlobeIcon size={14} />}
-                        label={selectedLanguage?.name || 'Select Language'}
-                        options={supportedLanguages.map(l => ({ value: l.code, label: l.name }))}
+                        label={selectedLanguage?.name || "Select Language"}
+                        options={supportedLanguages.map((l) => ({ value: l.code, label: l.name }))}
                         onSelect={setTargetLang}
                         scrollable
                       />
                       <SelectorMenu
                         icon={<ThermometerIcon size={14} />}
-                        label={tone ? (toneOptions.find(t => t.value === tone)?.label ?? 'Tone') : 'Tone'}
+                        label={tone ? (toneOptions.find((t) => t.value === tone)?.label ?? "Tone") : "Tone"}
                         options={toneOptions}
                         onSelect={setTone}
                       />
                       <SelectorMenu
                         icon={<SwatchBookIcon size={14} />}
-                        label={style ? (styleOptions.find(s => s.value === style)?.label ?? 'Style') : 'Style'}
+                        label={style ? (styleOptions.find((s) => s.value === style)?.label ?? "Style") : "Style"}
                         options={styleOptions}
                         onSelect={setStyle}
                       />
                     </div>
-                    
+
                     {/* Interactive text area */}
                     <InteractiveText
                       text={currentText}
@@ -496,7 +492,7 @@ export function TranslatePage() {
                       onTextSelect={handleTextSelect}
                       previewText={previewText}
                     />
-                    
+
                     {/* Floating prompt input */}
                     {translatedText && (
                       <div className="absolute bottom-4 left-4 right-4 z-20">
@@ -523,7 +519,7 @@ export function TranslatePage() {
                               )}
                             </button>
                           </div>
-                          
+
                           {/* Error message */}
                           {promptError && (
                             <div className="mt-2 text-xs text-red-600 dark:text-red-400 bg-red-50/90 dark:bg-red-950/40 backdrop-blur-xl px-3 py-2 rounded-xl border border-red-200/40 dark:border-red-800/40">
@@ -538,7 +534,7 @@ export function TranslatePage() {
                     {error && (
                       <div className="absolute bottom-2 left-2 right-2 z-10">
                         <div className="border border-red-200 dark:border-red-800 bg-red-50/95 dark:bg-red-950/20 backdrop-blur-lg rounded-lg overflow-hidden">
-                          <button 
+                          <button
                             onClick={() => setErrorExpanded(!errorExpanded)}
                             className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-red-100/50 dark:hover:bg-red-900/20 transition-colors"
                           >
@@ -554,18 +550,17 @@ export function TranslatePage() {
                               )}
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                              {errorExpanded ? 
-                                <ChevronDown className="w-3 h-3 text-red-500" /> : 
+                              {errorExpanded ? (
+                                <ChevronDown className="w-3 h-3 text-red-500" />
+                              ) : (
                                 <ChevronRight className="w-3 h-3 text-red-500" />
-                              }
+                              )}
                             </div>
                           </button>
-                          
+
                           {errorExpanded && (
                             <div className="px-3 pb-3 border-t border-red-200/50 dark:border-red-800/50">
-                              <div className="mt-2 text-xs text-red-700 dark:text-red-300 break-word">
-                                {error}
-                              </div>
+                              <div className="mt-2 text-xs text-red-700 dark:text-red-300 break-word">{error}</div>
                             </div>
                           )}
                         </div>
@@ -579,9 +574,7 @@ export function TranslatePage() {
                           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
                             <GlobeIcon size={28} className="text-neutral-400 dark:text-neutral-500" />
                           </div>
-                          <p className="text-neutral-500 dark:text-neutral-400">
-                            Enter text to translate
-                          </p>
+                          <p className="text-neutral-500 dark:text-neutral-400">Enter text to translate</p>
                           <p className="text-sm text-neutral-400 dark:text-neutral-500 mt-1">
                             Translation will appear here
                           </p>
