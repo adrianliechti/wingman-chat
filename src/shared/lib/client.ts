@@ -235,6 +235,7 @@ export class Client {
     const runner = this.oai.responses
       .stream({
         model: model,
+        store: false,
         tools: this.toTools(tools),
         input: items,
         instructions: instructions,
