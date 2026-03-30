@@ -1,91 +1,67 @@
-import {
-    BatchSpanProcessor,
-    WebTracerProvider,
-} from '@opentelemetry/sdk-trace-web';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-import {
-    MeterProvider,
-    PeriodicExportingMetricReader,
-} from '@opentelemetry/sdk-metrics';
-import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
-import {
-    BatchLogRecordProcessor,
-    LoggerProvider,
-} from '@opentelemetry/sdk-logs';
-import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
-import { FetchInstrumentation } from '@opentelemetry/instrumentation-fetch';
-import { ZoneContextManager } from '@opentelemetry/context-zone';
-import { registerInstrumentations } from '@opentelemetry/instrumentation';
-import { Resource } from '@opentelemetry/resources';
-import { trace } from '@opentelemetry/api';
-import { logs, SeverityNumber } from '@opentelemetry/api-logs';
+import { metrics } from "@opentelemetry/api";
+import { logs } from "@opentelemetry/api-logs";
+import { ZoneContextManager } from "@opentelemetry/context-zone";
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { registerInstrumentations } from "@opentelemetry/instrumentation";
+import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch";
+import { defaultResource, resourceFromAttributes } from "@opentelemetry/resources";
+import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
+import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
+import { BatchSpanProcessor, WebTracerProvider } from "@opentelemetry/sdk-trace-web";
 
 const IGNORE_URLS = [/\/otel\//];
 
-const resource = new Resource({ 'service.name': 'wingman-chat' });
+const resource = defaultResource().merge(
+  resourceFromAttributes({
+    "service.name": "wingman-chat",
+    "user_agent.original": navigator.userAgent,
+  }),
+);
 
 export function initTelemetry() {
-    // Traces
-    const traceExporter = new OTLPTraceExporter({ url: '/telemetry/v1/traces' });
-    const tracerProvider = new WebTracerProvider({
-        resource,
-        spanProcessors: [new BatchSpanProcessor(traceExporter)],
-    });
-    tracerProvider.register({
-        contextManager: new ZoneContextManager(),
-    });
+  // Traces
+  const traceExporter = new OTLPTraceExporter({ url: "/telemetry/v1/traces" });
+  const tracerProvider = new WebTracerProvider({
+    resource,
+    spanProcessors: [new BatchSpanProcessor(traceExporter)],
+  });
+  tracerProvider.register({
+    contextManager: new ZoneContextManager(),
+  });
 
-    // Metrics
-    const metricExporter = new OTLPMetricExporter({ url: '/telemetry/v1/metrics' });
-    const meterProvider = new MeterProvider({
-        resource,
-        readers: [
-            new PeriodicExportingMetricReader({
-                exporter: metricExporter,
-                exportIntervalMillis: 60_000,
-            }),
-        ],
-    });
+  // Metrics
+  const metricExporter = new OTLPMetricExporter({ url: "/telemetry/v1/metrics" });
+  const meterProvider = new MeterProvider({
+    resource,
+    readers: [
+      new PeriodicExportingMetricReader({
+        exporter: metricExporter,
+        exportIntervalMillis: 60_000,
+      }),
+    ],
+  });
 
-    // Logs
-    const logExporter = new OTLPLogExporter({ url: '/telemetry/v1/logs' });
-    const loggerProvider = new LoggerProvider({
-        resource,
-        processors: [new BatchLogRecordProcessor(logExporter)],
-    });
+  // Logs
+  const logExporter = new OTLPLogExporter({ url: "/telemetry/v1/logs" });
+  const loggerProvider = new LoggerProvider({
+    resource,
+    processors: [new BatchLogRecordProcessor(logExporter)],
+  });
 
-    // Instrumentations
-    registerInstrumentations({
-        instrumentations: [
-            new FetchInstrumentation({
-                ignoreUrls: IGNORE_URLS,
-            }),
-        ],
-    });
+  // Instrumentations
+  registerInstrumentations({
+    instrumentations: [
+      new FetchInstrumentation({
+        ignoreUrls: IGNORE_URLS,
+      }),
+    ],
+  });
 
-    // Register the logger provider so the logs API can find it
-    logs.setGlobalLoggerProvider(loggerProvider);
+  // Register providers so the global API can find them
+  metrics.setGlobalMeterProvider(meterProvider);
+  logs.setGlobalLoggerProvider(loggerProvider);
 
-    // Send a test log and trace so you can verify in Grafana
-    sendTestTelemetry();
-
-    return { tracerProvider, meterProvider, loggerProvider };
-}
-
-function sendTestTelemetry() {
-    // Test trace
-    const tracer = trace.getTracer('wingman-test');
-    const span = tracer.startSpan('test-span');
-    span.setAttribute('test', true);
-    span.setAttribute('message', 'Hello from Wingman telemetry');
-    span.end();
-
-    // Test log
-    const logger = logs.getLogger('wingman-test');
-    logger.emit({
-        severityNumber: SeverityNumber.INFO,
-        severityText: 'INFO',
-        body: 'Wingman telemetry initialized',
-        attributes: { test: true },
-    });
+  return { tracerProvider, meterProvider, loggerProvider };
 }
