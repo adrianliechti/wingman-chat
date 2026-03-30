@@ -43,31 +43,46 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     return agent.servers.filter((s) => s.enabled);
   }, [agent]);
 
+  // Track server configs to detect edits (URL, headers, etc.)
+  const serverConfigRef = useRef<Map<string, string>>(new Map());
+
   // Create/update MCP clients when enabled servers change
   useEffect(() => {
-    const currentIds = new Set(clientsRef.current.map((c) => c.id));
     const newIds = new Set(enabledServers.map((s) => s.id));
 
+    // Build config fingerprints to detect property changes
+    const newConfigs = new Map(
+      enabledServers.map((s) => [s.id, JSON.stringify({ url: s.url, headers: s.headers })]),
+    );
+
+    // Identify servers whose config changed (edited URL/headers)
+    const changedIds = new Set(
+      enabledServers.filter((s) => serverConfigRef.current.get(s.id) !== newConfigs.get(s.id)).map((s) => s.id),
+    );
+
     const needsUpdate =
-      currentIds.size !== newIds.size ||
-      enabledServers.some((s) => !currentIds.has(s.id)) ||
+      changedIds.size > 0 ||
+      clientsRef.current.length !== enabledServers.length ||
       clientsRef.current.some((c) => !newIds.has(c.id));
 
     if (needsUpdate) {
-      // Disconnect removed clients
-      const removedClients = clientsRef.current.filter((c) => !newIds.has(c.id));
-      removedClients.forEach((client) => {
+      // Disconnect removed or changed clients
+      const staleClients = clientsRef.current.filter((c) => !newIds.has(c.id) || changedIds.has(c.id));
+      staleClients.forEach((client) => {
         client.disconnect().catch(console.error);
       });
 
-      // Create new clients array, reusing existing connected clients
+      // Create new clients array, reusing unchanged existing clients
       const newClients = enabledServers.map((server) => {
-        const existing = clientsRef.current.find((c) => c.id === server.id);
-        if (existing) return existing;
+        if (!changedIds.has(server.id)) {
+          const existing = clientsRef.current.find((c) => c.id === server.id);
+          if (existing) return existing;
+        }
         return new MCPClient(server.id, server.url, server.name, server.description, server.headers, server.icon);
       });
 
       clientsRef.current = newClients;
+      serverConfigRef.current = newConfigs;
       setMcpClients(newClients);
     }
   }, [enabledServers]);
