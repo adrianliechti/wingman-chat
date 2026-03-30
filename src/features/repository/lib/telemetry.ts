@@ -19,11 +19,11 @@ import { registerInstrumentations } from '@opentelemetry/instrumentation';
 import { trace } from '@opentelemetry/api';
 import { logs, SeverityNumber } from '@opentelemetry/api-logs';
 
-const IGNORE_URLS = [/\/api\/v1\/otel\//];
+const IGNORE_URLS = [/\/otel\//];
 
 export function initTelemetry() {
     // Traces
-    const traceExporter = new OTLPTraceExporter({ url: '/api/v1/otel/traces' });
+    const traceExporter = new OTLPTraceExporter({ url: '/telemetry/v1/traces' });
     const tracerProvider = new WebTracerProvider({
         spanProcessors: [new BatchSpanProcessor(traceExporter)],
     });
@@ -32,7 +32,7 @@ export function initTelemetry() {
     });
 
     // Metrics
-    const metricExporter = new OTLPMetricExporter({ url: '/api/v1/otel/metrics' });
+    const metricExporter = new OTLPMetricExporter({ url: '/telemetry/v1/metrics' });
     const meterProvider = new MeterProvider({
         readers: [
             new PeriodicExportingMetricReader({
@@ -43,7 +43,7 @@ export function initTelemetry() {
     });
 
     // Logs
-    const logExporter = new OTLPLogExporter({ url: '/api/v1/otel/logs' });
+    const logExporter = new OTLPLogExporter({ url: '/telemetry/v1/logs' });
     const loggerProvider = new LoggerProvider({
         processors: [new BatchLogRecordProcessor(logExporter)],
     });
