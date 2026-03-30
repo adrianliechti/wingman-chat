@@ -406,7 +406,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setStreamingMessage(null);
 
         if (!initialTitle || conversation.length % 3 === 0) {
-          client.summarizeTitle(model!.id, conversation).then((title) => {
+          client.summarizeTitle(config.chat?.summarizer || model!.id, conversation).then((title) => {
             if (title) {
               updateChat(id, () => ({ title }));
             }

@@ -15,7 +15,9 @@ import (
 func New(cfg *config.Config, token string, platformURL, realtimeURL *url.URL, dist fs.FS) http.Handler {
 	mux := http.NewServeMux()
 
-	otel.New().Attach(mux)
+	if cfg.Telemetry != nil {
+		otel.New().Attach(mux)
+	}
 	
 	if realtimeURL != nil {
 		realtime.New(token, realtimeURL).Attach(mux)

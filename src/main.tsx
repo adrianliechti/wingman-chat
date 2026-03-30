@@ -63,9 +63,6 @@ const showFatalError = (title: string, message: string, error?: unknown) => {
 };
 
 const bootstrap = async () => {
-  // Initialize telemetry before anything else
-  initTelemetry();
-
   try {
     // Run migration from IndexedDB to OPFS (if needed)
     await runMigration();
@@ -80,6 +77,10 @@ const bootstrap = async () => {
 
   try {
     const config = await loadConfig();
+
+    if (config?.telemetry) {
+      initTelemetry();
+    }
 
     if (config?.title) {
       document.title = config.title;

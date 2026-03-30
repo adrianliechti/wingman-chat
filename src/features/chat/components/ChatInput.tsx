@@ -233,14 +233,14 @@ export function ChatInput() {
         if (model.prompts && model.prompts.length > 0) {
           suggestions = model.prompts;
         } else {
-          suggestions = await client.relatedPrompts(model.id, "");
+          suggestions = await client.relatedPrompts(config.chat?.summarizer || model.id, "");
         }
       } else {
         // Get the last few messages for context
         const contextMessages = messages.slice(-6);
         const contextText = contextMessages.map((msg) => `${msg.role}: ${msg.content}`).join("\n");
 
-        suggestions = await client.relatedPrompts(model.id, contextText);
+        suggestions = await client.relatedPrompts(config.chat?.summarizer || model.id, contextText);
       }
 
       setPromptSuggestions(suggestions);

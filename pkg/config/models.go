@@ -29,6 +29,8 @@ type Config struct {
 
 	Chat *Chat `json:"chat,omitempty" yaml:"chat,omitempty"`
 
+	Telemetry *Telemetry `json:"telemetry,omitempty" yaml:"telemetry,omitempty"`
+
 	Backgrounds map[string][]Background `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
 }
 
@@ -121,7 +123,9 @@ type Workflow struct {
 }
 
 type Chat struct {
-	RetentionDays *int `json:"retentionDays,omitempty" yaml:"retentionDays,omitempty"`
+	RetentionDays *int   `json:"retentionDays,omitempty" yaml:"retentionDays,omitempty"`
+	Summarizer    string `json:"summarizer,omitempty" yaml:"summarizer,omitempty"`
+	Optimizer     string `json:"optimizer,omitempty" yaml:"optimizer,omitempty"`
 }
 
 type Translator struct {
@@ -129,6 +133,8 @@ type Translator struct {
 	Files     []string `json:"files,omitempty" yaml:"files,omitempty"`
 	Languages []string `json:"languages,omitempty" yaml:"languages,omitempty"`
 }
+
+type Telemetry struct{}
 
 type Background struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`

@@ -67,7 +67,7 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
     setIsOptimizing(true);
     try {
       const config = getConfig();
-      const result = await config.client.optimizeSkill("", name, description, content);
+      const result = await config.client.optimizeSkill(config.chat?.optimizer || "", name, description, content);
       setName(result.name);
       setDescription(result.description);
       setContent(result.content);

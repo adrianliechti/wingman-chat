@@ -47,6 +47,7 @@ interface config {
   translator?: translatorConfig;
 
   chat?: chatConfig;
+  telemetry?: object;
 }
 
 interface modelConfig {
@@ -147,6 +148,8 @@ interface translatorConfig {
 
 interface chatConfig {
   retentionDays?: number;
+  optimizer?: string;
+  summarizer?: string;
 }
 
 interface Config {
@@ -182,6 +185,8 @@ interface Config {
   translator: translatorConfig | null;
 
   chat: chatConfig | null;
+
+  telemetry: boolean;
 
   backgrounds: backgroundPackConfig;
 }
@@ -324,6 +329,8 @@ export const loadConfig = async (): Promise<Config | undefined> => {
         : null,
 
       chat: cfg.chat ?? null,
+
+      telemetry: cfg.telemetry != null,
 
       backgrounds: cfg.backgrounds ?? {},
     };
