@@ -1,26 +1,34 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useMatch, useNavigate } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Plus as PlusIcon, BotMessageSquare, Info, Paperclip, Rocket, ArrowDown } from "lucide-react";
 import DOMPurify from "dompurify";
-import { useNavigate, useMatch } from "@tanstack/react-router";
-import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
-import { useAutoScroll } from "@/shared";
-import { getConfig } from "@/shared/config";
-import { useSidebar } from "@/shell/hooks/useSidebar";
-import { useNavigation } from "@/shell/hooks/useNavigation";
-import { useLayout } from "@/shell/hooks/useLayout";
-import { useChat } from "@/features/chat/hooks/useChat";
-import { useBackground } from "@/shell/hooks/useBackground";
+import {
+  ArrowDown,
+  BotMessageSquare,
+  ChevronLeft,
+  ChevronRight,
+  Info,
+  Paperclip,
+  Plus as PlusIcon,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
+import { useAgents } from "@/features/agent/hooks/useAgents";
+import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
+import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
-import { BackgroundImage } from "@/shell/components/BackgroundImage";
-import { useAgents } from "@/features/agent/hooks/useAgents";
-import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { useApp } from "@/shell/hooks/useApp";
-import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
-import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
+import { useChat } from "@/features/chat/hooks/useChat";
+import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
+import { useAutoScroll } from "@/shared";
+import { getConfig } from "@/shared/config";
 import { AppDrawer } from "@/shell/components/AppDrawer";
+import { BackgroundImage } from "@/shell/components/BackgroundImage";
+import { useApp } from "@/shell/hooks/useApp";
+import { useBackground } from "@/shell/hooks/useBackground";
+import { useLayout } from "@/shell/hooks/useLayout";
+import { useNavigation } from "@/shell/hooks/useNavigation";
+import { useSidebar } from "@/shell/hooks/useSidebar";
 
 // Custom hook to handle drawer animation state
 function useDrawerAnimation(isOpen: boolean) {
@@ -112,7 +120,7 @@ export function ChatPage() {
   const { layoutMode } = useLayout();
   const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
   const { showAgentDrawer, toggleAgentDrawer } = useAgents();
-  const { showAppDrawer, toggleAppDrawer, hasAppContent } = useApp();
+  const { showAppDrawer, closeApp } = useApp();
 
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
@@ -184,16 +192,6 @@ export function ChatPage() {
   useEffect(() => {
     setRightActions(
       <div className="flex items-center gap-2">
-        {hasAppContent && (
-          <button
-            type="button"
-            className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-            onClick={toggleAppDrawer}
-            title={showAppDrawer ? "Close app" : "Open app"}
-          >
-            <Rocket size={20} />
-          </button>
-        )}
         {artifactsAvailable && (
           <button
             type="button"
@@ -233,9 +231,6 @@ export function ChatPage() {
     toggleArtifactsDrawer,
     showAgentDrawer,
     toggleAgentDrawer,
-    hasAppContent,
-    showAppDrawer,
-    toggleAppDrawer,
   ]);
 
   // Create sidebar content with useMemo to avoid infinite re-renders
@@ -465,9 +460,31 @@ export function ChatPage() {
           bottom: isMobile ? `${chatInputHeight - 16}px` : undefined,
         }}
       >
-        <div className="h-full md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm overflow-hidden">
-          <AppDrawer />
+        <div className="h-full md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm overflow-hidden flex flex-col">
+          {/* Mobile close bar */}
+          <div className="flex md:hidden items-center h-10 px-2 border-b border-neutral-200/60 dark:border-neutral-700/60 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm">
+            <button
+              type="button"
+              onClick={() => closeApp()}
+              className="flex items-center gap-1 text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors p-1.5 rounded"
+            >
+              <ChevronLeft size={16} />
+              <span>Back</span>
+            </button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <AppDrawer />
+          </div>
         </div>
+        {/* Flag tab on the left edge to close the drawer */}
+        <button
+          type="button"
+          onClick={() => closeApp()}
+          className="hidden md:flex absolute left-0 top-6 -translate-x-full items-center justify-center w-5 h-12 rounded-l-md bg-white/90 dark:bg-neutral-800/90 border border-r-0 border-neutral-200/60 dark:border-neutral-700/60 shadow-sm text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
+          title="Close panel"
+        >
+          <ChevronRight size={14} />
+        </button>
       </div>
     </div>
   );

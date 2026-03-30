@@ -1,6 +1,19 @@
+import type {
+  McpUiDisplayMode,
+  McpUiHostCapabilities,
+  McpUiHostContext,
+  McpUiResourceMeta,
+} from "@modelcontextprotocol/ext-apps/app-bridge";
+import {
+  AppBridge,
+  getToolUiResourceUri,
+  isToolVisibilityAppOnly,
+  PostMessageTransport,
+  RESOURCE_MIME_TYPE,
+} from "@modelcontextprotocol/ext-apps/app-bridge";
+import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport as ClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
   CallToolResult,
   ContentBlock as MCPContentBlock,
@@ -8,30 +21,25 @@ import type {
   Tool as MCPTool,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
-  AppBridge,
-  PostMessageTransport,
-  RESOURCE_MIME_TYPE,
-  getToolUiResourceUri,
-  isToolVisibilityAppOnly,
-} from "@modelcontextprotocol/ext-apps/app-bridge";
-import type {
-  McpUiHostCapabilities,
-  McpUiHostContext,
-  McpUiResourceMeta,
-} from "@modelcontextprotocol/ext-apps/app-bridge";
-import {
+  type AudioContent,
+  type FileContent,
+  type ImageContent,
+  type Message,
   Role,
+  type TextContent,
   type Tool,
   type ToolContext,
   type ToolProvider,
-  type TextContent,
-  type ImageContent,
-  type AudioContent,
-  type FileContent,
-  type Message,
 } from "@/shared/types/chat";
 import { BrowserOAuthClientProvider } from "./mcpAuth";
 import { traceMCP } from "@/shared/lib/otel";
+
+export type { McpUiDisplayMode };
+
+export type DisplayModeOptions = {
+  displayMode?: McpUiDisplayMode;
+  onDisplayModeRequested?: (mode: McpUiDisplayMode) => void;
+};
 
 const HOST_INFO = {
   name: "Wingman Chat",
@@ -264,9 +272,14 @@ export class MCPClient implements ToolProvider {
 
               if (resource && context?.render) {
                 await this.renderToolUI(tool.name, resource, normalizedResult, args, context);
+                const toolUiMeta = tool._meta?.ui as
+                  | { defaultDisplayMode?: string; availableDisplayModes?: string[] }
+                  | undefined;
                 context.setMeta?.({
                   toolProvider: this.id,
                   toolResource: resource.uri,
+                  ...(toolUiMeta?.defaultDisplayMode ? { defaultDisplayMode: toolUiMeta.defaultDisplayMode } : {}),
+                  ...(toolUiMeta?.availableDisplayModes ? { appDisplayModes: toolUiMeta.availableDisplayModes } : {}),
                 });
               }
 
@@ -288,6 +301,7 @@ export class MCPClient implements ToolProvider {
     result: CallToolResult,
     args: Record<string, unknown>,
     context: ToolContext,
+    displayModeOptions?: DisplayModeOptions,
   ): Promise<void> {
     const renderTarget = await context.render!();
     const { iframe } = renderTarget;
@@ -306,7 +320,7 @@ export class MCPClient implements ToolProvider {
         !!context.sendMessage,
         !!context.setContext,
       ),
-      { hostContext: buildHostContext(toolDefinition, iframe) },
+      { hostContext: buildHostContext(toolDefinition, iframe, displayModeOptions?.displayMode) },
     );
 
     this.activeBridge = bridge;
@@ -346,6 +360,25 @@ export class MCPClient implements ToolProvider {
 
     bridge.oninitialized = () => {
       console.log("Guest UI initialized for tool:", toolName);
+
+      // Check guest app's declared capabilities and persist if available
+      const appCaps = bridge.getAppCapabilities();
+      const appModes = appCaps?.availableDisplayModes;
+      if (appModes && appModes.length > 0) {
+        // Guest-declared modes override server-declared modes
+        context.updateMeta?.({ appDisplayModes: appModes });
+      }
+
+      // Check if the app is fullscreen-only based on its declared capabilities
+      if (
+        appModes &&
+        appModes.length === 1 &&
+        appModes[0] === "fullscreen" &&
+        displayModeOptions?.displayMode !== "fullscreen"
+      ) {
+        displayModeOptions?.onDisplayModeRequested?.("fullscreen");
+      }
+
       bridge
         .sendToolInput({ arguments: args })
         .then(() => bridge.sendToolResult(result))
@@ -355,8 +388,12 @@ export class MCPClient implements ToolProvider {
     };
 
     bridge.onsizechange = ({ width, height }) => {
-      if (typeof width === "number" && width > 0) {
-        iframe.style.width = `${width}px`;
+      // In fullscreen mode the iframe width is managed by the ResizeObserver in AppDrawer,
+      // so only height changes are applied (allowing the drawer to scroll vertically).
+      if (displayModeOptions?.displayMode !== "fullscreen") {
+        if (typeof width === "number" && width > 0) {
+          iframe.style.width = `${width}px`;
+        }
       }
 
       if (typeof height === "number" && height > 0) {
@@ -373,7 +410,18 @@ export class MCPClient implements ToolProvider {
       return opened ? {} : { isError: true };
     };
 
-    bridge.onrequestdisplaymode = async () => ({ mode: "inline" });
+    bridge.onrequestdisplaymode = async ({ mode }) => {
+      const currentMode = displayModeOptions?.displayMode ?? "inline";
+      if (mode === "fullscreen" && currentMode !== "fullscreen") {
+        displayModeOptions?.onDisplayModeRequested?.(mode);
+        return { mode };
+      }
+      if (mode === "inline" && currentMode !== "inline") {
+        displayModeOptions?.onDisplayModeRequested?.(mode);
+        return { mode };
+      }
+      return { mode: currentMode };
+    };
 
     bridge.onupdatemodelcontext = async ({ content, structuredContent }) => {
       try {
@@ -449,6 +497,7 @@ export class MCPClient implements ToolProvider {
     args: Record<string, unknown>,
     storedResult: (TextContent | ImageContent | AudioContent | FileContent)[],
     context: ToolContext,
+    displayModeOptions?: DisplayModeOptions,
   ): Promise<void> {
     if (!this.client) {
       throw new Error("MCP client not connected");
@@ -496,7 +545,7 @@ export class MCPClient implements ToolProvider {
       }
     }
 
-    await this.renderToolUI(toolName, resource, result, args, context);
+    await this.renderToolUI(toolName, resource, result, args, context, displayModeOptions);
   }
 
   private async loadUIResources(tools: MCPTool[]): Promise<void> {
@@ -672,10 +721,11 @@ function buildHostCapabilities(
   return capabilities;
 }
 
-function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement): McpUiHostContext {
+function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?: McpUiDisplayMode): McpUiHostContext {
   const isDark = document.documentElement.classList.contains("dark");
   const width = iframe.clientWidth || undefined;
   const height = iframe.clientHeight || undefined;
+  const currentMode = displayMode ?? "inline";
 
   return {
     toolInfo: { tool },
@@ -689,8 +739,8 @@ function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement): McpUiHostCo
         "--font-mono": "ui-monospace, SFMono-Regular, monospace",
       } as NonNullable<NonNullable<McpUiHostContext["styles"]>["variables"]>,
     },
-    displayMode: "inline",
-    availableDisplayModes: ["inline"],
+    displayMode: currentMode,
+    availableDisplayModes: ["inline", "fullscreen"],
     containerDimensions: {
       ...(typeof width === "number" ? { maxWidth: width } : {}),
       ...(typeof height === "number" ? { maxHeight: height } : {}),
