@@ -13,6 +13,8 @@ export interface AppContextType {
   closeApp: () => Promise<void>;
   hasAppContent: boolean;
   showDrawer: () => void;
+  activeAppKey: string | null;
+  setActiveAppKey: (key: string | null) => void;
 }
 
 export const AppContext = createContext<AppContextType | null>(null);

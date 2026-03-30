@@ -92,6 +92,7 @@ export interface ToolContext {
   render?(): Promise<RenderedAppHandle>;
   sendMessage?(message: Message): Promise<void>;
   setMeta?(meta: Record<string, unknown>): void;
+  updateMeta?(meta: Record<string, unknown>): void;
   setContext?(text: string | null): Promise<void>;
 }
 

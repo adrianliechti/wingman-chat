@@ -1,27 +1,26 @@
-import { Markdown } from "@/shared/ui/Markdown";
-import { CopyButton } from "@/shared/ui/CopyButton";
-import { ConvertButton } from "@/shared/ui/ConvertButton";
-import { PlayButton } from "@/shared/ui/PlayButton";
-import { RenderContents } from "@/shared/ui/ContentRenderer";
+import { AlertCircle, Check, ChevronRight, Loader2, Pencil, ShieldQuestion, X } from "lucide-react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { useChat } from "@/features/chat/hooks/useChat";
+import { getConfig } from "@/shared/config";
+import type {
+  AudioContent,
+  Content,
+  ElicitationResult,
+  FileContent,
+  ImageContent,
+  Message,
+  TextContent,
+  ToolResultContent,
+} from "@/shared/types/chat";
+import { Role } from "@/shared/types/chat";
 import { CodeRenderer } from "@/shared/ui/CodeRenderer";
+import { RenderContents } from "@/shared/ui/ContentRenderer";
+import { ConvertButton } from "@/shared/ui/ConvertButton";
+import { CopyButton } from "@/shared/ui/CopyButton";
+import { Markdown } from "@/shared/ui/Markdown";
+import { PlayButton } from "@/shared/ui/PlayButton";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { InlineMcpApp } from "./InlineMcpApp";
-import { Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil, ChevronRight } from "lucide-react";
-import { useState, useRef, useEffect, memo } from "react";
-
-import { Role } from "@/shared/types/chat";
-import type {
-  Message,
-  ElicitationResult,
-  Content,
-  ToolResultContent,
-  ImageContent,
-  AudioContent,
-  FileContent,
-  TextContent,
-} from "@/shared/types/chat";
-import { getConfig } from "@/shared/config";
-import { useChat } from "@/features/chat/hooks/useChat";
 
 // Helper function to convert tool names to user-friendly display names
 function getToolDisplayName(toolName: string): string {
@@ -261,7 +260,7 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
   );
   const [editMediaContent, setEditMediaContent] = useState<(ImageContent | AudioContent | FileContent)[]>(mediaContent);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { pendingElicitation, resolveElicitation, sendMessage, chat } = useChat();
+  const { pendingElicitation, resolveElicitation, sendMessage, chat, messages } = useChat();
 
   const isUser = message.role === Role.User;
   const isAssistant = message.role === Role.Assistant;
@@ -287,6 +286,35 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
 
   const config = getConfig();
   const enableTTS = !!config.tts;
+
+  // Compute whether this message's tool result is the last fullscreen-capable app in the chat
+  const isLastFullscreenApp = useMemo(() => {
+    if (!toolResultParts.length) return false;
+    const tr = toolResultParts[0];
+    if (typeof tr?.meta?.toolProvider !== "string" || typeof tr?.meta?.toolResource !== "string") return false;
+
+    // Find the last message index with a fullscreen-capable tool result
+    let lastFullscreenIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      for (const part of msg.content) {
+        if (part.type !== "tool_result") continue;
+        const p = part as ToolResultContent;
+        if (typeof p.meta?.toolProvider !== "string" || typeof p.meta?.toolResource !== "string") continue;
+        const modes = p.meta?.appDisplayModes as string[] | undefined;
+        const defaultMode = p.meta?.defaultDisplayMode as string | undefined;
+        // Check if fullscreen is supported: explicit modes, defaultDisplayMode hint, or absent (backward compat = both)
+        const supportsFullscreen = modes ? modes.includes("fullscreen") : defaultMode !== "inline"; // "fullscreen" or absent both mean fullscreen is supported
+        if (supportsFullscreen) {
+          lastFullscreenIndex = i;
+          break;
+        }
+      }
+      if (lastFullscreenIndex >= 0) break;
+    }
+
+    return lastFullscreenIndex === index;
+  }, [messages, index, toolResultParts]);
 
   // Auto-resize textarea and focus when entering edit mode
   useEffect(() => {
@@ -470,7 +498,11 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
 
           {/* Render inline MCP app for tool results with UI metadata */}
           {typeof toolResult?.meta?.toolProvider === "string" && typeof toolResult?.meta?.toolResource === "string" && (
-            <InlineMcpApp key={`${chat?.id}-${index}`} toolResult={toolResult} />
+            <InlineMcpApp
+              key={`${chat?.id}-${index}`}
+              toolResult={toolResult}
+              isLastFullscreenApp={isLastFullscreenApp}
+            />
           )}
         </div>
       </div>
