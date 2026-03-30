@@ -107,9 +107,8 @@ type Renderer struct {
 type Artifacts struct{}
 
 type Repository struct {
-	Embedder     string `json:"embedder,omitempty" yaml:"embedder,omitempty"`
-	Extractor    string `json:"extractor,omitempty" yaml:"extractor,omitempty"`
-	ContextPages *int   `json:"context_pages,omitempty" yaml:"context_pages,omitempty"`
+	Embedder  string `json:"embedder,omitempty" yaml:"embedder,omitempty"`
+	Extractor string `json:"extractor,omitempty" yaml:"extractor,omitempty"`
 }
 
 type Memory struct{}

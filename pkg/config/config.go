@@ -78,7 +78,6 @@ func applyEnvOverrides(cfg *Config) {
 	withFeature("REPOSITORY_ENABLED", &cfg.Repository, func(r *Repository) {
 		envOverride("REPOSITORY_EMBEDDER", &r.Embedder)
 		envOverride("REPOSITORY_EXTRACTOR", &r.Extractor)
-		r.ContextPages = envPositiveInt("REPOSITORY_CONTEXT_PAGES", r.ContextPages)
 	})
 
 	withFeature("MEMORY_ENABLED", &cfg.Memory, nil)

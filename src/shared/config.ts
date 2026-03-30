@@ -1,194 +1,235 @@
 import { Client } from "./lib/client";
 import type { MCP, Model } from "./types/chat";
 
-interface backgroundConfig {
+interface BackgroundConfig {
   url: string;
 }
 
-interface backgroundPackConfig {
-  [packName: string]: backgroundConfig[];
+interface BackgroundPackConfig {
+  [packName: string]: BackgroundConfig[];
 }
 
-interface supportConfig {
+interface SupportConfig {
   url?: string;
   email?: string;
 }
 
-interface config {
-  title: string;
-  disclaimer: string;
-  support?: supportConfig;
-
-  tools: toolConfig[];
-  models: modelConfig[];
-
-  backgrounds?: backgroundPackConfig;
-
-  tts?: ttsConfig;
-  stt?: sttConfig;
-
-  notebook?: notebookConfig;
-  workflow?: workflowConfig;
-
-  voice?: voiceConfig;
-  vision?: visionConfig;
-
-  text?: textConfig;
-
-  internet?: internetConfig;
-
-  renderer?: rendererConfig;
-  extractor?: extractorConfig;
-
-  memory?: memoryConfig;
-
-  artifacts?: artifactsConfig;
-  repository?: repositoryConfig;
-  translator?: translatorConfig;
-
-  chat?: chatConfig;
-  telemetry?: object;
+interface ToolConfig {
+  id: string;
+  url: string;
+  name: string;
+  description: string;
+  icon?: string;
 }
 
-interface modelConfig {
+interface ModelConfig {
   id: string;
-
   name: string;
   description?: string;
-
   effort?: "none" | "minimal" | "low" | "medium" | "high";
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
   compactThreshold?: number;
-
   tools?: {
     enabled: string[];
     disabled: string[];
   };
-
   prompts?: string[];
 }
 
-interface toolConfig {
-  id: string;
-
-  url: string;
-
-  name: string;
-  description: string;
-
-  icon?: string;
-}
-
-interface ttsConfig {
+interface TTSConfig {
   model?: string;
   voices?: Record<string, string>;
 }
 
-interface sttConfig {
+interface STTConfig {
   model?: string;
 }
 
-interface notebookConfig {
+interface NotebookConfig {
   model?: string;
 }
 
-interface workflowConfig {
+interface WorkflowConfig {
   model?: string;
 }
 
-interface voiceConfig {
+interface VoiceConfig {
   model?: string;
   transcriber?: string;
 }
 
-interface textConfig {
+interface TextConfig {
   files: string[];
 }
 
-interface visionConfig {
+interface VisionConfig {
   files: string[];
 }
 
-interface rendererConfig {
+interface RendererConfig {
   model?: string;
   disclaimer?: string;
   elicitation?: boolean;
 }
 
-interface internetConfig {
+interface InternetConfig {
   scraper?: string;
   searcher?: string;
   researcher?: string;
   elicitation?: boolean;
 }
 
-interface extractorConfig {
+interface ExtractorConfig {
   model?: string;
   files: string[];
 }
 
-interface repositoryConfig {
+interface RepositoryConfig {
   embedder?: string;
   extractor?: string;
-
-  context_pages?: number;
 }
 
-type memoryConfig = object;
-
-type artifactsConfig = object;
-
-interface translatorConfig {
+interface TranslatorConfig {
   model?: string;
   files: string[];
-
   languages: string[];
 }
 
-interface chatConfig {
+interface ChatConfig {
   retentionDays?: number;
   optimizer?: string;
   summarizer?: string;
 }
 
+interface ConfigSchema {
+  title: string;
+  disclaimer: string;
+  support?: SupportConfig;
+
+  tools: ToolConfig[];
+  models: ModelConfig[];
+
+  backgrounds?: BackgroundPackConfig;
+
+  tts?: TTSConfig;
+  stt?: STTConfig;
+
+  notebook?: NotebookConfig;
+  workflow?: WorkflowConfig;
+
+  voice?: VoiceConfig;
+  vision?: VisionConfig;
+
+  text?: TextConfig;
+
+  internet?: InternetConfig;
+
+  renderer?: RendererConfig;
+  extractor?: ExtractorConfig;
+
+  memory?: object;
+
+  artifacts?: object;
+  repository?: RepositoryConfig;
+  translator?: TranslatorConfig;
+
+  chat?: ChatConfig;
+  telemetry?: object;
+}
+
+const DEFAULT_TTS_VOICES: Record<string, string> = {
+  host: "nova",
+  analyst: "onyx",
+  narrator: "alloy",
+  storyteller: "fable",
+  skeptic: "echo",
+};
+
+const DEFAULT_VISION_FILES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+];
+
+const DEFAULT_TEXT_FILES = [
+  "text/csv",
+  "text/markdown",
+  "text/plain",
+  "application/json",
+  "application/sql",
+  "application/toml",
+  "application/x-yaml",
+  "application/xml",
+  "text/css",
+  "text/html",
+  "text/xml",
+  "text/yaml",
+
+  ".c",
+  ".cpp",
+  ".cs",
+  ".go",
+  ".html",
+  ".java",
+  ".js",
+  ".kt",
+  ".md",
+  ".py",
+  ".rs",
+  ".ts",
+];
+
+const DEFAULT_EXTRACTOR_FILES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+
+  ".msg",
+  ".eml",
+];
+
+const DEFAULT_TRANSLATOR_LANGUAGES = ["en", "de", "fr", "it", "es"];
+
 interface Config {
   title: string;
   disclaimer: string;
-  support: supportConfig | null;
+  support: SupportConfig | null;
 
   client: Client;
 
   mcps: MCP[];
   models: Model[];
 
-  tts: ttsConfig | null;
-  stt: sttConfig | null;
+  tts: TTSConfig | null;
+  stt: STTConfig | null;
 
-  notebook: notebookConfig | null;
-  workflow: workflowConfig | null;
+  notebook: NotebookConfig | null;
+  workflow: WorkflowConfig | null;
 
-  voice: voiceConfig | null;
-  vision: visionConfig | null;
+  voice: VoiceConfig | null;
+  vision: VisionConfig | null;
 
-  text: textConfig | null;
-  extractor: extractorConfig | null;
+  text: TextConfig;
+  extractor: ExtractorConfig | null;
 
-  internet: internetConfig | null;
+  internet: InternetConfig | null;
 
-  renderer: rendererConfig | null;
+  renderer: RendererConfig | null;
 
-  memory: memoryConfig | null;
+  memory: object | null;
 
-  artifacts: artifactsConfig | null;
-  repository: repositoryConfig | null;
-  translator: translatorConfig | null;
+  artifacts: object | null;
+  repository: RepositoryConfig | null;
+  translator: TranslatorConfig | null;
 
-  chat: chatConfig | null;
+  chat: ChatConfig | null;
 
   telemetry: boolean;
 
-  backgrounds: backgroundPackConfig;
+  backgrounds: BackgroundPackConfig;
 }
 
 let config: Config;
@@ -201,61 +242,25 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       throw new Error(`failed to load config.json: ${resp.statusText}`);
     }
 
-    const cfg: config = await resp.json();
-
-    const client = new Client();
+    const cfg: ConfigSchema = await resp.json();
 
     config = {
       title: cfg.title,
       disclaimer: cfg.disclaimer,
       support: cfg.support ?? null,
 
-      client: client,
+      client: new Client(),
 
       mcps:
-        cfg.tools?.map((mcp) => {
-          return {
-            id: mcp.id,
+        cfg.tools?.map((mcp) => ({
+          ...mcp,
+          url: mcp.url ?? new URL(`/api/v1/mcp/${mcp.id}`, window.location.origin).toString(),
+        })) ?? [],
 
-            url: mcp.url ?? new URL(`/api/v1/mcp/${mcp.id}`, window.location.origin).toString(),
-
-            name: mcp.name,
-            description: mcp.description,
-
-            icon: mcp.icon,
-          };
-        }) ?? [],
-
-      models:
-        cfg.models?.map((model) => {
-          return {
-            id: model.id,
-
-            name: model.name,
-            description: model.description,
-
-            effort: model.effort,
-            summary: model.summary,
-            verbosity: model.verbosity,
-            compactThreshold: model.compactThreshold,
-
-            prompts: model.prompts,
-
-            tools: model.tools,
-          };
-        }) ?? [],
+      models: cfg.models ?? [],
 
       tts: cfg.tts
-        ? {
-            model: cfg.tts.model,
-            voices: cfg.tts.voices ?? {
-              host: "nova",
-              analyst: "onyx",
-              narrator: "alloy",
-              storyteller: "fable",
-              skeptic: "echo",
-            },
-          }
+        ? { model: cfg.tts.model, voices: cfg.tts.voices ?? DEFAULT_TTS_VOICES }
         : null,
       stt: cfg.stt ?? null,
 
@@ -263,55 +268,14 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       workflow: cfg.workflow ?? null,
 
       voice: cfg.voice ?? null,
-
       vision: cfg.vision
-        ? {
-            files: cfg.vision.files ?? ["image/jpeg", "image/png", "image/gif", "image/webp"],
-          }
+        ? { files: cfg.vision.files ?? DEFAULT_VISION_FILES }
         : null,
 
-      text: {
-        files: cfg.text?.files ?? [
-          "text/csv",
-          "text/markdown",
-          "text/plain",
-          "application/json",
-          "application/sql",
-          "application/toml",
-          "application/x-yaml",
-          "application/xml",
-          "text/css",
-          "text/html",
-          "text/xml",
-          "text/yaml",
-
-          ".c",
-          ".cpp",
-          ".cs",
-          ".go",
-          ".html",
-          ".java",
-          ".js",
-          ".kt",
-          ".md",
-          ".py",
-          ".rs",
-          ".ts",
-        ],
-      },
+      text: { files: cfg.text?.files ?? DEFAULT_TEXT_FILES },
 
       extractor: cfg.extractor
-        ? {
-            files: cfg.extractor.files ?? [
-              "application/pdf",
-              "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-
-              ".msg",
-              ".eml",
-            ],
-          }
+        ? { model: cfg.extractor.model, files: cfg.extractor.files ?? DEFAULT_EXTRACTOR_FILES }
         : null,
 
       internet: cfg.internet ?? null,
@@ -324,7 +288,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
         ? {
             model: cfg.translator.model,
             files: cfg.translator.files ?? [],
-            languages: cfg.translator.languages ?? ["en", "de", "fr", "it", "es"],
+            languages: cfg.translator.languages ?? DEFAULT_TRANSLATOR_LANGUAGES,
           }
         : null,
 
@@ -334,10 +298,6 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       backgrounds: cfg.backgrounds ?? {},
     };
-
-    if (config.repository && !config.repository.context_pages) {
-      config.repository.context_pages = 150;
-    }
 
     return config;
   } catch (error) {
