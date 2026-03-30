@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { useApp } from '@/shell/hooks/useApp';
+import { useEffect, useRef } from "react";
+import { useApp } from "@/shell/hooks/useApp";
 
 export function AppDrawer() {
   const { registerIframe } = useApp();

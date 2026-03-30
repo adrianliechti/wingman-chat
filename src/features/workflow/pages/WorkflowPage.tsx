@@ -1,10 +1,10 @@
-import { useEffect } from 'react';
-import { Plus as PlusIcon } from 'lucide-react';
-import { WorkflowProvider } from '@/features/workflow/context/WorkflowProvider';
-import { WorkflowPalette } from '@/features/workflow/components/WorkflowPalette';
-import { WorkflowCanvas } from '@/features/workflow/components/WorkflowCanvas';
-import { useNavigation } from '@/shell/hooks/useNavigation';
-import { useWorkflow } from '@/features/workflow/hooks/useWorkflow';
+import { useEffect } from "react";
+import { Plus as PlusIcon } from "lucide-react";
+import { WorkflowProvider } from "@/features/workflow/context/WorkflowProvider";
+import { WorkflowPalette } from "@/features/workflow/components/WorkflowPalette";
+import { WorkflowCanvas } from "@/features/workflow/components/WorkflowCanvas";
+import { useNavigation } from "@/shell/hooks/useNavigation";
+import { useWorkflow } from "@/features/workflow/hooks/useWorkflow";
 
 function WorkflowPageContent() {
   const { setRightActions } = useNavigation();
@@ -20,7 +20,7 @@ function WorkflowPageContent() {
         >
           <PlusIcon size={20} />
         </button>
-      </>
+      </>,
     );
 
     // Cleanup when component unmounts

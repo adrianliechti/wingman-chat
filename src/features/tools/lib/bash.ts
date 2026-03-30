@@ -1,8 +1,8 @@
-import { Bash, InMemoryFs } from 'just-bash/browser';
-import type { InitialFiles } from 'just-bash/browser';
-import { bytesToDataUrl, dataUrlToBytes } from '@/shared/lib/artifactFiles';
-import { inferContentTypeFromPath, isTextContentType } from '@/shared/lib/fileTypes';
-import type { OverlayFile } from '@/features/artifacts/lib/fs';
+import { Bash, InMemoryFs } from "just-bash/browser";
+import type { InitialFiles } from "just-bash/browser";
+import { bytesToDataUrl, dataUrlToBytes } from "@/shared/lib/artifactFiles";
+import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import type { OverlayFile } from "@/features/artifacts/lib/fs";
 
 export interface BashExecutionRequest {
   command: string;
@@ -20,7 +20,7 @@ export interface BashInstance {
   memFs: InMemoryFs;
 }
 
-export const BASH_HOME = '/home/user';
+export const BASH_HOME = "/home/user";
 
 function toFsContent(file: { content: string; contentType?: string }): string | Uint8Array {
   const parsed = dataUrlToBytes(file.content);
@@ -40,7 +40,7 @@ function toOverlayFile(path: string, content: Uint8Array): OverlayFile {
     };
   }
 
-  const mimeType = contentType ?? 'application/octet-stream';
+  const mimeType = contentType ?? "application/octet-stream";
   return {
     content: bytesToDataUrl(content, mimeType),
     contentType: mimeType,
@@ -53,14 +53,12 @@ let singleton: BashInstance | null = null;
  * Create a new Bash + InMemoryFs pair, optionally preloaded with files.
  * Files keys are artifact paths (e.g. "/script.sh"), mapped to /home/user/...
  */
-export function createBashInstance(
-  files?: Record<string, { content: string; contentType?: string }>
-): BashInstance {
+export function createBashInstance(files?: Record<string, { content: string; contentType?: string }>): BashInstance {
   const initialFiles: InitialFiles = {};
 
   if (files) {
     for (const [path, file] of Object.entries(files)) {
-      const relativePath = path.startsWith('/') ? path.slice(1) : path;
+      const relativePath = path.startsWith("/") ? path.slice(1) : path;
       initialFiles[`${BASH_HOME}/${relativePath}`] = toFsContent(file);
     }
   }
@@ -86,7 +84,7 @@ export function getBashCwd(instance: BashInstance): string {
 
 export function getBashEnv(instance: BashInstance): Record<string, string> {
   const bashWithEnv = instance.bash as Bash & { getEnv?: () => Record<string, string> };
-  return bashWithEnv.getEnv?.() ?? { HOME: BASH_HOME, PWD: BASH_HOME, OLDPWD: BASH_HOME, PATH: '/usr/bin:/bin' };
+  return bashWithEnv.getEnv?.() ?? { HOME: BASH_HOME, PWD: BASH_HOME, OLDPWD: BASH_HOME, PATH: "/usr/bin:/bin" };
 }
 
 export async function resolveBashCwd(memFs: InMemoryFs, cwd?: string | null): Promise<string> {
@@ -124,11 +122,11 @@ export async function executeBash(request: BashExecutionRequest): Promise<BashEx
       exitCode: result.exitCode,
     };
   } catch (error) {
-    console.error('Bash execution error:', error);
+    console.error("Bash execution error:", error);
 
     return {
       success: false,
-      stdout: '',
+      stdout: "",
       stderr: error instanceof Error ? error.message : String(error),
       exitCode: 1,
     };
@@ -154,14 +152,14 @@ export function resetBash(): void {
  */
 export async function loadArtifactsIntoFs(
   memFs: InMemoryFs,
-  files: { path: string; content: string; contentType?: string }[]
+  files: { path: string; content: string; contentType?: string }[],
 ): Promise<void> {
   for (const file of files) {
-    const relativePath = file.path.startsWith('/') ? file.path.slice(1) : file.path;
+    const relativePath = file.path.startsWith("/") ? file.path.slice(1) : file.path;
     const fsPath = `${BASH_HOME}/${relativePath}`;
 
     // Ensure parent directories exist
-    const dir = fsPath.substring(0, fsPath.lastIndexOf('/'));
+    const dir = fsPath.substring(0, fsPath.lastIndexOf("/"));
     if (dir) {
       await memFs.mkdir(dir, { recursive: true });
     }
@@ -175,9 +173,7 @@ export async function loadArtifactsIntoFs(
  * Returns a map of artifact path (e.g. "/script.sh") → content.
  * Uses InMemoryFs.getAllPaths() (synchronous) instead of bash `find`.
  */
-export async function readFilesFromFs(
-  memFs: InMemoryFs
-): Promise<Record<string, OverlayFile>> {
+export async function readFilesFromFs(memFs: InMemoryFs): Promise<Record<string, OverlayFile>> {
   const result: Record<string, OverlayFile> = {};
   const allPaths = memFs.getAllPaths();
 
@@ -188,7 +184,7 @@ export async function readFilesFromFs(
       const stat = await memFs.stat(fsPath);
       if (!stat.isFile) continue;
 
-      const artifactPath = '/' + fsPath.slice(`${BASH_HOME}/`.length);
+      const artifactPath = "/" + fsPath.slice(`${BASH_HOME}/`.length);
       const content = await memFs.readFileBuffer(fsPath);
       result[artifactPath] = toOverlayFile(artifactPath, content);
     } catch {

@@ -1,6 +1,6 @@
-import { memo, useState } from 'react';
-import { CopyButton } from '@/shared/ui/CopyButton';
-import { PreviewButton } from '@/shared/ui/PreviewButton';
+import { memo, useState } from "react";
+import { CopyButton } from "@/shared/ui/CopyButton";
+import { PreviewButton } from "@/shared/ui/PreviewButton";
 
 interface SvgRendererProps {
   svg: string;
@@ -66,7 +66,11 @@ const NonMemoizedSvgRenderer = ({ svg, language, name }: SvgRendererProps) => {
             </pre>
           </div>
         ) : (
-          <div className="flex items-center justify-center p-4 overflow-auto" dangerouslySetInnerHTML={{ __html: svg }} style={{ maxHeight: '75vw' }} />
+          <div
+            className="flex items-center justify-center p-4 overflow-auto"
+            dangerouslySetInnerHTML={{ __html: svg }}
+            style={{ maxHeight: "75vw" }}
+          />
         )}
       </div>
     </div>
@@ -75,5 +79,6 @@ const NonMemoizedSvgRenderer = ({ svg, language, name }: SvgRendererProps) => {
 
 export const SvgRenderer = memo(
   NonMemoizedSvgRenderer,
-  (prevProps, nextProps) => prevProps.svg === nextProps.svg && prevProps.language === nextProps.language && prevProps.name === nextProps.name,
+  (prevProps, nextProps) =>
+    prevProps.svg === nextProps.svg && prevProps.language === nextProps.language && prevProps.name === nextProps.name,
 );

@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import type { ReactNode } from 'react';
-import { NavigationContext } from './NavigationContext';
-import type { NavigationContextType } from './NavigationContext';
+import { useState } from "react";
+import type { ReactNode } from "react";
+import { NavigationContext } from "./NavigationContext";
+import type { NavigationContextType } from "./NavigationContext";
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
   const [leftActions, setLeftActions] = useState<ReactNode>(null);
@@ -14,9 +14,5 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     setRightActions,
   };
 
-  return (
-    <NavigationContext.Provider value={value}>
-      {children}
-    </NavigationContext.Provider>
-  );
+  return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;
 }

@@ -9,13 +9,9 @@ type LookupAddress = {
 
 type LookupCallback = (error: Error | null, address: string | LookupAddress[], family?: number) => void;
 
-export function lookup(
-  hostname: string,
-  options?: { all?: boolean } | LookupCallback,
-  callback?: LookupCallback,
-) {
-  const resolvedCallback = typeof options === 'function' ? options : callback;
-  const all = typeof options === 'object' && options?.all;
+export function lookup(hostname: string, options?: { all?: boolean } | LookupCallback, callback?: LookupCallback) {
+  const resolvedCallback = typeof options === "function" ? options : callback;
+  const all = typeof options === "object" && options?.all;
 
   const error = new Error(`node:dns.lookup is not available in the browser for host "${hostname}"`);
 
@@ -26,7 +22,7 @@ export function lookup(
         return;
       }
 
-      resolvedCallback(error, '', 4);
+      resolvedCallback(error, "", 4);
     });
     return;
   }

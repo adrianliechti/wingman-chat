@@ -1,6 +1,6 @@
-import { createContext } from 'react';
+import { createContext } from "react";
 
-export type EmojiMode = 'monochrome' | 'native';
+export type EmojiMode = "monochrome" | "native";
 
 export type EmojiContextType = {
   emojiMode: EmojiMode;

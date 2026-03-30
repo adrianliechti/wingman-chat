@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { X } from 'lucide-react';
-import { CodeEditor } from './CodeEditor';
-import { useArtifacts } from '@/features/artifacts/hooks/useArtifacts';
+import { useState, useCallback, useEffect, useRef } from "react";
+import { X } from "lucide-react";
+import { CodeEditor } from "./CodeEditor";
+import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 
 interface JsEditorProps {
   content: string;
@@ -10,7 +10,7 @@ interface JsEditorProps {
 }
 
 interface ConsoleEntry {
-  type: 'log' | 'warn' | 'error' | 'table' | 'result';
+  type: "log" | "warn" | "error" | "table" | "result";
   args: unknown[];
 }
 
@@ -37,10 +37,10 @@ export function JsEditor({ content, onRunReady, onRunningChange }: JsEditorProps
     }
 
     // Build VFS object for injection - escape to prevent breaking script tag
-    const vfsData = JSON.stringify(files).replace(/<\/script>/gi, '<\\/script>');
+    const vfsData = JSON.stringify(files).replace(/<\/script>/gi, "<\\/script>");
 
     // Escape user code to prevent breaking script tag
-    const escapedContent = content.replace(/<\/script>/gi, '<\\/script>');
+    const escapedContent = content.replace(/<\/script>/gi, "<\\/script>");
 
     // Wrap code in async IIFE to support top-level await
     const wrappedCode = `
@@ -154,29 +154,29 @@ export function JsEditor({ content, onRunReady, onRunningChange }: JsEditorProps
     const iframe = iframeRef.current;
     if (iframe) {
       const entries: ConsoleEntry[] = [];
-      
+
       const handleMessage = (event: MessageEvent) => {
         if (event.source !== iframe.contentWindow) return;
-        
+
         const data = event.data;
-        if (data.type === 'console') {
+        if (data.type === "console") {
           entries.push({ type: data.method, args: data.args });
           setOutput([...entries]);
-        } else if (data.type === 'result') {
-          entries.push({ type: 'result', args: [data.value] });
+        } else if (data.type === "result") {
+          entries.push({ type: "result", args: [data.value] });
           setOutput([...entries]);
-        } else if (data.type === 'done') {
+        } else if (data.type === "done") {
           setIsRunning(false);
-          window.removeEventListener('message', handleMessage);
+          window.removeEventListener("message", handleMessage);
         }
       };
 
-      window.addEventListener('message', handleMessage);
+      window.addEventListener("message", handleMessage);
 
       const timeout = setTimeout(() => {
         setIsRunning(false);
-        window.removeEventListener('message', handleMessage);
-        entries.push({ type: 'error', args: ['Execution timed out (10s)'] });
+        window.removeEventListener("message", handleMessage);
+        entries.push({ type: "error", args: ["Execution timed out (10s)"] });
         setOutput([...entries]);
       }, 10000);
 
@@ -203,19 +203,19 @@ export function JsEditor({ content, onRunReady, onRunningChange }: JsEditorProps
 
   const renderEntry = (entry: ConsoleEntry, index: number) => {
     const colorClass = {
-      log: 'text-neutral-600 dark:text-neutral-400',
-      warn: 'text-amber-600 dark:text-amber-400',
-      error: 'text-red-500/80 dark:text-red-400/70',
-      table: 'text-neutral-600 dark:text-neutral-400',
-      result: 'text-blue-600 dark:text-blue-400',
+      log: "text-neutral-600 dark:text-neutral-400",
+      warn: "text-amber-600 dark:text-amber-400",
+      error: "text-red-500/80 dark:text-red-400/70",
+      table: "text-neutral-600 dark:text-neutral-400",
+      result: "text-blue-600 dark:text-blue-400",
     }[entry.type];
 
-    const prefix = entry.type === 'result' ? '← ' : '';
+    const prefix = entry.type === "result" ? "← " : "";
 
-    if (entry.type === 'table' && entry.args[0]) {
+    if (entry.type === "table" && entry.args[0]) {
       try {
-        const data = typeof entry.args[0] === 'string' ? JSON.parse(entry.args[0]) : entry.args[0];
-        if (Array.isArray(data) || typeof data === 'object') {
+        const data = typeof entry.args[0] === "string" ? JSON.parse(entry.args[0]) : entry.args[0];
+        if (Array.isArray(data) || typeof data === "object") {
           return (
             <pre key={index} className={`${colorClass} whitespace-pre-wrap`}>
               {JSON.stringify(data, null, 2)}
@@ -229,30 +229,24 @@ export function JsEditor({ content, onRunReady, onRunningChange }: JsEditorProps
 
     return (
       <pre key={index} className={`${colorClass} whitespace-pre-wrap`}>
-        {prefix}{entry.args.join(' ')}
+        {prefix}
+        {entry.args.join(" ")}
       </pre>
     );
   };
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <iframe
-        ref={iframeRef}
-        sandbox="allow-scripts"
-        className="hidden"
-        title="JavaScript Sandbox"
-      />
+      <iframe ref={iframeRef} sandbox="allow-scripts" className="hidden" title="JavaScript Sandbox" />
 
-      <div className={hasOutput ? 'h-1/2 overflow-hidden' : 'flex-1 overflow-hidden'}>
+      <div className={hasOutput ? "h-1/2 overflow-hidden" : "flex-1 overflow-hidden"}>
         <CodeEditor content={content} language="javascript" />
       </div>
 
       {hasOutput && (
         <div className="h-1/2 flex flex-col border-t border-black/5 dark:border-white/5">
           <div className="flex items-center justify-between px-3 py-1">
-            <span className="text-[10px] uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-              Console
-            </span>
+            <span className="text-[10px] uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Console</span>
             <button
               onClick={handleClear}
               className="p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-neutral-400 dark:text-neutral-500"

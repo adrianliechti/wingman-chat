@@ -1,42 +1,36 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { getConfig } from '@/shared/config';
-import { convertFileToText } from '@/shared/lib/convert';
-import { getTextFromContent } from '@/shared/types/chat';
-import type { Content } from '@/shared/types/chat';
-import type {
-  Notebook,
-  NotebookSource,
-  NotebookOutput,
-  NotebookMessage,
-  OutputType,
-} from '../types/notebook';
-import { blobToDataUrl } from '@/shared/lib/opfs-core';
-import { createSourceTools } from '../lib/source-tools';
-import { runWithTools } from '../lib/tool-loop';
-import * as store from '../lib/opfs-notebook';
+import { useState, useCallback, useEffect, useRef } from "react";
+import { getConfig } from "@/shared/config";
+import { convertFileToText } from "@/shared/lib/convert";
+import { getTextFromContent } from "@/shared/types/chat";
+import type { Content } from "@/shared/types/chat";
+import type { Notebook, NotebookSource, NotebookOutput, NotebookMessage, OutputType } from "../types/notebook";
+import { blobToDataUrl } from "@/shared/lib/opfs-core";
+import { createSourceTools } from "../lib/source-tools";
+import { runWithTools } from "../lib/tool-loop";
+import * as store from "../lib/opfs-notebook";
 
-import type { QuizQuestion, MindMapNode } from '../types/notebook';
-import chatInstructions from '../prompts/chat.txt?raw';
-import studioAudioInstructions from '../prompts/studio-audio-overview.txt?raw';
-import podcastStyleOverview from '../prompts/podcast-style-overview.txt?raw';
-import podcastStyleDeepDive from '../prompts/podcast-style-deep-dive.txt?raw';
-import podcastStyleBriefing from '../prompts/podcast-style-briefing.txt?raw';
-import podcastStyleStory from '../prompts/podcast-style-story.txt?raw';
-import podcastStyleDebate from '../prompts/podcast-style-debate.txt?raw';
-import studioSlideInstructions from '../prompts/studio-slide-deck.txt?raw';
-import slideCommonRules from '../prompts/slide-style-common.txt?raw';
-import slideStyleWhiteboard from '../prompts/slide-style-whiteboard.txt?raw';
-import slideStyleConsulting from '../prompts/slide-style-consulting.txt?raw';
-import slideStyleDark from '../prompts/slide-style-dark.txt?raw';
-import slideStyleSwiss from '../prompts/slide-style-swiss.txt?raw';
-import slideStyleNature from '../prompts/slide-style-nature.txt?raw';
-import studioInfographicInstructions from '../prompts/studio-infographic.txt?raw';
-import studioDataTableInstructions from '../prompts/studio-data-table.txt?raw';
-import studioQuizInstructions from '../prompts/studio-quiz.txt?raw';
-import studioMindMapInstructions from '../prompts/studio-mind-map.txt?raw';
+import type { QuizQuestion, MindMapNode } from "../types/notebook";
+import chatInstructions from "../prompts/chat.txt?raw";
+import studioAudioInstructions from "../prompts/studio-audio-overview.txt?raw";
+import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
+import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
+import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
+import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
+import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
+import studioSlideInstructions from "../prompts/studio-slide-deck.txt?raw";
+import slideCommonRules from "../prompts/slide-style-common.txt?raw";
+import slideStyleWhiteboard from "../prompts/slide-style-whiteboard.txt?raw";
+import slideStyleConsulting from "../prompts/slide-style-consulting.txt?raw";
+import slideStyleDark from "../prompts/slide-style-dark.txt?raw";
+import slideStyleSwiss from "../prompts/slide-style-swiss.txt?raw";
+import slideStyleNature from "../prompts/slide-style-nature.txt?raw";
+import studioInfographicInstructions from "../prompts/studio-infographic.txt?raw";
+import studioDataTableInstructions from "../prompts/studio-data-table.txt?raw";
+import studioQuizInstructions from "../prompts/studio-quiz.txt?raw";
+import studioMindMapInstructions from "../prompts/studio-mind-map.txt?raw";
 
 function generateId(): string {
-  return crypto.randomUUID()
+  return crypto.randomUUID();
 }
 
 /**
@@ -72,12 +66,12 @@ async function mergeWavBlobs(blobs: Blob[]): Promise<Blob> {
   const blockAlign = numChannels * (bitsPerSample / 8);
 
   // RIFF header
-  writeString(view, 0, 'RIFF');
+  writeString(view, 0, "RIFF");
   view.setUint32(4, 36 + totalDataSize, true);
-  writeString(view, 8, 'WAVE');
+  writeString(view, 8, "WAVE");
 
   // fmt chunk
-  writeString(view, 12, 'fmt ');
+  writeString(view, 12, "fmt ");
   view.setUint32(16, 16, true); // chunk size
   view.setUint16(20, 1, true); // PCM
   view.setUint16(22, numChannels, true);
@@ -87,7 +81,7 @@ async function mergeWavBlobs(blobs: Blob[]): Promise<Blob> {
   view.setUint16(34, bitsPerSample, true);
 
   // data chunk
-  writeString(view, 36, 'data');
+  writeString(view, 36, "data");
   view.setUint32(40, totalDataSize, true);
 
   // Copy PCM data
@@ -98,7 +92,7 @@ async function mergeWavBlobs(blobs: Blob[]): Promise<Blob> {
     offset += chunk.byteLength;
   }
 
-  return new Blob([result], { type: 'audio/wav' });
+  return new Blob([result], { type: "audio/wav" });
 }
 
 function writeString(view: DataView, offset: number, str: string) {
@@ -108,49 +102,49 @@ function writeString(view: DataView, offset: number, str: string) {
 }
 
 const STUDIO_PROMPTS: Record<OutputType, string> = {
-  'audio-overview': studioAudioInstructions,
-  'slide-deck': studioSlideInstructions,
-  'infographic': studioInfographicInstructions,
-  'data-table': studioDataTableInstructions,
-  'quiz': studioQuizInstructions,
-  'mind-map': studioMindMapInstructions,
+  "audio-overview": studioAudioInstructions,
+  "slide-deck": studioSlideInstructions,
+  infographic: studioInfographicInstructions,
+  "data-table": studioDataTableInstructions,
+  quiz: studioQuizInstructions,
+  "mind-map": studioMindMapInstructions,
 };
 
 export const SLIDE_STYLES = [
-  { id: 'whiteboard', label: 'Whiteboard', prompt: slideStyleWhiteboard },
-  { id: 'consulting', label: 'Consulting', prompt: slideStyleConsulting },
-  { id: 'dark', label: 'Dark', prompt: slideStyleDark },
-  { id: 'swiss', label: 'Swiss', prompt: slideStyleSwiss },
-  { id: 'nature', label: 'Nature', prompt: slideStyleNature },
+  { id: "whiteboard", label: "Whiteboard", prompt: slideStyleWhiteboard },
+  { id: "consulting", label: "Consulting", prompt: slideStyleConsulting },
+  { id: "dark", label: "Dark", prompt: slideStyleDark },
+  { id: "swiss", label: "Swiss", prompt: slideStyleSwiss },
+  { id: "nature", label: "Nature", prompt: slideStyleNature },
 ] as const;
 
 export const PODCAST_STYLES = [
-  { id: 'overview', label: 'Overview', prompt: podcastStyleOverview, voices: ['host'] },
-  { id: 'deep-dive', label: 'Deep Dive', prompt: podcastStyleDeepDive, voices: ['analyst'] },
-  { id: 'briefing', label: 'Briefing', prompt: podcastStyleBriefing, voices: ['narrator'] },
-  { id: 'story', label: 'Story', prompt: podcastStyleStory, voices: ['storyteller'] },
-  { id: 'debate', label: 'Debate', prompt: podcastStyleDebate, voices: ['host', 'skeptic'] },
+  { id: "overview", label: "Overview", prompt: podcastStyleOverview, voices: ["host"] },
+  { id: "deep-dive", label: "Deep Dive", prompt: podcastStyleDeepDive, voices: ["analyst"] },
+  { id: "briefing", label: "Briefing", prompt: podcastStyleBriefing, voices: ["narrator"] },
+  { id: "story", label: "Story", prompt: podcastStyleStory, voices: ["storyteller"] },
+  { id: "debate", label: "Debate", prompt: podcastStyleDebate, voices: ["host", "skeptic"] },
 ] as const;
 
 function buildSlideInstructions(styleId: string): string {
   const style = SLIDE_STYLES.find((s) => s.id === styleId) ?? SLIDE_STYLES[0];
   return studioSlideInstructions
-    .replace('{{COMMON_RULES}}', slideCommonRules)
-    .replace('{{STYLE_SECTION}}', style.prompt);
+    .replace("{{COMMON_RULES}}", slideCommonRules)
+    .replace("{{STYLE_SECTION}}", style.prompt);
 }
 
 function buildAudioInstructions(styleId: string): string {
   const style = PODCAST_STYLES.find((s) => s.id === styleId) ?? PODCAST_STYLES[0];
-  return studioAudioInstructions.replace('{{STYLE_SECTION}}', style.prompt);
+  return studioAudioInstructions.replace("{{STYLE_SECTION}}", style.prompt);
 }
 
 const OUTPUT_TITLES: Record<OutputType, string> = {
-  'audio-overview': 'Audio Overview',
-  'slide-deck': 'Slides',
-  'infographic': 'Infographic',
-  'data-table': 'Data Table',
-  'quiz': 'Quiz',
-  'mind-map': 'Mind Map',
+  "audio-overview": "Audio Overview",
+  "slide-deck": "Slides",
+  infographic: "Infographic",
+  "data-table": "Data Table",
+  quiz: "Quiz",
+  "mind-map": "Mind Map",
 };
 
 export function useNotebook(notebookId?: string) {
@@ -175,7 +169,7 @@ export function useNotebook(notebookId?: string) {
   const loadIdRef = useRef(0);
 
   const getModel = useCallback(() => {
-    return config.notebook?.model || '';
+    return config.notebook?.model || "";
   }, [config.notebook]);
 
   // ── Init / Load ────────────────────────────────────────────────────
@@ -191,11 +185,7 @@ export function useNotebook(notebookId?: string) {
       if (loadIdRef.current !== thisLoad) return rid;
 
       if (existing) {
-        const [s, o, m] = await Promise.all([
-          store.getSources(rid),
-          store.getOutputs(rid),
-          store.getMessages(rid),
-        ]);
+        const [s, o, m] = await Promise.all([store.getSources(rid), store.getOutputs(rid), store.getMessages(rid)]);
         if (loadIdRef.current !== thisLoad) return rid;
         setNotebook(existing);
         setSources(s);
@@ -205,7 +195,7 @@ export function useNotebook(notebookId?: string) {
         const now = new Date().toISOString();
         const r: Notebook = {
           id: rid,
-          title: 'Untitled notebook',
+          title: "Untitled notebook",
           createdAt: now,
           updatedAt: now,
         };
@@ -248,21 +238,19 @@ export function useNotebook(notebookId?: string) {
   // ── Sources ────────────────────────────────────────────────────────
 
   const searchWeb = useCallback(
-    async (query: string, mode: 'web' | 'research'): Promise<string> => {
+    async (query: string, mode: "web" | "research"): Promise<string> => {
       setIsSearching(true);
 
       try {
-        if (mode === 'research') {
-          const content = await client.research('', query);
-          if (!content?.trim()) throw new Error('No results found');
+        if (mode === "research") {
+          const content = await client.research("", query);
+          if (!content?.trim()) throw new Error("No results found");
           return content;
         }
 
-        const results = await client.search(config.internet?.searcher || '', query);
-        const content = results
-          .map((r) => `## ${r.title || r.source || 'Result'}\n\n${r.content}`)
-          .join('\n\n---\n\n');
-        if (!content?.trim()) throw new Error('No results found');
+        const results = await client.search(config.internet?.searcher || "", query);
+        const content = results.map((r) => `## ${r.title || r.source || "Result"}\n\n${r.content}`).join("\n\n---\n\n");
+        if (!content?.trim()) throw new Error("No results found");
         return content;
       } finally {
         setIsSearching(false);
@@ -272,12 +260,12 @@ export function useNotebook(notebookId?: string) {
   );
 
   const addSearchResult = useCallback(
-    async (query: string, mode: 'web' | 'research', content: string) => {
+    async (query: string, mode: "web" | "research", content: string) => {
       if (!notebook) return;
 
       const source: NotebookSource = {
         id: generateId(),
-        type: 'web',
+        type: "web",
         name: query.slice(0, 60),
         content,
         metadata: { query, url: mode },
@@ -294,10 +282,7 @@ export function useNotebook(notebookId?: string) {
     async (file: File) => {
       if (!notebook) return;
 
-      const content = await convertFileToText(
-        file,
-        (f) => client.extractText(f),
-      );
+      const content = await convertFileToText(file, (f) => client.extractText(f));
 
       if (!content?.trim()) {
         throw new Error(`Could not extract text from ${file.name}`);
@@ -305,7 +290,7 @@ export function useNotebook(notebookId?: string) {
 
       const source: NotebookSource = {
         id: generateId(),
-        type: 'file',
+        type: "file",
         name: file.name,
         content,
         metadata: {
@@ -326,8 +311,8 @@ export function useNotebook(notebookId?: string) {
       setIsSearching(true);
 
       try {
-        const content = await client.scrape(config.internet?.scraper || '', url);
-        if (!content?.trim()) throw new Error('Could not fetch page content');
+        const content = await client.scrape(config.internet?.scraper || "", url);
+        if (!content?.trim()) throw new Error("Could not fetch page content");
         return content;
       } finally {
         setIsSearching(false);
@@ -342,7 +327,7 @@ export function useNotebook(notebookId?: string) {
 
       const source: NotebookSource = {
         id: generateId(),
-        type: 'web',
+        type: "web",
         name: url,
         content,
         metadata: { url },
@@ -373,8 +358,8 @@ export function useNotebook(notebookId?: string) {
       setStreamingContent(null);
 
       const userMsg: NotebookMessage = {
-        role: 'user',
-        content: [{ type: 'text', text }],
+        role: "user",
+        content: [{ type: "text", text }],
         timestamp: new Date().toISOString(),
       };
 
@@ -387,13 +372,8 @@ export function useNotebook(notebookId?: string) {
         // Build Message[] for the LLM (strip timestamps)
         const conversation = newMessages.map(({ timestamp, ...msg }) => msg);
 
-        const response = await runWithTools(
-          client,
-          getModel(),
-          chatInstructions,
-          conversation,
-          tools,
-          (content) => setStreamingContent(content),
+        const response = await runWithTools(client, getModel(), chatInstructions, conversation, tools, (content) =>
+          setStreamingContent(content),
         );
 
         setStreamingContent(null);
@@ -410,11 +390,11 @@ export function useNotebook(notebookId?: string) {
         setStreamingContent(null);
 
         const errorMsg: NotebookMessage = {
-          role: 'assistant',
+          role: "assistant",
           content: [
             {
-              type: 'text',
-              text: `Error: ${err instanceof Error ? err.message : 'Failed to generate response'}`,
+              type: "text",
+              text: `Error: ${err instanceof Error ? err.message : "Failed to generate response"}`,
             },
           ],
           timestamp: new Date().toISOString(),
@@ -438,8 +418,8 @@ export function useNotebook(notebookId?: string) {
         id: generateId(),
         type,
         title: OUTPUT_TITLES[type],
-        content: '',
-        status: 'generating',
+        content: "",
+        status: "generating",
         createdAt: new Date().toISOString(),
       };
 
@@ -447,9 +427,7 @@ export function useNotebook(notebookId?: string) {
       setOutputs((prev) => [output, ...prev]);
 
       const completeOutput = async (completed: NotebookOutput) => {
-        setOutputs((prev) =>
-          prev.map((o) => (o.id === output.id ? completed : o)),
-        );
+        setOutputs((prev) => prev.map((o) => (o.id === output.id ? completed : o)));
         await store.addOutput(notebook.id, completed);
       };
 
@@ -459,9 +437,8 @@ export function useNotebook(notebookId?: string) {
             o.id === output.id
               ? {
                   ...o,
-                  status: 'error' as const,
-                  error:
-                    err instanceof Error ? err.message : 'Generation failed',
+                  status: "error" as const,
+                  error: err instanceof Error ? err.message : "Generation failed",
                 }
               : o,
           ),
@@ -470,31 +447,32 @@ export function useNotebook(notebookId?: string) {
 
       // Fire and forget
       const tools = createSourceTools(sourcesRef.current);
-      const instructions = type === 'slide-deck'
-        ? buildSlideInstructions(styleId ?? 'whiteboard')
-        : type === 'audio-overview'
-          ? buildAudioInstructions(styleId ?? 'overview')
-          : STUDIO_PROMPTS[type];
+      const instructions =
+        type === "slide-deck"
+          ? buildSlideInstructions(styleId ?? "whiteboard")
+          : type === "audio-overview"
+            ? buildAudioInstructions(styleId ?? "overview")
+            : STUDIO_PROMPTS[type];
       const userMessage = {
-        role: 'user' as const,
+        role: "user" as const,
         content: [
           {
-            type: 'text' as const,
+            type: "text" as const,
             text: `Generate a ${OUTPUT_TITLES[type].toLowerCase()} from the available sources.`,
           },
         ],
       };
 
-      if (type === 'audio-overview') {
+      if (type === "audio-overview") {
         // Audio overview: LLM generates script → TTS generates audio per paragraph → merge
         runWithTools(client, getModel(), instructions, [userMessage], tools)
           .then(async (response) => {
             const script = getTextFromContent(response.content);
             if (!script?.trim()) {
-              throw new Error('Could not generate audio script');
+              throw new Error("Could not generate audio script");
             }
 
-            const ttsModel = config.tts?.model || '';
+            const ttsModel = config.tts?.model || "";
             const voiceMap = config.tts?.voices ?? {};
             const resolveVoice = (role: string) => voiceMap[role] || role;
             const podcastStyle = PODCAST_STYLES.find((s) => s.id === styleId) ?? PODCAST_STYLES[0];
@@ -506,17 +484,23 @@ export function useNotebook(notebookId?: string) {
             if (voices.length > 1) {
               // Split by speaker tags: [1] or [2]
               const tagPattern = /^\[(\d+)\]\s*/;
-              for (const para of script.split(/\n\n+/).map((p) => p.trim()).filter(Boolean)) {
+              for (const para of script
+                .split(/\n\n+/)
+                .map((p) => p.trim())
+                .filter(Boolean)) {
                 const match = para.match(tagPattern);
                 if (match) {
                   const idx = Math.min(parseInt(match[1], 10) - 1, voices.length - 1);
-                  segments.push({ text: para.replace(tagPattern, ''), voice: voices[Math.max(0, idx)] });
+                  segments.push({ text: para.replace(tagPattern, ""), voice: voices[Math.max(0, idx)] });
                 } else {
                   segments.push({ text: para, voice: voices[0] });
                 }
               }
             } else {
-              for (const para of script.split(/\n\n+/).map((p) => p.trim()).filter(Boolean)) {
+              for (const para of script
+                .split(/\n\n+/)
+                .map((p) => p.trim())
+                .filter(Boolean)) {
                 segments.push({ text: para, voice: voices[0] });
               }
             }
@@ -535,7 +519,7 @@ export function useNotebook(notebookId?: string) {
             // Merge WAV blobs into a single audio blob
             const validBlobs = audioBlobs.filter((b): b is Blob => b !== null);
             if (validBlobs.length === 0) {
-              throw new Error('Failed to generate audio');
+              throw new Error("Failed to generate audio");
             }
 
             const mergedBlob = await mergeWavBlobs(validBlobs);
@@ -545,20 +529,20 @@ export function useNotebook(notebookId?: string) {
               ...output,
               content: script,
               audioUrl,
-              status: 'completed',
+              status: "completed",
             });
           })
           .catch(failOutput);
-      } else if (type === 'infographic') {
+      } else if (type === "infographic") {
         // Infographic: LLM generates image prompt → renderer creates image
         runWithTools(client, getModel(), instructions, [userMessage], tools)
           .then(async (response) => {
             const imagePrompt = getTextFromContent(response.content);
             if (!imagePrompt?.trim()) {
-              throw new Error('Could not generate image prompt');
+              throw new Error("Could not generate image prompt");
             }
 
-            const rendererModel = config.renderer?.model || '';
+            const rendererModel = config.renderer?.model || "";
             const imageBlob = await client.generateImage(rendererModel, imagePrompt);
             const imageUrl = await blobToDataUrl(imageBlob);
 
@@ -566,18 +550,18 @@ export function useNotebook(notebookId?: string) {
               ...output,
               content: imagePrompt,
               imageUrl,
-              status: 'completed',
+              status: "completed",
             });
           })
           .catch(failOutput);
-      } else if (type === 'slide-deck') {
+      } else if (type === "slide-deck") {
         // Slide deck: LLM generates slide text + image prompts → render each slide sequentially
         // so each slide can use the previous one as a style reference
         runWithTools(client, getModel(), instructions, [userMessage], tools)
           .then(async (response) => {
             const fullContent = getTextFromContent(response.content);
             if (!fullContent?.trim()) {
-              throw new Error('Could not generate slide deck');
+              throw new Error("Could not generate slide deck");
             }
 
             // Parse slides: split by ---SLIDE--- separator
@@ -592,17 +576,17 @@ export function useNotebook(notebookId?: string) {
 
             for (const block of slideBlocks) {
               const parts = block.split(/---PROMPT---/i);
-              slideTexts.push((parts[0] || '').trim());
+              slideTexts.push((parts[0] || "").trim());
               if (parts[1]) {
                 imagePrompts.push(parts[1].trim());
               }
             }
 
-            const textContent = slideTexts.join('\n\n---\n\n');
+            const textContent = slideTexts.join("\n\n---\n\n");
 
             // Generate first slide alone to establish style, then remaining in parallel batches of 4
-            const rendererModel = config.renderer?.model || '';
-            const slideImages: string[] = new Array(imagePrompts.length).fill('');
+            const rendererModel = config.renderer?.model || "";
+            const slideImages: string[] = new Array(imagePrompts.length).fill("");
 
             if (imagePrompts.length > 0) {
               try {
@@ -614,13 +598,12 @@ export function useNotebook(notebookId?: string) {
                   const batch = remaining.slice(i, i + 4);
                   const results = await Promise.allSettled(
                     batch.map((prompt) =>
-                      client.generateImage(rendererModel, prompt, [firstBlob])
-                        .then((blob) => blobToDataUrl(blob))
-                    )
+                      client.generateImage(rendererModel, prompt, [firstBlob]).then((blob) => blobToDataUrl(blob)),
+                    ),
                   );
                   for (let j = 0; j < results.length; j++) {
                     const result = results[j];
-                    slideImages[1 + i + j] = result.status === 'fulfilled' ? result.value : '';
+                    slideImages[1 + i + j] = result.status === "fulfilled" ? result.value : "";
                   }
                 }
               } catch {
@@ -632,51 +615,57 @@ export function useNotebook(notebookId?: string) {
               ...output,
               content: textContent,
               slides: slideImages.filter(Boolean),
-              status: 'completed',
+              status: "completed",
             });
           })
           .catch(failOutput);
-      } else if (type === 'quiz') {
+      } else if (type === "quiz") {
         // Quiz: LLM reads sources → produces structured JSON
         runWithTools(client, getModel(), instructions, [userMessage], tools)
           .then(async (response) => {
             const raw = getTextFromContent(response.content);
-            if (!raw?.trim()) throw new Error('Could not generate quiz');
+            if (!raw?.trim()) throw new Error("Could not generate quiz");
 
-            const jsonStr = raw.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim();
+            const jsonStr = raw
+              .replace(/^```json?\s*/i, "")
+              .replace(/```\s*$/i, "")
+              .trim();
             const parsed = JSON.parse(jsonStr) as { questions: QuizQuestion[] };
 
             if (!parsed.questions?.length) {
-              throw new Error('No questions generated');
+              throw new Error("No questions generated");
             }
 
             await completeOutput({
               ...output,
               content: raw,
               quiz: parsed.questions,
-              status: 'completed',
+              status: "completed",
             });
           })
           .catch(failOutput);
-      } else if (type === 'mind-map') {
+      } else if (type === "mind-map") {
         // Mind map: LLM reads sources → produces structured JSON tree
         runWithTools(client, getModel(), instructions, [userMessage], tools)
           .then(async (response) => {
             const raw = getTextFromContent(response.content);
-            if (!raw?.trim()) throw new Error('Could not generate mind map');
+            if (!raw?.trim()) throw new Error("Could not generate mind map");
 
-            const jsonStr = raw.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim();
+            const jsonStr = raw
+              .replace(/^```json?\s*/i, "")
+              .replace(/```\s*$/i, "")
+              .trim();
             const parsed = JSON.parse(jsonStr) as MindMapNode;
 
             if (!parsed.label) {
-              throw new Error('Invalid mind map structure');
+              throw new Error("Invalid mind map structure");
             }
 
             await completeOutput({
               ...output,
               content: raw,
               mindMap: parsed,
-              status: 'completed',
+              status: "completed",
             });
           })
           .catch(failOutput);
@@ -686,13 +675,13 @@ export function useNotebook(notebookId?: string) {
           .then(async (response) => {
             const content = getTextFromContent(response.content);
             if (!content?.trim()) {
-              throw new Error('Could not generate output');
+              throw new Error("Could not generate output");
             }
 
             await completeOutput({
               ...output,
               content,
-              status: 'completed',
+              status: "completed",
             });
           })
           .catch(failOutput);

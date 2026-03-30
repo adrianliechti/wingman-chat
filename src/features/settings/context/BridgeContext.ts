@@ -1,4 +1,4 @@
-import { createContext } from 'react';
+import { createContext } from "react";
 
 export type BridgeServer = {
   id: string;
@@ -11,8 +11,8 @@ export type BridgeServer = {
 
 export interface BridgeContextType {
   servers: BridgeServer[];
-  addServer: (server: Omit<BridgeServer, 'id'>) => BridgeServer;
-  updateServer: (id: string, updates: Partial<Omit<BridgeServer, 'id'>>) => void;
+  addServer: (server: Omit<BridgeServer, "id">) => BridgeServer;
+  updateServer: (id: string, updates: Partial<Omit<BridgeServer, "id">>) => void;
   removeServer: (id: string) => void;
   toggleServer: (id: string) => void;
   getEnabledServers: () => BridgeServer[];

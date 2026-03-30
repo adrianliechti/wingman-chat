@@ -1,20 +1,20 @@
-import JSZip from 'jszip';
-import { artifactContentToZipValue, normalizeArtifactPath } from '@/shared/lib/artifactFiles';
-import { downloadBlob } from '@/shared/lib/utils';
-import * as opfs from '@/shared/lib/opfs';
-import type { File, FileEntry } from '@/features/artifacts/types/file';
+import JSZip from "jszip";
+import { artifactContentToZipValue, normalizeArtifactPath } from "@/shared/lib/artifactFiles";
+import { downloadBlob } from "@/shared/lib/utils";
+import * as opfs from "@/shared/lib/opfs";
+import type { File, FileEntry } from "@/features/artifacts/types/file";
 
-type FileEventType = 'fileCreated' | 'fileDeleted' | 'fileRenamed' | 'fileUpdated';
+type FileEventType = "fileCreated" | "fileDeleted" | "fileRenamed" | "fileUpdated";
 
-type FileEventHandler<T extends FileEventType> = T extends 'fileCreated'
+type FileEventHandler<T extends FileEventType> = T extends "fileCreated"
   ? (path: string) => void
-  : T extends 'fileDeleted'
-  ? (path: string) => void
-  : T extends 'fileRenamed'
-  ? (oldPath: string, newPath: string) => void
-  : T extends 'fileUpdated'
-  ? (path: string) => void
-  : never;
+  : T extends "fileDeleted"
+    ? (path: string) => void
+    : T extends "fileRenamed"
+      ? (oldPath: string, newPath: string) => void
+      : T extends "fileUpdated"
+        ? (path: string) => void
+        : never;
 
 export interface OverlayFile {
   content: string;
@@ -39,7 +39,7 @@ export interface OverlaySnapshotOptions {
 
 /**
  * FileSystemManager - OPFS-backed file system for artifacts
- * 
+ *
  * All operations go directly to OPFS. Events are emitted synchronously
  * after OPFS operations complete to notify UI of changes.
  */
@@ -49,10 +49,10 @@ export class FileSystemManager {
 
   constructor() {
     // Initialize event handler sets
-    this.eventHandlers.set('fileCreated', new Set());
-    this.eventHandlers.set('fileDeleted', new Set());
-    this.eventHandlers.set('fileRenamed', new Set());
-    this.eventHandlers.set('fileUpdated', new Set());
+    this.eventHandlers.set("fileCreated", new Set());
+    this.eventHandlers.set("fileDeleted", new Set());
+    this.eventHandlers.set("fileRenamed", new Set());
+    this.eventHandlers.set("fileUpdated", new Set());
   }
 
   // Get the current chat ID
@@ -91,7 +91,7 @@ export class FileSystemManager {
   private emit(eventType: FileEventType, ...args: unknown[]): void {
     const handlers = this.eventHandlers.get(eventType);
     if (handlers) {
-      handlers.forEach(handler => {
+      handlers.forEach((handler) => {
         try {
           handler(...args);
         } catch (error) {
@@ -104,7 +104,7 @@ export class FileSystemManager {
   private normalizePath(path: string): string {
     const normalized = normalizeArtifactPath(path);
     if (!normalized) {
-      throw new Error('Artifact path is required');
+      throw new Error("Artifact path is required");
     }
 
     return normalized;
@@ -116,7 +116,7 @@ export class FileSystemManager {
    */
   async createFile(path: string, content: string, contentType?: string): Promise<void> {
     if (!this._chatId) {
-      throw new Error('No chat ID set - cannot create file');
+      throw new Error("No chat ID set - cannot create file");
     }
 
     // Check if file exists to determine event type
@@ -128,9 +128,9 @@ export class FileSystemManager {
 
     // Emit event synchronously after write completes
     if (isUpdate) {
-      this.emit('fileUpdated', path);
+      this.emit("fileUpdated", path);
     } else {
-      this.emit('fileCreated', path);
+      this.emit("fileCreated", path);
     }
   }
 
@@ -146,21 +146,21 @@ export class FileSystemManager {
     const file = await opfs.readArtifact(this._chatId, path);
     if (file) {
       await opfs.deleteArtifact(this._chatId, path);
-      this.emit('fileDeleted', path);
+      this.emit("fileDeleted", path);
       return true;
     }
 
     // Check if this is a folder (has files that start with path + '/')
     const allFiles = await opfs.listArtifacts(this._chatId);
-    const affectedFiles = allFiles.filter(f => f.startsWith(path + '/'));
+    const affectedFiles = allFiles.filter((f) => f.startsWith(path + "/"));
 
     if (affectedFiles.length > 0) {
       // Delete the folder and all contents
       await opfs.deleteArtifactFolder(this._chatId, path);
-      
+
       // Emit event for each deleted file
       for (const filePath of affectedFiles) {
-        this.emit('fileDeleted', filePath);
+        this.emit("fileDeleted", filePath);
       }
       return true;
     }
@@ -188,25 +188,25 @@ export class FileSystemManager {
       // Copy content to new location and delete old
       await opfs.writeArtifact(this._chatId, newPath, file.content, file.contentType);
       await opfs.deleteArtifact(this._chatId, oldPath);
-      this.emit('fileRenamed', oldPath, newPath);
+      this.emit("fileRenamed", oldPath, newPath);
       return true;
     }
 
     // Check if source is a folder
     const allFiles = await opfs.listArtifacts(this._chatId);
-    const affectedFiles = allFiles.filter(f => f.startsWith(oldPath + '/'));
+    const affectedFiles = allFiles.filter((f) => f.startsWith(oldPath + "/"));
 
     if (affectedFiles.length > 0) {
       // Rename all files in the folder
       for (const filePath of affectedFiles) {
         const relativePath = filePath.substring(oldPath.length);
         const newFilePath = newPath + relativePath;
-        
+
         const fileData = await opfs.readArtifact(this._chatId, filePath);
         if (fileData) {
           await opfs.writeArtifact(this._chatId, newFilePath, fileData.content, fileData.contentType);
           await opfs.deleteArtifact(this._chatId, filePath);
-          this.emit('fileRenamed', filePath, newFilePath);
+          this.emit("fileRenamed", filePath, newFilePath);
         }
       }
       return true;
@@ -295,11 +295,11 @@ export class FileSystemManager {
    */
   async applyOverlayDelta(delta: OverlayDelta): Promise<OverlayCommitSummary> {
     if (!this._chatId) {
-      throw new Error('No chat ID set - cannot apply overlay delta');
+      throw new Error("No chat ID set - cannot apply overlay delta");
     }
 
     const existingFiles = await this.listFiles();
-    const existingByPath = new Map(existingFiles.map(file => [this.normalizePath(file.path), file]));
+    const existingByPath = new Map(existingFiles.map((file) => [this.normalizePath(file.path), file]));
 
     let created = 0;
     let updated = 0;
@@ -340,7 +340,7 @@ export class FileSystemManager {
    */
   async applyOverlaySnapshot(
     runtimeFiles: Record<string, string | OverlayFile>,
-    options: OverlaySnapshotOptions = {}
+    options: OverlaySnapshotOptions = {},
   ): Promise<OverlayCommitSummary> {
     const { deleteMissing = false, defaultContentType } = options;
     const normalizedRuntimePaths = new Set<string>();
@@ -350,7 +350,7 @@ export class FileSystemManager {
       const path = this.normalizePath(rawPath);
       normalizedRuntimePaths.add(path);
 
-      if (typeof value === 'string') {
+      if (typeof value === "string") {
         upserts[path] = { content: value, contentType: defaultContentType };
       } else {
         upserts[path] = {
@@ -411,11 +411,11 @@ export class FileSystemManager {
 }
 
 export async function downloadFilesystemAsZip(
-  filesystem: Record<string, File>, 
-  filename: string = 'filesystem.zip'
+  filesystem: Record<string, File>,
+  filename: string = "filesystem.zip",
 ): Promise<void> {
   if (Object.keys(filesystem).length === 0) {
-    throw new Error('No files to download');
+    throw new Error("No files to download");
   }
 
   const zip = new JSZip();
@@ -423,19 +423,19 @@ export async function downloadFilesystemAsZip(
   // Add each file to the zip
   for (const [path, file] of Object.entries(filesystem)) {
     // Remove leading slash if present for cleaner zip structure
-    const cleanPath = path.startsWith('/') ? path.substring(1) : path;
-    
+    const cleanPath = path.startsWith("/") ? path.substring(1) : path;
+
     // Add file to zip with its content
     zip.file(cleanPath, artifactContentToZipValue(file));
   }
 
   try {
     // Generate the zip file as a blob
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    const zipBlob = await zip.generateAsync({ type: "blob" });
 
     // Download the zip file
     downloadBlob(zipBlob, filename);
   } catch (error) {
-    throw new Error(`Failed to create zip file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(`Failed to create zip file: ${error instanceof Error ? error.message : "Unknown error"}`);
   }
 }

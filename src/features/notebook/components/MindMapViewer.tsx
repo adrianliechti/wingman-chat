@@ -1,15 +1,7 @@
-import { useMemo, useCallback, memo } from 'react';
-import {
-  ReactFlow,
-  Controls,
-  type Node,
-  type Edge,
-  type NodeProps,
-  Handle,
-  Position,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import type { MindMapNode } from '../types/notebook';
+import { useMemo, useCallback, memo } from "react";
+import { ReactFlow, Controls, type Node, type Edge, type NodeProps, Handle, Position } from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import type { MindMapNode } from "../types/notebook";
 
 interface MindMapViewerProps {
   root: MindMapNode;
@@ -18,13 +10,13 @@ interface MindMapViewerProps {
 // ── Colors ─────────────────────────────────────────────────────────────
 
 const COLORS = [
-  { bg: '#3b82f6', light: '#eff6ff', border: '#93bbfd', text: '#1e40af' },
-  { bg: '#10b981', light: '#ecfdf5', border: '#6ee7b7', text: '#065f46' },
-  { bg: '#f59e0b', light: '#fffbeb', border: '#fcd34d', text: '#92400e' },
-  { bg: '#8b5cf6', light: '#f5f3ff', border: '#c4b5fd', text: '#5b21b6' },
-  { bg: '#f43f5e', light: '#fff1f2', border: '#fda4af', text: '#9f1239' },
-  { bg: '#06b6d4', light: '#ecfeff', border: '#67e8f9', text: '#155e75' },
-  { bg: '#f97316', light: '#fff7ed', border: '#fdba74', text: '#9a3412' },
+  { bg: "#3b82f6", light: "#eff6ff", border: "#93bbfd", text: "#1e40af" },
+  { bg: "#10b981", light: "#ecfdf5", border: "#6ee7b7", text: "#065f46" },
+  { bg: "#f59e0b", light: "#fffbeb", border: "#fcd34d", text: "#92400e" },
+  { bg: "#8b5cf6", light: "#f5f3ff", border: "#c4b5fd", text: "#5b21b6" },
+  { bg: "#f43f5e", light: "#fff1f2", border: "#fda4af", text: "#9f1239" },
+  { bg: "#06b6d4", light: "#ecfeff", border: "#67e8f9", text: "#155e75" },
+  { bg: "#f97316", light: "#fff7ed", border: "#fdba74", text: "#9a3412" },
 ];
 
 // ── Layout: radial tree ────────────────────────────────────────────────
@@ -74,7 +66,7 @@ function layoutTree(root: MindMapNode): { nodes: LayoutNode[]; edges: Edge[] } {
         id: `edge-${parentId}-${id}`,
         source: parentId,
         target: id,
-        type: 'default',
+        type: "default",
         style: {
           stroke: COLORS[colorIndex % COLORS.length].bg,
           strokeWidth: Math.max(1.5, 3 - depth * 0.5),
@@ -129,15 +121,15 @@ const BranchNode = memo(({ data }: NodeProps<Node<MindMapNodeData>>) => {
     <div
       className="rounded-xl shadow-sm text-center select-none transition-shadow hover:shadow-md"
       style={{
-        padding: isMajor ? '8px 16px' : '5px 12px',
+        padding: isMajor ? "8px 16px" : "5px 12px",
         backgroundColor: isMajor ? color.bg : color.light,
-        color: isMajor ? '#fff' : color.text,
-        border: isMajor ? 'none' : `1.5px solid ${color.border}`,
-        fontSize: isMajor ? '13px' : '12px',
+        color: isMajor ? "#fff" : color.text,
+        border: isMajor ? "none" : `1.5px solid ${color.border}`,
+        fontSize: isMajor ? "13px" : "12px",
         fontWeight: isMajor ? 600 : 500,
-        minWidth: '60px',
-        maxWidth: '180px',
-        wordBreak: 'break-word' as const,
+        minWidth: "60px",
+        maxWidth: "180px",
+        wordBreak: "break-word" as const,
       }}
     >
       {data.label}
@@ -166,7 +158,7 @@ export function MindMapViewer({ root }: MindMapViewerProps) {
 
     const flowNodes: Node<MindMapNodeData>[] = nodes.map((n) => ({
       id: n.id,
-      type: n.depth === 0 ? 'root' : 'branch',
+      type: n.depth === 0 ? "root" : "branch",
       position: { x: n.x, y: n.y },
       data: {
         label: n.label,
@@ -184,7 +176,7 @@ export function MindMapViewer({ root }: MindMapViewerProps) {
   }, []);
 
   return (
-    <div className="h-full w-full" style={{ background: 'transparent' }}>
+    <div className="h-full w-full" style={{ background: "transparent" }}>
       <ReactFlow
         nodes={flowNodes}
         edges={flowEdges}
@@ -200,7 +192,7 @@ export function MindMapViewer({ root }: MindMapViewerProps) {
         panOnScroll
         zoomOnScroll
         proOptions={{ hideAttribution: true }}
-        style={{ background: 'transparent' }}
+        style={{ background: "transparent" }}
       >
         <Controls
           showInteractive={false}

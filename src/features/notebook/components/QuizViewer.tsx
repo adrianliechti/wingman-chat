@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Check, X, ChevronRight, RotateCcw } from 'lucide-react';
-import type { QuizQuestion } from '../types/notebook';
+import { useState } from "react";
+import { Check, X, ChevronRight, RotateCcw } from "lucide-react";
+import type { QuizQuestion } from "../types/notebook";
 
 interface QuizViewerProps {
   questions: QuizQuestion[];
@@ -48,19 +48,13 @@ export function QuizViewer({ questions }: QuizViewerProps) {
       <div className="h-full flex items-center justify-center p-8">
         <div className="text-center max-w-sm">
           <div className="w-20 h-20 mx-auto mb-5 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
-            <span className="text-2xl font-bold text-neutral-700 dark:text-neutral-300">
-              {percentage}%
-            </span>
+            <span className="text-2xl font-bold text-neutral-700 dark:text-neutral-300">{percentage}%</span>
           </div>
           <p className="text-lg font-semibold text-neutral-800 dark:text-neutral-200 mb-1">
             {score} / {questions.length} correct
           </p>
           <p className="text-sm text-neutral-500 mb-6">
-            {percentage >= 80
-              ? 'Excellent work!'
-              : percentage >= 60
-                ? 'Good effort!'
-                : 'Keep studying!'}
+            {percentage >= 80 ? "Excellent work!" : percentage >= 60 ? "Good effort!" : "Keep studying!"}
           </p>
           <button
             type="button"
@@ -83,9 +77,7 @@ export function QuizViewer({ questions }: QuizViewerProps) {
           <span className="text-xs text-neutral-400">
             Question {currentIndex + 1} of {questions.length}
           </span>
-          <span className="text-xs text-neutral-400">
-            Score: {score}
-          </span>
+          <span className="text-xs text-neutral-400">Score: {score}</span>
         </div>
         <div className="h-1 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
           <div
@@ -106,17 +98,18 @@ export function QuizViewer({ questions }: QuizViewerProps) {
             const isCorrect = i === question.correctIndex;
             const isSelected = i === selected;
 
-            let styles = 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600';
+            let styles =
+              "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600";
             if (revealed) {
               if (isCorrect) {
-                styles = 'border-green-500 bg-green-50 dark:bg-green-950/30';
+                styles = "border-green-500 bg-green-50 dark:bg-green-950/30";
               } else if (isSelected && !isCorrect) {
-                styles = 'border-red-500 bg-red-50 dark:bg-red-950/30';
+                styles = "border-red-500 bg-red-50 dark:bg-red-950/30";
               } else {
-                styles = 'border-neutral-200 dark:border-neutral-700 opacity-50';
+                styles = "border-neutral-200 dark:border-neutral-700 opacity-50";
               }
             } else if (isSelected) {
-              styles = 'border-neutral-800 dark:border-neutral-200';
+              styles = "border-neutral-800 dark:border-neutral-200";
             }
 
             return (
@@ -137,9 +130,7 @@ export function QuizViewer({ questions }: QuizViewerProps) {
                       String.fromCharCode(65 + i)
                     )}
                   </span>
-                  <span className="text-sm text-neutral-700 dark:text-neutral-300">
-                    {option}
-                  </span>
+                  <span className="text-sm text-neutral-700 dark:text-neutral-300">{option}</span>
                 </div>
               </button>
             );
@@ -150,9 +141,7 @@ export function QuizViewer({ questions }: QuizViewerProps) {
         {revealed && (
           <div className="mt-4 px-4 py-3 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg border border-neutral-200 dark:border-neutral-700">
             <p className="text-xs font-medium text-neutral-500 mb-1">Explanation</p>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed">
-              {question.explanation}
-            </p>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed">{question.explanation}</p>
           </div>
         )}
       </div>
@@ -171,7 +160,7 @@ export function QuizViewer({ questions }: QuizViewerProps) {
                 <ChevronRight size={14} />
               </>
             ) : (
-              'See results'
+              "See results"
             )}
           </button>
         </div>

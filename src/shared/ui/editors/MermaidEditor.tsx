@@ -1,11 +1,11 @@
-import { memo, useState, useEffect, useRef } from 'react';
-import { useTheme } from '@/shell/hooks/useTheme';
-import { CodeEditor } from './CodeEditor';
+import { memo, useState, useEffect, useRef } from "react";
+import { useTheme } from "@/shell/hooks/useTheme";
+import { CodeEditor } from "./CodeEditor";
 
 interface MermaidEditorProps {
   content: string;
-  viewMode?: 'code' | 'preview';
-  onViewModeChange?: (mode: 'code' | 'preview') => void;
+  viewMode?: "code" | "preview";
+  onViewModeChange?: (mode: "code" | "preview") => void;
 }
 
 interface MermaidAPI {
@@ -15,7 +15,7 @@ interface MermaidAPI {
 
 // Component to display Mermaid diagram
 function MermaidPreview({ content }: { content: string }) {
-  const [svg, setSvg] = useState<string>('');
+  const [svg, setSvg] = useState<string>("");
   const [isLoaded, setIsLoaded] = useState(false);
   const elementId = useRef(`mermaid-${Math.random().toString(36).substr(2, 9)}`);
   const mermaidRef = useRef<MermaidAPI | null>(null);
@@ -26,11 +26,11 @@ function MermaidPreview({ content }: { content: string }) {
     const loadMermaid = async () => {
       if (!mermaidRef.current) {
         try {
-          const mermaidModule = await import('mermaid');
+          const mermaidModule = await import("mermaid");
           mermaidRef.current = mermaidModule.default;
           setIsLoaded(true);
         } catch (error) {
-          console.error('Failed to load Mermaid:', error);
+          console.error("Failed to load Mermaid:", error);
         }
       }
     };
@@ -44,38 +44,40 @@ function MermaidPreview({ content }: { content: string }) {
 
     const themeConfig = {
       startOnLoad: false,
-      securityLevel: 'loose' as const,
+      securityLevel: "loose" as const,
       suppressErrorRendering: true,
-      theme: 'base' as const,
-      themeVariables: isDark ? {
-        // Dark mode configuration
-        primaryColor: '#64748b',
-        primaryBorderColor: '#475569',
-        lineColor: '#94a3b8',
-        secondaryColor: '#1e293b',
-        tertiaryColor: '#334155',
-        background: '#1f2937',
-        mainBkg: '#1f2937',
-        secondBkg: '#374151',
-        tertiaryBkg: '#4b5563',
-        primaryTextColor: '#ffffff',
-        secondaryTextColor: '#e5e7eb',
-        tertiaryTextColor: '#d1d5db',
-      } : {
-        // Light mode configuration
-        primaryColor: '#64748b',
-        primaryBorderColor: '#475569',
-        lineColor: '#94a3b8',
-        secondaryColor: '#1e293b',
-        tertiaryColor: '#334155',
-        background: '#ffffff',
-        mainBkg: '#ffffff',
-        secondBkg: '#f8fafc',
-        tertiaryBkg: '#f1f5f9',
-        primaryTextColor: '#0f172a',
-        secondaryTextColor: '#1f2937',
-        tertiaryTextColor: '#374151',
-      }
+      theme: "base" as const,
+      themeVariables: isDark
+        ? {
+            // Dark mode configuration
+            primaryColor: "#64748b",
+            primaryBorderColor: "#475569",
+            lineColor: "#94a3b8",
+            secondaryColor: "#1e293b",
+            tertiaryColor: "#334155",
+            background: "#1f2937",
+            mainBkg: "#1f2937",
+            secondBkg: "#374151",
+            tertiaryBkg: "#4b5563",
+            primaryTextColor: "#ffffff",
+            secondaryTextColor: "#e5e7eb",
+            tertiaryTextColor: "#d1d5db",
+          }
+        : {
+            // Light mode configuration
+            primaryColor: "#64748b",
+            primaryBorderColor: "#475569",
+            lineColor: "#94a3b8",
+            secondaryColor: "#1e293b",
+            tertiaryColor: "#334155",
+            background: "#ffffff",
+            mainBkg: "#ffffff",
+            secondBkg: "#f8fafc",
+            tertiaryBkg: "#f1f5f9",
+            primaryTextColor: "#0f172a",
+            secondaryTextColor: "#1f2937",
+            tertiaryTextColor: "#374151",
+          },
     };
 
     mermaidRef.current.initialize(themeConfig);
@@ -94,8 +96,8 @@ function MermaidPreview({ content }: { content: string }) {
         const { svg: renderedSvg } = await mermaidRef.current!.render(elementId.current, content);
         if (!cancelled) setSvg(renderedSvg);
       } catch (error) {
-        console.error('Mermaid rendering error:', error);
-        if (!cancelled) setSvg('');
+        console.error("Mermaid rendering error:", error);
+        if (!cancelled) setSvg("");
       }
     }, 300);
 
@@ -110,7 +112,7 @@ function MermaidPreview({ content }: { content: string }) {
       <div className="h-full flex items-center justify-center">
         <div className="flex items-center space-x-3 text-neutral-500">
           <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-gray-600 dark:border-neutral-600 dark:border-t-neutral-400"></div>
-          <span>{!isLoaded ? 'Loading diagram renderer...' : 'Loading preview...'}</span>
+          <span>{!isLoaded ? "Loading diagram renderer..." : "Loading preview..."}</span>
         </div>
       </div>
     );
@@ -126,19 +128,16 @@ function MermaidPreview({ content }: { content: string }) {
 
   return (
     <div className="h-full overflow-auto p-4">
-      <div 
-        className="mermaid-diagram flex justify-center"
-        dangerouslySetInnerHTML={{ __html: svg }}
-      />
+      <div className="mermaid-diagram flex justify-center" dangerouslySetInnerHTML={{ __html: svg }} />
     </div>
   );
 }
 
-const NonMemoizedMermaidEditor = ({ content, viewMode = 'preview' }: MermaidEditorProps) => {
+const NonMemoizedMermaidEditor = ({ content, viewMode = "preview" }: MermaidEditorProps) => {
   return (
     <div className="h-full flex flex-col overflow-hidden relative">
       <div className="flex-1 overflow-auto min-h-0">
-        {viewMode === 'preview' ? (
+        {viewMode === "preview" ? (
           <MermaidPreview content={content} />
         ) : (
           <CodeEditor content={content} language="mermaid" />
@@ -150,7 +149,5 @@ const NonMemoizedMermaidEditor = ({ content, viewMode = 'preview' }: MermaidEdit
 
 export const MermaidEditor = memo(
   NonMemoizedMermaidEditor,
-  (prevProps, nextProps) =>
-    prevProps.content === nextProps.content &&
-    prevProps.viewMode === nextProps.viewMode
+  (prevProps, nextProps) => prevProps.content === nextProps.content && prevProps.viewMode === nextProps.viewMode,
 );
