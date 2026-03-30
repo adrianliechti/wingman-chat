@@ -93,7 +93,7 @@ export function SkillCatalog({
     setIsOptimizing(true);
     try {
       const config = getConfig();
-      const result = await config.client.optimizeSkill("", edName, edDescription, edContent);
+      const result = await config.client.optimizeSkill(config.chat?.optimizer || "", edName, edDescription, edContent);
       if (editing === "new") {
         setEdName(result.name);
       }

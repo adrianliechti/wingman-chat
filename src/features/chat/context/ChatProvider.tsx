@@ -1,25 +1,38 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { Role } from "@/shared/types/chat";
-import type {
-  Message,
-  Model,
-  ToolContext,
-  PendingElicitation,
-  ElicitationResult,
-  Elicitation,
-  Content,
-  ToolResultContent,
-} from "@/shared/types/chat";
-import { useModels } from "@/features/chat/hooks/useModels";
-import { useChats } from "@/features/chat/hooks/useChats";
-import { useChatContext } from "@/features/chat/hooks/useChatContext";
-import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { useApp } from "@/shell/hooks/useApp";
 import { useAgents } from "@/features/agent/hooks/useAgents";
+import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { useChatContext } from "@/features/chat/hooks/useChatContext";
+import { useChats } from "@/features/chat/hooks/useChats";
+import { useModels } from "@/features/chat/hooks/useModels";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
-import { ChatContext } from "./ChatContext";
+import type {
+  Content,
+  Elicitation,
+  ElicitationResult,
+  Message,
+  Model,
+  PendingElicitation,
+  ToolContext,
+} from "@/shared/types/chat";
+import { Role } from "@/shared/types/chat";
+import { useApp } from "@/shell/hooks/useApp";
 import type { ChatContextType } from "./ChatContext";
+import { ChatContext } from "./ChatContext";
+
+/** Drop all messages before the last compaction item to keep API requests small. */
+function pruneAtCompaction(messages: Message[]): Message[] {
+  let lastCompactionIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].content.some(p => p.type === 'compaction')) {
+      lastCompactionIndex = i;
+      break;
+    }
+  }
+  if (lastCompactionIndex <= 0) return [...messages];
+  console.log(`[Compaction] Pruning ${lastCompactionIndex} messages before compaction item`);
+  return messages.slice(lastCompactionIndex);
+}
 
 interface ChatProviderProps {
   children: React.ReactNode;
@@ -32,9 +45,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { models, selectedModel, setSelectedModel } = useModels();
   const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { isAvailable: artifactsEnabled, setChatId: setArtifactsChatId } = useArtifacts();
-  const { renderApp } = useApp();
+  const { renderApp, closeApp } = useApp();
   const { currentAgent } = useAgents();
-  const { resetTools, setProviderEnabled, restoreToolUI } = useToolsContext();
+  const { resetTools } = useToolsContext();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
@@ -43,7 +56,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const chat = chats.find((c) => c.id === chatId) ?? null;
   const agentModel = currentAgent?.model ? (models.find((m) => m.id === currentAgent.model) ?? null) : null;
-  const model = chat?.model ?? agentModel ?? selectedModel ?? models[0];
+  const chatModel = chat?.model ? (models.find((m) => m.id === chat.model!.id) ?? chat.model) : null;
+  const model = chatModel ?? agentModel ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext("chat", model);
 
   const messages = useMemo(() => {
@@ -74,30 +88,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return newChat;
   }, [createChatHook, resetTools]);
 
-  const restoreToolApp = useCallback(
-    async (toolResult: ToolResultContent) => {
-      if (!toolResult.meta?.toolProvider || !toolResult.meta?.toolResource) return;
-
-      const providerId = toolResult.meta.toolProvider as string;
-      const resourceUri = toolResult.meta.toolResource as string;
-      const args = JSON.parse(toolResult.arguments || "{}");
-
-      // Enable the provider (connects if not already connected)
-      await setProviderEnabled(providerId, true);
-
-      const context: ToolContext = {
-        render: () => renderApp(),
-      };
-
-      try {
-        await restoreToolUI(providerId, toolResult.name, resourceUri, args, toolResult.result, context);
-      } catch (error) {
-        console.error("Failed to restore tool app:", error);
-      }
-    },
-    [setProviderEnabled, restoreToolUI, renderApp],
-  );
-
   const chatIdRef = useRef(chatId);
   chatIdRef.current = chatId;
 
@@ -107,27 +97,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
       setChatId(id);
       resetTools();
-
-      if (!id) return;
-
-      // Auto-restore the last MCP app for this chat
-      const chatData = chats.find((c) => c.id === id);
-      if (chatData?.messages?.length) {
-        const lastAppResult = chatData.messages
-          .flatMap((m) => m.content)
-          .filter(
-            (c): c is ToolResultContent => c.type === "tool_result" && !!c.meta?.toolProvider && !!c.meta?.toolResource,
-          )
-          .pop();
-
-        if (lastAppResult) {
-          restoreToolApp(lastAppResult).catch((error) => {
-            console.error("Failed to auto-restore app on chat load:", error);
-          });
-        }
-      }
+      closeApp();
     },
-    [chats, resetTools, restoreToolApp],
+    [resetTools, closeApp],
   );
 
   const deleteChat = useCallback(
@@ -202,7 +174,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const outgoingMessage = appendTextContent(message, pendingModelContext);
 
       let conversation = [...history, outgoingMessage];
-      let modelConversation = [...conversation];
+      let modelConversation = pruneAtCompaction(conversation);
 
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
@@ -243,6 +215,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
             setMeta: (meta: Record<string, unknown>) => {
               resultMeta = meta;
             },
+            updateMeta: (meta: Record<string, unknown>) => {
+              resultMeta = { ...resultMeta, ...meta };
+              // Also update the persisted chat data since this may be called
+              // asynchronously after the tool result message has been committed
+              updateChat(id, (prev) => ({
+                messages: prev.messages.map((msg) => ({
+                  ...msg,
+                  content: msg.content.map((part) => {
+                    if (part.type === "tool_result" && part.id === currentToolCall.id) {
+                      return { ...part, meta: { ...part.meta, ...meta } };
+                    }
+                    return part;
+                  }),
+                })),
+              }));
+            },
           },
           getResultMeta: () => resultMeta,
         };
@@ -276,12 +264,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
               effort: model?.effort,
               summary: model?.summary,
               verbosity: model?.verbosity,
+              compactThreshold: model?.compactThreshold,
             },
           );
 
           // Add the assistant message to conversation
           conversation = [...conversation, assistantMessage];
-          modelConversation = [...modelConversation, assistantMessage];
+          modelConversation = pruneAtCompaction([...modelConversation, assistantMessage]);
 
           // Commit the completed message once per turn
           updateChat(id, () => ({ messages: conversation }));
@@ -390,7 +379,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setStreamingMessage(null);
 
         if (!initialTitle || conversation.length % 3 === 0) {
-          client.summarizeTitle(model!.id, conversation).then((title) => {
+          client.summarizeTitle(config.chat?.summarizer || model!.id, conversation).then((title) => {
             if (title) {
               updateChat(id, () => ({ title }));
             }
@@ -495,7 +484,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     sendMessage,
 
     isResponding,
-    restoreToolApp,
     // Elicitation
     pendingElicitation,
     resolveElicitation,

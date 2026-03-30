@@ -12,6 +12,7 @@ export type Model = {
   effort?: "none" | "minimal" | "low" | "medium" | "high";
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
+  compactThreshold?: number;
 
   tools?: {
     enabled: string[];
@@ -92,6 +93,7 @@ export interface ToolContext {
   render?(): Promise<RenderedAppHandle>;
   sendMessage?(message: Message): Promise<void>;
   setMeta?(meta: Record<string, unknown>): void;
+  updateMeta?(meta: Record<string, unknown>): void;
   setContext?(text: string | null): Promise<void>;
 }
 
@@ -120,6 +122,12 @@ export type ToolResultContent = {
   result: (TextContent | ImageContent | AudioContent | FileContent)[];
 };
 
+export type CompactionContent = {
+    type: 'compaction';
+    id: string;
+    encrypted_content: string;
+};
+
 // Content is the union of all content types used in messages
 export type Content =
   | TextContent
@@ -128,7 +136,8 @@ export type Content =
   | FileContent
   | ReasoningContent
   | ToolCallContent
-  | ToolResultContent;
+  | ToolResultContent
+  | CompactionContent;
 
 export type TextContent = {
   type: "text";

@@ -47,6 +47,7 @@ interface config {
   translator?: translatorConfig;
 
   chat?: chatConfig;
+  telemetry?: object;
 }
 
 interface modelConfig {
@@ -58,6 +59,7 @@ interface modelConfig {
   effort?: "none" | "minimal" | "low" | "medium" | "high";
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
+  compactThreshold?: number;
 
   tools?: {
     enabled: string[];
@@ -146,6 +148,8 @@ interface translatorConfig {
 
 interface chatConfig {
   retentionDays?: number;
+  optimizer?: string;
+  summarizer?: string;
 }
 
 interface Config {
@@ -181,6 +185,8 @@ interface Config {
   translator: translatorConfig | null;
 
   chat: chatConfig | null;
+
+  telemetry: boolean;
 
   backgrounds: backgroundPackConfig;
 }
@@ -231,6 +237,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
             effort: model.effort,
             summary: model.summary,
             verbosity: model.verbosity,
+            compactThreshold: model.compactThreshold,
 
             prompts: model.prompts,
 
@@ -322,6 +329,8 @@ export const loadConfig = async (): Promise<Config | undefined> => {
         : null,
 
       chat: cfg.chat ?? null,
+
+      telemetry: cfg.telemetry != null,
 
       backgrounds: cfg.backgrounds ?? {},
     };

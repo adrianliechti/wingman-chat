@@ -7,6 +7,7 @@ import "./shared/lib/noto-emoji.ts";
 
 import { loadConfig } from "./shared/config.ts";
 import { runMigration } from "./features/settings/lib/migration.ts";
+import { initTelemetry } from "./features/repository/lib/telemetry";
 
 /**
  * Display a fatal error message to the user when the app fails to start.
@@ -76,6 +77,10 @@ const bootstrap = async () => {
 
   try {
     const config = await loadConfig();
+
+    if (config?.telemetry) {
+      initTelemetry();
+    }
 
     if (config?.title) {
       document.title = config.title;

@@ -16,6 +16,7 @@ import type { Message, Model, ModelType } from "@/shared/types/chat";
 import type { SearchResult } from "@/features/research/types/search";
 import { modelType, modelName } from "./models";
 import { simplifyMarkdown, serializeToolResultForApi } from "./utils";
+import { traceGenAI } from "./otel";
 
 import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
@@ -24,6 +25,26 @@ import instructionsRewriteSelection from "@/features/chat/prompts/rewrite-select
 import instructionsRewriteText from "@/features/chat/prompts/rewrite-text.txt?raw";
 import instructionsSummarizeTitle from "@/features/chat/prompts/chat-title.txt?raw";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
+
+function expandToSentences(text: string, start: number, end: number): string {
+  const sentenceBoundaries = /[.!?]+\s*|\n+/g;
+  const boundaries: number[] = [0];
+  let match;
+  while ((match = sentenceBoundaries.exec(text)) !== null) {
+    boundaries.push(match.index + match[0].length);
+  }
+  boundaries.push(text.length);
+
+  let sentenceStart = 0;
+  let sentenceEnd = text.length;
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    if (boundaries[i] < end && boundaries[i + 1] > start) {
+      sentenceStart = Math.min(sentenceStart === 0 ? boundaries[i] : sentenceStart, boundaries[i]);
+      sentenceEnd = Math.max(sentenceEnd === text.length ? boundaries[i + 1] : sentenceEnd, boundaries[i + 1]);
+    }
+  }
+  return text.substring(sentenceStart, sentenceEnd).trim();
+}
 
 export class Client {
   private oai: OpenAI;
@@ -66,8 +87,10 @@ export class Client {
       effort?: "none" | "minimal" | "low" | "medium" | "high";
       summary?: "auto" | "concise" | "detailed";
       verbosity?: "low" | "medium" | "high";
+      compactThreshold?: number;
     },
   ): Promise<Message> {
+    return traceGenAI("chat", model, async () => {
     input = this.sanitizeMessages(input);
 
     const items: OpenAI.Responses.ResponseInputItem[] = [];
@@ -177,6 +200,15 @@ export class Client {
                 arguments: part.arguments,
               });
             }
+
+            if (part.type === 'compaction') {
+              flushAssistantText();
+              items.push({
+                type: "compaction",
+                id: part.id,
+                encrypted_content: part.encrypted_content,
+              } as unknown as OpenAI.Responses.ResponseInputItem);
+            }
           }
 
           flushAssistantText();
@@ -224,6 +256,7 @@ export class Client {
     const runner = this.oai.responses
       .stream({
         model: model,
+        store: false,
         tools: this.toTools(tools),
         input: items,
         instructions: instructions,
@@ -239,6 +272,11 @@ export class Client {
         ...(options?.verbosity
           ? {
               text: { verbosity: options.verbosity },
+            }
+          : {}),
+        ...(options?.compactThreshold
+          ? {
+              context_management: [{ type: "compaction" as const, compact_threshold: options.compactThreshold }],
             }
           : {}),
       })
@@ -272,164 +310,59 @@ export class Client {
               handler?.([...contentParts]);
             }
           }
+        } else if (event.item.type === 'compaction') {
+          const compactionItem = event.item as { id: string; encrypted_content: string };
+          console.log("[Compaction] Context compacted", { id: compactionItem.id, bytes: compactionItem.encrypted_content.length });
+          contentParts.push({
+            type: 'compaction',
+            id: compactionItem.id,
+            encrypted_content: compactionItem.encrypted_content,
+          });
+          handler?.([...contentParts]);
         }
       });
 
-    await runner.finalResponse();
+    const finalResponse = await runner.finalResponse();
 
     return {
-      role: Role.Assistant,
-      content: contentParts,
+      result: { role: Role.Assistant, content: contentParts } as Message,
+      response: {
+        id: finalResponse.id,
+        model: finalResponse.model,
+        inputTokens: finalResponse.usage?.input_tokens,
+        outputTokens: finalResponse.usage?.output_tokens,
+      },
     };
+    }, { effort: options?.effort, verbosity: options?.verbosity, toolCount: tools?.length }); // end traceGenAI
   }
 
   async summarizeTitle(model: string, input: Message[]): Promise<string | null> {
-    const Schema = z
-      .object({
-        title: z.string(),
-      })
-      .strict();
-
     const history = input.slice(-6).map((m) => ({ role: m.role, content: m.content }));
-
-    try {
-      const response = await this.oai.responses.parse({
-        model: model,
-        instructions: instructionsSummarizeTitle,
-        input: JSON.stringify(history),
-        text: {
-          format: zodTextFormat(Schema, "summarize_title"),
-        },
-      });
-
-      const result = response.output_parsed;
-      return result?.title ?? null;
-    } catch (error) {
-      console.error("Error generating title:", error);
-      return null;
-    }
+    const result = await this.parse(model, instructionsSummarizeTitle, JSON.stringify(history), z.object({ title: z.string() }).strict(), "summarize_title");
+    return result?.title ?? null;
   }
 
   async relatedPrompts(model: string, prompt: string): Promise<string[]> {
-    const Schema = z
-      .object({
-        prompts: z
-          .array(
-            z
-              .object({
-                prompt: z.string(),
-              })
-              .strict(),
-          )
-          .min(3)
-          .max(10),
-      })
-      .strict();
-
-    try {
-      const response = await this.oai.responses.parse({
-        model: model,
-        instructions: instructionsRelatedPrompts,
-        input: prompt || "No input",
-        text: {
-          format: zodTextFormat(Schema, "list_prompts"),
-        },
-      });
-
-      const list = response.output_parsed;
-      return list?.prompts.map((p) => p.prompt) ?? [];
-    } catch (error) {
-      console.error("Error generating related prompts:", error);
-      return [];
-    }
+    const result = await this.parse(model, instructionsRelatedPrompts, prompt || "No input", z.object({ prompts: z.array(z.object({ prompt: z.string() }).strict()).min(3).max(10) }).strict(), "list_prompts");
+    return result?.prompts.map((p) => p.prompt) ?? [];
   }
 
   async extractUrl(model: string, text: string): Promise<string | null> {
-    const Schema = z
-      .object({
-        url: z.string().nullable(),
-      })
-      .strict();
-
-    if (!text.trim()) {
-      return null;
-    }
-
-    try {
-      const response = await this.oai.responses.parse({
-        model: model,
-        instructions:
-          "Extract a valid URL from the given text. If the text contains a URL, extract it. If no valid URL is found, return null.",
-        input: text,
-        text: {
-          format: zodTextFormat(Schema, "extract_url"),
-        },
-      });
-
-      const result = response.output_parsed;
-      return result?.url ?? null;
-    } catch (error) {
-      console.error("Error extracting URL:", error);
-      return null;
-    }
+    if (!text.trim()) return null;
+    const result = await this.parse(model, "Extract a valid URL from the given text. If the text contains a URL, extract it. If no valid URL is found, return null.", text, z.object({ url: z.string().nullable() }).strict(), "extract_url");
+    return result?.url ?? null;
   }
 
   async convertCSV(model: string, text: string): Promise<string> {
-    const Schema = z
-      .object({
-        csvData: z.string(),
-      })
-      .strict();
-
-    if (!text.trim()) {
-      return "";
-    }
-
-    try {
-      const response = await this.oai.responses.parse({
-        model: model,
-        instructions: instructionsConvertCsv,
-        input: text,
-        text: {
-          format: zodTextFormat(Schema, "convert_csv"),
-        },
-      });
-
-      const result = response.output_parsed;
-      return result?.csvData ?? "";
-    } catch (error) {
-      console.error("Error converting to CSV:", error);
-      return "";
-    }
+    if (!text.trim()) return "";
+    const result = await this.parse(model, instructionsConvertCsv, text, z.object({ csvData: z.string() }).strict(), "convert_csv");
+    return result?.csvData ?? "";
   }
 
   async convertMD(model: string, text: string): Promise<string> {
-    const Schema = z
-      .object({
-        mdData: z.string(),
-      })
-      .strict();
-
-    if (!text.trim()) {
-      return "";
-    }
-
-    try {
-      const response = await this.oai.responses.parse({
-        model: model,
-        instructions: instructionsConvertMd,
-        input: text,
-        text: {
-          format: zodTextFormat(Schema, "convert_md"),
-        },
-      });
-
-      const result = response.output_parsed;
-      return result?.mdData ?? "";
-    } catch (error) {
-      console.error("Error converting to Markdown:", error);
-      return "";
-    }
+    if (!text.trim()) return "";
+    const result = await this.parse(model, instructionsConvertMd, text, z.object({ mdData: z.string() }).strict(), "convert_md");
+    return result?.mdData ?? "";
   }
 
   async rewriteSelection(
@@ -438,154 +371,32 @@ export class Client {
     selectionStart: number,
     selectionEnd: number,
   ): Promise<{ alternatives: string[]; contextToReplace: string; keyChanges: string[] }> {
-    const Schema = z
-      .object({
-        alternatives: z
-          .array(
-            z
-              .object({
-                text: z.string(),
-                keyChange: z.string(),
-              })
-              .strict(),
-          )
-          .min(3)
-          .max(6),
-      })
-      .strict();
-
-    // Validate input
-    if (!text.trim() || selectionStart < 0 || selectionEnd <= selectionStart || selectionStart >= text.length) {
-      return {
-        alternatives: [],
-        contextToReplace: text.substring(selectionStart, selectionEnd),
-        keyChanges: [],
-      };
-    }
-
-    // Helper to expand selection to complete sentences
-    const expandToSentences = (text: string, start: number, end: number): string => {
-      const sentenceBoundaries = /[.!?]+\s*|\n+/g;
-      const boundaries: number[] = [0];
-
-      let match;
-
-      while ((match = sentenceBoundaries.exec(text)) !== null) {
-        boundaries.push(match.index + match[0].length);
-      }
-
-      boundaries.push(text.length);
-
-      let sentenceStart = 0;
-      let sentenceEnd = text.length;
-
-      for (let i = 0; i < boundaries.length - 1; i++) {
-        const currentStart = boundaries[i];
-        const currentEnd = boundaries[i + 1];
-
-        if (currentStart < end && currentEnd > start) {
-          sentenceStart = Math.min(sentenceStart === 0 ? currentStart : sentenceStart, currentStart);
-          sentenceEnd = Math.max(sentenceEnd === text.length ? currentEnd : sentenceEnd, currentEnd);
-        }
-      }
-
-      return text.substring(sentenceStart, sentenceEnd).trim();
-    };
+    const empty = { alternatives: [] as string[], contextToReplace: text.substring(selectionStart, selectionEnd), keyChanges: [] as string[] };
+    if (!text.trim() || selectionStart < 0 || selectionEnd <= selectionStart || selectionStart >= text.length) return empty;
 
     const contextToRewrite = expandToSentences(text, selectionStart, selectionEnd);
     const selectedText = text.substring(selectionStart, selectionEnd);
+    const result = await this.parse(model, instructionsRewriteSelection, JSON.stringify({ context: contextToRewrite, selection: selectedText }), z.object({ alternatives: z.array(z.object({ text: z.string(), keyChange: z.string() }).strict()).min(3).max(6) }).strict(), "rewrite_selection");
 
-    try {
-      const response = await this.oai.responses.parse({
-        model: model,
-        instructions: instructionsRewriteSelection,
-        input: JSON.stringify({
-          context: contextToRewrite,
-          selection: selectedText,
-        }),
-        text: {
-          format: zodTextFormat(Schema, "rewrite_selection"),
-        },
-      });
-
-      const result = response.output_parsed;
-      return {
-        alternatives: result?.alternatives.map((a) => a.text) ?? [],
-        contextToReplace: contextToRewrite,
-        keyChanges: result?.alternatives.map((a) => a.keyChange) ?? [],
-      };
-    } catch (error) {
-      console.error("Error generating text alternatives:", error);
-      return {
-        alternatives: [],
-        contextToReplace: contextToRewrite,
-        keyChanges: [],
-      };
-    }
+    return {
+      alternatives: result?.alternatives.map((a) => a.text) ?? [],
+      contextToReplace: contextToRewrite,
+      keyChanges: result?.alternatives.map((a) => a.keyChange) ?? [],
+    };
   }
 
   async extractText(blob: Blob): Promise<string> {
-    const data = new FormData();
-    data.append("file", blob);
-    data.append("format", "text");
-
-    const resp = await fetch(new URL("/api/v1/extract", window.location.origin), {
-      method: "POST",
-      body: data,
-    });
-
-    if (!resp.ok) {
-      throw new Error(`Extract request failed with status ${resp.status}`);
-    }
-
-    return resp.text();
+    return (await this.post("/api/v1/extract", { file: blob, format: "text" })).text();
   }
 
   async scrape(model: string, url: string): Promise<string> {
-    const data = new FormData();
-
-    if (model) {
-      data.append("model", model);
-    }
-
-    data.append("url", url);
-    data.append("format", "text");
-
-    const resp = await fetch(new URL("/api/v1/extract", window.location.origin), {
-      method: "POST",
-      body: data,
-    });
-
-    if (!resp.ok) {
-      throw new Error(`Fetch request failed with status ${resp.status}`);
-    }
-
-    return resp.text();
+    return (await this.post("/api/v1/extract", { ...(model && { model }), url, format: "text" })).text();
   }
 
   async segmentText(blob: Blob): Promise<string[]> {
-    const data = new FormData();
-    data.append("file", blob);
-
-    const resp = await fetch(new URL("/api/v1/segment", window.location.origin), {
-      method: "POST",
-      body: data,
-    });
-
-    if (!resp.ok) {
-      throw new Error(`Segment request failed with status ${resp.status}`);
-    }
-
-    const result = await resp.json();
-
-    if (!Array.isArray(result)) {
-      return [];
-    }
-
-    return result.map((item: { text?: string } | string) => {
-      if (typeof item === "string") return item;
-      return item.text || "";
-    });
+    const result = await (await this.post("/api/v1/segment", { file: blob })).json();
+    if (!Array.isArray(result)) return [];
+    return result.map((item: { text?: string } | string) => (typeof item === "string" ? item : item.text || ""));
   }
 
   async embedText(model: string, text: string): Promise<number[]> {
@@ -599,28 +410,15 @@ export class Client {
   }
 
   async translate(lang: string, input: string | Blob): Promise<string | Blob> {
-    // Input validation
-    if (input instanceof Blob) {
-      // Check file size limit (10MB)
-      const maxFileSize = 10 * 1024 * 1024; // 10MB in bytes
-
-      if (input.size > maxFileSize) {
-        throw new Error(`File size ${(input.size / 1024 / 1024).toFixed(1)}MB exceeds the maximum limit of 10MB`);
-      }
-    } else {
-      // Check text length limit (50,000 characters)
-      const maxTextLength = 50000;
-
-      if (input.length > maxTextLength) {
-        throw new Error(
-          `Text length ${input.length.toLocaleString()} characters exceeds the maximum limit of ${maxTextLength.toLocaleString()} characters`,
-        );
-      }
+    if (input instanceof Blob && input.size > 10 * 1024 * 1024) {
+      throw new Error(`File size ${(input.size / 1024 / 1024).toFixed(1)}MB exceeds the maximum limit of 10MB`);
+    }
+    if (typeof input === "string" && input.length > 50000) {
+      throw new Error(`Text length ${input.length.toLocaleString()} characters exceeds the maximum limit of 50,000 characters`);
     }
 
     const data = new FormData();
     data.append("lang", lang);
-
     const headers: HeadersInit = {};
 
     if (input instanceof Blob) {
@@ -630,22 +428,11 @@ export class Client {
       data.append("text", input);
     }
 
-    const resp = await fetch(new URL("/api/v1/translate", window.location.origin), {
-      method: "POST",
-      headers,
-      body: data,
-    });
-
-    if (!resp.ok) {
-      throw new Error(`Translate request failed with status ${resp.status}`);
-    }
-
+    const resp = await this.postRaw("/api/v1/translate", data, headers);
     const contentType = resp.headers.get("content-type")?.toLowerCase() || "";
 
     if (contentType.includes("text/plain") || contentType.includes("text/markdown")) {
-      const translatedText = await resp.text();
-      // Replace German ß with ss automatically
-      return translatedText.replace(/ß/g, "ss");
+      return (await resp.text()).replace(/ß/g, "ss");
     }
 
     return resp.blob();
@@ -659,84 +446,30 @@ export class Client {
     style?: string,
     userPrompt?: string,
   ): Promise<string> {
-    const Schema = z
-      .object({
-        rewrittenText: z.string(),
-      })
-      .strict();
+    if (!text.trim()) return text;
 
-    if (!text.trim()) {
-      return text;
-    }
+    const tones: Record<string, string> = {
+      enthusiastic: "Use an enthusiastic and energetic tone.",
+      friendly: "Use a warm and friendly tone.",
+      confident: "Use a confident and assertive tone.",
+      diplomatic: "Use a diplomatic and tactful tone.",
+    };
+    const styles: Record<string, string> = {
+      simple: "Use simple and clear language.",
+      business: "Use professional business language.",
+      academic: "Use formal academic language.",
+      casual: "Use casual and informal language.",
+    };
 
-    // Build tone instruction
-    const toneInstruction = !tone
-      ? ""
-      : tone === "enthusiastic"
-        ? "Use an enthusiastic and energetic tone."
-        : tone === "friendly"
-          ? "Use a warm and friendly tone."
-          : tone === "confident"
-            ? "Use a confident and assertive tone."
-            : tone === "diplomatic"
-              ? "Use a diplomatic and tactful tone."
-              : "";
-
-    // Build style instruction
-    const styleInstruction = !style
-      ? ""
-      : style === "simple"
-        ? "Use simple and clear language."
-        : style === "business"
-          ? "Use professional business language."
-          : style === "academic"
-            ? "Use formal academic language."
-            : style === "casual"
-              ? "Use casual and informal language."
-              : "";
-
-    // Combine predefined instructions
-    const predefinedInstructions = [toneInstruction, styleInstruction].filter(Boolean);
-
-    // Build the complete instruction set
-    const instructions = [];
-    if (predefinedInstructions.length > 0) {
-      instructions.push(predefinedInstructions.join(" "));
-    }
-    if (userPrompt?.trim()) {
-      instructions.push(`Custom instruction: ${userPrompt.trim()}`);
-    }
-
-    const finalInstructions = instructions.length > 0 ? instructions.join(" ") : "Maintain the original tone and style";
-
-    // Language handling
+    const parts = [tone && tones[tone], style && styles[style]].filter(Boolean);
+    if (userPrompt?.trim()) parts.push(`Custom instruction: ${userPrompt.trim()}`);
+    const finalInstructions = parts.length > 0 ? parts.join(" ") : "Maintain the original tone and style";
     const languageInstruction = lang
       ? `Ensure the text is in ${lang} language${lang !== "en" ? ", translating if necessary" : ""}.`
       : "Maintain the original language of the text.";
 
-    try {
-      const response = await this.oai.responses.parse({
-        model: model,
-        instructions: instructionsRewriteText
-          .replace("{languageInstruction}", languageInstruction)
-          .replace("{finalInstructions}", finalInstructions),
-        input: text,
-        text: {
-          format: zodTextFormat(Schema, "rewrite_text"),
-        },
-      });
-
-      const result = response.output_parsed;
-      let rewrittenText = result?.rewrittenText ?? text;
-
-      // Replace German ß with ss automatically
-      rewrittenText = rewrittenText.replace(/ß/g, "ss");
-
-      return rewrittenText;
-    } catch (error) {
-      console.error("Error rewriting text:", error);
-      return text;
-    }
+    const result = await this.parse(model, instructionsRewriteText.replace("{languageInstruction}", languageInstruction).replace("{finalInstructions}", finalInstructions), text, z.object({ rewrittenText: z.string() }).strict(), "rewrite_text");
+    return (result?.rewrittenText ?? text).replace(/ß/g, "ss");
   }
 
   async generateAudio(model: string, input: string, voice?: string): Promise<Blob> {
@@ -780,44 +513,9 @@ export class Client {
   }
 
   async transcribe(model: string, blob: Blob): Promise<string> {
-    const data = new FormData();
-
-    // Get file extension - handle common audio types explicitly
-    let extension = "audio";
-    if (blob.type.includes("webm")) {
-      extension = "webm";
-    } else if (blob.type.includes("mp3") || blob.type.includes("mpeg")) {
-      extension = "mp3";
-    } else if (blob.type.includes("wav")) {
-      extension = "wav";
-    } else if (blob.type.includes("ogg")) {
-      extension = "ogg";
-    } else if (blob.type.includes("m4a") || blob.type.includes("mp4")) {
-      extension = "m4a";
-    } else if (blob.type.includes("flac")) {
-      extension = "flac";
-    } else {
-      extension = mime.getExtension(blob.type) || "audio";
-    }
-
-    const filename = `audio_recording.${extension}`;
-
-    data.append("file", blob, filename);
-
-    if (model) {
-      data.append("model", model);
-    }
-
-    const response = await fetch(new URL("/api/v1/audio/transcriptions", window.location.origin), {
-      method: "POST",
-      body: data,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Transcription request failed with status ${response.status}`);
-    }
-
-    const result = await response.json();
+    const extension = mime.getExtension(blob.type) || "audio";
+    const file = new File([blob], `audio_recording.${extension}`, { type: blob.type });
+    const result = await (await this.post("/api/v1/audio/transcriptions", { file, ...(model && { model }) })).json();
     return result.text || "";
   }
 
@@ -826,110 +524,40 @@ export class Client {
     query: string,
     options?: { domains?: string[]; limit?: number },
   ): Promise<SearchResult[]> {
+    const fields: Record<string, string | Blob> = {
+      ...(model && { model }),
+      query,
+      limit: String(options?.limit ?? 10),
+    };
+
     const data = new FormData();
+    for (const [k, v] of Object.entries(fields)) data.append(k, v);
+    for (const domain of options?.domains ?? []) data.append("domain", domain);
 
-    if (model) {
-      data.append("model", model);
-    }
-
-    data.append("query", query);
-    data.append("limit", String(options?.limit ?? 10));
-
-    if (options?.domains) {
-      for (const domain of options.domains) {
-        data.append("domain", domain);
-      }
-    }
-
-    const response = await fetch(new URL(`/api/v1/search`, window.location.origin), {
-      method: "POST",
-      body: data,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Search request failed with status ${response.status}`);
-    }
-
-    const results = await response.json();
-
-    if (!Array.isArray(results)) {
-      return [];
-    }
+    const resp = await this.postRaw("/api/v1/search", data);
+    const results = await resp.json();
+    if (!Array.isArray(results)) return [];
 
     return results.map((result: SearchResult) => {
-      let content = result.content || "";
-
-      // Simplify markdown content before truncating
-      content = simplifyMarkdown(content);
-
-      if (content.length > 10000) {
-        content = content.slice(0, 10000) + "... [truncated]";
-      }
-
-      return {
-        source: result.source,
-        title: result.title,
-        content: content,
-        metadata: result.metadata,
-      };
+      let content = simplifyMarkdown(result.content || "");
+      if (content.length > 10000) content = content.slice(0, 10000) + "... [truncated]";
+      return { source: result.source, title: result.title, content, metadata: result.metadata };
     });
   }
 
   async research(model: string, instructions: string): Promise<string> {
-    const data = new FormData();
-
-    if (model) {
-      data.append("model", model);
-    }
-
-    data.append("instructions", instructions);
-
-    const response = await fetch(new URL(`/api/v1/research`, window.location.origin), {
-      method: "POST",
-      body: data,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Research request failed with status ${response.status}`);
-    }
-
-    const result = await response.json();
+    const result = await (await this.post("/api/v1/research", { ...(model && { model }), instructions })).json();
     return result.content || "";
   }
 
   async generateImage(model: string, prompt: string, images?: Blob[]): Promise<Blob> {
-    try {
-      const data = new FormData();
-      data.append("input", prompt);
-
-      if (model) {
-        data.append("model", model);
-      }
-
-      // Add optional image blobs as files
-      if (images && images.length > 0) {
-        images.forEach((blob, index) => {
-          const extension = mime.getExtension(blob.type) || "image";
-          const filename = `image_${index}.${extension}`;
-
-          data.append("file", blob, filename);
-        });
-      }
-
-      const response = await fetch(new URL(`/api/v1/render`, window.location.origin), {
-        method: "POST",
-        body: data,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Image generation request failed with status ${response.status}`);
-      }
-
-      return response.blob();
-    } catch (error) {
-      console.error("Image generation failed:", error);
-      throw error;
-    }
+    const data = new FormData();
+    data.append("input", prompt);
+    if (model) data.append("model", model);
+    images?.forEach((blob, i) => {
+      data.append("file", blob, `image_${i}.${mime.getExtension(blob.type) || "image"}`);
+    });
+    return (await this.postRaw("/api/v1/render", data)).blob();
   }
 
   private toTools(tools: Tool[]): OpenAI.Responses.Tool[] | undefined {
@@ -995,38 +623,52 @@ export class Client {
     description: string,
     content: string,
   ): Promise<{ name: string; description: string; content: string }> {
-    const Schema = z
-      .object({
-        name: z.string(),
-        description: z.string(),
-        content: z.string(),
-      })
-      .strict();
-
     const instructions = instructionsOptimizeSkill
       .replace("{name}", name || "")
       .replace("{description}", description || "")
       .replace("{content}", content || "");
+    const result = await this.parse(model, instructions, `Optimize this skill: "${name}"`, z.object({ name: z.string(), description: z.string(), content: z.string() }).strict(), "optimize_skill");
+    return {
+      name: result?.name ?? name,
+      description: result?.description ?? description,
+      content: result?.content ?? content,
+    };
+  }
 
-    try {
-      const response = await this.oai.responses.parse({
-        model: model,
-        instructions: instructions,
-        input: `Optimize this skill: "${name}"`,
-        text: {
-          format: zodTextFormat(Schema, "optimize_skill"),
-        },
-      });
+  // biome-ignore lint: zod schema type is complex
+  private async parse<T extends z.ZodType<any>>(model: string, instructions: string, input: string, schema: T, name: string): Promise<z.infer<T> | null> {
+    return traceGenAI(name, model, async () => {
+      try {
+        const response = await this.oai.responses.parse({
+          model,
+          instructions,
+          input,
+          text: { format: zodTextFormat(schema, name) },
+        });
+        return { result: response.output_parsed ?? null };
+      } catch (error) {
+        console.error(`Error in ${name}:`, error);
+        return { result: null };
+      }
+    });
+  }
 
-      const result = response.output_parsed;
-      return {
-        name: result?.name ?? name,
-        description: result?.description ?? description,
-        content: result?.content ?? content,
-      };
-    } catch (error) {
-      console.error("Error optimizing skill:", error);
-      return { name, description, content };
+  private async post(path: string, fields: Record<string, string | Blob>): Promise<Response> {
+    const data = new FormData();
+    for (const [k, v] of Object.entries(fields)) {
+      if (v instanceof Blob) data.append(k, v);
+      else data.append(k, v);
     }
+    return this.postRaw(path, data);
+  }
+
+  private async postRaw(path: string, data: FormData, headers?: HeadersInit): Promise<Response> {
+    const resp = await fetch(new URL(path, window.location.origin), {
+      method: "POST",
+      headers,
+      body: data,
+    });
+    if (!resp.ok) throw new Error(`${path} failed with status ${resp.status}`);
+    return resp;
   }
 }

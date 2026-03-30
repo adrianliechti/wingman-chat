@@ -99,6 +99,18 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Chat = ensurePtr(cfg.Chat)
 		cfg.Chat.RetentionDays = days
 	}
+
+	if v := os.Getenv("CHAT_SUMMARIZER"); v != "" {
+		cfg.Chat = ensurePtr(cfg.Chat)
+		cfg.Chat.Summarizer = v
+	}
+
+	if v := os.Getenv("CHAT_OPTIMIZER"); v != "" {
+		cfg.Chat = ensurePtr(cfg.Chat)
+		cfg.Chat.Optimizer = v
+	}
+
+	withFeature("TELEMETRY_ENABLED", &cfg.Telemetry, nil)
 }
 
 // PlatformToken returns the API token from environment variables.

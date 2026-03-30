@@ -3,7 +3,7 @@ FROM node:lts-alpine AS app
 WORKDIR /src
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install
 
 COPY . .
 RUN echo '{}' > public/config.json

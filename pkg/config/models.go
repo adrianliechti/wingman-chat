@@ -29,6 +29,8 @@ type Config struct {
 
 	Chat *Chat `json:"chat,omitempty" yaml:"chat,omitempty"`
 
+	Telemetry *Telemetry `json:"telemetry,omitempty" yaml:"telemetry,omitempty"`
+
 	Backgrounds map[string][]Background `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
 }
 
@@ -51,14 +53,15 @@ type ModelTools struct {
 }
 
 type Model struct {
-	ID          string      `json:"id,omitempty" yaml:"id,omitempty"`
-	Name        string      `json:"name,omitempty" yaml:"name,omitempty"`
-	Description string      `json:"description,omitempty" yaml:"description,omitempty"`
-	Effort      string      `json:"effort,omitempty" yaml:"effort,omitempty"`
-	Summary     string      `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Verbosity   string      `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
-	Tools       *ModelTools `json:"tools,omitempty" yaml:"tools,omitempty"`
-	Prompts     []string    `json:"prompts,omitempty" yaml:"prompts,omitempty"`
+	ID               string      `json:"id,omitempty" yaml:"id,omitempty"`
+	Name             string      `json:"name,omitempty" yaml:"name,omitempty"`
+	Description      string      `json:"description,omitempty" yaml:"description,omitempty"`
+	Effort           string      `json:"effort,omitempty" yaml:"effort,omitempty"`
+	Summary          string      `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Verbosity        string      `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
+	CompactThreshold int         `json:"compactThreshold,omitempty" yaml:"compactThreshold,omitempty"`
+	Tools            *ModelTools `json:"tools,omitempty" yaml:"tools,omitempty"`
+	Prompts          []string    `json:"prompts,omitempty" yaml:"prompts,omitempty"`
 }
 
 type TTS struct {
@@ -120,7 +123,9 @@ type Workflow struct {
 }
 
 type Chat struct {
-	RetentionDays *int `json:"retentionDays,omitempty" yaml:"retentionDays,omitempty"`
+	RetentionDays *int   `json:"retentionDays,omitempty" yaml:"retentionDays,omitempty"`
+	Summarizer    string `json:"summarizer,omitempty" yaml:"summarizer,omitempty"`
+	Optimizer     string `json:"optimizer,omitempty" yaml:"optimizer,omitempty"`
 }
 
 type Translator struct {
@@ -128,6 +133,8 @@ type Translator struct {
 	Files     []string `json:"files,omitempty" yaml:"files,omitempty"`
 	Languages []string `json:"languages,omitempty" yaml:"languages,omitempty"`
 }
+
+type Telemetry struct{}
 
 type Background struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`

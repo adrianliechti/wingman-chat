@@ -43,6 +43,12 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
 
+      "/telemetry/v1": {
+        target: "http://localhost:4318",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/telemetry\/v1/, "/v1"),
+      },
+
       "/api": {
         target: "http://localhost:8080",
         changeOrigin: true,

@@ -1,26 +1,27 @@
-import { Markdown } from "@/shared/ui/Markdown";
-import { CopyButton } from "@/shared/ui/CopyButton";
-import { ConvertButton } from "@/shared/ui/ConvertButton";
-import { PlayButton } from "@/shared/ui/PlayButton";
-import { RenderContents } from "@/shared/ui/ContentRenderer";
-import { CodeRenderer } from "@/shared/ui/CodeRenderer";
-import { ChatInputAttachments } from "./ChatInputAttachments";
-import { Loader2, AlertCircle, ShieldQuestion, Check, X, Pencil, ChevronRight } from "lucide-react";
-import { useState, useRef, useEffect, memo } from "react";
-
-import { Role } from "@/shared/types/chat";
-import type {
-  Message,
-  ElicitationResult,
-  Content,
-  ToolResultContent,
-  ImageContent,
-  AudioContent,
-  FileContent,
-  TextContent,
-} from "@/shared/types/chat";
-import { getConfig } from "@/shared/config";
+import { AlertCircle, Check, ChevronRight, Loader2, Pencil, ShieldQuestion, X } from "lucide-react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
+import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
+import { getConfig } from "@/shared/config";
+import type {
+  AudioContent,
+  Content,
+  ElicitationResult,
+  FileContent,
+  ImageContent,
+  Message,
+  TextContent,
+  ToolResultContent,
+} from "@/shared/types/chat";
+import { Role } from "@/shared/types/chat";
+import { CodeRenderer } from "@/shared/ui/CodeRenderer";
+import { RenderContents } from "@/shared/ui/ContentRenderer";
+import { ConvertButton } from "@/shared/ui/ConvertButton";
+import { CopyButton } from "@/shared/ui/CopyButton";
+import { Markdown } from "@/shared/ui/Markdown";
+import { PlayButton } from "@/shared/ui/PlayButton";
+import { ChatInputAttachments } from "./ChatInputAttachments";
+import { InlineMcpApp } from "./InlineMcpApp";
 
 // Helper function to convert tool names to user-friendly display names
 function getToolDisplayName(toolName: string): string {
@@ -260,7 +261,7 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
   );
   const [editMediaContent, setEditMediaContent] = useState<(ImageContent | AudioContent | FileContent)[]>(mediaContent);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { pendingElicitation, resolveElicitation, sendMessage, chat } = useChat();
+  const { pendingElicitation, resolveElicitation, sendMessage, chat, messages } = useChat();
 
   const isUser = message.role === Role.User;
   const isAssistant = message.role === Role.Assistant;
@@ -287,6 +288,9 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
   const config = getConfig();
   const enableTTS = !!config.tts;
 
+  // Compute whether this message's tool result is the last fullscreen-capable app in the chat
+  const isLastFullscreenApp = useLastFullscreenApp(messages, index, toolResultParts);
+
   // Auto-resize textarea and focus when entering edit mode
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -302,7 +306,7 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
-  }, [editContent]);
+  }, [textareaRef]);
 
   const handleStartEdit = () => {
     if (isResponding) return;
@@ -466,6 +470,15 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
                 <RenderContents contents={toolResult.result} />
               </div>
             )}
+
+          {/* Render inline MCP app for tool results with UI metadata */}
+          {typeof toolResult?.meta?.toolProvider === "string" && typeof toolResult?.meta?.toolResource === "string" && (
+            <InlineMcpApp
+              key={`${chat?.id}-${index}`}
+              toolResult={toolResult}
+              isLastFullscreenApp={isLastFullscreenApp}
+            />
+          )}
         </div>
       </div>
     );

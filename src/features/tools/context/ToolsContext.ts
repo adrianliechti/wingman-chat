@@ -8,6 +8,7 @@ import type {
   FileContent,
   ToolContext,
 } from "@/shared/types/chat";
+import type { DisplayModeOptions } from "@/features/settings/lib/mcp";
 
 export interface ToolsContextValue {
   providers: ToolProvider[];
@@ -22,6 +23,7 @@ export interface ToolsContextValue {
     args: Record<string, unknown>,
     result: (TextContent | ImageContent | AudioContent | FileContent)[],
     context: ToolContext,
+    displayModeOptions?: DisplayModeOptions,
   ) => Promise<void>;
 }
 
