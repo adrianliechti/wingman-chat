@@ -1,20 +1,92 @@
 {
-  "title": "Wingman",
-  "models": [
-    { "id": "wingman", "name": "Wingman", "description": "Smart, efficient model for everyday use" },
-    { "id": "wingman-thinking", "name": "Wingman Thinking", "description": "Powerful, large model for complex challenges" },
-    { "id": "wingman-coder", "name": "Wingman Coder", "description": "LGT Wingman for Coding" }
-  ],
-  "tts": {},
-  "stt": {},
-  "voice": {},
-  "vision": {},
-  "internet": { "researcher": "web" },
-  "renderer": { "model": "gpt-image-1.5" },
-  "interpreter": {},
-  "bridge": { "url": "http://localhost:4200" },
-  "artifacts": {},
-  "repository": { "embedder": "text-embedding-3-small" },
-  "workflow": {},
-  "researcher": { "model": "web" }
+    "vision": {
+        "enabled": true
+    },
+
+    "stt": {
+        "enabled": true
+    },
+
+    "tts": {
+        "enabled": true
+    },
+
+    "voice": {
+        "enabled": true
+    },
+
+    "artifacts": {
+        "enabled": true
+    },
+
+    "repository": {
+        "enabled": true
+    },
+
+    "renderer": {
+        "enabled": true
+    },
+
+    "internet": {
+        "enabled": true,
+        "elicitation": true
+    },
+
+    "workflow": {
+        "enabled": true
+    },
+
+    "recorder": {
+        "enabled": true
+    },
+
+    "bridge": {
+        "url": "http://localhost:4200"
+    },
+
+    "models1": [
+        {
+            "id": "gpt-5.1",
+
+            "name": "GPT-5.1",
+            "description": "Default Model"
+        }
+    ],
+
+    "tools1": [
+        {
+            "id": "context7",
+
+            "url": "https://mcp.context7.com/mcp",
+
+            "name": "Context7",
+            "description": "Provides access to Context7 knowledge base."
+        },
+        {
+            "id": "atlassian",
+
+            "url": "https://mcp.atlassian.com/v1/sse",
+
+            "name": "Atlassian",
+            "description": "Jira and Confluence"
+        }
+    ],
+
+    "translator": {
+        "enabled": true,
+
+        "files": [
+            ".pdf"
+        ],
+
+        "languages": [
+            "en",
+            "es",
+            "fr",
+            "de",
+            "zh",
+            "ja",
+            "ru"
+        ]
+    }
 }

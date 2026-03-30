@@ -4,10 +4,7 @@
  * size-change events and the container can scroll vertically when needed.
  * Returns a cleanup function that disconnects the observer and removes the inline style.
  */
-export function fitIframeToContainer(
-  iframe: HTMLIFrameElement,
-  container: HTMLElement,
-): () => void {
+export function fitIframeToContainer(iframe: HTMLIFrameElement, container: HTMLElement): () => void {
   const applyWidth = (entry: ResizeObserverEntry) => {
     iframe.style.width = `${entry.contentRect.width}px`;
   };
