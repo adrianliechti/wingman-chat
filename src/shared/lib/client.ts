@@ -17,6 +17,7 @@ import type { Message, Model, ModelType } from "@/shared/types/chat";
 import type { SearchResult } from "@/features/research/types/search";
 import { modelType, modelName } from "./models";
 import { simplifyMarkdown, serializeToolResultForApi } from "./utils";
+import { traceGenAI } from "./otel";
 
 import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
@@ -90,6 +91,7 @@ export class Client {
       compactThreshold?: number;
     },
   ): Promise<Message> {
+    return traceGenAI("chat", model, async () => {
     input = this.sanitizeMessages(input);
 
     const items: OpenAI.Responses.ResponseInputItem[] = [];
@@ -321,12 +323,18 @@ export class Client {
         }
       });
 
-    await runner.finalResponse();
+    const finalResponse = await runner.finalResponse();
 
     return {
-      role: Role.Assistant,
-      content: contentParts,
+      result: { role: Role.Assistant, content: contentParts } as Message,
+      response: {
+        id: finalResponse.id,
+        model: finalResponse.model,
+        inputTokens: finalResponse.usage?.input_tokens,
+        outputTokens: finalResponse.usage?.output_tokens,
+      },
     };
+    }, { effort: options?.effort, verbosity: options?.verbosity, toolCount: tools?.length }); // end traceGenAI
   }
 
   async summarizeTitle(model: string, input: Message[]): Promise<string | null> {
@@ -630,18 +638,20 @@ export class Client {
 
   // biome-ignore lint: zod schema type is complex
   private async parse<T extends z.ZodType<any>>(model: string, instructions: string, input: string, schema: T, name: string): Promise<z.infer<T> | null> {
-    try {
-      const response = await this.oai.responses.parse({
-        model,
-        instructions,
-        input,
-        text: { format: zodTextFormat(schema, name) },
-      });
-      return response.output_parsed ?? null;
-    } catch (error) {
-      console.error(`Error in ${name}:`, error);
-      return null;
-    }
+    return traceGenAI(name, model, async () => {
+      try {
+        const response = await this.oai.responses.parse({
+          model,
+          instructions,
+          input,
+          text: { format: zodTextFormat(schema, name) },
+        });
+        return { result: response.output_parsed ?? null };
+      } catch (error) {
+        console.error(`Error in ${name}:`, error);
+        return { result: null };
+      }
+    });
   }
 
   private async post(path: string, fields: Record<string, string | Blob>): Promise<Response> {

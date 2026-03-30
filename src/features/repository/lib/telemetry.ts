@@ -16,15 +16,19 @@ import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
 import { FetchInstrumentation } from '@opentelemetry/instrumentation-fetch';
 import { ZoneContextManager } from '@opentelemetry/context-zone';
 import { registerInstrumentations } from '@opentelemetry/instrumentation';
+import { Resource } from '@opentelemetry/resources';
 import { trace } from '@opentelemetry/api';
 import { logs, SeverityNumber } from '@opentelemetry/api-logs';
 
 const IGNORE_URLS = [/\/otel\//];
 
+const resource = new Resource({ 'service.name': 'wingman-chat' });
+
 export function initTelemetry() {
     // Traces
     const traceExporter = new OTLPTraceExporter({ url: '/telemetry/v1/traces' });
     const tracerProvider = new WebTracerProvider({
+        resource,
         spanProcessors: [new BatchSpanProcessor(traceExporter)],
     });
     tracerProvider.register({
@@ -34,6 +38,7 @@ export function initTelemetry() {
     // Metrics
     const metricExporter = new OTLPMetricExporter({ url: '/telemetry/v1/metrics' });
     const meterProvider = new MeterProvider({
+        resource,
         readers: [
             new PeriodicExportingMetricReader({
                 exporter: metricExporter,
@@ -45,6 +50,7 @@ export function initTelemetry() {
     // Logs
     const logExporter = new OTLPLogExporter({ url: '/telemetry/v1/logs' });
     const loggerProvider = new LoggerProvider({
+        resource,
         processors: [new BatchLogRecordProcessor(logExporter)],
     });
 

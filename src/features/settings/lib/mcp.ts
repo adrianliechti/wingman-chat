@@ -31,6 +31,7 @@ import {
   type Message,
 } from "@/shared/types/chat";
 import { BrowserOAuthClientProvider } from "./mcpAuth";
+import { traceMCP } from "@/shared/lib/otel";
 
 const HOST_INFO = {
   name: "Wingman Chat",
@@ -248,27 +249,29 @@ export class MCPClient implements ToolProvider {
               throw new Error("MCP client not connected");
             }
 
-            const result = await this.client.callTool({
-              name: tool.name,
-              arguments: args,
-            });
-
-            // Handle both current and compatibility result formats
-            // Compatibility format has toolResult field, current has content field
-            const normalizedResult: CallToolResult =
-              "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
-
-            const resource = this.uiResources.get(tool.name);
-
-            if (resource && context?.render) {
-              await this.renderToolUI(tool.name, resource, normalizedResult, args, context);
-              context.setMeta?.({
-                toolProvider: this.id,
-                toolResource: resource.uri,
+            return traceMCP("tools/call", tool.name, { toolName: tool.name, serverAddress: this.url }, async () => {
+              const result = await this.client!.callTool({
+                name: tool.name,
+                arguments: args,
               });
-            }
 
-            return processContent(normalizedResult.content as MCPContentBlock[]);
+              // Handle both current and compatibility result formats
+              // Compatibility format has toolResult field, current has content field
+              const normalizedResult: CallToolResult =
+                "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
+
+              const resource = this.uiResources.get(tool.name);
+
+              if (resource && context?.render) {
+                await this.renderToolUI(tool.name, resource, normalizedResult, args, context);
+                context.setMeta?.({
+                  toolProvider: this.id,
+                  toolResource: resource.uri,
+                });
+              }
+
+              return processContent(normalizedResult.content as MCPContentBlock[]);
+            });
           },
         }));
 
