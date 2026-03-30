@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import type { Agent } from "@/features/agent/types/agent";
 import { useAgentFiles } from "./useAgentFiles";
 import { useSkills } from "@/features/skills/hooks/useSkills";
@@ -41,7 +41,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
   const enabledServers = useMemo(() => {
     if (!agent) return [];
     return agent.servers.filter((s) => s.enabled);
-  }, [agent]);
+  }, [agent?.servers]);
 
   // Track server configs to detect edits (URL, headers, etc.)
   const serverConfigRef = useRef<Map<string, string>>(new Map());
@@ -101,15 +101,13 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
   const repositoryProvider = useMemo<ToolProvider | null>(() => {
     if (!agent || files.length === 0) return null;
 
-    const tools = createRepositoryTools(files, queryChunks);
-
     return {
       id: "repository",
       name: "Repository",
       description: "File access tools for your repository",
       icon: Package,
       instructions: repositoryInstructions || undefined,
-      tools,
+      tools: createRepositoryTools(files, queryChunks),
     };
   }, [agent, files, queryChunks]);
 
@@ -121,9 +119,10 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     return allSkills.filter((s) => agentSkillIds.has(s.name));
   }, [agent, allSkills, agentSkillIds]);
 
-  const getSkillTools = useCallback((): Tool[] => {
-    if (enabledSkills.length === 0) return [];
-    return [
+  const skillsProvider = useMemo<ToolProvider | null>(() => {
+    if (enabledSkills.length === 0) return null;
+
+    const tools: Tool[] = [
       {
         name: "read_skill",
         description: "Read the full content and instructions of an available skill.",
@@ -167,12 +166,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
         },
       },
     ];
-  }, [enabledSkills, getSkill, agentSkillIds]);
 
-  const skillsProvider = useMemo<ToolProvider | null>(() => {
-    if (enabledSkills.length === 0) return null;
-
-    const tools = getSkillTools();
     const skillsXml = enabledSkills
       .map(
         (skill) =>
@@ -180,17 +174,15 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
       )
       .join("\n");
 
-    const instructions = skillsPrompt.replace("{skillsXml}", skillsXml);
-
     return {
       id: "skills",
       name: "Skills",
       description: "Specialized agent skills",
       icon: Sparkles,
-      instructions: instructions || undefined,
+      instructions: skillsPrompt.replace("{skillsXml}", skillsXml) || undefined,
       tools,
     };
-  }, [enabledSkills, getSkillTools]);
+  }, [enabledSkills, getSkill, agentSkillIds]);
 
   // --- Memory provider ---
   const config = getConfig();
@@ -229,10 +221,11 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     return () => window.removeEventListener("memory-updated", handler);
   }, [memoryEnabled, agentId, memoryPath]);
 
-  const getMemoryTools = useCallback((): Tool[] => {
-    if (!memoryEnabled) return [];
+  const memoryProvider = useMemo<ToolProvider | null>(() => {
+    if (!memoryEnabled) return null;
+
     const agentPath = `agents/${agentId}`;
-    return [
+    const tools: Tool[] = [
       {
         name: "write_memory",
         description: "Write/update your persistent memory. This replaces the entire memory content.",
@@ -257,12 +250,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
         },
       },
     ];
-  }, [memoryEnabled, agentId]);
 
-  const memoryProvider = useMemo<ToolProvider | null>(() => {
-    if (!memoryEnabled) return null;
-
-    const tools = getMemoryTools();
     const memorySection = memoryContent.trim()
       ? `\n\n<memory>\n${memoryContent.trim()}\n</memory>`
       : "\n\nNo memories yet.";
@@ -272,20 +260,16 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
       name: "Memory",
       description: "Persistent memory across conversations",
       icon: BrainCircuit,
-      instructions: (memoryPrompt || "") + memorySection,
+      instructions: memoryPrompt + memorySection,
       tools,
     };
-  }, [memoryEnabled, getMemoryTools, memoryContent]);
+  }, [memoryEnabled, memoryContent, agentId]);
 
   // --- Combine all providers ---
-  const providers = useMemo<ToolProvider[]>(() => {
-    const list: ToolProvider[] = [];
-    if (repositoryProvider) list.push(repositoryProvider);
-    if (skillsProvider) list.push(skillsProvider);
-    if (memoryProvider) list.push(memoryProvider);
-    list.push(...mcpClients);
-    return list;
-  }, [repositoryProvider, skillsProvider, memoryProvider, mcpClients]);
+  const providers = useMemo<ToolProvider[]>(
+    () => [repositoryProvider, skillsProvider, memoryProvider, ...mcpClients].filter(Boolean) as ToolProvider[],
+    [repositoryProvider, skillsProvider, memoryProvider, mcpClients],
+  );
 
   const enabledTools = useMemo(() => agent?.tools || [], [agent?.tools]);
 
