@@ -20,6 +20,7 @@ import type {
   ResourceContents as MCPResourceContents,
   Tool as MCPTool,
 } from "@modelcontextprotocol/sdk/types.js";
+import { traceMCP } from "@/shared/lib/otel";
 import {
   type AudioContent,
   type FileContent,
@@ -32,7 +33,6 @@ import {
   type ToolProvider,
 } from "@/shared/types/chat";
 import { BrowserOAuthClientProvider } from "./mcpAuth";
-import { traceMCP } from "@/shared/lib/otel";
 
 export type { McpUiDisplayMode };
 
@@ -270,8 +270,10 @@ export class MCPClient implements ToolProvider {
 
               const resource = this.uiResources.get(tool.name);
 
-              if (resource && context?.render) {
-                await this.renderToolUI(tool.name, resource, normalizedResult, args, context);
+              if (resource && context?.setMeta) {
+                // Don't render the UI here — InlineMcpApp handles rendering via
+                // restoreToolUI with the correct display mode and target iframe.
+                // We only persist the metadata so InlineMcpApp knows what to render.
                 const toolUiMeta = tool._meta?.ui as
                   | { defaultDisplayMode?: string; availableDisplayModes?: string[] }
                   | undefined;
@@ -387,17 +389,16 @@ export class MCPClient implements ToolProvider {
         });
     };
 
-    bridge.onsizechange = ({ width, height }) => {
-      // In fullscreen mode the iframe width is managed by the ResizeObserver in AppDrawer,
-      // so only height changes are applied (allowing the drawer to scroll vertically).
-      if (displayModeOptions?.displayMode !== "fullscreen") {
-        if (typeof width === "number" && width > 0) {
-          iframe.style.width = `${width}px`;
-        }
-      }
+    bridge.onsizechange = ({ height }) => {
+      // Per spec §Container Dimensions, width is fixed (host-controlled) so the host
+      // does not need to respond to width from ui/notifications/size-changed.
+      // Only height uses flexible (maxHeight) or unbounded mode, so we apply it here.
 
       if (typeof height === "number" && height > 0) {
-        iframe.style.height = `${height}px`;
+        // Cap inline apps at INLINE_MAX_HEIGHT to prevent dominating the chat scroll
+        const cappedHeight =
+          displayModeOptions?.displayMode !== "fullscreen" ? Math.min(height, INLINE_MAX_HEIGHT) : height;
+        iframe.style.height = `${cappedHeight}px`;
       }
     };
 
@@ -414,10 +415,13 @@ export class MCPClient implements ToolProvider {
       const currentMode = displayModeOptions?.displayMode ?? "inline";
       if (mode === "fullscreen" && currentMode !== "fullscreen") {
         displayModeOptions?.onDisplayModeRequested?.(mode);
+        // Notify the view of the display mode change and updated container dimensions
+        bridge.setHostContext(buildHostContext(toolDefinition, iframe, mode));
         return { mode };
       }
       if (mode === "inline" && currentMode !== "inline") {
         displayModeOptions?.onDisplayModeRequested?.(mode);
+        bridge.setHostContext(buildHostContext(toolDefinition, iframe, mode));
         return { mode };
       }
       return { mode: currentMode };
@@ -633,6 +637,11 @@ export class MCPClient implements ToolProvider {
   isConnected(): boolean {
     return this.client !== null;
   }
+
+  /** Whether this client currently has a live app bridge (e.g. from an in-flight tool call). */
+  hasActiveBridge(): boolean {
+    return this.activeBridge !== null;
+  }
 }
 
 type ToolResultContent = TextContent | ImageContent | AudioContent | FileContent;
@@ -721,11 +730,30 @@ function buildHostCapabilities(
   return capabilities;
 }
 
+/** Max height (px) for inline apps to prevent them from dominating the chat scroll. */
+const INLINE_MAX_HEIGHT = 600;
+
 function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?: McpUiDisplayMode): McpUiHostContext {
   const isDark = document.documentElement.classList.contains("dark");
-  const width = iframe.clientWidth || undefined;
-  const height = iframe.clientHeight || undefined;
   const currentMode = displayMode ?? "inline";
+
+  // Per spec, containerDimensions signals how the host sizes the container:
+  //   - Fixed (width/height): host controls size, view fills it
+  //   - Flexible (maxWidth/maxHeight): view controls size up to a max
+  //   - Unbounded (field omitted): view controls size with no limit
+  // Width is always fixed: the host controls it (CSS w-full for inline, ResizeObserver
+  // for fullscreen). The view should fill the available width per the spec.
+  // Height: inline uses maxHeight (flexible, capped); fullscreen is unbounded (omitted).
+  const containerWidth =
+    iframe.clientWidth ||
+    iframe.parentElement?.getBoundingClientRect().width ||
+    iframe.closest(".min-h-\\[60px\\]")?.getBoundingClientRect().width ||
+    // Final fallback: use viewport-derived width when the element hasn't laid out yet
+    Math.min(window.innerWidth - 48, 800);
+  const containerDimensions: McpUiHostContext["containerDimensions"] = {
+    ...(typeof containerWidth === "number" && containerWidth > 0 ? { width: containerWidth } : {}),
+    ...(currentMode === "inline" ? { maxHeight: INLINE_MAX_HEIGHT } : {}),
+  };
 
   return {
     toolInfo: { tool },
@@ -741,10 +769,7 @@ function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?
     },
     displayMode: currentMode,
     availableDisplayModes: ["inline", "fullscreen"],
-    containerDimensions: {
-      ...(typeof width === "number" ? { maxWidth: width } : {}),
-      ...(typeof height === "number" ? { maxHeight: height } : {}),
-    },
+    containerDimensions,
     locale: navigator.language,
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     userAgent: navigator.userAgent,

@@ -1,14 +1,14 @@
 import { createContext } from "react";
+import type { DisplayModeOptions } from "@/features/settings/lib/mcp";
 import type {
-  ToolProvider,
-  ProviderState,
-  TextContent,
-  ImageContent,
   AudioContent,
   FileContent,
+  ImageContent,
+  ProviderState,
+  TextContent,
   ToolContext,
+  ToolProvider,
 } from "@/shared/types/chat";
-import type { DisplayModeOptions } from "@/features/settings/lib/mcp";
 
 export interface ToolsContextValue {
   providers: ToolProvider[];
@@ -25,6 +25,7 @@ export interface ToolsContextValue {
     context: ToolContext,
     displayModeOptions?: DisplayModeOptions,
   ) => Promise<void>;
+  hasActiveBridge: (providerId: string) => boolean;
 }
 
 export const ToolsContext = createContext<ToolsContextValue | undefined>(undefined);
