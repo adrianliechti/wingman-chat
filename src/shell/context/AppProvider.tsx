@@ -68,6 +68,8 @@ export function AppProvider({ children }: AppProviderProps) {
 
     await runActiveCleanup();
 
+    iframe.style.height = "";
+
     setShowAppDrawer(true);
     setHasAppContent(true);
 

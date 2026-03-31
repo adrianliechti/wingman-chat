@@ -1,21 +1,21 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { getConfig } from "@/shared/config";
-import { MCPClient } from "@/features/settings/lib/mcp";
-import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
-import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
-import { useRendererProvider } from "@/features/renderer/hooks/useRendererProvider";
+import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
-import { ToolsContext } from "./ToolsContext";
+import { useRendererProvider } from "@/features/renderer/hooks/useRendererProvider";
+import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
+import { MCPClient } from "@/features/settings/lib/mcp";
+import { getConfig } from "@/shared/config";
 import type {
-  ToolProvider,
-  TextContent,
-  ImageContent,
   AudioContent,
   FileContent,
+  ImageContent,
+  TextContent,
   ToolContext,
+  ToolProvider,
 } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
+import { ToolsContext } from "./ToolsContext";
 
 export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const config = getConfig();
@@ -93,6 +93,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     [mcpIds, mcpStates, desiredTools],
   );
 
+  // Track in-flight connection promises so callers can await an already-running connect
+  const connectPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
+
   // Connect/disconnect an MCP client (idempotent — skips no-ops via state ref)
   const connectMcp = useCallback(
     async (id: string, enabled: boolean) => {
@@ -100,24 +103,32 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       if (!client) return;
 
       const current = mcpStatesRef.current.get(id);
-      if (
-        enabled &&
-        (current === ProviderState.Connected ||
-          current === ProviderState.Initializing ||
-          current === ProviderState.Authenticating)
-      )
+
+      if (enabled && current === ProviderState.Connected) return;
+      // If already initializing/authenticating, wait for the in-flight connection
+      // instead of returning immediately so callers get a connected client.
+      if (enabled && (current === ProviderState.Initializing || current === ProviderState.Authenticating)) {
+        const pending = connectPromisesRef.current.get(id);
+        if (pending) await pending;
         return;
+      }
       if (!enabled && (!current || current === ProviderState.Disconnected)) return;
 
       if (enabled) {
         setMcpStates((prev) => new Map(prev).set(id, ProviderState.Initializing));
-        try {
-          await client.connect();
-          setMcpStates((prev) => new Map(prev).set(id, ProviderState.Connected));
-        } catch (error) {
-          console.error(`Failed to connect MCP ${id}:`, error);
-          setMcpStates((prev) => new Map(prev).set(id, ProviderState.Failed));
-        }
+        const promise = (async () => {
+          try {
+            await client.connect();
+            setMcpStates((prev) => new Map(prev).set(id, ProviderState.Connected));
+          } catch (error) {
+            console.error(`Failed to connect MCP ${id}:`, error);
+            setMcpStates((prev) => new Map(prev).set(id, ProviderState.Failed));
+          } finally {
+            connectPromisesRef.current.delete(id);
+          }
+        })();
+        connectPromisesRef.current.set(id, promise);
+        await promise;
       } else {
         await client.disconnect();
         setMcpStates((prev) => new Map(prev).set(id, ProviderState.Disconnected));
@@ -214,6 +225,15 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     [allMcpClients],
   );
 
+  // Check whether a provider currently has an active app bridge (e.g. from a live tool call)
+  const hasActiveBridge = useCallback(
+    (providerId: string): boolean => {
+      const client = allMcpClients.find((c) => c.id === providerId);
+      return client?.hasActiveBridge() ?? false;
+    },
+    [allMcpClients],
+  );
+
   const setModelOverrides = useCallback((enabled: string[], disabled: string[]) => {
     setModelEnabledTools(new Set(enabled));
     setModelDisabledTools(new Set(disabled));
@@ -236,6 +256,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         setModelOverrides,
         resetTools,
         restoreToolUI,
+        hasActiveBridge,
       }}
     >
       {children}

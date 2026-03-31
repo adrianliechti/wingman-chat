@@ -162,8 +162,7 @@ export function InlineMcpApp({ toolResult, isLastFullscreenApp }: InlineMcpAppPr
         Promise.resolve(cleanup()).catch(console.error);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayMode]);
+  }, [displayMode, isFullscreenOnly, isLastFullscreenApp, expandToFullscreen, renderInline]);
 
   // === FULLSCREEN-ONLY: always show a button to open/reopen in panel ===
   if (isFullscreenOnly) {
@@ -199,9 +198,9 @@ export function InlineMcpApp({ toolResult, isLastFullscreenApp }: InlineMcpAppPr
 
   // === INLINE rendering (inline-only or both-modes in inline state) ===
   return (
-    <div className="mt-2 ml-5 mb-2 relative rounded-lg overflow-hidden border border-neutral-200/60 dark:border-neutral-700/60">
+    <div className="mt-2 ml-5 mb-2 relative rounded-lg overflow-hidden border border-neutral-200/60 dark:border-neutral-700/60 min-h-[60px]">
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-neutral-950/80 z-10">
+        <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-neutral-950/80 z-10 min-h-[60px]">
           <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
         </div>
       )}
@@ -220,6 +219,7 @@ export function InlineMcpApp({ toolResult, isLastFullscreenApp }: InlineMcpAppPr
       <iframe
         ref={iframeRef}
         className="w-full border-none"
+        style={{ height: 0 }}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
         title={`MCP App: ${toolResult.name}`}
