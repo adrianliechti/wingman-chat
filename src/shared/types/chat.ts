@@ -190,6 +190,7 @@ export type Chat = {
   id: string;
   title?: string;
   customTitle?: string;
+  customIndex?: number;
 
   created: Date | null;
   updated: Date | null;

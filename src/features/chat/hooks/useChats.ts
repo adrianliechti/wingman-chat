@@ -23,6 +23,7 @@ async function storeChat(chat: Chat): Promise<void> {
       id: chat.id,
       title: chat.title,
       customTitle: chat.customTitle,
+      customIndex: chat.customIndex,
       updated: stored.updated || new Date().toISOString(),
     });
   } catch (error) {

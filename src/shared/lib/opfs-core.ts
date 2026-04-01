@@ -323,6 +323,7 @@ export interface IndexEntry {
   id: string;
   title?: string;
   customTitle?: string;
+  customIndex?: number;
   updated: string; // ISO date string
 }
 
