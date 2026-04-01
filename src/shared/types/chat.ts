@@ -189,6 +189,7 @@ export type Role = (typeof Role)[keyof typeof Role];
 export type Chat = {
   id: string;
   title?: string;
+  customTitle?: string;
 
   created: Date | null;
   updated: Date | null;

@@ -1,6 +1,6 @@
-import { Trash, PanelRightOpen, MoreVertical, GitBranch, Search, X } from "lucide-react";
+import { Trash, PanelRightOpen, MoreVertical, GitBranch, Search, X, Pencil } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { useMemo, useCallback, useState, useRef } from "react";
+import { useMemo, useCallback, useState, useRef, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
@@ -13,6 +13,35 @@ export function ChatSidebar() {
   const { newChat, openChat } = useChatNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (renamingChatId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingChatId]);
+
+  const startRename = useCallback((chatItem: (typeof chats)[0]) => {
+    setRenamingChatId(chatItem.id);
+    setRenameValue(chatItem.customTitle ?? chatItem.title ?? "");
+  }, []);
+
+  const confirmRename = useCallback(() => {
+    if (renamingChatId) {
+      const trimmed = renameValue.trim();
+      updateChat(renamingChatId, () => ({
+        customTitle: trimmed || undefined,
+      }));
+      setRenamingChatId(null);
+    }
+  }, [renamingChatId, renameValue, updateChat]);
+
+  const cancelRename = useCallback(() => {
+    setRenamingChatId(null);
+  }, []);
 
   // sort once per chats change
   const sortedChats = useMemo(
@@ -32,7 +61,10 @@ export function ChatSidebar() {
     const query = searchQuery.toLowerCase();
 
     return sortedChats.filter((chatItem) => {
-      // Search in title
+      // Search in custom title and auto-generated title
+      if (chatItem.customTitle?.toLowerCase().includes(query)) {
+        return true;
+      }
       if (chatItem.title?.toLowerCase().includes(query)) {
         return true;
       }
@@ -146,10 +178,12 @@ export function ChatSidebar() {
       const newChat = await createChat();
 
       // Copy all the properties from the original chat
+      const forkSuffix = " (Fork)";
       updateChat(newChat.id, () => ({
-        title: chatToFork.title ? `${chatToFork.title} (Fork)` : "Forked Chat",
+        title: chatToFork.title ? `${chatToFork.title}${forkSuffix}` : "Forked Chat",
+        customTitle: chatToFork.customTitle ? `${chatToFork.customTitle}${forkSuffix}` : undefined,
         model: chatToFork.model,
-        messages: [...chatToFork.messages], // Create a copy of the messages array
+        messages: [...chatToFork.messages],
       }));
 
       // Navigate to the new forked chat
@@ -293,12 +327,29 @@ export function ChatSidebar() {
                         : "py-2 md:py-1.5 pl-2.5 md:pl-2.5 pr-1 md:pr-0.5 hover:text-neutral-600 dark:hover:text-neutral-300"
                     }`}
                   >
-                    <div
-                      className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-base md:text-sm text-neutral-800 dark:text-neutral-200 pr-4"
-                      title={chatItem.title ?? "Untitled"}
-                    >
-                      {chatItem.title ?? "Untitled"}
-                    </div>
+                    {renamingChatId === chatItem.id ? (
+                      <input
+                        ref={renameInputRef}
+                        type="text"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") confirmRename();
+                          if (e.key === "Escape") cancelRename();
+                        }}
+                        onBlur={confirmRename}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex-1 min-w-0 px-1 py-0 text-base md:text-sm bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-600 rounded outline-none focus:border-blue-500 dark:focus:border-blue-400"
+                      />
+                    ) : (
+                      <div
+                        className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-base md:text-sm text-neutral-800 dark:text-neutral-200 pr-4"
+                        title={chatItem.customTitle ?? chatItem.title ?? "Untitled"}
+                      >
+                        {chatItem.customTitle ?? chatItem.title ?? "Untitled"}
+                      </div>
+                    )}
+                    {renamingChatId !== chatItem.id && (
                     <Menu>
                       <MenuButton
                         className="absolute right-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
@@ -312,6 +363,16 @@ export function ChatSidebar() {
                         anchor="bottom end"
                         className="w-32 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
                       >
+                        <MenuItem>
+                          <button
+                            type="button"
+                            onClick={() => startRename(chatItem)}
+                            className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
+                          >
+                            <Pencil size={14} />
+                            Rename
+                          </button>
+                        </MenuItem>
                         <MenuItem>
                           <button
                             type="button"
@@ -338,6 +399,7 @@ export function ChatSidebar() {
                         </MenuItem>
                       </MenuItems>
                     </Menu>
+                    )}
                   </div>
                 </div>
               );

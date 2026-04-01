@@ -322,6 +322,7 @@ export async function clearAll(): Promise<void> {
 export interface IndexEntry {
   id: string;
   title?: string;
+  customTitle?: string;
   updated: string; // ISO date string
 }
 

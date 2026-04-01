@@ -83,6 +83,7 @@ export interface StoredMessage {
 export interface StoredChat {
   id: string;
   title?: string;
+  customTitle?: string;
   created: string | null;
   updated: string | null;
   model: Chat["model"];
@@ -182,6 +183,7 @@ export async function extractChatBlobs(chat: Chat): Promise<StoredChat> {
   return {
     id: chat.id,
     title: chat.title,
+    customTitle: chat.customTitle,
     created: chat.created instanceof Date ? chat.created.toISOString() : (chat.created as unknown as string) || null,
     updated: chat.updated instanceof Date ? chat.updated.toISOString() : (chat.updated as unknown as string) || null,
     model: chat.model,
@@ -200,6 +202,7 @@ export async function rehydrateChatBlobs(stored: StoredChat): Promise<Chat> {
   return {
     id: stored.id,
     title: stored.title,
+    customTitle: stored.customTitle,
     created: stored.created ? new Date(stored.created) : null,
     updated: stored.updated ? new Date(stored.updated) : null,
     model: stored.model,

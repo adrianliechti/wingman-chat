@@ -22,6 +22,7 @@ async function storeChat(chat: Chat): Promise<void> {
     await opfs.upsertIndexEntry(COLLECTION, {
       id: chat.id,
       title: chat.title,
+      customTitle: chat.customTitle,
       updated: stored.updated || new Date().toISOString(),
     });
   } catch (error) {
