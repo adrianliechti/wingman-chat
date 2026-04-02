@@ -635,13 +635,17 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     }
   }, [currentAgent, isLoaded]);
 
-  const createAgent = useCallback(async (name: string): Promise<Agent> => {
+  const createAgent = useCallback(async (name: string, initialData?: Partial<Omit<Agent, "id" | "name">>): Promise<Agent> => {
     const newAgent: Agent = {
       id: crypto.randomUUID(),
       name,
-      skills: [],
-      servers: [],
-      tools: [],
+      description: initialData?.description,
+      model: initialData?.model,
+      instructions: initialData?.instructions,
+      skills: initialData?.skills ?? [],
+      servers: initialData?.servers ?? [],
+      tools: initialData?.tools ?? [],
+      memory: initialData?.memory,
     };
 
     setAgents((prev) => [...prev, newAgent]);
