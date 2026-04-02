@@ -1,45 +1,51 @@
-import { useState, useEffect, Fragment } from "react";
+import { Listbox, Transition } from "@headlessui/react";
 import {
-  Settings,
-  MessageSquare,
-  User,
-  Download,
-  Upload,
-  Trash2,
-  ChevronsUpDown,
-  Check,
-  X,
-  ChevronRight,
   Bot,
+  Check,
+  ChevronRight,
+  ChevronsUpDown,
+  Coffee,
+  Download,
   HardDrive,
+  MessageSquare,
+  Settings,
+  Trash2,
+  Upload,
+  User,
+  Wrench,
+  X,
 } from "lucide-react";
-import { Transition, Listbox } from "@headlessui/react";
-import { useSettings } from "@/features/settings/hooks/useSettings";
-import { useChat } from "@/features/chat/hooks/useChat";
+import { Fragment, useEffect, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import { getStorageUsage, clearAll, deleteDirectory, removeIndexEntry } from "@/shared/lib/opfs";
-import { formatBytes } from "@/shared/lib/utils";
-import type { Theme, LayoutMode, BackgroundPack, EmojiMode } from "@/shared/types/settings";
-import { personaOptions } from "@/features/settings/lib/personas";
-import type { PersonaKey } from "@/features/settings/lib/personas";
+import { useChat } from "@/features/chat/hooks/useChat";
+import { useSettings } from "@/features/settings/hooks/useSettings";
 import {
-  importChatsFromZip,
-  importChatsFromLegacyJson,
-  exportChatsAsZip,
-} from "@/features/settings/lib/chatImportExport";
-import {
-  importAgentsFromZip,
-  importAgentsFromLegacyJson,
   exportAgentsAsZip,
+  importAgentsFromLegacyJson,
+  importAgentsFromZip,
 } from "@/features/settings/lib/agentImportExport";
+import {
+  exportChatsAsZip,
+  importChatsFromLegacyJson,
+  importChatsFromZip,
+} from "@/features/settings/lib/chatImportExport";
+import type { PersonaKey } from "@/features/settings/lib/personas";
+import { personaOptions } from "@/features/settings/lib/personas";
 import { rebuildAllIndexes } from "@/features/settings/lib/rebuildIndexes";
+import { useToolsContext } from "@/features/tools";
+import { LOCAL_WINGMAN_ID } from "@/features/tools/hooks/useLocalWingman";
+import { clearAll, deleteDirectory, getStorageUsage, removeIndexEntry } from "@/shared/lib/opfs";
 import { downloadFolderAsZip } from "@/shared/lib/opfs-zip";
+import { formatBytes } from "@/shared/lib/utils";
+import { ProviderState } from "@/shared/types/chat";
+import type { BackgroundPack, EmojiMode, LayoutMode, Theme } from "@/shared/types/settings";
 import { OpfsBrowser } from "./OpfsBrowser";
 
 interface SettingsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   showAdvanced?: boolean;
+  initialSection?: string;
 }
 
 const themeOptions: { value: Theme; label: string }[] = [
@@ -182,8 +188,13 @@ function SectionPanel({ title, icon, isOpen, onClick, children }: SectionPanelPr
   );
 }
 
-export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawerProps) {
+export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }: SettingsDrawerProps) {
   const [openSection, setOpenSection] = useState<string | null>(null);
+  const { providers, getProviderState, localWingmanEnabled, localWingmanAvailable, toggleLocalWingman } =
+    useToolsContext();
+  const wingman = providers.find((p) => p.id === LOCAL_WINGMAN_ID);
+  const wingmanState = wingman ? getProviderState(wingman.id) : ProviderState.Disconnected;
+  const wingmanConnected = wingmanState === ProviderState.Connected && localWingmanEnabled;
   const [opfsBrowserOpen, setOpfsBrowserOpen] = useState(false);
   const [isRebuildingIndexes, setIsRebuildingIndexes] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -459,12 +470,12 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
     ...backgroundPacks.map((p: BackgroundPack) => ({ value: p.name, label: p.name })),
   ];
 
-  // Reset sections when drawer opens
+  // Reset (or jump to initial) section when drawer opens
   useEffect(() => {
     if (isOpen) {
-      setOpenSection(null);
+      setOpenSection(initialSection ?? null);
     }
-  }, [isOpen]);
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleSection = (section: string) => {
     setOpenSection(openSection === section ? null : section);
@@ -709,6 +720,94 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced }: SettingsDrawer
                     </p>
                   </div>
                 </SectionPanel>
+
+                {/* Companion (Local Wingman) Section */}
+                {localWingmanAvailable && (
+                  <SectionPanel
+                    title="Companion"
+                    icon={<Coffee size={20} />}
+                    isOpen={openSection === "companion"}
+                    onClick={() => toggleSection("companion")}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-neutral-700 dark:text-neutral-300">Enable companion</span>
+                      <button
+                        type="button"
+                        onClick={toggleLocalWingman}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none ${
+                          localWingmanEnabled
+                            ? "bg-emerald-500 dark:bg-emerald-600"
+                            : "bg-neutral-300 dark:bg-neutral-600"
+                        }`}
+                        role="switch"
+                        aria-checked={localWingmanEnabled}
+                      >
+                        <span
+                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                            localWingmanEnabled ? "translate-x-4.5" : "translate-x-0.5"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {wingmanConnected && wingman && wingman.tools.length > 0 ? (
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                          {wingman.tools.length} tool{wingman.tools.length !== 1 ? "s" : ""} available
+                        </p>
+                        <div className="space-y-1">
+                          {wingman.tools.map((tool) => (
+                            <div key={tool.name} className="flex items-center gap-2 py-1.5">
+                              <span className="shrink-0 text-neutral-600 dark:text-neutral-400">
+                                {(() => {
+                                  const toolIcon =
+                                    tool.icon ?? (typeof wingman.icon === "string" ? wingman.icon : undefined);
+                                  if (toolIcon) {
+                                    return (
+                                      <span
+                                        className="bg-current inline-block"
+                                        style={{
+                                          width: 16,
+                                          height: 16,
+                                          maskImage: `url(${toolIcon})`,
+                                          WebkitMaskImage: `url(${toolIcon})`,
+                                          maskSize: "contain",
+                                          maskRepeat: "no-repeat",
+                                          maskPosition: "center",
+                                        }}
+                                      />
+                                    );
+                                  }
+                                  if (wingman.icon && typeof wingman.icon !== "string") {
+                                    const WingmanIcon = wingman.icon;
+                                    return <WingmanIcon width={16} height={16} />;
+                                  }
+                                  return <Wrench size={16} />;
+                                })()}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                                  {tool.name}
+                                </div>
+                                {tool.description && (
+                                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                                    {tool.description}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : wingmanConnected ? (
+                      <p className="text-sm text-neutral-400 dark:text-neutral-500">No tools exposed</p>
+                    ) : (
+                      <p className="text-sm text-neutral-400 dark:text-neutral-500">
+                        Enable the companion to see available tools.
+                      </p>
+                    )}
+                  </SectionPanel>
+                )}
 
                 {/* Advanced — only visible via Alt+click */}
                 {showAdvanced && (

@@ -51,9 +51,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     const newIds = new Set(enabledServers.map((s) => s.id));
 
     // Build config fingerprints to detect property changes
-    const newConfigs = new Map(
-      enabledServers.map((s) => [s.id, JSON.stringify({ url: s.url, headers: s.headers })]),
-    );
+    const newConfigs = new Map(enabledServers.map((s) => [s.id, JSON.stringify({ url: s.url, headers: s.headers })]));
 
     // Identify servers whose config changed (edited URL/headers)
     const changedIds = new Set(

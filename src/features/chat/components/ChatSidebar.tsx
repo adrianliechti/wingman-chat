@@ -280,11 +280,12 @@ export function ChatSidebar() {
   const renderChatItem = (chatItem: Chat, options?: { draggable?: boolean }) => {
     const displayTitle = chatItem.customTitle ?? chatItem.title ?? "Untitled";
     const isActive = chatItem.id === chat?.id;
-    const dragBorder = dragOver?.id === chatItem.id
-      ? dragOver.position === "before"
-        ? "border-t-2 border-neutral-400 dark:border-neutral-500"
-        : "border-b-2 border-neutral-400 dark:border-neutral-500"
-      : "";
+    const dragBorder =
+      dragOver?.id === chatItem.id
+        ? dragOver.position === "before"
+          ? "border-t-2 border-neutral-400 dark:border-neutral-500"
+          : "border-b-2 border-neutral-400 dark:border-neutral-500"
+        : "";
 
     return (
       <div
@@ -300,9 +301,7 @@ export function ChatSidebar() {
           }
         }}
         className={`flex items-center cursor-pointer relative shrink-0 group rounded transition-all duration-200 py-2 md:py-1.5 pl-2.5 md:pl-2.5 pr-1 md:pr-0.5 ${dragBorder} ${
-          isActive
-            ? "text-neutral-900 dark:text-neutral-100"
-            : "hover:text-neutral-600 dark:hover:text-neutral-300"
+          isActive ? "text-neutral-900 dark:text-neutral-100" : "hover:text-neutral-600 dark:hover:text-neutral-300"
         }`}
       >
         {isActive && (
@@ -331,76 +330,76 @@ export function ChatSidebar() {
           </div>
         )}
         {renamingChatId !== chatItem.id && (
-        <Menu>
-          <MenuButton
-            className="absolute right-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-0.5 rounded hover:bg-white/30 dark:hover:bg-black/20"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <MoreVertical size={16} />
-          </MenuButton>
-          <MenuItems
-            modal={false}
-            transition
-            anchor="bottom end"
-            className="w-32 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
-          >
-            <MenuItem>
-              <button
-                type="button"
-                onClick={() => startRename(chatItem)}
-                className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
-              >
-                <Pencil size={14} />
-                Rename
-              </button>
-            </MenuItem>
-            <MenuItem>
-              {chatItem.customIndex != null ? (
+          <Menu>
+            <MenuButton
+              className="absolute right-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-0.5 rounded hover:bg-white/30 dark:hover:bg-black/20"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreVertical size={16} />
+            </MenuButton>
+            <MenuItems
+              modal={false}
+              transition
+              anchor="bottom end"
+              className="w-32 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
+            >
+              <MenuItem>
                 <button
                   type="button"
-                  onClick={() => unpinChat(chatItem)}
+                  onClick={() => startRename(chatItem)}
                   className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
                 >
-                  <PinOff size={14} />
-                  Unpin
+                  <Pencil size={14} />
+                  Rename
                 </button>
-              ) : (
+              </MenuItem>
+              <MenuItem>
+                {chatItem.customIndex != null ? (
+                  <button
+                    type="button"
+                    onClick={() => unpinChat(chatItem)}
+                    className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
+                  >
+                    <PinOff size={14} />
+                    Unpin
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => pinChat(chatItem)}
+                    className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
+                  >
+                    <Pin size={14} />
+                    Pin
+                  </button>
+                )}
+              </MenuItem>
+              <MenuItem>
                 <button
                   type="button"
-                  onClick={() => pinChat(chatItem)}
+                  onClick={() => forkChat(chatItem)}
                   className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
                 >
-                  <Pin size={14} />
-                  Pin
+                  <GitBranch size={14} />
+                  Fork
                 </button>
-              )}
-            </MenuItem>
-            <MenuItem>
-              <button
-                type="button"
-                onClick={() => forkChat(chatItem)}
-                className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 "
-              >
-                <GitBranch size={14} />
-                Fork
-              </button>
-            </MenuItem>
-            <MenuItem>
-              <button
-                type="button"
-                onClick={() => {
-                  const wasActive = chatItem.id === chat?.id;
-                  deleteChat(chatItem.id);
-                  if (wasActive) newChat();
-                }}
-                className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 "
-              >
-                <Trash size={14} />
-                Delete
-              </button>
-            </MenuItem>
-          </MenuItems>
-        </Menu>
+              </MenuItem>
+              <MenuItem>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const wasActive = chatItem.id === chat?.id;
+                    deleteChat(chatItem.id);
+                    if (wasActive) newChat();
+                  }}
+                  className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 "
+                >
+                  <Trash size={14} />
+                  Delete
+                </button>
+              </MenuItem>
+            </MenuItems>
+          </Menu>
         )}
       </div>
     );
@@ -493,9 +492,7 @@ export function ChatSidebar() {
               </Menu>
             </div>
             {pinnedChats.map((chatItem) => (
-              <div key={chatItem.id}>
-                {renderChatItem(chatItem, { draggable: true })}
-              </div>
+              <div key={chatItem.id}>{renderChatItem(chatItem, { draggable: true })}</div>
             ))}
           </div>
         )}

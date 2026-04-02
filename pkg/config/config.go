@@ -20,6 +20,10 @@ func Load() *Config {
 		cfg.Support = &Support{URL: u, Email: e}
 	}
 
+	if bridgeURL := os.Getenv("BRIDGE_URL"); bridgeURL != "" {
+		cfg.Bridge = &Bridge{URL: bridgeURL}
+	}
+
 	loadConfigFiles(cfg)
 	applyEnvOverrides(cfg)
 

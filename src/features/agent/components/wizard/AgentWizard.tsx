@@ -151,8 +151,7 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
   // Identity step requires a name
   const canAdvanceFromIdentity = !!state.name.trim();
 
-  const canNext =
-    currentStepId === "identity" ? canAdvanceFromIdentity : true;
+  const canNext = currentStepId === "identity" ? canAdvanceFromIdentity : true;
 
   const handleNext = useCallback(() => {
     if (currentStepId === "identity" && !canAdvanceFromIdentity) {
@@ -271,11 +270,7 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
                     <SkillsStep selectedSkills={state.selectedSkills} dispatch={dispatch} />
                   )}
                   {currentStepId === "tools" && (
-                    <ToolsStep
-                      selectedTools={state.selectedTools}
-                      servers={state.servers}
-                      dispatch={dispatch}
-                    />
+                    <ToolsStep selectedTools={state.selectedTools} servers={state.servers} dispatch={dispatch} />
                   )}
                   {currentStepId === "knowledge" && (
                     <KnowledgeStep pendingFiles={state.pendingFiles} dispatch={dispatch} />

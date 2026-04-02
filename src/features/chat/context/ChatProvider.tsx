@@ -16,7 +16,6 @@ import type {
   ToolContext,
 } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
-import { APIError, APIConnectionError, APIConnectionTimeoutError, APIUserAbortError } from "openai";
 import { useApp } from "@/shell/hooks/useApp";
 import type { ChatContextType } from "./ChatContext";
 import { ChatContext } from "./ChatContext";
@@ -25,7 +24,7 @@ import { ChatContext } from "./ChatContext";
 function pruneAtCompaction(messages: Message[]): Message[] {
   let lastCompactionIndex = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].content.some(p => p.type === 'compaction')) {
+    if (messages[i].content.some((p) => p.type === "compaction")) {
       lastCompactionIndex = i;
       break;
     }
@@ -390,8 +389,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         console.error(error);
         setIsResponding(false);
 
-        // Silently ignore abort errors (user cancelled)
-        if (error instanceof APIUserAbortError) {
+        if (error?.toString().includes("missing finish_reason")) {
           setStreamingMessage(null);
           return;
         }
@@ -400,56 +398,24 @@ export function ChatProvider({ children }: ChatProviderProps) {
         let errorCode = "COMPLETION_ERROR";
         let errorMessage = "An unexpected error occurred while generating the response.";
 
-        // Extract the backend's error message when available
-        const backendMessage = error instanceof APIError
-          ? (error.error as { message?: string })?.message || error.message
-          : error instanceof Error
-            ? error.message
-            : String(error);
+        const errorString = error?.toString() || "";
 
-        if (error instanceof APIError && error.status != null) {
-          switch (error.status) {
-            case 400:
-              errorCode = "BAD_REQUEST";
-              errorMessage = backendMessage || "The request was malformed or invalid.";
-              break;
-            case 401:
-              errorCode = "AUTH_ERROR";
-              errorMessage = backendMessage || "Authentication failed. Please check your API key or credentials.";
-              break;
-            case 403:
-              errorCode = "AUTH_ERROR";
-              errorMessage = backendMessage || "Access denied. You may not have permission to use this model.";
-              break;
-            case 404:
-              errorCode = "NOT_FOUND_ERROR";
-              errorMessage = backendMessage || "The requested model or resource was not found.";
-              break;
-            case 429:
-              errorCode = "RATE_LIMIT_ERROR";
-              errorMessage = backendMessage || "Rate limit exceeded. Please wait a moment before trying again.";
-              break;
-            case 500:
-              errorCode = "SERVER_ERROR";
-              errorMessage = backendMessage || "The server encountered an internal error. Please try again in a moment.";
-              break;
-            case 503:
-              errorCode = "SERVICE_UNAVAILABLE";
-              errorMessage = backendMessage || "The server is temporarily unavailable. Please try again in a moment.";
-              break;
-            default:
-              if (error.status >= 500) {
-                errorCode = "SERVER_ERROR";
-                errorMessage = backendMessage || "The server encountered an error. Please try again in a moment.";
-              } else {
-                errorMessage = backendMessage || errorMessage;
-              }
-              break;
-          }
-        } else if (error instanceof APIConnectionTimeoutError) {
-          errorCode = "TIMEOUT_ERROR";
-          errorMessage = "The request timed out. Please try again.";
-        } else if (error instanceof APIConnectionError) {
+        if (errorString.includes("500")) {
+          errorCode = "SERVER_ERROR";
+          errorMessage = "The server encountered an internal error. Please try again in a moment.";
+        } else if (errorString.includes("401")) {
+          errorCode = "AUTH_ERROR";
+          errorMessage = "Authentication failed. Please check your API key or credentials.";
+        } else if (errorString.includes("403")) {
+          errorCode = "AUTH_ERROR";
+          errorMessage = "Access denied. You may not have permission to use this model.";
+        } else if (errorString.includes("404")) {
+          errorCode = "NOT_FOUND_ERROR";
+          errorMessage = "The requested model or resource was not found.";
+        } else if (errorString.includes("429")) {
+          errorCode = "RATE_LIMIT_ERROR";
+          errorMessage = "Rate limit exceeded. Please wait a moment before trying again.";
+        } else if (errorString.includes("timeout") || errorString.includes("network")) {
           errorCode = "NETWORK_ERROR";
           errorMessage = "Network connection failed. Please check your internet connection and try again.";
         }

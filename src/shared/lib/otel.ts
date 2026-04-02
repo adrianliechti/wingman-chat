@@ -119,12 +119,7 @@ export interface MCPOptions {
  * Wraps an async MCP operation in a span following the MCP semantic conventions.
  * Span name: `{method} {target}` (e.g. "tools/call myTool")
  */
-export async function traceMCP<T>(
-  method: string,
-  target: string,
-  opts: MCPOptions,
-  fn: () => Promise<T>,
-): Promise<T> {
+export async function traceMCP<T>(method: string, target: string, opts: MCPOptions, fn: () => Promise<T>): Promise<T> {
   const spanName = target ? `${method} ${target}` : method;
 
   return tracer.startActiveSpan(spanName, { kind: SpanKind.CLIENT }, async (span) => {

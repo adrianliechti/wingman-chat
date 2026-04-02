@@ -102,9 +102,14 @@ interface ChatConfig {
   summarizer?: string;
 }
 
+interface BridgeConfig {
+  url?: string;
+}
+
 interface ConfigSchema {
   title: string;
   disclaimer: string;
+  bridge?: BridgeConfig;
   support?: SupportConfig;
 
   tools: ToolConfig[];
@@ -146,12 +151,7 @@ const DEFAULT_TTS_VOICES: Record<string, string> = {
   skeptic: "echo",
 };
 
-const DEFAULT_VISION_FILES = [
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-];
+const DEFAULT_VISION_FILES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 const DEFAULT_TEXT_FILES = [
   "text/csv",
@@ -196,6 +196,7 @@ const DEFAULT_TRANSLATOR_LANGUAGES = ["en", "de", "fr", "it", "es"];
 interface Config {
   title: string;
   disclaimer: string;
+  bridge: BridgeConfig | null;
   support: SupportConfig | null;
 
   client: Client;
@@ -247,6 +248,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
     config = {
       title: cfg.title,
       disclaimer: cfg.disclaimer,
+      bridge: cfg.bridge ?? null,
       support: cfg.support ?? null,
 
       client: new Client(),
@@ -259,18 +261,14 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       models: cfg.models ?? [],
 
-      tts: cfg.tts
-        ? { model: cfg.tts.model, voices: cfg.tts.voices ?? DEFAULT_TTS_VOICES }
-        : null,
+      tts: cfg.tts ? { model: cfg.tts.model, voices: cfg.tts.voices ?? DEFAULT_TTS_VOICES } : null,
       stt: cfg.stt ?? null,
 
       notebook: cfg.notebook ?? null,
       workflow: cfg.workflow ?? null,
 
       voice: cfg.voice ?? null,
-      vision: cfg.vision
-        ? { files: cfg.vision.files ?? DEFAULT_VISION_FILES }
-        : null,
+      vision: cfg.vision ? { files: cfg.vision.files ?? DEFAULT_VISION_FILES } : null,
 
       text: { files: cfg.text?.files ?? DEFAULT_TEXT_FILES },
 

@@ -57,8 +57,7 @@ function AgentDetails({ agent }: AgentDetailsProps) {
 // ─── Main AgentDrawer component ───
 
 export function AgentDrawer() {
-  const { agents, currentAgent, setCurrentAgent, updateAgent, deleteAgent, setShowAgentDrawer } =
-    useAgents();
+  const { agents, currentAgent, setCurrentAgent, updateAgent, deleteAgent, setShowAgentDrawer } = useAgents();
 
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -185,9 +184,7 @@ export function AgentDrawer() {
               </div>
 
               {/* Create New */}
-              <div
-                className="group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80"
-              >
+              <div className="group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80">
                 <button
                   type="button"
                   onClick={(e) => {

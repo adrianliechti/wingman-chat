@@ -1,24 +1,26 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { Transition } from "@headlessui/react";
+import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
-  MessageCircle,
-  Languages,
-  PanelLeftOpen,
   ChevronDown,
-  Settings,
-  Image,
+  Coffee,
   Globe,
   GraduationCap,
+  Image,
+  Languages,
+  MessageCircle,
+  PanelLeftOpen,
+  Settings,
 } from "lucide-react";
-import { Transition } from "@headlessui/react";
-import { Outlet, Link, useRouterState } from "@tanstack/react-router";
-import { getConfig } from "@/shared/config";
-import { useSidebar } from "@/shell/hooks/useSidebar";
-import { useNavigation } from "@/shell/hooks/useNavigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAgents } from "@/features/agent/hooks/useAgents";
+import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { SettingsButton } from "@/features/settings/components/SettingsButton";
 import { SettingsDrawer } from "@/features/settings/components/SettingsDrawer";
-import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { useAgents } from "@/features/agent/hooks/useAgents";
+import { useToolsContext } from "@/features/tools";
+import { getConfig } from "@/shared/config";
 import { useApp } from "@/shell/hooks/useApp";
+import { useNavigation } from "@/shell/hooks/useNavigation";
+import { useSidebar } from "@/shell/hooks/useSidebar";
 
 type Page = "chat" | "translate" | "notebook" | "renderer";
 
@@ -46,6 +48,7 @@ export function AppLayout() {
   const { showArtifactsDrawer } = useArtifacts();
   const { showAgentDrawer } = useAgents();
   const { showAppDrawer } = useApp();
+  const { localWingmanAvailable, localWingmanEnabled } = useToolsContext();
 
   // Detect if any panel is open - sidebar becomes overlay when panels are open
   const hasPanelOpen = showArtifactsDrawer || showAgentDrawer || showAppDrawer;
@@ -64,6 +67,7 @@ export function AppLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsAdvanced, setSettingsAdvanced] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
 
   // Refs and state for animated slider (tablet and desktop only)
   const tabletRef = useRef<HTMLDivElement>(null);
@@ -202,7 +206,12 @@ export function AppLayout() {
       )}
 
       {/* Settings Drawer - must be outside the z-10 content wrapper */}
-      <SettingsDrawer isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} showAdvanced={settingsAdvanced} />
+      <SettingsDrawer
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        showAdvanced={settingsAdvanced}
+        initialSection={settingsInitialSection}
+      />
 
       {/* Main app content */}
       <div
@@ -294,6 +303,20 @@ export function AppLayout() {
 
             {/* Right section */}
             <div className="flex items-center gap-2 justify-end flex-1">
+              {localWingmanAvailable && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsInitialSection("companion");
+                    setSettingsAdvanced(false);
+                    setSettingsOpen(true);
+                  }}
+                  className={`p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 ${localWingmanEnabled ? "" : "opacity-40"}`}
+                  title="Companion"
+                >
+                  <Coffee size={20} />
+                </button>
+              )}
               {config.support?.url && (
                 <a
                   href={config.support.url}
@@ -308,6 +331,7 @@ export function AppLayout() {
               <div className="hidden md:block">
                 <SettingsButton
                   onClick={(e) => {
+                    setSettingsInitialSection(undefined);
                     setSettingsAdvanced(e.altKey);
                     setSettingsOpen(true);
                   }}
@@ -342,6 +366,7 @@ export function AppLayout() {
 
               <button
                 onClick={(e) => {
+                  setSettingsInitialSection(undefined);
                   setSettingsAdvanced(e.altKey);
                   setSettingsOpen(true);
                   setMobileMenuOpen(false);
