@@ -58,6 +58,7 @@ export interface ToolProvider {
 export type Tool = {
   name: string;
   description: string;
+  icon?: string;
 
   parameters: Record<string, unknown>;
 
@@ -123,9 +124,9 @@ export type ToolResultContent = {
 };
 
 export type CompactionContent = {
-    type: 'compaction';
-    id: string;
-    encrypted_content: string;
+  type: "compaction";
+  id: string;
+  encrypted_content: string;
 };
 
 // Content is the union of all content types used in messages

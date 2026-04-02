@@ -102,9 +102,14 @@ interface ChatConfig {
   summarizer?: string;
 }
 
+interface BridgeConfig {
+  url?: string;
+}
+
 interface ConfigSchema {
   title: string;
   disclaimer: string;
+  bridge?: BridgeConfig;
   support?: SupportConfig;
 
   tools: ToolConfig[];
@@ -196,6 +201,7 @@ const DEFAULT_TRANSLATOR_LANGUAGES = ["en", "de", "fr", "it", "es"];
 interface Config {
   title: string;
   disclaimer: string;
+  bridge: BridgeConfig | null;
   support: SupportConfig | null;
 
   client: Client;
@@ -247,6 +253,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
     config = {
       title: cfg.title,
       disclaimer: cfg.disclaimer,
+      bridge: cfg.bridge ?? null,
       support: cfg.support ?? null,
 
       client: new Client(),

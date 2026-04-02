@@ -16,6 +16,9 @@ export interface ToolsContextValue {
   setProviderEnabled: (id: string, enabled: boolean) => Promise<void>;
   setModelOverrides: (enabled: string[], disabled: string[]) => void;
   resetTools: () => void;
+  localWingmanAvailable: boolean;
+  localWingmanEnabled: boolean;
+  toggleLocalWingman: () => void;
   restoreToolUI: (
     providerId: string,
     toolName: string,

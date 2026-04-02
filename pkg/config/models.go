@@ -3,6 +3,7 @@ package config
 type Config struct {
 	Title      string   `json:"title,omitempty" yaml:"title,omitempty"`
 	Disclaimer string   `json:"disclaimer,omitempty" yaml:"disclaimer,omitempty"`
+	Bridge     *Bridge  `json:"bridge,omitempty" yaml:"bridge,omitempty"`
 	Support    *Support `json:"support,omitempty" yaml:"support,omitempty"`
 
 	Tools  []Tool  `json:"tools,omitempty" yaml:"tools,omitempty"`
@@ -136,5 +137,9 @@ type Translator struct {
 type Telemetry struct{}
 
 type Background struct {
+	URL string `json:"url,omitempty" yaml:"url,omitempty"`
+}
+
+type Bridge struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
 }

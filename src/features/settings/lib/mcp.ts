@@ -256,49 +256,54 @@ export class MCPClient implements ToolProvider {
 
       this.tools = tools
         .filter((tool) => !isToolVisibilityAppOnly(tool))
-        .map((tool) => ({
-          name: tool.name,
+        .map((tool) => {
+          const icons = tool.icons ?? [];
+          const icon = (icons.find((i) => i.theme === "light") ?? icons.find((i) => !i.theme) ?? icons[0])?.src;
+          return {
+            name: tool.name,
+            icon,
 
-          description: tool.description || "",
-          parameters: tool.inputSchema || {},
+            description: tool.description || "",
+            parameters: tool.inputSchema || {},
 
-          function: async (args: Record<string, unknown>, context?: ToolContext) => {
-            if (!this.client) {
-              throw new Error("MCP client not connected");
-            }
-
-            return traceMCP("tools/call", tool.name, { toolName: tool.name, serverAddress: this.url }, async () => {
-              const result = await this.client!.callTool({
-                name: tool.name,
-                arguments: args,
-              });
-
-              // Handle both current and compatibility result formats
-              // Compatibility format has toolResult field, current has content field
-              const normalizedResult: CallToolResult =
-                "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
-
-              const resource = this.uiResources.get(tool.name);
-
-              if (resource && context?.setMeta) {
-                // Don't render the UI here — InlineMcpApp handles rendering via
-                // restoreToolUI with the correct display mode and target iframe.
-                // We only persist the metadata so InlineMcpApp knows what to render.
-                const toolUiMeta = tool._meta?.ui as
-                  | { defaultDisplayMode?: string; availableDisplayModes?: string[] }
-                  | undefined;
-                context.setMeta?.({
-                  toolProvider: this.id,
-                  toolResource: resource.uri,
-                  ...(toolUiMeta?.defaultDisplayMode ? { defaultDisplayMode: toolUiMeta.defaultDisplayMode } : {}),
-                  ...(toolUiMeta?.availableDisplayModes ? { appDisplayModes: toolUiMeta.availableDisplayModes } : {}),
-                });
+            function: async (args: Record<string, unknown>, context?: ToolContext) => {
+              if (!this.client) {
+                throw new Error("MCP client not connected");
               }
 
-              return processContent(normalizedResult.content as MCPContentBlock[]);
-            });
-          },
-        }));
+              return traceMCP("tools/call", tool.name, { toolName: tool.name, serverAddress: this.url }, async () => {
+                const result = await this.client!.callTool({
+                  name: tool.name,
+                  arguments: args,
+                });
+
+                // Handle both current and compatibility result formats
+                // Compatibility format has toolResult field, current has content field
+                const normalizedResult: CallToolResult =
+                  "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
+
+                const resource = this.uiResources.get(tool.name);
+
+                if (resource && context?.setMeta) {
+                  // Don't render the UI here — InlineMcpApp handles rendering via
+                  // restoreToolUI with the correct display mode and target iframe.
+                  // We only persist the metadata so InlineMcpApp knows what to render.
+                  const toolUiMeta = tool._meta?.ui as
+                    | { defaultDisplayMode?: string; availableDisplayModes?: string[] }
+                    | undefined;
+                  context.setMeta?.({
+                    toolProvider: this.id,
+                    toolResource: resource.uri,
+                    ...(toolUiMeta?.defaultDisplayMode ? { defaultDisplayMode: toolUiMeta.defaultDisplayMode } : {}),
+                    ...(toolUiMeta?.availableDisplayModes ? { appDisplayModes: toolUiMeta.availableDisplayModes } : {}),
+                  });
+                }
+
+                return processContent(normalizedResult.content as MCPContentBlock[]);
+              });
+            },
+          };
+        });
 
       // Load resources for tools that have ui/resourceUri meta field
       await this.loadUIResources(tools);

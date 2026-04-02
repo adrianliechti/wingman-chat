@@ -5,6 +5,7 @@ import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsPro
 import { useRendererProvider } from "@/features/renderer/hooks/useRendererProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import { MCPClient } from "@/features/settings/lib/mcp";
+import { LOCAL_WINGMAN_ID, localWingmanMcpUrl, useLocalWingman } from "@/features/tools/hooks/useLocalWingman";
 import { getConfig } from "@/shared/config";
 import type {
   AudioContent,
@@ -40,6 +41,22 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     (config.mcps || []).map((mcp) => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers, mcp.icon)),
   );
 
+  // Local Wingman auto-discovery
+  const bridgeHost = config.bridge?.url;
+  const { available: localWingmanAvailable } = useLocalWingman(bridgeHost);
+  const [localWingmanEnabled, setLocalWingmanEnabled] = useState(true);
+  const toggleLocalWingman = useCallback(() => setLocalWingmanEnabled((v) => !v), []);
+  const [localWingmanClient] = useState<MCPClient | null>(() =>
+    bridgeHost
+      ? new MCPClient(
+          LOCAL_WINGMAN_ID,
+          localWingmanMcpUrl(bridgeHost),
+          "Wingman (Local)",
+          "Locally running Wingman application",
+        )
+      : null,
+  );
+
   // Agent
   const { currentAgent } = useAgents();
   const {
@@ -53,8 +70,15 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const rendererProvider = useRendererProvider();
   const artifactsProvider = useArtifactsProvider();
 
-  // All MCP clients & lookup set
-  const allMcpClients = useMemo(() => [...configMcpClients, ...agentMcpClients], [configMcpClients, agentMcpClients]);
+  // All MCP clients & lookup set (include local wingman only when the app is detected)
+  const allMcpClients = useMemo(
+    () => [
+      ...configMcpClients,
+      ...(localWingmanAvailable && localWingmanClient ? [localWingmanClient] : []),
+      ...agentMcpClients,
+    ],
+    [configMcpClients, localWingmanAvailable, localWingmanClient, agentMcpClients],
+  );
   const mcpIds = useMemo(() => new Set(allMcpClients.map((c) => c.id)), [allMcpClients]);
 
   // Agent-required: built-in tools + assembled providers (repo, skills, memory, bridges)
@@ -69,13 +93,15 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // 2) add agent-required tools
   // 3) add model-forced enabled tools
   // 4) remove model-forced disabled tools (highest precedence)
+  // 5) auto-add local wingman when available and user has not disabled it
   const desiredTools = useMemo(() => {
     const merged = new Set(userTools);
     for (const id of agentRequired) merged.add(id);
     for (const id of modelEnabledTools) merged.add(id);
     for (const id of modelDisabledTools) merged.delete(id);
+    if (localWingmanAvailable && localWingmanEnabled) merged.add(LOCAL_WINGMAN_ID);
     return merged;
-  }, [userTools, agentRequired, modelEnabledTools, modelDisabledTools]);
+  }, [userTools, agentRequired, modelEnabledTools, modelDisabledTools, localWingmanAvailable, localWingmanEnabled]);
 
   // All available providers
   // biome-ignore lint/correctness/useExhaustiveDependencies: toolsVersion is a cache-bust trigger, not a real dependency
@@ -84,17 +110,29 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     if (rendererProvider) list.push(rendererProvider);
     if (internetProvider) list.push(internetProvider);
     if (artifactsProvider) list.push(artifactsProvider);
-    list.push(...configMcpClients, ...agentProviders);
+    list.push(...configMcpClients);
+    if (localWingmanAvailable && localWingmanClient) list.push(localWingmanClient);
+    list.push(...agentProviders);
     return list;
-  }, [internetProvider, rendererProvider, artifactsProvider, configMcpClients, agentProviders, toolsVersion]);
+  }, [
+    internetProvider,
+    rendererProvider,
+    artifactsProvider,
+    configMcpClients,
+    localWingmanAvailable,
+    localWingmanClient,
+    agentProviders,
+    toolsVersion,
+  ]);
 
   // State: MCP clients use lifecycle state, local providers derive from desiredTools
   const getProviderState = useCallback(
     (id: string): ProviderState => {
+      if (id === LOCAL_WINGMAN_ID && !localWingmanEnabled) return ProviderState.Disconnected;
       if (mcpIds.has(id)) return mcpStates.get(id) ?? ProviderState.Disconnected;
       return desiredTools.has(id) ? ProviderState.Connected : ProviderState.Disconnected;
     },
-    [mcpIds, mcpStates, desiredTools],
+    [mcpIds, mcpStates, desiredTools, localWingmanEnabled],
   );
 
   // Track in-flight connection promises so callers can await an already-running connect
@@ -195,6 +233,14 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // User-facing toggle
   const setProviderEnabled = useCallback(
     async (id: string, enabled: boolean) => {
+      // Local wingman has its own enable flag that gates desiredTools; toggling
+      // userTools alone is not enough because desiredTools re-adds the id when
+      // localWingmanEnabled is still true.
+      if (id === LOCAL_WINGMAN_ID) {
+        setLocalWingmanEnabled(enabled);
+        await connectMcp(id, enabled);
+        return;
+      }
       setUserTools((prev) => {
         const next = new Set(prev);
         if (enabled) next.add(id);
@@ -263,6 +309,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         setProviderEnabled,
         setModelOverrides,
         resetTools,
+        localWingmanAvailable,
+        localWingmanEnabled,
+        toggleLocalWingman,
         restoreToolUI,
         hasActiveBridge,
       }}
