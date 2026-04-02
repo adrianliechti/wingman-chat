@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Plus,
   Folder,
@@ -15,6 +15,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
+import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
 import {
   exportSingleAgentAsZip,
   importAgentsFromZip,
@@ -28,6 +29,7 @@ import { SkillsSection } from "./SkillsSection";
 import { ToolsSection } from "./ToolsSection";
 import { MemorySection } from "./MemorySection";
 import { ModelSection } from "./ModelSection";
+import { AgentWizard } from "./wizard/AgentWizard";
 
 // ─── Agent details: sections ───
 
@@ -55,19 +57,44 @@ function AgentDetails({ agent }: AgentDetailsProps) {
 // ─── Main AgentDrawer component ───
 
 export function AgentDrawer() {
-  const { agents, currentAgent, createAgent, setCurrentAgent, updateAgent, deleteAgent, setShowAgentDrawer } =
+  const { agents, currentAgent, setCurrentAgent, updateAgent, deleteAgent, setShowAgentDrawer } =
     useAgents();
 
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
-  const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Pending file uploads after wizard creation
+  const pendingFilesRef = useRef<{ agentId: string; files: File[] } | null>(null);
+  const { addFile } = useAgentFiles(currentAgent?.id || "");
+
+  // Process pending file uploads when agent becomes current
+  useEffect(() => {
+    if (!currentAgent || !pendingFilesRef.current) return;
+    if (pendingFilesRef.current.agentId !== currentAgent.id) return;
+
+    const files = pendingFilesRef.current.files;
+    pendingFilesRef.current = null;
+
+    (async () => {
+      for (const file of files) {
+        await addFile(file);
+      }
+    })();
+  }, [currentAgent, addFile]);
+
+  const handleWizardCreated = useCallback((agent: Agent, pendingFiles: File[]) => {
+    if (pendingFiles.length > 0) {
+      pendingFilesRef.current = { agentId: agent.id, files: pendingFiles };
+    }
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        if (!inlineEditingId && !isCreatingNew) {
+        if (!inlineEditingId) {
           setIsDropdownOpen(false);
         }
       }
@@ -77,14 +104,7 @@ export function AgentDrawer() {
       document.addEventListener("mousedown", handleClickOutside);
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
-  }, [isDropdownOpen, inlineEditingId, isCreatingNew]);
-
-  const handleCreateAgent = async (name: string) => {
-    await createAgent(name);
-    setIsCreatingNew(false);
-    setEditingName("");
-    setIsDropdownOpen(false);
-  };
+  }, [isDropdownOpen, inlineEditingId]);
 
   const startInlineEdit = (agent: Agent) => {
     setInlineEditingId(agent.id);
@@ -105,32 +125,14 @@ export function AgentDrawer() {
     setEditingName("");
   };
 
-  const startCreatingNew = () => {
-    setIsCreatingNew(true);
-    setEditingName("");
-  };
-
-  const saveNewAgent = () => {
-    if (editingName.trim()) {
-      handleCreateAgent(editingName.trim());
-    }
-  };
-
-  const cancelNewAgent = () => {
-    setIsCreatingNew(false);
-    setEditingName("");
-  };
-
   const handleInputKeyDown = (e: React.KeyboardEvent) => {
     e.stopPropagation();
     if (e.key === "Enter") {
       e.preventDefault();
-      if (isCreatingNew) saveNewAgent();
-      else saveInlineEdit();
+      saveInlineEdit();
     } else if (e.key === "Escape") {
       e.preventDefault();
-      if (isCreatingNew) cancelNewAgent();
-      else cancelInlineEdit();
+      cancelInlineEdit();
     }
   };
 
@@ -138,6 +140,11 @@ export function AgentDrawer() {
     setCurrentAgent(agent);
     if (!agent) setShowAgentDrawer(false);
     setIsDropdownOpen(false);
+  };
+
+  const openWizard = () => {
+    setIsDropdownOpen(false);
+    setWizardOpen(true);
   };
 
   return (
@@ -179,57 +186,19 @@ export function AgentDrawer() {
 
               {/* Create New */}
               <div
-                className={`group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 ${!isCreatingNew ? "hover:bg-neutral-200 dark:hover:bg-neutral-700/80" : ""}`}
+                className="group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80"
               >
-                {isCreatingNew ? (
-                  <div className="flex items-center gap-1 flex-1">
-                    <Plus size={16} className="text-neutral-600 dark:text-neutral-400 shrink-0" />
-                    <input
-                      type="text"
-                      value={editingName}
-                      onChange={(e) => setEditingName(e.target.value)}
-                      onKeyDown={handleInputKeyDown}
-                      autoFocus
-                      className="flex-1 text-sm bg-transparent border-0 border-b border-slate-500 rounded-none px-1 py-0 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-slate-600 dark:focus:border-slate-400"
-                      placeholder="Agent name"
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        saveNewAgent();
-                      }}
-                      className="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 rounded transition-colors shrink-0"
-                      title="Create"
-                    >
-                      <Check size={12} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        cancelNewAgent();
-                      }}
-                      className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded transition-colors shrink-0"
-                      title="Cancel"
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      startCreatingNew();
-                    }}
-                    className="flex items-center gap-2 w-full text-sm text-neutral-600 dark:text-neutral-400 font-medium"
-                  >
-                    <Plus size={16} /> Create New Agent
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openWizard();
+                  }}
+                  className="flex items-center gap-2 w-full text-sm text-neutral-600 dark:text-neutral-400 font-medium"
+                >
+                  <Plus size={16} /> Create New Agent
+                </button>
               </div>
 
               {/* Existing Agents */}
@@ -377,11 +346,7 @@ export function AgentDrawer() {
           <div className="flex items-center gap-2 mt-6">
             <button
               type="button"
-              onClick={() => {
-                setIsCreatingNew(true);
-                setEditingName("");
-                setIsDropdownOpen(true);
-              }}
+              onClick={openWizard}
               className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
             >
               <Plus size={12} />
@@ -443,6 +408,8 @@ export function AgentDrawer() {
           </div>
         </div>
       )}
+
+      <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} onCreated={handleWizardCreated} />
     </div>
   );
 }
