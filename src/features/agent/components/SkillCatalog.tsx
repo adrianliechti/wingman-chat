@@ -253,7 +253,7 @@ export function SkillCatalog({
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
                   <div className="flex items-center gap-2">
-                    {editing && (
+                    {editing && initialView !== "new" && (
                       <button
                         type="button"
                         onClick={() => setEditing(null)}
@@ -266,7 +266,7 @@ export function SkillCatalog({
                       {editing ? (editing === "new" ? "New Skill" : "Edit Skill") : "Skill Catalog"}
                     </Dialog.Title>
                   </div>
-                  {!editing && (
+                  {(!editing || initialView === "new") && (
                     <button
                       type="button"
                       onClick={onClose}
@@ -340,7 +340,7 @@ export function SkillCatalog({
                       <div className="flex items-center gap-2.5">
                         <button
                           type="button"
-                          onClick={() => setEditing(null)}
+                          onClick={() => initialView === "new" ? onClose() : setEditing(null)}
                           className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
                         >
                           Cancel

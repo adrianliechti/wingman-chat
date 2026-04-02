@@ -233,7 +233,7 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-xl transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all border border-neutral-200/50 dark:border-neutral-700/50">
+              <Dialog.Panel className="w-full max-w-xl transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl transition-all border border-neutral-200/50 dark:border-neutral-700/50 flex flex-col h-[min(580px,85vh)]">
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
                   <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
@@ -257,7 +257,7 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
                 />
 
                 {/* Step content */}
-                <div className="px-5 py-4 min-h-[320px] max-h-[60vh] overflow-y-auto">
+                <div className="px-5 py-4 flex-1 overflow-y-auto">
                   {currentStepId === "identity" && (
                     <IdentityStep
                       name={state.name}

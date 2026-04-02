@@ -17,7 +17,7 @@ export function IdentityStep({ name, description, instructions, showValidation, 
     <div className="space-y-4">
       <StepHeader
         title="Define your agent's identity"
-        description="Give your agent a name and tell it how to behave. Only the name is required — you can refine everything else later."
+        description="An agent is a reusable AI persona with its own instructions, skills, and tools. Start by giving it a name, then shape its behavior with instructions — think of them as the agent's soul. Only the name is required; everything else can be added later."
       />
 
       <div>

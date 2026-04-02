@@ -38,7 +38,7 @@ export function ReviewStep({
     <div className="space-y-4">
       <StepHeader
         title="Review & create"
-        description="Pick a model, review your choices, and create your agent. Everything here can be changed from the agent drawer after creation."
+        description="Almost there! Choose which model powers your agent, review your setup, and hit create. Nothing is permanent — you can tweak everything from the agent drawer anytime."
       />
 
       {/* Model */}

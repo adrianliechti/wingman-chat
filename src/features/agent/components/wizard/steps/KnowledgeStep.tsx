@@ -29,7 +29,7 @@ export function KnowledgeStep({ pendingFiles, dispatch }: KnowledgeStepProps) {
     <div className="space-y-3">
       <StepHeader
         title="Add knowledge"
-        description="Upload reference documents your agent can draw on — PDFs, text files, markdown, and more. This is optional and you can add files later too."
+        description="Give your agent context by uploading reference documents — PDFs, text files, code, markdown, and more. The agent can search and draw on these during conversations. This is optional; you can always add files later."
       />
 
       {/* Drop zone */}
