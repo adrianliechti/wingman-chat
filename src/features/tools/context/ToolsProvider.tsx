@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
@@ -32,6 +32,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     mcpStatesRef.current = mcpStates;
   }, [mcpStates]);
 
+  // Incremented whenever any MCP client reloads its tool list (e.g. tools/list_changed)
+  const [toolsVersion, setToolsVersion] = useState(0);
+
   // Config MCP clients (created once)
   const [configMcpClients] = useState<MCPClient[]>(() =>
     (config.mcps || []).map((mcp) => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers, mcp.icon)),
@@ -57,7 +60,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // Agent-required: built-in tools + assembled providers (repo, skills, memory, bridges)
   const agentRequired = useMemo(() => {
     const ids = new Set(agentTools);
-    agentProviders.forEach((p) => ids.add(p.id));
+    for (const p of agentProviders) ids.add(p.id);
     return ids;
   }, [agentTools, agentProviders]);
 
@@ -68,13 +71,14 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // 4) remove model-forced disabled tools (highest precedence)
   const desiredTools = useMemo(() => {
     const merged = new Set(userTools);
-    agentRequired.forEach((id) => merged.add(id));
-    modelEnabledTools.forEach((id) => merged.add(id));
-    modelDisabledTools.forEach((id) => merged.delete(id));
+    for (const id of agentRequired) merged.add(id);
+    for (const id of modelEnabledTools) merged.add(id);
+    for (const id of modelDisabledTools) merged.delete(id);
     return merged;
   }, [userTools, agentRequired, modelEnabledTools, modelDisabledTools]);
 
   // All available providers
+  // biome-ignore lint/correctness/useExhaustiveDependencies: toolsVersion is a cache-bust trigger, not a real dependency
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
     if (rendererProvider) list.push(rendererProvider);
@@ -82,7 +86,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     if (artifactsProvider) list.push(artifactsProvider);
     list.push(...configMcpClients, ...agentProviders);
     return list;
-  }, [internetProvider, rendererProvider, artifactsProvider, configMcpClients, agentProviders]);
+  }, [internetProvider, rendererProvider, artifactsProvider, configMcpClients, agentProviders, toolsVersion]);
 
   // State: MCP clients use lifecycle state, local providers derive from desiredTools
   const getProviderState = useCallback(
@@ -154,6 +158,10 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         // Transition back to Initializing while the reconnection is in flight
         setMcpStates((prev) => new Map(prev).set(client.id, ProviderState.Initializing));
       };
+      // eslint-disable-next-line react-hooks/immutability
+      client.onToolsChanged = () => {
+        setToolsVersion((v) => v + 1);
+      };
     }
   }, [allMcpClients]);
 
@@ -216,7 +224,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       displayModeOptions?: import("@/features/settings/lib/mcp").DisplayModeOptions,
     ) => {
       const client = allMcpClients.find((c) => c.id === providerId);
-      if (!client || !client.isConnected()) {
+      if (!client?.isConnected()) {
         console.warn(`Cannot restore tool UI: MCP client ${providerId} not connected`);
         return;
       }
@@ -243,7 +251,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const clients = configMcpClients;
     return () => {
-      clients.forEach((c) => c.disconnect().catch(console.error));
+      for (const c of clients) c.disconnect().catch(console.error);
     };
   }, [configMcpClients]);
 

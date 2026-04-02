@@ -20,6 +20,7 @@ import type {
   ResourceContents as MCPResourceContents,
   Tool as MCPTool,
 } from "@modelcontextprotocol/sdk/types.js";
+import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { traceMCP } from "@/shared/lib/otel";
 import {
   type AudioContent,
@@ -83,6 +84,8 @@ export class MCPClient implements ToolProvider {
   onAuthenticating: (() => void) | null = null;
   /** Called when the OAuth flow completes (success or failure) */
   onAuthComplete: (() => void) | null = null;
+  /** Called when the server notifies that its tool list has changed and tools have been reloaded */
+  onToolsChanged: (() => void) | null = null;
 
   constructor(
     id: string,
@@ -176,6 +179,13 @@ export class MCPClient implements ToolProvider {
 
     // Load and store tools and instructions after connection
     await this.loadToolsAndInstructions();
+
+    // Register list-changed notification handler if the server supports it
+    if (this.client.getServerCapabilities()?.tools?.listChanged) {
+      this.client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
+        await this.loadToolsAndInstructions();
+      });
+    }
 
     this.startPing();
   }
@@ -292,6 +302,9 @@ export class MCPClient implements ToolProvider {
 
       // Load resources for tools that have ui/resourceUri meta field
       await this.loadUIResources(tools);
+
+      // Notify listeners that the tool list has been (re)loaded
+      this.onToolsChanged?.();
     } catch (error) {
       console.error("Error loading tools and instructions:", error);
     }
