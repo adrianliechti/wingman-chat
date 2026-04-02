@@ -29,7 +29,10 @@
 
     "internet": {
         "enabled": true,
-        "elicitation": true
+        "elicitation": true,
+        "searcher": "web",
+        "scraper": "web",
+        "researcher": "web"
     },
 
     "workflow": {

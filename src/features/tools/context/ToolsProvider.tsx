@@ -5,6 +5,7 @@ import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsPro
 import { useRendererProvider } from "@/features/renderer/hooks/useRendererProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import { MCPClient } from "@/features/settings/lib/mcp";
+import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { LOCAL_WINGMAN_ID, localWingmanMcpUrl, useLocalWingman } from "@/features/tools/hooks/useLocalWingman";
 import { getConfig } from "@/shared/config";
 import type {
@@ -69,6 +70,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const internetProvider = useInternetProvider();
   const rendererProvider = useRendererProvider();
   const artifactsProvider = useArtifactsProvider();
+  const skillBuilderProvider = useSkillBuilderProvider();
 
   // All MCP clients & lookup set (include local wingman only when the app is detected)
   const allMcpClients = useMemo(
@@ -110,6 +112,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     if (rendererProvider) list.push(rendererProvider);
     if (internetProvider) list.push(internetProvider);
     if (artifactsProvider) list.push(artifactsProvider);
+    list.push(skillBuilderProvider);
     list.push(...configMcpClients);
     if (localWingmanAvailable && localWingmanClient) list.push(localWingmanClient);
     list.push(...agentProviders);
@@ -118,6 +121,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     internetProvider,
     rendererProvider,
     artifactsProvider,
+    skillBuilderProvider,
     configMcpClients,
     localWingmanAvailable,
     localWingmanClient,
