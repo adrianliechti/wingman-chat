@@ -24,7 +24,7 @@ import { ChatContext } from "./ChatContext";
 function pruneAtCompaction(messages: Message[]): Message[] {
   let lastCompactionIndex = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].content.some(p => p.type === 'compaction')) {
+    if (messages[i].content.some((p) => p.type === "compaction")) {
       lastCompactionIndex = i;
       break;
     }

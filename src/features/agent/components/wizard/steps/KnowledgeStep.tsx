@@ -35,7 +35,10 @@ export function KnowledgeStep({ pendingFiles, dispatch }: KnowledgeStepProps) {
       {/* Drop zone */}
       <div
         onDrop={handleDrop}
-        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
         onClick={() => inputRef.current?.click()}
         className="flex flex-col items-center justify-center gap-2 py-8 px-4 border-2 border-dashed border-neutral-300/60 dark:border-neutral-600/60 rounded-lg cursor-pointer hover:border-neutral-400 dark:hover:border-neutral-500 hover:bg-neutral-50/30 dark:hover:bg-neutral-800/20 transition-colors"
       >
@@ -44,17 +47,9 @@ export function KnowledgeStep({ pendingFiles, dispatch }: KnowledgeStepProps) {
           <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
             Drop files here or click to browse
           </p>
-          <p className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-0.5">
-            PDF, text, markdown, and more
-          </p>
+          <p className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-0.5">PDF, text, markdown, and more</p>
         </div>
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          onChange={handleFileSelect}
-          className="hidden"
-        />
+        <input ref={inputRef} type="file" multiple onChange={handleFileSelect} className="hidden" />
       </div>
 
       {/* File list */}

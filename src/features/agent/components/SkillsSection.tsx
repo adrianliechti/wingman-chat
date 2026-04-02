@@ -30,9 +30,7 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
 
   // Skills not yet enabled on this agent, filtered by search
   const availableSkills = useMemo(() => {
-    const sorted = allSkills
-      .filter((s) => !agentSkillIds.has(s.name))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const sorted = allSkills.filter((s) => !agentSkillIds.has(s.name)).sort((a, b) => a.name.localeCompare(b.name));
     if (!search.trim()) return sorted;
     const q = search.toLowerCase();
     return sorted.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));

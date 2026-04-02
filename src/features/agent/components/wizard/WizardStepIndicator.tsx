@@ -43,11 +43,7 @@ export function WizardStepIndicator({ steps, currentStep, visitedSteps, onStepCl
                     : "text-neutral-400 dark:text-neutral-500 cursor-default"
               }`}
             >
-              {isCompleted ? (
-                <Check size={12} />
-              ) : (
-                <step.icon size={12} />
-              )}
+              {isCompleted ? <Check size={12} /> : <step.icon size={12} />}
               <span className="hidden sm:inline">{step.label}</span>
             </button>
           </div>

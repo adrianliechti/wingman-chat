@@ -90,7 +90,9 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
       <div className="max-h-64 overflow-y-auto space-y-0.5 -mx-1">
         {filtered.length === 0 ? (
           <p className="text-xs text-neutral-400 dark:text-neutral-500 text-center py-6">
-            {skills.length === 0 ? "No skills yet. Create one above, or skip this step." : "No skills match your search."}
+            {skills.length === 0
+              ? "No skills yet. Create one above, or skip this step."
+              : "No skills match your search."}
           </p>
         ) : (
           filtered.map((skill) => {
@@ -108,9 +110,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
               >
                 <div
                   className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center ${
-                    isSelected
-                      ? "bg-blue-600 border-blue-600 text-white"
-                      : "border-neutral-300 dark:border-neutral-600"
+                    isSelected ? "bg-blue-600 border-blue-600 text-white" : "border-neutral-300 dark:border-neutral-600"
                   }`}
                 >
                   {isSelected && <Check size={10} />}

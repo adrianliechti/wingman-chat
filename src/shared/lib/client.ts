@@ -90,278 +90,323 @@ export class Client {
       compactThreshold?: number;
     },
   ): Promise<Message> {
-    return traceGenAI("chat", model, async () => {
-    input = this.sanitizeMessages(input);
+    return traceGenAI(
+      "chat",
+      model,
+      async () => {
+        input = this.sanitizeMessages(input);
 
-    const items: OpenAI.Responses.ResponseInputItem[] = [];
+        const items: OpenAI.Responses.ResponseInputItem[] = [];
 
-    for (const m of input) {
-      switch (m.role) {
-        case Role.User: {
-          const content: OpenAI.Responses.ResponseInputContent[] = [];
+        for (const m of input) {
+          switch (m.role) {
+            case Role.User: {
+              const content: OpenAI.Responses.ResponseInputContent[] = [];
 
-          // Process all content parts
-          for (const part of m.content) {
-            if (part.type === "text") {
-              content.push({ type: "input_text", text: part.text });
-            } else if (part.type === "image") {
-              const imgPart = part as ImageContent;
-              // data is already a full data URL
-              content.push({
-                type: "input_image",
-                image_url: imgPart.data,
-                detail: "auto",
-              });
-            } else if (part.type === "file") {
-              const filePart = part as FileContent;
-              // data is already a full data URL
-              content.push({
-                type: "input_file",
-                file_data: filePart.data,
-              });
-            } else if (part.type === "tool_result") {
-              // Tool results in user messages go as function_call_output
-              // Binary data (images, audio, files) is stripped and replaced with descriptions
-              // since the model cannot process base64 data in text output
-              const tr = part as ToolResultContent;
-              const output = serializeToolResultForApi(tr.result);
-              items.push({
-                type: "function_call_output",
-                call_id: tr.id,
-                output: output,
-              });
-            }
-            // Skip reasoning, tool_call in user messages
-          }
+              // Process all content parts
+              for (const part of m.content) {
+                if (part.type === "text") {
+                  content.push({ type: "input_text", text: part.text });
+                } else if (part.type === "image") {
+                  const imgPart = part as ImageContent;
+                  // data is already a full data URL
+                  content.push({
+                    type: "input_image",
+                    image_url: imgPart.data,
+                    detail: "auto",
+                  });
+                } else if (part.type === "file") {
+                  const filePart = part as FileContent;
+                  // data is already a full data URL
+                  content.push({
+                    type: "input_file",
+                    file_data: filePart.data,
+                  });
+                } else if (part.type === "tool_result") {
+                  // Tool results in user messages go as function_call_output
+                  // Binary data (images, audio, files) is stripped and replaced with descriptions
+                  // since the model cannot process base64 data in text output
+                  const tr = part as ToolResultContent;
+                  const output = serializeToolResultForApi(tr.result);
+                  items.push({
+                    type: "function_call_output",
+                    call_id: tr.id,
+                    output: output,
+                  });
+                }
+                // Skip reasoning, tool_call in user messages
+              }
 
-          // Only add user message if there's content (not just tool results)
-          if (content.length > 0) {
-            items.push({
-              type: "message",
-              role: "user",
-              content: content,
-            });
-          }
+              // Only add user message if there's content (not just tool results)
+              if (content.length > 0) {
+                items.push({
+                  type: "message",
+                  role: "user",
+                  content: content,
+                });
+              }
 
-          break;
-        }
-
-        case Role.Assistant: {
-          // TODO: Re-enable reasoning items once encrypted_content verification is fixed server-side
-          // Temporarily skip sending reasoning items back to API to avoid invalid_encrypted_content errors
-          // const reasoningParts = m.content.filter((p): p is ReasoningContent => p.type === 'reasoning' && !!p.signature);
-          // for (const rp of reasoningParts) {
-          //   const reasoningItem: Record<string, unknown> = {
-          //     id: rp.id,
-          //     type: "reasoning",
-          //
-          //     encrypted_content: rp.signature,
-          //   };
-          //
-          //   if (rp.summary) {
-          //     reasoningItem.summary = [{ type: "summary_text", text: rp.summary }];
-          //   }
-          //
-          //   if (rp.text) {
-          //     reasoningItem.content = [{ type: "reasoning_text", text: rp.text }];
-          //   }
-          //
-          //   items.push(reasoningItem as unknown as OpenAI.Responses.ResponseInputItem);
-          // }
-
-          let bufferedText = "";
-
-          const flushAssistantText = () => {
-            if (!bufferedText) {
-              return;
+              break;
             }
 
-            items.push({
-              type: "message",
-              role: "assistant",
-              content: bufferedText,
-            });
+            case Role.Assistant: {
+              // TODO: Re-enable reasoning items once encrypted_content verification is fixed server-side
+              // Temporarily skip sending reasoning items back to API to avoid invalid_encrypted_content errors
+              // const reasoningParts = m.content.filter((p): p is ReasoningContent => p.type === 'reasoning' && !!p.signature);
+              // for (const rp of reasoningParts) {
+              //   const reasoningItem: Record<string, unknown> = {
+              //     id: rp.id,
+              //     type: "reasoning",
+              //
+              //     encrypted_content: rp.signature,
+              //   };
+              //
+              //   if (rp.summary) {
+              //     reasoningItem.summary = [{ type: "summary_text", text: rp.summary }];
+              //   }
+              //
+              //   if (rp.text) {
+              //     reasoningItem.content = [{ type: "reasoning_text", text: rp.text }];
+              //   }
+              //
+              //   items.push(reasoningItem as unknown as OpenAI.Responses.ResponseInputItem);
+              // }
 
-            bufferedText = "";
-          };
+              let bufferedText = "";
 
-          for (const part of m.content) {
-            if (part.type === "text") {
-              bufferedText += part.text;
-              continue;
-            }
+              const flushAssistantText = () => {
+                if (!bufferedText) {
+                  return;
+                }
 
-            if (part.type === "tool_call") {
+                items.push({
+                  type: "message",
+                  role: "assistant",
+                  content: bufferedText,
+                });
+
+                bufferedText = "";
+              };
+
+              for (const part of m.content) {
+                if (part.type === "text") {
+                  bufferedText += part.text;
+                  continue;
+                }
+
+                if (part.type === "tool_call") {
+                  flushAssistantText();
+                  items.push({
+                    type: "function_call",
+                    call_id: part.id,
+                    name: part.name,
+                    arguments: part.arguments,
+                  });
+                }
+
+                if (part.type === "compaction") {
+                  flushAssistantText();
+                  items.push({
+                    type: "compaction",
+                    id: part.id,
+                    encrypted_content: part.encrypted_content,
+                  } as unknown as OpenAI.Responses.ResponseInputItem);
+                }
+              }
+
               flushAssistantText();
-              items.push({
-                type: "function_call",
-                call_id: part.id,
-                name: part.name,
-                arguments: part.arguments,
-              });
-            }
 
-            if (part.type === 'compaction') {
-              flushAssistantText();
-              items.push({
-                type: "compaction",
-                id: part.id,
-                encrypted_content: part.encrypted_content,
-              } as unknown as OpenAI.Responses.ResponseInputItem);
+              break;
             }
           }
-
-          flushAssistantText();
-
-          break;
         }
-      }
-    }
 
-    // Track streaming content parts
-    const contentParts: Content[] = [];
-    let currentType: "reasoning" | "text" | null = null;
+        // Track streaming content parts
+        const contentParts: Content[] = [];
+        let currentType: "reasoning" | "text" | null = null;
 
-    // Helper to append text content
-    const appendText = (delta: string) => {
-      if (currentType === "text" && contentParts.length > 0) {
-        const lastPart = contentParts[contentParts.length - 1];
-        if (lastPart.type === "text") {
-          lastPart.text += delta;
-        }
-      } else {
-        contentParts.push({ type: "text", text: delta });
-        currentType = "text";
-      }
-      handler?.([...contentParts]);
-    };
-
-    // Helper to append reasoning content (text or summary)
-    const appendReasoning = (id: string, delta: string, summary?: string) => {
-      let reasoningPart = contentParts.find((p): p is ReasoningContent => p.type === "reasoning");
-      if (!reasoningPart) {
-        reasoningPart = { type: "reasoning", id, text: "" };
-        contentParts.unshift(reasoningPart); // Reasoning goes first
-      }
-      if (summary) {
-        reasoningPart.summary = (reasoningPart.summary || "") + summary;
-      }
-      if (delta) {
-        reasoningPart.text += delta;
-      }
-      currentType = "reasoning";
-      handler?.([...contentParts]);
-    };
-
-    const runner = this.oai.responses
-      .stream({
-        model: model,
-        store: false,
-        tools: this.toTools(tools),
-        input: items,
-        instructions: instructions,
-        ...(options?.effort
-          ? {
-              include: ["reasoning.encrypted_content"],
-              reasoning: {
-                effort: options.effort,
-                summary: options.summary ?? "auto",
-              },
+        // Helper to append text content
+        const appendText = (delta: string) => {
+          if (currentType === "text" && contentParts.length > 0) {
+            const lastPart = contentParts[contentParts.length - 1];
+            if (lastPart.type === "text") {
+              lastPart.text += delta;
             }
-          : {}),
-        ...(options?.verbosity
-          ? {
-              text: { verbosity: options.verbosity },
-            }
-          : {}),
-        ...(options?.compactThreshold
-          ? {
-              context_management: [{ type: "compaction" as const, compact_threshold: options.compactThreshold }],
-            }
-          : {}),
-      })
-      .on("response.reasoning_summary_text.delta", (event) => {
-        appendReasoning(event.item_id, "", event.delta);
-      })
-      .on("response.reasoning_text.delta", (event) => {
-        appendReasoning(event.item_id, event.delta);
-      })
-      .on("response.output_text.delta", (event) => {
-        appendText(event.delta);
-      })
-      .on("response.output_item.done", (event) => {
-        if (event.item.type === "function_call") {
-          contentParts.push({
-            type: "tool_call",
-            id: event.item.call_id,
-            name: event.item.name,
-            arguments: event.item.arguments,
-          });
-          currentType = null;
+          } else {
+            contentParts.push({ type: "text", text: delta });
+            currentType = "text";
+          }
           handler?.([...contentParts]);
-        } else if (event.item.type === "reasoning") {
-          // Capture encrypted_content signature for multi-turn conversations
-          const encryptedContent = (event.item as { encrypted_content?: string }).encrypted_content;
-          if (encryptedContent) {
-            // Find the reasoning part and add the signature
-            const reasoningPart = contentParts.find((p) => p.type === "reasoning");
-            if (reasoningPart && reasoningPart.type === "reasoning") {
-              reasoningPart.signature = encryptedContent;
+        };
+
+        // Helper to append reasoning content (text or summary)
+        const appendReasoning = (id: string, delta: string, summary?: string) => {
+          let reasoningPart = contentParts.find((p): p is ReasoningContent => p.type === "reasoning");
+          if (!reasoningPart) {
+            reasoningPart = { type: "reasoning", id, text: "" };
+            contentParts.unshift(reasoningPart); // Reasoning goes first
+          }
+          if (summary) {
+            reasoningPart.summary = (reasoningPart.summary || "") + summary;
+          }
+          if (delta) {
+            reasoningPart.text += delta;
+          }
+          currentType = "reasoning";
+          handler?.([...contentParts]);
+        };
+
+        const runner = this.oai.responses
+          .stream({
+            model: model,
+            store: false,
+            tools: this.toTools(tools),
+            input: items,
+            instructions: instructions,
+            ...(options?.effort
+              ? {
+                  include: ["reasoning.encrypted_content"],
+                  reasoning: {
+                    effort: options.effort,
+                    summary: options.summary ?? "auto",
+                  },
+                }
+              : {}),
+            ...(options?.verbosity
+              ? {
+                  text: { verbosity: options.verbosity },
+                }
+              : {}),
+            ...(options?.compactThreshold
+              ? {
+                  context_management: [{ type: "compaction" as const, compact_threshold: options.compactThreshold }],
+                }
+              : {}),
+          })
+          .on("response.reasoning_summary_text.delta", (event) => {
+            appendReasoning(event.item_id, "", event.delta);
+          })
+          .on("response.reasoning_text.delta", (event) => {
+            appendReasoning(event.item_id, event.delta);
+          })
+          .on("response.output_text.delta", (event) => {
+            appendText(event.delta);
+          })
+          .on("response.output_item.done", (event) => {
+            if (event.item.type === "function_call") {
+              contentParts.push({
+                type: "tool_call",
+                id: event.item.call_id,
+                name: event.item.name,
+                arguments: event.item.arguments,
+              });
+              currentType = null;
+              handler?.([...contentParts]);
+            } else if (event.item.type === "reasoning") {
+              // Capture encrypted_content signature for multi-turn conversations
+              const encryptedContent = (event.item as { encrypted_content?: string }).encrypted_content;
+              if (encryptedContent) {
+                // Find the reasoning part and add the signature
+                const reasoningPart = contentParts.find((p) => p.type === "reasoning");
+                if (reasoningPart && reasoningPart.type === "reasoning") {
+                  reasoningPart.signature = encryptedContent;
+                  handler?.([...contentParts]);
+                }
+              }
+            } else if (event.item.type === "compaction") {
+              const compactionItem = event.item as { id: string; encrypted_content: string };
+              console.log("[Compaction] Context compacted", {
+                id: compactionItem.id,
+                bytes: compactionItem.encrypted_content.length,
+              });
+              contentParts.push({
+                type: "compaction",
+                id: compactionItem.id,
+                encrypted_content: compactionItem.encrypted_content,
+              });
               handler?.([...contentParts]);
             }
-          }
-        } else if (event.item.type === 'compaction') {
-          const compactionItem = event.item as { id: string; encrypted_content: string };
-          console.log("[Compaction] Context compacted", { id: compactionItem.id, bytes: compactionItem.encrypted_content.length });
-          contentParts.push({
-            type: 'compaction',
-            id: compactionItem.id,
-            encrypted_content: compactionItem.encrypted_content,
           });
-          handler?.([...contentParts]);
-        }
-      });
 
-    const finalResponse = await runner.finalResponse();
+        const finalResponse = await runner.finalResponse();
 
-    return {
-      result: { role: Role.Assistant, content: contentParts } as Message,
-      response: {
-        id: finalResponse.id,
-        model: finalResponse.model,
-        inputTokens: finalResponse.usage?.input_tokens,
-        outputTokens: finalResponse.usage?.output_tokens,
+        return {
+          result: { role: Role.Assistant, content: contentParts } as Message,
+          response: {
+            id: finalResponse.id,
+            model: finalResponse.model,
+            inputTokens: finalResponse.usage?.input_tokens,
+            outputTokens: finalResponse.usage?.output_tokens,
+          },
+        };
       },
-    };
-    }, { effort: options?.effort, verbosity: options?.verbosity, toolCount: tools?.length }); // end traceGenAI
+      { effort: options?.effort, verbosity: options?.verbosity, toolCount: tools?.length },
+    ); // end traceGenAI
   }
 
   async summarizeTitle(model: string, input: Message[]): Promise<string | null> {
     const history = input.slice(-6).map((m) => ({ role: m.role, content: m.content }));
-    const result = await this.parse(model, instructionsSummarizeTitle, JSON.stringify(history), z.object({ title: z.string() }).strict(), "summarize_title");
+    const result = await this.parse(
+      model,
+      instructionsSummarizeTitle,
+      JSON.stringify(history),
+      z.object({ title: z.string() }).strict(),
+      "summarize_title",
+    );
     return result?.title ?? null;
   }
 
   async relatedPrompts(model: string, prompt: string): Promise<string[]> {
-    const result = await this.parse(model, instructionsRelatedPrompts, prompt || "No input", z.object({ prompts: z.array(z.object({ prompt: z.string() }).strict()).min(3).max(10) }).strict(), "list_prompts");
+    const result = await this.parse(
+      model,
+      instructionsRelatedPrompts,
+      prompt || "No input",
+      z
+        .object({
+          prompts: z
+            .array(z.object({ prompt: z.string() }).strict())
+            .min(3)
+            .max(10),
+        })
+        .strict(),
+      "list_prompts",
+    );
     return result?.prompts.map((p) => p.prompt) ?? [];
   }
 
   async extractUrl(model: string, text: string): Promise<string | null> {
     if (!text.trim()) return null;
-    const result = await this.parse(model, "Extract a valid URL from the given text. If the text contains a URL, extract it. If no valid URL is found, return null.", text, z.object({ url: z.string().nullable() }).strict(), "extract_url");
+    const result = await this.parse(
+      model,
+      "Extract a valid URL from the given text. If the text contains a URL, extract it. If no valid URL is found, return null.",
+      text,
+      z.object({ url: z.string().nullable() }).strict(),
+      "extract_url",
+    );
     return result?.url ?? null;
   }
 
   async convertCSV(model: string, text: string): Promise<string> {
     if (!text.trim()) return "";
-    const result = await this.parse(model, instructionsConvertCsv, text, z.object({ csvData: z.string() }).strict(), "convert_csv");
+    const result = await this.parse(
+      model,
+      instructionsConvertCsv,
+      text,
+      z.object({ csvData: z.string() }).strict(),
+      "convert_csv",
+    );
     return result?.csvData ?? "";
   }
 
   async convertMD(model: string, text: string): Promise<string> {
     if (!text.trim()) return "";
-    const result = await this.parse(model, instructionsConvertMd, text, z.object({ mdData: z.string() }).strict(), "convert_md");
+    const result = await this.parse(
+      model,
+      instructionsConvertMd,
+      text,
+      z.object({ mdData: z.string() }).strict(),
+      "convert_md",
+    );
     return result?.mdData ?? "";
   }
 
@@ -371,12 +416,30 @@ export class Client {
     selectionStart: number,
     selectionEnd: number,
   ): Promise<{ alternatives: string[]; contextToReplace: string; keyChanges: string[] }> {
-    const empty = { alternatives: [] as string[], contextToReplace: text.substring(selectionStart, selectionEnd), keyChanges: [] as string[] };
-    if (!text.trim() || selectionStart < 0 || selectionEnd <= selectionStart || selectionStart >= text.length) return empty;
+    const empty = {
+      alternatives: [] as string[],
+      contextToReplace: text.substring(selectionStart, selectionEnd),
+      keyChanges: [] as string[],
+    };
+    if (!text.trim() || selectionStart < 0 || selectionEnd <= selectionStart || selectionStart >= text.length)
+      return empty;
 
     const contextToRewrite = expandToSentences(text, selectionStart, selectionEnd);
     const selectedText = text.substring(selectionStart, selectionEnd);
-    const result = await this.parse(model, instructionsRewriteSelection, JSON.stringify({ context: contextToRewrite, selection: selectedText }), z.object({ alternatives: z.array(z.object({ text: z.string(), keyChange: z.string() }).strict()).min(3).max(6) }).strict(), "rewrite_selection");
+    const result = await this.parse(
+      model,
+      instructionsRewriteSelection,
+      JSON.stringify({ context: contextToRewrite, selection: selectedText }),
+      z
+        .object({
+          alternatives: z
+            .array(z.object({ text: z.string(), keyChange: z.string() }).strict())
+            .min(3)
+            .max(6),
+        })
+        .strict(),
+      "rewrite_selection",
+    );
 
     return {
       alternatives: result?.alternatives.map((a) => a.text) ?? [],
@@ -414,7 +477,9 @@ export class Client {
       throw new Error(`File size ${(input.size / 1024 / 1024).toFixed(1)}MB exceeds the maximum limit of 10MB`);
     }
     if (typeof input === "string" && input.length > 50000) {
-      throw new Error(`Text length ${input.length.toLocaleString()} characters exceeds the maximum limit of 50,000 characters`);
+      throw new Error(
+        `Text length ${input.length.toLocaleString()} characters exceeds the maximum limit of 50,000 characters`,
+      );
     }
 
     const data = new FormData();
@@ -468,7 +533,15 @@ export class Client {
       ? `Ensure the text is in ${lang} language${lang !== "en" ? ", translating if necessary" : ""}.`
       : "Maintain the original language of the text.";
 
-    const result = await this.parse(model, instructionsRewriteText.replace("{languageInstruction}", languageInstruction).replace("{finalInstructions}", finalInstructions), text, z.object({ rewrittenText: z.string() }).strict(), "rewrite_text");
+    const result = await this.parse(
+      model,
+      instructionsRewriteText
+        .replace("{languageInstruction}", languageInstruction)
+        .replace("{finalInstructions}", finalInstructions),
+      text,
+      z.object({ rewrittenText: z.string() }).strict(),
+      "rewrite_text",
+    );
     return (result?.rewrittenText ?? text).replace(/ß/g, "ss");
   }
 
@@ -627,7 +700,13 @@ export class Client {
       .replace("{name}", name || "")
       .replace("{description}", description || "")
       .replace("{content}", content || "");
-    const result = await this.parse(model, instructions, `Optimize this skill: "${name}"`, z.object({ name: z.string(), description: z.string(), content: z.string() }).strict(), "optimize_skill");
+    const result = await this.parse(
+      model,
+      instructions,
+      `Optimize this skill: "${name}"`,
+      z.object({ name: z.string(), description: z.string(), content: z.string() }).strict(),
+      "optimize_skill",
+    );
     return {
       name: result?.name ?? name,
       description: result?.description ?? description,
@@ -636,7 +715,13 @@ export class Client {
   }
 
   // biome-ignore lint: zod schema type is complex
-  private async parse<T extends z.ZodType<any>>(model: string, instructions: string, input: string, schema: T, name: string): Promise<z.infer<T> | null> {
+  private async parse<T extends z.ZodType<any>>(
+    model: string,
+    instructions: string,
+    input: string,
+    schema: T,
+    name: string,
+  ): Promise<z.infer<T> | null> {
     return traceGenAI(name, model, async () => {
       try {
         const response = await this.oai.responses.parse({

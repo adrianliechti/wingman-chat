@@ -635,30 +635,33 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     }
   }, [currentAgent, isLoaded]);
 
-  const createAgent = useCallback(async (name: string, initialData?: Partial<Omit<Agent, "id" | "name">>): Promise<Agent> => {
-    const newAgent: Agent = {
-      id: crypto.randomUUID(),
-      name,
-      description: initialData?.description,
-      model: initialData?.model,
-      instructions: initialData?.instructions,
-      skills: initialData?.skills ?? [],
-      servers: initialData?.servers ?? [],
-      tools: initialData?.tools ?? [],
-      memory: initialData?.memory,
-    };
+  const createAgent = useCallback(
+    async (name: string, initialData?: Partial<Omit<Agent, "id" | "name">>): Promise<Agent> => {
+      const newAgent: Agent = {
+        id: crypto.randomUUID(),
+        name,
+        description: initialData?.description,
+        model: initialData?.model,
+        instructions: initialData?.instructions,
+        skills: initialData?.skills ?? [],
+        servers: initialData?.servers ?? [],
+        tools: initialData?.tools ?? [],
+        memory: initialData?.memory,
+      };
 
-    setAgents((prev) => [...prev, newAgent]);
-    setCurrentAgent(newAgent);
+      setAgents((prev) => [...prev, newAgent]);
+      setCurrentAgent(newAgent);
 
-    try {
-      await storeAgent(newAgent);
-    } catch (error) {
-      console.error("Error saving new agent:", error);
-    }
+      try {
+        await storeAgent(newAgent);
+      } catch (error) {
+        console.error("Error saving new agent:", error);
+      }
 
-    return newAgent;
-  }, []);
+      return newAgent;
+    },
+    [],
+  );
 
   const updateAgent = useCallback(
     (id: string, updates: Partial<Omit<Agent, "id">>) => {

@@ -40,7 +40,12 @@ export function useSkillBuilderProvider(): ToolProvider {
           const content = (args.content as string)?.trim();
 
           if (!name || !description || !content) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "name, description, and content are all required" }) }];
+            return [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ error: "name, description, and content are all required" }),
+              },
+            ];
           }
 
           const validation = validateSkillName(name);
@@ -49,12 +54,19 @@ export function useSkillBuilderProvider(): ToolProvider {
           }
 
           if (description.length > 1024) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Description must be 1024 characters or less" }) }];
+            return [
+              { type: "text" as const, text: JSON.stringify({ error: "Description must be 1024 characters or less" }) },
+            ];
           }
 
           const existing = getSkill(name);
           if (existing) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: `Skill "${name}" already exists. Use update_skill to modify it.` }) }];
+            return [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ error: `Skill "${name}" already exists. Use update_skill to modify it.` }),
+              },
+            ];
           }
 
           const skill = addSkill({ name, description, content });
@@ -67,7 +79,12 @@ export function useSkillBuilderProvider(): ToolProvider {
             }
           }
 
-          return [{ type: "text" as const, text: JSON.stringify({ success: true, skill: { name: skill.name, description: skill.description } }) }];
+          return [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ success: true, skill: { name: skill.name, description: skill.description } }),
+            },
+          ];
         },
       },
       {
@@ -106,7 +123,12 @@ export function useSkillBuilderProvider(): ToolProvider {
           if (args.description !== undefined) {
             const desc = (args.description as string).trim();
             if (desc.length > 1024) {
-              return [{ type: "text" as const, text: JSON.stringify({ error: "Description must be 1024 characters or less" }) }];
+              return [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify({ error: "Description must be 1024 characters or less" }),
+                },
+              ];
             }
             updates.description = desc;
           }
@@ -115,7 +137,12 @@ export function useSkillBuilderProvider(): ToolProvider {
           }
 
           if (Object.keys(updates).length === 0) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "No updates provided. Supply description and/or content." }) }];
+            return [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ error: "No updates provided. Supply description and/or content." }),
+              },
+            ];
           }
 
           updateSkillInLibrary(existing.id, updates);

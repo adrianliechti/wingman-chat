@@ -56,7 +56,10 @@ export function ReviewStep({
               </option>
             ))}
           </select>
-          <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+          <ChevronDown
+            size={14}
+            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400"
+          />
         </div>
       </div>
 
@@ -65,13 +68,9 @@ export function ReviewStep({
         {/* Identity */}
         <div className="px-3 py-2.5">
           <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{name}</div>
-          {description && (
-            <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{description}</div>
-          )}
+          {description && <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{description}</div>}
           {instructions && (
-            <div className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-1 line-clamp-2">
-              {instructions}
-            </div>
+            <div className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-1 line-clamp-2">{instructions}</div>
           )}
         </div>
 
@@ -83,7 +82,10 @@ export function ReviewStep({
             </div>
             <div className="flex flex-wrap gap-1">
               {selectedSkills.map((s) => (
-                <span key={s} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300">
+                <span
+                  key={s}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300"
+                >
                   <Zap size={8} /> {s}
                 </span>
               ))}
@@ -99,12 +101,18 @@ export function ReviewStep({
             </div>
             <div className="flex flex-wrap gap-1">
               {selectedTools.map((t) => (
-                <span key={t} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+                <span
+                  key={t}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
+                >
                   <Wrench size={8} /> {t}
                 </span>
               ))}
               {servers.map((s, i) => (
-                <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
+                >
                   <Server size={8} /> {s.name}
                 </span>
               ))}
@@ -120,7 +128,10 @@ export function ReviewStep({
             </div>
             <div className="flex flex-wrap gap-1">
               {pendingFiles.map((f, i) => (
-                <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
+                >
                   <FileText size={8} /> {f.name}
                 </span>
               ))}
