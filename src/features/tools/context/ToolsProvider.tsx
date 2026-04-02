@@ -4,6 +4,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import { useRendererProvider } from "@/features/renderer/hooks/useRendererProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
+import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { MCPClient } from "@/features/settings/lib/mcp";
 import { getConfig } from "@/shared/config";
 import type {
@@ -49,6 +50,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const internetProvider = useInternetProvider();
   const rendererProvider = useRendererProvider();
   const artifactsProvider = useArtifactsProvider();
+  const skillBuilderProvider = useSkillBuilderProvider();
 
   // All MCP clients & lookup set
   const allMcpClients = useMemo(() => [...configMcpClients, ...agentMcpClients], [configMcpClients, agentMcpClients]);
@@ -80,9 +82,10 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     if (rendererProvider) list.push(rendererProvider);
     if (internetProvider) list.push(internetProvider);
     if (artifactsProvider) list.push(artifactsProvider);
+    list.push(skillBuilderProvider);
     list.push(...configMcpClients, ...agentProviders);
     return list;
-  }, [internetProvider, rendererProvider, artifactsProvider, configMcpClients, agentProviders]);
+  }, [internetProvider, rendererProvider, artifactsProvider, skillBuilderProvider, configMcpClients, agentProviders]);
 
   // State: MCP clients use lifecycle state, local providers derive from desiredTools
   const getProviderState = useCallback(
