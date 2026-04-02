@@ -14,6 +14,7 @@ interface SkillCatalogProps {
   onToggle: (skillName: string) => void;
   onSkillSaved: (skill: Skill, isNew: boolean, oldName?: string) => void;
   onImported: (names: string[]) => void;
+  initialView?: "list" | "new";
 }
 
 export function SkillCatalog({
@@ -23,6 +24,7 @@ export function SkillCatalog({
   onToggle,
   onSkillSaved,
   onImported,
+  initialView = "list",
 }: SkillCatalogProps) {
   const { skills: allSkills, addSkill, updateSkill, removeSkill } = useSkills();
   const [search, setSearch] = useState("");
@@ -42,13 +44,18 @@ export function SkillCatalog({
     };
   }, []);
 
-  // Reset editor when catalog closes
+  // Reset editor when catalog opens/closes
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      if (initialView === "new") {
+        openEditor("new");
+      }
+    } else {
       setEditing(null);
       setSearch("");
     }
-  }, [isOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialView]);
 
   const openEditor = (skill: Skill | "new") => {
     if (skill === "new") {

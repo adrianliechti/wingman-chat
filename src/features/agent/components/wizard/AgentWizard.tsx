@@ -1,4 +1,4 @@
-import { Fragment, useReducer, useMemo, useState, useCallback } from "react";
+import { Fragment, useReducer, useMemo, useState, useCallback, useRef } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { X, Bot, Zap, Wrench, Folder, ClipboardCheck } from "lucide-react";
 import { getConfig } from "@/shared/config";
@@ -141,6 +141,8 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
   const { createAgent, addServer } = useAgents();
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const [isCreating, setIsCreating] = useState(false);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   const steps = useMemo(() => getSteps(), []);
   const isLastStep = state.currentStep === steps.length - 1;
@@ -173,23 +175,24 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
   }, []);
 
   const handleCreate = useCallback(async () => {
+    const s = stateRef.current;
     setIsCreating(true);
     try {
-      const agent = await createAgent(state.name.trim(), {
-        description: state.description.trim() || undefined,
-        instructions: state.instructions.trim() || undefined,
-        skills: state.selectedSkills,
-        tools: state.selectedTools,
-        model: state.model || undefined,
-        memory: state.memory || undefined,
+      const agent = await createAgent(s.name.trim(), {
+        description: s.description.trim() || undefined,
+        instructions: s.instructions.trim() || undefined,
+        skills: s.selectedSkills,
+        tools: s.selectedTools,
+        model: s.model || undefined,
+        memory: s.memory || undefined,
       });
 
       // Add MCP servers
-      for (const server of state.servers) {
+      for (const server of s.servers) {
         addServer(agent.id, server);
       }
 
-      onCreated(agent, state.pendingFiles);
+      onCreated(agent, s.pendingFiles);
       dispatch({ type: "RESET" });
       onClose();
     } catch (error) {
@@ -197,7 +200,7 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
     } finally {
       setIsCreating(false);
     }
-  }, [state, createAgent, addServer, onCreated, onClose]);
+  }, [createAgent, addServer, onCreated, onClose]);
 
   const handleClose = useCallback(() => {
     dispatch({ type: "RESET" });
