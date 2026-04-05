@@ -21,7 +21,7 @@ export function modelType(id: string): ModelType | undefined {
   }
 
   // Check for transcription models
-  if (lowerId.includes("transcribe") || lowerId.includes("whisper")) {
+  if (lowerId.includes("stt") || lowerId.includes("transcribe") || lowerId.includes("whisper")) {
     return "transcriber";
   }
 
