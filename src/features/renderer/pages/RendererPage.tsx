@@ -168,7 +168,7 @@ export function RendererPage() {
   const { images, createImage, deleteImage } = useImages();
 
   const [prompt, setPrompt] = useState("");
-  const [referenceImages, setReferenceImages] = useState<{ blob: Blob; preview: string }[]>([]);
+  const [referenceImages, setReferenceImages] = useState<{ blob: Blob; dataUrl: string }[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
   const [models, setModels] = useState<Model[]>([]);
@@ -201,10 +201,7 @@ export function RendererPage() {
 
   const handleReset = useCallback(() => {
     setPrompt("");
-    setReferenceImages((prev) => {
-      prev.forEach((img) => URL.revokeObjectURL(img.preview));
-      return [];
-    });
+    setReferenceImages([]);
     setSelectedStyle(null);
     setSelectedImageId(null);
   }, []);
@@ -233,7 +230,7 @@ export function RendererPage() {
     for (const file of imageFiles) {
       try {
         const resizedBlob = await resizeImageBlob(file, 1024, 1024);
-        const preview = URL.createObjectURL(resizedBlob);
+        const dataUrl = await readAsDataURL(resizedBlob);
 
         let added = false;
         setReferenceImages((prev) => {
@@ -241,10 +238,9 @@ export function RendererPage() {
             return prev;
           }
           added = true;
-          return [...prev, { blob: resizedBlob, preview }];
+          return [...prev, { blob: resizedBlob, dataUrl }];
         });
         if (!added) {
-          URL.revokeObjectURL(preview);
           break;
         }
       } catch (err) {
@@ -256,7 +252,6 @@ export function RendererPage() {
   const removeReferenceImage = useCallback((index: number) => {
     setReferenceImages((prev) => {
       const newImages = [...prev];
-      URL.revokeObjectURL(newImages[index].preview);
       newImages.splice(index, 1);
       return newImages;
     });
@@ -276,14 +271,13 @@ export function RendererPage() {
       try {
         const blob = decodeDataURL(generatedImage.data);
         const resizedBlob = await resizeImageBlob(blob, 1024, 1024);
-        const preview = URL.createObjectURL(resizedBlob);
+        const dataUrl = await readAsDataURL(resizedBlob);
 
         setReferenceImages((prev) => {
           if (prev.length >= 4) {
-            URL.revokeObjectURL(preview);
             return prev;
           }
-          return [...prev, { blob: resizedBlob, preview }];
+          return [...prev, { blob: resizedBlob, dataUrl }];
         });
       } catch (err) {
         console.error("Failed to use image as reference:", err);
@@ -312,10 +306,9 @@ export function RendererPage() {
 
     setIsGenerating(true);
 
-    // Capture and clear reference images (revoke previews)
+    // Capture and clear reference images
     const currentRefImages = referenceImages;
     setReferenceImages([]);
-    currentRefImages.forEach((img) => URL.revokeObjectURL(img.preview));
 
     try {
       const model = selectedModel?.id || config.renderer?.model || "";
