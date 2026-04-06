@@ -9,21 +9,16 @@ import (
 	"github.com/adrianliechti/wingman-chat/pkg/server/api"
 	"github.com/adrianliechti/wingman-chat/pkg/server/otel"
 	"github.com/adrianliechti/wingman-chat/pkg/server/public"
-	"github.com/adrianliechti/wingman-chat/pkg/server/realtime"
 )
 
-func New(cfg *config.Config, token string, platformURL, realtimeURL *url.URL, dist fs.FS) http.Handler {
+func New(cfg *config.Config, url *url.URL, token string, dist fs.FS) http.Handler {
 	mux := http.NewServeMux()
 
 	if cfg.Telemetry != nil {
 		otel.New().Attach(mux)
 	}
-	
-	if realtimeURL != nil {
-		realtime.New(token, realtimeURL).Attach(mux)
-	}
 
-	api.New(token, platformURL).Attach(mux)
+	api.New(token, url).Attach(mux)
 
 	public.New(cfg, dist).Attach(mux)
 

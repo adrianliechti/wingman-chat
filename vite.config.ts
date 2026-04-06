@@ -36,17 +36,17 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api/v1/realtime": {
-        target: "http://localhost:8081",
-        ws: true,
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ""),
-      },
-
       "/telemetry/v1": {
         target: "http://localhost:4318",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/telemetry\/v1/, "/v1"),
+      },
+
+      "/api/v1/realtime": {
+        target: "http://localhost:8080",
+        ws: true,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
       },
 
       "/api": {

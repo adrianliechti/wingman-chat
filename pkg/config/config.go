@@ -136,11 +136,6 @@ func PlatformURL() *url.URL {
 	panic("WINGMAN_URL is not set or invalid")
 }
 
-// RealtimeURL returns the realtime proxy URL, or nil if not configured.
-func RealtimeURL() *url.URL {
-	return urlFromEnv("REALTIME_PROXY")
-}
-
 // helpers
 
 func envBool(key string) bool {
