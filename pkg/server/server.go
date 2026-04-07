@@ -22,7 +22,7 @@ func New(cfg *config.Config, prefix string, url *url.URL, token string, dist fs.
 	api.New(prefix, token, url).Attach(mux)
 
 	if len(cfg.Drives) > 0 {
-		drive.New(cfg.Drives).Attach(mux)
+		drive.New(cfg.Drives).Attach(mux, prefix)
 	}
 
 	public.New(cfg, dist).Attach(mux)

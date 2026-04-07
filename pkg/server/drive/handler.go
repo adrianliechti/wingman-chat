@@ -1,15 +1,19 @@
 package drive
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/adrianliechti/wingman-chat/pkg/config"
-	drivelib "github.com/adrianliechti/wingman-chat/pkg/drive"
+	"github.com/adrianliechti/wingman-chat/pkg/drive"
 	"github.com/adrianliechti/wingman-chat/pkg/drive/local"
+	"github.com/adrianliechti/wingman-chat/pkg/drive/onedrive"
+	"github.com/adrianliechti/wingman-chat/pkg/drive/sharepoint"
 )
 
 type driveInfo struct {
@@ -19,17 +23,28 @@ type driveInfo struct {
 }
 
 type Handler struct {
-	drives map[string]drivelib.Provider
+	drives map[string]drive.Provider
 	info   []driveInfo
 }
 
 func New(cfgs []config.Drive) *Handler {
 	h := &Handler{
-		drives: make(map[string]drivelib.Provider),
+		drives: make(map[string]drive.Provider),
 	}
 
 	for _, cfg := range cfgs {
-		p, err := local.New(cfg.Path)
+		var p drive.Provider
+		var err error
+
+		switch cfg.Type {
+		case "onedrive":
+			p = onedrive.New()
+		case "sharepoint":
+			p, err = sharepoint.New(cfg.URL)
+		default:
+			p, err = local.New(cfg.Path)
+		}
+
 		if err != nil {
 			fmt.Printf("drive %q: %v\n", cfg.ID, err)
 			continue
@@ -46,10 +61,12 @@ func New(cfgs []config.Drive) *Handler {
 	return h
 }
 
-func (h *Handler) Attach(mux *http.ServeMux) {
-	mux.HandleFunc("GET /drives", h.handleList)
-	mux.HandleFunc("GET /drives/{id}/list", h.handleListEntries)
-	mux.HandleFunc("GET /drives/{id}/content", h.handleContent)
+func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
+	prefix = strings.TrimRight(prefix, "/")
+
+	mux.HandleFunc("GET "+prefix+"/v1/drives", h.handleList)
+	mux.HandleFunc("GET "+prefix+"/v1/drives/{id}/list", h.handleListEntries)
+	mux.HandleFunc("GET "+prefix+"/v1/drives/{id}/content", h.handleContent)
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +85,9 @@ func (h *Handler) handleListEntries(w http.ResponseWriter, r *http.Request) {
 
 	path := r.URL.Query().Get("path")
 
-	entries, err := d.List(path)
+	ctx := contextWithToken(r)
+
+	entries, err := d.List(ctx, path)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -93,7 +112,9 @@ func (h *Handler) handleContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reader, mimeType, size, err := d.Open(path)
+	ctx := contextWithToken(r)
+
+	reader, mimeType, size, err := d.Open(ctx, path)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -110,4 +131,22 @@ func (h *Handler) handleContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	io.Copy(w, reader)
+}
+
+func contextWithToken(r *http.Request) context.Context {
+	ctx := r.Context()
+
+	var token string
+
+	if v, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		token = v
+	} else if v := r.Header.Get("X-Forwarded-Access-Token"); v != "" {
+		token = v
+	}
+
+	if token != "" {
+		ctx = drive.WithToken(ctx, token)
+	}
+
+	return ctx
 }

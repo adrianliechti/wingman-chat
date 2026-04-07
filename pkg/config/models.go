@@ -148,7 +148,9 @@ type Bridge struct {
 
 type Drive struct {
 	ID   string `json:"id,omitempty" yaml:"id,omitempty"`
+	Type string `json:"-" yaml:"type,omitempty"`
 	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 	Path string `json:"-" yaml:"path,omitempty"`
+	URL  string `json:"-" yaml:"url,omitempty"`
 	Icon string `json:"icon,omitempty" yaml:"icon,omitempty"`
 }

@@ -10,7 +10,7 @@ export async function listDriveEntries(driveId: string, path: string = ""): Prom
   const params = new URLSearchParams();
   if (path) params.set("path", path);
 
-  const resp = await fetch(`/drives/${driveId}/list?${params}`);
+  const resp = await fetch(`/api/v1/drives/${driveId}/list?${params}`);
 
   if (!resp.ok) {
     throw new Error(`Failed to list files: ${resp.statusText}`);
@@ -21,5 +21,5 @@ export async function listDriveEntries(driveId: string, path: string = ""): Prom
 
 export function getDriveContentUrl(driveId: string, path: string): string {
   const params = new URLSearchParams({ path });
-  return `/drives/${driveId}/content?${params}`;
+  return `/api/v1/drives/${driveId}/content?${params}`;
 }

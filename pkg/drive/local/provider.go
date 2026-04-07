@@ -1,6 +1,7 @@
 package local
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"mime"
@@ -13,26 +14,24 @@ import (
 	"github.com/adrianliechti/wingman-chat/pkg/drive"
 )
 
+var _ drive.Provider = (*Provider)(nil)
+
 type Provider struct {
 	root string
 }
 
 func New(root string) (*Provider, error) {
-	abs, err := filepath.Abs(root)
+	dir, err := filepath.Abs(root)
+	
 	if err != nil {
-		return nil, fmt.Errorf("invalid root path: %w", err)
+		return nil, err
 	}
 
-	info, err := os.Stat(abs)
-	if err != nil {
-		return nil, fmt.Errorf("root path not accessible: %w", err)
+	p := &Provider{
+		root: dir,
 	}
 
-	if !info.IsDir() {
-		return nil, fmt.Errorf("root path is not a directory: %s", abs)
-	}
-
-	return &Provider{root: abs}, nil
+	return p, nil
 }
 
 func (p *Provider) resolve(path string) (string, error) {
@@ -55,7 +54,7 @@ func (p *Provider) resolve(path string) (string, error) {
 	return abs, nil
 }
 
-func (p *Provider) List(path string) ([]drive.Entry, error) {
+func (p *Provider) List(_ context.Context, path string) ([]drive.Entry, error) {
 	resolved, err := p.resolve(path)
 	if err != nil {
 		return nil, err
@@ -107,7 +106,7 @@ func (p *Provider) List(path string) ([]drive.Entry, error) {
 	return result, nil
 }
 
-func (p *Provider) Open(path string) (io.ReadCloser, string, int64, error) {
+func (p *Provider) Open(_ context.Context, path string) (io.ReadCloser, string, int64, error) {
 	resolved, err := p.resolve(path)
 	if err != nil {
 		return nil, "", 0, err

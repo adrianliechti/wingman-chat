@@ -1,6 +1,9 @@
 package drive
 
-import "io"
+import (
+	"context"
+	"io"
+)
 
 type Entry struct {
 	Name string `json:"name"`
@@ -11,6 +14,22 @@ type Entry struct {
 }
 
 type Provider interface {
-	List(path string) ([]Entry, error)
-	Open(path string) (io.ReadCloser, string, int64, error)
+	List(ctx context.Context, path string) ([]Entry, error)
+	Open(ctx context.Context, path string) (io.ReadCloser, string, int64, error)
+}
+
+type contextKey int
+
+const tokenKey contextKey = iota
+
+func WithToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, tokenKey, token)
+}
+
+func TokenFromContext(ctx context.Context) string {
+	if token, ok := ctx.Value(tokenKey).(string); ok {
+		return token
+	}
+
+	return ""
 }
