@@ -5,7 +5,7 @@ import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
   Send,
   Paperclip,
-  Folder,
+  HardDrive,
   ScreenShare,
   Sparkles,
   Loader2,
@@ -362,16 +362,28 @@ export function ChatInput() {
 
   const handleDriveFiles = useCallback(
     async (files: SelectedFile[]) => {
-      const fetched = await Promise.all(
-        files.map(async (f) => {
-          const url = getDriveContentUrl(f.driveId, f.path);
-          const resp = await fetch(url);
-          const blob = await resp.blob();
-          return new File([blob], f.name, { type: f.mime || blob.type });
-        }),
-      );
+      // Show extracting state for each file while downloading
+      const names = files.map((f) => f.name);
+      setExtractingAttachments((prev) => new Set([...prev, ...names]));
 
-      handleFiles(fetched);
+      try {
+        const fetched = await Promise.all(
+          files.map(async (f) => {
+            const url = getDriveContentUrl(f.driveId, f.path);
+            const resp = await fetch(url);
+            const blob = await resp.blob();
+            return new File([blob], f.name, { type: f.mime || blob.type });
+          }),
+        );
+
+        handleFiles(fetched);
+      } finally {
+        setExtractingAttachments((prev) => {
+          const next = new Set(prev);
+          for (const n of names) next.delete(n);
+          return next;
+        });
+      }
     },
     [handleFiles],
   );
@@ -900,7 +912,7 @@ export function ChatInput() {
                             className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10"
                           >
                             <Paperclip size={16} />
-                            <span className="font-medium text-sm">Local Files</span>
+                            <span className="font-medium text-sm">Upload</span>
                           </button>
                         </MenuItem>
                         {config.drives.map((fp) => (
@@ -924,7 +936,7 @@ export function ChatInput() {
                                   }}
                                 />
                               ) : (
-                                <Folder size={16} />
+                                <HardDrive size={16} />
                               )}
                               <span className="font-medium text-sm">{fp.name}</span>
                             </button>
@@ -1020,6 +1032,7 @@ export function ChatInput() {
         onClose={() => setActiveDrive(null)}
         drive={activeDrive}
         onFilesSelected={handleDriveFiles}
+        multiple
         accept={[
           ...(config.text?.files ?? []),
           ...(config.vision?.files ?? []),

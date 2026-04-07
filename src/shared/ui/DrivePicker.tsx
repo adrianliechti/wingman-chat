@@ -24,6 +24,8 @@ interface DrivePickerProps {
   onFilesSelected: (files: SelectedFile[]) => void;
   /** Comma-separated accept string like native file input, e.g. ".pdf,.docx,image/*" */
   accept?: string;
+  /** Allow selecting multiple files (default: false, like native file input) */
+  multiple?: boolean;
 }
 
 function parseAccept(accept?: string): { extensions: Set<string>; mimePatterns: string[] } | null {
@@ -196,7 +198,7 @@ function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilte
   );
 }
 
-export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept }: DrivePickerProps) {
+export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, multiple = false }: DrivePickerProps) {
   const [entries, setEntries] = useState<DriveEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const acceptFilter = useMemo(() => parseAccept(accept), [accept]);
@@ -227,23 +229,27 @@ export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept }:
 
   const handleToggleSelect = useCallback((entry: DriveEntry) => {
     setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(entry.path)) {
+      if (prev.has(entry.path)) {
+        const next = new Set(prev);
         next.delete(entry.path);
-      } else {
-        next.add(entry.path);
+        return next;
       }
-      return next;
+      if (multiple) {
+        return new Set([...prev, entry.path]);
+      }
+      return new Set([entry.path]);
     });
 
     setSelectedEntries((prev) => {
-      const next = new Map(prev);
-      if (next.has(entry.path)) {
+      if (prev.has(entry.path)) {
+        const next = new Map(prev);
         next.delete(entry.path);
-      } else {
-        next.set(entry.path, entry);
+        return next;
       }
-      return next;
+      if (multiple) {
+        return new Map([...prev, [entry.path, entry]]);
+      }
+      return new Map([[entry.path, entry]]);
     });
   }, []);
 

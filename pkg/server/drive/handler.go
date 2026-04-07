@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/adrianliechti/wingman-chat/pkg/config"
 	"github.com/adrianliechti/wingman-chat/pkg/drive"
@@ -111,6 +112,9 @@ func (h *Handler) handleContent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "path is required", http.StatusBadRequest)
 		return
 	}
+
+	// TODO: remove — simulate slow download for testing loaders
+	time.Sleep(3 * time.Second)
 
 	ctx := contextWithToken(r)
 

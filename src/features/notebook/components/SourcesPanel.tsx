@@ -6,7 +6,6 @@ import {
   X,
   Loader2,
   Upload,
-  File,
   Search,
   Zap,
   ArrowRight,
@@ -47,6 +46,10 @@ export function SourcesPanel({
   onDeleteSource,
 }: SourcesPanelProps) {
   const config = getConfig();
+  const acceptFilter = [
+    ...(config.text?.files ?? []),
+    ...(config.extractor?.files ?? []),
+  ].join(",");
   const [extracting, setExtracting] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -82,12 +85,32 @@ export function SourcesPanel({
   const handleDriveFiles = useCallback(
     async (files: SelectedFile[]) => {
       for (const f of files) {
-        const url = getDriveContentUrl(f.driveId, f.path);
-        const resp = await fetch(url);
-        if (!resp.ok) continue;
-        const blob = await resp.blob();
-        const file = new File([blob], f.name, { type: f.mime || "" });
-        await handleFiles([file]);
+        setExtracting((prev) => new Set([...prev, f.name]));
+        try {
+          const url = getDriveContentUrl(f.driveId, f.path);
+          const resp = await fetch(url);
+          if (!resp.ok) {
+            setError(`Failed to fetch ${f.name}: ${resp.statusText}`);
+            continue;
+          }
+          const blob = await resp.blob();
+          const type = f.mime || blob.type || "";
+          const file = new File([blob], f.name, { type });
+          // handleFiles also adds to extracting, so remove our entry first
+          setExtracting((prev) => {
+            const next = new Set(prev);
+            next.delete(f.name);
+            return next;
+          });
+          await handleFiles([file]);
+        } catch (err) {
+          setError(`Failed to add ${f.name}: ${err instanceof Error ? err.message : "Unknown error"}`);
+          setExtracting((prev) => {
+            const next = new Set(prev);
+            next.delete(f.name);
+            return next;
+          });
+        }
       }
     },
     [handleFiles],
@@ -148,23 +171,23 @@ export function SourcesPanel({
                 type="button"
                 onClick={() => {
                   setShowAddMenu(false);
-                  fileInputRef.current?.click();
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <Upload size={15} className="text-neutral-500" />
-                File
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddMenu(false);
                   setShowTextOverlay(true);
                 }}
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
               >
                 <Type size={15} className="text-neutral-500" />
                 Text
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddMenu(false);
+                  fileInputRef.current?.click();
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <Upload size={15} className="text-neutral-500" />
+                Upload
               </button>
               <button
                 type="button"
@@ -210,6 +233,7 @@ export function SourcesPanel({
           ref={fileInputRef}
           type="file"
           multiple
+          accept={acceptFilter}
           className="hidden"
           onChange={(e) => {
             if (e.target.files) {
@@ -289,6 +313,8 @@ export function SourcesPanel({
           onClose={() => setActiveDrive(null)}
           drive={activeDrive}
           onFilesSelected={handleDriveFiles}
+          multiple
+          accept={acceptFilter}
         />
       )}
     </div>
