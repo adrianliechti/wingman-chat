@@ -66,6 +66,13 @@ function fileMatchesAccept(entry: DriveEntry, filter: { extensions: Set<string>;
   return false;
 }
 
+function sortEntries(entries: DriveEntry[]): DriveEntry[] {
+  return [...entries].sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === "directory" ? -1 : 1;
+    return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  });
+}
+
 interface TreeItemProps {
   entry: DriveEntry;
   depth: number;
@@ -95,7 +102,7 @@ function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilte
       setLoading(true);
       try {
         const entries = await listDriveEntries(driveId, entry.path);
-        setChildren(entries);
+        setChildren(sortEntries(entries));
       } catch (err) {
         console.error("Failed to list directory:", err);
         setChildren([]);
@@ -211,7 +218,7 @@ export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, m
     setError(null);
     try {
       const result = await listDriveEntries(drive.id);
-      setEntries(result);
+      setEntries(sortEntries(result));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load files");
     } finally {
