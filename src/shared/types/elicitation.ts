@@ -70,10 +70,20 @@ export type ElicitationSchema = {
   required?: string[];
 };
 
-export type Elicitation = {
+export type FormElicitation = {
+  mode?: "form";
   message: string;
   requestedSchema?: ElicitationSchema;
 };
+
+export type UrlElicitation = {
+  mode: "url";
+  message: string;
+  url: string;
+  elicitationId: string;
+};
+
+export type Elicitation = FormElicitation | UrlElicitation;
 
 export type ElicitationResult = {
   action: "accept" | "decline" | "cancel";
@@ -85,4 +95,8 @@ export type PendingElicitation = {
   toolName: string;
   elicitation: Elicitation;
   resolve: (result: ElicitationResult) => void;
+  /** True after a URL elicitation was accepted, waiting for notifications/elicitation/complete */
+  waiting?: boolean;
+  /** True briefly after notifications/elicitation/complete is received, before the UI is dismissed */
+  completed?: boolean;
 };

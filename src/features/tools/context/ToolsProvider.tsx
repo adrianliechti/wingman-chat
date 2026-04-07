@@ -204,6 +204,8 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       client.onToolsChanged = () => {
         setToolsVersion((v) => v + 1);
       };
+      // eslint-disable-next-line react-hooks/immutability
+      client.onElicitationComplete = null; // handled via activeToolContext; clear any stale reference
     }
   }, [allMcpClients]);
 

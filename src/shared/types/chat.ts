@@ -78,6 +78,7 @@ export interface RenderedAppHandle {
 export interface ToolContext {
   content?(): Content[];
   elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
+  onElicitationComplete?(elicitationId: string): void;
   render?(): Promise<RenderedAppHandle>;
   sendMessage?(message: Message): Promise<void>;
   setMeta?(meta: Record<string, unknown>): void;

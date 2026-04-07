@@ -22,6 +22,7 @@ import type {
   Tool as MCPTool,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
+  ElicitationCompleteNotificationSchema,
   ElicitRequestSchema,
   ErrorCode,
   McpError,
@@ -94,6 +95,8 @@ export class MCPClient implements ToolProvider {
   onAuthComplete: (() => void) | null = null;
   /** Called when the server notifies that its tool list has changed and tools have been reloaded */
   onToolsChanged: (() => void) | null = null;
+  /** Called when the server notifies that an out-of-band URL elicitation has completed */
+  onElicitationComplete: ((elicitationId: string) => void) | null = null;
 
   constructor(
     id: string,
@@ -135,6 +138,7 @@ export class MCPClient implements ToolProvider {
       capabilities: {
         elicitation: {
           form: {},
+          url: {},
         },
         extensions: {
           [MCP_UI_EXTENSION]: {
@@ -150,7 +154,14 @@ export class MCPClient implements ToolProvider {
       }
 
       if (request.params.mode === "url") {
-        throw new McpError(ErrorCode.InvalidParams, "URL elicitation is not supported");
+        const result = await this.activeToolContext.elicit({
+          mode: "url",
+          message: request.params.message,
+          url: request.params.url,
+          elicitationId: request.params.elicitationId,
+        });
+
+        return { action: result.action };
       }
 
       const requestedSchema = normalizeRequestedSchema(request.params.requestedSchema);
@@ -223,6 +234,13 @@ export class MCPClient implements ToolProvider {
         await this.loadToolsAndInstructions();
       });
     }
+
+    // Register elicitation complete notification handler
+    this.client.setNotificationHandler(ElicitationCompleteNotificationSchema, (notification) => {
+      const { elicitationId } = notification.params;
+      this.onElicitationComplete?.(elicitationId);
+      this.activeToolContext?.onElicitationComplete?.(elicitationId);
+    });
 
     this.startPing();
   }

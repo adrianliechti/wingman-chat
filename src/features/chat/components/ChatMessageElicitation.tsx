@@ -1,4 +1,4 @@
-import { Check, ShieldQuestion, X } from "lucide-react";
+import { Check, CheckCircle2, ExternalLink, Loader2, ShieldQuestion, X } from "lucide-react";
 import { useState } from "react";
 
 import type {
@@ -12,11 +12,15 @@ import type {
   ElicitationSingleSelectSchema,
   ElicitationStringSchema,
   ElicitationValue,
+  FormElicitation,
+  UrlElicitation,
 } from "@/shared/types/elicitation";
 
 type ChatMessageElicitationProps = {
   toolName: string;
   elicitation: Elicitation;
+  waiting?: boolean;
+  completed?: boolean;
   onResolve: (result: ElicitationResult) => void;
 };
 
@@ -25,14 +29,143 @@ type ElicitationDraftValue = string | boolean | string[];
 export function ChatMessageElicitation({
   toolName,
   elicitation,
+  waiting,
+  completed,
   onResolve,
 }: ChatMessageElicitationProps) {
+  if (elicitation.mode === "url") {
+    return (
+      <UrlElicitationView
+        toolName={toolName}
+        elicitation={elicitation}
+        waiting={waiting}
+        completed={completed}
+        onResolve={onResolve}
+      />
+    );
+  }
+
+  return <FormElicitationView toolName={toolName} elicitation={elicitation} onResolve={onResolve} />;
+}
+
+function UrlElicitationView({
+  toolName,
+  elicitation,
+  waiting,
+  completed,
+  onResolve,
+}: {
+  toolName: string;
+  elicitation: UrlElicitation;
+  waiting?: boolean;
+  completed?: boolean;
+  onResolve: (result: ElicitationResult) => void;
+}) {
+  let parsedUrl: URL | null = null;
+  try {
+    parsedUrl = new URL(elicitation.url);
+  } catch {
+    // invalid URL — still show it, user can decline
+  }
+
+  const domain = parsedUrl ? parsedUrl.host : null;
+
+  const handleOpen = () => {
+    window.open(elicitation.url, "_blank", "noopener,noreferrer");
+    onResolve({ action: "accept" });
+  };
+
+  const renderActions = () => {
+    if (completed) {
+      return (
+        <div className="flex items-center gap-1.5">
+          <CheckCircle2 className="w-3 h-3 text-green-500 dark:text-green-400" />
+          <span className="text-xs text-green-600 dark:text-green-400">Completed</span>
+        </div>
+      );
+    }
+
+    if (waiting) {
+      return (
+        <div className="flex items-center gap-2">
+          <Loader2 className="w-3 h-3 animate-spin text-neutral-400 dark:text-neutral-500" />
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">Waiting for completion…</span>
+          <button
+            type="button"
+            onClick={() => onResolve({ action: "cancel" })}
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleOpen}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-300 transition-colors"
+        >
+          <ExternalLink className="w-3 h-3" />
+          Open URL
+        </button>
+        <button
+          type="button"
+          onClick={() => onResolve({ action: "decline" })}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-300 transition-colors"
+        >
+          <X className="w-3 h-3" />
+          Decline
+        </button>
+        <button
+          type="button"
+          onClick={() => onResolve({ action: "cancel" })}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  };
+
+  return (
+    <div className="rounded-lg overflow-hidden max-w-full">
+      <div className="flex items-start gap-2 min-w-0">
+        <ShieldQuestion className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0 space-y-2">
+          <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+            {getToolDisplayName(toolName)}
+          </div>
+          <div className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap">
+            {elicitation.message}
+          </div>
+          <div className="rounded border border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-950/30 p-2 space-y-1">
+            {domain && <div className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">{domain}</div>}
+            <div className="text-xs text-neutral-500 dark:text-neutral-400 break-all">{elicitation.url}</div>
+          </div>
+          {renderActions()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FormElicitationView({
+  toolName,
+  elicitation,
+  onResolve,
+}: {
+  toolName: string;
+  elicitation: FormElicitation;
+  onResolve: (result: ElicitationResult) => void;
+}) {
   const requestedSchema = elicitation.requestedSchema;
-  const isMinimalConfirmation =
-    !requestedSchema || Object.keys(requestedSchema.properties).length === 0;
-  const [formValues, setFormValues] = useState<
-    Record<string, ElicitationDraftValue>
-  >(() => buildInitialElicitationValues(requestedSchema));
+  const isMinimalConfirmation = !requestedSchema || Object.keys(requestedSchema.properties).length === 0;
+  const [formValues, setFormValues] = useState<Record<string, ElicitationDraftValue>>(() =>
+    buildInitialElicitationValues(requestedSchema),
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   if (isMinimalConfirmation) {
@@ -106,156 +239,83 @@ export function ChatMessageElicitation({
             <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
               {getToolDisplayName(toolName)}
             </span>
-            <div className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
-              {elicitation.message}
-            </div>
+            <div className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">{elicitation.message}</div>
           </div>
           <form className="mt-2 space-y-3" onSubmit={handleSubmit}>
             {requestedSchema && (
               <div className="space-y-3 rounded border border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-950/30 p-3">
-                {Object.entries(requestedSchema.properties).map(
-                  ([name, fieldSchema]) => {
-                    const fieldId = `elicitation-${toolName}-${name}`;
-                    const required =
-                      requestedSchema.required?.includes(name) ?? false;
-                    const label = fieldSchema.title || startCase(name);
-                    const description = fieldSchema.description;
-                    const error = errors[name];
+                {Object.entries(requestedSchema.properties).map(([name, fieldSchema]) => {
+                  const fieldId = `elicitation-${toolName}-${name}`;
+                  const required = requestedSchema.required?.includes(name) ?? false;
+                  const label = fieldSchema.title || startCase(name);
+                  const description = fieldSchema.description;
+                  const error = errors[name];
 
-                    if (isMultiSelectSchema(fieldSchema)) {
-                      const selected = Array.isArray(formValues[name])
-                        ? (formValues[name] as string[])
-                        : [];
-                      const options = getMultiSelectOptions(fieldSchema);
+                  if (isMultiSelectSchema(fieldSchema)) {
+                    const selected = Array.isArray(formValues[name]) ? (formValues[name] as string[]) : [];
+                    const options = getMultiSelectOptions(fieldSchema);
 
-                      return (
-                        <fieldset key={name} className="space-y-2 min-w-0">
-                          <legend className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                            {label}
-                            {required ? " *" : ""}
-                          </legend>
-                          {description && (
-                            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                              {description}
-                            </p>
-                          )}
-                          <div className="space-y-2">
-                            {options.map((option) => (
-                              <label
-                                key={option.value}
-                                className="flex items-center gap-2 text-xs text-neutral-700 dark:text-neutral-300"
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="rounded border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900"
-                                  checked={selected.includes(option.value)}
-                                  onChange={(event) => {
-                                    const next = event.target.checked
-                                      ? [...selected, option.value]
-                                      : selected.filter(
-                                          (value) => value !== option.value,
-                                        );
-                                    setFieldValue(name, next);
-                                  }}
-                                />
-                                <span>{option.label}</span>
-                              </label>
-                            ))}
-                          </div>
-                          {error && (
-                            <p className="text-xs text-red-500 dark:text-red-400">
-                              {error}
-                            </p>
-                          )}
-                        </fieldset>
-                      );
-                    }
-
-                    if (isBooleanSchema(fieldSchema)) {
-                      return (
-                        <div key={name} className="space-y-2 min-w-0">
-                          <label
-                            htmlFor={fieldId}
-                            className="flex items-center gap-2 text-xs text-neutral-700 dark:text-neutral-300"
-                          >
-                            <input
-                              id={fieldId}
-                              type="checkbox"
-                              className="rounded border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900"
-                              checked={!!formValues[name]}
-                              onChange={(event) =>
-                                setFieldValue(name, event.target.checked)
-                              }
-                            />
-                            <span className="font-medium">
-                              {label}
-                              {required ? " *" : ""}
-                            </span>
-                          </label>
-                          {description && (
-                            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                              {description}
-                            </p>
-                          )}
-                          {error && (
-                            <p className="text-xs text-red-500 dark:text-red-400">
-                              {error}
-                            </p>
-                          )}
+                    return (
+                      <fieldset key={name} className="space-y-2 min-w-0">
+                        <legend className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                          {label}
+                          {required ? " *" : ""}
+                        </legend>
+                        {description && <p className="text-xs text-neutral-500 dark:text-neutral-400">{description}</p>}
+                        <div className="space-y-2">
+                          {options.map((option) => (
+                            <label
+                              key={option.value}
+                              className="flex items-center gap-2 text-xs text-neutral-700 dark:text-neutral-300"
+                            >
+                              <input
+                                type="checkbox"
+                                className="rounded border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900"
+                                checked={selected.includes(option.value)}
+                                onChange={(event) => {
+                                  const next = event.target.checked
+                                    ? [...selected, option.value]
+                                    : selected.filter((value) => value !== option.value);
+                                  setFieldValue(name, next);
+                                }}
+                              />
+                              <span>{option.label}</span>
+                            </label>
+                          ))}
                         </div>
-                      );
-                    }
+                        {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
+                      </fieldset>
+                    );
+                  }
 
-                    if (isSingleSelectSchema(fieldSchema)) {
-                      const options = getSingleSelectOptions(fieldSchema);
-                      const value =
-                        typeof formValues[name] === "string"
-                          ? formValues[name]
-                          : "";
-
-                      return (
-                        <div key={name} className="space-y-2 min-w-0">
-                          <label
-                            htmlFor={fieldId}
-                            className="block text-xs font-medium text-neutral-700 dark:text-neutral-300"
-                          >
-                            {label}
-                            {required ? " *" : ""}
-                          </label>
-                          {description && (
-                            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                              {description}
-                            </p>
-                          )}
-                          <select
+                  if (isBooleanSchema(fieldSchema)) {
+                    return (
+                      <div key={name} className="space-y-2 min-w-0">
+                        <label
+                          htmlFor={fieldId}
+                          className="flex items-center gap-2 text-xs text-neutral-700 dark:text-neutral-300"
+                        >
+                          <input
                             id={fieldId}
-                            className="w-full rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-neutral-900 dark:text-neutral-100"
-                            value={value}
-                            onChange={(event) =>
-                              setFieldValue(name, event.target.value)
-                            }
-                          >
-                            <option value="">Select an option</option>
-                            {options.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                          {error && (
-                            <p className="text-xs text-red-500 dark:text-red-400">
-                              {error}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    }
+                            type="checkbox"
+                            className="rounded border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900"
+                            checked={!!formValues[name]}
+                            onChange={(event) => setFieldValue(name, event.target.checked)}
+                          />
+                          <span className="font-medium">
+                            {label}
+                            {required ? " *" : ""}
+                          </span>
+                        </label>
+                        {description && <p className="text-xs text-neutral-500 dark:text-neutral-400">{description}</p>}
+                        {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
+                      </div>
+                    );
+                  }
 
-                    const inputType = getInputType(fieldSchema);
-                    const value =
-                      typeof formValues[name] === "string"
-                        ? formValues[name]
-                        : "";
+                  if (isSingleSelectSchema(fieldSchema)) {
+                    const options = getSingleSelectOptions(fieldSchema);
+                    const value = typeof formValues[name] === "string" ? formValues[name] : "";
 
                     return (
                       <div key={name} className="space-y-2 min-w-0">
@@ -266,52 +326,54 @@ export function ChatMessageElicitation({
                           {label}
                           {required ? " *" : ""}
                         </label>
-                        {description && (
-                          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                            {description}
-                          </p>
-                        )}
-                        <input
+                        {description && <p className="text-xs text-neutral-500 dark:text-neutral-400">{description}</p>}
+                        <select
                           id={fieldId}
-                          type={inputType}
-                          value={value}
-                          min={
-                            isNumberSchema(fieldSchema)
-                              ? fieldSchema.minimum
-                              : undefined
-                          }
-                          max={
-                            isNumberSchema(fieldSchema)
-                              ? fieldSchema.maximum
-                              : undefined
-                          }
-                          minLength={
-                            isStringSchema(fieldSchema)
-                              ? fieldSchema.minLength
-                              : undefined
-                          }
-                          maxLength={
-                            isStringSchema(fieldSchema)
-                              ? fieldSchema.maxLength
-                              : undefined
-                          }
-                          step={
-                            fieldSchema.type === "integer" ? "1" : undefined
-                          }
                           className="w-full rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-neutral-900 dark:text-neutral-100"
-                          onChange={(event) =>
-                            setFieldValue(name, event.target.value)
-                          }
-                        />
-                        {error && (
-                          <p className="text-xs text-red-500 dark:text-red-400">
-                            {error}
-                          </p>
-                        )}
+                          value={value}
+                          onChange={(event) => setFieldValue(name, event.target.value)}
+                        >
+                          <option value="">Select an option</option>
+                          {options.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
                       </div>
                     );
-                  },
-                )}
+                  }
+
+                  const inputType = getInputType(fieldSchema);
+                  const value = typeof formValues[name] === "string" ? formValues[name] : "";
+
+                  return (
+                    <div key={name} className="space-y-2 min-w-0">
+                      <label
+                        htmlFor={fieldId}
+                        className="block text-xs font-medium text-neutral-700 dark:text-neutral-300"
+                      >
+                        {label}
+                        {required ? " *" : ""}
+                      </label>
+                      {description && <p className="text-xs text-neutral-500 dark:text-neutral-400">{description}</p>}
+                      <input
+                        id={fieldId}
+                        type={inputType}
+                        value={value}
+                        min={isNumberSchema(fieldSchema) ? fieldSchema.minimum : undefined}
+                        max={isNumberSchema(fieldSchema) ? fieldSchema.maximum : undefined}
+                        minLength={isStringSchema(fieldSchema) ? fieldSchema.minLength : undefined}
+                        maxLength={isStringSchema(fieldSchema) ? fieldSchema.maxLength : undefined}
+                        step={fieldSchema.type === "integer" ? "1" : undefined}
+                        className="w-full rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm text-neutral-900 dark:text-neutral-100"
+                        onChange={(event) => setFieldValue(name, event.target.value)}
+                      />
+                      {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -353,9 +415,7 @@ function getToolDisplayName(toolName: string): string {
     .join(" ");
 }
 
-function buildInitialElicitationValues(
-  schema?: ElicitationSchema,
-): Record<string, ElicitationDraftValue> {
+function buildInitialElicitationValues(schema?: ElicitationSchema): Record<string, ElicitationDraftValue> {
   if (!schema) {
     return {};
   }
@@ -371,10 +431,7 @@ function buildInitialElicitationValues(
       }
 
       if (isNumberSchema(fieldSchema)) {
-        return [
-          name,
-          fieldSchema.default !== undefined ? String(fieldSchema.default) : "",
-        ];
+        return [name, fieldSchema.default !== undefined ? String(fieldSchema.default) : ""];
       }
 
       return [name, fieldSchema.default ?? ""];
@@ -404,21 +461,13 @@ function validateElicitationForm(
         continue;
       }
 
-      if (
-        fieldSchema.minItems !== undefined &&
-        selected.length < fieldSchema.minItems
-      ) {
-        errors[name] =
-          `Select at least ${fieldSchema.minItems} option${fieldSchema.minItems === 1 ? "" : "s"}.`;
+      if (fieldSchema.minItems !== undefined && selected.length < fieldSchema.minItems) {
+        errors[name] = `Select at least ${fieldSchema.minItems} option${fieldSchema.minItems === 1 ? "" : "s"}.`;
         continue;
       }
 
-      if (
-        fieldSchema.maxItems !== undefined &&
-        selected.length > fieldSchema.maxItems
-      ) {
-        errors[name] =
-          `Select no more than ${fieldSchema.maxItems} option${fieldSchema.maxItems === 1 ? "" : "s"}.`;
+      if (fieldSchema.maxItems !== undefined && selected.length > fieldSchema.maxItems) {
+        errors[name] = `Select no more than ${fieldSchema.maxItems} option${fieldSchema.maxItems === 1 ? "" : "s"}.`;
         continue;
       }
 
@@ -456,21 +505,13 @@ function validateElicitationForm(
         continue;
       }
 
-      if (
-        fieldSchema.minimum !== undefined &&
-        numberValue < fieldSchema.minimum
-      ) {
-        errors[name] =
-          `Enter a value greater than or equal to ${fieldSchema.minimum}.`;
+      if (fieldSchema.minimum !== undefined && numberValue < fieldSchema.minimum) {
+        errors[name] = `Enter a value greater than or equal to ${fieldSchema.minimum}.`;
         continue;
       }
 
-      if (
-        fieldSchema.maximum !== undefined &&
-        numberValue > fieldSchema.maximum
-      ) {
-        errors[name] =
-          `Enter a value less than or equal to ${fieldSchema.maximum}.`;
+      if (fieldSchema.maximum !== undefined && numberValue > fieldSchema.maximum) {
+        errors[name] = `Enter a value less than or equal to ${fieldSchema.maximum}.`;
         continue;
       }
 
@@ -479,27 +520,17 @@ function validateElicitationForm(
     }
 
     if (isStringSchema(fieldSchema)) {
-      if (
-        fieldSchema.minLength !== undefined &&
-        stringValue.length < fieldSchema.minLength
-      ) {
+      if (fieldSchema.minLength !== undefined && stringValue.length < fieldSchema.minLength) {
         errors[name] = `Enter at least ${fieldSchema.minLength} characters.`;
         continue;
       }
 
-      if (
-        fieldSchema.maxLength !== undefined &&
-        stringValue.length > fieldSchema.maxLength
-      ) {
-        errors[name] =
-          `Enter no more than ${fieldSchema.maxLength} characters.`;
+      if (fieldSchema.maxLength !== undefined && stringValue.length > fieldSchema.maxLength) {
+        errors[name] = `Enter no more than ${fieldSchema.maxLength} characters.`;
         continue;
       }
 
-      if (
-        fieldSchema.format === "email" &&
-        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(stringValue)
-      ) {
+      if (fieldSchema.format === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(stringValue)) {
         errors[name] = "Enter a valid email address.";
         continue;
       }
@@ -555,41 +586,27 @@ function getInputType(schema: ElicitationPrimitiveSchema): string {
   }
 }
 
-function isNumberSchema(
-  schema: ElicitationPrimitiveSchema,
-): schema is ElicitationNumberSchema {
+function isNumberSchema(schema: ElicitationPrimitiveSchema): schema is ElicitationNumberSchema {
   return schema.type === "number" || schema.type === "integer";
 }
 
-function isBooleanSchema(
-  schema: ElicitationPrimitiveSchema,
-): schema is ElicitationBooleanSchema {
+function isBooleanSchema(schema: ElicitationPrimitiveSchema): schema is ElicitationBooleanSchema {
   return schema.type === "boolean";
 }
 
-function isMultiSelectSchema(
-  schema: ElicitationPrimitiveSchema,
-): schema is ElicitationMultiSelectSchema {
+function isMultiSelectSchema(schema: ElicitationPrimitiveSchema): schema is ElicitationMultiSelectSchema {
   return schema.type === "array";
 }
 
-function isSingleSelectSchema(
-  schema: ElicitationPrimitiveSchema,
-): schema is ElicitationSingleSelectSchema {
+function isSingleSelectSchema(schema: ElicitationPrimitiveSchema): schema is ElicitationSingleSelectSchema {
   return schema.type === "string" && ("enum" in schema || "oneOf" in schema);
 }
 
-function isStringSchema(
-  schema: ElicitationPrimitiveSchema,
-): schema is ElicitationStringSchema {
-  return (
-    schema.type === "string" && !("enum" in schema) && !("oneOf" in schema)
-  );
+function isStringSchema(schema: ElicitationPrimitiveSchema): schema is ElicitationStringSchema {
+  return schema.type === "string" && !("enum" in schema) && !("oneOf" in schema);
 }
 
-function getSingleSelectOptions(
-  schema: ElicitationSingleSelectSchema,
-): Array<{ value: string; label: string }> {
+function getSingleSelectOptions(schema: ElicitationSingleSelectSchema): Array<{ value: string; label: string }> {
   if (schema.oneOf) {
     return schema.oneOf.map((option) => ({
       value: option.const,
@@ -607,9 +624,7 @@ function getSingleSelectOptions(
   return [];
 }
 
-function getMultiSelectOptions(
-  schema: ElicitationMultiSelectSchema,
-): Array<{ value: string; label: string }> {
+function getMultiSelectOptions(schema: ElicitationMultiSelectSchema): Array<{ value: string; label: string }> {
   if (schema.items.anyOf) {
     return schema.items.anyOf.map((option) => ({
       value: option.const,

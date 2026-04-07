@@ -8,7 +8,7 @@ import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
 import type { Content, Message, Model, ToolContext } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
-import type { Elicitation, ElicitationResult, PendingElicitation } from "@/shared/types/elicitation";
+import type { Elicitation, ElicitationResult, PendingElicitation, UrlElicitation } from "@/shared/types/elicitation";
 import { useApp } from "@/shell/hooks/useApp";
 import type { ChatContextType } from "./ChatContext";
 import { ChatContext } from "./ChatContext";
@@ -44,6 +44,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
+  const elicitationCompleteCallbacksRef = useRef<Map<string, () => void>>(new Map());
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
   const pendingModelContextRef = useRef<Map<string, string | null>>(new Map());
 
@@ -199,6 +200,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   resolve,
                 });
               });
+            },
+            onElicitationComplete: (elicitationId: string) => {
+              const cb = elicitationCompleteCallbacksRef.current.get(elicitationId);
+              if (cb) {
+                elicitationCompleteCallbacksRef.current.delete(elicitationId);
+                cb();
+              }
             },
             render: async () => {
               console.log("[Render] Getting iframe for tool call:", currentToolCall.id, currentToolCall.name);
@@ -447,7 +455,34 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const resolveElicitation = useCallback(
     (result: ElicitationResult) => {
-      if (pendingElicitation) {
+      if (!pendingElicitation) return;
+
+      const elicitation = pendingElicitation.elicitation as UrlElicitation;
+      const isWaitingUrl = pendingElicitation.waiting && elicitation.mode === "url";
+
+      if (isWaitingUrl) {
+        // User cancelled while waiting — resolve the MCP promise now and clean up
+        pendingElicitation.resolve({ action: "cancel" });
+        elicitationCompleteCallbacksRef.current.delete(elicitation.elicitationId);
+        setPendingElicitation(null);
+        return;
+      }
+
+      if (elicitation.mode === "url" && result.action === "accept") {
+        const resolve = pendingElicitation.resolve;
+        setPendingElicitation((prev) => (prev ? { ...prev, waiting: true } : null));
+
+        if (elicitationCompleteCallbacksRef.current.size > 0) {
+          elicitationCompleteCallbacksRef.current.clear();
+        }
+        elicitationCompleteCallbacksRef.current.set(elicitation.elicitationId, () => {
+          resolve({ action: "accept" });
+          setPendingElicitation((prev) => (prev ? { ...prev, waiting: false, completed: true } : null));
+          window.setTimeout(() => {
+            setPendingElicitation(null);
+          }, 1500);
+        });
+      } else {
         pendingElicitation.resolve(result);
         setPendingElicitation(null);
       }

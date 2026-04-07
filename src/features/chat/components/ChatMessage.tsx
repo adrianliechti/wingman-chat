@@ -505,6 +505,8 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
                     key={`${toolCall.id || "tool"}-${index}`}
                     toolName={pendingElicitation.toolName}
                     elicitation={pendingElicitation.elicitation}
+                    waiting={pendingElicitation.waiting}
+                    completed={pendingElicitation.completed}
                     onResolve={resolveElicitation}
                   />
                 );
@@ -685,6 +687,8 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
                         <ChatMessageElicitation
                           toolName={pendingElicitation.toolName}
                           elicitation={pendingElicitation.elicitation}
+                          waiting={pendingElicitation.waiting}
+                          completed={pendingElicitation.completed}
                           onResolve={resolveElicitation}
                         />
                       </div>
