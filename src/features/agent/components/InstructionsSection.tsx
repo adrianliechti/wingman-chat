@@ -116,7 +116,7 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
                           onChange={(e) => setValue(e.target.value)}
                           onKeyDown={handleKeyDown}
                           rows={12}
-                          className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-y min-h-50 backdrop-blur-sm transition-colors"
+                          className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-y min-h-50 backdrop-blur-sm transition-colors"
                           placeholder="Enter instructions for this agent..."
                           autoFocus
                         />
@@ -153,7 +153,7 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
                         <button
                           type="button"
                           onClick={save}
-                          className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600/90 text-white hover:bg-blue-600 transition-colors"
+                          className="px-3 py-1.5 text-xs font-medium rounded-md bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 transition-colors"
                         >
                           Save
                         </button>

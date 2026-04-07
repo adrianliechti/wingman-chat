@@ -45,7 +45,7 @@ export function WizardNavFooter({
             type="button"
             onClick={onCreate}
             disabled={isCreating}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium rounded-md bg-blue-600/90 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium rounded-md bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isCreating ? "Creating…" : "Create Agent"}
           </button>

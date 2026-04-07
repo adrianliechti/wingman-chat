@@ -1,6 +1,10 @@
-import { useState, useRef, useEffect } from "react";
-import { FileText, X, Plus, Loader2, Upload } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { FileText, X, Plus, Loader2, Upload, HardDrive } from "lucide-react";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { getDriveContentUrl } from "@/shared/lib/drives";
+import { getConfig } from "@/shared/config";
 import type { Agent } from "@/features/agent/types/agent";
 import type { RepositoryFile } from "@/features/repository/types/repository";
 import { Section } from "./Section";
@@ -10,8 +14,14 @@ interface FilesSectionProps {
 }
 
 export function FilesSection({ agent }: FilesSectionProps) {
+  const config = getConfig();
   const { files, addFile, removeFile } = useAgentFiles(agent.id);
+  const acceptFilter = [
+    ...(config.text?.files ?? []),
+    ...(config.extractor?.files ?? []),
+  ].join(",");
   const [isDragOver, setIsDragOver] = useState(false);
+  const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -53,6 +63,19 @@ export function FilesSection({ agent }: FilesSectionProps) {
     e.target.value = "";
   };
 
+  const handleDriveFiles = useCallback(
+    async (selected: SelectedFile[]) => {
+      for (const f of selected) {
+        const url = getDriveContentUrl(f.driveId, f.path);
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        const file = new File([blob], f.name, { type: f.mime || blob.type || "" });
+        await addFile(file);
+      }
+    },
+    [addFile],
+  );
+
   return (
     <div
       className={`relative ${isDragOver ? "bg-slate-50/50 dark:bg-slate-900/50" : ""}`}
@@ -73,19 +96,57 @@ export function FilesSection({ agent }: FilesSectionProps) {
         isOpen={true}
         collapsible={false}
         headerAction={
-          <button
-            type="button"
-            onClick={() => document.getElementById(`agent-file-upload-${agent.id}`)?.click()}
-            className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-          >
-            <Upload size={12} /> Upload
-          </button>
+          config.drives.length > 0 ? (
+            <Menu>
+              <MenuButton className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
+                <Plus size={12} /> Add File
+              </MenuButton>
+              <MenuItems
+                modal={false}
+                transition
+                anchor="bottom end"
+                className="mt-1 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-40"
+              >
+                <MenuItem>
+                  <button
+                    type="button"
+                    onClick={() => document.getElementById(`agent-file-upload-${agent.id}`)?.click()}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                  >
+                    <Upload size={15} className="text-neutral-500" />
+                    Upload
+                  </button>
+                </MenuItem>
+                {config.drives.map((drive) => (
+                  <MenuItem key={drive.id}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveDrive(drive)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                    >
+                      <HardDrive size={15} className="text-neutral-500" />
+                      {drive.name}
+                    </button>
+                  </MenuItem>
+                ))}
+              </MenuItems>
+            </Menu>
+          ) : (
+            <button
+              type="button"
+              onClick={() => document.getElementById(`agent-file-upload-${agent.id}`)?.click()}
+              className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+            >
+              <Plus size={12} /> Add File
+            </button>
+          )
         }
       >
         <div className="space-y-2">
           <input
             type="file"
             multiple
+            accept={acceptFilter}
             onChange={handleFileSelect}
             className="hidden"
             id={`agent-file-upload-${agent.id}`}
@@ -141,6 +202,17 @@ export function FilesSection({ agent }: FilesSectionProps) {
           )}
         </div>
       </Section>
+
+      {activeDrive && (
+        <DrivePicker
+          isOpen={!!activeDrive}
+          onClose={() => setActiveDrive(null)}
+          drive={activeDrive}
+          onFilesSelected={handleDriveFiles}
+          multiple
+          accept={acceptFilter}
+        />
+      )}
     </div>
   );
 }

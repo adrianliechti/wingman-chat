@@ -104,7 +104,7 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
               onClick={() => setSearchOpen(!searchOpen)}
               className={`p-0.5 rounded transition-colors ${
                 searchOpen
-                  ? "text-blue-600 dark:text-blue-400"
+                  ? "text-neutral-800 dark:text-neutral-200"
                   : "text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300"
               }`}
               title="Search & add skills"
@@ -132,7 +132,7 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Filter skills…"
-                className="w-full pl-7 pr-7 py-1 text-xs rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
+                className="w-full pl-7 pr-7 py-1 text-xs rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
               />
               {search && (
                 <button

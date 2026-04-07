@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { X, ImagePlus, ArrowRight, Paintbrush, Sparkles } from "lucide-react";
+import { X, ImagePlus, ArrowRight, Paintbrush, Sparkles, HardDrive, Upload, Loader2 } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import type { Model } from "@/shared/types/chat";
 
@@ -11,6 +11,9 @@ interface RendererInputProps {
   referenceImages: { blob: Blob; dataUrl: string }[];
   onRemoveReferenceImage: (index: number) => void;
   onFileUploadClick: () => void;
+  drives?: { id: string; name: string; icon?: string }[];
+  onDriveSelect?: (drive: { id: string; name: string; icon?: string }) => void;
+  isLoadingFiles?: boolean;
   models: Model[];
   selectedModel: Model | null;
   onSelectModel: (model: Model) => void;
@@ -32,6 +35,9 @@ export function RendererInput({
   referenceImages,
   onRemoveReferenceImage,
   onFileUploadClick,
+  drives,
+  onDriveSelect,
+  isLoadingFiles,
   models,
   selectedModel,
   onSelectModel,
@@ -53,7 +59,7 @@ export function RendererInput({
       className={`flex flex-col rounded-2xl backdrop-blur-2xl shadow-2xl shadow-black/60 dark:shadow-black/80 border border-neutral-200/50 dark:border-neutral-900 bg-white/60 dark:bg-neutral-950/70 dark:ring-1 dark:ring-white/10 w-full max-w-2xl overflow-hidden ${className}`}
     >
       {/* Reference images above text (like chat attachments) */}
-      {referenceImages.length > 0 && (
+      {(referenceImages.length > 0 || isLoadingFiles) && (
         <div className="flex flex-wrap gap-2 px-3 pt-3">
           {referenceImages.map((img, index) => (
             <div
@@ -70,6 +76,11 @@ export function RendererInput({
               </button>
             </div>
           ))}
+          {isLoadingFiles && (
+            <div className="relative size-14 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm flex items-center justify-center animate-pulse">
+              <Loader2 size={16} className="animate-spin text-neutral-400 dark:text-neutral-500" />
+            </div>
+          )}
         </div>
       )}
 
@@ -183,14 +194,54 @@ export function RendererInput({
 
         <div className="flex items-center gap-1.5 shrink-0">
           {referenceImages.length < 4 && (
-            <button
-              type="button"
-              onClick={onFileUploadClick}
-              className="rounded-xl p-2 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors hover:bg-neutral-100/70 dark:hover:bg-white/5"
-              title="Add reference image"
-            >
-              <ImagePlus size={16} />
-            </button>
+            drives && drives.length > 0 && onDriveSelect ? (
+              <Menu>
+                <MenuButton
+                  className="rounded-xl p-2 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors hover:bg-neutral-100/70 dark:hover:bg-white/5"
+                  title="Add reference image"
+                >
+                  <ImagePlus size={16} />
+                </MenuButton>
+                <MenuItems
+                  modal={false}
+                  transition
+                  anchor="bottom end"
+                  className="mt-1 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-40"
+                >
+                  <MenuItem>
+                    <button
+                      type="button"
+                      onClick={onFileUploadClick}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                    >
+                      <Upload size={15} className="text-neutral-500" />
+                      Upload
+                    </button>
+                  </MenuItem>
+                  {drives.map((drive) => (
+                    <MenuItem key={drive.id}>
+                      <button
+                        type="button"
+                        onClick={() => onDriveSelect(drive)}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                      >
+                        <HardDrive size={15} className="text-neutral-500" />
+                        {drive.name}
+                      </button>
+                    </MenuItem>
+                  ))}
+                </MenuItems>
+              </Menu>
+            ) : (
+              <button
+                type="button"
+                onClick={onFileUploadClick}
+                className="rounded-xl p-2 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors hover:bg-neutral-100/70 dark:hover:bg-white/5"
+                title="Add reference image"
+              >
+                <ImagePlus size={16} />
+              </button>
+            )
           )}
 
           <button

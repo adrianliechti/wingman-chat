@@ -153,7 +153,7 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
+                      className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
                       placeholder="My MCP Server"
                     />
                   </div>
@@ -170,7 +170,7 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                       className={`w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border ${
                         urlError
                           ? "border-red-400/70 focus:ring-red-500/60"
-                          : "border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60"
+                          : "border-neutral-300/60 dark:border-neutral-700/60 focus:ring-neutral-500/60"
                       } focus:ring-2 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors`}
                       placeholder="https://example.com/mcp"
                     />
@@ -186,7 +186,7 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                     <textarea
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none transition-colors"
+                      className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none transition-colors"
                       rows={2}
                       placeholder="Describe what this bridge provides..."
                     />
@@ -201,7 +201,7 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                       <button
                         type="button"
                         onClick={handleAddHeader}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors"
+                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors"
                       >
                         <Plus size={12} />
                         Add Header
@@ -215,14 +215,14 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                               type="text"
                               value={header.key}
                               onChange={(e) => handleUpdateHeader(header.id, "key", e.target.value)}
-                              className="flex-1 px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
+                              className="flex-1 px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
                               placeholder="Header name"
                             />
                             <input
                               type="text"
                               value={header.value}
                               onChange={(e) => handleUpdateHeader(header.id, "value", e.target.value)}
-                              className="flex-1 px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
+                              className="flex-1 px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
                               placeholder="Header value"
                             />
                             <button
@@ -270,7 +270,7 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                       type="button"
                       onClick={handleSave}
                       disabled={!isValid}
-                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600/90 text-white hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
                       Save
                     </button>

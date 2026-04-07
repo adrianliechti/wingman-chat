@@ -71,7 +71,7 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
               <button
                 type="button"
                 onClick={() => dispatch({ type: "TOGGLE_TOOL", id: tool.id })}
-                className={`shrink-0 ${isEnabled ? "text-blue-600 dark:text-blue-400" : "text-neutral-400 dark:text-neutral-500"}`}
+                className={`shrink-0 ${isEnabled ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
               >
                 {isEnabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
               </button>

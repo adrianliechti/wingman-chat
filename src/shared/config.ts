@@ -102,6 +102,12 @@ interface ChatConfig {
   summarizer?: string;
 }
 
+interface DriveConfig {
+  id: string;
+  name: string;
+  icon?: string;
+}
+
 interface BridgeConfig {
   url?: string;
 }
@@ -114,6 +120,8 @@ interface ConfigSchema {
 
   tools: ToolConfig[];
   models: ModelConfig[];
+
+  drives?: DriveConfig[];
 
   backgrounds?: BackgroundPackConfig;
 
@@ -204,6 +212,8 @@ interface Config {
   mcps: MCP[];
   models: Model[];
 
+  drives: DriveConfig[];
+
   tts: TTSConfig | null;
   stt: STTConfig | null;
 
@@ -260,6 +270,8 @@ export const loadConfig = async (): Promise<Config | undefined> => {
         })) ?? [],
 
       models: cfg.models ?? [],
+
+      drives: cfg.drives ?? [],
 
       tts: cfg.tts ? { model: cfg.tts.model, voices: cfg.tts.voices ?? DEFAULT_TTS_VOICES } : null,
       stt: cfg.stt ?? null,

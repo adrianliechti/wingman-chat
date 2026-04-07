@@ -6,6 +6,13 @@ vars:
   REPOSITORY: ghcr.io/adrianliechti/wingman-chat
 
 tasks:
+  serve:
+    env:
+      PORT: "8080"
+      PREFIX: "/"
+    cmds:
+      - go run .
+
   run:
     cmds:
       - docker run -it --rm -p 8000:8000 -e WINGMAN_URL=http://host.docker.internal:8080 $(docker build -q .)

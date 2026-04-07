@@ -9,6 +9,8 @@ type Config struct {
 	Tools  []Tool  `json:"tools,omitempty" yaml:"tools,omitempty"`
 	Models []Model `json:"models,omitempty" yaml:"models,omitempty"`
 
+	Drives []Drive `json:"drives,omitempty" yaml:"drives,omitempty"`
+
 	TTS *TTS `json:"tts,omitempty" yaml:"tts,omitempty"`
 	STT *STT `json:"stt,omitempty" yaml:"stt,omitempty"`
 
@@ -142,4 +144,13 @@ type Background struct {
 
 type Bridge struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
+}
+
+type Drive struct {
+	ID   string `json:"id,omitempty" yaml:"id,omitempty"`
+	Type string `json:"-" yaml:"type,omitempty"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+	Path string `json:"-" yaml:"path,omitempty"`
+	URL  string `json:"-" yaml:"url,omitempty"`
+	Icon string `json:"icon,omitempty" yaml:"icon,omitempty"`
 }
