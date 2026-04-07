@@ -1,5 +1,6 @@
 import { Check, CheckCircle2, ExternalLink, Loader2, ShieldQuestion, X } from "lucide-react";
 import { useState } from "react";
+import { getToolDisplayName } from "@/shared/lib/utils";
 
 import type {
   Elicitation,
@@ -406,13 +407,6 @@ function FormElicitationView({
       </div>
     </div>
   );
-}
-
-function getToolDisplayName(toolName: string): string {
-  return toolName
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
 }
 
 function buildInitialElicitationValues(schema?: ElicitationSchema): Record<string, ElicitationDraftValue> {

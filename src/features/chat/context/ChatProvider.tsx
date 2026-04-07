@@ -8,7 +8,7 @@ import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
 import type { Content, Message, Model, ToolContext } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
-import type { Elicitation, ElicitationResult, PendingElicitation, UrlElicitation } from "@/shared/types/elicitation";
+import type { Elicitation, ElicitationResult, PendingElicitation } from "@/shared/types/elicitation";
 import { useApp } from "@/shell/hooks/useApp";
 import type { ChatContextType } from "./ChatContext";
 import { ChatContext } from "./ChatContext";
@@ -457,35 +457,37 @@ export function ChatProvider({ children }: ChatProviderProps) {
     (result: ElicitationResult) => {
       if (!pendingElicitation) return;
 
-      const elicitation = pendingElicitation.elicitation as UrlElicitation;
-      const isWaitingUrl = pendingElicitation.waiting && elicitation.mode === "url";
+      const elicitation = pendingElicitation.elicitation;
 
-      if (isWaitingUrl) {
-        // User cancelled while waiting — resolve the MCP promise now and clean up
-        pendingElicitation.resolve({ action: "cancel" });
-        elicitationCompleteCallbacksRef.current.delete(elicitation.elicitationId);
-        setPendingElicitation(null);
-        return;
-      }
-
-      if (elicitation.mode === "url" && result.action === "accept") {
-        const resolve = pendingElicitation.resolve;
-        setPendingElicitation((prev) => (prev ? { ...prev, waiting: true } : null));
-
-        if (elicitationCompleteCallbacksRef.current.size > 0) {
-          elicitationCompleteCallbacksRef.current.clear();
+      if (elicitation.mode === "url") {
+        if (pendingElicitation.waiting) {
+          // User cancelled while waiting — resolve the MCP promise now and clean up
+          pendingElicitation.resolve({ action: "cancel" });
+          elicitationCompleteCallbacksRef.current.delete(elicitation.elicitationId);
+          setPendingElicitation(null);
+          return;
         }
-        elicitationCompleteCallbacksRef.current.set(elicitation.elicitationId, () => {
-          resolve({ action: "accept" });
-          setPendingElicitation((prev) => (prev ? { ...prev, waiting: false, completed: true } : null));
-          window.setTimeout(() => {
-            setPendingElicitation(null);
-          }, 1500);
-        });
-      } else {
-        pendingElicitation.resolve(result);
-        setPendingElicitation(null);
+
+        if (result.action === "accept") {
+          const resolve = pendingElicitation.resolve;
+          setPendingElicitation((prev) => (prev ? { ...prev, waiting: true } : null));
+
+          if (elicitationCompleteCallbacksRef.current.size > 0) {
+            elicitationCompleteCallbacksRef.current.clear();
+          }
+          elicitationCompleteCallbacksRef.current.set(elicitation.elicitationId, () => {
+            resolve({ action: "accept" });
+            setPendingElicitation((prev) => (prev ? { ...prev, waiting: false, completed: true } : null));
+            window.setTimeout(() => {
+              setPendingElicitation(null);
+            }, 1500);
+          });
+          return;
+        }
       }
+
+      pendingElicitation.resolve(result);
+      setPendingElicitation(null);
     },
     [pendingElicitation],
   );

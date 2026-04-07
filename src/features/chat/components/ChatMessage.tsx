@@ -3,6 +3,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
 import { getConfig } from "@/shared/config";
+import { getToolDisplayName } from "@/shared/lib/utils";
 import type {
   AudioContent,
   Content,
@@ -22,14 +23,6 @@ import { PlayButton } from "@/shared/ui/PlayButton";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatMessageElicitation } from "./ChatMessageElicitation";
 import { InlineMcpApp } from "./InlineMcpApp";
-
-// Helper function to convert tool names to user-friendly display names
-function getToolDisplayName(toolName: string): string {
-  return toolName
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
 
 // Helper function to extract and format common parameters for tool calls
 function getToolCallPreview(_toolName: string, arguments_: string): string | null {

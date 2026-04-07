@@ -920,12 +920,17 @@ function serializeModelContextBlock(block: MCPContentBlock): string | null {
   return JSON.stringify(block);
 }
 
-function normalizeRequestedSchema(schema: {
-  $schema?: string;
-  type: "object";
-  properties: Record<string, unknown>;
-  required?: string[];
-}): ElicitationSchema {
+function normalizeRequestedSchema(
+  schema:
+    | {
+        $schema?: string;
+        type: "object";
+        properties: Record<string, unknown>;
+        required?: string[];
+      }
+    | undefined,
+): ElicitationSchema | undefined {
+  if (!schema) return undefined;
   return {
     $schema: schema.$schema,
     type: "object",
