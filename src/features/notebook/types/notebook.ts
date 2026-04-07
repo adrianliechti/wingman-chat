@@ -9,7 +9,7 @@ export interface Notebook {
 
 export interface NotebookSource {
   id: string;
-  type: "web" | "file";
+  type: "web" | "file" | "text";
   name: string;
   content: string;
   metadata?: {

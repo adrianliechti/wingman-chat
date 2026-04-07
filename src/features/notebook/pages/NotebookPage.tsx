@@ -45,6 +45,7 @@ export function NotebookPage() {
     scrapeWeb,
     addScrapeResult,
     addFileSource,
+    addTextSource,
     deleteSource,
     sendMessage,
     generateOutput,
@@ -198,6 +199,7 @@ export function NotebookPage() {
               scrapeWeb={scrapeWeb}
               addScrapeResult={addScrapeResult}
               onFileAdd={addFileSource}
+              onTextAdd={addTextSource}
               onDeleteSource={deleteSource}
             />
           )}

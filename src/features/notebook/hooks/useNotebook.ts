@@ -306,6 +306,24 @@ export function useNotebook(notebookId?: string) {
     [notebook, client],
   );
 
+  const addTextSource = useCallback(
+    async (name: string, text: string) => {
+      if (!notebook) return;
+
+      const source: NotebookSource = {
+        id: generateId(),
+        type: "text",
+        name: name || "Pasted text",
+        content: text,
+        addedAt: new Date().toISOString(),
+      };
+
+      await store.addSource(notebook.id, source);
+      setSources((prev) => [...prev, source]);
+    },
+    [notebook],
+  );
+
   const scrapeWeb = useCallback(
     async (url: string): Promise<string> => {
       setIsSearching(true);
@@ -718,6 +736,7 @@ export function useNotebook(notebookId?: string) {
     scrapeWeb,
     addScrapeResult,
     addFileSource,
+    addTextSource,
     deleteSource,
 
     sendMessage,

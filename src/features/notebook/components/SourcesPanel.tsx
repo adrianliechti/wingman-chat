@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, Fragment } from "react";
 import {
   Plus,
   Globe,
@@ -12,9 +12,15 @@ import {
   ArrowRight,
   ChevronDown,
   Link,
+  HardDrive,
+  Type,
 } from "lucide-react";
+import { Dialog, Transition } from "@headlessui/react";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { Markdown } from "@/shared/ui/Markdown";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { getDriveContentUrl } from "@/shared/lib/drives";
+import { getConfig } from "@/shared/config";
 import type { NotebookSource } from "../types/notebook";
 
 interface SourcesPanelProps {
@@ -25,6 +31,7 @@ interface SourcesPanelProps {
   scrapeWeb: (url: string) => Promise<string>;
   addScrapeResult: (url: string, content: string) => Promise<void>;
   onFileAdd: (file: File) => Promise<void>;
+  onTextAdd: (name: string, text: string) => Promise<void>;
   onDeleteSource: (sourceId: string) => void;
 }
 
@@ -36,13 +43,17 @@ export function SourcesPanel({
   scrapeWeb,
   addScrapeResult,
   onFileAdd,
+  onTextAdd,
   onDeleteSource,
 }: SourcesPanelProps) {
+  const config = getConfig();
   const [extracting, setExtracting] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showSearchOverlay, setShowSearchOverlay] = useState(false);
   const [showScrapeOverlay, setShowScrapeOverlay] = useState(false);
+  const [showTextOverlay, setShowTextOverlay] = useState(false);
+  const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -66,6 +77,20 @@ export function SourcesPanel({
       }
     },
     [onFileAdd],
+  );
+
+  const handleDriveFiles = useCallback(
+    async (files: SelectedFile[]) => {
+      for (const f of files) {
+        const url = getDriveContentUrl(f.driveId, f.path);
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const blob = await resp.blob();
+        const file = new File([blob], f.name, { type: f.mime || "" });
+        await handleFiles([file]);
+      }
+    },
+    [handleFiles],
   );
 
   const isDragging = useDropZone(containerRef, handleFiles);
@@ -127,8 +152,19 @@ export function SourcesPanel({
                 }}
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
               >
-                <File size={15} className="text-neutral-500" />
-                Files
+                <Upload size={15} className="text-neutral-500" />
+                File
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddMenu(false);
+                  setShowTextOverlay(true);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <Type size={15} className="text-neutral-500" />
+                Text
               </button>
               <button
                 type="button"
@@ -152,6 +188,20 @@ export function SourcesPanel({
                 <Globe size={15} className="text-neutral-500" />
                 Web Search
               </button>
+              {config.drives.map((drive) => (
+                <button
+                  key={drive.id}
+                  type="button"
+                  onClick={() => {
+                    setShowAddMenu(false);
+                    setActiveDrive(drive);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <HardDrive size={15} className="text-neutral-500" />
+                  {drive.name}
+                </button>
+              ))}
             </div>
           </>
         )}
@@ -172,10 +222,10 @@ export function SourcesPanel({
 
       {/* Drop zone overlay */}
       {isDragging && (
-        <div className="absolute inset-0 z-50 bg-blue-500/10 border-2 border-dashed border-blue-500 rounded-lg flex items-center justify-center backdrop-blur-sm">
+        <div className="absolute inset-0 z-50 bg-neutral-500/10 border-2 border-dashed border-neutral-400 dark:border-neutral-500 rounded-lg flex items-center justify-center backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2">
-            <Upload size={24} className="text-blue-500" />
-            <span className="text-sm font-medium text-blue-600 dark:text-blue-400">Drop files to add as sources</span>
+            <Upload size={24} className="text-neutral-500" />
+            <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400">Drop files to add as sources</span>
           </div>
         </div>
       )}
@@ -213,6 +263,32 @@ export function SourcesPanel({
             }
           }}
           onClose={() => setShowScrapeOverlay(false)}
+        />
+      )}
+
+      {/* Text Input Overlay */}
+      {showTextOverlay && (
+        <TextInputOverlay
+          onAdd={async (name, text) => {
+            setError(null);
+            try {
+              await onTextAdd(name, text);
+              setShowTextOverlay(false);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Failed to add text");
+            }
+          }}
+          onClose={() => setShowTextOverlay(false)}
+        />
+      )}
+
+      {/* Drive Picker */}
+      {activeDrive && (
+        <DrivePicker
+          isOpen={!!activeDrive}
+          onClose={() => setActiveDrive(null)}
+          drive={activeDrive}
+          onFilesSelected={handleDriveFiles}
         />
       )}
     </div>
@@ -525,6 +601,97 @@ function WebScrapeOverlay({
   );
 }
 
+// ── Text Input Overlay ──────────────────────────────────────────────────
+
+function TextInputOverlay({
+  onAdd,
+  onClose,
+}: {
+  onAdd: (name: string, text: string) => void;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState("");
+
+  return (
+    <Transition appear show as={Fragment}>
+      <Dialog as="div" className="relative z-80" onClose={onClose}>
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black/40 dark:bg-black/60" />
+        </Transition.Child>
+
+        <div className="fixed inset-0 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className="w-full max-w-lg rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl border border-neutral-200/50 dark:border-neutral-700/50 transition-all">
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
+                  <Dialog.Title className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                    Text Input
+                  </Dialog.Title>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                {/* Content */}
+                <div className="px-5 py-3.5">
+                  <textarea
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    placeholder="Paste or type text here..."
+                    rows={10}
+                    autoFocus
+                    className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-y transition-colors"
+                  />
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-end gap-2.5 px-5 py-3 border-t border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/30 rounded-b-xl">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onAdd("Pasted text", text.trim())}
+                    disabled={!text.trim()}
+                    className="px-3 py-1.5 text-xs font-medium rounded-md bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Add
+                  </button>
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </div>
+      </Dialog>
+    </Transition>
+  );
+}
+
 // ── Source Item ─────────────────────────────────────────────────────────
 
 function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: () => void }) {
@@ -544,6 +711,8 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
         <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
           {source.type === "web" ? (
             <Globe size={12} className="text-neutral-500" />
+          ) : source.type === "text" ? (
+            <Type size={12} className="text-neutral-500" />
           ) : (
             <FileText size={12} className="text-neutral-500" />
           )}
