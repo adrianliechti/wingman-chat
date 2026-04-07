@@ -7,19 +7,21 @@ import (
 )
 
 type Handler struct {
-	token string
-	url   *url.URL
+	prefix string
+	token  string
+	url    *url.URL
 }
 
-func New(token string, url *url.URL) *Handler {
+func New(prefix, token string, url *url.URL) *Handler {
 	return &Handler{
-		token: token,
-		url:   url,
+		prefix: prefix,
+		token:  token,
+		url:    url,
 	}
 }
 
 func (h *Handler) Attach(mux *http.ServeMux) {
-	mux.Handle("/api/", http.StripPrefix("/api", &httputil.ReverseProxy{
+	mux.Handle(h.prefix+"/", http.StripPrefix(h.prefix, &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(h.url)
 
