@@ -48,7 +48,7 @@ export function ReviewStep({
           <select
             value={model || models[0]?.id || ""}
             onChange={(e) => dispatch({ type: "SET_MODEL", id: e.target.value })}
-            className="w-full appearance-none rounded-lg bg-white/40 dark:bg-neutral-900/60 py-2 pl-3 pr-8 text-sm text-neutral-900 dark:text-neutral-100 border border-neutral-200/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 hover:border-neutral-300/80 dark:hover:border-neutral-600/80 transition-colors backdrop-blur-lg cursor-pointer"
+            className="w-full appearance-none rounded-lg bg-white/40 dark:bg-neutral-900/60 py-2 pl-3 pr-8 text-sm text-neutral-900 dark:text-neutral-100 border border-neutral-200/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 hover:border-neutral-300/80 dark:hover:border-neutral-600/80 transition-colors backdrop-blur-lg cursor-pointer"
           >
             {models.map((m) => (
               <option key={m.id} value={m.id}>
@@ -84,7 +84,7 @@ export function ReviewStep({
               {selectedSkills.map((s) => (
                 <span
                   key={s}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-neutral-100 dark:bg-neutral-800/40 text-neutral-700 dark:text-neutral-300"
                 >
                   <Zap size={8} /> {s}
                 </span>
@@ -152,7 +152,7 @@ export function ReviewStep({
           <button
             type="button"
             onClick={() => dispatch({ type: "SET_MEMORY", enabled: !memory })}
-            className={`shrink-0 ${memory ? "text-blue-600 dark:text-blue-400" : "text-neutral-400 dark:text-neutral-500"}`}
+            className={`shrink-0 ${memory ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
           >
             {memory ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
           </button>

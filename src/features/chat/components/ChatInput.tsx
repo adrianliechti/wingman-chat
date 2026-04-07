@@ -1020,6 +1020,11 @@ export function ChatInput() {
         onClose={() => setActiveDrive(null)}
         drive={activeDrive}
         onFilesSelected={handleDriveFiles}
+        accept={[
+          ...(config.text?.files ?? []),
+          ...(config.vision?.files ?? []),
+          ...(config.extractor?.files ?? []),
+        ].join(",")}
       />
     )}
     </>
