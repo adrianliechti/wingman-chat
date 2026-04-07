@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
@@ -6,16 +6,9 @@ import { useChats } from "@/features/chat/hooks/useChats";
 import { useModels } from "@/features/chat/hooks/useModels";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
-import type {
-  Content,
-  Elicitation,
-  ElicitationResult,
-  Message,
-  Model,
-  PendingElicitation,
-  ToolContext,
-} from "@/shared/types/chat";
+import type { Content, Message, Model, ToolContext } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
+import type { Elicitation, ElicitationResult, PendingElicitation } from "@/shared/types/elicitation";
 import { useApp } from "@/shell/hooks/useApp";
 import type { ChatContextType } from "./ChatContext";
 import { ChatContext } from "./ChatContext";

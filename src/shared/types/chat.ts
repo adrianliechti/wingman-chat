@@ -1,3 +1,5 @@
+import type { Elicitation, ElicitationResult } from "./elicitation.ts";
+
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
 export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "synthesizer" | "transcriber";
@@ -66,21 +68,6 @@ export type Tool = {
     args: Record<string, unknown>,
     context?: ToolContext,
   ) => Promise<(TextContent | ImageContent | AudioContent | FileContent)[]>;
-};
-
-export type Elicitation = {
-  message: string;
-};
-
-export type ElicitationResult = {
-  action: "accept" | "decline" | "cancel";
-};
-
-export type PendingElicitation = {
-  toolCallId: string;
-  toolName: string;
-  elicitation: Elicitation;
-  resolve: (result: ElicitationResult) => void;
 };
 
 export interface RenderedAppHandle {
