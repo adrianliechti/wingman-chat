@@ -1,8 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { getConfig } from "@/shared/config";
 import { resizeImageBlob, readAsDataURL, decodeDataURL } from "@/shared/lib/utils";
-import { X, ImagePlus, Download, PlusIcon, Info, Loader2, HardDrive } from "lucide-react";
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { X, ImagePlus, Download, PlusIcon, Info, Loader2 } from "lucide-react";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import DOMPurify from "dompurify";

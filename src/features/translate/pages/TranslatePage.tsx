@@ -353,7 +353,7 @@ export function TranslatePage() {
 
                   {/* File name */}
                   <span className="text-base font-medium text-neutral-800 dark:text-neutral-200 text-center max-w-[280px] truncate">
-                    {translatedFileName || getCandidateFileName() || selectedFile.name}
+                    {translatedFileName || getCandidateFileName() || selectedFile?.name}
                   </span>
 
                   {/* Status text */}
