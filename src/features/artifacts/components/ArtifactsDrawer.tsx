@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { File as FileIcon2, Code, Eye, Play, Loader2, TerminalSquare, Upload, Download } from "lucide-react";
+import { File as FileIcon2, Code, Eye, Play, Loader2, TerminalSquare, Upload, Download, HardDrive } from "lucide-react";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { getDriveContentUrl } from "@/shared/lib/drives";
+import { getConfig } from "@/shared/config";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { HtmlEditor } from "@/shared/ui/editors/HtmlEditor";
@@ -20,10 +24,12 @@ import { markdownToDocx } from "@/shared/lib/markdownToDocx";
 import type { File, FileEntry } from "@/features/artifacts/types/file";
 
 export function ArtifactsDrawer() {
+  const config = getConfig();
   const { fs, activeFile, openFile } = useArtifacts();
   const { chat, createChat } = useChat();
 
   const [isDragOver, setIsDragOver] = useState(false);
+  const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
   const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
   const [isRunning, setIsRunning] = useState(false);
   const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
@@ -57,6 +63,50 @@ export function ArtifactsDrawer() {
       }
     }
   }, [chat, createChat, fs]);
+
+  const uploadFiles = useCallback(
+    async (fileList: globalThis.File[]) => {
+      await ensureFs();
+      setIsProcessing(true);
+      try {
+        for (const file of fileList) {
+          try {
+            const processedFiles = await processUploadedFile(file);
+            for (const processed of processedFiles) {
+              if (fs?.isReady) {
+                await fs.createFile(processed.path, processed.content, processed.contentType);
+                openFile(processed.path);
+              }
+            }
+          } catch (error) {
+            console.error(`Error uploading file ${file.name}:`, error);
+          }
+        }
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [ensureFs, fs, openFile],
+  );
+
+  const handleDriveFiles = useCallback(
+    async (selected: SelectedFile[]) => {
+      setIsProcessing(true);
+      try {
+        const fetched: globalThis.File[] = [];
+        for (const f of selected) {
+          const url = getDriveContentUrl(f.driveId, f.path);
+          const resp = await fetch(url);
+          const blob = await resp.blob();
+          fetched.push(new globalThis.File([blob], f.name, { type: f.mime || blob.type || "" }));
+        }
+        await uploadFiles(fetched);
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [uploadFiles],
+  );
 
   // Toggle terminal panel (auto-creates chat if needed)
   const toggleTerminal = useCallback(async () => {
@@ -420,11 +470,11 @@ export function ArtifactsDrawer() {
     >
       {/* Drag overlay */}
       {isDragOver && (
-        <div className="absolute inset-0 bg-blue-500/10 border-2 border-dashed border-blue-500 flex items-center justify-center z-50 backdrop-blur-sm">
+        <div className="absolute inset-0 bg-neutral-500/10 border-2 border-dashed border-neutral-400 dark:border-neutral-500 flex items-center justify-center z-50 backdrop-blur-sm">
           <div className="text-center">
-            <FileIcon2 size={48} className="text-blue-500 mx-auto mb-3" />
-            <p className="text-lg font-medium text-blue-700 dark:text-blue-300 mb-1">Drop files here</p>
-            <p className="text-sm text-blue-600 dark:text-blue-400">Files will be added to the project</p>
+            <FileIcon2 size={48} className="text-neutral-500 mx-auto mb-3" />
+            <p className="text-lg font-medium text-neutral-700 dark:text-neutral-300 mb-1">Drop files here</p>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">Files will be added to the project</p>
           </div>
         </div>
       )}
@@ -438,26 +488,8 @@ export function ArtifactsDrawer() {
         onChange={async (e) => {
           if (!e.target.files || e.target.files.length === 0) return;
           const selectedFiles = Array.from(e.target.files);
-          e.target.value = ""; // Reset to allow re-uploading same file
-          await ensureFs();
-          setIsProcessing(true);
-          try {
-            for (const file of selectedFiles) {
-              try {
-                const processedFiles = await processUploadedFile(file);
-                for (const processed of processedFiles) {
-                  if (fs?.isReady) {
-                    await fs.createFile(processed.path, processed.content, processed.contentType);
-                    openFile(processed.path);
-                  }
-                }
-              } catch (error) {
-                console.error(`Error uploading file ${file.name}:`, error);
-              }
-            }
-          } finally {
-            setIsProcessing(false);
-          }
+          e.target.value = "";
+          await uploadFiles(selectedFiles);
         }}
       />
 
@@ -559,15 +591,58 @@ export function ArtifactsDrawer() {
           </button>
 
           {/* Upload button — always visible */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isProcessing}
-            className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-            title={isProcessing ? "Processing files..." : "Upload files"}
-          >
-            {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-          </button>
+          {isProcessing ? (
+            <div className="p-2">
+              <Loader2 size={16} className="animate-spin text-neutral-400" />
+            </div>
+          ) : config.drives.length > 0 ? (
+            <Menu>
+              <MenuButton
+                className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                title="Upload files"
+              >
+                <Upload size={16} />
+              </MenuButton>
+              <MenuItems
+                modal={false}
+                transition
+                anchor="bottom end"
+                className="mt-1 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-40"
+              >
+                <MenuItem>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                  >
+                    <Upload size={15} className="text-neutral-500" />
+                    Upload
+                  </button>
+                </MenuItem>
+                {config.drives.map((drive) => (
+                  <MenuItem key={drive.id}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveDrive(drive)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                    >
+                      <HardDrive size={15} className="text-neutral-500" />
+                      {drive.name}
+                    </button>
+                  </MenuItem>
+                ))}
+              </MenuItems>
+            </Menu>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+              title="Upload files"
+            >
+              <Upload size={16} />
+            </button>
+          )}
 
           {/* Download button — only when files exist */}
           {files.length > 0 && fs && (
@@ -595,6 +670,15 @@ export function ArtifactsDrawer() {
         <div className={`shrink-0 border-t border-black/10 dark:border-white/10 ${showTerminal ? "h-1/3" : "hidden"}`}>
           <BashEditor key="terminal" visible={showTerminal} />
         </div>
+      )}
+      {activeDrive && (
+        <DrivePicker
+          isOpen={!!activeDrive}
+          onClose={() => setActiveDrive(null)}
+          drive={activeDrive}
+          onFilesSelected={handleDriveFiles}
+          multiple
+        />
       )}
     </div>
   );

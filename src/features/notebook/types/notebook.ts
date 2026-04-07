@@ -3,6 +3,7 @@ import type { Message } from "@/shared/types/chat";
 export interface Notebook {
   id: string;
   title: string;
+  customTitle?: string;
   createdAt: string;
   updatedAt: string;
 }

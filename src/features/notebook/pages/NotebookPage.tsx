@@ -105,6 +105,18 @@ export function NotebookPage() {
     [notebookId, loadNotebooks, initNotebook, navigate],
   );
 
+  // Rename notebook
+  const handleRename = useCallback(
+    async (id: string, customTitle: string | undefined) => {
+      const nb = await store.getNotebook(id);
+      if (!nb) return;
+      const updated = { ...nb, customTitle, updatedAt: new Date().toISOString() };
+      await store.saveNotebook(updated);
+      setNotebooks((prev) => prev.map((n) => (n.id === id ? { ...n, customTitle, updatedAt: updated.updatedAt } : n)));
+    },
+    [],
+  );
+
   // Select notebook
   const handleSelect = useCallback(
     (id: string) => {
@@ -148,10 +160,11 @@ export function NotebookPage() {
         activeId={notebookId}
         onSelect={handleSelect}
         onDelete={handleDelete}
+        onRename={handleRename}
         onNew={handleNew}
       />
     );
-  }, [notebooks, notebookId, handleSelect, handleDelete, handleNew, loaded]);
+  }, [notebooks, notebookId, handleSelect, handleDelete, handleRename, handleNew, loaded]);
 
   useEffect(() => {
     setSidebarContent(sidebarContent);
