@@ -62,15 +62,6 @@ function UrlElicitationView({
   completed?: boolean;
   onResolve: (result: ElicitationResult) => void;
 }) {
-  let parsedUrl: URL | null = null;
-  try {
-    parsedUrl = new URL(elicitation.url);
-  } catch {
-    // invalid URL — still show it, user can decline
-  }
-
-  const domain = parsedUrl ? parsedUrl.host : null;
-
   const handleOpen = () => {
     window.open(elicitation.url, "_blank", "noopener,noreferrer");
     onResolve({ action: "accept" });
@@ -142,9 +133,8 @@ function UrlElicitationView({
           <div className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap">
             {elicitation.message}
           </div>
-          <div className="rounded border border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-950/30 p-2 space-y-1">
-            {domain && <div className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">{domain}</div>}
-            <div className="text-xs text-neutral-500 dark:text-neutral-400 break-all">{elicitation.url}</div>
+          <div className="text-xs font-semibold text-neutral-700 dark:text-neutral-200 break-all">
+            {elicitation.url}
           </div>
           {renderActions()}
         </div>
