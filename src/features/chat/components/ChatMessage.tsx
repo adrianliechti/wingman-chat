@@ -1,12 +1,12 @@
-import { AlertCircle, Check, ChevronRight, Loader2, Pencil, ShieldQuestion, X } from "lucide-react";
+import { AlertCircle, Check, ChevronRight, Loader2, Pencil, X } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
 import { getConfig } from "@/shared/config";
+import { getToolDisplayName } from "@/shared/lib/utils";
 import type {
   AudioContent,
   Content,
-  ElicitationResult,
   FileContent,
   ImageContent,
   Message,
@@ -21,15 +21,8 @@ import { CopyButton } from "@/shared/ui/CopyButton";
 import { Markdown } from "@/shared/ui/Markdown";
 import { PlayButton } from "@/shared/ui/PlayButton";
 import { ChatInputAttachments } from "./ChatInputAttachments";
+import { ChatMessageElicitation } from "./ChatMessageElicitation";
 import { InlineMcpApp } from "./InlineMcpApp";
-
-// Helper function to convert tool names to user-friendly display names
-function getToolDisplayName(toolName: string): string {
-  return toolName
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
 
 // Helper function to extract and format common parameters for tool calls
 function getToolCallPreview(_toolName: string, arguments_: string): string | null {
@@ -144,53 +137,6 @@ function ErrorMessage({ title, message }: { title: string; message: string }) {
               <h4 className="font-medium text-red-800 dark:text-red-200 mb-1">{displayTitle}</h4>
               <p className="text-sm text-red-700 dark:text-red-300 leading-relaxed">{displayMessage}</p>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Elicitation prompt component for tool approval/denial
-type ElicitationPromptProps = {
-  toolName: string;
-  message: string;
-  onResolve: (result: ElicitationResult) => void;
-};
-
-function ElicitationPrompt({ toolName, message, onResolve }: ElicitationPromptProps) {
-  return (
-    <div className="rounded-lg overflow-hidden max-w-full">
-      <div className="flex items-start gap-2 min-w-0">
-        <ShieldQuestion className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <div className="mb-1">
-            <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-              {getToolDisplayName(toolName)}
-            </span>
-            <div className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">{message}</div>
-          </div>
-          <div className="flex items-center gap-2 mt-2">
-            <button
-              onClick={() => onResolve({ action: "accept" })}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-300 transition-colors"
-            >
-              <Check className="w-3 h-3" />
-              Approve
-            </button>
-            <button
-              onClick={() => onResolve({ action: "decline" })}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-300 transition-colors"
-            >
-              <X className="w-3 h-3" />
-              Deny
-            </button>
-            <button
-              onClick={() => onResolve({ action: "cancel" })}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
-            >
-              Cancel
-            </button>
           </div>
         </div>
       </div>
@@ -548,10 +494,12 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
               // Show elicitation prompt if this tool call has a pending elicitation
               if (isPendingElicitation) {
                 return (
-                  <ElicitationPrompt
+                  <ChatMessageElicitation
                     key={`${toolCall.id || "tool"}-${index}`}
                     toolName={pendingElicitation.toolName}
-                    message={pendingElicitation.elicitation.message}
+                    elicitation={pendingElicitation.elicitation}
+                    waiting={pendingElicitation.waiting}
+                    completed={pendingElicitation.completed}
                     onResolve={resolveElicitation}
                   />
                 );
@@ -724,6 +672,22 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
                   );
                 }
                 if (part.type === "tool_call") {
+                  const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === part.id;
+
+                  if (isPendingElicitation) {
+                    return (
+                      <div key={index} className="my-2 rounded-lg overflow-hidden max-w-full">
+                        <ChatMessageElicitation
+                          toolName={pendingElicitation.toolName}
+                          elicitation={pendingElicitation.elicitation}
+                          waiting={pendingElicitation.waiting}
+                          completed={pendingElicitation.completed}
+                          onResolve={resolveElicitation}
+                        />
+                      </div>
+                    );
+                  }
+
                   // Tool calls shown inline only when streaming
                   if (!props.isLast || !isResponding) return null;
                   const preview = getToolCallPreview(part.name, part.arguments);

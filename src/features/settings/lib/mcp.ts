@@ -16,11 +16,18 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport as ClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type {
   CallToolResult,
+  ElicitResult,
   ContentBlock as MCPContentBlock,
   ResourceContents as MCPResourceContents,
   Tool as MCPTool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
+import {
+  ElicitationCompleteNotificationSchema,
+  ElicitRequestSchema,
+  ErrorCode,
+  McpError,
+  ToolListChangedNotificationSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import { traceMCP } from "@/shared/lib/otel";
 import {
   type AudioContent,
@@ -33,6 +40,7 @@ import {
   type ToolContext,
   type ToolProvider,
 } from "@/shared/types/chat";
+import type { ElicitationSchema } from "@/shared/types/elicitation";
 import { BrowserOAuthClientProvider } from "./mcpAuth";
 
 export type { McpUiDisplayMode };
@@ -71,6 +79,7 @@ export class MCPClient implements ToolProvider {
   private client: Client | null = null;
   private activeBridge: AppBridge | null = null;
   private authProvider: BrowserOAuthClientProvider;
+  private activeToolContext: ToolContext | null = null;
 
   private pingInterval: ReturnType<typeof setInterval> | undefined;
 
@@ -86,6 +95,8 @@ export class MCPClient implements ToolProvider {
   onAuthComplete: (() => void) | null = null;
   /** Called when the server notifies that its tool list has changed and tools have been reloaded */
   onToolsChanged: (() => void) | null = null;
+  /** Called when the server notifies that an out-of-band URL elicitation has completed */
+  onElicitationComplete: ((elicitationId: string) => void) | null = null;
 
   constructor(
     id: string,
@@ -125,12 +136,49 @@ export class MCPClient implements ToolProvider {
 
     const client = new Client(HOST_INFO, {
       capabilities: {
+        elicitation: {
+          form: {},
+          url: {},
+        },
         extensions: {
           [MCP_UI_EXTENSION]: {
             mimeTypes: [RESOURCE_MIME_TYPE],
           },
         },
       } as never,
+    });
+
+    client.setRequestHandler(ElicitRequestSchema, async (request): Promise<ElicitResult> => {
+      if (!this.activeToolContext?.elicit) {
+        throw new McpError(ErrorCode.InvalidRequest, "No active tool context available for elicitation");
+      }
+
+      if (request.params.mode === "url") {
+        const result = await this.activeToolContext.elicit({
+          mode: "url",
+          message: request.params.message,
+          url: request.params.url,
+          elicitationId: request.params.elicitationId,
+        });
+
+        return { action: result.action };
+      }
+
+      const requestedSchema = normalizeRequestedSchema(request.params.requestedSchema);
+
+      const result = await this.activeToolContext.elicit({
+        message: request.params.message,
+        requestedSchema,
+      });
+
+      if (result.action !== "accept") {
+        return { action: result.action };
+      }
+
+      return {
+        action: "accept",
+        ...(result.content ? { content: result.content } : {}),
+      };
     });
 
     // Setup error and close handlers
@@ -186,6 +234,13 @@ export class MCPClient implements ToolProvider {
         await this.loadToolsAndInstructions();
       });
     }
+
+    // Register elicitation complete notification handler
+    this.client.setNotificationHandler(ElicitationCompleteNotificationSchema, (notification) => {
+      const { elicitationId } = notification.params;
+      this.onElicitationComplete?.(elicitationId);
+      this.activeToolContext?.onElicitationComplete?.(elicitationId);
+    });
 
     this.startPing();
   }
@@ -271,36 +326,51 @@ export class MCPClient implements ToolProvider {
                 throw new Error("MCP client not connected");
               }
 
-              return traceMCP("tools/call", tool.name, { toolName: tool.name, serverAddress: this.url }, async () => {
-                const result = await this.client!.callTool({
-                  name: tool.name,
-                  arguments: args,
-                });
+              this.activeToolContext = context ?? null;
 
-                // Handle both current and compatibility result formats
-                // Compatibility format has toolResult field, current has content field
-                const normalizedResult: CallToolResult =
-                  "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
+              try {
+                return await traceMCP(
+                  "tools/call",
+                  tool.name,
+                  { toolName: tool.name, serverAddress: this.url },
+                  async () => {
+                    const result = await this.client!.callTool({
+                      name: tool.name,
+                      arguments: args,
+                    });
 
-                const resource = this.uiResources.get(tool.name);
+                    // Handle both current and compatibility result formats
+                    // Compatibility format has toolResult field, current has content field
+                    const normalizedResult: CallToolResult =
+                      "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
 
-                if (resource && context?.setMeta) {
-                  // Don't render the UI here — InlineMcpApp handles rendering via
-                  // restoreToolUI with the correct display mode and target iframe.
-                  // We only persist the metadata so InlineMcpApp knows what to render.
-                  const toolUiMeta = tool._meta?.ui as
-                    | { defaultDisplayMode?: string; availableDisplayModes?: string[] }
-                    | undefined;
-                  context.setMeta?.({
-                    toolProvider: this.id,
-                    toolResource: resource.uri,
-                    ...(toolUiMeta?.defaultDisplayMode ? { defaultDisplayMode: toolUiMeta.defaultDisplayMode } : {}),
-                    ...(toolUiMeta?.availableDisplayModes ? { appDisplayModes: toolUiMeta.availableDisplayModes } : {}),
-                  });
-                }
+                    const resource = this.uiResources.get(tool.name);
 
-                return processContent(normalizedResult.content as MCPContentBlock[]);
-              });
+                    if (resource && context?.setMeta) {
+                      // Don't render the UI here — InlineMcpApp handles rendering via
+                      // restoreToolUI with the correct display mode and target iframe.
+                      // We only persist the metadata so InlineMcpApp knows what to render.
+                      const toolUiMeta = tool._meta?.ui as
+                        | { defaultDisplayMode?: string; availableDisplayModes?: string[] }
+                        | undefined;
+                      context.setMeta?.({
+                        toolProvider: this.id,
+                        toolResource: resource.uri,
+                        ...(toolUiMeta?.defaultDisplayMode
+                          ? { defaultDisplayMode: toolUiMeta.defaultDisplayMode }
+                          : {}),
+                        ...(toolUiMeta?.availableDisplayModes
+                          ? { appDisplayModes: toolUiMeta.availableDisplayModes }
+                          : {}),
+                      });
+                    }
+
+                    return processContent(normalizedResult.content as MCPContentBlock[]);
+                  },
+                );
+              } finally {
+                this.activeToolContext = null;
+              }
             },
           };
         });
@@ -848,4 +918,23 @@ function serializeModelContextBlock(block: MCPContentBlock): string | null {
   }
 
   return JSON.stringify(block);
+}
+
+function normalizeRequestedSchema(
+  schema:
+    | {
+        $schema?: string;
+        type: "object";
+        properties: Record<string, unknown>;
+        required?: string[];
+      }
+    | undefined,
+): ElicitationSchema | undefined {
+  if (!schema) return undefined;
+  return {
+    $schema: schema.$schema,
+    type: "object",
+    properties: schema.properties as ElicitationSchema["properties"],
+    required: schema.required,
+  };
 }
