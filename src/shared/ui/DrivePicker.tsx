@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { X, Folder, File, ChevronRight, Loader2, FolderOpen, Square, SquareCheckBig } from "lucide-react";
 import { formatBytes, lookupContentType } from "@/shared/lib/utils";
-import { listDriveEntries, type DriveEntry } from "@/shared/lib/drives";
+import { listDriveEntries, getDriveInsights, type DriveEntry, type InsightCategory } from "@/shared/lib/drives";
 
 interface DriveConfig {
   id: string;
@@ -212,6 +212,9 @@ export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, m
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectedEntries, setSelectedEntries] = useState<Map<string, DriveEntry>>(new Map());
+  const [insights, setInsights] = useState<InsightCategory[]>([]);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<string | null>(null);
 
   const loadRoot = useCallback(async () => {
     setLoading(true);
@@ -230,9 +233,16 @@ export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, m
     if (isOpen) {
       setSelected(new Set());
       setSelectedEntries(new Map());
+      setInsights([]);
+      setActiveTab(null);
       loadRoot();
+      setInsightsLoading(true);
+      getDriveInsights(drive.id)
+        .then(setInsights)
+        .catch(() => {})
+        .finally(() => setInsightsLoading(false));
     }
-  }, [isOpen, loadRoot]);
+  }, [isOpen, loadRoot, drive.id]);
 
   const handleToggleSelect = useCallback((entry: DriveEntry) => {
     setSelected((prev) => {
@@ -300,44 +310,121 @@ export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, m
             >
               <Dialog.Panel className="w-full max-w-lg transform overflow-hidden rounded-xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl border border-neutral-200/50 dark:border-neutral-700/50 transition-all flex flex-col max-h-[80vh]">
                 {/* Header */}
-                <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60 shrink-0">
-                  <div className="flex items-center gap-2">
-                    <FolderOpen size={16} className="text-neutral-500 dark:text-neutral-400" />
-                    <Dialog.Title className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                      {drive.name}
-                    </Dialog.Title>
-                  </div>
+                <div className="flex items-center gap-3 px-4 py-2.5 border-b border-neutral-200/60 dark:border-neutral-800/60 shrink-0">
+                  <Dialog.Title className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 shrink-0">
+                    {drive.name}
+                  </Dialog.Title>
+
+                  {/* Tabs */}
+                  {(insights.length > 0 || insightsLoading) && (
+                    <div className="flex items-center gap-0.5 overflow-x-auto">
+                      <button
+                        type="button"
+                        className={`px-2 py-0.5 text-[11px] font-medium rounded whitespace-nowrap transition-colors ${
+                          activeTab === null
+                            ? "bg-neutral-200/80 dark:bg-neutral-700/80 text-neutral-900 dark:text-neutral-100"
+                            : "text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300"
+                        }`}
+                        onClick={() => setActiveTab(null)}
+                      >
+                        Browse
+                      </button>
+                      {insightsLoading && (
+                        <Loader2 size={10} className="animate-spin text-neutral-300 dark:text-neutral-600 mx-1" />
+                      )}
+                      {insights.map((cat) => (
+                        <button
+                          key={cat.label}
+                          type="button"
+                          className={`px-2 py-0.5 text-[11px] font-medium rounded whitespace-nowrap transition-colors ${
+                            activeTab === cat.label
+                              ? "bg-neutral-200/80 dark:bg-neutral-700/80 text-neutral-900 dark:text-neutral-100"
+                              : "text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300"
+                          }`}
+                          onClick={() => setActiveTab(cat.label)}
+                        >
+                          {cat.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex-1" />
                   <button
                     type="button"
                     onClick={onClose}
-                    className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                    className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors shrink-0"
                   >
-                    <X size={16} />
+                    <X size={14} />
                   </button>
                 </div>
 
-                {/* Tree content */}
-                <div className="flex-1 overflow-y-auto px-4 py-2.5 min-h-50">
-                  {loading && entries.length === 0 ? (
-                    <div className="flex items-center justify-center h-32 text-neutral-400">
-                      <Loader2 size={16} className="animate-spin" />
-                    </div>
-                  ) : error ? (
-                    <div className="flex items-center justify-center h-32 text-red-500 text-xs">{error}</div>
-                  ) : entries.length === 0 ? (
-                    <div className="flex items-center justify-center h-32 text-neutral-400 text-xs">No files</div>
+                {/* Content */}
+                <div className="overflow-y-auto px-4 py-2.5 h-80">
+                  {activeTab === null ? (
+                    // Tree view
+                    loading && entries.length === 0 ? (
+                      <div className="flex items-center justify-center h-32 text-neutral-400">
+                        <Loader2 size={16} className="animate-spin" />
+                      </div>
+                    ) : error ? (
+                      <div className="flex items-center justify-center h-32 text-red-500 text-xs">{error}</div>
+                    ) : entries.length === 0 ? (
+                      <div className="flex items-center justify-center h-32 text-neutral-400 text-xs">No files</div>
+                    ) : (
+                      entries.map((entry) => (
+                        <TreeItem
+                          key={entry.path}
+                          entry={entry}
+                          depth={0}
+                          driveId={drive.id}
+                          selected={selected}
+                          onToggleSelect={handleToggleSelect}
+                          acceptFilter={acceptFilter}
+                        />
+                      ))
+                    )
                   ) : (
-                    entries.map((entry) => (
-                      <TreeItem
-                        key={entry.path}
-                        entry={entry}
-                        depth={0}
-                        driveId={drive.id}
-                        selected={selected}
-                        onToggleSelect={handleToggleSelect}
-                        acceptFilter={acceptFilter}
-                      />
-                    ))
+                    // Insight list
+                    (() => {
+                      const cat = insights.find((c) => c.label === activeTab);
+                      const items = cat?.entries ?? [];
+                      if (items.length === 0) {
+                        return <div className="flex items-center justify-center h-32 text-neutral-400 text-xs">No suggestions</div>;
+                      }
+                      return items.map((entry) => {
+                        const isSelected = selected.has(entry.path);
+                        const isDisabled = acceptFilter != null && !fileMatchesAccept(entry, acceptFilter);
+                        return (
+                          <div
+                            key={entry.path}
+                            className={`group flex items-center gap-1.5 py-1.5 px-2 rounded-md transition-colors ${
+                              isDisabled
+                                ? "opacity-40 cursor-default"
+                                : "hover:bg-neutral-100/60 dark:hover:bg-neutral-800/40 cursor-pointer"
+                            }`}
+                            onClick={() => !isDisabled && handleToggleSelect(entry)}
+                          >
+                            {isSelected ? (
+                              <SquareCheckBig size={15} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+                            ) : isDisabled ? (
+                              <File size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+                            ) : (
+                              <>
+                                <File size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500 group-hover:hidden" />
+                                <Square size={15} className="shrink-0 text-neutral-300 dark:text-neutral-600 hidden group-hover:block" />
+                              </>
+                            )}
+                            <span className="ml-0.5 text-sm text-neutral-800 dark:text-neutral-200 truncate flex-1">{entry.name}</span>
+                            {entry.size != null && entry.size > 0 && (
+                              <span className="text-[11px] text-neutral-400 dark:text-neutral-500 whitespace-nowrap tabular-nums mr-1">
+                                {formatBytes(entry.size)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()
                   )}
                 </div>
 

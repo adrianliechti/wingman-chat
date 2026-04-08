@@ -10,10 +10,25 @@ export async function listDriveEntries(driveId: string, path: string = ""): Prom
   const params = new URLSearchParams();
   if (path) params.set("path", path);
 
-  const resp = await fetch(`/api/v1/drives/${driveId}/list?${params}`);
+  const resp = await fetch(`/api/v1/drives/${driveId}/entries?${params}`);
 
   if (!resp.ok) {
     throw new Error(`Failed to list files: ${resp.statusText}`);
+  }
+
+  return resp.json();
+}
+
+export interface InsightCategory {
+  label: string;
+  entries: DriveEntry[];
+}
+
+export async function getDriveInsights(driveId: string): Promise<InsightCategory[]> {
+  const resp = await fetch(`/api/v1/drives/${driveId}/insights`);
+
+  if (!resp.ok) {
+    return [];
   }
 
   return resp.json();

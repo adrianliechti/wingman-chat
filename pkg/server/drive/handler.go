@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/adrianliechti/wingman-chat/pkg/config"
 	"github.com/adrianliechti/wingman-chat/pkg/drive"
@@ -66,7 +65,8 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 	prefix = strings.TrimRight(prefix, "/")
 
 	mux.HandleFunc("GET "+prefix+"/v1/drives", h.handleList)
-	mux.HandleFunc("GET "+prefix+"/v1/drives/{id}/list", h.handleListEntries)
+	mux.HandleFunc("GET "+prefix+"/v1/drives/{id}/entries", h.handleEntries)
+	mux.HandleFunc("GET "+prefix+"/v1/drives/{id}/insights", h.handleInsights)
 	mux.HandleFunc("GET "+prefix+"/v1/drives/{id}/content", h.handleContent)
 }
 
@@ -75,7 +75,7 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(h.info)
 }
 
-func (h *Handler) handleListEntries(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleEntries(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	d, ok := h.drives[id]
@@ -113,9 +113,6 @@ func (h *Handler) handleContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: remove — simulate slow download for testing loaders
-	time.Sleep(3 * time.Second)
-
 	ctx := contextWithToken(r)
 
 	reader, mimeType, size, err := d.Open(ctx, path)
@@ -135,6 +132,38 @@ func (h *Handler) handleContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	io.Copy(w, reader)
+}
+
+func (h *Handler) handleInsights(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	d, ok := h.drives[id]
+	if !ok {
+		http.Error(w, "drive not found", http.StatusNotFound)
+		return
+	}
+
+	ip, ok := d.(drive.InsightsProvider)
+	if !ok {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]drive.InsightCategory{})
+		return
+	}
+
+	ctx := contextWithToken(r)
+
+	categories, err := ip.Insights(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if categories == nil {
+		categories = []drive.InsightCategory{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(categories)
 }
 
 func contextWithToken(r *http.Request) context.Context {

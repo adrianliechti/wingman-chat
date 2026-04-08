@@ -18,6 +18,17 @@ type Provider interface {
 	Open(ctx context.Context, path string) (io.ReadCloser, string, int64, error)
 }
 
+type InsightCategory struct {
+	Label   string  `json:"label"`
+	Entries []Entry `json:"entries"`
+}
+
+// InsightsProvider is an optional interface that providers can implement
+// to surface suggested/interesting files grouped by category.
+type InsightsProvider interface {
+	Insights(ctx context.Context) ([]InsightCategory, error)
+}
+
 type contextKey int
 
 const tokenKey contextKey = iota

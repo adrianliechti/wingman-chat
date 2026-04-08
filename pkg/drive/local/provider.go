@@ -15,6 +15,7 @@ import (
 )
 
 var _ drive.Provider = (*Provider)(nil)
+var _ drive.InsightsProvider = (*Provider)(nil)
 
 type Provider struct {
 	root string
@@ -136,6 +137,75 @@ func (p *Provider) Open(_ context.Context, path string) (io.ReadCloser, string, 
 	}
 
 	return f, mimeType, info.Size(), nil
+}
+
+func (p *Provider) Insights(_ context.Context) ([]drive.InsightCategory, error) {
+	type fileInfo struct {
+		entry   drive.Entry
+		modTime int64
+	}
+
+	var files []fileInfo
+
+	filepath.Walk(p.root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		if info.IsDir() {
+			if strings.HasPrefix(info.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if strings.HasPrefix(info.Name(), ".") {
+			return nil
+		}
+
+		rel, err := filepath.Rel(p.root, path)
+		if err != nil {
+			return nil
+		}
+
+		files = append(files, fileInfo{
+			entry: drive.Entry{
+				Name: info.Name(),
+				Path: rel,
+				Kind: "file",
+				Size: info.Size(),
+				Mime: detectMime(info.Name()),
+			},
+			modTime: info.ModTime().Unix(),
+		})
+
+		return nil
+	})
+
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime > files[j].modTime
+	})
+
+	limit := 10
+	if len(files) < limit {
+		limit = len(files)
+	}
+
+	entries := make([]drive.Entry, limit)
+	for i := 0; i < limit; i++ {
+		entries[i] = files[i].entry
+	}
+
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	return []drive.InsightCategory{
+		{
+			Label:   "Recently Changed",
+			Entries: entries,
+		},
+	}, nil
 }
 
 func detectMime(name string) string {

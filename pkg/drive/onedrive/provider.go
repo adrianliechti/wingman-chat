@@ -12,9 +12,11 @@ import (
 	"strings"
 
 	"github.com/adrianliechti/wingman-chat/pkg/drive"
+	"github.com/adrianliechti/wingman-chat/pkg/drive/graph"
 )
 
 var _ drive.Provider = (*Provider)(nil)
+var _ drive.InsightsProvider = (*Provider)(nil)
 
 type Provider struct {
 	client *http.Client
@@ -222,6 +224,15 @@ func (p *Provider) downloadItem(ctx context.Context, token, driveID, itemPath st
 	size, _ := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
 
 	return resp.Body, mimeType, size, nil
+}
+
+func (p *Provider) Insights(ctx context.Context) ([]drive.InsightCategory, error) {
+	token := drive.TokenFromContext(ctx)
+	if token == "" {
+		return nil, fmt.Errorf("authorization token required")
+	}
+
+	return graph.FetchInsights(ctx, p.client, token)
 }
 
 func encodePath(p string) string {
