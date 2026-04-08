@@ -87,7 +87,7 @@ export function SourcesPanel({
       for (const f of files) {
         setExtracting((prev) => new Set([...prev, f.name]));
         try {
-          const url = getDriveContentUrl(f.driveId, f.path);
+          const url = getDriveContentUrl(f.driveId, f.id);
           const resp = await fetch(url);
           if (!resp.ok) {
             setError(`Failed to fetch ${f.name}: ${resp.statusText}`);

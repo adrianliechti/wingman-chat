@@ -6,27 +6,16 @@ import (
 )
 
 type Entry struct {
+	ID   string `json:"id"`
 	Name string `json:"name"`
-	Path string `json:"path"`
 	Kind string `json:"kind"`
 	Size int64  `json:"size,omitempty"`
 	Mime string `json:"mime,omitempty"`
 }
 
 type Provider interface {
-	List(ctx context.Context, path string) ([]Entry, error)
-	Open(ctx context.Context, path string) (io.ReadCloser, string, int64, error)
-}
-
-type InsightCategory struct {
-	Label   string  `json:"label"`
-	Entries []Entry `json:"entries"`
-}
-
-// InsightsProvider is an optional interface that providers can implement
-// to surface suggested/interesting files grouped by category.
-type InsightsProvider interface {
-	Insights(ctx context.Context) ([]InsightCategory, error)
+	List(ctx context.Context, id string) ([]Entry, error)
+	Open(ctx context.Context, id string) (io.ReadCloser, string, int64, error)
 }
 
 type contextKey int

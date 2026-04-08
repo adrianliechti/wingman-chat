@@ -19,7 +19,6 @@ import (
 type driveInfo struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	Icon string `json:"icon,omitempty"`
 }
 
 type Handler struct {
@@ -51,10 +50,10 @@ func New(cfgs []config.Drive) *Handler {
 		}
 
 		h.drives[cfg.ID] = p
+
 		h.info = append(h.info, driveInfo{
 			ID:   cfg.ID,
 			Name: cfg.Name,
-			Icon: cfg.Icon,
 		})
 	}
 
@@ -66,7 +65,6 @@ func (h *Handler) Attach(mux *http.ServeMux, prefix string) {
 
 	mux.HandleFunc("GET "+prefix+"/v1/drives", h.handleList)
 	mux.HandleFunc("GET "+prefix+"/v1/drives/{id}/entries", h.handleEntries)
-	mux.HandleFunc("GET "+prefix+"/v1/drives/{id}/insights", h.handleInsights)
 	mux.HandleFunc("GET "+prefix+"/v1/drives/{id}/content", h.handleContent)
 }
 
@@ -84,14 +82,18 @@ func (h *Handler) handleEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	path := r.URL.Query().Get("path")
-
 	ctx := contextWithToken(r)
 
-	entries, err := d.List(ctx, path)
+	entryID := r.URL.Query().Get("id")
+
+	entries, err := d.List(ctx, entryID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+
+	if entries == nil {
+		entries = []drive.Entry{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -107,15 +109,15 @@ func (h *Handler) handleContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	path := r.URL.Query().Get("path")
-	if path == "" {
-		http.Error(w, "path is required", http.StatusBadRequest)
+	identifier := r.URL.Query().Get("id")
+	if identifier == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
 		return
 	}
 
 	ctx := contextWithToken(r)
 
-	reader, mimeType, size, err := d.Open(ctx, path)
+	reader, mimeType, size, err := d.Open(ctx, identifier)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -132,38 +134,6 @@ func (h *Handler) handleContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	io.Copy(w, reader)
-}
-
-func (h *Handler) handleInsights(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-
-	d, ok := h.drives[id]
-	if !ok {
-		http.Error(w, "drive not found", http.StatusNotFound)
-		return
-	}
-
-	ip, ok := d.(drive.InsightsProvider)
-	if !ok {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]drive.InsightCategory{})
-		return
-	}
-
-	ctx := contextWithToken(r)
-
-	categories, err := ip.Insights(ctx)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if categories == nil {
-		categories = []drive.InsightCategory{}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(categories)
 }
 
 func contextWithToken(r *http.Request) context.Context {

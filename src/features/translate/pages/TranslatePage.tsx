@@ -87,7 +87,7 @@ export function TranslatePage() {
       if (!f) return;
       setIsFetchingDrive(true);
       try {
-        const url = getDriveContentUrl(f.driveId, f.path);
+        const url = getDriveContentUrl(f.driveId, f.id);
         const resp = await fetch(url);
         const blob = await resp.blob();
         const file = new File([blob], f.name, { type: f.mime || blob.type });

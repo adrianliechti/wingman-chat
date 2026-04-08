@@ -1,14 +1,17 @@
 export interface DriveEntry {
+  id: string;
   name: string;
-  path: string;
   kind: "file" | "directory";
   size?: number;
   mime?: string;
 }
 
-export async function listDriveEntries(driveId: string, path: string = ""): Promise<DriveEntry[]> {
+export async function listDriveEntries(driveId: string, id: string = ""): Promise<DriveEntry[]> {
   const params = new URLSearchParams();
-  if (path) params.set("path", path);
+
+  if (id) {
+    params.set("id", id);
+  }
 
   const resp = await fetch(`/api/v1/drives/${driveId}/entries?${params}`);
 
@@ -19,22 +22,7 @@ export async function listDriveEntries(driveId: string, path: string = ""): Prom
   return resp.json();
 }
 
-export interface InsightCategory {
-  label: string;
-  entries: DriveEntry[];
-}
-
-export async function getDriveInsights(driveId: string): Promise<InsightCategory[]> {
-  const resp = await fetch(`/api/v1/drives/${driveId}/insights`);
-
-  if (!resp.ok) {
-    return [];
-  }
-
-  return resp.json();
-}
-
-export function getDriveContentUrl(driveId: string, path: string): string {
-  const params = new URLSearchParams({ path });
+export function getDriveContentUrl(driveId: string, id: string): string {
+  const params = new URLSearchParams({ id });
   return `/api/v1/drives/${driveId}/content?${params}`;
 }

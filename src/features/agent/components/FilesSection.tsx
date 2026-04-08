@@ -66,7 +66,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
   const handleDriveFiles = useCallback(
     async (selected: SelectedFile[]) => {
       for (const f of selected) {
-        const url = getDriveContentUrl(f.driveId, f.path);
+        const url = getDriveContentUrl(f.driveId, f.id);
         const resp = await fetch(url);
         const blob = await resp.blob();
         const file = new File([blob], f.name, { type: f.mime || blob.type || "" });

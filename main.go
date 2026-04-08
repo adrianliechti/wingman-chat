@@ -22,7 +22,7 @@ func main() {
 	if port == "" {
 		port = "8000"
 	}
-	
+
 	if prefix == "" {
 		prefix = "/api"
 	}

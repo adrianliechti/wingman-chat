@@ -259,7 +259,7 @@ export function RendererPage() {
       try {
         const fetched = await Promise.all(
           files.map(async (f) => {
-            const url = getDriveContentUrl(f.driveId, f.path);
+            const url = getDriveContentUrl(f.driveId, f.id);
             const resp = await fetch(url);
             const blob = await resp.blob();
             return new File([blob], f.name, { type: f.mime || blob.type });

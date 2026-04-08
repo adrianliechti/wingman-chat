@@ -95,7 +95,7 @@ export function ArtifactsDrawer() {
       try {
         const fetched: globalThis.File[] = [];
         for (const f of selected) {
-          const url = getDriveContentUrl(f.driveId, f.path);
+          const url = getDriveContentUrl(f.driveId, f.id);
           const resp = await fetch(url);
           const blob = await resp.blob();
           fetched.push(new globalThis.File([blob], f.name, { type: f.mime || blob.type || "" }));
