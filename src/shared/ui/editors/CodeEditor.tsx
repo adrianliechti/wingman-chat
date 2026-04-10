@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react";
-import { codeToHtml } from "shiki";
 import { useTheme } from "@/shell/hooks/useTheme";
+
+let shikiPromise: Promise<typeof import("shiki")> | null = null;
+function getShiki() {
+  if (!shikiPromise) shikiPromise = import("shiki");
+  return shikiPromise;
+}
 
 interface CodeEditorProps {
   content: string;
@@ -18,6 +23,8 @@ export function CodeEditor({ content, language = "" }: CodeEditorProps) {
     const highlight = async () => {
       try {
         const langId = language.toLowerCase();
+
+        const { codeToHtml } = await getShiki();
 
         const highlighted = await codeToHtml(content, {
           lang: langId || "text",

@@ -1,7 +1,12 @@
 import { memo, useState, useEffect, useRef } from "react";
-import { codeToHtml } from "shiki";
-import { CopyButton } from "./CopyButton";
 import { useTheme } from "@/shell/hooks/useTheme";
+import { CopyButton } from "./CopyButton";
+
+let shikiPromise: Promise<typeof import("shiki")> | null = null;
+function getShiki() {
+  if (!shikiPromise) shikiPromise = import("shiki");
+  return shikiPromise;
+}
 
 const HIGHLIGHT_DEBOUNCE_MS = 150;
 
@@ -35,6 +40,7 @@ const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
     // Debounce Shiki calls — during streaming, code changes on every token
     debounceRef.current = setTimeout(async () => {
       try {
+        const { codeToHtml } = await getShiki();
         const highlighted = await codeToHtml(code, {
           lang: language.toLowerCase(),
           theme: isDark ? "one-dark-pro" : "one-light",

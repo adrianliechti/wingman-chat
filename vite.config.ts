@@ -18,17 +18,19 @@ function notoEmojiFontDisplayBlock() {
   };
 }
 
+const src = path.resolve(import.meta.dirname, "src");
+const shim = (file: string) => path.resolve(src, "shared/lib", file);
+
 // https://vite.dev/config/
 export default defineConfig({
   resolve: {
     alias: {
-      "@": path.resolve(import.meta.dirname, "src"),
-      // Shim node:zlib that just-bash's browser bundle imports but can't use in the browser
-      "node:zlib": path.resolve(import.meta.dirname, "src/shared/lib/zlib-shim.ts"),
-      zlib: path.resolve(import.meta.dirname, "src/shared/lib/zlib-shim.ts"),
-      // Shim node:dns that just-bash's browser bundle imports for network resolution
-      "node:dns": path.resolve(import.meta.dirname, "src/shared/lib/dns-shim.ts"),
-      dns: path.resolve(import.meta.dirname, "src/shared/lib/dns-shim.ts"),
+      "@": src,
+      // just-bash imports Node built-ins that don't exist in the browser
+      "node:zlib": shim("zlib-shim.ts"),
+      "zlib": shim("zlib-shim.ts"),
+      "node:dns": shim("dns-shim.ts"),
+      "dns": shim("dns-shim.ts"),
     },
   },
   optimizeDeps: {
@@ -39,35 +41,32 @@ export default defineConfig({
       "/telemetry/v1": {
         target: "http://localhost:4318",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/telemetry\/v1/, "/v1"),
+        rewrite: (p) => p.replace(/^\/telemetry\/v1/, "/v1"),
       },
-
       "/api/v1/realtime": {
         target: "http://localhost:8080",
         ws: true,
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ""),
+        rewrite: (p) => p.replace(/^\/api/, ""),
       },
-
       "/api": {
         target: "http://localhost:8080",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ""),
+        rewrite: (p) => p.replace(/^\/api/, ""),
       },
     },
   },
   plugins: [
     notoEmojiFontDisplayBlock(),
     react(),
-    babel({
-      presets: [reactCompilerPreset({ target: "19" })],
-    }),
+    babel({ presets: [reactCompilerPreset({ target: "19" })] }),
     tailwindcss(),
   ],
   build: {
+    target: "esnext",
+    chunkSizeWarningLimit: 1000,
     rolldownOptions: {
       onwarn(warning, warn) {
-        // Suppress Pyodide and just-bash Node.js module externalization warnings
         if (
           warning.code === "MODULE_LEVEL_DIRECTIVE" ||
           warning.message?.includes("externalized for browser compatibility") ||
@@ -77,29 +76,28 @@ export default defineConfig({
         }
         warn(warning);
       },
-
       output: {
         manualChunks(id) {
+          if (!id.includes("node_modules/")) return;
+
+          // Group vendor dependencies into logical chunks for caching.
+          // Shiki is intentionally excluded — it lazy-loads grammars/themes
+          // via dynamic import() and manages its own code splitting.
           const chunks: Record<string, RegExp> = {
-            "vendor-react": /node_modules\/(react|react-dom)\//,
-            "vendor-bash": /node_modules\/just-bash\//,
-            "vendor-reactflow": /node_modules\/@xyflow\/react\//,
-            "vendor-shiki": /node_modules\/shiki\//,
-            "vendor-openai": /node_modules\/openai\//,
-            "vendor-markdown":
-              /node_modules\/(unified|rehype-react|remark-parse|remark-rehype|remark-breaks|remark-gfm|remark-gemoji|remark-math|rehype-katex|emoji-regex|@fontsource\/noto-emoji)\//,
-            "vendor-ui":
-              /node_modules\/(@headlessui\/react|@floating-ui\/react|@floating-ui\/react-dom|lucide-react)\//,
-            "vendor-utils": /node_modules\/(zod|p-limit|mime|jszip|marked)\//,
-            "vendor-docx": /node_modules\/docx\//,
+            "vendor-react": /\/(react|react-dom)\//,
+            "vendor-openai": /\/openai\//,
+            "vendor-reactflow": /\/@xyflow\//,
+            "vendor-bash": /\/just-bash\//,
+            "vendor-docx": /\/(docx|marked|jspdf)\//,
+            "vendor-markdown": /\/(unified|rehype-|remark-|emoji-regex|@fontsource\/noto-emoji|katex)\//,
+            "vendor-ui": /\/(@headlessui|@floating-ui|lucide-react)\//,
           };
+
           for (const [chunk, re] of Object.entries(chunks)) {
             if (re.test(id)) return chunk;
           }
         },
       },
     },
-    chunkSizeWarningLimit: 1000,
-    target: "esnext",
   },
 });
