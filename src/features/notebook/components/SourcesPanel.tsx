@@ -14,6 +14,7 @@ import {
   HardDrive,
   Type,
   Mic,
+  Download,
 } from "lucide-react";
 import { Dialog, Transition } from "@headlessui/react";
 import { useDropZone } from "@/shared/hooks/useDropZone";
@@ -32,7 +33,7 @@ interface SourcesPanelProps {
   scrapeWeb: (url: string) => Promise<string>;
   addScrapeResult: (url: string, content: string) => Promise<void>;
   onFileAdd: (file: File) => Promise<void>;
-  onTextAdd: (name: string, text: string) => Promise<void>;
+  onTextAdd: (name: string, text: string, audioUrl?: string) => Promise<void>;
   onDeleteSource: (sourceId: string) => void;
 }
 
@@ -325,10 +326,10 @@ export function SourcesPanel({
       {/* Field Recorder */}
       {showRecordOverlay && (
         <FieldRecorderOverlay
-          onComplete={async (text) => {
+          onComplete={async ({ transcript, audioUrl }) => {
             setError(null);
             try {
-              await onTextAdd("Field Recording", text);
+              await onTextAdd("Field Recording", transcript, audioUrl);
               setShowRecordOverlay(false);
             } catch (err) {
               setError(err instanceof Error ? err.message : "Failed to add recording");
@@ -753,11 +754,19 @@ function TextInputOverlay({
 
 // ── Source Item ─────────────────────────────────────────────────────────
 
+function sourceIcon(source: NotebookSource) {
+  if (source.audioUrl) return Mic;
+  if (source.type === "web") return Globe;
+  if (source.type === "text") return Type;
+  return FileText;
+}
+
 function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: () => void }) {
   const [expanded, setExpanded] = useState(false);
+  const Icon = sourceIcon(source);
 
   return (
-    <div className="group/source relative">
+    <div className="group/source">
       <div
         role="button"
         tabIndex={0}
@@ -765,33 +774,44 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") setExpanded(!expanded);
         }}
-        className="w-full flex items-center gap-2 py-1.5 text-left cursor-pointer"
+        className="flex items-center gap-2.5 px-1 py-1.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 cursor-pointer transition-colors"
       >
-        <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
-          {source.type === "web" ? (
-            <Globe size={12} className="text-neutral-500" />
-          ) : source.type === "text" ? (
-            <Type size={12} className="text-neutral-500" />
-          ) : (
-            <FileText size={12} className="text-neutral-500" />
-          )}
+        <div className="w-6 h-6 rounded-md bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
+          <Icon size={12} className="text-neutral-500" />
         </div>
         <span className="text-xs text-neutral-700 dark:text-neutral-300 truncate flex-1">{source.name}</span>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="invisible group-hover/source:visible p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-        >
-          <X size={12} className="text-neutral-400" />
-        </button>
+        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/source:opacity-100 transition-opacity">
+          {source.audioUrl && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const a = document.createElement("a");
+                a.href = source.audioUrl as string;
+                a.download = "recording.wav";
+                a.click();
+              }}
+              className="p-1 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+            >
+              <Download size={12} className="text-neutral-400" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="p-1 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+          >
+            <X size={12} className="text-neutral-400" />
+          </button>
+        </div>
       </div>
 
       {expanded && (
-        <div className="px-3 pb-2 max-h-80 overflow-y-auto">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap">
+        <div className="ml-8.5 mr-2 mb-1 px-2.5 py-2 rounded-md bg-neutral-50 dark:bg-neutral-800/40 max-h-64 overflow-y-auto">
+          <p className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap">
             {source.content.slice(0, 2000)}
             {source.content.length > 2000 && "..."}
           </p>

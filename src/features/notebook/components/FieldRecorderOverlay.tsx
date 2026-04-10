@@ -1,9 +1,9 @@
 import { Loader2, Mic, Square, X } from "lucide-react";
 import { useState } from "react";
-import { useFieldRecorder } from "../hooks/useFieldRecorder";
+import { useFieldRecorder, type FieldRecorderResult } from "../hooks/useFieldRecorder";
 
 interface FieldRecorderOverlayProps {
-  onComplete: (text: string) => void;
+  onComplete: (result: FieldRecorderResult) => void;
   onClose: () => void;
 }
 
@@ -31,8 +31,8 @@ export function FieldRecorderOverlay({ onComplete, onClose }: FieldRecorderOverl
   const handleStop = async () => {
     setIsStopping(true);
     try {
-      const transcript = await stop();
-      onComplete(transcript);
+      const result = await stop();
+      onComplete(result);
     } catch (err) {
       setStartError(err instanceof Error ? err.message : "Failed to stop recording");
       setIsStopping(false);

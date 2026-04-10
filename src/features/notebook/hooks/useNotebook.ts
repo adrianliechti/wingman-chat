@@ -307,7 +307,7 @@ export function useNotebook(notebookId?: string) {
   );
 
   const addTextSource = useCallback(
-    async (name: string, text: string) => {
+    async (name: string, text: string, audioUrl?: string) => {
       if (!notebook) return;
 
       const source: NotebookSource = {
@@ -315,6 +315,7 @@ export function useNotebook(notebookId?: string) {
         type: "text",
         name: name || "Pasted text",
         content: text,
+        ...(audioUrl && { audioUrl }),
         addedAt: new Date().toISOString(),
       };
 

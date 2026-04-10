@@ -13,6 +13,7 @@ export interface NotebookSource {
   type: "web" | "file" | "text";
   name: string;
   content: string;
+  audioUrl?: string;
   metadata?: {
     url?: string;
     query?: string;

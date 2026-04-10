@@ -1,21 +1,25 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { getConfig } from "@/shared/config";
 import { AudioRecorder } from "@/features/voice/lib/AudioRecorder";
 import { pcm16ToWav, mergePcm16Chunks } from "@/features/voice/lib/audio";
+import { blobToDataUrl } from "@/shared/lib/opfs-core";
 
 interface FieldRecorderOptions {
   chunkDurationSec?: number;
+}
+
+export interface FieldRecorderResult {
+  transcript: string;
+  audioUrl: string;
 }
 
 export interface UseFieldRecorderReturn {
   canRecord: boolean;
   isRecording: boolean;
   elapsedSec: number;
-  chunksTotal: number;
-  chunksTranscribed: number;
   error: string | null;
   start: () => Promise<void>;
-  stop: () => Promise<string>;
+  stop: () => Promise<FieldRecorderResult>;
 }
 
 const SAMPLE_RATE = 24000;
@@ -33,16 +37,17 @@ export function useFieldRecorder(
 
   const [isRecording, setIsRecording] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
-  const [chunksTotal, setChunksTotal] = useState(0);
-  const [chunksTranscribed, setChunksTranscribed] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const recorderRef = useRef<AudioRecorder | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Per-chunk accumulation (for transcription)
   const currentChunkRef = useRef<Int16Array[]>([]);
   const currentChunkSamplesRef = useRef(0);
   const chunkIndexRef = useRef(0);
+  // Full recording accumulation (for audio export)
+  const allSamplesRef = useRef<Int16Array[]>([]);
   const transcriptsRef = useRef<Map<number, { startSec: number; endSec: number; text: string }>>(new Map());
   const inflightRef = useRef<Set<Promise<void>>>(new Set());
   const startTimeRef = useRef(0);
@@ -66,7 +71,6 @@ export function useFieldRecorder(
         .transcribe(model, wav)
         .then((text) => {
           transcriptsRef.current.set(index, { startSec, endSec, text });
-          setChunksTranscribed((prev) => prev + 1);
         })
         .catch((err) => {
           const msg = err instanceof Error ? err.message : "Unknown error";
@@ -75,7 +79,6 @@ export function useFieldRecorder(
             endSec,
             text: `(transcription failed: ${msg})`,
           });
-          setChunksTranscribed((prev) => prev + 1);
         })
         .finally(() => {
           inflightRef.current.delete(promise);
@@ -95,27 +98,23 @@ export function useFieldRecorder(
     const sampleCount = currentChunkSamplesRef.current;
     const endSec = startSec + sampleCount / SAMPLE_RATE;
 
-    // Snapshot and reset
     const snapshot = [...chunks];
     currentChunkRef.current = [];
     currentChunkSamplesRef.current = 0;
     chunkIndexRef.current = index + 1;
 
-    setChunksTotal((prev) => prev + 1);
     transcribeChunk(snapshot, index, startSec, endSec);
   }, [chunkDurationSec, transcribeChunk]);
 
   const start = useCallback(async () => {
     if (!canRecord) throw new Error("Recording is not available");
 
-    // Reset state
     setError(null);
     setElapsedSec(0);
-    setChunksTotal(0);
-    setChunksTranscribed(0);
     currentChunkRef.current = [];
     currentChunkSamplesRef.current = 0;
     chunkIndexRef.current = 0;
+    allSamplesRef.current = [];
     transcriptsRef.current = new Map();
     inflightRef.current = new Set();
 
@@ -126,6 +125,9 @@ export function useFieldRecorder(
 
     await recorder.record((chunk) => {
       const samples = new Int16Array(chunk.mono);
+      // Accumulate for full audio export
+      allSamplesRef.current.push(samples);
+      // Accumulate for current transcription chunk
       currentChunkRef.current.push(samples);
       currentChunkSamplesRef.current += samples.length;
 
@@ -138,44 +140,45 @@ export function useFieldRecorder(
     startTimeRef.current = Date.now();
     setIsRecording(true);
 
-    // Keep screen awake during recording
     if (navigator.wakeLock) {
       navigator.wakeLock.request("screen").then((lock) => {
         wakeLockRef.current = lock;
       }).catch(() => {});
     }
 
-    // Elapsed time ticker
     timerRef.current = setInterval(() => {
       setElapsedSec(Math.floor((Date.now() - startTimeRef.current) / 1000));
     }, 1000);
   }, [canRecord, chunkDurationSec, flushChunk]);
 
-  const stop = useCallback(async (): Promise<string> => {
+  const stop = useCallback(async (): Promise<FieldRecorderResult> => {
     const recorder = recorderRef.current;
     if (!recorder) throw new Error("No active recording");
 
-    // Stop timer
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
 
-    // Stop recording
     await recorder.end();
     recorderRef.current = null;
     setIsRecording(false);
 
-    // Release wake lock
     if (wakeLockRef.current) {
       await wakeLockRef.current.release().catch(() => {});
       wakeLockRef.current = null;
     }
 
-    // Flush remaining samples
+    // Flush remaining samples for transcription
     if (currentChunkRef.current.length > 0) {
       flushChunk();
     }
+
+    // Build full WAV from all samples
+    const allMerged = mergePcm16Chunks(allSamplesRef.current);
+    const fullWav = pcm16ToWav(allMerged, SAMPLE_RATE);
+    const audioUrl = await blobToDataUrl(fullWav);
+    allSamplesRef.current = [];
 
     // Wait for all in-flight transcriptions
     if (inflightRef.current.size > 0) {
@@ -186,24 +189,48 @@ export function useFieldRecorder(
     const transcripts = transcriptsRef.current;
     const indices = [...transcripts.keys()].sort((a, b) => a - b);
 
+    let transcript: string;
     if (indices.length === 0) {
-      return "(no audio recorded)";
+      transcript = "(no audio recorded)";
+    } else if (indices.length === 1) {
+      const entry = transcripts.get(indices[0]);
+      transcript = entry?.text ?? "";
+    } else {
+      transcript = indices
+        .map((i) => {
+          const t = transcripts.get(i);
+          if (!t) return "";
+          return `[${formatTimestamp(t.startSec)} - ${formatTimestamp(t.endSec)}]\n${t.text}`;
+        })
+        .join("\n\n");
     }
 
-    const parts = indices.map((i) => {
-      const t = transcripts.get(i)!;
-      return `[${formatTimestamp(t.startSec)} - ${formatTimestamp(t.endSec)}]\n${t.text}`;
-    });
-
-    return parts.join("\n\n");
+    return { transcript, audioUrl };
   }, [flushChunk]);
+
+  // Force-release all resources (mic, wake lock, timer)
+  const cleanup = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (recorderRef.current) {
+      recorderRef.current.end().catch(() => {});
+      recorderRef.current = null;
+    }
+    if (wakeLockRef.current) {
+      wakeLockRef.current.release().catch(() => {});
+      wakeLockRef.current = null;
+    }
+  }, []);
+
+  // Release mic on unmount
+  useEffect(() => cleanup, [cleanup]);
 
   return {
     canRecord,
     isRecording,
     elapsedSec,
-    chunksTotal,
-    chunksTranscribed,
     error,
     start,
     stop,
