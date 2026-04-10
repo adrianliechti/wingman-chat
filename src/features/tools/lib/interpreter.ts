@@ -1,6 +1,9 @@
 import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodide";
 import { bytesToDataUrl, dataUrlToBytes, isDataUrlContent } from "@/shared/lib/artifactFiles";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import { clearRenderQueue, processRenderQueue } from "./plotlyRenderer";
+import PLOTLY_IMAGE_SHIM from "./plotlyShim.py?raw";
+import KALEIDO_MOCK from "./kaleidoMock.py?raw";
 
 interface ArtifactFile {
   content: string;
@@ -14,21 +17,13 @@ interface PyodideProxy<T = unknown> {
   destroy?: () => void;
 }
 
-interface MicropipModule {
-  install: (pkg: string) => Promise<void>;
-  destroy?: () => void;
-}
-
+// Maps Python import names to pip package names — only needed for PyPI-manifest
+// packages where the import name differs from the pip name.  Pyodide builtins
+// (PIL→pillow, bs4→beautifulsoup4, …) are resolved automatically by loadPackage
+// via pyodide-lock.json.
 const PACKAGE_ALIASES: Record<string, string> = {
-  "matplotlib.pyplot": "matplotlib",
-  "matplotlib.ticker": "matplotlib",
   docx: "python-docx",
   pptx: "python-pptx",
-  pil: "pillow",
-  bs4: "beautifulsoup4",
-  sklearn: "scikit-learn",
-  dateutil: "python-dateutil",
-  typing_extensions: "typing-extensions",
 };
 
 let standardLibraryModules: Set<string> | null = null;
@@ -147,6 +142,14 @@ export interface CodeExecutionResult {
 let pyodideInstance: PyodideInterface | null = null;
 let pyodideLoading: Promise<PyodideInterface> | null = null;
 const loadedPackages = new Set<string>();
+const appliedShims = new Set<string>();
+
+async function applyCompatShims(pyodide: PyodideInterface, packages: string[]): Promise<void> {
+  if (packages.includes("plotly") && !appliedShims.has("plotly")) {
+    await pyodide.runPythonAsync(PLOTLY_IMAGE_SHIM);
+    appliedShims.add("plotly");
+  }
+}
 
 function ensureDirectory(pyodide: PyodideInterface, dir: string): void {
   try {
@@ -294,15 +297,17 @@ async function ensurePackagesLoaded(pyodide: PyodideInterface, packages: string[
 
   if (pypiPackages.length > 0) {
     await pyodide.loadPackage("micropip");
-    const micropip = pyodide.pyimport("micropip") as MicropipModule;
 
-    try {
-      for (const pkg of pypiPackages) {
-        await micropip.install(`/pyodide/${manifest[pkg]}`);
-        loadedPackages.add(pkg);
-      }
-    } finally {
-      micropip.destroy?.();
+    // Register mock kaleido so micropip considers it "installed" and
+    // Pyodide's import hook won't try to auto-install the native binary.
+    if (pypiPackages.includes("plotly") && !appliedShims.has("kaleido-mock")) {
+      await pyodide.runPythonAsync(KALEIDO_MOCK);
+      appliedShims.add("kaleido-mock");
+    }
+
+    for (const pkg of pypiPackages) {
+      await pyodide.runPythonAsync(`import micropip; await micropip.install("/pyodide/${manifest[pkg]}")`);
+      loadedPackages.add(pkg);
     }
   }
 }
@@ -368,10 +373,15 @@ export async function executeCode(request: CodeExecutionRequest): Promise<CodeEx
 
     syncFilesToPyodide(pyodide, files);
     await ensurePackagesLoaded(pyodide, requestedPackages);
+    await applyCompatShims(pyodide, requestedPackages);
+    clearRenderQueue(pyodide);
+
+    const output = await runPythonCode(pyodide, code);
+    await processRenderQueue(pyodide);
 
     return {
       success: true,
-      output: await runPythonCode(pyodide, code),
+      output,
       files: collectPyodideFiles(pyodide, files),
     };
   } catch (error) {
