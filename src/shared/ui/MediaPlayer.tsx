@@ -1,5 +1,8 @@
 import { memo } from "react";
 
+const mediaLinkClassName =
+  "text-sky-700 dark:text-sky-300 underline decoration-2 underline-offset-3 decoration-sky-500/60 dark:decoration-sky-400/70 hover:text-sky-800 dark:hover:text-sky-200 hover:decoration-current focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50";
+
 interface MediaPlayerProps {
   url: string;
   type: "audio" | "video";
@@ -14,7 +17,7 @@ const MediaPlayer = memo(({ url, type, children }: MediaPlayerProps) => {
         <audio controls className="w-full max-w-md" preload="metadata">
           <source src={url} />
           Your browser does not support the audio element.
-          <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+          <a href={url} target="_blank" rel="noopener noreferrer" className={mediaLinkClassName}>
             {children || url}
           </a>
         </audio>
@@ -30,7 +33,7 @@ const MediaPlayer = memo(({ url, type, children }: MediaPlayerProps) => {
         <video controls className="w-full max-w-2xl rounded-lg" preload="metadata">
           <source src={url} />
           Your browser does not support the video element.
-          <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+          <a href={url} target="_blank" rel="noopener noreferrer" className={mediaLinkClassName}>
             {children || url}
           </a>
         </video>
@@ -41,7 +44,7 @@ const MediaPlayer = memo(({ url, type, children }: MediaPlayerProps) => {
 
   // Fallback to regular link for non-direct media files
   return (
-    <a className="text-blue-500 hover:underline" href={url} target="_blank" rel="noreferrer noopener">
+    <a className={mediaLinkClassName} href={url} target="_blank" rel="noreferrer noopener">
       {children}
     </a>
   );
