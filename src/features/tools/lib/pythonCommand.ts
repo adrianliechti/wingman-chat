@@ -12,8 +12,7 @@ async function collectFsFiles(ctx: CommandContext): Promise<Record<string, { con
   const walk = async (dir: string) => {
     let entries: string[];
     try {
-      const listing = await ctx.fs.readdir(dir);
-      entries = listing.map((e) => (typeof e === "string" ? e : e.name));
+      entries = await ctx.fs.readdir(dir);
     } catch {
       return;
     }
