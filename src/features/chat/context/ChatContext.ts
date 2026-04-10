@@ -13,6 +13,7 @@ export interface ChatContextType {
   chat: Chat | null;
   messages: Message[];
   isResponding: boolean;
+  stopStreaming: () => void;
 
   // Chat actions
   createChat: () => Promise<Chat>;

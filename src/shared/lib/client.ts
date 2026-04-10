@@ -88,6 +88,7 @@ export class Client {
       summary?: "auto" | "concise" | "detailed";
       verbosity?: "low" | "medium" | "high";
       compactThreshold?: number;
+      signal?: AbortSignal;
     },
   ): Promise<Message> {
     return traceGenAI(
@@ -328,17 +329,33 @@ export class Client {
             }
           });
 
-        const finalResponse = await runner.finalResponse();
+        // If a signal was provided, wire it up to abort the runner
+        if (options?.signal) {
+          options.signal.addEventListener("abort", () => runner.abort(), { once: true });
+        }
 
-        return {
-          result: { role: Role.Assistant, content: contentParts } as Message,
-          response: {
-            id: finalResponse.id,
-            model: finalResponse.model,
-            inputTokens: finalResponse.usage?.input_tokens,
-            outputTokens: finalResponse.usage?.output_tokens,
-          },
-        };
+        try {
+          const finalResponse = await runner.finalResponse();
+
+          return {
+            result: { role: Role.Assistant, content: contentParts } as Message,
+            response: {
+              id: finalResponse.id,
+              model: finalResponse.model,
+              inputTokens: finalResponse.usage?.input_tokens,
+              outputTokens: finalResponse.usage?.output_tokens,
+            },
+          };
+        } catch (error) {
+          // On abort, return partial content accumulated so far
+          if (options?.signal?.aborted) {
+            return {
+              result: { role: Role.Assistant, content: contentParts } as Message,
+              response: { id: "", model },
+            };
+          }
+          throw error;
+        }
       },
       { effort: options?.effort, verbosity: options?.verbosity, toolCount: tools?.length },
     ); // end traceGenAI
