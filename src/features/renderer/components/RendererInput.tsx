@@ -1,6 +1,7 @@
-import { useRef } from "react";
-import { X, ImagePlus, ArrowRight, Paintbrush, Sparkles, HardDrive, Upload, Loader2 } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { ArrowRight, HardDrive, ImagePlus, Loader2, Paintbrush, Sparkles, Upload, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import type { Model } from "@/shared/types/chat";
 
 interface RendererInputProps {
@@ -50,9 +51,45 @@ export function RendererInput({
   autoFocus,
   className = "",
 }: RendererInputProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const contentEditableRef = useRef<HTMLDivElement>(null);
+  const [showPlaceholder, setShowPlaceholder] = useState(true);
 
   const canSubmit = (prompt.trim() || referenceImages.length > 0) && !disabled;
+
+  // Sync contentEditable when prompt is cleared externally
+  useEffect(() => {
+    setShowPlaceholder(!prompt);
+    if (!prompt && contentEditableRef.current && contentEditableRef.current.innerHTML !== "") {
+      contentEditableRef.current.innerHTML = "";
+    }
+  }, [prompt]);
+
+  const handleContentChange = useCallback(
+    (e: React.FormEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLDivElement;
+      const input = target.innerText || target.textContent || "";
+      onPromptChange(input);
+    },
+    [onPromptChange],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (canSubmit) {
+          onSubmit();
+        }
+      }
+    },
+    [canSubmit, onSubmit],
+  );
+
+  useEffect(() => {
+    if (autoFocus && contentEditableRef.current) {
+      contentEditableRef.current.focus();
+    }
+  }, [autoFocus]);
 
   return (
     <div
@@ -84,31 +121,33 @@ export function RendererInput({
         </div>
       )}
 
-      {/* Textarea */}
-      <textarea
-        ref={textareaRef}
-        value={prompt}
-        onChange={(e) => {
-          onPromptChange(e.target.value);
-          const target = e.target;
-          target.style.height = "auto";
-          target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
+      {/* Input area */}
+      <div className="relative flex-1">
+        <div
+          ref={contentEditableRef}
+          className="px-4 pt-4 pb-2 flex-1 max-h-[40vh] overflow-y-auto min-h-12 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 focus:outline-none whitespace-pre-wrap wrap-break-word"
+          style={{ scrollbarWidth: "thin", minHeight: "2.5rem", height: "auto" }}
+          role="textbox"
+          tabIndex={0}
+          contentEditable={!disabled}
+          suppressContentEditableWarning={true}
+          onInput={handleContentChange}
+          onKeyDown={handleKeyDown}
+          onPaste={(e) => {
             e.preventDefault();
-            if ((prompt.trim() || referenceImages.length > 0) && !disabled) {
-              onSubmit();
+            const text = e.clipboardData.getData("text/plain");
+            if (text.trim()) {
+              document.execCommand("insertText", false, text);
             }
-          }
-        }}
-        onPaste={onPaste}
-        rows={1}
-        placeholder={placeholder}
-        className="px-4 pt-4 pb-2 flex-1 max-h-[30vh] overflow-y-auto min-h-12 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none resize-none"
-        autoFocus={autoFocus}
-        disabled={disabled}
-      />
+            onPaste(e);
+          }}
+        />
+        {showPlaceholder && (
+          <div className="absolute top-4 left-4 pointer-events-none text-sm text-neutral-400 dark:text-neutral-500">
+            {placeholder}
+          </div>
+        )}
+      </div>
 
       {/* Controls bar */}
       <div className="flex items-center justify-between gap-3 px-3 pb-3">
@@ -193,8 +232,8 @@ export function RendererInput({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {referenceImages.length < 4 && (
-            drives && drives.length > 0 && onDriveSelect ? (
+          {referenceImages.length < 4 &&
+            (drives && drives.length > 0 && onDriveSelect ? (
               <Menu>
                 <MenuButton
                   className="rounded-xl p-2 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors hover:bg-neutral-100/70 dark:hover:bg-white/5"
@@ -241,8 +280,7 @@ export function RendererInput({
               >
                 <ImagePlus size={16} />
               </button>
-            )
-          )}
+            ))}
 
           <button
             type="button"
