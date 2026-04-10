@@ -16,6 +16,17 @@ func main() {
 
 	dist := os.DirFS("dist")
 
-	handler := server.New(cfg, url, token, dist)
-	http.ListenAndServe(":8000", handler)
+	port := os.Getenv("PORT")
+	prefix := os.Getenv("PREFIX")
+
+	if port == "" {
+		port = "8000"
+	}
+
+	if prefix == "" {
+		prefix = "/api"
+	}
+
+	handler := server.New(cfg, prefix, url, token, dist)
+	http.ListenAndServe(":"+port, handler)
 }

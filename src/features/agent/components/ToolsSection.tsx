@@ -126,7 +126,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
               <button
                 type="button"
                 onClick={() => toggleTool(tool.id)}
-                className={`shrink-0 ${agentToolIds.has(tool.id) ? "text-blue-600 dark:text-blue-400" : "text-neutral-400 dark:text-neutral-500"}`}
+                className={`shrink-0 ${agentToolIds.has(tool.id) ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
                 title={agentToolIds.has(tool.id) ? "Enabled (click to disable)" : "Disabled (click to enable)"}
               >
                 {agentToolIds.has(tool.id) ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
@@ -184,7 +184,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                     e.stopPropagation();
                     toggleServer(agent.id, server.id);
                   }}
-                  className={`shrink-0 ${server.enabled ? "text-blue-600 dark:text-blue-400" : "text-neutral-400 dark:text-neutral-500"}`}
+                  className={`shrink-0 ${server.enabled ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
                   title={server.enabled ? "Enabled (click to disable)" : "Disabled (click to enable)"}
                 >
                   {server.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}

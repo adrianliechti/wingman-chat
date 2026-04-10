@@ -219,7 +219,7 @@ export function AppLayout() {
       >
         {/* Fixed navigation bar with glass effect */}
         <nav
-          className={`fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 shadow-sm transition-all duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? "md:left-59" : ""}`}
+          className={`fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 shadow-sm transition-[padding] duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? "md:pl-62" : ""}`}
         >
           <div className="flex items-center justify-between">
             {/* Left section */}

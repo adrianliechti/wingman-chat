@@ -16,7 +16,9 @@ import {
   ChevronDown,
   ChevronRight,
   SparklesIcon,
+  HardDrive,
 } from "lucide-react";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useLayout } from "@/shell/hooks/useLayout";
 import { useTranslate } from "@/features/translate/hooks/useTranslate";
@@ -26,6 +28,8 @@ import { RewritePopover } from "@/shared/ui/RewritePopover";
 import { InteractiveText } from "@/shared/ui/InteractiveText";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import { getConfig } from "@/shared/config";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { getDriveContentUrl } from "@/shared/lib/drives";
 
 export function TranslatePage() {
   const { setRightActions } = useNavigation();
@@ -48,6 +52,8 @@ export function TranslatePage() {
 
   const config = getConfig();
   const enableTTS = !!config.tts;
+  const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
+  const [isFetchingDrive, setIsFetchingDrive] = useState(false);
 
   // Use translate context
   const {
@@ -74,6 +80,24 @@ export function TranslatePage() {
     selectFile,
     clearFile,
   } = useTranslate();
+
+  const handleDriveFiles = useCallback(
+    async (files: SelectedFile[]) => {
+      const f = files[0];
+      if (!f) return;
+      setIsFetchingDrive(true);
+      try {
+        const url = getDriveContentUrl(f.driveId, f.id);
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        const file = new File([blob], f.name, { type: f.mime || blob.type });
+        selectFile(file);
+      } finally {
+        setIsFetchingDrive(false);
+      }
+    },
+    [selectFile],
+  );
 
   // Local state for editable translated text (to allow rewriting)
   const [currentText, setCurrentText] = useState(translatedText);
@@ -252,7 +276,7 @@ export function TranslatePage() {
     <div className="h-full w-full flex flex-col overflow-hidden relative">
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {/* File Translation Mode - Single centered file */}
-        {selectedFile ? (
+        {selectedFile || isFetchingDrive ? (
           <div
             ref={containerRef}
             className={`flex-1 flex items-center justify-center p-4 pt-20 ${isDragging ? "bg-slate-50/80 dark:bg-slate-900/40" : ""} transition-all duration-200`}
@@ -270,6 +294,18 @@ export function TranslatePage() {
                   <span className="text-base font-medium text-neutral-500 dark:text-neutral-400 text-center">
                     Drop to replace file
                   </span>
+                </div>
+              </div>
+            ) : isFetchingDrive ? (
+              <div className="flex flex-col items-center gap-6">
+                <div className="relative bg-neutral-50/60 dark:bg-neutral-900/50 backdrop-blur-lg p-10 rounded-2xl shadow-xl border border-neutral-200/60 dark:border-neutral-700/50 flex flex-col items-center gap-5 transition-all">
+                  <div className="relative">
+                    <FileIcon size={96} className="text-neutral-700 dark:text-neutral-300" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Loader2 size={32} className="animate-spin text-neutral-800 dark:text-neutral-200" />
+                    </div>
+                  </div>
+                  <span className="text-base font-medium text-neutral-500 dark:text-neutral-400">Loading file…</span>
                 </div>
               </div>
             ) : (
@@ -317,7 +353,7 @@ export function TranslatePage() {
 
                   {/* File name */}
                   <span className="text-base font-medium text-neutral-800 dark:text-neutral-200 text-center max-w-[280px] truncate">
-                    {translatedFileName || getCandidateFileName() || selectedFile.name}
+                    {translatedFileName || getCandidateFileName() || selectedFile?.name}
                   </span>
 
                   {/* Status text */}
@@ -427,15 +463,53 @@ export function TranslatePage() {
                     {/* File upload controls */}
                     <div className="absolute top-2 left-3 z-10">
                       {supportedFiles.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={handleFileUploadClick}
-                          className="inline-flex items-center gap-1 pl-0.5 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors"
-                          title={`Select a file to translate (${supportedFiles.map((sf) => sf.ext).join(", ")})`}
-                        >
-                          <UploadIcon size={14} />
-                          <span>Upload file</span>
-                        </button>
+                        config.drives.length > 0 ? (
+                          <Menu>
+                            <MenuButton className="inline-flex items-center gap-1 pl-0.5 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
+                              <UploadIcon size={14} />
+                              <span>Upload file</span>
+                            </MenuButton>
+                            <MenuItems
+                              modal={false}
+                              transition
+                              anchor="bottom start"
+                              className="mt-1 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-40"
+                            >
+                              <MenuItem>
+                                <button
+                                  type="button"
+                                  onClick={handleFileUploadClick}
+                                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                                >
+                                  <UploadIcon size={15} className="text-neutral-500" />
+                                  Upload
+                                </button>
+                              </MenuItem>
+                              {config.drives.map((drive) => (
+                                <MenuItem key={drive.id}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveDrive(drive)}
+                                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                                  >
+                                    <HardDrive size={15} className="text-neutral-500" />
+                                    {drive.name}
+                                  </button>
+                                </MenuItem>
+                              ))}
+                            </MenuItems>
+                          </Menu>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleFileUploadClick}
+                            className="inline-flex items-center gap-1 pl-0.5 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors"
+                            title={`Select a file to translate (${supportedFiles.map((sf) => sf.ext).join(", ")})`}
+                          >
+                            <UploadIcon size={14} />
+                            <span>Upload file</span>
+                          </button>
+                        )
                       )}
                       {supportedFiles.length === 0 && <div className="h-8"></div>}
                       <input
@@ -596,6 +670,17 @@ export function TranslatePage() {
           </div>
         )}
       </main>
+
+      {/* Drive Picker */}
+      {activeDrive && (
+        <DrivePicker
+          isOpen={!!activeDrive}
+          onClose={() => setActiveDrive(null)}
+          drive={activeDrive}
+          onFilesSelected={handleDriveFiles}
+          accept={supportedFiles.map((sf) => sf.ext).join(",")}
+        />
+      )}
 
       {/* Rewrite Menu */}
       {rewriteMenu && currentText && (

@@ -1,6 +1,6 @@
-import mime from "mime";
 import { marked } from "marked";
-import type { TextContent, ImageContent, AudioContent, FileContent } from "@/shared/types/chat";
+import mime from "mime";
+import type { AudioContent, FileContent, ImageContent, TextContent } from "@/shared/types/chat";
 
 // Parse a data URL to extract mimeType and base64 data
 export function parseDataUrl(dataUrl: string): { mimeType: string; data: string } | null {
@@ -195,6 +195,13 @@ export function formatBytes(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+export function getToolDisplayName(toolName: string): string {
+  return toolName
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 export function markdownToHtml(markdown: string): string {

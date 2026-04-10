@@ -33,7 +33,7 @@ export function IdentityStep({ name, description, instructions, showValidation, 
           className={`w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border ${
             nameError
               ? "border-red-400/70 dark:border-red-500/70 focus:ring-red-500/60"
-              : "border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60"
+              : "border-neutral-300/60 dark:border-neutral-700/60 focus:ring-neutral-500/60"
           } focus:ring-2 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors`}
         />
         {nameError && <p className="mt-1 text-xs text-red-500">{nameError}</p>}
@@ -46,7 +46,7 @@ export function IdentityStep({ name, description, instructions, showValidation, 
           value={description}
           onChange={(e) => dispatch({ type: "SET_DESCRIPTION", value: e.target.value })}
           placeholder="A one-liner about what this agent does"
-          className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
+          className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
         />
       </div>
 
@@ -57,7 +57,7 @@ export function IdentityStep({ name, description, instructions, showValidation, 
           onChange={(e) => dispatch({ type: "SET_INSTRUCTIONS", value: e.target.value })}
           rows={8}
           placeholder="How should this agent behave? What personality, constraints, or context should it have?"
-          className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors resize-y"
+          className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors resize-y"
         />
         <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
           The soul of your agent — the instructions it follows in every conversation.

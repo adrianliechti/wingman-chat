@@ -27,7 +27,7 @@ export function WizardStepIndicator({ steps, currentStep, visitedSteps, onStepCl
             {i > 0 && (
               <div
                 className={`w-6 h-px mx-0.5 ${
-                  visitedSteps.has(i) ? "bg-blue-400/60 dark:bg-blue-500/40" : "bg-neutral-200 dark:bg-neutral-700"
+                  visitedSteps.has(i) ? "bg-neutral-400/60 dark:bg-neutral-500/40" : "bg-neutral-200 dark:bg-neutral-700"
                 }`}
               />
             )}
@@ -37,9 +37,9 @@ export function WizardStepIndicator({ steps, currentStep, visitedSteps, onStepCl
               onClick={() => isClickable && onStepClick(i)}
               className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
                 isActive
-                  ? "bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300"
+                  ? "bg-neutral-100 dark:bg-neutral-800/60 text-neutral-900 dark:text-neutral-100"
                   : isCompleted
-                    ? "text-blue-500 dark:text-blue-400 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 cursor-pointer"
+                    ? "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 cursor-pointer"
                     : "text-neutral-400 dark:text-neutral-500 cursor-default"
               }`}
             >

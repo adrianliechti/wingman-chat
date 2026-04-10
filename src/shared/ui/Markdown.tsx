@@ -23,6 +23,9 @@ import { MediaPlayer } from "./MediaPlayer";
 import { isAudioUrl, isVideoUrl } from "@/shared/lib/utils";
 import type { ReactNode } from "react";
 
+const markdownLinkClassName =
+  "text-sky-700 dark:text-sky-300 underline decoration-2 underline-offset-3 decoration-sky-500/60 dark:decoration-sky-400/70 hover:text-sky-800 dark:hover:text-sky-200 hover:decoration-current focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50";
+
 const slugify = (children: ReactNode): string => {
   const text = extractText(children);
   return text
@@ -148,7 +151,7 @@ const components: Partial<Components> = {
     if (internalHash) {
       return (
         <a
-          className="hover:underline"
+          className={markdownLinkClassName}
           href={`#${internalHash}`}
           onClick={(e) => {
             e.preventDefault();
@@ -162,7 +165,7 @@ const components: Partial<Components> = {
     }
 
     return (
-      <a className="hover:underline" href={url} target="_blank" rel="noreferrer noopener" {...props}>
+      <a className={markdownLinkClassName} href={url} target="_blank" rel="noreferrer noopener" {...props}>
         {children}
       </a>
     );
@@ -371,8 +374,91 @@ const rehypeReactOptions: Parameters<typeof rehypeReact>[0] = {
 
 const STREAM_RENDER_THROTTLE_MS = 120;
 
-const preprocessMarkdown = (content: string): string => {
+const findMatchingLinkDestinationEnd = (content: string, start: number): number => {
+  let depth = 1;
+
+  for (let index = start; index < content.length; index += 1) {
+    const char = content[index];
+
+    if (char === "\\") {
+      index += 1;
+      continue;
+    }
+
+    if (char === "(") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+
+  return -1;
+};
+
+const stabilizeStreamingLinks = (content: string): string => {
+  const bracketStack: number[] = [];
+  let inInlineCode = false;
+  let inFence = false;
+
+  for (let index = 0; index < content.length; index += 1) {
+    const char = content[index];
+    const nextThree = content.slice(index, index + 3);
+    const lineStart = index === 0 || content[index - 1] === "\n";
+
+    if (!inInlineCode && lineStart && nextThree === "```") {
+      inFence = !inFence;
+      index += 2;
+      continue;
+    }
+
+    if (inFence) {
+      continue;
+    }
+
+    if (char === "`" && content[index - 1] !== "\\") {
+      inInlineCode = !inInlineCode;
+      continue;
+    }
+
+    if (inInlineCode) {
+      continue;
+    }
+
+    if (char === "[") {
+      bracketStack.push(index);
+      continue;
+    }
+
+    if (char === "]" && content[index + 1] === "(" && bracketStack.length > 0) {
+      const labelStart = bracketStack.pop();
+      if (labelStart === undefined) {
+        continue;
+      }
+      const label = content.slice(labelStart + 1, index);
+      const destinationEnd = findMatchingLinkDestinationEnd(content, index + 2);
+
+      if (destinationEnd === -1) {
+        const imageStart = labelStart > 0 && content[labelStart - 1] === "!" ? labelStart - 1 : labelStart;
+        return `${content.slice(0, imageStart)}${label}`;
+      }
+    }
+  }
+
+  return content;
+};
+
+const preprocessMarkdown = (content: string, isStreaming = false): string => {
   let processedContent = content;
+
+  if (isStreaming) {
+    processedContent = stabilizeStreamingLinks(processedContent);
+  }
 
   // Convert LaTeX-style display math \[...\] to $$...$$
   processedContent = processedContent.replace(/\\\[([\s\S]+?)\\\]/g, (_match, mathContent) => {
@@ -438,7 +524,7 @@ const NonMemoizedMarkdown = ({ children, isStreaming = false }: MarkdownProps) =
   const input = useDeferredValue(isStreaming ? throttled : children);
   if (!input) return null;
 
-  return processor.processSync(preprocessMarkdown(input)).result;
+  return processor.processSync(preprocessMarkdown(input, isStreaming)).result;
 };
 
 export const Markdown = memo(

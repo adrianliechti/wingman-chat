@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { getConfig } from "@/shared/config";
 import { resizeImageBlob, readAsDataURL, decodeDataURL } from "@/shared/lib/utils";
 import { X, ImagePlus, Download, PlusIcon, Info, Loader2 } from "lucide-react";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { getDriveContentUrl } from "@/shared/lib/drives";
 import DOMPurify from "dompurify";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useDropZone } from "@/shared/hooks/useDropZone";
@@ -178,6 +180,8 @@ export function RendererPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
+  const [isFetchingDrive, setIsFetchingDrive] = useState(false);
 
   // Load available renderer models
   useEffect(() => {
@@ -248,6 +252,26 @@ export function RendererPage() {
       }
     }
   }, []);
+
+  const handleDriveFiles = useCallback(
+    async (files: SelectedFile[]) => {
+      setIsFetchingDrive(true);
+      try {
+        const fetched = await Promise.all(
+          files.map(async (f) => {
+            const url = getDriveContentUrl(f.driveId, f.id);
+            const resp = await fetch(url);
+            const blob = await resp.blob();
+            return new File([blob], f.name, { type: f.mime || blob.type });
+          }),
+        );
+        await handleImageUpload(fetched);
+      } finally {
+        setIsFetchingDrive(false);
+      }
+    },
+    [handleImageUpload],
+  );
 
   const removeReferenceImage = useCallback((index: number) => {
     setReferenceImages((prev) => {
@@ -474,6 +498,9 @@ export function RendererPage() {
                 referenceImages={referenceImages}
                 onRemoveReferenceImage={removeReferenceImage}
                 onFileUploadClick={() => fileInputRef.current?.click()}
+                drives={config.drives}
+                onDriveSelect={setActiveDrive}
+                isLoadingFiles={isFetchingDrive}
                 models={models}
                 selectedModel={selectedModel}
                 onSelectModel={setSelectedModel}
@@ -498,6 +525,9 @@ export function RendererPage() {
                 referenceImages={referenceImages}
                 onRemoveReferenceImage={removeReferenceImage}
                 onFileUploadClick={() => fileInputRef.current?.click()}
+                drives={config.drives}
+                onDriveSelect={setActiveDrive}
+                isLoadingFiles={isFetchingDrive}
                 models={models}
                 selectedModel={selectedModel}
                 onSelectModel={setSelectedModel}
@@ -579,6 +609,17 @@ export function RendererPage() {
           className="hidden"
         />
       </main>
+
+      {activeDrive && (
+        <DrivePicker
+          isOpen={!!activeDrive}
+          onClose={() => setActiveDrive(null)}
+          drive={activeDrive}
+          onFilesSelected={handleDriveFiles}
+          multiple
+          accept="image/*"
+        />
+      )}
     </div>
   );
 }

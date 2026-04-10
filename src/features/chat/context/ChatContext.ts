@@ -1,5 +1,6 @@
 import { createContext } from "react";
-import type { Chat, Message, Model, PendingElicitation, ElicitationResult } from "@/shared/types/chat";
+import type { Chat, Message, Model } from "@/shared/types/chat";
+import type { ElicitationResult, PendingElicitation } from "@/shared/types/elicitation";
 
 export interface ChatContextType {
   // Models
@@ -12,6 +13,7 @@ export interface ChatContextType {
   chat: Chat | null;
   messages: Message[];
   isResponding: boolean;
+  stopStreaming: () => void;
 
   // Chat actions
   createChat: () => Promise<Chat>;

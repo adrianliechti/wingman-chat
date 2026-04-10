@@ -292,7 +292,7 @@ export function SkillCatalog({
                           className={`w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border ${
                             nameError
                               ? "border-red-400/70 focus:ring-red-500/60"
-                              : "border-neutral-300/60 dark:border-neutral-700/60 focus:ring-blue-500/60"
+                              : "border-neutral-300/60 dark:border-neutral-700/60 focus:ring-neutral-500/60"
                           } focus:ring-2 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors`}
                           placeholder="my-skill-name"
                           autoFocus={editing === "new"}
@@ -309,7 +309,7 @@ export function SkillCatalog({
                         <textarea
                           value={edDescription}
                           onChange={(e) => setEdDescription(e.target.value)}
-                          className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none transition-colors"
+                          className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none transition-colors"
                           rows={2}
                           placeholder="Describe what this skill does and when to use it..."
                         />
@@ -321,7 +321,7 @@ export function SkillCatalog({
                         <textarea
                           value={edContent}
                           onChange={(e) => setEdContent(e.target.value)}
-                          className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-blue-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 font-mono resize-none transition-colors"
+                          className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 font-mono resize-none transition-colors"
                           rows={10}
                           placeholder={"# Skill Instructions\n\nDetailed instructions for the agent..."}
                         />
@@ -349,7 +349,7 @@ export function SkillCatalog({
                           type="button"
                           onClick={handleEditorSave}
                           disabled={!editorIsValid}
-                          className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600/90 text-white hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          className="px-3 py-1.5 text-xs font-medium rounded-md bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
                           Save
                         </button>
@@ -420,7 +420,7 @@ export function SkillCatalog({
                               className="flex items-center gap-2.5 px-5 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-800/40 transition-colors group cursor-pointer select-none"
                             >
                               <span
-                                className={`shrink-0 rounded p-0.5 flex items-center justify-center transition-colors ${enabled ? "text-blue-600 dark:text-blue-400" : "text-neutral-400 dark:text-neutral-500"}`}
+                                className={`shrink-0 rounded p-0.5 flex items-center justify-center transition-colors ${enabled ? "text-neutral-800 dark:text-neutral-200" : "text-neutral-400 dark:text-neutral-500"}`}
                               >
                                 {enabled ? <Minus size={14} strokeWidth={3} /> : <Plus size={14} strokeWidth={3} />}
                               </span>

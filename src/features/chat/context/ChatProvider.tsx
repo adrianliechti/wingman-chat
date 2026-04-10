@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
@@ -6,16 +6,9 @@ import { useChats } from "@/features/chat/hooks/useChats";
 import { useModels } from "@/features/chat/hooks/useModels";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
-import type {
-  Content,
-  Elicitation,
-  ElicitationResult,
-  Message,
-  Model,
-  PendingElicitation,
-  ToolContext,
-} from "@/shared/types/chat";
+import type { Content, Message, Model, ToolContext } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
+import type { Elicitation, ElicitationResult, PendingElicitation } from "@/shared/types/elicitation";
 import { useApp } from "@/shell/hooks/useApp";
 import type { ChatContextType } from "./ChatContext";
 import { ChatContext } from "./ChatContext";
@@ -51,8 +44,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
+  const elicitationCompleteCallbacksRef = useRef<Map<string, () => void>>(new Map());
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
+  const streamingMessageRef = useRef<{ chatId: string; message: Message } | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const pendingModelContextRef = useRef<Map<string, string | null>>(new Map());
+
+  // Keep ref in sync with state so stopStreaming can read current value synchronously
+  const updateStreamingMessage = useCallback((msg: { chatId: string; message: Message } | null) => {
+    streamingMessageRef.current = msg;
+    setStreamingMessage(msg);
+  }, []);
 
   const chat = chats.find((c) => c.id === chatId) ?? null;
   const agentModel = currentAgent?.model ? (models.find((m) => m.id === currentAgent.model) ?? null) : null;
@@ -207,6 +209,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 });
               });
             },
+            onElicitationComplete: (elicitationId: string) => {
+              const cb = elicitationCompleteCallbacksRef.current.get(elicitationId);
+              if (cb) {
+                elicitationCompleteCallbacksRef.current.delete(elicitationId);
+                cb();
+              }
+            },
             render: async () => {
               console.log("[Render] Getting iframe for tool call:", currentToolCall.id, currentToolCall.name);
 
@@ -244,7 +253,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Main completion loop to handle tool calls
         while (true) {
           // Track streaming content in-memory to avoid writing the full conversation on every token
-          setStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: [] } });
+          updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: [] } });
+
+          const abortController = new AbortController();
+          abortControllerRef.current = abortController;
 
           const assistantMessage = await client.complete(
             model!.id,
@@ -252,7 +264,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             modelConversation,
             tools,
             (contentParts) => {
-              setStreamingMessage({
+              updateStreamingMessage({
                 chatId: id,
                 message: {
                   role: Role.Assistant,
@@ -265,8 +277,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
               summary: model?.summary,
               verbosity: model?.verbosity,
               compactThreshold: model?.compactThreshold,
+              signal: abortController.signal,
             },
           );
+
+          abortControllerRef.current = null;
+
+          // If the stream was stopped by the user, exit cleanly
+          if (abortController.signal.aborted) {
+            return;
+          }
 
           // Add the assistant message to conversation
           conversation = [...conversation, assistantMessage];
@@ -276,7 +296,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           updateChat(id, () => ({ messages: conversation }));
 
           // Clear streaming buffer now that the message is persisted
-          setStreamingMessage(null);
+          updateStreamingMessage(null);
 
           // Check if there are tool calls to handle
           const toolCalls = assistantMessage.content.filter((p) => p.type === "tool_call");
@@ -376,7 +396,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setIsResponding(false);
 
         // Ensure streaming buffer is cleared after completion
-        setStreamingMessage(null);
+        updateStreamingMessage(null);
 
         if (!initialTitle || conversation.length % 3 === 0) {
           client.summarizeTitle(config.chat?.summarizer || model!.id, conversation).then((title) => {
@@ -388,9 +408,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
       } catch (error) {
         console.error(error);
         setIsResponding(false);
+        abortControllerRef.current = null;
 
         if (error?.toString().includes("missing finish_reason")) {
-          setStreamingMessage(null);
+          updateStreamingMessage(null);
           return;
         }
 
@@ -435,10 +456,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
         updateChat(id, () => ({ messages: conversation }));
 
         // Ensure streaming buffer is cleared on errors
-        setStreamingMessage(null);
+        updateStreamingMessage(null);
       }
     },
-    [chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, renderApp, updateModelContext],
+    [chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, renderApp, updateModelContext, updateStreamingMessage],
   );
 
   const sendMessage = useCallback(
@@ -454,13 +475,62 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const resolveElicitation = useCallback(
     (result: ElicitationResult) => {
-      if (pendingElicitation) {
-        pendingElicitation.resolve(result);
-        setPendingElicitation(null);
+      if (!pendingElicitation) return;
+
+      const elicitation = pendingElicitation.elicitation;
+
+      if (elicitation.mode === "url") {
+        if (pendingElicitation.waiting) {
+          // User cancelled while waiting — resolve the MCP promise now and clean up
+          pendingElicitation.resolve({ action: "cancel" });
+          elicitationCompleteCallbacksRef.current.delete(elicitation.elicitationId);
+          setPendingElicitation(null);
+          return;
+        }
+
+        if (result.action === "accept") {
+          const resolve = pendingElicitation.resolve;
+          setPendingElicitation((prev) => (prev ? { ...prev, waiting: true } : null));
+
+          if (elicitationCompleteCallbacksRef.current.size > 0) {
+            elicitationCompleteCallbacksRef.current.clear();
+          }
+          elicitationCompleteCallbacksRef.current.set(elicitation.elicitationId, () => {
+            resolve({ action: "accept" });
+            setPendingElicitation((prev) => (prev ? { ...prev, waiting: false, completed: true } : null));
+            window.setTimeout(() => {
+              setPendingElicitation(null);
+            }, 1500);
+          });
+          return;
+        }
       }
+
+      pendingElicitation.resolve(result);
+      setPendingElicitation(null);
     },
     [pendingElicitation],
   );
+
+  const stopStreaming = useCallback(() => {
+    const controller = abortControllerRef.current;
+    if (!controller) return;
+
+    controller.abort();
+    abortControllerRef.current = null;
+
+    // Commit partial streaming content to chat
+    const streaming = streamingMessageRef.current;
+    if (streaming && streaming.message.content.length > 0) {
+      updateChat(streaming.chatId, (prev) => ({
+        messages: [...prev.messages, streaming.message],
+      }));
+    }
+
+    updateStreamingMessage(null);
+    setIsResponding(false);
+    setPendingElicitation(null);
+  }, [updateChat, updateStreamingMessage]);
 
   const value: ChatContextType = {
     // Models
@@ -484,6 +554,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     sendMessage,
 
     isResponding,
+    stopStreaming,
     // Elicitation
     pendingElicitation,
     resolveElicitation,

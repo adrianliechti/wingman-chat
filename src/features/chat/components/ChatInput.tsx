@@ -5,6 +5,7 @@ import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
   Send,
   Paperclip,
+  HardDrive,
   ScreenShare,
   Sparkles,
   Loader2,
@@ -22,6 +23,8 @@ import {
 
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSuggestions } from "./ChatInputSuggestions";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { getDriveContentUrl } from "@/shared/lib/drives";
 import { VoiceWaves } from "@/features/voice/components/VoiceWaves";
 
 import { Role, ProviderState } from "@/shared/types/chat";
@@ -41,7 +44,7 @@ export function ChatInput() {
   const config = getConfig();
   const client = config.client;
 
-  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding } = useChat();
+  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding, stopStreaming } = useChat();
   const { currentAgent, setCurrentAgent } = useAgents();
   const { profile } = useSettings();
   const {
@@ -73,6 +76,8 @@ export function ChatInput() {
   const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
 
   // Prompt suggestions state
+  const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
+
   const [showPromptSuggestions, setShowPromptSuggestions] = useState(false);
   const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
   const [loadingPrompts, setLoadingPrompts] = useState(false);
@@ -355,6 +360,34 @@ export function ChatInput() {
     }
   }, []);
 
+  const handleDriveFiles = useCallback(
+    async (files: SelectedFile[]) => {
+      // Show extracting state for each file while downloading
+      const names = files.map((f) => f.name);
+      setExtractingAttachments((prev) => new Set([...prev, ...names]));
+
+      try {
+        const fetched = await Promise.all(
+          files.map(async (f) => {
+            const url = getDriveContentUrl(f.driveId, f.id);
+            const resp = await fetch(url);
+            const blob = await resp.blob();
+            return new File([blob], f.name, { type: f.mime || blob.type });
+          }),
+        );
+
+        handleFiles(fetched);
+      } finally {
+        setExtractingAttachments((prev) => {
+          const next = new Set(prev);
+          for (const n of names) next.delete(n);
+          return next;
+        });
+      }
+    },
+    [handleFiles],
+  );
+
   const handleContinuousCaptureToggle = useCallback(async () => {
     try {
       if (isContinuousCaptureActive) {
@@ -435,6 +468,7 @@ export function ChatInput() {
   }, [isTranscribing, stopTranscription, startTranscription]);
 
   return (
+    <>
     <form onSubmit={handleSubmit}>
       <div
         ref={containerRef}
@@ -859,15 +893,66 @@ export function ChatInput() {
                   </button>
                 )}
 
-                {!isRealtimeSelected && (
-                  <button
-                    type="button"
-                    className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                    onClick={handleAttachmentClick}
-                  >
-                    <Paperclip size={16} />
-                  </button>
-                )}
+                {!isRealtimeSelected &&
+                  (config.drives.length > 0 ? (
+                    <Menu>
+                      <MenuButton className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200">
+                        <Paperclip size={16} />
+                      </MenuButton>
+                      <MenuItems
+                        modal={false}
+                        transition
+                        anchor="bottom end"
+                        className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-48 dark:ring-1 dark:ring-white/10"
+                      >
+                        <MenuItem>
+                          <button
+                            type="button"
+                            onClick={handleAttachmentClick}
+                            className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10"
+                          >
+                            <Paperclip size={16} />
+                            <span className="font-medium text-sm">Upload</span>
+                          </button>
+                        </MenuItem>
+                        {config.drives.map((fp) => (
+                          <MenuItem key={fp.id}>
+                            <button
+                              type="button"
+                              onClick={() => setActiveDrive(fp)}
+                              className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
+                            >
+                              {fp.icon ? (
+                                <span
+                                  className="shrink-0 bg-current inline-block"
+                                  style={{
+                                    width: 16,
+                                    height: 16,
+                                    maskImage: `url(${fp.icon})`,
+                                    WebkitMaskImage: `url(${fp.icon})`,
+                                    maskSize: "contain",
+                                    maskRepeat: "no-repeat",
+                                    maskPosition: "center",
+                                  }}
+                                />
+                              ) : (
+                                <HardDrive size={16} />
+                              )}
+                              <span className="font-medium text-sm">{fp.name}</span>
+                            </button>
+                          </MenuItem>
+                        ))}
+                      </MenuItems>
+                    </Menu>
+                  ) : (
+                    <button
+                      type="button"
+                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      onClick={handleAttachmentClick}
+                    >
+                      <Paperclip size={16} />
+                    </button>
+                  ))}
               </>
             )}
 
@@ -889,11 +974,12 @@ export function ChatInput() {
             ) : isResponding ? (
               <button
                 type="button"
-                className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
-                disabled
-                title="Generating response..."
+                className="group/stop p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                onClick={stopStreaming}
+                title="Stop generating"
               >
-                <LoaderCircle size={16} className="animate-spin" />
+                <LoaderCircle size={16} className="animate-spin group-hover/stop:hidden" />
+                <Square size={16} className="hidden group-hover/stop:block" />
               </button>
             ) : content.trim() ? (
               <button
@@ -940,5 +1026,21 @@ export function ChatInput() {
         </div>
       </div>
     </form>
+
+    {activeDrive && (
+      <DrivePicker
+        isOpen={!!activeDrive}
+        onClose={() => setActiveDrive(null)}
+        drive={activeDrive}
+        onFilesSelected={handleDriveFiles}
+        multiple
+        accept={[
+          ...(config.text?.files ?? []),
+          ...(config.vision?.files ?? []),
+          ...(config.extractor?.files ?? []),
+        ].join(",")}
+      />
+    )}
+    </>
   );
 }
