@@ -5,6 +5,9 @@ export interface ArtifactContent {
   contentType?: string;
 }
 
+// Sandbox mount prefixes that LLMs may include in artifact paths.
+const SANDBOX_PREFIXES = ["/home/pyodide/", "/home/user/"];
+
 export function normalizeArtifactPath(path: string | undefined): string | undefined {
   if (!path) {
     return undefined;
@@ -13,6 +16,14 @@ export function normalizeArtifactPath(path: string | undefined): string | undefi
   let normalized = path.trim();
   if (!normalized) {
     return undefined;
+  }
+
+  // Strip sandbox mount prefixes so "/home/pyodide/chart.py" → "/chart.py"
+  for (const prefix of SANDBOX_PREFIXES) {
+    if (normalized.startsWith(prefix)) {
+      normalized = normalized.slice(prefix.length - 1); // keep leading "/"
+      break;
+    }
   }
 
   if (!normalized.startsWith("/")) {
