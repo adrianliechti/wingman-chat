@@ -390,7 +390,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       {
         name: "execute_python_code",
         description:
-          "Execute Python code or an existing Python artifact file with optional package dependencies. Provide exactly one of `code` or `path`. All artifact files are available under /home/pyodide/, and files written there are synced back.",
+          "Execute Python code or an existing Python artifact file with optional package dependencies. Provide exactly one of `code` or `path`. All artifact files are available under /home/user/, and files written there are synced back.",
         parameters: {
           type: "object",
           properties: {
@@ -520,7 +520,7 @@ export function useArtifactsProvider(): ToolProvider | null {
               const { memFs } = getSingleton();
               const currentFiles = await readFilesFromFs(memFs);
 
-              await fs.applyOverlaySnapshot(currentFiles, { deleteMissing: true });
+              await fs.applyOverlaySnapshot(currentFiles, { deleteMissing: false });
             }
 
             const parts: string[] = [];

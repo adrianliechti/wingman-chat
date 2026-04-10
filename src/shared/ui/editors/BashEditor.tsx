@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { SANDBOX_HOME } from "@/shared/lib/artifactFiles";
 import {
-  BASH_HOME,
   createBashInstance,
   getBashCwd,
   getBashEnv,
@@ -28,12 +28,12 @@ interface OutputEntry {
 }
 
 function formatPromptCwd(cwd: string): string {
-  if (cwd === BASH_HOME) {
+  if (cwd === SANDBOX_HOME) {
     return "~";
   }
 
-  if (cwd.startsWith(`${BASH_HOME}/`)) {
-    return `~/${cwd.slice(BASH_HOME.length + 1)}`;
+  if (cwd.startsWith(`${SANDBOX_HOME}/`)) {
+    return `~/${cwd.slice(SANDBOX_HOME.length + 1)}`;
   }
 
   return cwd;
@@ -46,7 +46,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
   const [input, setInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  const [cwd, setCwd] = useState(BASH_HOME);
+  const [cwd, setCwd] = useState(SANDBOX_HOME);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -54,11 +54,11 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
   const previousFilesRef = useRef<Record<string, OverlayFile>>({});
   const hasRunInitialScript = useRef(false);
   const isApplyingLocalSyncRef = useRef(false);
-  const cwdRef = useRef(BASH_HOME);
+  const cwdRef = useRef(SANDBOX_HOME);
   const shellEnvRef = useRef<Record<string, string>>({
-    HOME: BASH_HOME,
-    PWD: BASH_HOME,
-    OLDPWD: BASH_HOME,
+    HOME: SANDBOX_HOME,
+    PWD: SANDBOX_HOME,
+    OLDPWD: SANDBOX_HOME,
     PATH: "/usr/bin:/bin",
   });
 

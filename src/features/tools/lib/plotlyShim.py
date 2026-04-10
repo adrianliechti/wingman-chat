@@ -53,7 +53,7 @@ def _plotly_shim_write_image(fig, file, format=None, width=None, height=None, sc
 def _plotly_shim_to_image(fig, format=None, width=None, height=None, scale=None, validate=True, engine=None, **kwargs):
     raise RuntimeError(
         "plotly to_image() is not supported in this environment. "
-        "Use fig.write_image('/home/pyodide/chart.png') to save an image file instead."
+        "Use fig.write_image('/home/user/chart.png') to save an image file instead."
     )
 
 

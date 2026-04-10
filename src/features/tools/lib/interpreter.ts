@@ -1,5 +1,5 @@
 import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodide";
-import { bytesToDataUrl, dataUrlToBytes, isDataUrlContent } from "@/shared/lib/artifactFiles";
+import { SANDBOX_HOME, bytesToDataUrl, dataUrlToBytes, isDataUrlContent } from "@/shared/lib/artifactFiles";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { clearRenderQueue, processRenderQueue } from "./plotlyRenderer";
 import PLOTLY_IMAGE_SHIM from "./plotlyShim.py?raw";
@@ -22,7 +22,6 @@ const PACKAGE_ALIASES: Record<string, string> = {
 // Packages that cannot run in Pyodide (native binaries) — silently ignored when requested.
 const IGNORED_PACKAGES = new Set(["kaleido"]);
 
-const PYODIDE_BASE_DIR = "/home/pyodide";
 const NO_OUTPUT_MESSAGE = "Code executed successfully (no output)";
 
 function normalizePackageName(name: string): string {
@@ -82,11 +81,11 @@ let plotlyShimApplied = false;
 
 function syncFilesToPyodide(pyodide: PyodideInterface, files: ArtifactFiles): void {
   // Clear existing files
-  clearDirectory(pyodide, PYODIDE_BASE_DIR);
-  ensureDir(pyodide, PYODIDE_BASE_DIR);
+  clearDirectory(pyodide, SANDBOX_HOME);
+  ensureDir(pyodide, SANDBOX_HOME);
 
   for (const [path, file] of Object.entries(files)) {
-    const fsPath = `${PYODIDE_BASE_DIR}/${path.startsWith("/") ? path.slice(1) : path}`;
+    const fsPath = `${SANDBOX_HOME}/${path.startsWith("/") ? path.slice(1) : path}`;
     const dir = fsPath.substring(0, fsPath.lastIndexOf("/"));
     if (dir) ensureDir(pyodide, dir);
 
@@ -119,23 +118,21 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
           continue;
         }
 
-        const relativePath = fullPath.slice(PYODIDE_BASE_DIR.length + 1);
-        if (!relativePath) continue;
+        const artifactPath = `/${fullPath.slice(SANDBOX_HOME.length + 1)}`;
+        if (artifactPath === "/") continue;
 
         const contentType =
-          sourceFiles[`/${relativePath}`]?.contentType ??
-          sourceFiles[relativePath]?.contentType ??
-          inferContentTypeFromPath(relativePath);
+          sourceFiles[artifactPath]?.contentType ?? inferContentTypeFromPath(artifactPath);
 
         if (isTextContentType(contentType)) {
-          files[relativePath] = {
+          files[artifactPath] = {
             content: pyodide.FS.readFile(fullPath, { encoding: "utf8" }) as string,
             contentType,
           };
         } else {
           const bytes = pyodide.FS.readFile(fullPath) as Uint8Array;
           const ct = contentType ?? "application/octet-stream";
-          files[relativePath] = { content: bytesToDataUrl(bytes, ct), contentType: ct };
+          files[artifactPath] = { content: bytesToDataUrl(bytes, ct), contentType: ct };
         }
       } catch {
         // Skip unreadable files.
@@ -143,7 +140,7 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
     }
   };
 
-  walk(PYODIDE_BASE_DIR);
+  walk(SANDBOX_HOME);
   return files;
 }
 
