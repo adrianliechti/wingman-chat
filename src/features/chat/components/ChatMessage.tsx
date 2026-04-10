@@ -1,4 +1,4 @@
-import { AlertCircle, Check, ChevronRight, Loader2, Pencil, X } from "lucide-react";
+import { AlertCircle, ChevronRight, Loader2, Pencil, Send, X } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
@@ -182,7 +182,7 @@ function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
       </button>
 
       {isExpanded && (
-        <div className="mt-1 ml-[18px]">
+        <div className="mt-1 ml-4.5">
           <div className="text-sm text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap">{reasoning}</div>
         </div>
       )}
@@ -252,7 +252,7 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
-  }, [textareaRef]);
+  }, []);
 
   const handleStartEdit = () => {
     if (isResponding) return;
@@ -574,81 +574,102 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
 
     return (
       <div
-        className={`flex ${isUser ? "justify-end" : "justify-start"} pb-4 ${!isUser && isResponding && props.isLast ? "" : "group"} text-neutral-900 dark:text-neutral-200`}
+        className={`flex ${isUser ? "justify-end" : "justify-start"} pb-2 ${!isUser && isResponding && props.isLast ? "" : "group"} text-neutral-900 dark:text-neutral-200`}
       >
-        {/* Edit button for user messages - positioned to the left of the bubble */}
-        {isUser && !isEditing && !isResponding && (
-          <button
-            onClick={handleStartEdit}
-            className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors opacity-0 group-hover:opacity-100 p-1 mr-1 self-center"
-            title="Edit message"
-            type="button"
-          >
-            <Pencil className="h-4 w-4" />
-          </button>
-        )}
+        {isUser ? (
+          <div className={`flex flex-col items-end${isEditing ? " flex-1" : ""}`}>
+            <div
+              className={`rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 wrap-break-words overflow-x-auto${isEditing ? " self-stretch" : ""}`}
+            >
+              {isEditing ? (
+                <div className="flex flex-col gap-2">
+                  <textarea
+                    ref={textareaRef}
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    className="w-full min-w-50 bg-transparent border-none outline-none resize-none font-sans text-neutral-900 dark:text-neutral-200"
+                    rows={1}
+                  />
+                  {/* Show additional text attachments (file attachments) with ability to remove */}
+                  {editAdditionalTextContent.length > 0 && (
+                    <ChatInputAttachments
+                      attachments={editAdditionalTextContent}
+                      extractingAttachments={new Set()}
+                      onRemove={handleRemoveAdditionalText}
+                    />
+                  )}
+                  {/* Show media attachments with ability to remove */}
+                  {editMediaContent.length > 0 && (
+                    <ChatInputAttachments
+                      attachments={editMediaContent}
+                      extractingAttachments={new Set()}
+                      onRemove={handleRemoveMedia}
+                    />
+                  )}
+                </div>
+              ) : (
+                <>
+                  <pre className="whitespace-pre-wrap font-sans">{textContent}</pre>
+                  {/* Show additional text content (file attachments) as attachment tiles */}
+                  {additionalTextContent.length > 0 && (
+                    <div className="pt-2">
+                      <ChatInputAttachments attachments={additionalTextContent} extractingAttachments={new Set()} />
+                    </div>
+                  )}
+                </>
+              )}
 
-        <div
-          className={`${isUser ? "rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200" : "flex-1 py-3"} wrap-break-words overflow-x-auto`}
-        >
-          {isUser ? (
-            isEditing ? (
-              <div className="flex flex-col gap-2">
-                <textarea
-                  ref={textareaRef}
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  className="w-full min-w-50 bg-transparent border-none outline-none resize-none font-sans text-neutral-900 dark:text-neutral-200"
-                  rows={1}
-                />
-                {/* Show additional text attachments (file attachments) with ability to remove */}
-                {editAdditionalTextContent.length > 0 && (
-                  <ChatInputAttachments
-                    attachments={editAdditionalTextContent}
-                    extractingAttachments={new Set()}
-                    onRemove={handleRemoveAdditionalText}
-                  />
-                )}
-                {/* Show media attachments with ability to remove */}
-                {editMediaContent.length > 0 && (
-                  <ChatInputAttachments
-                    attachments={editMediaContent}
-                    extractingAttachments={new Set()}
-                    onRemove={handleRemoveMedia}
-                  />
-                )}
-                <div className="flex items-center gap-1 justify-end">
+              {/* Render images, audio, and files from content (hide during edit since ChatInputAttachments shows them) */}
+              {hasMedia && !isEditing && (
+                <div className="pt-2">
+                  <RenderContents contents={mediaParts} />
+                </div>
+              )}
+            </div>
+
+            {isEditing ? (
+              <div className="flex items-center gap-2 justify-between mt-1 pr-1 self-stretch">
+                <span className="text-[11px] text-neutral-400 dark:text-neutral-500 select-none">
+                  Esc to cancel · Enter to submit
+                </span>
+                <div className="flex items-center gap-1">
                   <button
                     onClick={handleCancelEdit}
-                    className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors p-1"
-                    title="Cancel (Esc)"
+                    className="p-1.5 text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors"
+                    title="Cancel"
                     type="button"
                   >
-                    <X className="h-4 w-4" />
+                    <X size={16} />
                   </button>
                   <button
                     onClick={handleConfirmEdit}
-                    className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors p-1"
-                    title="Save (Enter)"
+                    className="p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors"
+                    title="Save & Submit"
                     type="button"
                   >
-                    <Check className="h-4 w-4" />
+                    <Send size={16} />
                   </button>
                 </div>
               </div>
             ) : (
-              <>
-                <pre className="whitespace-pre-wrap font-sans">{textContent}</pre>
-                {/* Show additional text content (file attachments) as attachment tiles */}
-                {additionalTextContent.length > 0 && (
-                  <div className="pt-2">
-                    <ChatInputAttachments attachments={additionalTextContent} extractingAttachments={new Set()} />
-                  </div>
-                )}
-              </>
-            )
-          ) : (
+              <div
+                className={`flex items-center gap-2 justify-end mt-1 pr-1 transition-opacity duration-200 ${isResponding ? "invisible" : "opacity-0 group-hover:opacity-100"}`}
+              >
+                <CopyButton markdown={textContent} className="h-4 w-4" />
+                <button
+                  onClick={handleStartEdit}
+                  className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors"
+                  title="Edit message"
+                  type="button"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex-1 py-3 wrap-break-words overflow-x-auto">
             <>
               {/* Render content parts in order */}
               {message.content.map((part, index) => {
@@ -710,27 +731,22 @@ export const ChatMessage = memo(function ChatMessage({ message, index, isRespond
                 return null;
               })}
             </>
-          )}
 
-          {/* Render images, audio, and files from content (hide during edit since ChatInputAttachments shows them) */}
-          {hasMedia && !isEditing && (
-            <div className="pt-2">
-              <RenderContents contents={mediaParts} />
-            </div>
-          )}
+            {hasMedia && (
+              <div className="pt-2">
+                <RenderContents contents={mediaParts} />
+              </div>
+            )}
 
-          {!isUser && (
-            <div
-              className={`flex justify-between items-center mt-2 transition-opacity duration-200 ${props.isLast && !isResponding ? "opacity-100!" : "opacity-0 group-hover:opacity-100"}`}
-            >
+            <div className="flex justify-between items-center mt-1 transition-opacity duration-200 opacity-0 group-hover:opacity-100">
               <div className="flex items-center gap-2">
                 <CopyButton markdown={textContent} className="h-4 w-4" />
                 <ConvertButton markdown={textContent} className="h-4 w-4" />
                 {enableTTS && <PlayButton text={textContent} className="h-4 w-4" />}
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     );
   }
