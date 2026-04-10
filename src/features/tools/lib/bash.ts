@@ -3,6 +3,7 @@ import type { InitialFiles } from "just-bash/browser";
 import { SANDBOX_HOME, bytesToDataUrl, dataUrlToBytes } from "@/shared/lib/artifactFiles";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import type { OverlayFile } from "@/features/artifacts/lib/fs";
+import { pythonCommands } from "./pythonCommand";
 
 export interface BashExecutionRequest {
   command: string;
@@ -65,6 +66,7 @@ export function createBashInstance(files?: Record<string, { content: string; con
   const bash = new Bash({
     fs: memFs,
     cwd: SANDBOX_HOME,
+    customCommands: pythonCommands,
     executionLimits: {
       maxCallDepth: 50,
       maxCommandCount: 10000,
