@@ -3,7 +3,6 @@ import { bytesToDataUrl, dataUrlToBytes, isDataUrlContent } from "@/shared/lib/a
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { clearRenderQueue, processRenderQueue } from "./plotlyRenderer";
 import PLOTLY_IMAGE_SHIM from "./plotlyShim.py?raw";
-import KALEIDO_MOCK from "./kaleidoMock.py?raw";
 
 interface ArtifactFile {
   content: string;
@@ -12,118 +11,54 @@ interface ArtifactFile {
 
 type ArtifactFiles = Record<string, ArtifactFile>;
 
-interface PyodideProxy<T = unknown> {
-  toJs?: () => T;
-  destroy?: () => void;
-}
-
 // Maps Python import names to pip package names — only needed for PyPI-manifest
 // packages where the import name differs from the pip name.  Pyodide builtins
-// (PIL→pillow, bs4→beautifulsoup4, …) are resolved automatically by loadPackage
-// via pyodide-lock.json.
+// (PIL→pillow, bs4→beautifulsoup4, …) are resolved automatically by loadPackage.
 const PACKAGE_ALIASES: Record<string, string> = {
   docx: "python-docx",
   pptx: "python-pptx",
 };
 
-let standardLibraryModules: Set<string> | null = null;
+// Packages that cannot run in Pyodide (native binaries) — silently ignored when requested.
+const IGNORED_PACKAGES = new Set(["kaleido"]);
+
 const PYODIDE_BASE_DIR = "/home/pyodide";
 const NO_OUTPUT_MESSAGE = "Code executed successfully (no output)";
 
 function normalizePackageName(name: string): string {
-  const trimmed = name.trim();
-  const lower = trimmed.toLowerCase();
-  if (!lower) {
-    return lower;
-  }
-
-  if (PACKAGE_ALIASES[lower]) {
-    return PACKAGE_ALIASES[lower];
-  }
-
-  const rootModule = lower.split(".")[0];
-  return PACKAGE_ALIASES[rootModule] ?? rootModule;
-}
-
-function uniquePackages(packages: string[]): string[] {
-  return Array.from(new Set(packages.map(normalizePackageName).filter(Boolean)));
+  const lower = name.trim().toLowerCase();
+  if (!lower) return lower;
+  const root = lower.split(".")[0];
+  return PACKAGE_ALIASES[lower] ?? PACKAGE_ALIASES[root] ?? root;
 }
 
 // Manifest mapping package names to local wheel filenames (built at compile time)
 let wheelManifest: Record<string, string> | null = null;
 async function getWheelManifest(): Promise<Record<string, string>> {
-  if (wheelManifest) {
-    return wheelManifest;
-  }
+  if (wheelManifest) return wheelManifest;
 
-  try {
-    const res = await fetch("/pyodide/pypi-manifest.json");
-    if (!res.ok) {
-      throw new Error(`Failed to load bundled package manifest: ${res.status}`);
-    }
-
-    wheelManifest = (await res.json()) as Record<string, string>;
-    return wheelManifest;
-  } catch (error) {
-    throw new Error(
-      `Bundled Python package manifest is unavailable: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
+  const res = await fetch("/pyodide/pypi-manifest.json");
+  if (!res.ok) throw new Error(`Failed to load bundled package manifest: ${res.status}`);
+  wheelManifest = (await res.json()) as Record<string, string>;
+  return wheelManifest;
 }
 
-async function getStandardLibraryModules(pyodide: PyodideInterface): Promise<Set<string>> {
-  if (standardLibraryModules) {
-    return standardLibraryModules;
-  }
-
-  const modules = pyodide.runPython(
-    "import sys\nsorted(set(sys.stdlib_module_names) | set(sys.builtin_module_names))",
-  ) as PyodideProxy<unknown>;
-
-  try {
-    const values = modules.toJs ? modules.toJs() : modules;
-    standardLibraryModules = new Set(
-      Array.isArray(values)
-        ? values.filter((value): value is string => typeof value === "string").map((value) => value.toLowerCase())
-        : [],
-    );
-    return standardLibraryModules;
-  } finally {
-    modules.destroy?.();
-  }
-}
-
-function isStandardLibraryModule(name: string, stdlibModules: Set<string>): boolean {
-  const rootModule = name.trim().toLowerCase().split(".")[0];
-  return stdlibModules.has(rootModule);
-}
-
+/**
+ * Detect non-stdlib imports in user code via Pyodide's find_imports,
+ * then normalize to pip package names.
+ */
 async function findImportedPackages(pyodide: PyodideInterface, code: string): Promise<string[]> {
-  const globals = pyodide.toPy({ source_code: code });
+  const raw = await pyodide.runPythonAsync(`
+from pyodide.code import find_imports
+import sys as _sys
+_stdlib = set(getattr(_sys, 'stdlib_module_names', set())) | set(_sys.builtin_module_names)
+[m for m in find_imports(${JSON.stringify(code)}) if m.split('.')[0].lower() not in _stdlib]
+`);
 
-  try {
-    const imports = pyodide.runPython(`from pyodide.code import find_imports\nfind_imports(source_code)`, {
-      globals,
-    }) as PyodideProxy<unknown>;
-
-    try {
-      const values = imports.toJs ? imports.toJs() : imports;
-      if (Array.isArray(values)) {
-        const stdlibModules = await getStandardLibraryModules(pyodide);
-        return uniquePackages(
-          values
-            .filter((value): value is string => typeof value === "string")
-            .filter((value) => !isStandardLibraryModule(value, stdlibModules)),
-        );
-      }
-
-      return [];
-    } finally {
-      imports.destroy?.();
-    }
-  } finally {
-    globals.destroy();
-  }
+  const imports: string[] = raw?.toJs?.() ?? [];
+  raw?.destroy?.();
+  const unique = new Set(imports.map(normalizePackageName).filter(Boolean));
+  return [...unique];
 }
 
 export interface CodeExecutionRequest {
@@ -142,76 +77,22 @@ export interface CodeExecutionResult {
 let pyodideInstance: PyodideInterface | null = null;
 let pyodideLoading: Promise<PyodideInterface> | null = null;
 const loadedPackages = new Set<string>();
-const appliedShims = new Set<string>();
-
-async function applyCompatShims(pyodide: PyodideInterface, packages: string[]): Promise<void> {
-  if (packages.includes("plotly") && !appliedShims.has("plotly")) {
-    await pyodide.runPythonAsync(PLOTLY_IMAGE_SHIM);
-    appliedShims.add("plotly");
-  }
-}
-
-function ensureDirectory(pyodide: PyodideInterface, dir: string): void {
-  try {
-    pyodide.FS.mkdirTree(dir);
-  } catch {
-    // Directory may already exist.
-  }
-}
-
-function toFsPath(path: string): string {
-  const relativePath = path.startsWith("/") ? path.slice(1) : path;
-  return `${PYODIDE_BASE_DIR}/${relativePath}`;
-}
-
-function isBinaryFile(file: ArtifactFile): boolean {
-  return isDataUrlContent(file.content) || (!!file.contentType && !isTextContentType(file.contentType));
-}
-
-function toBinaryBytes(file: ArtifactFile): Uint8Array {
-  const parsed = dataUrlToBytes(file.content);
-  if (parsed) {
-    return parsed.bytes;
-  }
-
-  return new TextEncoder().encode(file.content);
-}
-
-function clearPyodideDirectory(pyodide: PyodideInterface, dir: string): void {
-  try {
-    const entries = pyodide.FS.readdir(dir).filter((entry: string) => entry !== "." && entry !== "..");
-
-    for (const entry of entries) {
-      const fullPath = dir === "/" ? `/${entry}` : `${dir}/${entry}`;
-      const stat = pyodide.FS.stat(fullPath);
-
-      if (pyodide.FS.isDir(stat.mode)) {
-        clearPyodideDirectory(pyodide, fullPath);
-        pyodide.FS.rmdir(fullPath);
-      } else {
-        pyodide.FS.unlink(fullPath);
-      }
-    }
-  } catch {
-    // Ignore directories that do not exist yet.
-  }
-}
+let kaleidoMockApplied = false;
+let plotlyShimApplied = false;
 
 function syncFilesToPyodide(pyodide: PyodideInterface, files: ArtifactFiles): void {
-  clearPyodideDirectory(pyodide, PYODIDE_BASE_DIR);
-
-  ensureDirectory(pyodide, PYODIDE_BASE_DIR);
+  // Clear existing files
+  clearDirectory(pyodide, PYODIDE_BASE_DIR);
+  ensureDir(pyodide, PYODIDE_BASE_DIR);
 
   for (const [path, file] of Object.entries(files)) {
-    const fsPath = toFsPath(path);
+    const fsPath = `${PYODIDE_BASE_DIR}/${path.startsWith("/") ? path.slice(1) : path}`;
     const dir = fsPath.substring(0, fsPath.lastIndexOf("/"));
+    if (dir) ensureDir(pyodide, dir);
 
-    if (dir) {
-      ensureDirectory(pyodide, dir);
-    }
-
-    if (isBinaryFile(file)) {
-      pyodide.FS.writeFile(fsPath, toBinaryBytes(file));
+    if (isDataUrlContent(file.content) || (file.contentType && !isTextContentType(file.contentType))) {
+      const parsed = dataUrlToBytes(file.content);
+      pyodide.FS.writeFile(fsPath, parsed ? parsed.bytes : new TextEncoder().encode(file.content));
     } else {
       pyodide.FS.writeFile(fsPath, file.content);
     }
@@ -221,88 +102,76 @@ function syncFilesToPyodide(pyodide: PyodideInterface, files: ArtifactFiles): vo
 function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFiles): ArtifactFiles {
   const files: ArtifactFiles = {};
 
-  const walkDir = (dir: string) => {
+  const walk = (dir: string) => {
+    let entries: string[];
     try {
-      const entries = pyodide.FS.readdir(dir).filter((entry: string) => entry !== "." && entry !== "..");
-
-      for (const entry of entries) {
-        const fullPath = dir === "/" ? `/${entry}` : `${dir}/${entry}`;
-
-        try {
-          const stat = pyodide.FS.stat(fullPath);
-          if (pyodide.FS.isDir(stat.mode)) {
-            walkDir(fullPath);
-            continue;
-          }
-
-          const relativePath = fullPath.slice(PYODIDE_BASE_DIR.length + 1);
-          if (!relativePath) {
-            continue;
-          }
-
-          const priorContentType =
-            sourceFiles[`/${relativePath}`]?.contentType ?? sourceFiles[relativePath]?.contentType;
-          const contentType = priorContentType ?? inferContentTypeFromPath(relativePath);
-
-          if (isTextContentType(contentType)) {
-            files[relativePath] = {
-              content: pyodide.FS.readFile(fullPath, { encoding: "utf8" }) as string,
-              contentType,
-            };
-            continue;
-          }
-
-          const bytes = pyodide.FS.readFile(fullPath) as Uint8Array;
-          files[relativePath] = {
-            content: bytesToDataUrl(bytes, contentType ?? "application/octet-stream"),
-            contentType: contentType ?? "application/octet-stream",
-          };
-        } catch {
-          // Skip files that can't be read.
-        }
-      }
+      entries = (pyodide.FS.readdir(dir) as string[]).filter((e) => e !== "." && e !== "..");
     } catch {
-      // Skip directories that can't be listed.
+      return;
+    }
+
+    for (const entry of entries) {
+      const fullPath = `${dir}/${entry}`;
+      try {
+        const stat = pyodide.FS.stat(fullPath);
+        if (pyodide.FS.isDir(stat.mode)) {
+          walk(fullPath);
+          continue;
+        }
+
+        const relativePath = fullPath.slice(PYODIDE_BASE_DIR.length + 1);
+        if (!relativePath) continue;
+
+        const contentType =
+          sourceFiles[`/${relativePath}`]?.contentType ??
+          sourceFiles[relativePath]?.contentType ??
+          inferContentTypeFromPath(relativePath);
+
+        if (isTextContentType(contentType)) {
+          files[relativePath] = {
+            content: pyodide.FS.readFile(fullPath, { encoding: "utf8" }) as string,
+            contentType,
+          };
+        } else {
+          const bytes = pyodide.FS.readFile(fullPath) as Uint8Array;
+          const ct = contentType ?? "application/octet-stream";
+          files[relativePath] = { content: bytesToDataUrl(bytes, ct), contentType: ct };
+        }
+      } catch {
+        // Skip unreadable files.
+      }
     }
   };
 
-  walkDir(PYODIDE_BASE_DIR);
+  walk(PYODIDE_BASE_DIR);
   return files;
 }
 
 async function ensurePackagesLoaded(pyodide: PyodideInterface, packages: string[]): Promise<void> {
-  const toLoad = packages.filter((pkg) => !loadedPackages.has(pkg));
-  if (toLoad.length === 0) {
-    return;
-  }
+  const toLoad = packages.filter((pkg) => !loadedPackages.has(pkg) && !IGNORED_PACKAGES.has(pkg));
+  if (toLoad.length === 0) return;
 
   const manifest = await getWheelManifest();
   const pyodideBuiltins: string[] = [];
   const pypiPackages: string[] = [];
 
   for (const pkg of toLoad) {
-    if (manifest[pkg]) {
-      pypiPackages.push(pkg);
-    } else {
-      pyodideBuiltins.push(pkg);
-    }
+    (manifest[pkg] ? pypiPackages : pyodideBuiltins).push(pkg);
   }
 
   if (pyodideBuiltins.length > 0) {
     await pyodide.loadPackage(pyodideBuiltins);
-    for (const pkg of pyodideBuiltins) {
-      loadedPackages.add(pkg);
-    }
+    for (const pkg of pyodideBuiltins) loadedPackages.add(pkg);
   }
 
   if (pypiPackages.length > 0) {
     await pyodide.loadPackage("micropip");
 
-    // Register mock kaleido so micropip considers it "installed" and
-    // Pyodide's import hook won't try to auto-install the native binary.
-    if (pypiPackages.includes("plotly") && !appliedShims.has("kaleido-mock")) {
-      await pyodide.runPythonAsync(KALEIDO_MOCK);
-      appliedShims.add("kaleido-mock");
+    // Register mock kaleido so micropip considers it "installed" and won't
+    // try to install the native binary. Plotly's built-in renderer works without it.
+    if (pypiPackages.includes("plotly") && !kaleidoMockApplied) {
+      await pyodide.runPythonAsync('import micropip; micropip.add_mock_package("kaleido", "1.1.0")');
+      kaleidoMockApplied = true;
     }
 
     for (const pkg of pypiPackages) {
@@ -314,18 +183,12 @@ async function ensurePackagesLoaded(pyodide: PyodideInterface, packages: string[
 
 async function runPythonCode(pyodide: PyodideInterface, code: string): Promise<string> {
   let output = "";
+  const collect = (text: string) => {
+    output += `${text}\n`;
+  };
 
-  pyodide.setStdout({
-    batched: (text: string) => {
-      output += `${text}\n`;
-    },
-  });
-
-  pyodide.setStderr({
-    batched: (text: string) => {
-      output += `${text}\n`;
-    },
-  });
+  pyodide.setStdout({ batched: collect });
+  pyodide.setStderr({ batched: collect });
 
   const result = await pyodide.runPythonAsync(code);
 
@@ -337,20 +200,12 @@ async function runPythonCode(pyodide: PyodideInterface, code: string): Promise<s
 }
 
 async function loadPyodide(): Promise<PyodideInterface> {
-  if (pyodideInstance) {
-    return pyodideInstance;
-  }
-
-  if (pyodideLoading) {
-    return pyodideLoading;
-  }
+  if (pyodideInstance) return pyodideInstance;
+  if (pyodideLoading) return pyodideLoading;
 
   pyodideLoading = (async () => {
     try {
-      pyodideInstance = await loadPyodideRuntime({
-        indexURL: "/pyodide/",
-      });
-
+      pyodideInstance = await loadPyodideRuntime({ indexURL: "/pyodide/" });
       console.log("Pyodide loaded successfully");
       return pyodideInstance;
     } catch (error) {
@@ -369,13 +224,18 @@ export async function executeCode(request: CodeExecutionRequest): Promise<CodeEx
   try {
     const pyodide = await loadPyodide();
     const importedPackages = await findImportedPackages(pyodide, code);
-    const requestedPackages = uniquePackages([...importedPackages, ...packages]);
+    const requestedPackages = [...new Set([...importedPackages, ...packages.map(normalizePackageName).filter(Boolean)])];
 
     syncFilesToPyodide(pyodide, files);
     await ensurePackagesLoaded(pyodide, requestedPackages);
-    await applyCompatShims(pyodide, requestedPackages);
-    clearRenderQueue(pyodide);
 
+    // Apply plotly shim after packages are loaded (once per session)
+    if (requestedPackages.includes("plotly") && !plotlyShimApplied) {
+      await pyodide.runPythonAsync(PLOTLY_IMAGE_SHIM);
+      plotlyShimApplied = true;
+    }
+
+    clearRenderQueue(pyodide);
     const output = await runPythonCode(pyodide, code);
     await processRenderQueue(pyodide);
 
@@ -386,7 +246,6 @@ export async function executeCode(request: CodeExecutionRequest): Promise<CodeEx
     };
   } catch (error) {
     console.error("Code execution error:", error);
-
     return {
       success: false,
       output: "",
@@ -394,3 +253,35 @@ export async function executeCode(request: CodeExecutionRequest): Promise<CodeEx
     };
   }
 }
+
+// FS helpers
+
+function ensureDir(pyodide: PyodideInterface, dir: string): void {
+  try {
+    pyodide.FS.mkdirTree(dir);
+  } catch {
+    // Already exists.
+  }
+}
+
+function clearDirectory(pyodide: PyodideInterface, dir: string): void {
+  let entries: string[];
+  try {
+    entries = (pyodide.FS.readdir(dir) as string[]).filter((e) => e !== "." && e !== "..");
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    const fullPath = `${dir}/${entry}`;
+    const stat = pyodide.FS.stat(fullPath);
+
+    if (pyodide.FS.isDir(stat.mode)) {
+      clearDirectory(pyodide, fullPath);
+      pyodide.FS.rmdir(fullPath);
+    } else {
+      pyodide.FS.unlink(fullPath);
+    }
+  }
+}
+

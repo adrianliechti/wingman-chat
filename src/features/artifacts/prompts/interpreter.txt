@@ -44,7 +44,6 @@ Limitations:
 - No network access.
 - Only Pyodide built-ins and bundled offline packages are available.
 - Visualizations can generate files but do not display inline.
-- Plotly: `fig.write_image()` supports PNG, SVG, JPEG, and WebP formats. PDF format is not supported. `fig.to_image()` (returning bytes) is not supported — use `write_image()` to save to a file instead. `fig.write_html()` also works for interactive HTML output.
 - The script runs in a sandbox at `/home/pyodide/`.
 
 ### Bash Interpreter (`execute_bash_code`)

@@ -19,7 +19,6 @@ async function ensurePlotlyJsLoaded(pyodide: PyodideInterface): Promise<void> {
     return;
   }
 
-  // Discover plotly.min.js path from the installed wheel
   const plotlyJsPath = String(
     pyodide.runPython(
       "import plotly, os; os.path.join(os.path.dirname(plotly.__file__), 'package_data', 'plotly.min.js')",
@@ -28,7 +27,6 @@ async function ensurePlotlyJsLoaded(pyodide: PyodideInterface): Promise<void> {
 
   const plotlyJsSource = pyodide.FS.readFile(plotlyJsPath, { encoding: "utf8" }) as string;
 
-  // Inject into the page via a blob URL <script> tag
   const blob = new Blob([plotlyJsSource], { type: "application/javascript" });
   const url = URL.createObjectURL(blob);
 
@@ -54,14 +52,9 @@ function decodeDataUrl(dataUrl: string, format: string): Uint8Array | string {
   const payload = dataUrl.substring(commaIndex + 1);
 
   if (format === "svg") {
-    // SVG may come as URL-encoded or base64
-    if (header.includes(";base64")) {
-      return atob(payload);
-    }
-    return decodeURIComponent(payload);
+    return header.includes(";base64") ? atob(payload) : decodeURIComponent(payload);
   }
 
-  // Binary formats (PNG, JPEG, WebP): always base64
   const binaryString = atob(payload);
   const bytes = new Uint8Array(binaryString.length);
   for (let i = 0; i < binaryString.length; i++) {
@@ -92,30 +85,19 @@ async function renderFigure(manifest: RenderManifest): Promise<{ path: string; d
     if (manifest.scale != null) opts.scale = manifest.scale;
 
     const dataUrl = await Plotly.toImage(div, opts);
-
     Plotly.purge(div);
 
-    return {
-      path: manifest.file,
-      data: decodeDataUrl(dataUrl, manifest.format),
-    };
+    return { path: manifest.file, data: decodeDataUrl(dataUrl, manifest.format) };
   } finally {
     div.remove();
   }
 }
 
-function ensureDirectory(pyodide: PyodideInterface, dir: string): void {
-  try {
-    pyodide.FS.mkdirTree(dir);
-  } catch {
-    // Directory may already exist.
-  }
-}
-
 export function clearRenderQueue(pyodide: PyodideInterface): void {
   try {
-    const entries = (pyodide.FS.readdir(RENDER_QUEUE_DIR) as string[]).filter((e: string) => e !== "." && e !== "..");
-
+    const entries = (pyodide.FS.readdir(RENDER_QUEUE_DIR) as string[]).filter(
+      (e: string) => e !== "." && e !== "..",
+    );
     for (const entry of entries) {
       pyodide.FS.unlink(`${RENDER_QUEUE_DIR}/${entry}`);
     }
@@ -131,40 +113,34 @@ export async function processRenderQueue(pyodide: PyodideInterface): Promise<voi
       .filter((e: string) => e !== "." && e !== ".." && e.endsWith(".json"))
       .sort();
   } catch {
-    // No queue directory means no render requests.
     return;
   }
 
-  if (entries.length === 0) {
-    return;
-  }
+  if (entries.length === 0) return;
 
   await ensurePlotlyJsLoaded(pyodide);
 
   for (const entry of entries) {
-    const manifestPath = `${RENDER_QUEUE_DIR}/${entry}`;
     try {
-      const manifestJson = pyodide.FS.readFile(manifestPath, { encoding: "utf8" }) as string;
-      const manifest = JSON.parse(manifestJson) as RenderManifest;
-
+      const json = pyodide.FS.readFile(`${RENDER_QUEUE_DIR}/${entry}`, { encoding: "utf8" }) as string;
+      const manifest = JSON.parse(json) as RenderManifest;
       const result = await renderFigure(manifest);
 
       // Ensure parent directory exists
       const dir = result.path.substring(0, result.path.lastIndexOf("/"));
       if (dir) {
-        ensureDirectory(pyodide, dir);
+        try {
+          pyodide.FS.mkdirTree(dir);
+        } catch {
+          /* exists */
+        }
       }
 
-      if (typeof result.data === "string") {
-        pyodide.FS.writeFile(result.path, result.data);
-      } else {
-        pyodide.FS.writeFile(result.path, result.data);
-      }
+      pyodide.FS.writeFile(result.path, result.data);
     } catch (error) {
       console.error(`Failed to render plotly figure from ${entry}:`, error);
     }
   }
 
-  // Clean up manifests
   clearRenderQueue(pyodide);
 }
