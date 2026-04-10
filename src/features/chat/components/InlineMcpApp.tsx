@@ -14,11 +14,9 @@ type AppDisplayMode = "inline" | "fullscreen";
 function getAppDisplayModes(toolResult: ToolResultContent): AppDisplayMode[] {
   const modes = toolResult.meta?.appDisplayModes as AppDisplayMode[] | undefined;
   if (modes && modes.length > 0) return modes;
-  // Fallback: use defaultDisplayMode as a hint when availableDisplayModes is not set
   const defaultMode = toolResult.meta?.defaultDisplayMode as string | undefined;
   if (defaultMode === "fullscreen") return ["fullscreen"];
   if (defaultMode === "inline") return ["inline"];
-  // No info at all: assume both modes (backward compat)
   return ["inline", "fullscreen"];
 }
 
@@ -34,16 +32,15 @@ export function InlineMcpApp({ toolResult, isLastFullscreenApp }: InlineMcpAppPr
   const appKey = `${providerId}-${resourceUri}-${toolResult.id}`;
 
   const appDisplayModes = getAppDisplayModes(toolResult);
-  const isInlineOnly = appDisplayModes.length === 1 && appDisplayModes[0] === "inline";
-  const isFullscreenOnly = appDisplayModes.length === 1 && appDisplayModes[0] === "fullscreen";
-  const supportsBoth = appDisplayModes.includes("inline") && appDisplayModes.includes("fullscreen");
 
-  // Determine initial display mode
+  const [bridgeDisplayModes, setBridgeDisplayModes] = useState<AppDisplayMode[] | null>(null);
+  const effectiveDisplayModes = bridgeDisplayModes ?? appDisplayModes;
+  const isInlineOnly = effectiveDisplayModes.length === 1 && effectiveDisplayModes[0] === "inline";
+  const isFullscreenOnly = effectiveDisplayModes.length === 1 && effectiveDisplayModes[0] === "fullscreen";
+
   const getInitialDisplayMode = (): AppDisplayMode => {
-    if (isInlineOnly) return "inline";
-    if (isFullscreenOnly) return "fullscreen";
-    // Both modes: show fullscreen only if this is the last fullscreen app
-    return isLastFullscreenApp ? "fullscreen" : "inline";
+    if (appDisplayModes.length === 1 && appDisplayModes[0] === "fullscreen") return "fullscreen";
+    return "inline";
   };
 
   const [displayMode, setDisplayMode] = useState<AppDisplayMode>(getInitialDisplayMode);
@@ -110,10 +107,17 @@ export function InlineMcpApp({ toolResult, isLastFullscreenApp }: InlineMcpAppPr
             cleanupRef.current = cleanup;
           },
         }),
+        updateMeta: (meta) => {
+          const modes = meta.appDisplayModes as AppDisplayMode[] | undefined;
+          if (modes && modes.length > 0) {
+            setBridgeDisplayModes(modes);
+          }
+        },
       };
 
       await restoreToolUI(providerId, toolResult.name, resourceUri, args, toolResult.result, context, {
         displayMode: "inline",
+        onDisplayModeRequested: (mode) => setDisplayMode(mode as AppDisplayMode),
       });
 
       setIsLoading(false);
@@ -123,21 +127,16 @@ export function InlineMcpApp({ toolResult, isLastFullscreenApp }: InlineMcpAppPr
     }
   }, [toolResult, providerId, resourceUri, setProviderEnabled, renderAppInto, restoreToolUI]);
 
-  // When drawer closes while in fullscreen mode:
-  // - For "both" mode apps: switch to inline
-  // - For fullscreen-only apps: stay in fullscreen mode (just show the reopen button)
   const [prevShowAppDrawer, setPrevShowAppDrawer] = useState(showAppDrawer);
   if (showAppDrawer !== prevShowAppDrawer) {
     setPrevShowAppDrawer(showAppDrawer);
     if (!showAppDrawer && displayMode === "fullscreen" && activeAppKey === appKey) {
-      if (supportsBoth) {
+      if (!isInlineOnly && !isFullscreenOnly) {
         setDisplayMode("inline");
       }
-      // For fullscreen-only: displayMode stays "fullscreen", will show the reopen button
     }
   }
 
-  // When another app takes over fullscreen, switch this one to inline (if it supports it)
   const [prevActiveAppKey, setPrevActiveAppKey] = useState(activeAppKey);
   if (activeAppKey !== prevActiveAppKey) {
     setPrevActiveAppKey(activeAppKey);
@@ -164,7 +163,6 @@ export function InlineMcpApp({ toolResult, isLastFullscreenApp }: InlineMcpAppPr
     };
   }, [displayMode, isFullscreenOnly, isLastFullscreenApp, expandToFullscreen, renderInline]);
 
-  // === FULLSCREEN-ONLY: always show a button to open/reopen in panel ===
   if (isFullscreenOnly) {
     return (
       <div className="mt-2 ml-5 mb-2">
@@ -180,8 +178,7 @@ export function InlineMcpApp({ toolResult, isLastFullscreenApp }: InlineMcpAppPr
     );
   }
 
-  // === BOTH MODES: fullscreen state shows "Showing in panel" button ===
-  if (displayMode === "fullscreen" && supportsBoth) {
+  if (displayMode === "fullscreen" && !isFullscreenOnly) {
     return (
       <div className="mt-2 ml-5 mb-2">
         <button
@@ -196,7 +193,6 @@ export function InlineMcpApp({ toolResult, isLastFullscreenApp }: InlineMcpAppPr
     );
   }
 
-  // === INLINE rendering (inline-only or both-modes in inline state) ===
   return (
     <div className="mt-2 ml-5 mb-2 relative rounded-lg overflow-hidden border border-neutral-200/60 dark:border-neutral-700/60 min-h-[60px]">
       {isLoading && (
@@ -204,8 +200,7 @@ export function InlineMcpApp({ toolResult, isLastFullscreenApp }: InlineMcpAppPr
           <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
         </div>
       )}
-      {/* Only show expand button if the app supports fullscreen */}
-      {supportsBoth && (
+      {!isInlineOnly && !isFullscreenOnly && (
         <button
           type="button"
           onClick={expandToFullscreen}
