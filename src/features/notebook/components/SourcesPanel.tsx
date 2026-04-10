@@ -13,6 +13,7 @@ import {
   Link,
   HardDrive,
   Type,
+  Mic,
 } from "lucide-react";
 import { Dialog, Transition } from "@headlessui/react";
 import { useDropZone } from "@/shared/hooks/useDropZone";
@@ -21,6 +22,7 @@ import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { getConfig } from "@/shared/config";
 import type { NotebookSource } from "../types/notebook";
+import { FieldRecorderOverlay } from "./FieldRecorderOverlay";
 
 interface SourcesPanelProps {
   sources: NotebookSource[];
@@ -56,6 +58,7 @@ export function SourcesPanel({
   const [showSearchOverlay, setShowSearchOverlay] = useState(false);
   const [showScrapeOverlay, setShowScrapeOverlay] = useState(false);
   const [showTextOverlay, setShowTextOverlay] = useState(false);
+  const [showRecordOverlay, setShowRecordOverlay] = useState(false);
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -178,6 +181,19 @@ export function SourcesPanel({
                 <Type size={15} className="text-neutral-500" />
                 Text
               </button>
+              {config.stt && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddMenu(false);
+                    setShowRecordOverlay(true);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <Mic size={15} className="text-neutral-500" />
+                  Record
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -303,6 +319,23 @@ export function SourcesPanel({
             }
           }}
           onClose={() => setShowTextOverlay(false)}
+        />
+      )}
+
+      {/* Field Recorder */}
+      {showRecordOverlay && (
+        <FieldRecorderOverlay
+          onComplete={async (text) => {
+            setError(null);
+            try {
+              await onTextAdd("Field Recording", text);
+              setShowRecordOverlay(false);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Failed to add recording");
+              setShowRecordOverlay(false);
+            }
+          }}
+          onClose={() => setShowRecordOverlay(false)}
         />
       )}
 
