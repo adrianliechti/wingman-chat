@@ -44,7 +44,7 @@ export function ChatInput() {
   const config = getConfig();
   const client = config.client;
 
-  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding } = useChat();
+  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding, stopStreaming } = useChat();
   const { currentAgent, setCurrentAgent } = useAgents();
   const { profile } = useSettings();
   const {
@@ -974,11 +974,12 @@ export function ChatInput() {
             ) : isResponding ? (
               <button
                 type="button"
-                className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
-                disabled
-                title="Generating response..."
+                className="group/stop p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                onClick={stopStreaming}
+                title="Stop generating"
               >
-                <LoaderCircle size={16} className="animate-spin" />
+                <LoaderCircle size={16} className="animate-spin group-hover/stop:hidden" />
+                <Square size={16} className="hidden group-hover/stop:block" />
               </button>
             ) : content.trim() ? (
               <button
