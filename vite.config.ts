@@ -85,7 +85,6 @@ export default defineConfig({
             "vendor-bash": /node_modules\/just-bash\//,
             "vendor-reactflow": /node_modules\/@xyflow\/react\//,
             "vendor-shiki": /node_modules\/shiki\//,
-            "vendor-mermaid": /node_modules\/mermaid\//,
             "vendor-openai": /node_modules\/openai\//,
             "vendor-markdown":
               /node_modules\/(unified|rehype-react|remark-parse|remark-rehype|remark-breaks|remark-gfm|remark-gemoji|remark-math|rehype-katex|emoji-regex|@fontsource\/noto-emoji)\//,

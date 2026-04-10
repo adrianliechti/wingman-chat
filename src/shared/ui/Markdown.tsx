@@ -13,7 +13,7 @@ import rehypeKatex from "rehype-katex";
 import katex from "katex";
 import "katex/dist/katex.min.css";
 import rehypeNotoEmoji from "@/shared/lib/rehype-noto-emoji";
-import { MermaidRenderer } from "./renderers/MermaidRenderer";
+
 import { CodeRenderer } from "./CodeRenderer";
 import { HtmlRenderer } from "./renderers/HtmlRenderer";
 import { CsvRenderer } from "./renderers/CsvRenderer";
@@ -321,10 +321,6 @@ const components: Partial<Components> = {
         console.warn("KaTeX rendering failed:", error);
         return <CodeRenderer code={text} language="latex" name={filename} />;
       }
-    }
-
-    if (language === "mermaid" || language === "mmd") {
-      return <MermaidRenderer chart={text} language={language} />;
     }
 
     if (language === "svg") {

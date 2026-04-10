@@ -3,7 +3,6 @@ import type { Content, ImageContent, FileContent } from "@/shared/types/chat";
 import { downloadBlob, downloadFromUrl, parseDataUrl } from "@/shared/lib/utils";
 import { PdfRenderer } from "./renderers/PdfRenderer";
 import { Markdown } from "./Markdown";
-import { MermaidRenderer } from "./renderers/MermaidRenderer";
 import { CsvRenderer } from "./renderers/CsvRenderer";
 import { HtmlRenderer } from "./renderers/HtmlRenderer";
 import mime from "mime";
@@ -180,12 +179,6 @@ function CsvDisplay({ content }: { content: FileContent }) {
   return <CsvRenderer csv={csv} language="html" name={content.name} />;
 }
 
-function MermaidDisplay({ content }: { content: FileContent }) {
-  const chart = extractTextFromDataUrl(content.data);
-
-  return <MermaidRenderer chart={chart} language="html" name={content.name} />;
-}
-
 // Main content renderer with simple design
 export function ContentRenderer({ content, className }: { content: Content; className?: string }) {
   // Handle text content - not rendered by this component
@@ -229,10 +222,6 @@ export function ContentRenderer({ content, className }: { content: Content; clas
 
     if (mimeType === "text/markdown") {
       return <MarkdownDisplay content={content} />;
-    }
-
-    if (mimeType === "text/vnd.mermaid") {
-      return <MermaidDisplay content={content} />;
     }
 
     if (mimeType === "application/pdf") {

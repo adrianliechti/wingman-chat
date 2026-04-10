@@ -11,7 +11,6 @@ import { SvgEditor } from "@/shared/ui/editors/SvgEditor";
 import { TextEditor } from "@/shared/ui/editors/TextEditor";
 import { CodeEditor } from "@/shared/ui/editors/CodeEditor";
 import { CsvEditor } from "@/shared/ui/editors/CsvEditor";
-import { MermaidEditor } from "@/shared/ui/editors/MermaidEditor";
 import { MarkdownEditor } from "@/shared/ui/editors/MarkdownEditor";
 import { PythonEditor } from "@/shared/ui/editors/PythonEditor";
 import { JsEditor } from "@/shared/ui/editors/JsEditor";
@@ -388,15 +387,6 @@ export function ArtifactsDrawer() {
             onViewModeChange={(mode) => setViewMode(mode === "table" ? "preview" : "code")}
           />
         );
-      case "mermaid":
-        return (
-          <MermaidEditor
-            key={`${activeFile}-${editorVersion}`}
-            content={activeFileData.content}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-          />
-        );
       case "markdown":
         return (
           <MarkdownEditor
@@ -452,7 +442,7 @@ export function ArtifactsDrawer() {
     const kind = activeFileData
       ? artifactKind(activeFileData.path, activeFileData.contentType)
       : artifactKind(activeFile);
-    return ["html", "svg", "csv", "mermaid", "markdown"].includes(kind);
+    return ["html", "svg", "csv", "markdown"].includes(kind);
   };
 
   // Handle run button click

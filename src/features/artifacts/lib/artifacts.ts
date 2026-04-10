@@ -5,10 +5,10 @@ import { readAsDataURL } from "@/shared/lib/utils";
 import { xlsxToCsv } from "@/shared/lib/xlsx";
 
 // Artifact kind type
-export type ArtifactKind = "text" | "code" | "svg" | "html" | "csv" | "mermaid" | "markdown" | "image" | "binary";
+export type ArtifactKind = "text" | "code" | "svg" | "html" | "csv" | "markdown" | "image" | "binary";
 
 // Re-export HTML transformation utilities
-export { transformHtmlForPreview, type TransformResult } from "./artifactsHtml";
+export { type TransformResult, transformHtmlForPreview } from "./artifactsHtml";
 
 // Result type for processed files
 export interface ProcessedFile {
@@ -121,10 +121,6 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     return "markdown";
   }
 
-  if (normalizedContentType === "text/vnd.mermaid") {
-    return "mermaid";
-  }
-
   // Dockerfile files (check for exact names)
   if (basename === "dockerfile" || basename.startsWith("dockerfile.")) {
     return "code";
@@ -148,11 +144,6 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
   // CSV files
   if (ext === "csv" || ext === "tsv") {
     return "csv";
-  }
-
-  // Mermaid files
-  if (ext === "mmd" || ext === "mermaid") {
-    return "mermaid";
   }
 
   // Markdown files
