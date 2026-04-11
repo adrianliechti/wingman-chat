@@ -255,8 +255,6 @@ function extractTextContent(element: Element, relationships: Relationships): str
         parts.push(linkText);
       }
     } else if (tagName === "w:bookmarkStart" || tagName === "w:bookmarkEnd") {
-      // Skip bookmarks
-      continue;
     } else if (child.children.length > 0) {
       // Recursively process nested elements
       parts.push(extractTextContent(child, relationships));

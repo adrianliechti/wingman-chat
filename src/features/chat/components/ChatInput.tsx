@@ -40,7 +40,11 @@ import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 
-export function ChatInput() {
+type ChatInputProps = {
+  onGoToLatest?: () => void;
+};
+
+export function ChatInput({ onGoToLatest }: ChatInputProps) {
   const config = getConfig();
   const client = config.client;
 
@@ -266,6 +270,7 @@ export function ChatInput() {
       content: messageContent,
     };
 
+    onGoToLatest?.();
     sendMessage(message);
 
     // Clear attachments after sending
@@ -342,6 +347,7 @@ export function ChatInput() {
           content: messageContent,
         };
 
+        onGoToLatest?.();
         sendMessage(message);
         setContent("");
         setAttachments([]);
@@ -351,7 +357,7 @@ export function ChatInput() {
         }
       }
     },
-    [isResponding, content, attachments, isContinuousCaptureActive, captureFrame, sendMessage],
+    [isResponding, content, attachments, isContinuousCaptureActive, captureFrame, onGoToLatest, sendMessage],
   );
 
   const handleAttachmentClick = useCallback(() => {
@@ -419,6 +425,7 @@ export function ChatInput() {
     (e: React.FormEvent<HTMLDivElement>) => {
       const target = e.target as HTMLDivElement;
       const input = target.innerText || target.textContent || "";
+
       setContent(input);
 
       if (input.trim() && showPromptSuggestions) {

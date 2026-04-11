@@ -1,104 +1,122 @@
-import { useEffect, useRef, useCallback, useState } from "react";
-import type { Virtualizer } from "@tanstack/react-virtual";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 interface UseAutoScrollOptions {
-  /** The mounted scrollable container element. */
-  scrollElement: HTMLDivElement | null;
-  /** Virtualizer instance — count is read from virtualizer.options.count. */
-  virtualizer: Virtualizer<HTMLDivElement, Element>;
-  /** Pixel distance from bottom that still counts as "at bottom". */
+  resetKey?: string | null;
   bottomThreshold?: number;
 }
 
-export function useAutoScroll({ scrollElement, virtualizer, bottomThreshold = 48 }: UseAutoScrollOptions) {
-  const pinnedRef = useRef(true);
-  const [isPinned, setIsPinned] = useState(true);
-  const unpinTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const rafRef = useRef(0);
+export function useAutoScroll({ resetKey, bottomThreshold = 48 }: UseAutoScrollOptions) {
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+  const [isAutoFollowEnabled, setIsAutoFollowEnabled] = useState(true);
+  const lastResetKeyRef = useRef(resetKey);
+  const lastScrollTopRef = useRef(0);
+  const programmaticScrollRef = useRef(false);
+  const programmaticScrollRafRef = useRef(0);
+  const contentResizeRafRef = useRef(0);
+
+  const clearProgrammaticScrollGuard = useCallback(() => {
+    cancelAnimationFrame(programmaticScrollRafRef.current);
+  }, []);
 
   const isAtBottom = useCallback(() => {
     if (!scrollElement) return true;
     return scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight <= bottomThreshold;
-  }, [scrollElement, bottomThreshold]);
+  }, [bottomThreshold, scrollElement]);
 
-  // Scroll to the last virtual item (sentinel). Reading count at call-time
-  // avoids a dependency on it and prevents stale closures.
-  const scrollToBottom = useCallback(
-    (behavior: ScrollBehavior = "auto") => {
-      if (!scrollElement) return;
-      const count = virtualizer.options.count;
-      if (count === 0) return;
-      virtualizer.scrollToIndex(count - 1, { align: "end", behavior });
-    },
-    [scrollElement, virtualizer],
-  );
+  const scrollToBottom = useCallback(() => {
+    if (!scrollElement) return;
 
-  // Debounced unpin UI: pinnedRef is set immediately (gates ResizeObserver
-  // scrolling), but the React state that shows "Latest" is debounced so the
-  // button doesn't flicker during fast streaming when isAtBottom() briefly
-  // returns false between a resize and the corrective scroll.
+    clearProgrammaticScrollGuard();
+    programmaticScrollRef.current = true;
+    scrollElement.scrollTop = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
+
+    programmaticScrollRafRef.current = requestAnimationFrame(() => {
+      programmaticScrollRef.current = false;
+      lastScrollTopRef.current = scrollElement.scrollTop;
+    });
+  }, [clearProgrammaticScrollGuard, scrollElement]);
+
+  const handleScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
+    setScrollElement(element);
+  }, []);
+
+  const goToLatest = useCallback(() => {
+    setIsAutoFollowEnabled(true);
+    scrollToBottom();
+  }, [scrollToBottom]);
+
+  useEffect(() => {
+    if (!scrollElement) return;
+    lastScrollTopRef.current = scrollElement.scrollTop;
+  }, [scrollElement]);
+
+  useLayoutEffect(() => {
+    if (lastResetKeyRef.current === resetKey) return;
+
+    lastResetKeyRef.current = resetKey;
+    setIsAutoFollowEnabled(true);
+    scrollToBottom();
+  }, [resetKey, scrollToBottom]);
+
+  useLayoutEffect(() => {
+    if (!scrollElement || !isAutoFollowEnabled) return;
+    scrollToBottom();
+  }, [isAutoFollowEnabled, scrollElement, scrollToBottom]);
+
   useEffect(() => {
     if (!scrollElement) return;
 
     const onScroll = () => {
-      if (isAtBottom()) {
-        clearTimeout(unpinTimerRef.current);
-        pinnedRef.current = true;
-        setIsPinned((c) => (c ? c : true));
-      } else {
-        // Stop the ResizeObserver from scrolling immediately.
-        pinnedRef.current = false;
-        // Delay the UI update so the "Latest" button doesn't flash.
-        clearTimeout(unpinTimerRef.current);
-        unpinTimerRef.current = setTimeout(() => {
-          if (!isAtBottom()) {
-            setIsPinned(false);
-          }
-        }, 150);
+      const currentScrollTop = scrollElement.scrollTop;
+      const previousScrollTop = lastScrollTopRef.current;
+      lastScrollTopRef.current = currentScrollTop;
+
+      if (programmaticScrollRef.current) return;
+
+      if (isAutoFollowEnabled && currentScrollTop < previousScrollTop - 2 && !isAtBottom()) {
+        setIsAutoFollowEnabled(false);
       }
     };
 
-    onScroll();
     scrollElement.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       scrollElement.removeEventListener("scroll", onScroll);
-      clearTimeout(unpinTimerRef.current);
     };
-  }, [scrollElement, isAtBottom]);
+  }, [isAtBottom, isAutoFollowEnabled, scrollElement]);
 
-  // Keep pinned during late layout changes (streaming, images, measurement).
-  // Throttled to one scrollToBottom per animation frame.
   useEffect(() => {
-    if (!scrollElement) return;
+    if (!scrollElement || !isAutoFollowEnabled) return;
+
+    const content = scrollElement.firstElementChild;
+    if (!content) return;
 
     const observer = new ResizeObserver(() => {
-      if (!pinnedRef.current) return;
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = requestAnimationFrame(() => {
-        scrollToBottom("auto");
+      cancelAnimationFrame(contentResizeRafRef.current);
+      contentResizeRafRef.current = requestAnimationFrame(() => {
+        if (!isAutoFollowEnabled) return;
+        scrollToBottom();
       });
     });
 
-    const content = scrollElement.firstElementChild;
-    if (content) observer.observe(content);
+    observer.observe(content);
     observer.observe(scrollElement);
 
     return () => {
       observer.disconnect();
-      cancelAnimationFrame(rafRef.current);
+      cancelAnimationFrame(contentResizeRafRef.current);
     };
-  }, [scrollElement, scrollToBottom]);
+  }, [isAutoFollowEnabled, scrollElement, scrollToBottom]);
 
-  const enableAutoScroll = useCallback(() => {
-    clearTimeout(unpinTimerRef.current);
-    pinnedRef.current = true;
-    setIsPinned(true);
-    scrollToBottom("smooth");
-  }, [scrollToBottom]);
+  useEffect(() => {
+    return () => {
+      clearProgrammaticScrollGuard();
+      cancelAnimationFrame(contentResizeRafRef.current);
+    };
+  }, [clearProgrammaticScrollGuard]);
 
   return {
-    enableAutoScroll,
-    isAutoScrollEnabled: isPinned,
-    scrollToBottom,
+    handleScrollContainerRef,
+    isAutoFollowEnabled,
+    goToLatest,
   };
 }

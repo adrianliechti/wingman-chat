@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useCallback } from "react";
+import type React from "react";
+import { useState, useMemo, useCallback } from "react";
 import { getConfig } from "@/shared/config";
 import { BackgroundContext } from "./BackgroundContext";
 import type { BackgroundPack, BackgroundSetting, BackgroundContextValue } from "./BackgroundContext";

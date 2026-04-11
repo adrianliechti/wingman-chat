@@ -57,7 +57,6 @@ export class VectorDB {
         similarities.push({ document, similarity });
       } catch (error) {
         console.warn(`Error calculating similarity for document ${document.id}:`, error);
-        continue;
       }
     }
 

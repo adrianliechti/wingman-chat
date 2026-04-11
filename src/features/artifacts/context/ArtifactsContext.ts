@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import { FileSystemManager } from "@/features/artifacts/lib/fs";
+import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 
 export interface ArtifactsContextType {
   isAvailable: boolean;

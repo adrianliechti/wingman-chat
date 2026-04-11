@@ -7,7 +7,7 @@
  *
  * The __VFS_URLS__ object is populated at injection time with the URL mapping.
  */
-(function () {
+(() => {
   // URL mapping will be injected before this script
   // window.__VFS_URLS__ = { "file.json": "data:application/json;base64,..." }
 
@@ -34,7 +34,7 @@
 
   // Override native fetch to intercept virtual file requests
   var originalFetch = window.fetch;
-  window.fetch = function (input, init) {
+  window.fetch = (input, init) => {
     var url = typeof input === "string" ? input : input && input.url;
     if (url && isVirtualPath(url)) {
       var resolved = resolveVfsPath(url);
@@ -47,7 +47,7 @@
 
   // Override XMLHttpRequest to intercept virtual file requests
   var OriginalXHR = window.XMLHttpRequest;
-  window.XMLHttpRequest = function () {
+  window.XMLHttpRequest = () => {
     var xhr = new OriginalXHR();
     var originalOpen = xhr.open;
     xhr.open = function (method, url) {
@@ -63,21 +63,19 @@
     return xhr;
   };
   // Copy static properties/methods from original XMLHttpRequest
-  Object.keys(OriginalXHR).forEach(function (key) {
+  Object.keys(OriginalXHR).forEach((key) => {
     window.XMLHttpRequest[key] = OriginalXHR[key];
   });
   window.XMLHttpRequest.prototype = OriginalXHR.prototype;
 
   // Override Image constructor to intercept virtual file requests
   var OriginalImage = window.Image;
-  window.Image = function (width, height) {
+  window.Image = (width, height) => {
     var img = new OriginalImage(width, height);
     var originalSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
     Object.defineProperty(img, "src", {
-      get: function () {
-        return originalSrcDescriptor.get.call(img);
-      },
-      set: function (value) {
+      get: () => originalSrcDescriptor.get.call(img),
+      set: (value) => {
         if (value && isVirtualPath(value)) {
           var resolved = resolveVfsPath(value);
           if (resolved) {
@@ -93,7 +91,7 @@
 
   // Override Audio constructor to intercept virtual file requests
   var OriginalAudio = window.Audio;
-  window.Audio = function (src) {
+  window.Audio = (src) => {
     if (src && isVirtualPath(src)) {
       var resolved = resolveVfsPath(src);
       if (resolved) {
@@ -107,9 +105,7 @@
   // VFS helper object for explicit access
   window.vfs = {
     // Resolve a virtual path to its data URL
-    resolve: function (path) {
-      return resolveVfsPath(path) || path;
-    },
+    resolve: (path) => resolveVfsPath(path) || path,
 
     // Fetch from virtual filesystem (uses original fetch)
     fetch: function (path) {
@@ -119,30 +115,22 @@
 
     // Load JSON from virtual filesystem
     loadJSON: function (path) {
-      return this.fetch(path).then(function (res) {
-        return res.json();
-      });
+      return this.fetch(path).then((res) => res.json());
     },
 
     // Load text from virtual filesystem
     loadText: function (path) {
-      return this.fetch(path).then(function (res) {
-        return res.text();
-      });
+      return this.fetch(path).then((res) => res.text());
     },
 
     // Load as Blob
     loadBlob: function (path) {
-      return this.fetch(path).then(function (res) {
-        return res.blob();
-      });
+      return this.fetch(path).then((res) => res.blob());
     },
 
     // Load as ArrayBuffer
     loadArrayBuffer: function (path) {
-      return this.fetch(path).then(function (res) {
-        return res.arrayBuffer();
-      });
+      return this.fetch(path).then((res) => res.arrayBuffer());
     },
 
     // Get image URL for use in src attributes
@@ -152,27 +140,22 @@
 
     // Create and load an Image
     loadImage: function (path) {
-      var self = this;
-      return new Promise(function (resolve, reject) {
+      return new Promise((resolve, reject) => {
         var img = new OriginalImage();
-        img.onload = function () {
+        img.onload = () => {
           resolve(img);
         };
-        img.onerror = function (e) {
+        img.onerror = (e) => {
           reject(e);
         };
-        img.src = self.resolve(path);
+        img.src = this.resolve(path);
       });
     },
 
     // Check if a file exists in the virtual filesystem
-    exists: function (path) {
-      return resolveVfsPath(path) !== null;
-    },
+    exists: (path) => resolveVfsPath(path) !== null,
 
     // List all available files
-    list: function () {
-      return Object.keys(window.__VFS_URLS__);
-    },
+    list: () => Object.keys(window.__VFS_URLS__),
   };
 })();

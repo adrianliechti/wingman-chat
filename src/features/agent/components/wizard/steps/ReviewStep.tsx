@@ -1,4 +1,4 @@
-import { type Dispatch } from "react";
+import type { Dispatch } from "react";
 import { ChevronDown, ToggleLeft, ToggleRight, Zap, Wrench, FileText, Server } from "lucide-react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
