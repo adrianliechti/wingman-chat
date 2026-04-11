@@ -123,7 +123,7 @@ function globToRegex(glob: string): string {
         let classContent = glob.slice(i + 1, classEnd);
         // Handle negation
         if (classContent[0] === "!") {
-          classContent = "^" + classContent.slice(1);
+          classContent = `^${classContent.slice(1)}`;
         }
         regex += `[${classContent}]`;
         i = classEnd + 1;
@@ -305,7 +305,7 @@ export function truncateLine(line: string, maxLength: number = 500): string {
   if (line.length <= maxLength) {
     return line;
   }
-  return line.slice(0, maxLength) + "... (truncated)";
+  return `${line.slice(0, maxLength)}... (truncated)`;
 }
 
 /**

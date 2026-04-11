@@ -26,7 +26,7 @@ async function collectFsFiles(ctx: CommandContext): Promise<Record<string, { con
         if (stat.isDirectory) {
           await walk(fullPath);
         } else if (stat.isFile) {
-          const artifactPath = "/" + fullPath.slice(SANDBOX_HOME.length + 1);
+          const artifactPath = `/${fullPath.slice(SANDBOX_HOME.length + 1)}`;
           const contentType = inferContentTypeFromPath(artifactPath);
 
           if (isTextContentType(contentType)) {
@@ -49,7 +49,10 @@ async function collectFsFiles(ctx: CommandContext): Promise<Record<string, { con
   return files;
 }
 
-async function syncResultFiles(ctx: CommandContext, resultFiles: Record<string, { content: string; contentType?: string }>) {
+async function syncResultFiles(
+  ctx: CommandContext,
+  resultFiles: Record<string, { content: string; contentType?: string }>,
+) {
   for (const [path, file] of Object.entries(resultFiles)) {
     const fsPath = `${SANDBOX_HOME}/${path.startsWith("/") ? path.slice(1) : path}`;
 
@@ -94,7 +97,11 @@ async function executePython(args: string[], ctx: CommandContext): Promise<ExecR
     try {
       code = (await ctx.fs.readFile(scriptPath, "utf-8")) as string;
     } catch {
-      return { stdout: "", stderr: `python3: can't open file '${args[0]}': [Errno 2] No such file or directory\n`, exitCode: 2 };
+      return {
+        stdout: "",
+        stderr: `python3: can't open file '${args[0]}': [Errno 2] No such file or directory\n`,
+        exitCode: 2,
+      };
     }
   }
 
@@ -105,7 +112,11 @@ async function executePython(args: string[], ctx: CommandContext): Promise<ExecR
 
   // no input at all
   if (code === undefined) {
-    return { stdout: "", stderr: "python3: no code provided (use -c, a script file, or pipe via stdin)\n", exitCode: 2 };
+    return {
+      stdout: "",
+      stderr: "python3: no code provided (use -c, a script file, or pipe via stdin)\n",
+      exitCode: 2,
+    };
   }
 
   try {
@@ -121,7 +132,7 @@ async function executePython(args: string[], ctx: CommandContext): Promise<ExecR
     }
 
     const output = result.output === "Code executed successfully (no output)" ? "" : result.output;
-    return { stdout: output ? output + "\n" : "", stderr: "", exitCode: 0 };
+    return { stdout: output ? `${output}\n` : "", stderr: "", exitCode: 0 };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { stdout: "", stderr: `${message}\n`, exitCode: 1 };

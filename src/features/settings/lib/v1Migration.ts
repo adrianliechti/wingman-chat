@@ -103,12 +103,7 @@ function migrateMessageError(error: LegacyMessage["error"]): MessageError | null
 function migrateToolResultPart(part: LegacyContentPart): ToolResultItem {
   const migrated = migrateContentPart(part);
 
-  if (
-    migrated.type === "text" ||
-    migrated.type === "image" ||
-    migrated.type === "audio" ||
-    migrated.type === "file"
-  ) {
+  if (migrated.type === "text" || migrated.type === "image" || migrated.type === "audio" || migrated.type === "file") {
     return migrated;
   }
 
@@ -244,7 +239,12 @@ function migrateMessage(msg: LegacyMessage): Message {
   // Migrate tool calls
   if (msg.toolCalls) {
     for (const tc of msg.toolCalls) {
-      content.push({ type: "tool_call", id: tc.id ?? crypto.randomUUID(), name: tc.name, arguments: tc.arguments ?? "" });
+      content.push({
+        type: "tool_call",
+        id: tc.id ?? crypto.randomUUID(),
+        name: tc.name,
+        arguments: tc.arguments ?? "",
+      });
     }
   }
 

@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!!**/dist"]
+    "includes": ["**", "!!**/dist", "!!index.html", "!!public/mcp-app-sandbox-proxy.html"]
   },
   "formatter": {
     "indentStyle": "space",

@@ -27,7 +27,9 @@ export function WizardStepIndicator({ steps, currentStep, visitedSteps, onStepCl
             {i > 0 && (
               <div
                 className={`w-6 h-px mx-0.5 ${
-                  visitedSteps.has(i) ? "bg-neutral-400/60 dark:bg-neutral-500/40" : "bg-neutral-200 dark:bg-neutral-700"
+                  visitedSteps.has(i)
+                    ? "bg-neutral-400/60 dark:bg-neutral-500/40"
+                    : "bg-neutral-200 dark:bg-neutral-700"
                 }`}
               />
             )}

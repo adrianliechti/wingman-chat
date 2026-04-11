@@ -29,7 +29,7 @@ function buildFileTree(files: FileEntry[]): FileNode[] {
     // Create folder structure
     for (let i = 0; i < pathParts.length - 1; i++) {
       const folderName = pathParts[i];
-      currentPath += "/" + folderName;
+      currentPath += `/${folderName}`;
 
       let folderNode = folderMap.get(currentPath);
       if (!folderNode) {
@@ -122,23 +122,20 @@ function FileTreeNode({
             <span className="text-sm text-neutral-700 dark:text-neutral-300 truncate">{node.name}</span>
           </div>
         </button>
-        {isExpanded && node.children && (
-          <>
-            {node.children.map((child) => (
-              <FileTreeNode
-                key={child.path}
-                node={child}
-                level={level + 1}
-                openTabs={openTabs}
-                onFileClick={onFileClick}
-                expandedFolders={expandedFolders}
-                onToggleFolder={onToggleFolder}
-                onDeleteFile={onDeleteFile}
-                onRenameFile={onRenameFile}
-              />
-            ))}
-          </>
-        )}
+        {isExpanded &&
+          node.children?.map((child) => (
+            <FileTreeNode
+              key={child.path}
+              node={child}
+              level={level + 1}
+              openTabs={openTabs}
+              onFileClick={onFileClick}
+              expandedFolders={expandedFolders}
+              onToggleFolder={onToggleFolder}
+              onDeleteFile={onDeleteFile}
+              onRenameFile={onRenameFile}
+            />
+          ))}
       </>
     );
   }
@@ -227,7 +224,7 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
 
         // Expand all parent folders up to the file
         for (let i = 0; i < pathParts.length - 1; i++) {
-          currentPath += "/" + pathParts[i];
+          currentPath += `/${pathParts[i]}`;
           newExpanded.add(currentPath);
         }
 
@@ -244,7 +241,7 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
         // Also remove any nested expanded folders
         const expandedArray = Array.from(newExpanded);
         for (const expandedPath of expandedArray) {
-          if (expandedPath.startsWith(path + "/")) {
+          if (expandedPath.startsWith(`${path}/`)) {
             newExpanded.delete(expandedPath);
           }
         }

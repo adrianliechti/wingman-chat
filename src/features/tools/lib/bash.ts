@@ -84,7 +84,9 @@ export function getBashCwd(instance: BashInstance): string {
 
 export function getBashEnv(instance: BashInstance): Record<string, string> {
   const bashWithEnv = instance.bash as Bash & { getEnv?: () => Record<string, string> };
-  return bashWithEnv.getEnv?.() ?? { HOME: SANDBOX_HOME, PWD: SANDBOX_HOME, OLDPWD: SANDBOX_HOME, PATH: "/usr/bin:/bin" };
+  return (
+    bashWithEnv.getEnv?.() ?? { HOME: SANDBOX_HOME, PWD: SANDBOX_HOME, OLDPWD: SANDBOX_HOME, PATH: "/usr/bin:/bin" }
+  );
 }
 
 export async function resolveBashCwd(memFs: InMemoryFs, cwd?: string | null): Promise<string> {
@@ -184,7 +186,7 @@ export async function readFilesFromFs(memFs: InMemoryFs): Promise<Record<string,
       const stat = await memFs.stat(fsPath);
       if (!stat.isFile) continue;
 
-      const artifactPath = "/" + fsPath.slice(`${SANDBOX_HOME}/`.length);
+      const artifactPath = `/${fsPath.slice(`${SANDBOX_HOME}/`.length)}`;
       const content = await memFs.readFileBuffer(fsPath);
       result[artifactPath] = toOverlayFile(artifactPath, content);
     } catch {

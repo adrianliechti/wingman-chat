@@ -113,13 +113,13 @@ export async function listArtifacts(chatId: string): Promise<string[]> {
   const artifacts: string[] = [];
 
   async function scanDirectory(dirPath: string): Promise<void> {
-    const fullDirPath = `chats/${chatId}/artifacts${dirPath ? "/" + dirPath : ""}`;
+    const fullDirPath = `chats/${chatId}/artifacts${dirPath ? `/${dirPath}` : ""}`;
 
     try {
       const files = await listFiles(fullDirPath);
       for (const file of files) {
         const relativePath = dirPath ? `${dirPath}/${file}` : file;
-        artifacts.push("/" + relativePath);
+        artifacts.push(`/${relativePath}`);
       }
 
       const dirs = await listDirectories(fullDirPath);
@@ -144,13 +144,13 @@ export async function listArtifactEntries(chatId: string): Promise<ArtifactEntry
   const artifacts: ArtifactEntry[] = [];
 
   async function scanDirectory(dirPath: string): Promise<void> {
-    const fullDirPath = `chats/${chatId}/artifacts${dirPath ? "/" + dirPath : ""}`;
+    const fullDirPath = `chats/${chatId}/artifacts${dirPath ? `/${dirPath}` : ""}`;
 
     try {
       const files = await listFiles(fullDirPath);
       for (const file of files) {
         const relativePath = dirPath ? `${dirPath}/${file}` : file;
-        const path = "/" + relativePath;
+        const path = `/${relativePath}`;
         const metadata = await readFileMetadata(`chats/${chatId}/artifacts/${relativePath}`);
 
         artifacts.push({

@@ -28,9 +28,9 @@ export default defineConfig({
       "@": src,
       // just-bash imports Node built-ins that don't exist in the browser
       "node:zlib": shim("zlib-shim.ts"),
-      "zlib": shim("zlib-shim.ts"),
+      zlib: shim("zlib-shim.ts"),
       "node:dns": shim("dns-shim.ts"),
-      "dns": shim("dns-shim.ts"),
+      dns: shim("dns-shim.ts"),
     },
   },
   optimizeDeps: {

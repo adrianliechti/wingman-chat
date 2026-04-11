@@ -30,9 +30,7 @@ function formatTimestamp(sec: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export function useFieldRecorder(
-  options: FieldRecorderOptions = {},
-): UseFieldRecorderReturn {
+export function useFieldRecorder(options: FieldRecorderOptions = {}): UseFieldRecorderReturn {
   const chunkDurationSec = options.chunkDurationSec ?? 120;
 
   const [isRecording, setIsRecording] = useState(false);
@@ -59,35 +57,32 @@ export function useFieldRecorder(
     !!navigator.mediaDevices &&
     typeof navigator.mediaDevices.getUserMedia === "function";
 
-  const transcribeChunk = useCallback(
-    (pcmChunks: Int16Array[], index: number, startSec: number, endSec: number) => {
-      const merged = mergePcm16Chunks(pcmChunks);
-      const wav = pcm16ToWav(merged, SAMPLE_RATE);
+  const transcribeChunk = useCallback((pcmChunks: Int16Array[], index: number, startSec: number, endSec: number) => {
+    const merged = mergePcm16Chunks(pcmChunks);
+    const wav = pcm16ToWav(merged, SAMPLE_RATE);
 
-      const config = getConfig();
-      const model = config.stt?.model ?? "";
+    const config = getConfig();
+    const model = config.stt?.model ?? "";
 
-      const promise = config.client
-        .transcribe(model, wav)
-        .then((text) => {
-          transcriptsRef.current.set(index, { startSec, endSec, text });
-        })
-        .catch((err) => {
-          const msg = err instanceof Error ? err.message : "Unknown error";
-          transcriptsRef.current.set(index, {
-            startSec,
-            endSec,
-            text: `(transcription failed: ${msg})`,
-          });
-        })
-        .finally(() => {
-          inflightRef.current.delete(promise);
+    const promise = config.client
+      .transcribe(model, wav)
+      .then((text) => {
+        transcriptsRef.current.set(index, { startSec, endSec, text });
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        transcriptsRef.current.set(index, {
+          startSec,
+          endSec,
+          text: `(transcription failed: ${msg})`,
         });
+      })
+      .finally(() => {
+        inflightRef.current.delete(promise);
+      });
 
-      inflightRef.current.add(promise);
-    },
-    [],
-  );
+    inflightRef.current.add(promise);
+  }, []);
 
   const flushChunk = useCallback(() => {
     const chunks = currentChunkRef.current;
@@ -141,9 +136,12 @@ export function useFieldRecorder(
     setIsRecording(true);
 
     if (navigator.wakeLock) {
-      navigator.wakeLock.request("screen").then((lock) => {
-        wakeLockRef.current = lock;
-      }).catch(() => {});
+      navigator.wakeLock
+        .request("screen")
+        .then((lock) => {
+          wakeLockRef.current = lock;
+        })
+        .catch(() => {});
     }
 
     timerRef.current = setInterval(() => {

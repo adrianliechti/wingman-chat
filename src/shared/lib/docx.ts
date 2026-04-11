@@ -228,12 +228,12 @@ function parseParagraph(
 
   // Apply heading prefix
   if (headingLevel > 0 && headingLevel <= 6) {
-    return "#".repeat(headingLevel) + " " + textContent;
+    return `${"#".repeat(headingLevel)} ${textContent}`;
   }
 
   // Apply list formatting
   if (listPrefix) {
-    return listIndent + listPrefix + textContent;
+    return `${listIndent}${listPrefix}${textContent}`;
   }
 
   return textContent;
@@ -306,16 +306,16 @@ function parseRun(r: Element): string {
 
   // Apply formatting (innermost to outermost)
   if (isCode) {
-    text = "`" + text + "`";
+    text = `\`${text}\``;
   }
   if (isStrike) {
-    text = "~~" + text + "~~";
+    text = `~~${text}~~`;
   }
   if (isItalic) {
-    text = "*" + text + "*";
+    text = `*${text}*`;
   }
   if (isBold) {
-    text = "**" + text + "**";
+    text = `**${text}**`;
   }
 
   return text;
@@ -394,15 +394,15 @@ function parseTable(tbl: Element, relationships: Relationships): string[] {
 
   // Header row (first row)
   const headerRow = tableData[0];
-  lines.push("| " + headerRow.map((cell) => escapeTableCell(cell)).join(" | ") + " |");
+  lines.push(`| ${headerRow.map((cell) => escapeTableCell(cell)).join(" | ")} |`);
 
   // Separator row
-  lines.push("| " + headerRow.map(() => "---").join(" | ") + " |");
+  lines.push(`| ${headerRow.map(() => "---").join(" | ")} |`);
 
   // Data rows
   for (let i = 1; i < tableData.length; i++) {
     const row = tableData[i];
-    lines.push("| " + row.map((cell) => escapeTableCell(cell)).join(" | ") + " |");
+    lines.push(`| ${row.map((cell) => escapeTableCell(cell)).join(" | ")} |`);
   }
 
   return lines;

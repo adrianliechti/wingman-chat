@@ -469,8 +469,8 @@ export function TranslatePage() {
                   <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
                     {/* File upload controls */}
                     <div className="absolute top-2 left-3 z-10">
-                      {supportedFiles.length > 0 && (
-                        config.drives.length > 0 ? (
+                      {supportedFiles.length > 0 &&
+                        (config.drives.length > 0 ? (
                           <Menu>
                             <MenuButton className="inline-flex items-center gap-1 pl-0.5 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
                               <UploadIcon size={14} />
@@ -516,8 +516,7 @@ export function TranslatePage() {
                             <UploadIcon size={14} />
                             <span>Upload file</span>
                           </button>
-                        )
-                      )}
+                        ))}
                       {supportedFiles.length === 0 && <div className="h-8"></div>}
                       <input
                         ref={fileInputRef}

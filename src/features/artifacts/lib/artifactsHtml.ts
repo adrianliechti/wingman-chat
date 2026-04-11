@@ -139,7 +139,7 @@ export function transformHtmlForPreview(html: string, files: FileSystem): Transf
 
     const normalized = normalizeArtifactReferencePath(href);
     // Also try with leading slash since artifacts may be stored that way
-    const withSlash = "/" + normalized;
+    const withSlash = `/${normalized}`;
     const file = files[normalized] || files[href] || files[withSlash];
 
     if (file) {
@@ -214,11 +214,11 @@ ${vfsRuntimeScript}
 
   // Inject script after <head> or at start of document
   if (transformed.includes("<head>")) {
-    transformed = transformed.replace("<head>", "<head>" + vfsScript);
+    transformed = transformed.replace("<head>", `<head>${vfsScript}`);
   } else if (transformed.includes("<head ")) {
     transformed = transformed.replace(/<head\s[^>]*>/, (match) => match + vfsScript);
   } else if (transformed.includes("<body>")) {
-    transformed = transformed.replace("<body>", "<body>" + vfsScript);
+    transformed = transformed.replace("<body>", `<body>${vfsScript}`);
   } else if (transformed.includes("<body ")) {
     transformed = transformed.replace(/<body\s[^>]*>/, (match) => match + vfsScript);
   } else if (transformed.includes("<html>") || transformed.includes("<html ")) {

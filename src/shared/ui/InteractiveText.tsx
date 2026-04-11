@@ -236,11 +236,7 @@ export function InteractiveText({
   };
 
   return (
-    <div
-      ref={containerRef}
-      className={`${className}`}
-      style={{ userSelect: "text" }}
-    >
+    <div ref={containerRef} className={`${className}`} style={{ userSelect: "text" }}>
       {renderText()}
     </div>
   );

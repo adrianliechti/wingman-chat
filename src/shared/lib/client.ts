@@ -502,11 +502,11 @@ export class Client {
 
     const data = new FormData();
     data.append("lang", lang);
-    const headers: HeadersInit = {};
+    const headers: Record<string, string> = {};
 
     if (input instanceof Blob) {
       data.append("file", input);
-      headers["Accept"] = input.type || "application/octet-stream";
+      headers.Accept = input.type || "application/octet-stream";
     } else {
       data.append("text", input);
     }
@@ -631,7 +631,7 @@ export class Client {
 
     return results.map((result: SearchResult) => {
       let content = simplifyMarkdown(result.content || "");
-      if (content.length > 10000) content = content.slice(0, 10000) + "... [truncated]";
+      if (content.length > 10000) content = `${content.slice(0, 10000)}... [truncated]`;
       return { source: result.source, title: result.title, content, metadata: result.metadata };
     });
   }

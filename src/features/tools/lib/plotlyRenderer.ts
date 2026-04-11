@@ -95,9 +95,7 @@ async function renderFigure(manifest: RenderManifest): Promise<{ path: string; d
 
 export function clearRenderQueue(pyodide: PyodideInterface): void {
   try {
-    const entries = (pyodide.FS.readdir(RENDER_QUEUE_DIR) as string[]).filter(
-      (e: string) => e !== "." && e !== "..",
-    );
+    const entries = (pyodide.FS.readdir(RENDER_QUEUE_DIR) as string[]).filter((e: string) => e !== "." && e !== "..");
     for (const entry of entries) {
       pyodide.FS.unlink(`${RENDER_QUEUE_DIR}/${entry}`);
     }

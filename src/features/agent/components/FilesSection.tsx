@@ -16,10 +16,7 @@ interface FilesSectionProps {
 export function FilesSection({ agent }: FilesSectionProps) {
   const config = getConfig();
   const { files, addFile, removeFile } = useAgentFiles(agent.id);
-  const acceptFilter = [
-    ...(config.text?.files ?? []),
-    ...(config.extractor?.files ?? []),
-  ].join(",");
+  const acceptFilter = [...(config.text?.files ?? []), ...(config.extractor?.files ?? [])].join(",");
   const [isDragOver, setIsDragOver] = useState(false);
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);

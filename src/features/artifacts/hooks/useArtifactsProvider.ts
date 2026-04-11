@@ -134,7 +134,7 @@ export function useArtifactsProvider(): ToolProvider | null {
 
           const file = await fs.getFile(path);
           const allFiles = await fs.listEntries();
-          const isFolder = allFiles.some((f) => f.path.startsWith(path + "/"));
+          const isFolder = allFiles.some((f) => f.path.startsWith(`${path}/`));
 
           if (!file && !isFolder) {
             return [{ type: "text" as const, text: JSON.stringify({ error: `File or folder not found: ${path}` }) }];
@@ -558,7 +558,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       name: "File System",
       description: "Create and edit files, run Python and Bash code",
       icon: Paperclip,
-      instructions: artifactsInstructionsText + "\n\n" + interpreterInstructionsText,
+      instructions: `${artifactsInstructionsText}\n\n${interpreterInstructionsText}`,
       tools: artifactsTools(),
     };
   }, [isAvailable, artifactsTools]);

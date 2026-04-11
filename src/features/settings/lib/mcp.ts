@@ -424,12 +424,7 @@ export class MCPClient implements ToolProvider {
     const bridge = new AppBridge(
       client,
       HOST_INFO,
-      buildHostCapabilities(
-        resource.meta,
-        client.getServerCapabilities(),
-        !!context.sendMessage,
-        !!context.setContext,
-      ),
+      buildHostCapabilities(resource.meta, client.getServerCapabilities(), !!context.sendMessage, !!context.setContext),
       { hostContext: buildHostContext(toolDefinition, iframe, displayModeOptions?.displayMode) },
     );
 

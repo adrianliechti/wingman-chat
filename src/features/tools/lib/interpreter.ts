@@ -121,8 +121,7 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
         const artifactPath = `/${fullPath.slice(SANDBOX_HOME.length + 1)}`;
         if (artifactPath === "/") continue;
 
-        const contentType =
-          sourceFiles[artifactPath]?.contentType ?? inferContentTypeFromPath(artifactPath);
+        const contentType = sourceFiles[artifactPath]?.contentType ?? inferContentTypeFromPath(artifactPath);
 
         if (isTextContentType(contentType)) {
           files[artifactPath] = {
@@ -221,7 +220,9 @@ export async function executeCode(request: CodeExecutionRequest): Promise<CodeEx
   try {
     const pyodide = await loadPyodide();
     const importedPackages = await findImportedPackages(pyodide, code);
-    const requestedPackages = [...new Set([...importedPackages, ...packages.map(normalizePackageName).filter(Boolean)])];
+    const requestedPackages = [
+      ...new Set([...importedPackages, ...packages.map(normalizePackageName).filter(Boolean)]),
+    ];
 
     syncFilesToPyodide(pyodide, files);
     await ensurePackagesLoaded(pyodide, requestedPackages);
@@ -281,4 +282,3 @@ function clearDirectory(pyodide: PyodideInterface, dir: string): void {
     }
   }
 }
-

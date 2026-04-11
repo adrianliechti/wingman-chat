@@ -152,7 +152,7 @@ export class FileSystemManager {
 
     // Check if this is a folder (has files that start with path + '/')
     const allFiles = await opfs.listArtifacts(this._chatId);
-    const affectedFiles = allFiles.filter((f) => f.startsWith(path + "/"));
+    const affectedFiles = allFiles.filter((f) => f.startsWith(`${path}/`));
 
     if (affectedFiles.length > 0) {
       // Delete the folder and all contents
@@ -194,7 +194,7 @@ export class FileSystemManager {
 
     // Check if source is a folder
     const allFiles = await opfs.listArtifacts(this._chatId);
-    const affectedFiles = allFiles.filter((f) => f.startsWith(oldPath + "/"));
+    const affectedFiles = allFiles.filter((f) => f.startsWith(`${oldPath}/`));
 
     if (affectedFiles.length > 0) {
       // Rename all files in the folder

@@ -14,8 +14,6 @@ export interface QueryResult {
 export class VectorDB {
   private documents: Map<string, Document> = new Map();
 
-  constructor() {}
-
   addDocument(document: Document): void {
     this.documents.set(document.id, document);
   }
