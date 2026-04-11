@@ -234,8 +234,8 @@ export function grepText(
     // Reset regex state for global flag
     regex.lastIndex = 0;
 
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(line)) !== null) {
+    let match: RegExpExecArray | null = regex.exec(line);
+    while (match !== null) {
       lineMatches.push({
         start: match.index,
         end: match.index + match[0].length,
@@ -246,6 +246,8 @@ export function grepText(
       if (match[0].length === 0) {
         regex.lastIndex++;
       }
+
+      match = regex.exec(line);
     }
 
     if (lineMatches.length > 0) {

@@ -84,7 +84,7 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
       {servers.length > 0 && (
         <div className="space-y-0.5 pt-1 border-t border-neutral-200/40 dark:border-neutral-700/40">
           {servers.map((server, i) => (
-            <div key={i} className="flex items-center gap-2 py-1.5">
+            <div key={`${server.name}-${server.url}`} className="flex items-center gap-2 py-1.5">
               <Server size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{server.name}</div>

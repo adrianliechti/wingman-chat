@@ -1,4 +1,4 @@
-import type { Dispatch } from "react";
+import { useId, type Dispatch } from "react";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
 
@@ -11,6 +11,9 @@ interface IdentityStepProps {
 }
 
 export function IdentityStep({ name, description, instructions, showValidation, dispatch }: IdentityStepProps) {
+  const nameInputId = useId();
+  const descriptionInputId = useId();
+  const instructionsInputId = useId();
   const nameError = showValidation && !name.trim() ? "Name is required" : "";
 
   return (
@@ -21,14 +24,14 @@ export function IdentityStep({ name, description, instructions, showValidation, 
       />
 
       <div>
-        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+        <label htmlFor={nameInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
           Name <span className="text-red-400">*</span>
         </label>
         <input
+          id={nameInputId}
           type="text"
           value={name}
           onChange={(e) => dispatch({ type: "SET_NAME", value: e.target.value })}
-          autoFocus
           placeholder="My Agent"
           className={`w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border ${
             nameError
@@ -40,8 +43,11 @@ export function IdentityStep({ name, description, instructions, showValidation, 
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">Description</label>
+        <label htmlFor={descriptionInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+          Description
+        </label>
         <input
+          id={descriptionInputId}
           type="text"
           value={description}
           onChange={(e) => dispatch({ type: "SET_DESCRIPTION", value: e.target.value })}
@@ -51,8 +57,11 @@ export function IdentityStep({ name, description, instructions, showValidation, 
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">Instructions</label>
+        <label htmlFor={instructionsInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+          Instructions
+        </label>
         <textarea
+          id={instructionsInputId}
           value={instructions}
           onChange={(e) => dispatch({ type: "SET_INSTRUCTIONS", value: e.target.value })}
           rows={8}

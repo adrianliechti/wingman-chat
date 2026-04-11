@@ -238,7 +238,7 @@ async function bundlePypiPackages() {
     manifest[pkg] = filename;
   }
 
-  fs.writeFileSync(path.join(PYPI_OUTPUT_DIR, "pypi-manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
+  fs.writeFileSync(path.join(PYPI_OUTPUT_DIR, "pypi-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
   console.log("  Manifest written to", path.join(PYPI_OUTPUT_DIR, "pypi-manifest.json"));
 }

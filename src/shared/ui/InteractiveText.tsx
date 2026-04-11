@@ -38,15 +38,17 @@ export function InteractiveText({
   const words = useMemo(() => {
     const wordList: WordInfo[] = [];
     const regex = /[\p{L}\p{N}]+/gu;
-    let match;
+    let match: RegExpExecArray | null = regex.exec(displayText);
 
-    while ((match = regex.exec(displayText)) !== null) {
+    while (match !== null) {
       wordList.push({
         original: match[0],
         clean: match[0],
         start: match.index,
         end: match.index + match[0].length,
       });
+
+      match = regex.exec(displayText);
     }
 
     return wordList;

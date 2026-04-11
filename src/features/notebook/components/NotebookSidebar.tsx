@@ -19,7 +19,14 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
   const [showSearch, setShowSearch] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (showSearch) {
+      searchInputRef.current?.focus();
+    }
+  }, [showSearch]);
 
   useEffect(() => {
     if (renamingId && renameInputRef.current) {
@@ -112,12 +119,12 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
         {showSearch ? (
           <div className="flex-1 flex items-center gap-1">
             <input
+              ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search notebooks..."
               className="w-full min-w-0 px-2 py-0.5 text-sm bg-transparent text-neutral-800 dark:text-neutral-200 placeholder-neutral-500 dark:placeholder-neutral-400 focus:outline-none"
-              autoFocus
             />
             <button
               type="button"
@@ -179,7 +186,9 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
                         type="button"
                         onClick={() => {
                           const hasActive = group.items.some((n) => n.id === activeId);
-                          group.items.forEach((n) => onDelete(n.id));
+                          group.items.forEach((n) => {
+                            onDelete(n.id);
+                          });
                           if (hasActive) onNew();
                         }}
                         className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"

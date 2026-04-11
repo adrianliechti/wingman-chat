@@ -127,8 +127,12 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
 
   const modelTools = useMemo(() => {
     const ids = new Set<string>();
-    (model?.tools?.enabled || []).forEach((id) => ids.add(id));
-    (model?.tools?.disabled || []).forEach((id) => ids.add(id));
+    (model?.tools?.enabled || []).forEach((id) => {
+      ids.add(id);
+    });
+    (model?.tools?.disabled || []).forEach((id) => {
+      ids.add(id);
+    });
     return ids;
   }, [model?.tools]);
 

@@ -12,6 +12,10 @@ interface KnowledgeStepProps {
 export function KnowledgeStep({ pendingFiles, dispatch }: KnowledgeStepProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const handleOpenFilePicker = () => {
+    inputRef.current?.click();
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -33,30 +37,33 @@ export function KnowledgeStep({ pendingFiles, dispatch }: KnowledgeStepProps) {
       />
 
       {/* Drop zone */}
-      <div
+      <input ref={inputRef} type="file" multiple onChange={handleFileSelect} className="hidden" />
+      <button
+        type="button"
         onDrop={handleDrop}
         onDragOver={(e) => {
           e.preventDefault();
           e.stopPropagation();
         }}
-        onClick={() => inputRef.current?.click()}
-        className="flex flex-col items-center justify-center gap-2 py-8 px-4 border-2 border-dashed border-neutral-300/60 dark:border-neutral-600/60 rounded-lg cursor-pointer hover:border-neutral-400 dark:hover:border-neutral-500 hover:bg-neutral-50/30 dark:hover:bg-neutral-800/20 transition-colors"
+        onClick={handleOpenFilePicker}
+        className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-neutral-300/60 px-4 py-8 transition-colors hover:border-neutral-400 hover:bg-neutral-50/30 dark:border-neutral-600/60 dark:hover:border-neutral-500 dark:hover:bg-neutral-800/20"
       >
         <Upload size={24} className="text-neutral-400 dark:text-neutral-500" />
-        <div className="text-center">
-          <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
+        <span className="text-center">
+          <span className="block text-xs font-medium text-neutral-600 dark:text-neutral-400">
             Drop files here or click to browse
-          </p>
-          <p className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-0.5">PDF, text, markdown, and more</p>
-        </div>
-        <input ref={inputRef} type="file" multiple onChange={handleFileSelect} className="hidden" />
-      </div>
+          </span>
+          <span className="mt-0.5 block text-[10px] text-neutral-400 dark:text-neutral-500">
+            PDF, text, markdown, and more
+          </span>
+        </span>
+      </button>
 
       {/* File list */}
       {pendingFiles.length > 0 && (
         <div className="space-y-1">
           {pendingFiles.map((file, i) => (
-            <div key={`${file.name}-${i}`} className="flex items-center gap-2 py-1.5">
+            <div key={`${file.name}-${file.size}-${file.lastModified}`} className="flex items-center gap-2 py-1.5">
               <FileText size={14} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{file.name}</div>

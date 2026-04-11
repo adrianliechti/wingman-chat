@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo, Fragment, useId } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { X, Plus, Trash2 } from "lucide-react";
 import type { BridgeServer } from "@/features/settings/context/BridgeContext";
@@ -18,6 +18,9 @@ interface HeaderEntry {
 }
 
 export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: BridgeEditorProps) {
+  const nameInputId = useId();
+  const urlInputId = useId();
+  const descriptionInputId = useId();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [url, setUrl] = useState("");
@@ -146,10 +149,11 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                 <div className="px-5 py-3.5 space-y-3.5">
                   {/* Name field */}
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                    <label htmlFor={nameInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
                       Name <span className="text-red-500">*</span>
                     </label>
                     <input
+                      id={nameInputId}
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
@@ -160,10 +164,11 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
 
                   {/* URL field */}
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                    <label htmlFor={urlInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
                       URL <span className="text-red-500">*</span>
                     </label>
                     <input
+                      id={urlInputId}
                       type="text"
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
@@ -180,10 +185,14 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
 
                   {/* Description field */}
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                    <label
+                      htmlFor={descriptionInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
+                    >
                       Description
                     </label>
                     <textarea
+                      id={descriptionInputId}
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none transition-colors"
@@ -195,9 +204,7 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                   {/* Headers section */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                        Headers
-                      </label>
+                      <p className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">Headers</p>
                       <button
                         type="button"
                         onClick={handleAddHeader}

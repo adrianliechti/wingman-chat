@@ -6,196 +6,196 @@
     <title>MCP App Sandbox Proxy</title>
     <style>
       html, body {
-                    width: 100%;
-                    height: 100%;
-                    margin: 0;
-                    padding: 0;
-                    overflow: hidden;
-                    background: transparent;
-                  }
+                                                                                                                                                                                                                                                                                                                    width: 100%;
+                                                                                                                                                                                                                                                                                                                    height: 100%;
+                                                                                                                                                                                                                                                                                                                    margin: 0;
+                                                                                                                                                                                                                                                                                                                    padding: 0;
+                                                                                                                                                                                                                                                                                                                    overflow: hidden;
+                                                                                                                                                                                                                                                                                                                    background: transparent;
+                                                                                                                                                                                                                                                                                                                  }
 
-                  body {
-                    display: block;
-                  }
+                                                                                                                                                                                                                                                                                                                  body {
+                                                                                                                                                                                                                                                                                                                    display: block;
+                                                                                                                                                                                                                                                                                                                  }
 
-                  iframe {
-                    width: 100%;
-                    height: 100%;
-                    border: 0;
-                    display: block;
-                    background: transparent;
-                  }
+                                                                                                                                                                                                                                                                                                                  iframe {
+                                                                                                                                                                                                                                                                                                                    width: 100%;
+                                                                                                                                                                                                                                                                                                                    height: 100%;
+                                                                                                                                                                                                                                                                                                                    border: 0;
+                                                                                                                                                                                                                                                                                                                    display: block;
+                                                                                                                                                                                                                                                                                                                    background: transparent;
+                                                                                                                                                                                                                                                                                                                  }
     </style>
   </head>
   <body>
     <script>
       (() => {
-                    let innerFrame = null;
-                    let readyTimer = null;
-                    let resourceLoaded = false;
+                                                                                                                                                                                                                                                                                                                    let innerFrame = null;
+                                                                                                                                                                                                                                                                                                                    let readyTimer = null;
+                                                                                                                                                                                                                                                                                                                    let resourceLoaded = false;
 
-                    function sendToHost(message) {
-                      window.parent.postMessage(message, '*');
-                    }
+                                                                                                                                                                                                                                                                                                                    function sendToHost(message) {
+                                                                                                                                                                                                                                                                                                                      window.parent.postMessage(message, '*');
+                                                                                                                                                                                                                                                                                                                    }
 
-                    function sendSandboxReady() {
-                      sendToHost({
-                        jsonrpc: '2.0',
-                        method: 'ui/notifications/sandbox-proxy-ready',
-                        params: {},
-                      });
-                    }
+                                                                                                                                                                                                                                                                                                                    function sendSandboxReady() {
+                                                                                                                                                                                                                                                                                                                      sendToHost({
+                                                                                                                                                                                                                                                                                                                        jsonrpc: '2.0',
+                                                                                                                                                                                                                                                                                                                        method: 'ui/notifications/sandbox-proxy-ready',
+                                                                                                                                                                                                                                                                                                                        params: {},
+                                                                                                                                                                                                                                                                                                                      });
+                                                                                                                                                                                                                                                                                                                    }
 
-                    function startReadyLoop() {
-                      stopReadyLoop();
-                      sendSandboxReady();
-                      readyTimer = window.setInterval(() => {
-                        if (resourceLoaded) {
-                          stopReadyLoop();
-                          return;
-                        }
+                                                                                                                                                                                                                                                                                                                    function startReadyLoop() {
+                                                                                                                                                                                                                                                                                                                      stopReadyLoop();
+                                                                                                                                                                                                                                                                                                                      sendSandboxReady();
+                                                                                                                                                                                                                                                                                                                      readyTimer = window.setInterval(() => {
+                                                                                                                                                                                                                                                                                                                        if (resourceLoaded) {
+                                                                                                                                                                                                                                                                                                                          stopReadyLoop();
+                                                                                                                                                                                                                                                                                                                          return;
+                                                                                                                                                                                                                                                                                                                        }
 
-                        sendSandboxReady();
-                      }, 250);
-                    }
+                                                                                                                                                                                                                                                                                                                        sendSandboxReady();
+                                                                                                                                                                                                                                                                                                                      }, 250);
+                                                                                                                                                                                                                                                                                                                    }
 
-                    function stopReadyLoop() {
-                      if (readyTimer !== null) {
-                        window.clearInterval(readyTimer);
-                        readyTimer = null;
-                      }
-                    }
+                                                                                                                                                                                                                                                                                                                    function stopReadyLoop() {
+                                                                                                                                                                                                                                                                                                                      if (readyTimer !== null) {
+                                                                                                                                                                                                                                                                                                                        window.clearInterval(readyTimer);
+                                                                                                                                                                                                                                                                                                                        readyTimer = null;
+                                                                                                                                                                                                                                                                                                                      }
+                                                                                                                                                                                                                                                                                                                    }
 
-                    function buildCspValue(csp) {
-                      const connectDomains = Array.isArray(csp == null ? void 0 : csp.connectDomains) ? csp.connectDomains.join(' ') : '';
-                      const resourceDomains = Array.isArray(csp == null ? void 0 : csp.resourceDomains) ? csp.resourceDomains.join(' ') : '';
-                      const frameDomains = Array.isArray(csp == null ? void 0 : csp.frameDomains) && csp.frameDomains.length > 0
-                        ? csp.frameDomains.join(' ')
-                        : "'none'";
-                      const baseUriDomains = Array.isArray(csp == null ? void 0 : csp.baseUriDomains) && csp.baseUriDomains.length > 0
-                        ? csp.baseUriDomains.join(' ')
-                        : "'self'";
-                      const scriptSources = ["'self'", "'unsafe-inline'", 'blob:', 'data:', resourceDomains]
-                        .filter(Boolean)
-                        .join(' ');
-                      const workerSources = ["'self'", 'blob:', 'data:', resourceDomains]
-                        .filter(Boolean)
-                        .join(' ');
+                                                                                                                                                                                                                                                                                                                    function buildCspValue(csp) {
+                                                                                                                                                                                                                                                                                                                      const connectDomains = Array.isArray(csp == null ? void 0 : csp.connectDomains) ? csp.connectDomains.join(' ') : '';
+                                                                                                                                                                                                                                                                                                                      const resourceDomains = Array.isArray(csp == null ? void 0 : csp.resourceDomains) ? csp.resourceDomains.join(' ') : '';
+                                                                                                                                                                                                                                                                                                                      const frameDomains = Array.isArray(csp == null ? void 0 : csp.frameDomains) && csp.frameDomains.length > 0
+                                                                                                                                                                                                                                                                                                                        ? csp.frameDomains.join(' ')
+                                                                                                                                                                                                                                                                                                                        : "'none'";
+                                                                                                                                                                                                                                                                                                                      const baseUriDomains = Array.isArray(csp == null ? void 0 : csp.baseUriDomains) && csp.baseUriDomains.length > 0
+                                                                                                                                                                                                                                                                                                                        ? csp.baseUriDomains.join(' ')
+                                                                                                                                                                                                                                                                                                                        : "'self'";
+                                                                                                                                                                                                                                                                                                                      const scriptSources = ["'self'", "'unsafe-inline'", 'blob:', 'data:', resourceDomains]
+                                                                                                                                                                                                                                                                                                                        .filter(Boolean)
+                                                                                                                                                                                                                                                                                                                        .join(' ');
+                                                                                                                                                                                                                                                                                                                      const workerSources = ["'self'", 'blob:', 'data:', resourceDomains]
+                                                                                                                                                                                                                                                                                                                        .filter(Boolean)
+                                                                                                                                                                                                                                                                                                                        .join(' ');
 
-                      return [
-                        "default-src 'none'",
-                        `script-src ${scriptSources}`,
-                        `worker-src ${workerSources}`,
-                        `style-src 'self' 'unsafe-inline' ${resourceDomains}`.trim(),
-                        `img-src 'self' data: ${resourceDomains}`.trim(),
-                        `font-src 'self' ${resourceDomains}`.trim(),
-                        `media-src 'self' data: ${resourceDomains}`.trim(),
-                        `connect-src ${connectDomains || "'none'"}`.trim(),
-                        `frame-src ${frameDomains}`,
-                        "object-src 'none'",
-                        `base-uri ${baseUriDomains}`,
-                      ].join('; ');
-                    }
+                                                                                                                                                                                                                                                                                                                      return [
+                                                                                                                                                                                                                                                                                                                        "default-src 'none'",
+                                                                                                                                                                                                                                                                                                                        `script-src ${scriptSources}`,
+                                                                                                                                                                                                                                                                                                                        `worker-src ${workerSources}`,
+                                                                                                                                                                                                                                                                                                                        `style-src 'self' 'unsafe-inline' ${resourceDomains}`.trim(),
+                                                                                                                                                                                                                                                                                                                        `img-src 'self' data: ${resourceDomains}`.trim(),
+                                                                                                                                                                                                                                                                                                                        `font-src 'self' ${resourceDomains}`.trim(),
+                                                                                                                                                                                                                                                                                                                        `media-src 'self' data: ${resourceDomains}`.trim(),
+                                                                                                                                                                                                                                                                                                                        `connect-src ${connectDomains || "'none'"}`.trim(),
+                                                                                                                                                                                                                                                                                                                        `frame-src ${frameDomains}`,
+                                                                                                                                                                                                                                                                                                                        "object-src 'none'",
+                                                                                                                                                                                                                                                                                                                        `base-uri ${baseUriDomains}`,
+                                                                                                                                                                                                                                                                                                                      ].join('; ');
+                                                                                                                                                                                                                                                                                                                    }
 
-                    function escapeHtmlAttribute(value) {
-                      return value
-                        .replaceAll('&', '&amp;')
-                        .replaceAll('"', '&quot;')
-                        .replaceAll('<', '&lt;')
-                        .replaceAll('>', '&gt;');
-                    }
+                                                                                                                                                                                                                                                                                                                    function escapeHtmlAttribute(value) {
+                                                                                                                                                                                                                                                                                                                      return value
+                                                                                                                                                                                                                                                                                                                        .replaceAll('&', '&amp;')
+                                                                                                                                                                                                                                                                                                                        .replaceAll('"', '&quot;')
+                                                                                                                                                                                                                                                                                                                        .replaceAll('<', '&lt;')
+                                                                                                                                                                                                                                                                                                                        .replaceAll('>', '&gt;');
+                                                                                                                                                                                                                                                                                                                    }
 
-                    function injectCsp(html, csp) {
-                      const metaTag = `<meta http-equiv="Content-Security-Policy" content="${escapeHtmlAttribute(buildCspValue(csp))}">`;
+                                                                                                                                                                                                                                                                                                                    function injectCsp(html, csp) {
+                                                                                                                                                                                                                                                                                                                      const metaTag = `<meta http-equiv="Content-Security-Policy" content="${escapeHtmlAttribute(buildCspValue(csp))}">`;
 
-                      if (/<head[\s>]/i.test(html)) {
-                        return html.replace(/<head([^>]*)>/i, (match) => `${match}${metaTag}`);
-                      }
+                                                                                                                                                                                                                                                                                                                      if (/<head[\s>]/i.test(html)) {
+                                                                                                                                                                                                                                                                                                                        return html.replace(/<head([^>]*)>/i, (match) => `${match}${metaTag}`);
+                                                                                                                                                                                                                                                                                                                      }
 
-                      if (/<html[\s>]/i.test(html)) {
-                        return html.replace(/<html([^>]*)>/i, (match) => `${match}<head>${metaTag}</head>`);
-                      }
+                                                                                                                                                                                                                                                                                                                      if (/<html[\s>]/i.test(html)) {
+                                                                                                                                                                                                                                                                                                                        return html.replace(/<html([^>]*)>/i, (match) => `${match}<head>${metaTag}</head>`);
+                                                                                                                                                                                                                                                                                                                      }
 
-                      return `<!doctype html><html><head>${metaTag}</head><body>${html}</body></html>`;
-                    }
+                                                                                                                                                                                                                                                                                                                      return `<!doctype html><html><head>${metaTag}</head><body>${html}</body></html>`;
+                                                                                                                                                                                                                                                                                                                    }
 
-                    function buildAllowAttribute(permissions) {
-                      const allow = [];
+                                                                                                                                                                                                                                                                                                                    function buildAllowAttribute(permissions) {
+                                                                                                                                                                                                                                                                                                                      const allow = [];
 
-                      if (permissions == null ? void 0 : permissions.camera) {
-                        allow.push('camera');
-                      }
+                                                                                                                                                                                                                                                                                                                      if (permissions == null ? void 0 : permissions.camera) {
+                                                                                                                                                                                                                                                                                                                        allow.push('camera');
+                                                                                                                                                                                                                                                                                                                      }
 
-                      if (permissions == null ? void 0 : permissions.microphone) {
-                        allow.push('microphone');
-                      }
+                                                                                                                                                                                                                                                                                                                      if (permissions == null ? void 0 : permissions.microphone) {
+                                                                                                                                                                                                                                                                                                                        allow.push('microphone');
+                                                                                                                                                                                                                                                                                                                      }
 
-                      if (permissions == null ? void 0 : permissions.geolocation) {
-                        allow.push('geolocation');
-                      }
+                                                                                                                                                                                                                                                                                                                      if (permissions == null ? void 0 : permissions.geolocation) {
+                                                                                                                                                                                                                                                                                                                        allow.push('geolocation');
+                                                                                                                                                                                                                                                                                                                      }
 
-                      if (permissions == null ? void 0 : permissions.clipboardWrite) {
-                        allow.push('clipboard-write');
-                      }
+                                                                                                                                                                                                                                                                                                                      if (permissions == null ? void 0 : permissions.clipboardWrite) {
+                                                                                                                                                                                                                                                                                                                        allow.push('clipboard-write');
+                                                                                                                                                                                                                                                                                                                      }
 
-                      return allow.join('; ');
-                    }
+                                                                                                                                                                                                                                                                                                                      return allow.join('; ');
+                                                                                                                                                                                                                                                                                                                    }
 
-                    function loadSandboxedResource(params) {
-                      resourceLoaded = true;
-                      stopReadyLoop();
+                                                                                                                                                                                                                                                                                                                    function loadSandboxedResource(params) {
+                                                                                                                                                                                                                                                                                                                      resourceLoaded = true;
+                                                                                                                                                                                                                                                                                                                      stopReadyLoop();
 
-                      if (innerFrame) {
-                        innerFrame.remove();
-                      }
+                                                                                                                                                                                                                                                                                                                      if (innerFrame) {
+                                                                                                                                                                                                                                                                                                                        innerFrame.remove();
+                                                                                                                                                                                                                                                                                                                      }
 
-                      innerFrame = document.createElement('iframe');
-                      innerFrame.sandbox = params.sandbox || 'allow-scripts';
+                                                                                                                                                                                                                                                                                                                      innerFrame = document.createElement('iframe');
+                                                                                                                                                                                                                                                                                                                      innerFrame.sandbox = params.sandbox || 'allow-scripts';
 
-                      const allow = buildAllowAttribute(params.permissions);
-                      if (allow) {
-                        innerFrame.setAttribute('allow', allow);
-                      }
+                                                                                                                                                                                                                                                                                                                      const allow = buildAllowAttribute(params.permissions);
+                                                                                                                                                                                                                                                                                                                      if (allow) {
+                                                                                                                                                                                                                                                                                                                        innerFrame.setAttribute('allow', allow);
+                                                                                                                                                                                                                                                                                                                      }
 
-                      innerFrame.srcdoc = injectCsp(params.html || '<!doctype html><html><body></body></html>', params.csp || undefined);
-                      document.body.appendChild(innerFrame);
-                    }
+                                                                                                                                                                                                                                                                                                                      innerFrame.srcdoc = injectCsp(params.html || '<!doctype html><html><body></body></html>', params.csp || undefined);
+                                                                                                                                                                                                                                                                                                                      document.body.appendChild(innerFrame);
+                                                                                                                                                                                                                                                                                                                    }
 
-                    window.addEventListener('message', (event) => {
-                      const data = event.data;
+                                                                                                                                                                                                                                                                                                                    window.addEventListener('message', (event) => {
+                                                                                                                                                                                                                                                                                                                      const data = event.data;
 
-                      if (!data || typeof data !== 'object') {
-                        return;
-                      }
+                                                                                                                                                                                                                                                                                                                      if (!data || typeof data !== 'object') {
+                                                                                                                                                                                                                                                                                                                        return;
+                                                                                                                                                                                                                                                                                                                      }
 
-                      if (event.source === window.parent) {
-                        if (data.method === 'ui/notifications/sandbox-resource-ready') {
-                          loadSandboxedResource(data.params || {});
-                          return;
-                        }
+                                                                                                                                                                                                                                                                                                                      if (event.source === window.parent) {
+                                                                                                                                                                                                                                                                                                                        if (data.method === 'ui/notifications/sandbox-resource-ready') {
+                                                                                                                                                                                                                                                                                                                          loadSandboxedResource(data.params || {});
+                                                                                                                                                                                                                                                                                                                          return;
+                                                                                                                                                                                                                                                                                                                        }
 
-                        if (typeof data.method === 'string' && data.method.startsWith('ui/notifications/sandbox-')) {
-                          return;
-                        }
+                                                                                                                                                                                                                                                                                                                        if (typeof data.method === 'string' && data.method.startsWith('ui/notifications/sandbox-')) {
+                                                                                                                                                                                                                                                                                                                          return;
+                                                                                                                                                                                                                                                                                                                        }
 
-                        if (innerFrame && innerFrame.contentWindow) {
-                          innerFrame.contentWindow.postMessage(data, '*');
-                        }
+                                                                                                                                                                                                                                                                                                                        if (innerFrame?.contentWindow) {
+                                                                                                                                                                                                                                                                                                                          innerFrame.contentWindow.postMessage(data, '*');
+                                                                                                                                                                                                                                                                                                                        }
 
-                        return;
-                      }
+                                                                                                                                                                                                                                                                                                                        return;
+                                                                                                                                                                                                                                                                                                                      }
 
-                      if (innerFrame && event.source === innerFrame.contentWindow) {
-                        if (typeof data.method === 'string' && data.method.startsWith('ui/notifications/sandbox-')) {
-                          return;
-                        }
+                                                                                                                                                                                                                                                                                                                      if (innerFrame && event.source === innerFrame.contentWindow) {
+                                                                                                                                                                                                                                                                                                                        if (typeof data.method === 'string' && data.method.startsWith('ui/notifications/sandbox-')) {
+                                                                                                                                                                                                                                                                                                                          return;
+                                                                                                                                                                                                                                                                                                                        }
 
-                        sendToHost(data);
-                      }
-                    });
+                                                                                                                                                                                                                                                                                                                        sendToHost(data);
+                                                                                                                                                                                                                                                                                                                      }
+                                                                                                                                                                                                                                                                                                                    });
 
-                    window.addEventListener('load', startReadyLoop);
-                  })();
+                                                                                                                                                                                                                                                                                                                    window.addEventListener('load', startReadyLoop);
+                                                                                                                                                                                                                                                                                                                  })();
     </script>
   </body>
 </html>

@@ -21,10 +21,9 @@ const rehypeNotoEmoji = () => {
       // Reset regex after the test above
       const parts: ElementContent[] = [];
       let lastIndex = 0;
-      let match: RegExpExecArray | null;
-
       const regex2 = emojiRegex();
-      while ((match = regex2.exec(value)) !== null) {
+      let match: RegExpExecArray | null = regex2.exec(value);
+      while (match !== null) {
         // Text before the emoji
         if (match.index > lastIndex) {
           parts.push({
@@ -43,6 +42,7 @@ const rehypeNotoEmoji = () => {
         parts.push(emojiSpan);
 
         lastIndex = match.index + match[0].length;
+        match = regex2.exec(value);
       }
 
       // Trailing text after the last emoji

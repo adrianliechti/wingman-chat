@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Folder, FolderOpen, ChevronRight, ChevronDown, MoreVertical, Trash, Edit2 } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { FileIcon } from "@/shared/ui/FileIcon";
@@ -211,6 +211,7 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   // Subscribe to filesystem events for folder expansion/collapse UI
   useEffect(() => {
@@ -257,6 +258,13 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
 
   // Build the file tree from files state
   const fileTree = buildFileTree(files);
+
+  useEffect(() => {
+    if (!renamingPath) return;
+
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, [renamingPath]);
 
   const handleToggleFolder = (path: string) => {
     const newExpanded = new Set(expandedFolders);
@@ -336,6 +344,7 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
           >
             <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-3">Rename File</h3>
             <input
+              ref={renameInputRef}
               type="text"
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
@@ -347,7 +356,6 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
                 }
               }}
               className="w-full px-3 py-2 bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded border border-neutral-300 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              autoFocus
             />
             <div className="flex gap-2 mt-4 justify-end">
               <button

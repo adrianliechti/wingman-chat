@@ -178,7 +178,9 @@ export class AudioRecorder {
 
     // Stop all tracks
     if (this.stream) {
-      this.stream.getTracks().forEach((track) => track.stop());
+      this.stream.getTracks().forEach((track) => {
+        track.stop();
+      });
       this.stream = null;
     }
 

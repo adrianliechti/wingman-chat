@@ -29,9 +29,10 @@ import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
 function expandToSentences(text: string, start: number, end: number): string {
   const sentenceBoundaries = /[.!?]+\s*|\n+/g;
   const boundaries: number[] = [0];
-  let match;
-  while ((match = sentenceBoundaries.exec(text)) !== null) {
+  let match: RegExpExecArray | null = sentenceBoundaries.exec(text);
+  while (match !== null) {
     boundaries.push(match.index + match[0].length);
+    match = sentenceBoundaries.exec(text);
   }
   boundaries.push(text.length);
 

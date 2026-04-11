@@ -573,7 +573,6 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
           aria-busy={isRunning}
           className="flex-1 bg-transparent text-neutral-900 dark:text-neutral-100 outline-none placeholder-neutral-400 dark:placeholder-neutral-600 caret-emerald-600 dark:caret-green-400 disabled:opacity-50 read-only:opacity-75"
           placeholder={isReady ? "" : "Initializing..."}
-          autoFocus
           spellCheck={false}
           autoComplete="off"
           autoCapitalize="off"

@@ -65,31 +65,30 @@ const components: Partial<Components> = {
   pre: ({ children }) => {
     return <>{children}</>;
   },
-  input: ({ type, checked, ...props }) => {
+  input: ({ type, checked, className, ...props }) => {
     if (type === "checkbox") {
       return (
-        <svg
-          className={`task-checkbox${checked ? " checked" : ""}`}
-          viewBox="0 0 16 16"
-          fill="none"
+        <span
+          className={`${className ?? ""} task-checkbox${checked ? " checked" : ""}`.trim()}
           role="checkbox"
           aria-checked={checked}
-          {...props}
         >
-          <rect x="1" y="1" width="14" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
-          {checked && (
-            <path
-              d="M4.5 8L7 10.5L11.5 5.5"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          )}
-        </svg>
+          <svg className="task-checkbox-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" {...props}>
+            <rect x="1" y="1" width="14" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+            {checked && (
+              <path
+                d="M4.5 8L7 10.5L11.5 5.5"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            )}
+          </svg>
+        </span>
       );
     }
-    return <input type={type} checked={checked} {...props} />;
+    return <input type={type} checked={checked} className={className} {...props} />;
   },
   li: ({ children, className, ...props }) => {
     const isTask = typeof className === "string" && className.includes("task-list-item");
@@ -278,11 +277,9 @@ const components: Partial<Components> = {
     // Inline code (no language specified and single line)
     if (!match && !isMultiLine) {
       return (
-        <code
-          {...rest}
-          className={`${className || ""} bg-neutral-200 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-sm font-mono`}
-          children={children}
-        />
+        <code {...rest} className={`${className || ""} bg-neutral-200 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-sm font-mono`}>
+          {children}
+        </code>
       );
     }
 

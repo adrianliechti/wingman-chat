@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, Fragment } from "react";
+import { useState, useRef, useCallback, Fragment, useEffect } from "react";
 import {
   Plus,
   Globe,
@@ -374,6 +374,7 @@ function WebSearchOverlay({
   const [preview, setPreview] = useState("");
   const [previewQuery, setPreviewQuery] = useState("");
   const [previewMode, setPreviewMode] = useState<"web" | "research">("web");
+  const queryInputRef = useRef<HTMLInputElement>(null);
 
   const modes = {
     web: { label: "Web", icon: Globe },
@@ -381,6 +382,10 @@ function WebSearchOverlay({
   };
 
   const ModeIcon = modes[mode].icon;
+
+  useEffect(() => {
+    queryInputRef.current?.focus();
+  }, []);
 
   const handleSearch = async () => {
     if (!query.trim() || isSearching) return;
@@ -421,6 +426,7 @@ function WebSearchOverlay({
           <div className="flex items-center gap-2 px-3 py-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-lg border border-neutral-200 dark:border-neutral-700 focus-within:border-neutral-400 dark:focus-within:border-neutral-500 transition-colors">
             <Search size={16} className="text-neutral-400 shrink-0" />
             <input
+              ref={queryInputRef}
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -432,7 +438,6 @@ function WebSearchOverlay({
               }}
               placeholder="What are you looking for?"
               disabled={isSearching}
-              autoFocus
               className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 outline-none min-w-0"
             />
           </div>
@@ -557,6 +562,11 @@ function WebScrapeOverlay({
   const [url, setUrl] = useState("");
   const [preview, setPreview] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
+  const urlInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    urlInputRef.current?.focus();
+  }, []);
 
   const handleFetch = async () => {
     if (!url.trim() || isLoading) return;
@@ -589,6 +599,7 @@ function WebScrapeOverlay({
           <div className="flex items-center gap-2 px-3 py-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-lg border border-neutral-200 dark:border-neutral-700 focus-within:border-neutral-400 dark:focus-within:border-neutral-500 transition-colors">
             <Link size={16} className="text-neutral-400 shrink-0" />
             <input
+              ref={urlInputRef}
               type="url"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
@@ -600,7 +611,6 @@ function WebScrapeOverlay({
               }}
               placeholder="https://example.com"
               disabled={isLoading}
-              autoFocus
               className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 outline-none min-w-0"
             />
           </div>

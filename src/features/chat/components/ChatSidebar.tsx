@@ -15,9 +15,16 @@ export function ChatSidebar() {
   const [showSearch, setShowSearch] = useState(false);
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState<{ id: string; position: "before" | "after" } | null>(null);
   const dragItemId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (showSearch) {
+      searchInputRef.current?.focus();
+    }
+  }, [showSearch]);
 
   useEffect(() => {
     if (renamingChatId && renameInputRef.current) {
@@ -412,12 +419,12 @@ export function ChatSidebar() {
         {showSearch ? (
           <div className="flex-1 flex items-center gap-1">
             <input
+              ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search..."
               className="w-full min-w-0 px-2 py-0.5 text-sm bg-transparent text-neutral-800 dark:text-neutral-200 placeholder-neutral-500 dark:placeholder-neutral-400 focus:outline-none"
-              autoFocus
             />
             <button
               type="button"
@@ -480,7 +487,9 @@ export function ChatSidebar() {
                     <button
                       type="button"
                       onClick={() => {
-                        pinnedChats.forEach((c) => unpinChat(c));
+                        pinnedChats.forEach((c) => {
+                          unpinChat(c);
+                        });
                       }}
                       className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
                     >
@@ -542,7 +551,9 @@ export function ChatSidebar() {
                               type="button"
                               onClick={() => {
                                 const hasActive = group.chats.some((c) => c.id === chat?.id);
-                                group.chats.forEach((chatItem) => deleteChat(chatItem.id));
+                                group.chats.forEach((chatItem) => {
+                                  deleteChat(chatItem.id);
+                                });
                                 if (hasActive) newChat();
                               }}
                               className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
