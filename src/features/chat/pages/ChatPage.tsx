@@ -144,19 +144,26 @@ export function ChatPage() {
   // User-initiated actions (plus button, sidebar clicks) go through useChatNavigate
   // which sets both state and URL directly, so this only catches external URL changes.
   useEffect(() => {
-    if (routeChatId && routeChatId !== chat?.id) {
+    const activeChatId = chat?.id ?? null;
+
+    if (routeChatId && routeChatId !== activeChatId) {
       selectChat(routeChatId);
-    } else if (!routeChatId && chat) {
+    } else if (!routeChatId && activeChatId) {
       selectChat(null);
     }
-  }, [routeChatId, chat, selectChat]);
+  }, [routeChatId, chat?.id, selectChat]);
 
   // Sync state → URL when a chat is implicitly created during message send.
   // The URL is still /chat but chatId just appeared — update to /chat/$chatId.
   useEffect(() => {
-    if (chat?.id && !routeChatId) {
+    const previousChatId = previousChatIdRef.current;
+    const currentChatId = chat?.id ?? null;
+
+    if (currentChatId && !routeChatId && previousChatId === null) {
       navigate({ to: "/chat/$chatId", params: { chatId: chat.id }, replace: true });
     }
+
+    previousChatIdRef.current = currentChatId;
   }, [chat?.id, navigate, routeChatId]);
 
   const { layoutMode } = useLayout();
@@ -186,6 +193,7 @@ export function ChatPage() {
   const messageKeysRef = useRef<string[]>([]);
   const messageKeyScopeRef = useRef<string | null>(null);
   const nextMessageKeyRef = useRef(0);
+  const previousChatIdRef = useRef<string | null>(null);
 
   const messageRenderKeys = useMemo(() => {
     const scopeKey = chat?.id ?? routeChatId ?? "__draft__";

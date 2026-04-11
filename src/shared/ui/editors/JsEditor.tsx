@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from "react";
 import { X } from "lucide-react";
-import { CodeEditor } from "./CodeEditor";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { CodeEditor } from "./CodeEditor";
 
 interface JsEditorProps {
   content: string;
@@ -248,6 +248,7 @@ export function JsEditor({ content, onRunReady, onRunningChange }: JsEditorProps
           <div className="flex items-center justify-between px-3 py-1">
             <span className="text-[10px] uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Console</span>
             <button
+              type="button"
               onClick={handleClear}
               className="p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-neutral-400 dark:text-neutral-500"
               title="Clear console"

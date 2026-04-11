@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect } from "react";
 import { X } from "lucide-react";
-import { CodeEditor } from "./CodeEditor";
-import { executeCode } from "@/features/tools/lib/interpreter";
+import { useCallback, useEffect, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { executeCode } from "@/features/tools/lib/interpreter";
+import { CodeEditor } from "./CodeEditor";
 
 interface PythonEditorProps {
   content: string;
@@ -74,6 +74,7 @@ export function PythonEditor({ content, onRunReady, onRunningChange }: PythonEdi
           <div className="flex items-center justify-between px-3 py-1">
             <span className="text-[10px] uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Output</span>
             <button
+              type="button"
               onClick={handleClear}
               className="p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-neutral-400 dark:text-neutral-500"
               title="Clear output"

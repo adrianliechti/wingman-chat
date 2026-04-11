@@ -19,6 +19,7 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messageCount = messages.length;
   const streamingPartCount = streamingContent?.length ?? 0;
+  const messageKeyCounts = new Map<string, number>();
 
   useEffect(() => {
     if (messageCount === 0 && streamingPartCount === 0) return;
@@ -93,10 +94,17 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
           </div>
         ) : (
           <div className="p-4 space-y-4">
-            {messages.map((msg, i) => {
+            {messages.map((msg) => {
               const text = getTextFromContent(msg.content);
+              const messageSignature = `${msg.timestamp}:${msg.role}:${text}`;
+              const occurrence = (messageKeyCounts.get(messageSignature) ?? 0) + 1;
+              messageKeyCounts.set(messageSignature, occurrence);
+
               return (
-                <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div
+                  key={`${messageSignature}:${occurrence}`}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                >
                   <div
                     className={`max-w-[85%] rounded-xl px-4 py-2.5 ${msg.role === "user" ? "bg-neutral-200 dark:bg-neutral-900" : "bg-neutral-100 dark:bg-neutral-800"}`}
                   >

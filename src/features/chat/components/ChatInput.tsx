@@ -541,7 +541,7 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
               <>
                 <textarea
                   ref={contentInputRef}
-                  className="p-3 md:p-4 flex-1 max-h-[40vh] overflow-y-auto min-h-10 whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200"
+                  className="block w-full resize-none border-0 bg-transparent p-3 md:p-4 max-h-[40vh] overflow-y-auto min-h-10 whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
                   style={{
                     scrollbarWidth: "thin",
                     minHeight: "2.5rem",

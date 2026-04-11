@@ -1,5 +1,5 @@
+import { Check, ChevronRight, RotateCcw, X } from "lucide-react";
 import { useState } from "react";
-import { Check, X, ChevronRight, RotateCcw } from "lucide-react";
 import type { QuizQuestion } from "../types/notebook";
 
 interface QuizViewerProps {
@@ -14,6 +14,7 @@ export function QuizViewer({ questions }: QuizViewerProps) {
   const [finished, setFinished] = useState(false);
 
   const question = questions[currentIndex];
+  const optionKeyCounts = new Map<string, number>();
 
   const handleSelect = (optionIndex: number) => {
     if (revealed) return;
@@ -97,6 +98,8 @@ export function QuizViewer({ questions }: QuizViewerProps) {
           {question.options.map((option, i) => {
             const isCorrect = i === question.correctIndex;
             const isSelected = i === selected;
+            const occurrence = (optionKeyCounts.get(option) ?? 0) + 1;
+            optionKeyCounts.set(option, occurrence);
 
             let styles =
               "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600";
@@ -114,7 +117,7 @@ export function QuizViewer({ questions }: QuizViewerProps) {
 
             return (
               <button
-                key={i}
+                key={`${option}:${occurrence}`}
                 type="button"
                 onClick={() => handleSelect(i)}
                 disabled={revealed}

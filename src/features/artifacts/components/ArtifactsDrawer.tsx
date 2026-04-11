@@ -1,5 +1,5 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { File as FileIcon2, Code, Eye, Play, Loader2, TerminalSquare, Upload, Download, HardDrive } from "lucide-react";
+import { Code, Download, Eye, File as FileIcon2, HardDrive, Loader2, Play, TerminalSquare, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
@@ -464,6 +464,7 @@ export function ArtifactsDrawer() {
   };
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: File drag-and-drop requires drag events on the drawer surface.
     <div
       className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md pt-2 md:pt-0"
       onDragOver={handleDragOver}

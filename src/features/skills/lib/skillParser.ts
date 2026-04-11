@@ -109,7 +109,7 @@ export function parseSkillFile(content: string): SkillParseResult {
   } else {
     const nameValidation = validateSkillName(name);
     if (!nameValidation.valid) {
-      errors.push({ field: "name", message: nameValidation.error! });
+      errors.push({ field: "name", message: nameValidation.error ?? "Invalid skill name" });
     }
   }
 
@@ -123,6 +123,13 @@ export function parseSkillFile(content: string): SkillParseResult {
 
   if (errors.length > 0) {
     return { success: false, errors };
+  }
+
+  if (!name || !description) {
+    return {
+      success: false,
+      errors: [{ field: "format", message: "Missing required frontmatter fields" }],
+    };
   }
 
   return {

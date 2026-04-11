@@ -3,9 +3,9 @@
  * Provides ls, glob, grep, read, and search tools for repository files.
  */
 
-import type { Tool, TextContent } from "@/shared/types/chat";
 import type { RepositoryFile } from "@/features/repository/types/repository";
-import { splitLines, getLineRange, formatLineOutput, matchGlob, grepText, truncateLine } from "@/shared/lib/text-utils";
+import { formatLineOutput, getLineRange, grepText, matchGlob, splitLines, truncateLine } from "@/shared/lib/text-utils";
+import type { TextContent, Tool } from "@/shared/types/chat";
 
 /**
  * Result from semantic search (queryChunks).
@@ -338,7 +338,7 @@ function createSearchTool(queryChunks: QueryChunksFunction, options: Required<Re
       const query = args.query as string;
       const limit = Math.min((args.limit as number) ?? options.defaultSearchResults, 20);
 
-      if (!query || !query.trim()) {
+      if (!query?.trim()) {
         return errorResult("Query is required");
       }
 

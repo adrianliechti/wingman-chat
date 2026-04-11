@@ -1,4 +1,5 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
+import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { useTheme } from "@/shell/hooks/useTheme";
 import { CopyButton } from "./CopyButton";
 
@@ -102,6 +103,10 @@ const CodeRenderer = memo(({ code, language, name, blockId, isStreaming = false 
   }, [blockCacheKey, cacheKey, code, isDark, isStreaming, normalizedLanguage]);
 
   const effectiveHtml = code ? html : "";
+  const renderedHtml = useMemo(
+    () => sanitizeHtmlToReact(effectiveHtml, { keyPrefix: blockCacheKey ?? cacheKey }),
+    [blockCacheKey, cacheKey, effectiveHtml],
+  );
 
   const renderCodeBlock = (content: React.ReactNode) => (
     <div className="relative my-4">
@@ -129,11 +134,9 @@ const CodeRenderer = memo(({ code, language, name, blockId, isStreaming = false 
   }
 
   return renderCodeBlock(
-    <div
-      className="overflow-x-auto"
-      dangerouslySetInnerHTML={{ __html: effectiveHtml }}
-      style={highlightedCodeStyle}
-    />,
+    <div className="overflow-x-auto" style={highlightedCodeStyle}>
+      {renderedHtml}
+    </div>,
   );
 });
 

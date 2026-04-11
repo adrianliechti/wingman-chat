@@ -20,7 +20,7 @@ export async function pptxToMarkdown(file: File): Promise<string> {
     const slideNum = i + 1;
 
     // Parse slide relationships for hyperlinks
-    const relsPath = slidePath.replace("ppt/slides/", "ppt/slides/_rels/") + ".rels";
+    const relsPath = `${slidePath.replace("ppt/slides/", "ppt/slides/_rels/")}.rels`;
     const relationships = await parseRelationships(zip, relsPath);
 
     // Parse slide content
@@ -42,7 +42,7 @@ export async function pptxToMarkdown(file: File): Promise<string> {
     if (slideMarkdown.trim() || notesMarkdown.trim()) {
       let content = slideMarkdown;
       if (notesMarkdown.trim()) {
-        content += "\n\n" + notesMarkdown;
+        content += `\n\n${notesMarkdown}`;
       }
       slideMarkdowns.push(content);
     }
@@ -75,7 +75,7 @@ async function getSlideOrder(zip: JSZip): Promise<string[]> {
 
     if (id && target && type?.includes("/slide")) {
       // Normalize path
-      const slidePath = target.startsWith("/") ? target.slice(1) : "ppt/" + target;
+      const slidePath = target.startsWith("/") ? target.slice(1) : `ppt/${target}`;
       rIdToPath.set(id, slidePath);
     }
   }
@@ -94,8 +94,9 @@ async function getSlideOrder(zip: JSZip): Promise<string[]> {
     const rId =
       sldId.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id") ||
       sldId.getAttribute("r:id");
-    if (rId && rIdToPath.has(rId)) {
-      slides.push(rIdToPath.get(rId)!);
+    const slidePath = rId ? rIdToPath.get(rId) : undefined;
+    if (slidePath) {
+      slides.push(slidePath);
     }
   }
 
@@ -313,13 +314,13 @@ function parseTextRun(r: Element, relationships: Relationships): string {
 
   // Apply formatting (innermost to outermost)
   if (isStrike) {
-    text = "~~" + text + "~~";
+    text = `~~${text}~~`;
   }
   if (isItalic) {
-    text = "*" + text + "*";
+    text = `*${text}*`;
   }
   if (isBold) {
-    text = "**" + text + "**";
+    text = `**${text}**`;
   }
   if (linkUrl) {
     text = `[${text}](${linkUrl})`;
@@ -376,15 +377,15 @@ function parseGraphicFrame(graphicFrame: Element, relationships: Relationships):
 
   // Header row
   const headerRow = tableData[0];
-  lines.push("| " + headerRow.map((cell) => escapeTableCell(cell)).join(" | ") + " |");
+  lines.push(`| ${headerRow.map((cell) => escapeTableCell(cell)).join(" | ")} |`);
 
   // Separator
-  lines.push("| " + headerRow.map(() => "---").join(" | ") + " |");
+  lines.push(`| ${headerRow.map(() => "---").join(" | ")} |`);
 
   // Data rows
   for (let i = 1; i < tableData.length; i++) {
     const row = tableData[i];
-    lines.push("| " + row.map((cell) => escapeTableCell(cell)).join(" | ") + " |");
+    lines.push(`| ${row.map((cell) => escapeTableCell(cell)).join(" | ")} |`);
   }
 
   return lines.join("\n");
@@ -430,7 +431,7 @@ function parseNotes(xml: string, relationships: Relationships): string {
 
   // Format as blockquote
   const notesContent = notesTexts.join("\n\n");
-  const quotedLines = notesContent.split("\n").map((line) => "> " + line);
+  const quotedLines = notesContent.split("\n").map((line) => `> ${line}`);
 
-  return "> **Notes:**\n>\n" + quotedLines.join("\n");
+  return `> **Notes:**\n>\n${quotedLines.join("\n")}`;
 }

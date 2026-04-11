@@ -1,6 +1,6 @@
 import { Loader2, Mic, Square, X } from "lucide-react";
 import { useState } from "react";
-import { useFieldRecorder, type FieldRecorderResult } from "../hooks/useFieldRecorder";
+import { type FieldRecorderResult, useFieldRecorder } from "../hooks/useFieldRecorder";
 
 interface FieldRecorderOverlayProps {
   onComplete: (result: FieldRecorderResult) => void;
@@ -14,8 +14,7 @@ function formatElapsed(sec: number): string {
 }
 
 export function FieldRecorderOverlay({ onComplete, onClose }: FieldRecorderOverlayProps) {
-  const { isRecording, elapsedSec, error, start, stop } =
-    useFieldRecorder({ chunkDurationSec: 120 });
+  const { isRecording, elapsedSec, error, start, stop } = useFieldRecorder({ chunkDurationSec: 120 });
   const [isStopping, setIsStopping] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
@@ -54,14 +53,17 @@ export function FieldRecorderOverlay({ onComplete, onClose }: FieldRecorderOverl
 
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" role="button" tabIndex={-1} onClick={handleCancel} onKeyDown={(e) => { if (e.key === "Escape") handleCancel(); }} />
+      <button
+        type="button"
+        aria-label="Close field recorder"
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={handleCancel}
+      />
 
       <div className="relative z-10 w-full max-w-sm bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
-          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
-            Field Recorder
-          </h3>
+          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Field Recorder</h3>
           <button
             type="button"
             onClick={handleCancel}
@@ -91,9 +93,7 @@ export function FieldRecorderOverlay({ onComplete, onClose }: FieldRecorderOverl
               </div>
 
               {isStopping && (
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  Finishing transcription...
-                </p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">Finishing transcription...</p>
               )}
             </>
           ) : (
@@ -101,9 +101,7 @@ export function FieldRecorderOverlay({ onComplete, onClose }: FieldRecorderOverl
               <div className="w-14 h-14 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
                 <Mic size={24} className="text-neutral-500" />
               </div>
-              <p className="text-sm text-neutral-700 dark:text-neutral-300">
-                Record a conversation
-              </p>
+              <p className="text-sm text-neutral-700 dark:text-neutral-300">Record a conversation</p>
             </>
           )}
 

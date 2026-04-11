@@ -1,8 +1,8 @@
-import { useMemo, useState, useEffect } from "react";
-import { CodeEditor } from "./CodeEditor";
+import { useEffect, useMemo, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { transformHtmlForPreview } from "@/features/artifacts/lib/artifacts";
 import type { File } from "@/features/artifacts/types/file";
+import { CodeEditor } from "./CodeEditor";
 
 // Component to display HTML content in iframe with virtual filesystem support
 function HtmlPreview({ content }: { content: string }) {
@@ -63,7 +63,12 @@ function HtmlPreview({ content }: { content: string }) {
 
   return (
     <div className="h-full overflow-hidden">
-      <iframe srcDoc={transformedHtml} className="w-full h-full" sandbox="allow-scripts allow-same-origin" />
+      <iframe
+        srcDoc={transformedHtml}
+        title="HTML preview"
+        className="w-full h-full"
+        sandbox="allow-scripts allow-same-origin"
+      />
     </div>
   );
 }

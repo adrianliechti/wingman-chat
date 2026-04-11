@@ -1,19 +1,19 @@
 import {
+  AlignmentType,
+  BorderStyle,
   Document,
+  ExternalHyperlink,
+  HeadingLevel,
   Packer,
   Paragraph,
-  TextRun,
-  HeadingLevel,
   Table,
-  TableRow,
   TableCell,
+  TableRow,
+  TextRun,
   WidthType,
-  BorderStyle,
-  AlignmentType,
-  ExternalHyperlink,
 } from "docx";
-import { marked } from "marked";
 import type { Token, Tokens } from "marked";
+import { marked } from "marked";
 
 type DocxElement = Paragraph | Table;
 
@@ -79,7 +79,7 @@ function getListItemInlineTokens(item: Tokens.ListItem): Token[] {
   const first = item.tokens[0];
   if (!first) return [];
   if ("tokens" in first && Array.isArray((first as Tokens.Text).tokens)) {
-    return (first as Tokens.Text).tokens!;
+    return (first as Tokens.Text).tokens;
   }
   return [];
 }
