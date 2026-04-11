@@ -97,10 +97,18 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
     filtered.forEach((n) => {
       const cat = getDateCategory(n.updatedAt);
       if (!map.has(cat)) map.set(cat, []);
-      map.get(cat)!.push(n);
+      const notebooksInCategory = map.get(cat);
+      if (notebooksInCategory) {
+        notebooksInCategory.push(n);
+      }
     });
 
-    return categoryOrder.filter((c) => map.has(c)).map((category) => ({ category, items: map.get(category)! }));
+    return categoryOrder
+      .map((category) => {
+        const items = map.get(category);
+        return items && items.length > 0 ? { category, items } : null;
+      })
+      .filter((group): group is { category: string; items: Notebook[] } => group !== null);
   }, [filtered, getDateCategory]);
 
   const handleSelect = (id: string) => {
@@ -203,7 +211,6 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
               {group.items.map((notebook) => (
                 <div
                   key={notebook.id}
-                  onClick={() => renamingId !== notebook.id && handleSelect(notebook.id)}
                   className={`flex items-center cursor-pointer relative shrink-0 group rounded transition-all duration-200 ${
                     notebook.id === activeId
                       ? "py-2 md:py-1.5 px-2.5 md:px-2 text-neutral-900 dark:text-neutral-100"
@@ -226,12 +233,14 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
                       className="flex-1 min-w-0 text-base md:text-sm bg-transparent text-neutral-800 dark:text-neutral-200 border-0 border-b border-neutral-400 dark:border-neutral-500 rounded-none px-0 py-0 focus:outline-none focus:border-neutral-600 dark:focus:border-neutral-300"
                     />
                   ) : (
-                    <div
-                      className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-base md:text-sm text-neutral-800 dark:text-neutral-200 pr-4"
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(notebook.id)}
+                      className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap pr-4 text-left text-base md:text-sm text-neutral-800 dark:text-neutral-200"
                       title={notebook.customTitle ?? notebook.title}
                     >
                       {notebook.customTitle ?? notebook.title}
-                    </div>
+                    </button>
                   )}
                   {renamingId !== notebook.id && (
                     <Menu>

@@ -395,6 +395,7 @@ export function TranslatePage() {
                   <div className="max-w-md">
                     <div className="border border-red-200 dark:border-red-800 bg-red-50/95 dark:bg-red-950/20 backdrop-blur-lg rounded-lg overflow-hidden">
                       <button
+                        type="button"
                         onClick={() => setErrorExpanded(!errorExpanded)}
                         className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-red-100/50 dark:hover:bg-red-900/20 transition-colors"
                       >
@@ -609,6 +610,7 @@ export function TranslatePage() {
                       <div className="absolute bottom-2 left-2 right-2 z-10">
                         <div className="border border-red-200 dark:border-red-800 bg-red-50/95 dark:bg-red-950/20 backdrop-blur-lg rounded-lg overflow-hidden">
                           <button
+                            type="button"
                             onClick={() => setErrorExpanded(!errorExpanded)}
                             className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-red-100/50 dark:hover:bg-red-900/20 transition-colors"
                           >

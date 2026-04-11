@@ -64,6 +64,7 @@ function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
   return (
     <div className={isExpanded ? "mb-1" : "mb-0"}>
       <button
+        type="button"
         onClick={() => setIsExpanded(!isExpanded)}
         className="grid w-full grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 text-left text-xs text-neutral-500 transition-colors hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
       >
@@ -90,12 +91,44 @@ type ChatAssistantMessageProps = {
   isResponding?: boolean;
 };
 
+function createMessagePartKeyFactory() {
+  const seen = new Map<string, number>();
+
+  return (part: Message["content"][number]) => {
+    let baseKey: string;
+
+    switch (part.type) {
+      case "text":
+        baseKey = `text:${part.text}`;
+        break;
+      case "reasoning":
+        baseKey = `reasoning:${part.text ?? ""}:${part.summary ?? ""}`;
+        break;
+      case "tool_call":
+        baseKey = `tool_call:${part.id ?? ""}:${part.name}:${part.arguments}`;
+        break;
+      default:
+        baseKey = `${part.type}:${JSON.stringify(part)}`;
+        break;
+    }
+
+    const occurrence = seen.get(baseKey) ?? 0;
+    seen.set(baseKey, occurrence + 1);
+
+    return occurrence === 0 ? baseKey : `${baseKey}:${occurrence}`;
+  };
+}
+
 export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   message,
   isLast,
   isResponding,
 }: ChatAssistantMessageProps) {
   const { pendingElicitation, resolveElicitation } = useChat();
+  const oldReasoningKey = createMessagePartKeyFactory();
+  const loadingReasoningKey = createMessagePartKeyFactory();
+  const loadingToolCallKey = createMessagePartKeyFactory();
+  const messageContentKey = createMessagePartKeyFactory();
 
   const toolCallParts = message.content.filter((p) => p.type === "tool_call");
   const hasToolCalls = toolCallParts.length > 0;
@@ -129,9 +162,13 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
       return (
         <div className="pb-2">
           {reasoningParts.map(
-            (part, index) =>
+            (part) =>
               part.type === "reasoning" && (
-                <ReasoningDisplay key={index} reasoning={part.text || part.summary || ""} isStreaming={false} />
+                <ReasoningDisplay
+                  key={oldReasoningKey(part)}
+                  reasoning={part.text || part.summary || ""}
+                  isStreaming={false}
+                />
               ),
           )}
         </div>
@@ -159,17 +196,17 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
           {/* Show reasoning above tool calls */}
           {hasReasoning &&
             reasoningParts.map(
-              (part, index) =>
+              (part) =>
                 part.type === "reasoning" && (
                   <ReasoningDisplay
-                    key={index}
+                    key={loadingReasoningKey(part)}
                     reasoning={part.text || part.summary || ""}
                     isStreaming={isReasoningActive}
                   />
                 ),
             )}
           <div className="mt-0 space-y-0">
-            {toolCallParts.map((part, index) => {
+            {toolCallParts.map((part) => {
               if (part.type !== "tool_call") return null;
               const toolCall = part;
               const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
@@ -179,7 +216,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
               if (isPendingElicitation) {
                 return (
                   <ChatMessageElicitation
-                    key={`${toolCall.id || "tool"}-${index}`}
+                    key={loadingToolCallKey(toolCall)}
                     toolName={pendingElicitation.toolName}
                     elicitation={pendingElicitation.elicitation}
                     waiting={pendingElicitation.waiting}
@@ -190,7 +227,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
               }
 
               return (
-                <div key={`${toolCall.id || "tool"}-${index}`} className="rounded-lg overflow-hidden max-w-full">
+                <div key={loadingToolCallKey(toolCall)} className="rounded-lg overflow-hidden max-w-full">
                   <div className="flex items-center gap-2 min-w-0">
                     <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
                     <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
@@ -215,10 +252,10 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
       <div className="pb-4">
         {hasReasoning ? (
           reasoningParts.map(
-            (part, index) =>
+            (part) =>
               part.type === "reasoning" && (
                 <ReasoningDisplay
-                  key={index}
+                  key={loadingReasoningKey(part)}
                   reasoning={part.text || part.summary || ""}
                   isStreaming={isReasoningActive}
                 />
@@ -255,10 +292,12 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
         <>
           {/* Render content parts in order */}
           {message.content.map((part, index) => {
+            const partKey = messageContentKey(part);
+
             if (part.type === "reasoning") {
               return (
                 <ReasoningDisplay
-                  key={index}
+                  key={partKey}
                   reasoning={part.text || part.summary || ""}
                   isStreaming={isReasoningActive}
                 />
@@ -269,7 +308,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
                 .slice(0, index)
                 .some((p) => p.type === "reasoning" || p.type === "tool_call");
               return (
-                <div key={index} className={hasPrecedingItems ? "mt-2" : ""}>
+                <div key={partKey} className={hasPrecedingItems ? "mt-2" : ""}>
                   <Markdown isStreaming={!!(isLast && isResponding)}>{part.text}</Markdown>
                 </div>
               );
@@ -279,7 +318,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
               if (isPendingElicitation) {
                 return (
-                  <div key={index} className="my-2 rounded-lg overflow-hidden max-w-full">
+                  <div key={partKey} className="my-2 rounded-lg overflow-hidden max-w-full">
                     <ChatMessageElicitation
                       toolName={pendingElicitation.toolName}
                       elicitation={pendingElicitation.elicitation}
@@ -295,7 +334,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
               if (!isLast || !isResponding) return null;
               const preview = getToolCallPreview(part.name, part.arguments);
               return (
-                <div key={index} className="mt-0.5 mb-0 rounded-lg overflow-hidden max-w-full">
+                <div key={partKey} className="mt-0.5 mb-0 rounded-lg overflow-hidden max-w-full">
                   <div className="flex items-center gap-2 min-w-0">
                     <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
                     <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">

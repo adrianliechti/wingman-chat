@@ -102,7 +102,7 @@ function TreeItem({ node, depth, onDelete }: { node: TreeNode; depth: number; on
         {/* Meta */}
         <span className="text-[11px] text-neutral-400 dark:text-neutral-500 whitespace-nowrap tabular-nums mr-1">
           {isDir
-            ? `${stats!.files} file${stats!.files === 1 ? "" : "s"} · ${formatBytes(stats!.size)}`
+            ? `${stats?.files ?? 0} file${stats?.files === 1 ? "" : "s"} · ${formatBytes(stats?.size ?? 0)}`
             : formatBytes(node.size ?? 0)}
         </span>
 
@@ -123,7 +123,7 @@ function TreeItem({ node, depth, onDelete }: { node: TreeNode; depth: number; on
       {/* Children */}
       {isDir && expanded && hasChildren && (
         <div>
-          {node.children!.map((child) => (
+          {(node.children ?? []).map((child) => (
             <TreeItem key={child.path} node={child} depth={depth + 1} onDelete={onDelete} />
           ))}
         </div>

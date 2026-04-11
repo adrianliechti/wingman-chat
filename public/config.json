@@ -35,10 +35,6 @@
         "researcher": "web"
     },
 
-    "workflow": {
-        "enabled": true
-    },
-
     "notebook": {
         "enabled": true
     },

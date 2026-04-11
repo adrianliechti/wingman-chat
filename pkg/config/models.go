@@ -28,7 +28,6 @@ type Config struct {
 
 	Memory   *Memory   `json:"memory,omitempty" yaml:"memory,omitempty"`
 	Notebook *Notebook `json:"notebook,omitempty" yaml:"notebook,omitempty"`
-	Workflow *Workflow `json:"workflow,omitempty" yaml:"workflow,omitempty"`
 
 	Chat *Chat `json:"chat,omitempty" yaml:"chat,omitempty"`
 
@@ -117,10 +116,6 @@ type Repository struct {
 type Memory struct{}
 
 type Notebook struct {
-	Model string `json:"model,omitempty" yaml:"model,omitempty"`
-}
-
-type Workflow struct {
 	Model string `json:"model,omitempty" yaml:"model,omitempty"`
 }
 

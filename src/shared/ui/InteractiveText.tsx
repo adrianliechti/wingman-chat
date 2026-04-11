@@ -117,6 +117,20 @@ export function InteractiveText({
     );
   }, [onTextSelect]);
 
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleMouseUp = () => {
+      handleTextSelection();
+    };
+
+    container.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      container.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [handleTextSelection]);
+
   // Handle word click
   const handleWordClick = useCallback(
     (word: WordInfo, event: React.MouseEvent) => {
@@ -155,20 +169,26 @@ export function InteractiveText({
     let lastEnd = 0;
     const elements: React.ReactNode[] = [];
 
-    words.forEach((word, index) => {
+    const pushTextSegment = (segment: string, segmentStart: number) => {
+      let offset = 0;
+
+      for (const line of segment.split("\n")) {
+        const lineStart = segmentStart + offset;
+        elements.push(<span key={`text-${lineStart}`}>{line}</span>);
+        offset += line.length;
+
+        if (offset < segment.length) {
+          elements.push(<br key={`break-${segmentStart + offset}`} />);
+          offset += 1;
+        }
+      }
+    };
+
+    words.forEach((word) => {
       // Add text before word
       if (word.start > lastEnd) {
         const textBefore = displayText.substring(lastEnd, word.start);
-        elements.push(
-          <span key={`text-${index}`}>
-            {textBefore.split("\n").map((line, i, arr) => (
-              <span key={i}>
-                {line}
-                {i < arr.length - 1 && <br />}
-              </span>
-            ))}
-          </span>,
-        );
+        pushTextSegment(textBefore, lastEnd);
       }
 
       const isSelected = selectedWord?.start === word.start;
@@ -176,10 +196,11 @@ export function InteractiveText({
 
       // Add interactive word
       elements.push(
-        <span
-          key={`word-${index}`}
+        <button
+          key={`word-${word.start}-${word.end}`}
+          type="button"
           className={`
-            cursor-pointer transition-all duration-200 rounded
+            inline rounded border-0 bg-transparent p-0 text-inherit transition-all duration-200
             ${
               isSelected
                 ? "bg-blue-200 dark:bg-blue-800/50 text-blue-900 dark:text-blue-100 px-1 font-medium"
@@ -191,10 +212,15 @@ export function InteractiveText({
           onMouseEnter={() => setHoveredWord(word.clean)}
           onMouseLeave={() => setHoveredWord(null)}
           onClick={(e) => handleWordClick(word, e)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              handleWordClick(word, e as unknown as React.MouseEvent);
+            }
+          }}
           title={`Click for alternatives to "${word.clean}"`}
         >
           {word.original}
-        </span>,
+        </button>,
       );
 
       lastEnd = word.end;
@@ -203,16 +229,7 @@ export function InteractiveText({
     // Add remaining text
     if (lastEnd < displayText.length) {
       const textAfter = displayText.substring(lastEnd);
-      elements.push(
-        <span key="text-end">
-          {textAfter.split("\n").map((line, i, arr) => (
-            <span key={i}>
-              {line}
-              {i < arr.length - 1 && <br />}
-            </span>
-          ))}
-        </span>,
-      );
+      pushTextSegment(textAfter, lastEnd);
     }
 
     return elements;
@@ -222,12 +239,6 @@ export function InteractiveText({
     <div
       ref={containerRef}
       className={`${className}`}
-      onMouseUp={handleTextSelection}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          setSelectedWord(null);
-        }
-      }}
       style={{ userSelect: "text" }}
     >
       {renderText()}

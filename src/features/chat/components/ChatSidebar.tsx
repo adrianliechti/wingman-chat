@@ -170,7 +170,10 @@ export function ChatSidebar() {
       if (!categoryMap.has(category)) {
         categoryMap.set(category, []);
       }
-      categoryMap.get(category)!.push(chatItem);
+      const categoryChats = categoryMap.get(category);
+      if (categoryChats) {
+        categoryChats.push(chatItem);
+      }
     });
 
     categoryOrder.forEach((category) => {
@@ -296,17 +299,6 @@ export function ChatSidebar() {
 
     return (
       <div
-        draggable={options?.draggable}
-        onDragStart={options?.draggable ? () => handleDragStart(chatItem.id) : undefined}
-        onDragOver={options?.draggable ? (e) => handleDragOver(e, chatItem.id) : undefined}
-        onDragEnd={options?.draggable ? handleDragEnd : undefined}
-        onDrop={options?.draggable ? () => handleDrop(chatItem.id) : undefined}
-        onClick={() => {
-          openChat(chatItem.id);
-          if (window.innerWidth < 768) {
-            setShowSidebar(false);
-          }
-        }}
         className={`flex items-center cursor-pointer relative shrink-0 group rounded transition-all duration-200 py-2 md:py-1.5 pl-2.5 md:pl-2.5 pr-1 md:pr-0.5 ${dragBorder} ${
           isActive ? "text-neutral-900 dark:text-neutral-100" : "hover:text-neutral-600 dark:hover:text-neutral-300"
         }`}
@@ -329,12 +321,24 @@ export function ChatSidebar() {
             className="flex-1 min-w-0 px-1 py-0 text-base md:text-sm bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-600 rounded outline-none focus:border-blue-500 dark:focus:border-blue-400"
           />
         ) : (
-          <div
-            className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-base md:text-sm text-neutral-800 dark:text-neutral-200 pr-4"
+          <button
+            type="button"
+            draggable={options?.draggable}
+            onDragStart={options?.draggable ? () => handleDragStart(chatItem.id) : undefined}
+            onDragOver={options?.draggable ? (e) => handleDragOver(e, chatItem.id) : undefined}
+            onDragEnd={options?.draggable ? handleDragEnd : undefined}
+            onDrop={options?.draggable ? () => handleDrop(chatItem.id) : undefined}
+            onClick={() => {
+              openChat(chatItem.id);
+              if (window.innerWidth < 768) {
+                setShowSidebar(false);
+              }
+            }}
+            className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap pr-4 text-left text-base md:text-sm text-neutral-800 dark:text-neutral-200"
             title={displayTitle}
           >
             {displayTitle}
-          </div>
+          </button>
         )}
         {renamingChatId !== chatItem.id && (
           <Menu>

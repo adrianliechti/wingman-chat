@@ -50,7 +50,9 @@ function buildFileTree(files: FileEntry[]): FileNode[] {
         });
       }
 
-      currentLevel = folderNode.children!;
+      const folderChildren = folderNode.children ?? [];
+      folderNode.children = folderChildren;
+      currentLevel = folderChildren;
     }
 
     // Add the file
@@ -100,8 +102,9 @@ function FileTreeNode({
   if (node.type === "folder") {
     return (
       <>
-        <div
-          className="flex items-center gap-2 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0"
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 p-1 text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0"
           style={{ marginLeft: `${level * 10}px` }}
           onClick={() => onToggleFolder(node.path)}
         >
@@ -118,7 +121,7 @@ function FileTreeNode({
             )}
             <span className="text-sm text-neutral-700 dark:text-neutral-300 truncate">{node.name}</span>
           </div>
-        </div>
+        </button>
         {isExpanded && node.children && (
           <>
             {node.children.map((child) => (
@@ -337,11 +340,14 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
 
       {/* Rename Dialog */}
       {renamingPath && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={handleRenameCancel}>
-          <div
-            className="bg-white dark:bg-neutral-900 rounded-lg shadow-xl p-4 w-80 max-w-[90vw]"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <button
+            type="button"
+            aria-label="Close rename dialog"
+            className="absolute inset-0 bg-black/50"
+            onClick={handleRenameCancel}
+          />
+          <div className="relative bg-white dark:bg-neutral-900 rounded-lg shadow-xl p-4 w-80 max-w-[90vw]">
             <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-3">Rename File</h3>
             <input
               ref={renameInputRef}

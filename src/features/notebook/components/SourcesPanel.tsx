@@ -166,7 +166,12 @@ export function SourcesPanel({
 
         {showAddMenu && (
           <>
-            <div className="fixed inset-0 z-40" onClick={() => setShowAddMenu(false)} />
+            <button
+              type="button"
+              aria-label="Close add sources menu"
+              className="fixed inset-0 z-40"
+              onClick={() => setShowAddMenu(false)}
+            />
             <div className="absolute bottom-full left-3 right-3 mb-1 z-50 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg py-1">
               <button
                 type="button"
@@ -403,7 +408,12 @@ function WebSearchOverlay({
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <button
+        type="button"
+        aria-label="Close web search"
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={onClose}
+      />
 
       {/* Panel */}
       <div className="relative z-10 w-full max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
@@ -456,7 +466,12 @@ function WebSearchOverlay({
 
               {showModeMenu && (
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowModeMenu(false)} />
+                  <button
+                    type="button"
+                    aria-label="Close search mode menu"
+                    className="fixed inset-0 z-40"
+                    onClick={() => setShowModeMenu(false)}
+                  />
                   <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg py-1 min-w-32.5">
                     {(Object.keys(modes) as Array<"web" | "research">).map((m) => {
                       const Icon = modes[m].icon;
@@ -582,7 +597,12 @@ function WebScrapeOverlay({
 
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <button
+        type="button"
+        aria-label="Close web page overlay"
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={onClose}
+      />
       <div className="relative z-10 w-full max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
           <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Add web page</h3>
@@ -770,19 +790,17 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
 
   return (
     <div className="group/source">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setExpanded(!expanded)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") setExpanded(!expanded);
-        }}
-        className="flex items-center gap-2.5 px-1 py-1.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 cursor-pointer transition-colors"
-      >
-        <div className="w-6 h-6 rounded-md bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
-          <Icon size={12} className="text-neutral-500" />
-        </div>
-        <span className="text-xs text-neutral-700 dark:text-neutral-300 truncate flex-1">{source.name}</span>
+      <div className="flex items-center gap-2.5 rounded-lg px-1 py-1.5 transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+        >
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-neutral-100 dark:bg-neutral-800">
+            <Icon size={12} className="text-neutral-500" />
+          </div>
+          <span className="flex-1 truncate text-xs text-neutral-700 dark:text-neutral-300">{source.name}</span>
+        </button>
         <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/source:opacity-100 transition-opacity">
           {source.audioUrl && (
             <button

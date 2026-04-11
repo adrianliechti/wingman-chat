@@ -2,6 +2,14 @@ import JSZip from "jszip";
 import { getDirectory, writeJson, writeText, writeBlob, readText, readIndex } from "@/shared/lib/opfs-core";
 import { addDirectoryToZip, rebuildFolderIndex } from "@/shared/lib/opfs-zip";
 
+function getZipFolder(parent: JSZip, name: string): JSZip {
+  const folder = parent.folder(name);
+  if (!folder) {
+    throw new Error(`Failed to create zip folder: ${name}`);
+  }
+  return folder;
+}
+
 // ============================================================================
 // Export
 // ============================================================================
@@ -16,10 +24,10 @@ export async function exportAgentsAsZip(): Promise<void> {
 
   try {
     const agentIndex = await readIndex("agents");
-    const agentsZip = zip.folder("agents")!;
+    const agentsZip = getZipFolder(zip, "agents");
 
     for (const entry of agentIndex) {
-      const agentFolder = agentsZip.folder(entry.id)!;
+      const agentFolder = getZipFolder(agentsZip, entry.id);
 
       // Add agent's own files (AGENTS.md, servers.json, files/, etc.)
       try {
@@ -51,12 +59,12 @@ export async function exportAgentsAsZip(): Promise<void> {
           .filter(Boolean);
       }
 
-      const skillsFolder = agentFolder.folder("skills")!;
+      const skillsFolder = getZipFolder(agentFolder, "skills");
 
       for (const skillName of skillNames) {
         try {
           const skillHandle = await getDirectory(`skills/${skillName}`);
-          const skillZipFolder = skillsFolder.folder(skillName)!;
+          const skillZipFolder = getZipFolder(skillsFolder, skillName);
           await addDirectoryToZip(skillHandle, skillZipFolder);
         } catch {
           /* skill folder missing */
@@ -117,11 +125,11 @@ export async function exportSingleAgentAsZip(
           .filter(Boolean);
       }
 
-      const skillsFolder = zip.folder("skills")!;
+      const skillsFolder = getZipFolder(zip, "skills");
       for (const skillName of skillNames) {
         try {
           const skillHandle = await getDirectory(`skills/${skillName}`);
-          const skillZipFolder = skillsFolder.folder(skillName)!;
+          const skillZipFolder = getZipFolder(skillsFolder, skillName);
           await addDirectoryToZip(skillHandle, skillZipFolder);
         } catch {
           /* skill folder missing */
