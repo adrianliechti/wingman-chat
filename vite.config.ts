@@ -4,20 +4,6 @@ import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// Vite plugin: override font-display for @fontsource/noto-emoji from "swap" to
-// "block" so the browser never falls back to OS color emoji while the font
-// file is downloading. "block" shows invisible text during the load period
-// instead of the OS fallback glyph, eliminating the brief color-emoji flash.
-function notoEmojiFontDisplayBlock() {
-  return {
-    name: "noto-emoji-font-display-block",
-    transform(code: string, id: string) {
-      if (!id.includes("@fontsource/noto-emoji")) return;
-      return code.replace(/font-display:\s*swap/g, "font-display: block");
-    },
-  };
-}
-
 const src = path.resolve(import.meta.dirname, "src");
 const shim = (file: string) => path.resolve(src, "shared/lib", file);
 
@@ -56,12 +42,7 @@ export default defineConfig({
       },
     },
   },
-  plugins: [
-    notoEmojiFontDisplayBlock(),
-    react(),
-    babel({ presets: [reactCompilerPreset({ target: "19" })] }),
-    tailwindcss(),
-  ],
+  plugins: [react(), babel({ presets: [reactCompilerPreset({ target: "19" })] }), tailwindcss()],
   build: {
     target: "esnext",
     chunkSizeWarningLimit: 1000,

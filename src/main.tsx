@@ -3,10 +3,10 @@ import { createRoot } from "react-dom/client";
 
 import "./index.css";
 import App from "./App.tsx";
-import "./shared/lib/noto-emoji.ts";
 
 import { initTelemetry } from "./features/repository/lib/telemetry";
 import { loadConfig } from "./shared/config.ts";
+import { prepareInitialEmojiRendering } from "./shared/lib/noto-emoji.ts";
 
 /**
  * Display a fatal error message to the user when the app fails to start.
@@ -63,7 +63,7 @@ const showFatalError = (title: string, message: string, error?: unknown) => {
 
 const bootstrap = async () => {
   try {
-    const config = await loadConfig();
+    const [config] = await Promise.all([loadConfig(), prepareInitialEmojiRendering()]);
 
     if (config?.telemetry) {
       initTelemetry();

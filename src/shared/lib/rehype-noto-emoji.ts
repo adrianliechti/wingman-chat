@@ -2,29 +2,34 @@ import emojiRegex from "emoji-regex";
 import type { ElementContent, Element as HastElement, Root, Text } from "hast";
 import { visit } from "unist-util-visit";
 
+const SKIP_TAGS = new Set(["code", "pre", "script", "style", "textarea"]);
+
 /**
  * Rehype plugin that wraps emoji characters in a span with the "noto-emoji"
  * class so they render using Google's monochrome Noto Emoji font instead of
  * the OS default color emoji.
  */
 const rehypeNotoEmoji = () => {
+  const detectEmojiRegex = emojiRegex();
+  const splitEmojiRegex = emojiRegex();
+
   return (tree: Root) => {
     visit(tree, "text", (node: Text, index, parent) => {
       if (index === undefined || !parent) return;
 
-      const regex = emojiRegex();
+      const parentTagName = "tagName" in parent && typeof parent.tagName === "string" ? parent.tagName : undefined;
+      if (parentTagName && SKIP_TAGS.has(parentTagName)) return;
+
       const value = node.value;
 
-      // Quick check: skip nodes with no emoji
-      if (!regex.test(value)) return;
+      detectEmojiRegex.lastIndex = 0;
+      if (!detectEmojiRegex.test(value)) return;
 
-      // Reset regex after the test above
       const parts: ElementContent[] = [];
       let lastIndex = 0;
-      const regex2 = emojiRegex();
-      let match: RegExpExecArray | null = regex2.exec(value);
+      splitEmojiRegex.lastIndex = 0;
+      let match: RegExpExecArray | null = splitEmojiRegex.exec(value);
       while (match !== null) {
-        // Text before the emoji
         if (match.index > lastIndex) {
           parts.push({
             type: "text",
@@ -32,7 +37,6 @@ const rehypeNotoEmoji = () => {
           });
         }
 
-        // Wrap the emoji in <span class="noto-emoji">
         const emojiSpan: HastElement = {
           type: "element",
           tagName: "span",
@@ -42,10 +46,9 @@ const rehypeNotoEmoji = () => {
         parts.push(emojiSpan);
 
         lastIndex = match.index + match[0].length;
-        match = regex2.exec(value);
+        match = splitEmojiRegex.exec(value);
       }
 
-      // Trailing text after the last emoji
       if (lastIndex < value.length) {
         parts.push({
           type: "text",
@@ -53,7 +56,6 @@ const rehypeNotoEmoji = () => {
         });
       }
 
-      // Replace the original text node with our split nodes
       if (parts.length > 0) {
         parent.children.splice(index, 1, ...parts);
       }
