@@ -87,9 +87,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const createChat = useCallback(async () => {
     const newChat = await createChatHook();
     setChatId(newChat.id);
+    setArtifactsChatId(newChat.id);
     resetTools();
     return newChat;
-  }, [createChatHook, resetTools]);
+  }, [createChatHook, resetTools, setArtifactsChatId]);
 
   const chatIdRef = useRef(chatId);
   chatIdRef.current = chatId;
@@ -139,6 +140,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       chatItem.model = model;
 
       setChatId(chatItem.id);
+      setArtifactsChatId(chatItem.id);
       updateChat(chatItem.id, () => ({ model }));
 
       id = chatItem.id;
@@ -149,7 +151,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     return { id, chat: chatItem };
-  }, [model, createChatHook, updateChat, chatId, chats]);
+  }, [model, createChatHook, updateChat, chatId, chats, setArtifactsChatId]);
 
   const addMessage = useCallback(
     async (message: Message) => {

@@ -1,5 +1,4 @@
 import { useMatch, useNavigate } from "@tanstack/react-router";
-import DOMPurify from "dompurify";
 import {
   ArrowDown,
   BotMessageSquare,
@@ -9,7 +8,7 @@ import {
   Paperclip,
   Plus as PlusIcon,
 } from "lucide-react";
-import { createElement, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
@@ -21,6 +20,7 @@ import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { useAutoScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
+import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { AppDrawer } from "@/shell/components/AppDrawer";
 import { BackgroundImage } from "@/shell/components/BackgroundImage";
 import { useApp } from "@/shell/hooks/useApp";
@@ -31,8 +31,8 @@ import { useSidebar } from "@/shell/hooks/useSidebar";
 
 // Custom hook to handle drawer animation state
 function useDrawerAnimation(isOpen: boolean) {
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [shouldRender, setShouldRender] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(isOpen);
+  const [shouldRender, setShouldRender] = useState(isOpen);
 
   useEffect(() => {
     let animationTimer: NodeJS.Timeout | undefined;
@@ -62,59 +62,14 @@ function useDrawerAnimation(isOpen: boolean) {
   return { isAnimating, shouldRender };
 }
 
-function htmlNodeToReact(node: ChildNode, key: string): ReactNode {
-  if (node.nodeType === 3) {
-    return node.textContent;
-  }
-
-  if (node.nodeType !== 1) {
-    return null;
-  }
-
-  const element = node as HTMLElement;
-  const props: Record<string, unknown> = { key };
-
-  for (const attribute of Array.from(element.attributes)) {
-    if (attribute.name === "class") {
-      props.className = attribute.value;
-    } else if (attribute.name === "for") {
-      props.htmlFor = attribute.value;
-    } else {
-      props[attribute.name] = attribute.value;
-    }
-  }
-
-  if (element.tagName.toLowerCase() === "a") {
-    props.rel = element.getAttribute("rel") ?? "noreferrer";
-    props.target = element.getAttribute("target") ?? "_blank";
-  }
-
-  const children = Array.from(element.childNodes).map((child, index) => htmlNodeToReact(child, `${key}-${index}`));
-  return createElement(element.tagName.toLowerCase(), props, ...children);
-}
-
-function renderSanitizedHtml(html: string): ReactNode[] {
-  if (typeof DOMParser === "undefined") {
-    return [html];
-  }
-
-  const parsed = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
-  const root = parsed.body.firstElementChild;
-
-  if (!root) {
-    return [html];
-  }
-
-  return Array.from(root.childNodes).map((node, index) => htmlNodeToReact(node, `disclaimer-${index}`));
-}
-
 // Memoized disclaimer component to avoid re-computing on every render
 const Disclaimer = () => {
   const disclaimer = useMemo(() => {
     try {
       const config = getConfig();
-      const sanitized = DOMPurify.sanitize(config.disclaimer);
-      return sanitized?.trim() ? renderSanitizedHtml(sanitized) : null;
+      return config.disclaimer?.trim()
+        ? sanitizeHtmlToReact(config.disclaimer, { keyPrefix: "chat-disclaimer" })
+        : null;
     } catch {
       return null;
     }

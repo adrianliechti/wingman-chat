@@ -43,6 +43,7 @@ export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UseP
   const { key, defaultValue, debounceMs = 0, onLoad, onSave } = options;
 
   const [value, setValueInternal] = useState<T>(defaultValue);
+  const [saveSequence, setSaveSequence] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Refs to avoid stale closures in async callbacks
@@ -77,6 +78,12 @@ export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UseP
     }
   }, [key]);
 
+  const setValue = useCallback<React.Dispatch<React.SetStateAction<T>>>((nextValue) => {
+    pendingSaveRef.current = true;
+    setSaveSequence((currentSequence) => currentSequence + 1);
+    setValueInternal(nextValue);
+  }, []);
+
   // Load from OPFS on mount
   useEffect(() => {
     let cancelled = false;
@@ -108,19 +115,23 @@ export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UseP
 
   // Debounced save effect
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || saveSequence === 0 || !pendingSaveRef.current) return;
 
-    pendingSaveRef.current = true;
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
 
     if (debounceMs > 0) {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-      saveTimeoutRef.current = setTimeout(save, debounceMs);
-    } else {
-      save();
+      saveTimeoutRef.current = setTimeout(() => {
+        saveTimeoutRef.current = null;
+        void save();
+      }, debounceMs);
+      return;
     }
-  }, [isLoaded, debounceMs, save]);
+
+    void save();
+  }, [debounceMs, isLoaded, save, saveSequence]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -145,5 +156,5 @@ export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UseP
     await save();
   }, [save]);
 
-  return { value, setValue: setValueInternal, isLoaded, flush };
+  return { value, setValue, isLoaded, flush };
 }

@@ -10,8 +10,40 @@ function getShiki() {
 }
 
 const HIGHLIGHT_DEBOUNCE_MS = 120;
+const MAX_HIGHLIGHT_CACHE_SIZE = 200;
+const MAX_BLOCK_HIGHLIGHT_CACHE_SIZE = 200;
 const highlightCache = new Map<string, string>();
 const blockHighlightCache = new Map<string, string>();
+
+function getCacheEntry(cache: Map<string, string>, key: string): string | undefined {
+  const cached = cache.get(key);
+
+  if (cached === undefined) {
+    return undefined;
+  }
+
+  cache.delete(key);
+  cache.set(key, cached);
+  return cached;
+}
+
+function setCacheEntry(cache: Map<string, string>, key: string, value: string, maxSize: number) {
+  if (cache.has(key)) {
+    cache.delete(key);
+  }
+
+  cache.set(key, value);
+
+  while (cache.size > maxSize) {
+    const oldestKey = cache.keys().next().value as string | undefined;
+
+    if (oldestKey === undefined) {
+      break;
+    }
+
+    cache.delete(oldestKey);
+  }
+}
 
 const highlightedCodeStyle: React.CSSProperties = {
   margin: 0,
@@ -40,6 +72,16 @@ const CodeRenderer = memo(({ code, language, name, blockId, isStreaming = false 
   });
 
   useEffect(() => {
+    if (!blockCacheKey) {
+      return;
+    }
+
+    return () => {
+      blockHighlightCache.delete(blockCacheKey);
+    };
+  }, [blockCacheKey]);
+
+  useEffect(() => {
     if (!code) {
       setHtml("");
       return;
@@ -47,18 +89,18 @@ const CodeRenderer = memo(({ code, language, name, blockId, isStreaming = false 
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const cached = highlightCache.get(cacheKey);
+    const cached = getCacheEntry(highlightCache, cacheKey);
 
     if (cached) {
       setHtml(cached);
       if (blockCacheKey) {
-        blockHighlightCache.set(blockCacheKey, cached);
+        setCacheEntry(blockHighlightCache, blockCacheKey, cached, MAX_BLOCK_HIGHLIGHT_CACHE_SIZE);
       }
       return;
     }
 
     if (blockCacheKey) {
-      const previousBlockHtml = blockHighlightCache.get(blockCacheKey);
+      const previousBlockHtml = getCacheEntry(blockHighlightCache, blockCacheKey);
       if (previousBlockHtml) {
         setHtml(previousBlockHtml);
       }
@@ -76,9 +118,9 @@ const CodeRenderer = memo(({ code, language, name, blockId, isStreaming = false 
           },
         });
 
-        highlightCache.set(cacheKey, highlighted);
+        setCacheEntry(highlightCache, cacheKey, highlighted, MAX_HIGHLIGHT_CACHE_SIZE);
         if (blockCacheKey) {
-          blockHighlightCache.set(blockCacheKey, highlighted);
+          setCacheEntry(blockHighlightCache, blockCacheKey, highlighted, MAX_BLOCK_HIGHLIGHT_CACHE_SIZE);
         }
 
         if (!cancelled) {

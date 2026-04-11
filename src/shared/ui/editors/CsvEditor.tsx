@@ -180,8 +180,10 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
                         aria-label={`Resize ${
                           (header.column.columnDef.meta as { title: string } | undefined)?.title ?? header.id
                         } column`}
-                        className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none opacity-0 group-hover:opacity-100 bg-gray-400 dark:bg-neutral-500 ${
-                          header.column.getIsResizing() ? "opacity-100 bg-blue-500 dark:bg-blue-400" : ""
+                        className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none ${
+                          header.column.getIsResizing()
+                            ? "opacity-100 bg-blue-500 dark:bg-blue-400"
+                            : "opacity-0 group-hover:opacity-100 bg-gray-400 dark:bg-neutral-500"
                         }`}
                       />
                     </th>

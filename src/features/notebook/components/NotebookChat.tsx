@@ -149,7 +149,7 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
             placeholder={hasSources ? "Ask about your sources..." : "Add sources first to start chatting"}
             disabled={!hasSources || isChatting}
             rows={1}
-            className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 outline-none resize-none min-h-6 max-h-30 disabled:opacity-50"
+            className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 outline-none resize-none min-h-6 max-h-[120px] disabled:opacity-50"
             style={{ height: "auto" }}
             onInput={(e) => {
               const target = e.target as HTMLTextAreaElement;

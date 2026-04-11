@@ -1,11 +1,11 @@
-import DOMPurify from "dompurify";
 import { Download, ImagePlus, Info, Loader2, PlusIcon, X } from "lucide-react";
-import { createElement, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RendererInput } from "@/features/renderer/components/RendererInput";
 import { useImages } from "@/features/renderer/hooks/useImages";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { getDriveContentUrl } from "@/shared/lib/drives";
+import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { decodeDataURL, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
 import type { Model } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
@@ -137,59 +137,14 @@ function CanvasBackground() {
   );
 }
 
-function htmlNodeToReact(node: ChildNode, key: string): ReactNode {
-  if (node.nodeType === 3) {
-    return node.textContent;
-  }
-
-  if (node.nodeType !== 1) {
-    return null;
-  }
-
-  const element = node as HTMLElement;
-  const props: Record<string, unknown> = { key };
-
-  for (const attribute of Array.from(element.attributes)) {
-    if (attribute.name === "class") {
-      props.className = attribute.value;
-    } else if (attribute.name === "for") {
-      props.htmlFor = attribute.value;
-    } else {
-      props[attribute.name] = attribute.value;
-    }
-  }
-
-  if (element.tagName.toLowerCase() === "a") {
-    props.rel = element.getAttribute("rel") ?? "noreferrer";
-    props.target = element.getAttribute("target") ?? "_blank";
-  }
-
-  const children = Array.from(element.childNodes).map((child, index) => htmlNodeToReact(child, `${key}-${index}`));
-  return createElement(element.tagName.toLowerCase(), props, ...children);
-}
-
-function renderSanitizedHtml(html: string): ReactNode[] {
-  if (typeof DOMParser === "undefined") {
-    return [html];
-  }
-
-  const parsed = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
-  const root = parsed.body.firstElementChild;
-
-  if (!root) {
-    return [html];
-  }
-
-  return Array.from(root.childNodes).map((node, index) => htmlNodeToReact(node, `disclaimer-${index}`));
-}
-
 // Memoized disclaimer component to avoid re-computing on every render
 const Disclaimer = () => {
   const disclaimer = useMemo(() => {
     try {
       const config = getConfig();
-      const sanitized = DOMPurify.sanitize(config.renderer?.disclaimer || "");
-      return sanitized?.trim() ? renderSanitizedHtml(sanitized) : null;
+      return config.renderer?.disclaimer?.trim()
+        ? sanitizeHtmlToReact(config.renderer.disclaimer, { keyPrefix: "renderer-disclaimer" })
+        : null;
     } catch {
       return null;
     }
