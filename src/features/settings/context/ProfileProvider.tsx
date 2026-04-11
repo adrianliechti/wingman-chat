@@ -39,23 +39,6 @@ export function ProfileProvider({ children }: ProfileProviderProps) {
     defaultValue: {},
     debounceMs: 300,
 
-    migrate: () => {
-      const legacySettings = localStorage.getItem("profile-settings");
-      if (legacySettings) {
-        try {
-          const parsed = JSON.parse(legacySettings);
-          if ("instructions" in parsed) {
-            delete parsed.instructions;
-          }
-          localStorage.removeItem("profile-settings");
-          return filterEmptySettings(parsed) || {};
-        } catch {
-          return undefined;
-        }
-      }
-      return undefined;
-    },
-
     onLoad: (data) => filterEmptySettings(data) || {},
     onSave: (data) => filterEmptySettings(data),
   });

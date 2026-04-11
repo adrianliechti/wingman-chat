@@ -14,9 +14,6 @@ export interface UsePersistedStateOptions<T> {
   /** Debounce delay in ms before saving (default: 0 = immediate) */
   debounceMs?: number;
 
-  /** Optional migration function from localStorage or other sources */
-  migrate?: () => T | undefined;
-
   /** Optional validation/transformation on load */
   onLoad?: (data: T) => T;
 
@@ -40,10 +37,10 @@ export interface UsePersistedStateReturn<T> {
 
 /**
  * Hook for persisting simple key-value state to OPFS.
- * Handles loading, saving, debouncing, and migration automatically.
+ * Handles loading, saving, and debouncing automatically.
  */
 export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UsePersistedStateReturn<T> {
-  const { key, defaultValue, debounceMs = 0, migrate, onLoad, onSave } = options;
+  const { key, defaultValue, debounceMs = 0, onLoad, onSave } = options;
 
   const [value, setValueInternal] = useState<T>(defaultValue);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -59,10 +56,8 @@ export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UseP
   // Store callbacks in refs to avoid re-triggering effects
   const onLoadRef = useRef(onLoad);
   const onSaveRef = useRef(onSave);
-  const migrateRef = useRef(migrate);
   onLoadRef.current = onLoad;
   onSaveRef.current = onSave;
-  migrateRef.current = migrate;
 
   // Save function using refs
   const save = useCallback(async () => {
@@ -88,18 +83,7 @@ export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UseP
 
     const load = async () => {
       try {
-        let data: T | undefined = await opfs.readJson<T>(key);
-
-        // Try migration if no data found
-        if (data === undefined && migrateRef.current) {
-          data = migrateRef.current();
-          if (data !== undefined) {
-            const toSave = onSaveRef.current ? onSaveRef.current(data) : data;
-            if (toSave !== undefined) {
-              await opfs.writeJson(key, toSave);
-            }
-          }
-        }
+        const data = await opfs.readJson<T>(key);
 
         if (!cancelled && data !== undefined) {
           const processed = onLoadRef.current ? onLoadRef.current(data) : data;

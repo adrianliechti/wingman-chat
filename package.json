@@ -32,7 +32,6 @@
     "@tanstack/react-router": "^1.168.13",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.23",
-    "@xyflow/react": "^12.10.2",
     "docx": "^9.6.1",
     "dompurify": "^3.3.3",
     "emoji-regex": "^10.6.0",

@@ -21,23 +21,8 @@ export function SkillsProvider({ children }: SkillsProviderProps) {
   useEffect(() => {
     const loadSkills = async () => {
       try {
-        // Try new folder-based structure first
         const loaded = await opfs.loadAllSkills();
-        if (loaded.length > 0) {
-          setSkills(loaded);
-        } else {
-          // Fall back to legacy skills.json for migration
-          const legacy = await opfs.readJson<Skill[]>("skills.json");
-          if (legacy && Array.isArray(legacy)) {
-            setSkills(legacy);
-            // Migrate legacy skills to new structure
-            for (const skill of legacy) {
-              await opfs.saveSkill(skill);
-            }
-            // Remove legacy file after migration
-            await opfs.deleteFile("skills.json");
-          }
-        }
+        setSkills(loaded);
       } catch (error) {
         console.warn("Failed to load skills:", error);
       } finally {

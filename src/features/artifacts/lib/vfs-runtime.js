@@ -32,26 +32,11 @@
     );
   }
 
-  // Override native fetch to intercept virtual file requests
-  const originalFetch = window.fetch;
-  window.fetch = (input, init) => {
-    const url = typeof input === "string" ? input : input?.url;
-    const resolved = url && isVirtualPath(url) ? resolveVfsPath(url) : null;
-
-    if (resolved) {
-      return originalFetch.call(window, resolved, init);
-    }
-
-    return originalFetch.call(window, input, init);
-  };
-
-  // Override XMLHttpRequest to intercept virtual file requests
-  const OriginalXHR = window.XMLHttpRequest;
-  window.XMLHttpRequest = function () {
+  function InterceptedXMLHttpRequest() {
     const xhr = new OriginalXHR();
     const originalOpen = xhr.open;
 
-    xhr.open = function (...args) {
+    function interceptedOpen(...args) {
       const url = args[1];
       const resolved = url && isVirtualPath(url) ? resolveVfsPath(url) : null;
 
@@ -60,20 +45,13 @@
       }
 
       return originalOpen.apply(xhr, args);
-    };
+    }
 
+    xhr.open = interceptedOpen;
     return xhr;
-  };
+  }
 
-  // Copy static properties/methods from original XMLHttpRequest
-  Object.keys(OriginalXHR).forEach((key) => {
-    window.XMLHttpRequest[key] = OriginalXHR[key];
-  });
-  window.XMLHttpRequest.prototype = OriginalXHR.prototype;
-
-  // Override Image constructor to intercept virtual file requests
-  const OriginalImage = window.Image;
-  window.Image = function (width, height) {
+  function InterceptedImage(width, height) {
     const img = new OriginalImage(width, height);
     const originalSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
 
@@ -96,15 +74,44 @@
     });
 
     return img;
+  }
+
+  function InterceptedAudio(src) {
+    const resolved = src && isVirtualPath(src) ? resolveVfsPath(src) : null;
+    return new OriginalAudio(resolved || src);
+  }
+
+  // Override native fetch to intercept virtual file requests
+  const originalFetch = window.fetch;
+  window.fetch = (input, init) => {
+    const url = typeof input === "string" ? input : input?.url;
+    const resolved = url && isVirtualPath(url) ? resolveVfsPath(url) : null;
+
+    if (resolved) {
+      return originalFetch.call(window, resolved, init);
+    }
+
+    return originalFetch.call(window, input, init);
   };
+
+  // Override XMLHttpRequest to intercept virtual file requests
+  const OriginalXHR = window.XMLHttpRequest;
+  window.XMLHttpRequest = InterceptedXMLHttpRequest;
+
+  // Copy static properties/methods from original XMLHttpRequest
+  Object.keys(OriginalXHR).forEach((key) => {
+    window.XMLHttpRequest[key] = OriginalXHR[key];
+  });
+  window.XMLHttpRequest.prototype = OriginalXHR.prototype;
+
+  // Override Image constructor to intercept virtual file requests
+  const OriginalImage = window.Image;
+  window.Image = InterceptedImage;
   window.Image.prototype = OriginalImage.prototype;
 
   // Override Audio constructor to intercept virtual file requests
   const OriginalAudio = window.Audio;
-  window.Audio = function (src) {
-    const resolved = src && isVirtualPath(src) ? resolveVfsPath(src) : null;
-    return new OriginalAudio(resolved || src);
-  };
+  window.Audio = InterceptedAudio;
   window.Audio.prototype = OriginalAudio.prototype;
 
   // VFS helper object for explicit access

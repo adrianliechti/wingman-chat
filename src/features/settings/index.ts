@@ -18,4 +18,3 @@ export { useSettings } from "./hooks/useSettings";
 export type { PersonaKey } from "./lib/personas";
 export { personas, personaOptions, getPersonaContent } from "./lib/personas";
 export { MCPClient } from "./lib/mcp";
-export { isMigrationComplete, runMigration } from "./lib/migration";

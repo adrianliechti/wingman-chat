@@ -1,16 +1,77 @@
 /**
- * V1 Format Migration - Import Support
+ * Legacy Chat Import Conversion
  *
- * Handles importing old backup formats for chats and repositories.
- * This module provides migration functions for JSON import files.
- *
- * REMOVE AFTER APRIL 2026 when all users have migrated their backups.
+ * Keeps support for importing pre-OPFS chat backups by converting them
+ * into the current chat schema at import time.
  */
 
-import type { Chat, Message, Content } from "@/shared/types/chat";
-import type { Repository, RepositoryFile } from "@/features/repository/types/repository";
-import type { Skill } from "@/features/skills/lib/skillParser";
-import { parseSkillFile } from "@/features/skills/lib/skillParser";
+import type {
+  AudioContent,
+  Chat,
+  Content,
+  FileContent,
+  ImageContent,
+  Message,
+  MessageError,
+  Model,
+  TextContent,
+} from "@/shared/types/chat";
+
+type ToolResultItem = TextContent | ImageContent | AudioContent | FileContent;
+
+interface LegacyContentPart {
+  type: string;
+  name?: string;
+  data?: string;
+  mimeType?: string;
+  text?: string;
+  summary?: string;
+  id?: string;
+  arguments?: string;
+  encrypted_content?: string;
+  result?: LegacyContentPart[];
+  [key: string]: unknown;
+}
+
+interface LegacyAttachment {
+  type: string;
+  name?: string;
+  data: string;
+}
+
+interface LegacyToolCall {
+  id?: string;
+  name: string;
+  arguments?: string;
+}
+
+interface LegacyToolResult {
+  id?: string;
+  name: string;
+  arguments?: string;
+  data?: string | LegacyContentPart[];
+}
+
+interface LegacyMessage {
+  role?: string;
+  content?: string | LegacyContentPart[];
+  attachments?: LegacyAttachment[];
+  toolCalls?: LegacyToolCall[];
+  toolResult?: LegacyToolResult;
+  error?: string | MessageError | null;
+  [key: string]: unknown;
+}
+
+interface LegacyChat extends LegacyMessage {
+  id?: string;
+  title?: string;
+  customTitle?: string;
+  customIndex?: number;
+  model?: Model | null;
+  created?: string | Date | null;
+  updated?: string | Date | null;
+  messages?: LegacyMessage[];
+}
 
 // ============================================================================
 // CHAT MIGRATION
@@ -27,25 +88,106 @@ function toDataUrl(mimeType: string, data: string): string {
   return `data:${mimeType};base64,${data}`;
 }
 
+function migrateMessageError(error: LegacyMessage["error"]): MessageError | null | undefined {
+  if (error === undefined || error === null) {
+    return error;
+  }
+
+  if (typeof error === "string") {
+    return { code: "legacy_error", message: error };
+  }
+
+  return error;
+}
+
+function migrateToolResultPart(part: LegacyContentPart): ToolResultItem {
+  const migrated = migrateContentPart(part);
+
+  if (
+    migrated.type === "text" ||
+    migrated.type === "image" ||
+    migrated.type === "audio" ||
+    migrated.type === "file"
+  ) {
+    return migrated;
+  }
+
+  return {
+    type: "text",
+    text: "text" in migrated ? migrated.text : "",
+  };
+}
+
 /**
  * Migrate content part from old format to new format.
  * Handles mimeType+data → data URL conversion for media types.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function migrateContentPart(part: any): Content {
-  if (part.type === "image" && part.mimeType) {
+function migrateContentPart(part: LegacyContentPart): Content {
+  if (part.type === "image" && part.mimeType && part.data) {
     return { type: "image", name: part.name, data: toDataUrl(part.mimeType, part.data) };
-  } else if (part.type === "audio" && part.mimeType) {
-    return { type: "audio", name: part.name, data: toDataUrl(part.mimeType, part.data) };
-  } else if (part.type === "file" && part.mimeType) {
-    return { type: "file", name: part.name, data: toDataUrl(part.mimeType, part.data) };
-  } else if (part.type === "tool_result" && part.result) {
-    // Recursively migrate tool result contents
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const migratedResult = part.result.map((r: any) => migrateContentPart(r));
-    return { ...part, result: migratedResult };
   }
-  return part;
+
+  if (part.type === "audio" && part.mimeType && part.data) {
+    return { type: "audio", name: part.name, data: toDataUrl(part.mimeType, part.data) };
+  }
+
+  if (part.type === "file" && part.mimeType && part.data) {
+    return { type: "file", name: part.name ?? "file", data: toDataUrl(part.mimeType, part.data) };
+  }
+
+  if (part.type === "text") {
+    return { type: "text", text: part.text ?? part.data ?? "" };
+  }
+
+  if (part.type === "reasoning") {
+    return {
+      type: "reasoning",
+      id: part.id ?? crypto.randomUUID(),
+      text: part.text ?? "",
+      summary: part.summary,
+    };
+  }
+
+  if (part.type === "tool_call") {
+    return {
+      type: "tool_call",
+      id: part.id ?? crypto.randomUUID(),
+      name: part.name ?? "tool",
+      arguments: part.arguments ?? "",
+    };
+  }
+
+  if (part.type === "tool_result") {
+    return {
+      type: "tool_result",
+      id: part.id ?? crypto.randomUUID(),
+      name: part.name ?? "tool",
+      arguments: part.arguments ?? "",
+      result: Array.isArray(part.result) ? part.result.map(migrateToolResultPart) : [],
+    };
+  }
+
+  if (part.type === "compaction") {
+    return {
+      type: "compaction",
+      id: part.id ?? crypto.randomUUID(),
+      encrypted_content: part.encrypted_content ?? "",
+    };
+  }
+
+  if (part.type === "image" && part.data) {
+    return { type: "image", name: part.name, data: part.data };
+  }
+
+  if (part.type === "audio" && part.data) {
+    return { type: "audio", name: part.name, data: part.data };
+  }
+
+  if (part.type === "file" && part.data) {
+    return { type: "file", name: part.name ?? "file", data: part.data };
+  }
+
+  return { type: "text", text: part.text ?? part.data ?? "" };
 }
 
 /**
@@ -61,16 +203,15 @@ function migrateContentPart(part: any): Content {
  *
  * This function is idempotent - already migrated messages pass through unchanged.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function migrateMessage(msg: any): Message {
+function migrateMessage(msg: LegacyMessage): Message {
+  const role: Message["role"] = msg.role === "assistant" ? "assistant" : "user";
+  const error = migrateMessageError(msg.error);
+
   // Check if already in new format (content is array with no attachments and no separate mimeType fields)
   if (Array.isArray(msg.content) && !msg.attachments?.length) {
     // Migrate existing content parts to use data URLs (handle old mimeType+data format)
     const migratedContent: Content[] = msg.content.map(migrateContentPart);
-
-    // Convert role: 'tool' to 'user'
-    const role = msg.role === "tool" ? "user" : msg.role;
-    return { ...msg, role, content: migratedContent } as Message;
+    return { role, content: migratedContent, error };
   }
 
   // Full migration for very old formats
@@ -93,7 +234,7 @@ export function migrateMessage(msg: any): Message {
         // att.data is already a data URL
         content.push({ type: "image", name: att.name, data: att.data });
       } else if (att.type === "file_data" || att.type === "file") {
-        content.push({ type: "file", name: att.name, data: att.data });
+        content.push({ type: "file", name: att.name ?? "file", data: att.data });
       } else if (att.type === "text") {
         content.push({ type: "text", text: `// ${att.name}\n${att.data}` });
       }
@@ -103,36 +244,32 @@ export function migrateMessage(msg: any): Message {
   // Migrate tool calls
   if (msg.toolCalls) {
     for (const tc of msg.toolCalls) {
-      content.push({ type: "tool_call", id: tc.id, name: tc.name, arguments: tc.arguments });
+      content.push({ type: "tool_call", id: tc.id ?? crypto.randomUUID(), name: tc.name, arguments: tc.arguments ?? "" });
     }
   }
 
   // Migrate tool result
   if (msg.toolResult) {
     const resultData = msg.toolResult.data;
-    let result: Content[];
+    let result: ToolResultItem[];
     if (typeof resultData === "string") {
       result = [{ type: "text" as const, text: resultData }];
     } else if (Array.isArray(resultData)) {
       // Migrate nested content items
-      result = resultData.map(migrateContentPart);
+      result = resultData.map(migrateToolResultPart);
     } else {
       result = [];
     }
     content.push({
       type: "tool_result",
-      id: msg.toolResult.id,
+      id: msg.toolResult.id ?? crypto.randomUUID(),
       name: msg.toolResult.name,
-      arguments: msg.toolResult.arguments,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      result: result as any,
+      arguments: msg.toolResult.arguments ?? "",
+      result,
     });
   }
 
-  // Convert role: 'tool' to 'user'
-  const role = msg.role === "tool" ? "user" : msg.role;
-
-  return { role, content, error: msg.error };
+  return { role, content, error };
 }
 
 /**
@@ -142,170 +279,19 @@ export function migrateMessage(msg: any): Message {
  * Preserves original created/updated timestamps.
  * This function is idempotent - already migrated chats pass through unchanged.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function migrateChat(chat: any): Chat {
+export function migrateChat(chat: LegacyChat): Chat {
   // Ensure dates are Date objects (handle string dates from JSON)
   const created = chat.created ? (chat.created instanceof Date ? chat.created : new Date(chat.created)) : null;
   const updated = chat.updated ? (chat.updated instanceof Date ? chat.updated : new Date(chat.updated)) : null;
 
   return {
-    ...chat,
+    id: chat.id || crypto.randomUUID(),
+    title: chat.title,
+    customTitle: chat.customTitle,
+    customIndex: chat.customIndex,
     created,
     updated,
+    model: chat.model ?? null,
     messages: Array.isArray(chat.messages) ? chat.messages.map(migrateMessage) : [],
   };
-}
-
-// ============================================================================
-// REPOSITORY MIGRATION
-// ============================================================================
-
-/**
- * Old repository file format (pre-folder structure).
- * Text and vectors were embedded directly in the file object.
- */
-interface OldRepositoryFile {
-  id: string;
-  name: string;
-  status: "pending" | "processing" | "completed" | "error";
-  progress: number;
-  text?: string;
-  segments?: Array<{
-    text: string;
-    vector: number[];
-  }>;
-  error?: string;
-  uploadedAt: string | Date;
-}
-
-/**
- * Old repository format (pre-folder structure).
- * Files were embedded directly in the repository object with all data.
- */
-interface OldRepository {
-  id: string;
-  name: string;
-  embedder?: string;
-  instructions?: string;
-  createdAt: string | Date;
-  updatedAt: string | Date;
-  files?: OldRepositoryFile[];
-}
-
-/**
- * Migrate a repository file from old format.
- * Handles date conversion and ensures all required fields exist.
- */
-function migrateRepositoryFile(file: OldRepositoryFile): RepositoryFile {
-  return {
-    id: file.id || crypto.randomUUID(),
-    name: file.name || "Unknown File",
-    status: file.status || "completed",
-    progress: typeof file.progress === "number" ? file.progress : 100,
-    text: file.text,
-    segments: file.segments,
-    error: file.error,
-    uploadedAt: file.uploadedAt instanceof Date ? file.uploadedAt : new Date(file.uploadedAt || Date.now()),
-  };
-}
-
-/**
- * Migrate a repository from old format to current schema.
- *
- * Handles:
- * - Date string → Date object conversion
- * - Missing embedder field (defaults to config or 'openai')
- * - File migration with embedded text/vectors
- * - Missing required fields
- *
- * This function is idempotent - already migrated repositories pass through unchanged.
- */
-export function migrateRepository(repo: OldRepository, defaultEmbedder: string = "openai"): Repository {
-  return {
-    id: repo.id || crypto.randomUUID(),
-    name: repo.name || "Imported Repository",
-    embedder: repo.embedder || defaultEmbedder,
-    instructions: repo.instructions,
-    createdAt: repo.createdAt instanceof Date ? repo.createdAt : new Date(repo.createdAt || Date.now()),
-    updatedAt: repo.updatedAt instanceof Date ? repo.updatedAt : new Date(repo.updatedAt || Date.now()),
-    files: repo.files?.map(migrateRepositoryFile),
-  };
-}
-
-/**
- * Migrate an array of repositories from an old backup format.
- *
- * @param repositories - Array of repositories in old format
- * @param defaultEmbedder - Default embedder to use if not specified
- * @returns Array of migrated repositories
- */
-export function migrateRepositories(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  repositories: any[],
-  defaultEmbedder: string = "openai",
-): Repository[] {
-  return repositories.map((repo) => migrateRepository(repo, defaultEmbedder));
-}
-
-/**
- * Migrate an array of chats from an old backup format.
- *
- * @param chats - Array of chats in old format
- * @returns Array of migrated chats
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function migrateChats(chats: any[]): Chat[] {
-  return chats.map(migrateChat);
-}
-
-// ============================================================================
-// SKILL MIGRATION
-// ============================================================================
-
-/**
- * Migrate a skill from old JSON format to current schema.
- *
- * Old formats may have:
- * - Embedded content as string
- * - Missing enabled field
- * - Different field names
- *
- * @param skill - Skill in potentially old format
- * @returns Migrated skill
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function migrateSkill(skill: any): Skill | null {
-  // If it's already a proper skill object
-  if (skill.name && skill.description !== undefined) {
-    return {
-      id: skill.id || crypto.randomUUID(),
-      name: skill.name,
-      description: skill.description || "",
-      content: skill.content || skill.instructions || "",
-    };
-  }
-
-  // Try to parse as SKILL.md content
-  if (typeof skill === "string") {
-    const result = parseSkillFile(skill);
-    if (result.success) {
-      return {
-        ...result.skill,
-        id: crypto.randomUUID(),
-      };
-    }
-  }
-
-  return null;
-}
-
-/**
- * Migrate an array of skills from an old backup format.
- *
- * @param skills - Array of skills in old format
- * @returns Array of migrated skills (nulls filtered out)
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function migrateSkills(skills: any[]): Skill[] {
-  return skills.map(migrateSkill).filter((s): s is Skill => s !== null);
 }

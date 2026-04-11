@@ -6,7 +6,6 @@ import App from "./App.tsx";
 import "./shared/lib/noto-emoji.ts";
 
 import { loadConfig } from "./shared/config.ts";
-import { runMigration } from "./features/settings/lib/migration.ts";
 import { initTelemetry } from "./features/repository/lib/telemetry";
 
 /**
@@ -64,18 +63,6 @@ const showFatalError = (title: string, message: string, error?: unknown) => {
 
 const bootstrap = async () => {
   try {
-    // Run migration from IndexedDB to OPFS (if needed)
-    await runMigration();
-  } catch (error) {
-    showFatalError(
-      "Migration Failed",
-      "Failed to migrate your data to the new storage format. Your data has not been lost. Please try reloading the page or contact support if the issue persists.",
-      error,
-    );
-    return;
-  }
-
-  try {
     const config = await loadConfig();
 
     if (config?.telemetry) {
@@ -86,7 +73,12 @@ const bootstrap = async () => {
       document.title = config.title;
     }
 
-    createRoot(document.getElementById("root")!).render(
+    const rootElement = document.getElementById("root");
+    if (!rootElement) {
+      throw new Error("App root element not found.");
+    }
+
+    createRoot(rootElement).render(
       <StrictMode>
         <App />
       </StrictMode>,
