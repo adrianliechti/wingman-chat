@@ -33,35 +33,38 @@
   }
 
   // Override native fetch to intercept virtual file requests
-  var originalFetch = window.fetch;
+  const originalFetch = window.fetch;
   window.fetch = (input, init) => {
-    var url = typeof input === "string" ? input : input && input.url;
-    if (url && isVirtualPath(url)) {
-      var resolved = resolveVfsPath(url);
-      if (resolved) {
-        return originalFetch.call(window, resolved, init);
-      }
+    const url = typeof input === "string" ? input : input?.url;
+    const resolved = url && isVirtualPath(url) ? resolveVfsPath(url) : null;
+
+    if (resolved) {
+      return originalFetch.call(window, resolved, init);
     }
+
     return originalFetch.call(window, input, init);
   };
 
   // Override XMLHttpRequest to intercept virtual file requests
-  var OriginalXHR = window.XMLHttpRequest;
-  window.XMLHttpRequest = () => {
-    var xhr = new OriginalXHR();
-    var originalOpen = xhr.open;
-    xhr.open = function (method, url) {
-      var args = Array.prototype.slice.call(arguments);
-      if (url && isVirtualPath(url)) {
-        var resolved = resolveVfsPath(url);
-        if (resolved) {
-          args[1] = resolved;
-        }
+  const OriginalXHR = window.XMLHttpRequest;
+  window.XMLHttpRequest = function () {
+    const xhr = new OriginalXHR();
+    const originalOpen = xhr.open;
+
+    xhr.open = function (...args) {
+      const url = args[1];
+      const resolved = url && isVirtualPath(url) ? resolveVfsPath(url) : null;
+
+      if (resolved) {
+        args[1] = resolved;
       }
+
       return originalOpen.apply(xhr, args);
     };
+
     return xhr;
   };
+
   // Copy static properties/methods from original XMLHttpRequest
   Object.keys(OriginalXHR).forEach((key) => {
     window.XMLHttpRequest[key] = OriginalXHR[key];
@@ -69,36 +72,38 @@
   window.XMLHttpRequest.prototype = OriginalXHR.prototype;
 
   // Override Image constructor to intercept virtual file requests
-  var OriginalImage = window.Image;
-  window.Image = (width, height) => {
-    var img = new OriginalImage(width, height);
-    var originalSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+  const OriginalImage = window.Image;
+  window.Image = function (width, height) {
+    const img = new OriginalImage(width, height);
+    const originalSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+
+    if (!originalSrcDescriptor?.get || !originalSrcDescriptor.set) {
+      return img;
+    }
+
     Object.defineProperty(img, "src", {
       get: () => originalSrcDescriptor.get.call(img),
       set: (value) => {
-        if (value && isVirtualPath(value)) {
-          var resolved = resolveVfsPath(value);
-          if (resolved) {
-            value = resolved;
-          }
+        let nextValue = value;
+        const resolved = nextValue && isVirtualPath(nextValue) ? resolveVfsPath(nextValue) : null;
+
+        if (resolved) {
+          nextValue = resolved;
         }
-        originalSrcDescriptor.set.call(img, value);
+
+        originalSrcDescriptor.set.call(img, nextValue);
       },
     });
+
     return img;
   };
   window.Image.prototype = OriginalImage.prototype;
 
   // Override Audio constructor to intercept virtual file requests
-  var OriginalAudio = window.Audio;
-  window.Audio = (src) => {
-    if (src && isVirtualPath(src)) {
-      var resolved = resolveVfsPath(src);
-      if (resolved) {
-        src = resolved;
-      }
-    }
-    return new OriginalAudio(src);
+  const OriginalAudio = window.Audio;
+  window.Audio = function (src) {
+    const resolved = src && isVirtualPath(src) ? resolveVfsPath(src) : null;
+    return new OriginalAudio(resolved || src);
   };
   window.Audio.prototype = OriginalAudio.prototype;
 
@@ -141,7 +146,7 @@
     // Create and load an Image
     loadImage: function (path) {
       return new Promise((resolve, reject) => {
-        var img = new OriginalImage();
+        const img = new OriginalImage();
         img.onload = () => {
           resolve(img);
         };

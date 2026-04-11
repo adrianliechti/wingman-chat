@@ -60,6 +60,17 @@ function getFilename(content: Content): string {
   return "file";
 }
 
+function createContentKeyFactory() {
+  const seen = new Map<string, number>();
+
+  return (content: Content) => {
+    const baseKey = `${content.type}:${getFilename(content)}:${content.data.slice(0, 64)}`;
+    const occurrence = seen.get(baseKey) ?? 0;
+    seen.set(baseKey, occurrence + 1);
+    return occurrence === 0 ? baseKey : `${baseKey}:${occurrence}`;
+  };
+}
+
 // Component for image content with minimal styling
 function ImageDisplay({ content, className }: { content: ImageContent; className?: string }) {
   const filename = content.name || "image";
@@ -81,6 +92,7 @@ function ImageDisplay({ content, className }: { content: ImageContent; className
       />
       <div className="absolute inset-0 flex items-center justify-center">
         <button
+          type="button"
           onClick={handleDownload}
           className="opacity-0 group-hover/image:opacity-100 transition-opacity duration-200 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 p-2 rounded-full shadow-lg"
           title="Download image"
@@ -111,10 +123,12 @@ function FileDisplay({ content, className }: { content: FileContent; className?:
   const fileExtension = getFileExtension(content.name);
 
   return (
-    <div
+    <button
+      type="button"
       className={`relative inline-block cursor-pointer ${className || "w-48 h-48"}`}
       onClick={handleDownload}
       title={`Download ${content.name}`}
+      aria-label={`Download ${content.name}`}
     >
       {/* Main file container */}
       <div className="w-full h-full bg-neutral-100 dark:bg-neutral-800 rounded-md border-2 border-dashed border-neutral-300 dark:border-neutral-600 flex flex-col items-center justify-center p-4 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors">
@@ -138,7 +152,7 @@ function FileDisplay({ content, className }: { content: FileContent; className?:
           <Download className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -248,10 +262,12 @@ function SingleContentDisplay({ content }: { content: Content }) {
 function MultipleContentsDisplay({ contents }: { contents: Content[] }) {
   // Filter to only renderable content (images, files, audio)
   const renderableContents = contents.filter((c) => c.type === "image" || c.type === "file" || c.type === "audio");
+  const getContentKey = createContentKeyFactory();
 
   return (
     <div className="flex flex-wrap gap-3">
-      {renderableContents.map((content, index) => {
+      {renderableContents.map((content) => {
+        const key = getContentKey(content);
         const mimeType =
           content.type === "image"
             ? detectMimeType(content.data, content.name)
@@ -265,7 +281,7 @@ function MultipleContentsDisplay({ contents }: { contents: Content[] }) {
             content.type === "image" ? content : { type: "image" as const, name: content.name, data: content.data };
           return (
             <div
-              key={index}
+              key={key}
               className="w-48 h-48 rounded-md overflow-hidden bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center cursor-pointer hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
               title={getFilename(content)}
             >
@@ -274,11 +290,11 @@ function MultipleContentsDisplay({ contents }: { contents: Content[] }) {
           );
         } else if (content.type === "file") {
           // Everything else (video, audio, PDF, HTML, etc.) shows as file tile
-          return <FileDisplay key={index} content={content} className="w-48 h-48" />;
+          return <FileDisplay key={key} content={content} className="w-48 h-48" />;
         } else if (content.type === "audio") {
           const filename = content.name || "audio.mp3";
           const fileContent: FileContent = { type: "file", name: filename, data: content.data };
-          return <FileDisplay key={index} content={fileContent} className="w-48 h-48" />;
+          return <FileDisplay key={key} content={fileContent} className="w-48 h-48" />;
         }
         return null;
       })}

@@ -81,7 +81,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
       const currentId = currentAgentIdRef.current;
 
       const fileToRemove = files.find((f) => f.id === fileId);
-      if (fileToRemove && fileToRemove.segments) {
+      if (fileToRemove?.segments) {
         for (let i = 0; i < fileToRemove.segments.length; i++) {
           const documentId = `${currentId}:${fileId}:${i}`;
           vectorDB.deleteDocument(documentId);
@@ -228,18 +228,23 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
 
         return results
           .filter((result) => result.document.id.startsWith(`${agentId}:`))
-          .map((result) => {
+          .flatMap((result) => {
             const parts = result.document.id.split(":");
             const fileId = parts[1];
             const file = files.find((f) => f.id === fileId);
 
-            return {
-              file: file!,
-              text: result.document.text,
-              similarity: result.similarity,
-            };
-          })
-          .filter((chunk) => chunk.file);
+            if (!file) {
+              return [];
+            }
+
+            return [
+              {
+                file,
+                text: result.document.text,
+                similarity: result.similarity,
+              },
+            ];
+          });
       } catch (error) {
         console.error("[agent] Search failed", { query, agentId, error });
         return [];

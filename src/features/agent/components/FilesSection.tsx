@@ -23,6 +23,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     return () => {
@@ -30,30 +31,47 @@ export function FilesSection({ agent }: FilesSectionProps) {
     };
   }, []);
 
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-    if (dragTimeoutRef.current) {
-      clearTimeout(dragTimeoutRef.current);
-      dragTimeoutRef.current = null;
-    }
-    const droppedFiles = Array.from(e.dataTransfer.files);
-    for (const file of droppedFiles) {
-      await addFile(file);
-    }
-  };
+  const handleDrop = useCallback(
+    async (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      if (dragTimeoutRef.current) {
+        clearTimeout(dragTimeoutRef.current);
+        dragTimeoutRef.current = null;
+      }
 
-  const handleDragOver = (e: React.DragEvent) => {
+      const droppedFiles = Array.from(e.dataTransfer?.files ?? []);
+      for (const file of droppedFiles) {
+        await addFile(file);
+      }
+    },
+    [addFile],
+  );
+
+  const handleDragOver = useCallback((e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!isDragOver) setIsDragOver(true);
+    setIsDragOver(true);
     if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
     dragTimeoutRef.current = setTimeout(() => {
       setIsDragOver(false);
       dragTimeoutRef.current = null;
     }, 100);
-  };
+  }, []);
+
+  useEffect(() => {
+    const dropZone = dropZoneRef.current;
+    if (!dropZone) return;
+
+    dropZone.addEventListener("drop", handleDrop);
+    dropZone.addEventListener("dragover", handleDragOver);
+
+    return () => {
+      dropZone.removeEventListener("drop", handleDrop);
+      dropZone.removeEventListener("dragover", handleDragOver);
+    };
+  }, [handleDrop, handleDragOver]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
@@ -77,11 +95,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
   );
 
   return (
-    <div
-      className={`relative ${isDragOver ? "bg-slate-50/50 dark:bg-slate-900/50" : ""}`}
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-    >
+    <div ref={dropZoneRef} className={`relative ${isDragOver ? "bg-slate-50/50 dark:bg-slate-900/50" : ""}`}>
       {isDragOver && (
         <div className="absolute inset-0 z-10 bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm border-2 border-dashed border-slate-400 dark:border-slate-500 rounded-lg flex items-center justify-center">
           <div className="text-center">
