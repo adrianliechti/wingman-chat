@@ -1,5 +1,5 @@
-import { CodeEditor } from "./CodeEditor";
 import { Markdown } from "@/shared/ui/Markdown";
+import { CodeEditor } from "./CodeEditor";
 
 // Component to display Markdown content as rendered HTML
 function MarkdownPreview({ content }: { content: string }) {

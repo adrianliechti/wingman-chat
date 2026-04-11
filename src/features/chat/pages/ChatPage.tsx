@@ -9,7 +9,7 @@ import {
   Paperclip,
   Plus as PlusIcon,
 } from "lucide-react";
-import { createElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createElement, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
@@ -160,7 +160,7 @@ export function ChatPage() {
     const currentChatId = chat?.id ?? null;
 
     if (currentChatId && !routeChatId && previousChatId === null) {
-      navigate({ to: "/chat/$chatId", params: { chatId: chat.id }, replace: true });
+      navigate({ to: "/chat/$chatId", params: { chatId: currentChatId }, replace: true });
     }
 
     previousChatIdRef.current = currentChatId;

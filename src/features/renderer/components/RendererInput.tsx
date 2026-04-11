@@ -137,7 +137,7 @@ export function RendererInput({
       <div className="relative flex-1">
         <textarea
           ref={inputRef}
-          className="px-4 pt-4 pb-2 flex-1 max-h-[40vh] overflow-y-auto min-h-12 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 focus:outline-none whitespace-pre-wrap wrap-break-word"
+          className="px-4 pt-4 pb-2 flex-1 max-h-[40vh] overflow-y-auto min-h-12 resize-none bg-transparent text-sm text-neutral-800 dark:text-neutral-200 focus:outline-none whitespace-pre-wrap wrap-break-word"
           style={{ scrollbarWidth: "thin", minHeight: "2.5rem", height: "auto" }}
           value={prompt}
           placeholder={placeholder}

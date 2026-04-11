@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { X, Folder, File, ChevronRight, Loader2, FolderOpen, Square, SquareCheckBig } from "lucide-react";
+import { ChevronRight, File, Folder, FolderOpen, Loader2, Square, SquareCheckBig, X } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type DriveEntry, listDriveEntries } from "@/shared/lib/drives";
 import { formatBytes, lookupContentType } from "@/shared/lib/utils";
-import { listDriveEntries, type DriveEntry } from "@/shared/lib/drives";
 
 interface DriveConfig {
   id: string;

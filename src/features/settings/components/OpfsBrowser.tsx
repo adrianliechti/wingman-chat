@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, Fragment } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { X, Folder, File, ChevronRight, Trash2, RefreshCw, Loader2, HardDrive } from "lucide-react";
-import { getRoot, deleteFile, deleteDirectory } from "@/shared/lib/opfs";
+import { ChevronRight, File, Folder, HardDrive, Loader2, RefreshCw, Trash2, X } from "lucide-react";
+import { Fragment, useCallback, useEffect, useState } from "react";
+import { deleteDirectory, deleteFile, getRoot } from "@/shared/lib/opfs";
 import { formatBytes } from "@/shared/lib/utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────────

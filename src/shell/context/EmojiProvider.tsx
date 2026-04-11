@@ -1,7 +1,7 @@
-import { useState, useLayoutEffect } from "react";
 import type { ReactNode } from "react";
+import { useLayoutEffect, useState } from "react";
+import type { EmojiContextType, EmojiMode } from "./EmojiContext";
 import { EmojiContext } from "./EmojiContext";
-import type { EmojiMode, EmojiContextType } from "./EmojiContext";
 
 export function EmojiProvider({ children }: { children: ReactNode }) {
   const [emojiMode, setEmojiMode] = useState<EmojiMode>(() => {

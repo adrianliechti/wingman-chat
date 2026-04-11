@@ -1,4 +1,4 @@
-import DOMPurify from "dompurify";
+import DOMPurify, { type Config } from "dompurify";
 import { type CSSProperties, createElement, type ReactNode } from "react";
 
 const ATTRIBUTE_NAME_MAP: Record<string, string> = {
@@ -82,16 +82,13 @@ function htmlNodeToReact(node: ChildNode, key: string): ReactNode {
   return createElement(tagName, props, ...children);
 }
 
-export function sanitizeHtmlToReact(
-  html: string,
-  options: { keyPrefix?: string; config?: DOMPurify.Config } = {},
-): ReactNode[] {
+export function sanitizeHtmlToReact(html: string, options: { keyPrefix?: string; config?: Config } = {}): ReactNode[] {
   if (typeof DOMParser === "undefined") {
     return [html];
   }
 
   const { keyPrefix = "html", config } = options;
-  const sanitized = DOMPurify.sanitize(html, config);
+  const sanitized = String(DOMPurify.sanitize(html, { ...config, RETURN_TRUSTED_TYPE: false }));
 
   if (!sanitized.trim()) {
     return [];

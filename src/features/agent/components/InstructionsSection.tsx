@@ -1,10 +1,10 @@
-import { useState, Fragment } from "react";
-import { Edit, X } from "lucide-react";
 import { Dialog, Transition } from "@headlessui/react";
+import { Edit, X } from "lucide-react";
+import { Fragment, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
-import { Section } from "./Section";
 import { Markdown } from "@/shared/ui/Markdown";
+import { Section } from "./Section";
 
 interface InstructionsSectionProps {
   agent: Agent;

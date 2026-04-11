@@ -1,15 +1,15 @@
-import { createElement, useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
-import { getConfig } from "@/shared/config";
-import { resizeImageBlob, readAsDataURL, decodeDataURL } from "@/shared/lib/utils";
-import { X, ImagePlus, Download, PlusIcon, Info, Loader2 } from "lucide-react";
-import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
-import { getDriveContentUrl } from "@/shared/lib/drives";
 import DOMPurify from "dompurify";
-import { useNavigation } from "@/shell/hooks/useNavigation";
-import { useDropZone } from "@/shared/hooks/useDropZone";
-import { useImages } from "@/features/renderer/hooks/useImages";
+import { Download, ImagePlus, Info, Loader2, PlusIcon, X } from "lucide-react";
+import { createElement, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RendererInput } from "@/features/renderer/components/RendererInput";
+import { useImages } from "@/features/renderer/hooks/useImages";
+import { getConfig } from "@/shared/config";
+import { useDropZone } from "@/shared/hooks/useDropZone";
+import { getDriveContentUrl } from "@/shared/lib/drives";
+import { decodeDataURL, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
 import type { Model } from "@/shared/types/chat";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { useNavigation } from "@/shell/hooks/useNavigation";
 
 const STYLE_INSTRUCTIONS: Record<string, string> = {
   // Photography styles

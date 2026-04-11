@@ -1,33 +1,39 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
 import { convertFileToText } from "@/shared/lib/convert";
-import { getTextFromContent } from "@/shared/types/chat";
-import type { Content } from "@/shared/types/chat";
-import type { Notebook, NotebookSource, NotebookOutput, NotebookMessage, OutputType } from "../types/notebook";
 import { blobToDataUrl } from "@/shared/lib/opfs-core";
+import type { Content } from "@/shared/types/chat";
+import { getTextFromContent } from "@/shared/types/chat";
+import * as store from "../lib/opfs-notebook";
 import { createSourceTools } from "../lib/source-tools";
 import { runWithTools } from "../lib/tool-loop";
-import * as store from "../lib/opfs-notebook";
-
-import type { QuizQuestion, MindMapNode } from "../types/notebook";
 import chatInstructions from "../prompts/chat.txt?raw";
-import studioAudioInstructions from "../prompts/studio-audio-overview.txt?raw";
-import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
-import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
 import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
-import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
 import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
-import studioSlideInstructions from "../prompts/studio-slide-deck.txt?raw";
+import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
+import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
+import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
 import slideCommonRules from "../prompts/slide-style-common.txt?raw";
-import slideStyleWhiteboard from "../prompts/slide-style-whiteboard.txt?raw";
 import slideStyleConsulting from "../prompts/slide-style-consulting.txt?raw";
 import slideStyleDark from "../prompts/slide-style-dark.txt?raw";
-import slideStyleSwiss from "../prompts/slide-style-swiss.txt?raw";
 import slideStyleNature from "../prompts/slide-style-nature.txt?raw";
-import studioInfographicInstructions from "../prompts/studio-infographic.txt?raw";
+import slideStyleSwiss from "../prompts/slide-style-swiss.txt?raw";
+import slideStyleWhiteboard from "../prompts/slide-style-whiteboard.txt?raw";
+import studioAudioInstructions from "../prompts/studio-audio-overview.txt?raw";
 import studioDataTableInstructions from "../prompts/studio-data-table.txt?raw";
-import studioQuizInstructions from "../prompts/studio-quiz.txt?raw";
+import studioInfographicInstructions from "../prompts/studio-infographic.txt?raw";
 import studioMindMapInstructions from "../prompts/studio-mind-map.txt?raw";
+import studioQuizInstructions from "../prompts/studio-quiz.txt?raw";
+import studioSlideInstructions from "../prompts/studio-slide-deck.txt?raw";
+import type {
+  MindMapNode,
+  Notebook,
+  NotebookMessage,
+  NotebookOutput,
+  NotebookSource,
+  OutputType,
+  QuizQuestion,
+} from "../types/notebook";
 
 function generateId(): string {
   return crypto.randomUUID();

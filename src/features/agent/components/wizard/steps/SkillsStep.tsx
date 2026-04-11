@@ -1,7 +1,7 @@
-import { useState, useMemo, useRef, useEffect, type Dispatch } from "react";
-import { Search, Check, Plus, X } from "lucide-react";
-import { useSkills } from "@/features/skills/hooks/useSkills";
+import { Check, Plus, Search, X } from "lucide-react";
+import { type Dispatch, useEffect, useMemo, useRef, useState } from "react";
 import { SkillCatalog } from "@/features/agent/components/SkillCatalog";
+import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { Skill } from "@/features/skills/lib/skillParser";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";

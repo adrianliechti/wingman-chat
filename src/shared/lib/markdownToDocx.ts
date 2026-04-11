@@ -77,11 +77,11 @@ function parseInlineTokens(tokens: Token[], style: TextStyle = {}): (TextRun | E
 
 function getListItemInlineTokens(item: Tokens.ListItem): Token[] {
   const first = item.tokens[0];
-  if (!first) return [];
-  if ("tokens" in first && Array.isArray((first as Tokens.Text).tokens)) {
-    return (first as Tokens.Text).tokens;
+  if (!first || !("tokens" in first) || !Array.isArray(first.tokens)) {
+    return [];
   }
-  return [];
+
+  return first.tokens as Token[];
 }
 
 function blockTokensToDocx(tokens: Token[]): DocxElement[] {

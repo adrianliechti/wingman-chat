@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
-import { ArtifactsContext } from "./ArtifactsContext";
-import { getConfig } from "@/shared/config";
+import { useCallback, useEffect, useState } from "react";
 import { FileSystemManager } from "@/features/artifacts/lib/fs";
+import { getConfig } from "@/shared/config";
+import { ArtifactsContext } from "./ArtifactsContext";
 
 interface ArtifactsProviderProps {
   children: ReactNode;
@@ -33,6 +33,8 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
       if (!chatId) {
         // Reset UI state when no chat
         setActiveFile(null);
+        setShowArtifactsDrawer(false);
+        setIsEnabled(false);
         return;
       }
 

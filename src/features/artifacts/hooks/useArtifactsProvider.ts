@@ -1,12 +1,12 @@
-import { useCallback, useMemo } from "react";
 import { Paperclip } from "lucide-react";
-import { useArtifacts } from "./useArtifacts";
-import type { Tool, ToolProvider } from "@/shared/types/chat";
+import { useCallback, useMemo } from "react";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
 import interpreterInstructionsText from "@/features/artifacts/prompts/interpreter.txt?raw";
-import { executeCode } from "@/features/tools/lib/interpreter";
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
+import { executeCode } from "@/features/tools/lib/interpreter";
 import { normalizeArtifactPath } from "@/shared/lib/artifactFiles";
+import type { Tool, ToolProvider } from "@/shared/types/chat";
+import { useArtifacts } from "./useArtifacts";
 
 export function useArtifactsProvider(): ToolProvider | null {
   const { fs, activeFile, isAvailable } = useArtifacts();
@@ -390,7 +390,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       {
         name: "execute_python_code",
         description:
-          "Execute Python code or an existing Python artifact file with optional package dependencies. Provide exactly one of `code` or `path`. All artifact files are available under /home/user/, and files written there are synced back.",
+          "Execute Python code or an existing Python artifact file with optional package dependencies. Provide exactly one of `code` or `path`. All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back.",
         parameters: {
           type: "object",
           properties: {
@@ -466,7 +466,7 @@ export function useArtifactsProvider(): ToolProvider | null {
 
             // Sync changed files back to artifacts
             if (fs?.isReady && result.files) {
-              await fs.applyOverlaySnapshot(result.files, { deleteMissing: false });
+              await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
             }
 
             return [{ type: "text" as const, text: result.output }];
@@ -483,7 +483,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       {
         name: "execute_bash_code",
         description:
-          "Execute bash commands or scripts in a sandboxed shell. All artifact files are preloaded and any files created or modified are synced back. Prefer explicit paths rather than relying on prior shell state. Supports pipes, redirections, loops, variables, jq, yq, xan, sqlite3, grep, sed, awk, and more.",
+          "Execute bash commands or scripts in a sandboxed shell. All artifact files are preloaded and any files created, modified, or deleted are synced back. Prefer explicit paths rather than relying on prior shell state. Supports pipes, redirections, loops, variables, jq, yq, xan, sqlite3, grep, sed, awk, and more.",
         parameters: {
           type: "object",
           properties: {
@@ -520,7 +520,7 @@ export function useArtifactsProvider(): ToolProvider | null {
               const { memFs } = getSingleton();
               const currentFiles = await readFilesFromFs(memFs);
 
-              await fs.applyOverlaySnapshot(currentFiles, { deleteMissing: false });
+              await fs.applyOverlaySnapshot(currentFiles, { deleteMissing: true });
             }
 
             const parts: string[] = [];

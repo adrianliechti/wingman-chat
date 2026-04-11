@@ -1,12 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { FileText, X, Plus, Loader2, Upload, HardDrive } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { FileText, HardDrive, Loader2, Plus, Upload, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
-import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
-import { getDriveContentUrl } from "@/shared/lib/drives";
-import { getConfig } from "@/shared/config";
 import type { Agent } from "@/features/agent/types/agent";
 import type { RepositoryFile } from "@/features/repository/types/repository";
+import { getConfig } from "@/shared/config";
+import { getDriveContentUrl } from "@/shared/lib/drives";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { Section } from "./Section";
 
 interface FilesSectionProps {

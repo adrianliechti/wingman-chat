@@ -1,5 +1,5 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { Trash, PanelRightOpen, MoreVertical, Search, X, Pencil } from "lucide-react";
+import { MoreVertical, PanelRightOpen, Pencil, Search, Trash, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 import type { Notebook } from "../types/notebook";

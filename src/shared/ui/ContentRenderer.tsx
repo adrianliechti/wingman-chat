@@ -1,11 +1,13 @@
-import { File, Download } from "lucide-react";
-import type { Content, ImageContent, FileContent } from "@/shared/types/chat";
+import { Download, File } from "lucide-react";
+import mime from "mime";
 import { downloadBlob, downloadFromUrl, parseDataUrl } from "@/shared/lib/utils";
-import { PdfRenderer } from "./renderers/PdfRenderer";
+import type { AudioContent, Content, FileContent, ImageContent } from "@/shared/types/chat";
 import { Markdown } from "./Markdown";
 import { CsvRenderer } from "./renderers/CsvRenderer";
 import { HtmlRenderer } from "./renderers/HtmlRenderer";
-import mime from "mime";
+import { PdfRenderer } from "./renderers/PdfRenderer";
+
+type RenderableContent = AudioContent | FileContent | ImageContent;
 
 // Helper function to check if content is a URL
 function isUrl(content: string): boolean {
@@ -45,7 +47,7 @@ function downloadContent(data: string, filename: string, mimeType: string) {
 }
 
 // Helper to get filename from content
-function getFilename(content: Content): string {
+function getFilename(content: RenderableContent): string {
   if (content.type === "file") return content.name;
   if (content.type === "image" && content.name) return content.name;
   if (content.type === "audio" && content.name) return content.name;
@@ -63,7 +65,7 @@ function getFilename(content: Content): string {
 function createContentKeyFactory() {
   const seen = new Map<string, number>();
 
-  return (content: Content) => {
+  return (content: RenderableContent) => {
     const baseKey = `${content.type}:${getFilename(content)}:${content.data.slice(0, 64)}`;
     const occurrence = seen.get(baseKey) ?? 0;
     seen.set(baseKey, occurrence + 1);
@@ -259,7 +261,7 @@ function SingleContentDisplay({ content }: { content: Content }) {
 
 // Multiple contents display for list view with uniform tiles (internal)
 // Only images render a visual preview; other types render a file tile.
-function MultipleContentsDisplay({ contents }: { contents: Content[] }) {
+function MultipleContentsDisplay({ contents }: { contents: RenderableContent[] }) {
   // Filter to only renderable content (images, files, audio)
   const renderableContents = contents.filter((c) => c.type === "image" || c.type === "file" || c.type === "audio");
   const getContentKey = createContentKeyFactory();
@@ -305,7 +307,9 @@ function MultipleContentsDisplay({ contents }: { contents: Content[] }) {
 // Render contents - automatically chooses single or multiple layout
 export function RenderContents({ contents }: { contents: Content[] }) {
   // Filter to only renderable content (images, files, audio)
-  const renderableContents = contents.filter((c) => c.type === "image" || c.type === "file" || c.type === "audio");
+  const renderableContents = contents.filter(
+    (c): c is RenderableContent => c.type === "image" || c.type === "file" || c.type === "audio",
+  );
 
   if (renderableContents.length === 0) {
     return null;

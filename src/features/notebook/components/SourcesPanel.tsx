@@ -1,20 +1,20 @@
 import { Dialog, Transition } from "@headlessui/react";
 import {
-  Plus,
-  Globe,
-  FileText,
-  X,
-  Loader2,
-  Upload,
-  Search,
-  Zap,
   ArrowRight,
   ChevronDown,
-  Link,
-  HardDrive,
-  Type,
-  Mic,
   Download,
+  FileText,
+  Globe,
+  HardDrive,
+  Link,
+  Loader2,
+  Mic,
+  Plus,
+  Search,
+  Type,
+  Upload,
+  X,
+  Zap,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";

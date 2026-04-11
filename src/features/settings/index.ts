@@ -1,20 +1,19 @@
 // Components
+
+export { OpfsBrowser } from "./components/OpfsBrowser";
 export { SettingsButton } from "./components/SettingsButton";
 export { SettingsDrawer } from "./components/SettingsDrawer";
-export { OpfsBrowser } from "./components/OpfsBrowser";
-
+export type { BridgeContextType, BridgeServer } from "./context/BridgeContext";
 // Context
 export { BridgeContext } from "./context/BridgeContext";
-export type { BridgeServer, BridgeContextType } from "./context/BridgeContext";
+export type { ProfileContextType, ProfileSettings } from "./context/ProfileContext";
 export { ProfileContext } from "./context/ProfileContext";
-export type { ProfileSettings, ProfileContextType } from "./context/ProfileContext";
 export { ProfileProvider } from "./context/ProfileProvider";
 
 // Hooks
 export { useProfile } from "./hooks/useProfile";
 export { useSettings } from "./hooks/useSettings";
-
+export { MCPClient } from "./lib/mcp";
 // Lib
 export type { PersonaKey } from "./lib/personas";
-export { personas, personaOptions, getPersonaContent } from "./lib/personas";
-export { MCPClient } from "./lib/mcp";
+export { getPersonaContent, personaOptions, personas } from "./lib/personas";

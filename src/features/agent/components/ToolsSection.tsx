@@ -1,10 +1,9 @@
-import { useState, useMemo } from "react";
-import { Plus, ToggleLeft, ToggleRight, Server, Wrench, AlertTriangle, Loader2 } from "lucide-react";
-
-import { useAgents } from "@/features/agent/hooks/useAgents";
-import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+import { AlertTriangle, Loader2, Plus, Server, ToggleLeft, ToggleRight, Wrench } from "lucide-react";
+import { useMemo, useState } from "react";
 import { BridgeEditor } from "@/features/agent/components/BridgeEditor";
+import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
+import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { ProviderState } from "@/shared/types/chat";
 import { Section } from "./Section";
 

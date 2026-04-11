@@ -1,11 +1,11 @@
-import { useState, useCallback } from "react";
-import { useVoiceWebSockets } from "@/features/voice/hooks/useVoiceWebSockets";
+import { useCallback, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
+import { useVoiceWebSockets } from "@/features/voice/hooks/useVoiceWebSockets";
 import { getConfig } from "@/shared/config";
 import { Role } from "@/shared/types/chat";
-import { VoiceContext } from "./VoiceContext";
 import type { VoiceContextType } from "./VoiceContext";
+import { VoiceContext } from "./VoiceContext";
 
 interface VoiceProviderProps {
   children: React.ReactNode;

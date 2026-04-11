@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
-import { ProfileContext } from "./ProfileContext";
-import type { ProfileSettings } from "./ProfileContext";
-import { usePersistedState } from "@/shared/hooks/usePersistedState";
-import { getPersonaContent } from "@/features/settings/lib/personas";
 import type { PersonaKey } from "@/features/settings/lib/personas";
+import { getPersonaContent } from "@/features/settings/lib/personas";
+import { usePersistedState } from "@/shared/hooks/usePersistedState";
+import type { ProfileSettings } from "./ProfileContext";
+import { ProfileContext } from "./ProfileContext";
 
 interface ProfileProviderProps {
   children: ReactNode;

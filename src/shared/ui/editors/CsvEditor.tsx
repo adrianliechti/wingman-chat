@@ -1,13 +1,13 @@
-import { useRef, useMemo, useState } from "react";
 import {
-  useReactTable,
+  type ColumnDef,
+  flexRender,
   getCoreRowModel,
   getSortedRowModel,
-  flexRender,
-  type ColumnDef,
   type SortingState,
+  useReactTable,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useMemo, useRef, useState } from "react";
 
 interface CsvEditorProps {
   content: string;
@@ -181,7 +181,7 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
                           (header.column.columnDef.meta as { title: string } | undefined)?.title ?? header.id
                         } column`}
                         className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none opacity-0 group-hover:opacity-100 bg-gray-400 dark:bg-neutral-500 ${
-                          header.column.getIsResizing() ? "opacity-100! bg-blue-500 dark:bg-blue-400" : ""
+                          header.column.getIsResizing() ? "opacity-100 bg-blue-500 dark:bg-blue-400" : ""
                         }`}
                       />
                     </th>

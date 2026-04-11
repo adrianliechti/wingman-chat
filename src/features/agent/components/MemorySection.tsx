@@ -1,5 +1,5 @@
 import { Dialog, Transition } from "@headlessui/react";
-import { ToggleLeft, ToggleRight, Edit, Trash2, Pencil, X } from "lucide-react";
+import { Edit, Pencil, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";

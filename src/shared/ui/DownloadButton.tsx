@@ -1,5 +1,5 @@
+import { Check as CheckIcon, Download as DownloadIcon } from "lucide-react";
 import { useState } from "react";
-import { Download as DownloadIcon, Check as CheckIcon } from "lucide-react";
 import { downloadBlob } from "@/shared/lib/utils";
 
 type DownloadButtonProps = {

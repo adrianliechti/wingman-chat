@@ -1,35 +1,35 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import { useDropZone } from "@/shared/hooks/useDropZone";
-import { SelectorMenu } from "@/shared/ui/SelectorMenu";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
-  PilcrowRightIcon,
-  Loader2,
-  PlusIcon,
-  GlobeIcon,
-  FileIcon,
-  UploadIcon,
-  XIcon,
-  DownloadIcon,
-  ThermometerIcon,
-  SwatchBookIcon,
   AlertCircle,
   ChevronDown,
   ChevronRight,
-  SparklesIcon,
+  DownloadIcon,
+  FileIcon,
+  GlobeIcon,
   HardDrive,
+  Loader2,
+  PilcrowRightIcon,
+  PlusIcon,
+  SparklesIcon,
+  SwatchBookIcon,
+  ThermometerIcon,
+  UploadIcon,
+  XIcon,
 } from "lucide-react";
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { useNavigation } from "@/shell/hooks/useNavigation";
-import { useLayout } from "@/shell/hooks/useLayout";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslate } from "@/features/translate/hooks/useTranslate";
+import { getConfig } from "@/shared/config";
+import { useDropZone } from "@/shared/hooks/useDropZone";
+import { getDriveContentUrl } from "@/shared/lib/drives";
+import { downloadFromUrl } from "@/shared/lib/utils";
 import { CopyButton } from "@/shared/ui/CopyButton";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { InteractiveText } from "@/shared/ui/InteractiveText";
 import { PlayButton } from "@/shared/ui/PlayButton";
 import { RewritePopover } from "@/shared/ui/RewritePopover";
-import { InteractiveText } from "@/shared/ui/InteractiveText";
-import { downloadFromUrl } from "@/shared/lib/utils";
-import { getConfig } from "@/shared/config";
-import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { SelectorMenu } from "@/shared/ui/SelectorMenu";
+import { useLayout } from "@/shell/hooks/useLayout";
+import { useNavigation } from "@/shell/hooks/useNavigation";
 
 export function TranslatePage() {
   const { setRightActions } = useNavigation();

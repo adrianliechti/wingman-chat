@@ -1,5 +1,5 @@
 import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodide";
-import { SANDBOX_HOME, bytesToDataUrl, dataUrlToBytes, isDataUrlContent } from "@/shared/lib/artifactFiles";
+import { bytesToDataUrl, dataUrlToBytes, isDataUrlContent, SANDBOX_HOME } from "@/shared/lib/artifactFiles";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { clearRenderQueue, processRenderQueue } from "./plotlyRenderer";
 import PLOTLY_IMAGE_SHIM from "./plotlyShim.py?raw";

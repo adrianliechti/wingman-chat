@@ -5,8 +5,8 @@ import "./index.css";
 import App from "./App.tsx";
 import "./shared/lib/noto-emoji.ts";
 
-import { loadConfig } from "./shared/config.ts";
 import { initTelemetry } from "./features/repository/lib/telemetry";
+import { loadConfig } from "./shared/config.ts";
 
 /**
  * Display a fatal error message to the user when the app fails to start.

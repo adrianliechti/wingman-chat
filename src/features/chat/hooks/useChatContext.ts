@@ -1,12 +1,12 @@
 import { useMemo } from "react";
-import type { Tool, Model, ToolProvider } from "@/shared/types/chat";
-import { ProviderState } from "@/shared/types/chat";
+import { useAgents } from "@/features/agent/hooks/useAgents";
+import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
+import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
 import { useProfile } from "@/features/settings/hooks/useProfile";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
-import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
-import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { useAgents } from "@/features/agent/hooks/useAgents";
-import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
+import type { Model, Tool, ToolProvider } from "@/shared/types/chat";
+import { ProviderState } from "@/shared/types/chat";
 
 export interface ChatContext {
   tools: () => Promise<Tool[]>;

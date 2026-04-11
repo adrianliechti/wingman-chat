@@ -17,7 +17,7 @@ Artifact paths (what you see in the file list) are always absolute and start wit
 
 Both tools mount artifacts under `/home/user/`. Artifact `/analysis/data.csv` → filesystem path `/home/user/analysis/data.csv`.
 
-After execution, any files created or modified under `/home/user/` are synced back as artifacts (the sandbox prefix is stripped). Files written by one tool are visible to the other in subsequent runs.
+After execution, any files created, modified, or deleted under `/home/user/` are synced back as artifacts (the sandbox prefix is stripped). Files written by one tool are visible to the other in subsequent runs.
 
 ### Python Interpreter (`execute_python_code`)
 

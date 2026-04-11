@@ -1,8 +1,8 @@
 import JSZip from "jszip";
-import { artifactContentToZipValue, normalizeArtifactPath } from "@/shared/lib/artifactFiles";
-import { downloadBlob } from "@/shared/lib/utils";
-import * as opfs from "@/shared/lib/opfs";
 import type { File, FileEntry } from "@/features/artifacts/types/file";
+import { artifactContentToZipValue, normalizeArtifactPath } from "@/shared/lib/artifactFiles";
+import * as opfs from "@/shared/lib/opfs";
+import { downloadBlob } from "@/shared/lib/utils";
 
 type FileEventType = "fileCreated" | "fileDeleted" | "fileRenamed" | "fileUpdated";
 

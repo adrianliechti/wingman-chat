@@ -1,10 +1,10 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import pLimit from "p-limit";
-import { Client } from "@/shared/lib/client";
-import { getConfig } from "@/shared/config";
-import { VectorDB } from "@/features/repository/lib/vectordb";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Document } from "@/features/repository/lib/vectordb";
+import { VectorDB } from "@/features/repository/lib/vectordb";
 import type { RepositoryFile } from "@/features/repository/types/repository";
+import { getConfig } from "@/shared/config";
+import { Client } from "@/shared/lib/client";
 import { useAgents } from "./useAgents";
 
 export interface FileChunk {

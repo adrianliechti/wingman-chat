@@ -1,9 +1,9 @@
-import { useCallback, useMemo } from "react";
 import { Palette } from "lucide-react";
-import { getConfig } from "@/shared/config";
-import type { Tool, ToolContext, ToolProvider, ImageContent } from "@/shared/types/chat";
-import { readAsDataURL } from "@/shared/lib/utils";
+import { useCallback, useMemo } from "react";
 import rendererInstructionsText from "@/features/renderer/prompts/renderer.txt?raw";
+import { getConfig } from "@/shared/config";
+import { readAsDataURL } from "@/shared/lib/utils";
+import type { ImageContent, Tool, ToolContext, ToolProvider } from "@/shared/types/chat";
 
 export function useRendererProvider(): ToolProvider | null {
   const config = getConfig();

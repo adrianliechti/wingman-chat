@@ -1,8 +1,8 @@
-import { defineCommand } from "just-bash/browser";
 import type { Command, CommandContext, ExecResult } from "just-bash/browser";
-import { executeCode } from "./interpreter";
-import { SANDBOX_HOME, bytesToDataUrl, dataUrlToBytes } from "@/shared/lib/artifactFiles";
+import { defineCommand } from "just-bash/browser";
+import { bytesToDataUrl, dataUrlToBytes, SANDBOX_HOME } from "@/shared/lib/artifactFiles";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import { executeCode } from "./interpreter";
 
 const PYODIDE_VERSION = "3.13 (Pyodide)";
 

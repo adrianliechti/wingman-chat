@@ -1,5 +1,5 @@
 // Config
-export { loadConfig, getConfig } from "./config";
+export { getConfig, loadConfig } from "./config";
 
 // Hooks
 export { useAutoScroll } from "./hooks/useAutoScroll";

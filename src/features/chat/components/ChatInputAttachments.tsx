@@ -1,5 +1,5 @@
+import { File, FileText, Image, Loader2, X } from "lucide-react";
 import { memo } from "react";
-import { Image, File, FileText, Loader2, X } from "lucide-react";
 
 import type { Content } from "@/shared/types/chat";
 

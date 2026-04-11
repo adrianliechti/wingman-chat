@@ -1,11 +1,11 @@
 import { createRootRoute, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
+import { ChatPage } from "./features/chat/pages/ChatPage";
+import { NotebookPage } from "./features/notebook/pages/NotebookPage";
+import { RendererPage } from "./features/renderer/pages/RendererPage";
+import { OAuthCallbackPage } from "./features/settings/pages/OAuthCallbackPage";
+import { TranslatePage } from "./features/translate/pages/TranslatePage";
 import { getConfig } from "./shared/config";
 import { AppLayout } from "./shell/AppLayout";
-import { ChatPage } from "./features/chat/pages/ChatPage";
-import { TranslatePage } from "./features/translate/pages/TranslatePage";
-import { RendererPage } from "./features/renderer/pages/RendererPage";
-import { NotebookPage } from "./features/notebook/pages/NotebookPage";
-import { OAuthCallbackPage } from "./features/settings/pages/OAuthCallbackPage";
 
 const hashToRoute: Record<string, string> = {
   chat: "/chat",

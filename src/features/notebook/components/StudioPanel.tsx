@@ -1,20 +1,20 @@
-import { useState, useRef, useEffect } from "react";
 import {
-  AudioLines,
-  Presentation,
-  BarChart3,
-  Table2,
-  Loader2,
-  X,
   AlertCircle,
-  StickyNote,
-  CircleHelp,
-  Network,
+  AudioLines,
+  BarChart3,
   ChevronDown,
+  CircleHelp,
   Download,
+  Loader2,
+  Network,
+  Presentation,
+  StickyNote,
+  Table2,
+  X,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { PODCAST_STYLES, SLIDE_STYLES } from "../hooks/useNotebook";
 import type { NotebookOutput, NotebookSource, OutputType } from "../types/notebook";
-import { SLIDE_STYLES, PODCAST_STYLES } from "../hooks/useNotebook";
 
 interface StudioPanelProps {
   sources: NotebookSource[];

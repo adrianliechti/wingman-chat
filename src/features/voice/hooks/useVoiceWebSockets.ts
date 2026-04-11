@@ -1,10 +1,10 @@
-import { useRef, useEffect } from "react";
-import { AudioStreamPlayer } from "@/features/voice/lib/AudioStreamPlayer";
+import { useEffect, useRef } from "react";
 import { AudioRecorder } from "@/features/voice/lib/AudioRecorder";
+import { AudioStreamPlayer } from "@/features/voice/lib/AudioStreamPlayer";
 import { float32ToPcm16 } from "@/features/voice/lib/audio";
 import { serializeToolResultForApi } from "@/shared/lib/utils";
+import type { AudioContent, FileContent, ImageContent, Message, TextContent, Tool } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
-import type { Message, Tool, TextContent, ImageContent, AudioContent, FileContent } from "@/shared/types/chat";
 
 export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: (text: string) => void) {
   const wsRef = useRef<WebSocket | null>(null);

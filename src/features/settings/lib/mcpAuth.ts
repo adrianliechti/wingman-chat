@@ -1,9 +1,9 @@
+import type { OAuthClientProvider, OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
   OAuthClientInformationMixed,
   OAuthClientMetadata,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
-import type { OAuthDiscoveryState, OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 
 const STORAGE_PREFIX = "mcp_oauth";
 

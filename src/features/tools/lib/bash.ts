@@ -1,8 +1,8 @@
-import { Bash, InMemoryFs } from "just-bash/browser";
 import type { InitialFiles } from "just-bash/browser";
-import { SANDBOX_HOME, bytesToDataUrl, dataUrlToBytes } from "@/shared/lib/artifactFiles";
-import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import { Bash, InMemoryFs } from "just-bash/browser";
 import type { OverlayFile } from "@/features/artifacts/lib/fs";
+import { bytesToDataUrl, dataUrlToBytes, SANDBOX_HOME } from "@/shared/lib/artifactFiles";
+import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { pythonCommands } from "./pythonCommand";
 
 export interface BashExecutionRequest {
@@ -150,12 +150,36 @@ export function resetBash(): void {
 
 /**
  * Load artifact files into an InMemoryFs under /home/user/.
- * Existing files at those paths are overwritten.
+ * Existing files at those paths are overwritten and stale files are removed.
  */
 export async function loadArtifactsIntoFs(
   memFs: InMemoryFs,
   files: { path: string; content: string; contentType?: string }[],
 ): Promise<void> {
+  const desiredPaths = new Set(
+    files.map((file) => {
+      const relativePath = file.path.startsWith("/") ? file.path.slice(1) : file.path;
+      return `${SANDBOX_HOME}/${relativePath}`;
+    }),
+  );
+
+  for (const fsPath of memFs.getAllPaths()) {
+    if (!fsPath.startsWith(`${SANDBOX_HOME}/`) || desiredPaths.has(fsPath)) {
+      continue;
+    }
+
+    try {
+      const stat = await memFs.lstat(fsPath);
+      if (stat.isDirectory) {
+        continue;
+      }
+
+      await memFs.rm(fsPath, { force: true });
+    } catch {
+      // Skip paths that disappeared mid-sync.
+    }
+  }
+
   for (const file of files) {
     const relativePath = file.path.startsWith("/") ? file.path.slice(1) : file.path;
     const fsPath = `${SANDBOX_HOME}/${relativePath}`;

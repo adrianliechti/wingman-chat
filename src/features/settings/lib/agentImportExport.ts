@@ -1,5 +1,5 @@
 import JSZip from "jszip";
-import { getDirectory, writeJson, writeText, writeBlob, readText, readIndex } from "@/shared/lib/opfs-core";
+import { getDirectory, readIndex, readText, writeBlob, writeJson, writeText } from "@/shared/lib/opfs-core";
 import { addDirectoryToZip, rebuildFolderIndex } from "@/shared/lib/opfs-zip";
 
 function getZipFolder(parent: JSZip, name: string): JSZip {

@@ -1,5 +1,5 @@
+import { Loader2, Play, Square } from "lucide-react";
 import { useState } from "react";
-import { Play, Square, Loader2 } from "lucide-react";
 import { getConfig } from "@/shared/config";
 
 type PlayButtonProps = {

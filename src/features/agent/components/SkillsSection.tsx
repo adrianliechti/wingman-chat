@@ -1,11 +1,11 @@
-import { useState, useMemo, useRef, useEffect } from "react";
-import { X, Search, Plus, Zap, BookOpen } from "lucide-react";
+import { BookOpen, Plus, Search, X, Zap } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import { useSkills } from "@/features/skills/hooks/useSkills";
-import { SkillCatalog } from "./SkillCatalog";
-import type { Skill } from "@/features/skills/lib/skillParser";
 import type { Agent } from "@/features/agent/types/agent";
+import { useSkills } from "@/features/skills/hooks/useSkills";
+import type { Skill } from "@/features/skills/lib/skillParser";
 import { Section } from "./Section";
+import { SkillCatalog } from "./SkillCatalog";
 
 interface SkillsSectionProps {
   agent: Agent;

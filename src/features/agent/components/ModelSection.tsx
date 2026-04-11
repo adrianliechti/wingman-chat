@@ -1,8 +1,8 @@
-import { useEffect } from "react";
 import { ChevronDown } from "lucide-react";
+import { useEffect } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import { useChat } from "@/features/chat/hooks/useChat";
 import type { Agent } from "@/features/agent/types/agent";
+import { useChat } from "@/features/chat/hooks/useChat";
 import { Section } from "./Section";
 
 interface ModelSectionProps {

@@ -4,9 +4,10 @@
  * Transforms HTML content to use data URLs for virtual file references,
  * enabling iframes to access files from the artifact filesystem.
  */
-import { isDataUrlContent, normalizeArtifactReferencePath, textToDataUrl } from "@/shared/lib/artifactFiles";
-import { lookupContentType, getFileExt } from "@/shared/lib/utils";
+
 import type { FileSystem } from "@/features/artifacts/types/file";
+import { isDataUrlContent, normalizeArtifactReferencePath, textToDataUrl } from "@/shared/lib/artifactFiles";
+import { getFileExt, lookupContentType } from "@/shared/lib/utils";
 
 // Import the VFS runtime script as raw text
 import vfsRuntimeScript from "./vfs-runtime.js?raw";

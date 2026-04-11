@@ -1,5 +1,5 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { Folder, FolderOpen, ChevronRight, ChevronDown, MoreVertical, Trash, Edit2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Edit2, Folder, FolderOpen, MoreVertical, Trash } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { FileEntry } from "@/features/artifacts/types/file";

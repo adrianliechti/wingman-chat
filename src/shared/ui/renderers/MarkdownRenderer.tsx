@@ -1,7 +1,7 @@
 import { memo, useState } from "react";
 import { CopyButton } from "@/shared/ui/CopyButton";
-import { PreviewButton } from "@/shared/ui/PreviewButton";
 import { Markdown } from "@/shared/ui/Markdown";
+import { PreviewButton } from "@/shared/ui/PreviewButton";
 
 interface MarkdownRendererProps {
   content: string;

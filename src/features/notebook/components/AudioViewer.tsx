@@ -1,5 +1,5 @@
-import { useRef, useState, useEffect, useMemo } from "react";
-import { Play, Pause, RotateCcw } from "lucide-react";
+import { Pause, Play, RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 interface AudioViewerProps {
   content: string;

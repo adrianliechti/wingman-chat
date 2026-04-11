@@ -1,6 +1,6 @@
 import { Dialog, Transition } from "@headlessui/react";
 import JSZip from "jszip";
-import { X, Search, Plus, Minus, Download, Pencil, Trash2, ArrowLeft, Sparkles, Loader2 } from "lucide-react";
+import { ArrowLeft, Download, Loader2, Minus, Pencil, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { Skill } from "@/features/skills/lib/skillParser";
