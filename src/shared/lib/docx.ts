@@ -135,9 +135,10 @@ async function parseNumbering(zip: JSZip): Promise<NumberingInfo> {
     const numId = num.getAttribute("w:numId");
     const abstractNumIdEl = num.getElementsByTagName("w:abstractNumId")[0];
     const abstractNumId = abstractNumIdEl?.getAttribute("w:val");
+    const abstractNumLevels = abstractNumId ? abstractNums.get(abstractNumId) : undefined;
 
-    if (numId && abstractNumId && abstractNums.has(abstractNumId)) {
-      info.definitions.set(numId, abstractNums.get(abstractNumId)!);
+    if (numId && abstractNumLevels) {
+      info.definitions.set(numId, abstractNumLevels);
     }
   }
 
@@ -188,7 +189,11 @@ function parseParagraph(
       if (!listState.counters.has(numId)) {
         listState.counters.set(numId, []);
       }
-      const counters = listState.counters.get(numId)!;
+      let counters = listState.counters.get(numId);
+      if (!counters) {
+        counters = [];
+        listState.counters.set(numId, counters);
+      }
 
       // Ensure counter array is long enough
       while (counters.length <= ilvl) {

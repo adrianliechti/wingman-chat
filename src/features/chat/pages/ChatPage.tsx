@@ -9,7 +9,7 @@ import {
   Paperclip,
   Plus as PlusIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
@@ -62,13 +62,59 @@ function useDrawerAnimation(isOpen: boolean) {
   return { isAnimating, shouldRender };
 }
 
+function htmlNodeToReact(node: ChildNode, key: string): ReactNode {
+  if (node.nodeType === 3) {
+    return node.textContent;
+  }
+
+  if (node.nodeType !== 1) {
+    return null;
+  }
+
+  const element = node as HTMLElement;
+  const props: Record<string, unknown> = { key };
+
+  for (const attribute of Array.from(element.attributes)) {
+    if (attribute.name === "class") {
+      props.className = attribute.value;
+    } else if (attribute.name === "for") {
+      props.htmlFor = attribute.value;
+    } else {
+      props[attribute.name] = attribute.value;
+    }
+  }
+
+  if (element.tagName.toLowerCase() === "a") {
+    props.rel = element.getAttribute("rel") ?? "noreferrer";
+    props.target = element.getAttribute("target") ?? "_blank";
+  }
+
+  const children = Array.from(element.childNodes).map((child, index) => htmlNodeToReact(child, `${key}-${index}`));
+  return createElement(element.tagName.toLowerCase(), props, ...children);
+}
+
+function renderSanitizedHtml(html: string): ReactNode[] {
+  if (typeof DOMParser === "undefined") {
+    return [html];
+  }
+
+  const parsed = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  const root = parsed.body.firstElementChild;
+
+  if (!root) {
+    return [html];
+  }
+
+  return Array.from(root.childNodes).map((node, index) => htmlNodeToReact(node, `disclaimer-${index}`));
+}
+
 // Memoized disclaimer component to avoid re-computing on every render
 const Disclaimer = () => {
   const disclaimer = useMemo(() => {
     try {
       const config = getConfig();
       const sanitized = DOMPurify.sanitize(config.disclaimer);
-      return sanitized?.trim() || null;
+      return sanitized?.trim() ? renderSanitizedHtml(sanitized) : null;
     } catch {
       return null;
     }
@@ -80,10 +126,7 @@ const Disclaimer = () => {
     <div className="mb-6 mx-auto max-w-2xl">
       <div className="flex items-start justify-center gap-2 px-4 py-3">
         <Info size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-        <p
-          className="text-xs text-neutral-600 dark:text-neutral-400 text-left"
-          dangerouslySetInnerHTML={{ __html: disclaimer }}
-        />
+        <div className="text-xs text-neutral-600 dark:text-neutral-400 text-left">{disclaimer}</div>
       </div>
     </div>
   );

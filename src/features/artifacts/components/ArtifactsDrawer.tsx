@@ -1,26 +1,26 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { File as FileIcon2, Code, Eye, Play, Loader2, TerminalSquare, Upload, Download, HardDrive } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
-import { getDriveContentUrl } from "@/shared/lib/drives";
-import { getConfig } from "@/shared/config";
+import { File as FileIcon2, Code, Eye, Play, Loader2, TerminalSquare, Upload, Download, HardDrive } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
+import type { File, FileEntry } from "@/features/artifacts/types/file";
 import { useChat } from "@/features/chat/hooks/useChat";
-import { HtmlEditor } from "@/shared/ui/editors/HtmlEditor";
-import { SvgEditor } from "@/shared/ui/editors/SvgEditor";
-import { TextEditor } from "@/shared/ui/editors/TextEditor";
+import { getConfig } from "@/shared/config";
+import { getDriveContentUrl } from "@/shared/lib/drives";
+import { markdownToDocx } from "@/shared/lib/markdownToDocx";
+import { downloadBlob, getFileName } from "@/shared/lib/utils";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { BashEditor } from "@/shared/ui/editors/BashEditor";
 import { CodeEditor } from "@/shared/ui/editors/CodeEditor";
 import { CsvEditor } from "@/shared/ui/editors/CsvEditor";
+import { HtmlEditor } from "@/shared/ui/editors/HtmlEditor";
+import { JsEditor } from "@/shared/ui/editors/JsEditor";
 import { MarkdownEditor } from "@/shared/ui/editors/MarkdownEditor";
 import { PythonEditor } from "@/shared/ui/editors/PythonEditor";
-import { JsEditor } from "@/shared/ui/editors/JsEditor";
-import { BashEditor } from "@/shared/ui/editors/BashEditor";
-import { ArtifactsBrowser } from "./ArtifactsBrowser";
-import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
+import { SvgEditor } from "@/shared/ui/editors/SvgEditor";
+import { TextEditor } from "@/shared/ui/editors/TextEditor";
 import { FileIcon } from "@/shared/ui/FileIcon";
-import { getFileName, downloadBlob } from "@/shared/lib/utils";
-import { markdownToDocx } from "@/shared/lib/markdownToDocx";
-import type { File, FileEntry } from "@/features/artifacts/types/file";
+import { ArtifactsBrowser } from "./ArtifactsBrowser";
 
 export function ArtifactsDrawer() {
   const config = getConfig();
@@ -42,9 +42,6 @@ export function ArtifactsDrawer() {
 
   // State for active file content (loaded from async fs.getFile)
   const [activeFileData, setActiveFileData] = useState<File | null>(null);
-
-  // Local version counter for forcing editor remounts when file content changes
-  const [editorVersion, setEditorVersion] = useState(0);
 
   // Processing state for file uploads
   const [isProcessing, setIsProcessing] = useState(false);
@@ -172,17 +169,41 @@ export function ArtifactsDrawer() {
     loadFiles();
     loadActiveFile();
 
-    // Subscribe to events for subsequent updates
-    const handleFileChange = () => {
-      loadFiles();
-      loadActiveFile();
-      setEditorVersion((v) => v + 1);
+    // Subscribe to events for subsequent updates.
+    // Reload the sidebar list for every filesystem change, but only refresh
+    // the active editor content when that specific file is affected.
+    const handleFileCreated = () => {
+      void loadFiles();
     };
 
-    const unsubscribeCreated = fs.subscribe("fileCreated", handleFileChange);
-    const unsubscribeDeleted = fs.subscribe("fileDeleted", handleFileChange);
-    const unsubscribeRenamed = fs.subscribe("fileRenamed", handleFileChange);
-    const unsubscribeUpdated = fs.subscribe("fileUpdated", handleFileChange);
+    const handleFileDeleted = (path: string) => {
+      void loadFiles();
+
+      if (path === activeFile && !cancelled) {
+        setActiveFileData(null);
+      }
+    };
+
+    const handleFileRenamed = (oldPath: string, newPath: string) => {
+      void loadFiles();
+
+      if (activeFile === oldPath || activeFile === newPath) {
+        void loadActiveFile();
+      }
+    };
+
+    const handleFileUpdated = (path: string) => {
+      void loadFiles();
+
+      if (path === activeFile) {
+        void loadActiveFile();
+      }
+    };
+
+    const unsubscribeCreated = fs.subscribe("fileCreated", handleFileCreated);
+    const unsubscribeDeleted = fs.subscribe("fileDeleted", handleFileDeleted);
+    const unsubscribeRenamed = fs.subscribe("fileRenamed", handleFileRenamed);
+    const unsubscribeUpdated = fs.subscribe("fileUpdated", handleFileUpdated);
 
     return () => {
       cancelled = true;
@@ -192,16 +213,6 @@ export function ArtifactsDrawer() {
       unsubscribeUpdated();
     };
   }, [fs, fs?.chatId, activeFile]);
-
-  // Track previous values for "adjust state during render" pattern
-  const [prevFiles, setPrevFiles] = useState(files);
-  const [prevActiveFile, setPrevActiveFile] = useState(activeFile);
-
-  // Adjust state during render when files or activeFile changes
-  if (files !== prevFiles || activeFile !== prevActiveFile) {
-    setPrevFiles(files);
-    setPrevActiveFile(activeFile);
-  }
 
   // Handle auto-opening single file (needs effect since openFile is async)
   useEffect(() => {
@@ -330,6 +341,7 @@ export function ArtifactsDrawer() {
       return null;
     }
 
+    const editorKey = activeFileData.path;
     const kind = artifactKind(activeFileData.path, activeFileData.contentType);
 
     switch (kind) {
@@ -337,7 +349,7 @@ export function ArtifactsDrawer() {
         return (
           <div className="h-full flex items-center justify-center bg-neutral-50 dark:bg-neutral-900/60 p-6 overflow-auto">
             <img
-              key={`${activeFile}-${editorVersion}`}
+              key={editorKey}
               src={activeFileData.content}
               alt={getFileName(activeFileData.path)}
               className="max-w-full max-h-full object-contain rounded-md shadow-sm"
@@ -363,7 +375,7 @@ export function ArtifactsDrawer() {
       case "html":
         return (
           <HtmlEditor
-            key={`${activeFile}-${editorVersion}`}
+            key={editorKey}
             content={activeFileData.content}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
@@ -372,7 +384,7 @@ export function ArtifactsDrawer() {
       case "svg":
         return (
           <SvgEditor
-            key={`${activeFile}-${editorVersion}`}
+            key={editorKey}
             content={activeFileData.content}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
@@ -381,7 +393,7 @@ export function ArtifactsDrawer() {
       case "csv":
         return (
           <CsvEditor
-            key={`${activeFile}-${editorVersion}`}
+            key={editorKey}
             content={activeFileData.content}
             viewMode={viewMode === "preview" ? "table" : "code"}
             onViewModeChange={(mode) => setViewMode(mode === "table" ? "preview" : "code")}
@@ -390,7 +402,7 @@ export function ArtifactsDrawer() {
       case "markdown":
         return (
           <MarkdownEditor
-            key={`${activeFile}-${editorVersion}`}
+            key={editorKey}
             content={activeFileData.content}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
@@ -401,7 +413,7 @@ export function ArtifactsDrawer() {
         if (lang === "py") {
           return (
             <PythonEditor
-              key={`${activeFile}-${editorVersion}`}
+              key={editorKey}
               content={activeFileData.content}
               onRunReady={onRunReady}
               onRunningChange={setIsRunning}
@@ -411,7 +423,7 @@ export function ArtifactsDrawer() {
         if (lang === "js") {
           return (
             <JsEditor
-              key={`${activeFile}-${editorVersion}`}
+              key={editorKey}
               content={activeFileData.content}
               onRunReady={onRunReady}
               onRunningChange={setIsRunning}
@@ -421,18 +433,17 @@ export function ArtifactsDrawer() {
         if (lang === "sh" || lang === "bash") {
           return (
             <BashEditor
-              key={`${activeFile}-${editorVersion}`}
+              key={editorKey}
               initialScript={activeFileData.content}
               onRunReady={onRunReady}
               onRunningChange={setIsRunning}
             />
           );
         }
-        return <CodeEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} language={lang} />;
+        return <CodeEditor key={editorKey} content={activeFileData.content} language={lang} />;
       }
-      case "text":
       default:
-        return <TextEditor key={`${activeFile}-${editorVersion}`} content={activeFileData.content} />;
+        return <TextEditor key={editorKey} content={activeFileData.content} />;
     }
   };
 

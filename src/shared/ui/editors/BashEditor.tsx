@@ -105,6 +105,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
   const [cwd, setCwd] = useState(SANDBOX_HOME);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const terminalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
   const previousFilesRef = useRef<Record<string, OverlayFile>>({});
@@ -493,10 +494,31 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
     }
   }, [visible, isReady, isRunning]);
 
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      return;
+    }
+
+    const handleMouseDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest("button, input, textarea, a")) {
+        return;
+      }
+
+      inputRef.current?.focus();
+    };
+
+    terminal.addEventListener("mousedown", handleMouseDown);
+    return () => {
+      terminal.removeEventListener("mousedown", handleMouseDown);
+    };
+  }, []);
+
   return (
     <div
+      ref={terminalRef}
       className="h-full flex flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-200 font-mono text-xs cursor-text"
-      onClick={() => inputRef.current?.focus()}
     >
       {/* Output area */}
       <div ref={outputRef} className="flex-1 overflow-auto p-3" style={{ overflowAnchor: "none" }}>

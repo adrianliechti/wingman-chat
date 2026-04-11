@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { memo, useEffect, useState } from "react";
 import { useTheme } from "@/shell/hooks/useTheme";
 
 let shikiPromise: Promise<typeof import("shiki")> | null = null;
@@ -12,7 +12,7 @@ interface CodeEditorProps {
   language?: string;
 }
 
-export function CodeEditor({ content, language = "" }: CodeEditorProps) {
+export const CodeEditor = memo(function CodeEditor({ content, language = "" }: CodeEditorProps) {
   const [html, setHtml] = useState<string>("");
   const { isDark } = useTheme();
 
@@ -48,7 +48,7 @@ export function CodeEditor({ content, language = "" }: CodeEditorProps) {
 
   return (
     <div className="h-full relative">
-      {html && html.trim() ? (
+      {html?.trim() ? (
         <div
           className="h-full overflow-auto"
           dangerouslySetInnerHTML={{ __html: html }}
@@ -68,4 +68,4 @@ export function CodeEditor({ content, language = "" }: CodeEditorProps) {
       )}
     </div>
   );
-}
+});

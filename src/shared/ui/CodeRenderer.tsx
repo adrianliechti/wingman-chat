@@ -1,4 +1,4 @@
-import { memo, useState, useEffect, useRef } from "react";
+import { memo, useEffect, useState } from "react";
 import { useTheme } from "@/shell/hooks/useTheme";
 import { CopyButton } from "./CopyButton";
 
@@ -8,7 +8,9 @@ function getShiki() {
   return shikiPromise;
 }
 
-const HIGHLIGHT_DEBOUNCE_MS = 150;
+const HIGHLIGHT_DEBOUNCE_MS = 120;
+const highlightCache = new Map<string, string>();
+const blockHighlightCache = new Map<string, string>();
 
 const highlightedCodeStyle: React.CSSProperties = {
   margin: 0,
@@ -23,44 +25,81 @@ interface CodeRendererProps {
   code: string;
   language: string;
   name?: string;
+  blockId?: string;
+  isStreaming?: boolean;
 }
 
-const CodeRenderer = memo(({ code, language, name }: CodeRendererProps) => {
+const CodeRenderer = memo(({ code, language, name, blockId, isStreaming = false }: CodeRendererProps) => {
   const { isDark } = useTheme();
-  const [html, setHtml] = useState<string>("");
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const normalizedLanguage = language.toLowerCase();
+  const cacheKey = `${isDark ? "dark" : "light"}:${normalizedLanguage}:${code}`;
+  const blockCacheKey = blockId ? `${isDark ? "dark" : "light"}:${blockId}` : null;
+  const [html, setHtml] = useState<string>(() => {
+    return highlightCache.get(cacheKey) ?? (blockCacheKey ? (blockHighlightCache.get(blockCacheKey) ?? "") : "");
+  });
 
   useEffect(() => {
-    clearTimeout(debounceRef.current);
-
-    if (!code) return;
+    if (!code) {
+      setHtml("");
+      return;
+    }
 
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cached = highlightCache.get(cacheKey);
 
-    // Debounce Shiki calls — during streaming, code changes on every token
-    debounceRef.current = setTimeout(async () => {
+    if (cached) {
+      setHtml(cached);
+      if (blockCacheKey) {
+        blockHighlightCache.set(blockCacheKey, cached);
+      }
+      return;
+    }
+
+    if (blockCacheKey) {
+      const previousBlockHtml = blockHighlightCache.get(blockCacheKey);
+      if (previousBlockHtml) {
+        setHtml(previousBlockHtml);
+      }
+    }
+
+    const highlight = async () => {
       try {
         const { codeToHtml } = await getShiki();
         const highlighted = await codeToHtml(code, {
-          lang: language.toLowerCase(),
+          lang: normalizedLanguage,
           theme: isDark ? "one-dark-pro" : "one-light",
           colorReplacements: {
             "#fafafa": "transparent",
             "#282c34": "transparent",
           },
         });
-        if (!cancelled) setHtml(highlighted);
+
+        highlightCache.set(cacheKey, highlighted);
+        if (blockCacheKey) {
+          blockHighlightCache.set(blockCacheKey, highlighted);
+        }
+
+        if (!cancelled) {
+          setHtml(highlighted);
+        }
       } catch (error) {
         console.error("Failed to highlight code:", error);
-        if (!cancelled) setHtml("");
+        if (!cancelled) {
+          setHtml("");
+        }
       }
-    }, HIGHLIGHT_DEBOUNCE_MS);
+    };
+
+    timer = setTimeout(highlight, isStreaming ? HIGHLIGHT_DEBOUNCE_MS : 0);
 
     return () => {
       cancelled = true;
-      clearTimeout(debounceRef.current);
+      if (timer) {
+        clearTimeout(timer);
+      }
     };
-  }, [code, language, isDark]);
+  }, [blockCacheKey, cacheKey, code, isDark, isStreaming, normalizedLanguage]);
 
   const effectiveHtml = code ? html : "";
 

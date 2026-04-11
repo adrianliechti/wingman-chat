@@ -1,6 +1,6 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { ArrowRight, HardDrive, ImagePlus, Loader2, Paintbrush, Sparkles, Upload, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { Model } from "@/shared/types/chat";
 
@@ -51,30 +51,42 @@ export function RendererInput({
   autoFocus,
   className = "",
 }: RendererInputProps) {
-  const contentEditableRef = useRef<HTMLDivElement>(null);
-  const [showPlaceholder, setShowPlaceholder] = useState(true);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const referenceImageEntries = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    return referenceImages.map((img, index) => {
+      const baseKey = img.dataUrl.slice(0, 64);
+      const occurrence = (counts.get(baseKey) ?? 0) + 1;
+      counts.set(baseKey, occurrence);
+      return { img, index, key: `${baseKey}:${occurrence}` };
+    });
+  }, [referenceImages]);
 
   const canSubmit = (prompt.trim() || referenceImages.length > 0) && !disabled;
 
-  // Sync contentEditable when prompt is cleared externally
   useEffect(() => {
-    setShowPlaceholder(!prompt);
-    if (!prompt && contentEditableRef.current && contentEditableRef.current.innerHTML !== "") {
-      contentEditableRef.current.innerHTML = "";
+    if (!inputRef.current) {
+      return;
+    }
+
+    inputRef.current.style.height = "auto";
+    inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
+
+    if (prompt.length === 0) {
+      inputRef.current.style.height = "auto";
     }
   }, [prompt]);
 
   const handleContentChange = useCallback(
-    (e: React.FormEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLDivElement;
-      const input = target.innerText || target.textContent || "";
-      onPromptChange(input);
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      onPromptChange(e.target.value);
     },
     [onPromptChange],
   );
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         if (canSubmit) {
@@ -86,8 +98,8 @@ export function RendererInput({
   );
 
   useEffect(() => {
-    if (autoFocus && contentEditableRef.current) {
-      contentEditableRef.current.focus();
+    if (autoFocus && inputRef.current) {
+      inputRef.current.focus();
     }
   }, [autoFocus]);
 
@@ -98,9 +110,9 @@ export function RendererInput({
       {/* Reference images above text (like chat attachments) */}
       {(referenceImages.length > 0 || isLoadingFiles) && (
         <div className="flex flex-wrap gap-2 px-3 pt-3">
-          {referenceImages.map((img, index) => (
+          {referenceImageEntries.map(({ img, index, key }) => (
             <div
-              key={index}
+              key={key}
               className="relative size-14 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all overflow-hidden"
             >
               <img src={img.dataUrl} alt={`Reference ${index + 1}`} className="size-full object-cover" />
@@ -123,30 +135,18 @@ export function RendererInput({
 
       {/* Input area */}
       <div className="relative flex-1">
-        <div
-          ref={contentEditableRef}
+        <textarea
+          ref={inputRef}
           className="px-4 pt-4 pb-2 flex-1 max-h-[40vh] overflow-y-auto min-h-12 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 focus:outline-none whitespace-pre-wrap wrap-break-word"
           style={{ scrollbarWidth: "thin", minHeight: "2.5rem", height: "auto" }}
-          role="textbox"
-          tabIndex={0}
-          contentEditable={!disabled}
-          suppressContentEditableWarning={true}
-          onInput={handleContentChange}
+          value={prompt}
+          placeholder={placeholder}
+          disabled={disabled}
+          rows={1}
+          onChange={handleContentChange}
           onKeyDown={handleKeyDown}
-          onPaste={(e) => {
-            e.preventDefault();
-            const text = e.clipboardData.getData("text/plain");
-            if (text.trim()) {
-              document.execCommand("insertText", false, text);
-            }
-            onPaste(e);
-          }}
+          onPaste={onPaste}
         />
-        {showPlaceholder && (
-          <div className="absolute top-4 left-4 pointer-events-none text-sm text-neutral-400 dark:text-neutral-500">
-            {placeholder}
-          </div>
-        )}
       </div>
 
       {/* Controls bar */}

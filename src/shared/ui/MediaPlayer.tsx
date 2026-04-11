@@ -2,6 +2,7 @@ import { memo } from "react";
 
 const mediaLinkClassName =
   "text-sky-700 dark:text-sky-300 underline decoration-2 underline-offset-3 decoration-sky-500/60 dark:decoration-sky-400/70 hover:text-sky-800 dark:hover:text-sky-200 hover:decoration-current focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50";
+const emptyCaptionTrackUrl = "data:text/vtt;charset=utf-8,WEBVTT%0A%0A";
 
 interface MediaPlayerProps {
   url: string;
@@ -16,6 +17,7 @@ const MediaPlayer = memo(({ url, type, children }: MediaPlayerProps) => {
       <div className="my-4">
         <audio controls className="w-full max-w-md" preload="metadata">
           <source src={url} />
+          <track kind="captions" src={emptyCaptionTrackUrl} srcLang="en" label="Captions unavailable" />
           Your browser does not support the audio element.
           <a href={url} target="_blank" rel="noopener noreferrer" className={mediaLinkClassName}>
             {children || url}
@@ -32,6 +34,7 @@ const MediaPlayer = memo(({ url, type, children }: MediaPlayerProps) => {
       <div className="my-4">
         <video controls className="w-full max-w-2xl rounded-lg" preload="metadata">
           <source src={url} />
+          <track kind="captions" src={emptyCaptionTrackUrl} srcLang="en" label="Captions unavailable" />
           Your browser does not support the video element.
           <a href={url} target="_blank" rel="noopener noreferrer" className={mediaLinkClassName}>
             {children || url}

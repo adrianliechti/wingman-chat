@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { createElement, useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { getConfig } from "@/shared/config";
 import { resizeImageBlob, readAsDataURL, decodeDataURL } from "@/shared/lib/utils";
 import { X, ImagePlus, Download, PlusIcon, Info, Loader2 } from "lucide-react";
@@ -120,9 +120,9 @@ const blobs = [
 function CanvasBackground() {
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
-      {blobs.map((b, i) => (
+      {blobs.map((b) => (
         <div
-          key={i}
+          key={`${b.top}-${b.left}-${b.w}-${b.h}`}
           className="absolute"
           style={{
             top: b.top,
@@ -137,13 +137,59 @@ function CanvasBackground() {
   );
 }
 
+function htmlNodeToReact(node: ChildNode, key: string): ReactNode {
+  if (node.nodeType === 3) {
+    return node.textContent;
+  }
+
+  if (node.nodeType !== 1) {
+    return null;
+  }
+
+  const element = node as HTMLElement;
+  const props: Record<string, unknown> = { key };
+
+  for (const attribute of Array.from(element.attributes)) {
+    if (attribute.name === "class") {
+      props.className = attribute.value;
+    } else if (attribute.name === "for") {
+      props.htmlFor = attribute.value;
+    } else {
+      props[attribute.name] = attribute.value;
+    }
+  }
+
+  if (element.tagName.toLowerCase() === "a") {
+    props.rel = element.getAttribute("rel") ?? "noreferrer";
+    props.target = element.getAttribute("target") ?? "_blank";
+  }
+
+  const children = Array.from(element.childNodes).map((child, index) => htmlNodeToReact(child, `${key}-${index}`));
+  return createElement(element.tagName.toLowerCase(), props, ...children);
+}
+
+function renderSanitizedHtml(html: string): ReactNode[] {
+  if (typeof DOMParser === "undefined") {
+    return [html];
+  }
+
+  const parsed = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  const root = parsed.body.firstElementChild;
+
+  if (!root) {
+    return [html];
+  }
+
+  return Array.from(root.childNodes).map((node, index) => htmlNodeToReact(node, `disclaimer-${index}`));
+}
+
 // Memoized disclaimer component to avoid re-computing on every render
 const Disclaimer = () => {
   const disclaimer = useMemo(() => {
     try {
       const config = getConfig();
       const sanitized = DOMPurify.sanitize(config.renderer?.disclaimer || "");
-      return sanitized?.trim() || null;
+      return sanitized?.trim() ? renderSanitizedHtml(sanitized) : null;
     } catch {
       return null;
     }
@@ -155,10 +201,7 @@ const Disclaimer = () => {
     <div className="mb-6 mx-auto max-w-2xl">
       <div className="flex items-start justify-center gap-2 px-4 py-3">
         <Info size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-        <p
-          className="text-xs text-neutral-600 dark:text-neutral-400 text-left"
-          dangerouslySetInnerHTML={{ __html: disclaimer }}
-        />
+        <div className="text-xs text-neutral-600 dark:text-neutral-400 text-left">{disclaimer}</div>
       </div>
     </div>
   );
@@ -568,20 +611,27 @@ export function RendererPage() {
               return (
                 <div
                   key={img.id}
-                  onClick={() => {
-                    setSelectedImageId(img.id);
-                    setPrompt("");
-                  }}
                   className={`relative size-16 md:size-20 rounded-xl overflow-hidden cursor-pointer group shrink-0 transition-all ${
                     isActive
                       ? "ring-2 ring-blue-500 dark:ring-blue-400 shadow-md"
                       : "border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-500"
                   }`}
                 >
-                  <img src={img.data} alt={img.prompt || "Generated image"} className="size-full object-cover" />
                   <button
                     type="button"
-                    className="absolute top-0.5 right-0.5 size-4 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                    onClick={() => {
+                      setSelectedImageId(img.id);
+                      setPrompt("");
+                    }}
+                    className="block size-full"
+                    aria-pressed={isActive}
+                    title={img.prompt || "Select generated image"}
+                  >
+                    <img src={img.data} alt={img.prompt || "Generated image"} className="size-full object-cover" />
+                  </button>
+                  <button
+                    type="button"
+                    className="absolute top-0.5 right-0.5 z-10 size-4 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm"
                     onClick={(e) => {
                       e.stopPropagation();
                       deleteImage(img.id);

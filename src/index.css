@@ -56,14 +56,14 @@ html.emoji-native .noto-emoji {
 /* Hide scrollbar utility */
 @layer utilities {
   .scrollbar-hide {
-    scrollbar-width: none !important;
+    scrollbar-width: none;
     /* Firefox */
-    -ms-overflow-style: none !important;
+    -ms-overflow-style: none;
     /* IE and Edge */
   }
 
   .scrollbar-hide::-webkit-scrollbar {
-    display: none !important;
+    display: none;
     /* Chrome, Safari, Opera */
   }
 }
@@ -119,7 +119,7 @@ html.emoji-native .noto-emoji {
 .overflow-x-auto {
   overscroll-behavior-x: contain;
   overscroll-behavior-y: auto;
-  overflow-y: visible !important;
+  overflow-y: visible;
 }
 
 html,
@@ -150,7 +150,7 @@ body {
 
 *:focus,
 *:focus-visible {
-  outline: none !important;
+  outline: none;
 }
 
 button,

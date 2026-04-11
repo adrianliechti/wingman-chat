@@ -84,7 +84,7 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
   const [loadingPrompts, setLoadingPrompts] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const contentEditableRef = useRef<HTMLDivElement>(null);
+  const contentInputRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const profileName = profile?.name;
 
@@ -285,9 +285,8 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
       // Force a repaint by reading offsetHeight
       void containerRef.current.offsetHeight;
     }
-    if (contentEditableRef.current) {
-      // Force a repaint for the content editable area
-      void contentEditableRef.current.offsetHeight;
+    if (contentInputRef.current) {
+      void contentInputRef.current.offsetHeight;
     }
   }, []);
 
@@ -297,10 +296,10 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
       // Check if this is a touch device
       const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
 
-      if (!isTouchDevice && contentEditableRef.current) {
+      if (!isTouchDevice && contentInputRef.current) {
         // Small delay to ensure DOM is ready
         const timer = setTimeout(() => {
-          contentEditableRef.current?.focus();
+          contentInputRef.current?.focus();
         }, 100);
 
         return () => clearTimeout(timer);
@@ -350,10 +349,6 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
         sendMessage(message);
         setContent("");
         setAttachments([]);
-
-        if (contentEditableRef.current) {
-          contentEditableRef.current.innerHTML = "";
-        }
       }
     },
     [isResponding, content, attachments, isContinuousCaptureActive, captureFrame, onGoToLatest, sendMessage],
@@ -421,9 +416,8 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
   }, []);
 
   const handleContentChange = useCallback(
-    (e: React.FormEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLDivElement;
-      const input = target.innerText || target.textContent || "";
+    (e: ChangeEvent<HTMLTextAreaElement>) => {
+      const input = e.target.value;
 
       setContent(input);
 
@@ -435,7 +429,7 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
   );
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSubmit(e as unknown as FormEvent);
@@ -452,12 +446,6 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
         const text = await stopTranscription();
         if (text.trim()) {
           setContent(text);
-
-          if (contentEditableRef.current) {
-            // Convert newlines to <br> tags for proper display in contentEditable
-            const htmlText = text.replace(/\n/g, "<br>");
-            contentEditableRef.current.innerHTML = htmlText;
-          }
         }
       } catch (error) {
         console.error("Transcription failed:", error);
@@ -472,6 +460,19 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
       }
     }
   }, [isTranscribing, stopTranscription, startTranscription]);
+
+  useEffect(() => {
+    if (!contentInputRef.current) {
+      return;
+    }
+
+    contentInputRef.current.style.height = "auto";
+    contentInputRef.current.style.height = `${contentInputRef.current.scrollHeight}px`;
+
+    if (content.length === 0) {
+      contentInputRef.current.style.height = "auto";
+    }
+  }, [content]);
 
   return (
     <>
@@ -538,18 +539,17 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
               </div>
             ) : (
               <>
-                <div
-                  ref={contentEditableRef}
+                <textarea
+                  ref={contentInputRef}
                   className="p-3 md:p-4 flex-1 max-h-[40vh] overflow-y-auto min-h-10 whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200"
                   style={{
                     scrollbarWidth: "thin",
                     minHeight: "2.5rem",
                     height: "auto",
                   }}
-                  role="textbox"
-                  contentEditable
-                  suppressContentEditableWarning={true}
-                  onInput={handleContentChange}
+                  value={content}
+                  rows={1}
+                  onChange={handleContentChange}
                   onKeyDown={handleKeyDown}
                   onPaste={async (e) => {
                     e.preventDefault();
@@ -561,14 +561,29 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
                       .map((item) => item.getAsFile())
                       .filter(Boolean) as File[];
 
+                    const input = e.currentTarget;
+                    const selectionStart = input.selectionStart ?? content.length;
+                    const selectionEnd = input.selectionEnd ?? content.length;
+
                     if (text.trim()) {
-                      document.execCommand("insertText", false, text);
+                      const nextContent = `${content.slice(0, selectionStart)}${text}${content.slice(selectionEnd)}`;
+                      setContent(nextContent);
+
+                      if (text.trim() && showPromptSuggestions) {
+                        setShowPromptSuggestions(false);
+                      }
+
+                      requestAnimationFrame(() => {
+                        const nextPosition = selectionStart + text.length;
+                        input.setSelectionRange(nextPosition, nextPosition);
+                      });
                     }
 
                     if (imageItems.length > 0) {
                       await handleFiles(imageItems);
                     }
                   }}
+                  aria-label="Chat message input"
                 />
 
                 {/* CSS-animated placeholder */}

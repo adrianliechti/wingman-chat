@@ -138,32 +138,41 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
               return (
                 <div
                   key={output.id}
-                  className={`group/output flex items-center gap-2 py-1.5 transition-colors ${isGenerating ? "opacity-60" : isError ? "opacity-75" : "cursor-pointer"}`}
-                  onClick={() => {
-                    if (output.status === "completed") onSelectOutput(output);
-                  }}
+                  className={`group/output flex items-center gap-2 py-1.5 transition-colors ${isGenerating ? "opacity-60" : isError ? "opacity-75" : ""}`}
                 >
-                  <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
-                    {isGenerating ? (
-                      <Loader2 size={13} className="text-neutral-400 animate-spin" />
-                    ) : isError ? (
-                      <AlertCircle size={13} className="text-red-400" />
-                    ) : (
-                      <Icon size={13} className="text-neutral-500" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300 truncate">
-                      {output.title}
-                    </p>
-                    <p className="text-[10px] text-neutral-400">
-                      {isGenerating
-                        ? "Generating..."
-                        : isError
-                          ? output.error || "Failed"
-                          : new Date(output.createdAt).toLocaleString()}
-                    </p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (output.status === "completed") {
+                        onSelectOutput(output);
+                      }
+                    }}
+                    className={`flex flex-1 min-w-0 items-center gap-2 text-left ${
+                      output.status === "completed" ? "cursor-pointer" : "cursor-default"
+                    }`}
+                  >
+                    <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
+                      {isGenerating ? (
+                        <Loader2 size={13} className="text-neutral-400 animate-spin" />
+                      ) : isError ? (
+                        <AlertCircle size={13} className="text-red-400" />
+                      ) : (
+                        <Icon size={13} className="text-neutral-500" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300 truncate">
+                        {output.title}
+                      </p>
+                      <p className="text-[10px] text-neutral-400">
+                        {isGenerating
+                          ? "Generating..."
+                          : isError
+                            ? output.error || "Failed"
+                            : new Date(output.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                  </button>
                   {!isGenerating && (
                     <div className="invisible group-hover/output:visible flex items-center shrink-0">
                       {output.status === "completed" && canDownload(output) && (
@@ -186,6 +195,7 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                           onDeleteOutput(output.id);
                         }}
                         className="p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                        title="Delete"
                       >
                         <X size={12} className="text-neutral-400" />
                       </button>

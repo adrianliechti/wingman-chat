@@ -6,11 +6,25 @@ interface AudioViewerProps {
   audioUrl: string;
 }
 
+function createTranscriptTrack(content: string): string {
+  const text = content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ");
+
+  return `WEBVTT\n\n1\n00:00:00.000 --> 99:59:59.000\n${text || "Transcript unavailable."}\n`;
+}
+
 export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const transcriptTrackUrl = useMemo(
+    () => URL.createObjectURL(new Blob([createTranscriptTrack(content)], { type: "text/vtt" })),
+    [content],
+  );
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -37,6 +51,12 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      URL.revokeObjectURL(transcriptTrackUrl);
+    };
+  }, [transcriptTrackUrl]);
+
   const togglePlay = () => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -61,7 +81,7 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
   };
 
   const formatTime = (seconds: number) => {
-    if (!isFinite(seconds)) return "0:00";
+    if (!Number.isFinite(seconds)) return "0:00";
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
     return `${m}:${s.toString().padStart(2, "0")}`;
@@ -69,7 +89,9 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
 
   return (
     <div className="h-full flex flex-col relative">
-      <audio ref={audioRef} src={audioUrl} preload="metadata" />
+      <audio ref={audioRef} src={audioUrl} preload="metadata">
+        <track kind="captions" src={transcriptTrackUrl} srcLang="en" label="Transcript" default />
+      </audio>
 
       {/* Transcript */}
       <div className="flex-1 overflow-y-auto p-6 pb-24 min-h-0">
@@ -184,6 +206,16 @@ function parseTranscript(content: string): TranscriptBlock[] {
 function Transcript({ content }: { content: string }) {
   const blocks = useMemo(() => parseTranscript(content), [content]);
   const hasHosts = blocks.some((b) => b.speaker);
+  const keyedBlocks = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    return blocks.map((block) => {
+      const baseKey = `${block.speaker ?? "transcript"}:${block.text.slice(0, 80)}`;
+      const occurrence = (counts.get(baseKey) ?? 0) + 1;
+      counts.set(baseKey, occurrence);
+      return { block, key: `${baseKey}:${occurrence}` };
+    });
+  }, [blocks]);
 
   if (!hasHosts) {
     return (
@@ -195,8 +227,8 @@ function Transcript({ content }: { content: string }) {
 
   return (
     <div className="space-y-5">
-      {blocks.map((block, i) => (
-        <div key={i}>
+      {keyedBlocks.map(({ block, key }) => (
+        <div key={key}>
           {block.speaker && (
             <p className="text-xs font-bold uppercase tracking-wider text-blue-500 dark:text-blue-400 mb-1.5">
               {block.speaker}

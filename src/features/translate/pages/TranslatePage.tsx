@@ -317,13 +317,17 @@ export function TranslatePage() {
                       ? "hover:bg-neutral-50/80 dark:hover:bg-neutral-900/70 hover:scale-[1.02] hover:shadow-2xl"
                       : ""
                   }`}
-                  onClick={() => {
-                    if (translatedFileUrl && translatedFileName) {
-                      handleDownload();
-                    }
-                  }}
-                  title={translatedFileUrl ? "Click to download" : undefined}
                 >
+                  {translatedFileUrl && translatedFileName && (
+                    <button
+                      type="button"
+                      onClick={handleDownload}
+                      className="absolute inset-0 rounded-2xl"
+                      title="Click to download"
+                      aria-label={`Download ${translatedFileName}`}
+                    />
+                  )}
+
                   {/* Delete button */}
                   <button
                     type="button"
@@ -331,37 +335,39 @@ export function TranslatePage() {
                       e.stopPropagation();
                       handleFileClear();
                     }}
-                    className="absolute -top-3 -right-3 p-2 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-lg hover:bg-neutral-200/90 dark:hover:bg-neutral-700/90 rounded-full transition-all border border-neutral-200/70 dark:border-neutral-700/60 shadow-md hover:shadow-lg"
+                    className="absolute -top-3 -right-3 z-10 p-2 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-lg hover:bg-neutral-200/90 dark:hover:bg-neutral-700/90 rounded-full transition-all border border-neutral-200/70 dark:border-neutral-700/60 shadow-md hover:shadow-lg"
                     title="Remove file"
                   >
                     <XIcon size={14} />
                   </button>
 
-                  {/* File icon with status overlay */}
-                  <div className="relative">
-                    <FileIcon size={96} className="text-neutral-700 dark:text-neutral-300" />
+                  <div className="relative z-1 flex flex-col items-center gap-5 pointer-events-none">
+                    {/* File icon with status overlay */}
+                    <div className="relative">
+                      <FileIcon size={96} className="text-neutral-700 dark:text-neutral-300" />
 
-                    {/* Status icon overlay */}
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      {isLoading ? (
-                        <Loader2 size={32} className="animate-spin text-neutral-800 dark:text-neutral-200" />
-                      ) : translatedFileUrl ? (
-                        <DownloadIcon size={32} className="text-neutral-800 dark:text-neutral-200" />
-                      ) : null}
+                      {/* Status icon overlay */}
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        {isLoading ? (
+                          <Loader2 size={32} className="animate-spin text-neutral-800 dark:text-neutral-200" />
+                        ) : translatedFileUrl ? (
+                          <DownloadIcon size={32} className="text-neutral-800 dark:text-neutral-200" />
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
 
-                  {/* File name */}
-                  <span className="text-base font-medium text-neutral-800 dark:text-neutral-200 text-center max-w-[280px] truncate">
-                    {translatedFileName || getCandidateFileName() || selectedFile?.name}
-                  </span>
-
-                  {/* Status text */}
-                  {(isLoading || translatedFileUrl) && (
-                    <span className="text-sm text-neutral-500 dark:text-neutral-400">
-                      {isLoading ? "Translating..." : "Click to download"}
+                    {/* File name */}
+                    <span className="text-base font-medium text-neutral-800 dark:text-neutral-200 text-center max-w-70 truncate">
+                      {translatedFileName || getCandidateFileName() || selectedFile?.name}
                     </span>
-                  )}
+
+                    {/* Status text */}
+                    {(isLoading || translatedFileUrl) && (
+                      <span className="text-sm text-neutral-500 dark:text-neutral-400">
+                        {isLoading ? "Translating..." : "Click to download"}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Language selector and translate button */}
@@ -455,7 +461,7 @@ export function TranslatePage() {
               </div>
             )}
 
-            <div className={`w-full h-full ${layoutMode === "wide" ? "max-w-full mx-auto" : "max-w-[1200px] mx-auto"}`}>
+            <div className={`w-full h-full ${layoutMode === "wide" ? "max-w-full mx-auto" : "max-w-300 mx-auto"}`}>
               <div className="relative h-full w-full overflow-hidden">
                 {/* Responsive layout: vertical stack on mobile/narrow screens, horizontal on wide screens */}
                 <div className="h-full flex flex-col md:flex-row min-h-0 transition-all duration-200">

@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { CopyButton } from "@/shared/ui/CopyButton";
 import { PreviewButton } from "@/shared/ui/PreviewButton";
 
@@ -10,13 +10,14 @@ interface SvgRendererProps {
 
 const extractTitle = (svg: string): string | null => {
   const match = svg.match(/<title[^>]*>([^<]*)<\/title>/i);
-  return match && match[1].trim() ? match[1].trim() : null;
+  return match?.[1].trim() ? match[1].trim() : null;
 };
 
 const NonMemoizedSvgRenderer = ({ svg, language, name }: SvgRendererProps) => {
   const [showCode, setShowCode] = useState(false);
   const isComplete = svg.trim().length > 0 && /<\/svg>/i.test(svg);
   const extractedTitle = extractTitle(svg);
+  const svgPreviewUrl = useMemo(() => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, [svg]);
 
   if (!isComplete) {
     return (
@@ -66,11 +67,13 @@ const NonMemoizedSvgRenderer = ({ svg, language, name }: SvgRendererProps) => {
             </pre>
           </div>
         ) : (
-          <div
-            className="flex items-center justify-center p-4 overflow-auto"
-            dangerouslySetInnerHTML={{ __html: svg }}
-            style={{ maxHeight: "75vw" }}
-          />
+          <div className="flex items-center justify-center p-4 overflow-auto" style={{ maxHeight: "75vw" }}>
+            <img
+              src={svgPreviewUrl}
+              alt={extractedTitle || name || language}
+              className="max-w-full object-contain"
+            />
+          </div>
         )}
       </div>
     </div>

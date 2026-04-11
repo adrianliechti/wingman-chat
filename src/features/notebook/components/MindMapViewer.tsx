@@ -226,7 +226,9 @@ function MindMapCard({ node }: { node: RenderNode }) {
   return (
     <div
       className={`absolute pointer-events-none flex -translate-x-1/2 -translate-y-1/2 select-none flex-col justify-center text-center ${
-        isRoot ? "rounded-2xl bg-neutral-800 text-white shadow-lg dark:bg-neutral-100 dark:text-neutral-900" : "rounded-xl shadow-sm"
+        isRoot
+          ? "rounded-2xl bg-neutral-800 text-white shadow-lg dark:bg-neutral-100 dark:text-neutral-900"
+          : "rounded-xl shadow-sm"
       }`}
       style={{
         left: node.renderX,
