@@ -1,19 +1,19 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useMatch, useNavigate } from "@tanstack/react-router";
 import { PlusIcon, X } from "lucide-react";
-import { useNavigate, useMatch } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CopyButton } from "@/shared/ui/CopyButton";
+import { Markdown } from "@/shared/ui/Markdown";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
-import { Markdown } from "@/shared/ui/Markdown";
-import { CopyButton } from "@/shared/ui/CopyButton";
-import { useNotebook } from "../hooks/useNotebook";
-import { SourcesPanel } from "../components/SourcesPanel";
-import { NotebookChat } from "../components/NotebookChat";
-import { StudioPanel } from "../components/StudioPanel";
-import { SlideViewer } from "../components/SlideViewer";
 import { AudioViewer } from "../components/AudioViewer";
-import { QuizViewer } from "../components/QuizViewer";
 import { MindMapViewer } from "../components/MindMapViewer";
+import { NotebookChat } from "../components/NotebookChat";
 import { NotebookSidebar } from "../components/NotebookSidebar";
+import { QuizViewer } from "../components/QuizViewer";
+import { SlideViewer } from "../components/SlideViewer";
+import { SourcesPanel } from "../components/SourcesPanel";
+import { StudioPanel } from "../components/StudioPanel";
+import { useNotebook } from "../hooks/useNotebook";
 import * as store from "../lib/opfs-notebook";
 import type { Notebook, NotebookOutput } from "../types/notebook";
 
@@ -65,7 +65,7 @@ export function NotebookPage() {
       setNotebookId(routeNotebookId);
       setViewingOutput(null);
     }
-  }, [routeNotebookId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [routeNotebookId, notebookId]);
 
   // Create new notebook (only if current one has content, or none exists)
   const handleNew = useCallback(async () => {
@@ -106,16 +106,13 @@ export function NotebookPage() {
   );
 
   // Rename notebook
-  const handleRename = useCallback(
-    async (id: string, customTitle: string | undefined) => {
-      const nb = await store.getNotebook(id);
-      if (!nb) return;
-      const updated = { ...nb, customTitle, updatedAt: new Date().toISOString() };
-      await store.saveNotebook(updated);
-      setNotebooks((prev) => prev.map((n) => (n.id === id ? { ...n, customTitle, updatedAt: updated.updatedAt } : n)));
-    },
-    [],
-  );
+  const handleRename = useCallback(async (id: string, customTitle: string | undefined) => {
+    const nb = await store.getNotebook(id);
+    if (!nb) return;
+    const updated = { ...nb, customTitle, updatedAt: new Date().toISOString() };
+    await store.saveNotebook(updated);
+    setNotebooks((prev) => prev.map((n) => (n.id === id ? { ...n, customTitle, updatedAt: updated.updatedAt } : n)));
+  }, []);
 
   // Select notebook
   const handleSelect = useCallback(

@@ -17,12 +17,16 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const messageCount = messages.length;
+  const streamingPartCount = streamingContent?.length ?? 0;
 
   useEffect(() => {
+    if (messageCount === 0 && streamingPartCount === 0) return;
+
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, streamingContent]);
+  }, [messageCount, streamingPartCount]);
 
   const handleSubmit = () => {
     if (!input.trim() || isChatting) return;

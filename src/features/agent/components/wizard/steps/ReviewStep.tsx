@@ -1,8 +1,8 @@
-import { useId, type Dispatch } from "react";
-import { ChevronDown, ToggleLeft, ToggleRight, Zap, Wrench, FileText, Server } from "lucide-react";
+import { ChevronDown, FileText, Server, ToggleLeft, ToggleRight, Wrench, Zap } from "lucide-react";
+import { type Dispatch, useId } from "react";
+import type { BridgeServer } from "@/features/agent/types/agent";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
-import type { BridgeServer } from "@/features/agent/types/agent";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
 
@@ -44,7 +44,10 @@ export function ReviewStep({
 
       {/* Model */}
       <div>
-        <label htmlFor={modelSelectId} className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">
+        <label
+          htmlFor={modelSelectId}
+          className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5"
+        >
           Model
         </label>
         <div className="relative">

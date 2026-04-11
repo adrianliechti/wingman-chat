@@ -1,34 +1,34 @@
-import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Plus,
-  Folder,
-  X,
-  ChevronDown,
-  Check,
-  Edit,
-  Trash2,
-  PenLine,
-  MessageSquare,
-  Sparkles,
   Bot,
+  Check,
+  ChevronDown,
   Download,
+  Edit,
+  Folder,
+  MessageSquare,
+  PenLine,
+  Plus,
+  Sparkles,
+  Trash2,
   Upload,
+  X,
 } from "lucide-react";
-import { useAgents } from "@/features/agent/hooks/useAgents";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
+import { useAgents } from "@/features/agent/hooks/useAgents";
+import type { Agent } from "@/features/agent/types/agent";
 import {
   exportSingleAgentAsZip,
-  importAgentsFromZip,
   importAgentsFromLegacyJson,
+  importAgentsFromZip,
 } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
-import type { Agent } from "@/features/agent/types/agent";
-import { InstructionsSection } from "./InstructionsSection";
 import { FilesSection } from "./FilesSection";
-import { SkillsSection } from "./SkillsSection";
-import { ToolsSection } from "./ToolsSection";
+import { InstructionsSection } from "./InstructionsSection";
 import { MemorySection } from "./MemorySection";
 import { ModelSection } from "./ModelSection";
+import { SkillsSection } from "./SkillsSection";
+import { ToolsSection } from "./ToolsSection";
 import { AgentWizard } from "./wizard/AgentWizard";
 
 // ─── Agent details: sections ───

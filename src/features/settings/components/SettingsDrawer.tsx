@@ -566,7 +566,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   onClick={() => toggleSection("profile")}
                 >
                   <div>
-                    <label htmlFor={profileNameInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                    <label
+                      htmlFor={profileNameInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2"
+                    >
                       Name
                     </label>
                     <input
@@ -580,7 +583,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   </div>
 
                   <div>
-                    <label htmlFor={profileRoleInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                    <label
+                      htmlFor={profileRoleInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2"
+                    >
                       Role
                     </label>
                     <input
@@ -594,7 +600,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   </div>
 
                   <div>
-                    <label htmlFor={profileAboutInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                    <label
+                      htmlFor={profileAboutInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2"
+                    >
                       About
                     </label>
                     <textarea

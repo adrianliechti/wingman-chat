@@ -144,7 +144,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     return { id: id!, chat: chatItem! };
-  }, [model, createChatHook, updateChat, setChatId, chatId, chats]);
+  }, [model, createChatHook, updateChat, chatId, chats]);
 
   const addMessage = useCallback(
     async (message: Message) => {
@@ -459,7 +459,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
         updateStreamingMessage(null);
       }
     },
-    [chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, renderApp, updateModelContext, updateStreamingMessage],
+    [
+      chats,
+      updateChat,
+      client,
+      model,
+      config.chat?.summarizer,
+      chatTools,
+      chatInstructions,
+      renderApp,
+      updateModelContext,
+      updateStreamingMessage,
+    ],
   );
 
   const sendMessage = useCallback(

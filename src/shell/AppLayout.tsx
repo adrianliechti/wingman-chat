@@ -61,7 +61,7 @@ export function AppLayout() {
     if (hasPanelOpen && !wasOpen && showSidebar && window.innerWidth >= 768) {
       setShowSidebar(false);
     }
-  }, [hasPanelOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasPanelOpen, showSidebar, setShowSidebar]);
 
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -105,7 +105,7 @@ export function AppLayout() {
       updateSlider(tabletRef, "tablet");
       updateSlider(desktopRef, "desktop");
     }, 0);
-  }, [currentPage, updateSlider]);
+  }, [updateSlider]);
 
   // Auto-close sidebar on mobile screens and update sliders on resize
   useEffect(() => {
@@ -125,7 +125,7 @@ export function AppLayout() {
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [setShowSidebar, currentPage, updateSlider]);
+  }, [setShowSidebar, updateSlider]);
 
   // Prevent default file-drop behavior on the rest of the page (avoid navigation)
   useEffect(() => {

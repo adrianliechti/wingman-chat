@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, Fragment, useEffect } from "react";
+import { Dialog, Transition } from "@headlessui/react";
 import {
   Plus,
   Globe,
@@ -16,12 +16,12 @@ import {
   Mic,
   Download,
 } from "lucide-react";
-import { Dialog, Transition } from "@headlessui/react";
-import { useDropZone } from "@/shared/hooks/useDropZone";
-import { Markdown } from "@/shared/ui/Markdown";
-import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
+import { useDropZone } from "@/shared/hooks/useDropZone";
+import { getDriveContentUrl } from "@/shared/lib/drives";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { Markdown } from "@/shared/ui/Markdown";
 import type { NotebookSource } from "../types/notebook";
 import { FieldRecorderOverlay } from "./FieldRecorderOverlay";
 
@@ -49,10 +49,7 @@ export function SourcesPanel({
   onDeleteSource,
 }: SourcesPanelProps) {
   const config = getConfig();
-  const acceptFilter = [
-    ...(config.text?.files ?? []),
-    ...(config.extractor?.files ?? []),
-  ].join(",");
+  const acceptFilter = [...(config.text?.files ?? []), ...(config.extractor?.files ?? [])].join(",");
   const [extracting, setExtracting] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -266,7 +263,9 @@ export function SourcesPanel({
         <div className="absolute inset-0 z-50 bg-neutral-500/10 border-2 border-dashed border-neutral-400 dark:border-neutral-500 rounded-lg flex items-center justify-center backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2">
             <Upload size={24} className="text-neutral-500" />
-            <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400">Drop files to add as sources</span>
+            <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
+              Drop files to add as sources
+            </span>
           </div>
         </div>
       )}
@@ -673,13 +672,7 @@ function WebScrapeOverlay({
 
 // ── Text Input Overlay ──────────────────────────────────────────────────
 
-function TextInputOverlay({
-  onAdd,
-  onClose,
-}: {
-  onAdd: (name: string, text: string) => void;
-  onClose: () => void;
-}) {
+function TextInputOverlay({ onAdd, onClose }: { onAdd: (name: string, text: string) => void; onClose: () => void }) {
   const [text, setText] = useState("");
 
   return (

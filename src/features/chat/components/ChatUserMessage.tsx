@@ -59,7 +59,18 @@ export const ChatUserMessage = memo(function ChatUserMessage({
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
-  }, [editContent]);
+  }, []);
+
+  const handleEditContentChange = (value: string) => {
+    setEditContent(value);
+
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+      }
+    });
+  };
 
   const handleStartEdit = () => {
     if (isResponding) return;
@@ -120,7 +131,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({
         {isEditing ? (
           <ChatMessageEditor
             editContent={editContent}
-            onEditContentChange={setEditContent}
+            onEditContentChange={handleEditContentChange}
             onKeyDown={handleKeyDown}
             textareaRef={textareaRef}
             editAdditionalTextContent={editAdditionalTextContent}

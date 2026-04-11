@@ -1,6 +1,6 @@
-import type { Root, Text, Element as HastElement, ElementContent } from "hast";
-import { visit } from "unist-util-visit";
 import emojiRegex from "emoji-regex";
+import type { ElementContent, Element as HastElement, Root, Text } from "hast";
+import { visit } from "unist-util-visit";
 
 /**
  * Rehype plugin that wraps emoji characters in a span with the "noto-emoji"

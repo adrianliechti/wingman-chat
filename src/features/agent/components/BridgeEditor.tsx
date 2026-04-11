@@ -1,6 +1,6 @@
-import { useState, useMemo, Fragment, useId } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { X, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, X } from "lucide-react";
+import { Fragment, useId, useMemo, useState } from "react";
 import type { BridgeServer } from "@/features/settings/context/BridgeContext";
 
 interface BridgeEditorProps {
@@ -149,7 +149,10 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                 <div className="px-5 py-3.5 space-y-3.5">
                   {/* Name field */}
                   <div>
-                    <label htmlFor={nameInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                    <label
+                      htmlFor={nameInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
+                    >
                       Name <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -164,7 +167,10 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
 
                   {/* URL field */}
                   <div>
-                    <label htmlFor={urlInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                    <label
+                      htmlFor={urlInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
+                    >
                       URL <span className="text-red-500">*</span>
                     </label>
                     <input

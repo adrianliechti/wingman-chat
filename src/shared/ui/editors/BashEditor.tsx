@@ -1,16 +1,10 @@
-import { useState, useCallback, useEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { SANDBOX_HOME } from "@/shared/lib/artifactFiles";
-import {
-  createBashInstance,
-  getBashCwd,
-  getBashEnv,
-  readFilesFromFs,
-  resolveBashCwd,
-} from "@/features/tools/lib/bash";
-import type { BashInstance } from "@/features/tools/lib/bash";
 import type { OverlayFile } from "@/features/artifacts/lib/fs";
+import type { BashInstance } from "@/features/tools/lib/bash";
+import { createBashInstance, getBashCwd, getBashEnv, readFilesFromFs, resolveBashCwd } from "@/features/tools/lib/bash";
+import { SANDBOX_HOME } from "@/shared/lib/artifactFiles";
 
 /**
  * Use `compgen -A command` and `compgen -A file` for tab-completions.
@@ -192,11 +186,13 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
   }, [isReady, initialScript]);
 
   // Auto-scroll to bottom when entries change
+  const outputEntryCount = entries.length;
+
   useEffect(() => {
-    if (outputRef.current) {
+    if (outputEntryCount > 0 && outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
-  }, [entries]);
+  }, [outputEntryCount]);
 
   // Virtualizer for terminal output entries
   const outputVirtualizer = useVirtualizer({
@@ -380,8 +376,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
         if (tabCompletionsRef.current.length > 0) {
           const dir = e.shiftKey ? -1 : 1;
           tabIndexRef.current =
-            (tabIndexRef.current + dir + tabCompletionsRef.current.length) %
-            tabCompletionsRef.current.length;
+            (tabIndexRef.current + dir + tabCompletionsRef.current.length) % tabCompletionsRef.current.length;
           const match = tabCompletionsRef.current[tabIndexRef.current];
           const before = tabOriginalInputRef.current.slice(0, tabReplaceFromRef.current);
           const after = tabOriginalInputRef.current.slice(tabOriginalCursorRef.current);
@@ -394,37 +389,33 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
         tabOriginalInputRef.current = input;
         tabOriginalCursorRef.current = cursorPos;
 
-        void getCompletions(
-          instanceRef.current,
-          input,
-          cursorPos,
-          cwd,
-          shellEnvRef.current,
-        ).then(({ completions, replaceFrom }) => {
-          if (completions.length === 0) return;
+        void getCompletions(instanceRef.current, input, cursorPos, cwd, shellEnvRef.current).then(
+          ({ completions, replaceFrom }) => {
+            if (completions.length === 0) return;
 
-          tabCompletionsRef.current = completions;
-          tabReplaceFromRef.current = replaceFrom;
+            tabCompletionsRef.current = completions;
+            tabReplaceFromRef.current = replaceFrom;
 
-          const before = input.slice(0, replaceFrom);
-          const after = input.slice(cursorPos);
+            const before = input.slice(0, replaceFrom);
+            const after = input.slice(cursorPos);
 
-          if (completions.length === 1) {
-            const match = completions[0];
-            const suffix = match.endsWith("/") ? "" : " ";
-            setInput(`${before}${match}${suffix}${after}`);
-            tabCompletionsRef.current = [];
-          } else {
-            const common = longestCommonPrefix(completions);
-            setInput(`${before}${common}${after}`);
-            tabIndexRef.current = -1;
-            setEntries((prev) => [
-              ...prev,
-              { type: "command", text: input, cwd },
-              { type: "stdout", text: completions.join("  ") },
-            ]);
-          }
-        });
+            if (completions.length === 1) {
+              const match = completions[0];
+              const suffix = match.endsWith("/") ? "" : " ";
+              setInput(`${before}${match}${suffix}${after}`);
+              tabCompletionsRef.current = [];
+            } else {
+              const common = longestCommonPrefix(completions);
+              setInput(`${before}${common}${after}`);
+              tabIndexRef.current = -1;
+              setEntries((prev) => [
+                ...prev,
+                { type: "command", text: input, cwd },
+                { type: "stdout", text: completions.join("  ") },
+              ]);
+            }
+          },
+        );
         return;
       }
 
@@ -559,9 +550,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
 
       {/* Input line — inline with output, no separator */}
       <div className="shrink-0 flex items-center px-3 pb-3 pt-1">
-        <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">
-          {formatPromptCwd(cwd)} $
-        </span>
+        <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">{formatPromptCwd(cwd)} $</span>
         <input
           ref={inputRef}
           type="text"

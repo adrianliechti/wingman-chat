@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as opfs from "@/shared/lib/opfs";
 
 /**
@@ -136,7 +136,7 @@ export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UseP
     } else {
       save();
     }
-  }, [value, isLoaded, debounceMs, save]);
+  }, [isLoaded, debounceMs, save]);
 
   // Cleanup on unmount
   useEffect(() => {

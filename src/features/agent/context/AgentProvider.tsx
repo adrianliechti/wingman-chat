@@ -1,11 +1,11 @@
-import { useState, useCallback, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
 import type { RepositoryFile } from "@/features/repository/types/repository";
-import * as opfs from "@/shared/lib/opfs";
-import { AgentContext } from "./AgentContext";
-import type { AgentContextType } from "./AgentContext";
 import { clearMcpOAuthStorage } from "@/features/settings/lib/mcpAuth";
+import * as opfs from "@/shared/lib/opfs";
+import type { AgentContextType } from "./AgentContext";
+import { AgentContext } from "./AgentContext";
 
 const COLLECTION = "agents";
 const AGENT_STORAGE_KEY = "app_agent";
@@ -826,7 +826,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         );
       }
     },
-    [currentAgent, scheduleSave],
+    [agents, currentAgent, scheduleSave],
   );
 
   const toggleServer = useCallback(

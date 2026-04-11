@@ -1,21 +1,21 @@
 import { RouterProvider } from "@tanstack/react-router";
-import { ThemeProvider } from "./shell/context/ThemeProvider";
-import { LayoutProvider } from "./shell/context/LayoutProvider";
-import { EmojiProvider } from "./shell/context/EmojiProvider";
-import { BackgroundProvider } from "./shell/context/BackgroundProvider";
+import { AgentProvider } from "./features/agent/context/AgentProvider";
+import { ArtifactsProvider } from "./features/artifacts/context/ArtifactsProvider";
+import { ChatProvider } from "./features/chat/context/ChatProvider";
+import { ScreenCaptureProvider } from "./features/chat/context/ScreenCaptureProvider";
 import { ProfileProvider } from "./features/settings/context/ProfileProvider";
 import { SkillsProvider } from "./features/skills/context/SkillsProvider";
-import { SidebarProvider } from "./shell/context/SidebarProvider";
-import { NavigationProvider } from "./shell/context/NavigationProvider";
-import { ArtifactsProvider } from "./features/artifacts/context/ArtifactsProvider";
-import { AppProvider } from "./shell/context/AppProvider";
-import { AgentProvider } from "./features/agent/context/AgentProvider";
-import { ScreenCaptureProvider } from "./features/chat/context/ScreenCaptureProvider";
 import { ToolsProvider } from "./features/tools/context/ToolsProvider";
-import { ChatProvider } from "./features/chat/context/ChatProvider";
-import { VoiceProvider } from "./features/voice/context/VoiceProvider";
 import { TranslateProvider } from "./features/translate/context/TranslateProvider";
+import { VoiceProvider } from "./features/voice/context/VoiceProvider";
 import { router } from "./router";
+import { AppProvider } from "./shell/context/AppProvider";
+import { BackgroundProvider } from "./shell/context/BackgroundProvider";
+import { EmojiProvider } from "./shell/context/EmojiProvider";
+import { LayoutProvider } from "./shell/context/LayoutProvider";
+import { NavigationProvider } from "./shell/context/NavigationProvider";
+import { SidebarProvider } from "./shell/context/SidebarProvider";
+import { ThemeProvider } from "./shell/context/ThemeProvider";
 
 // Compose providers to avoid deep nesting
 const providers = [

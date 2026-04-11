@@ -1,27 +1,26 @@
+import type { Components } from "hast-util-to-jsx-runtime";
+import katex from "katex";
 import { memo, useDeferredValue, useEffect, useRef, useState } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
-import { unified } from "unified";
+import rehypeKatex from "rehype-katex";
 import rehypeReact from "rehype-react";
-import type { Components } from "hast-util-to-jsx-runtime";
-import remarkParse from "remark-parse";
-import remarkRehype from "remark-rehype";
-import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import remarkGemoji from "remark-gemoji";
+import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import katex from "katex";
+import remarkParse from "remark-parse";
+import remarkRehype from "remark-rehype";
+import { unified } from "unified";
 import "katex/dist/katex.min.css";
-import rehypeNotoEmoji from "@/shared/lib/rehype-noto-emoji";
-
-import { CodeRenderer } from "./CodeRenderer";
-import { HtmlRenderer } from "./renderers/HtmlRenderer";
-import { CsvRenderer } from "./renderers/CsvRenderer";
-import { SvgRenderer } from "./renderers/SvgRenderer";
-import { MarkdownRenderer } from "./renderers/MarkdownRenderer";
-import { MediaPlayer } from "./MediaPlayer";
-import { isAudioUrl, isVideoUrl } from "@/shared/lib/utils";
 import type { ReactNode } from "react";
+import rehypeNotoEmoji from "@/shared/lib/rehype-noto-emoji";
+import { isAudioUrl, isVideoUrl } from "@/shared/lib/utils";
+import { CodeRenderer } from "./CodeRenderer";
+import { MediaPlayer } from "./MediaPlayer";
+import { CsvRenderer } from "./renderers/CsvRenderer";
+import { HtmlRenderer } from "./renderers/HtmlRenderer";
+import { MarkdownRenderer } from "./renderers/MarkdownRenderer";
+import { SvgRenderer } from "./renderers/SvgRenderer";
 
 const markdownLinkClassName =
   "text-sky-700 dark:text-sky-300 underline decoration-2 underline-offset-3 decoration-sky-500/60 dark:decoration-sky-400/70 hover:text-sky-800 dark:hover:text-sky-200 hover:decoration-current focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50";
@@ -277,7 +276,10 @@ const components: Partial<Components> = {
     // Inline code (no language specified and single line)
     if (!match && !isMultiLine) {
       return (
-        <code {...rest} className={`${className || ""} bg-neutral-200 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-sm font-mono`}>
+        <code
+          {...rest}
+          className={`${className || ""} bg-neutral-200 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-sm font-mono`}
+        >
           {children}
         </code>
       );

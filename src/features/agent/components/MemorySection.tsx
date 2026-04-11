@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, Fragment } from "react";
-import { ToggleLeft, ToggleRight, Edit, Trash2, Pencil, X } from "lucide-react";
 import { Dialog, Transition } from "@headlessui/react";
+import { ToggleLeft, ToggleRight, Edit, Trash2, Pencil, X } from "lucide-react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import * as opfs from "@/shared/lib/opfs";
 import type { Agent } from "@/features/agent/types/agent";
-import { Section } from "./Section";
+import * as opfs from "@/shared/lib/opfs";
 import { Markdown } from "@/shared/ui/Markdown";
+import { Section } from "./Section";
 
 interface MemorySectionProps {
   agent: Agent;
@@ -30,21 +30,21 @@ export function MemorySection({ agent }: MemorySectionProps) {
   }, [agent.memory, memoryPath]);
 
   useEffect(() => {
-    loadMemory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agent.memory]);
+    void loadMemory();
+  }, [loadMemory]);
 
   // Live-update when the agent writes memory
   useEffect(() => {
     if (!agent.memory) return;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail?.agentId === agent.id) loadMemory();
+      if (detail?.agentId === agent.id) {
+        void loadMemory();
+      }
     };
     window.addEventListener("memory-updated", handler);
     return () => window.removeEventListener("memory-updated", handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agent.memory, agent.id]);
+  }, [agent.memory, agent.id, loadMemory]);
 
   const toggleMemory = () => {
     updateAgent(agent.id, { memory: !agent.memory });

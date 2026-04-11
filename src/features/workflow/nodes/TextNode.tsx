@@ -1,10 +1,10 @@
-import { memo, useState, useRef, useEffect } from "react";
-import { StickyNote } from "lucide-react";
 import type { Node, NodeProps } from "@xyflow/react";
+import { StickyNote } from "lucide-react";
+import { memo, useEffect, useRef, useState } from "react";
+import { WorkflowNode } from "@/features/workflow/components/WorkflowNode";
+import { useWorkflow } from "@/features/workflow/hooks/useWorkflow";
 import type { BaseNodeData } from "@/features/workflow/types/workflow";
 import { createData } from "@/features/workflow/types/workflow";
-import { useWorkflow } from "@/features/workflow/hooks/useWorkflow";
-import { WorkflowNode } from "@/features/workflow/components/WorkflowNode";
 
 // TextNode data interface
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -42,9 +42,7 @@ export const TextNode = memo(({ id, data, selected }: NodeProps<TextNodeType>) =
       isLocalChangeRef.current = true;
       updateNode(id, { data: { ...data, output: createData(localValue) } });
     }
-    // Only run on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [localValue, data, data.output, id, updateNode]);
 
   return (
     <WorkflowNode

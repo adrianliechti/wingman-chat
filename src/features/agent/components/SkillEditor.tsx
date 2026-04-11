@@ -1,8 +1,8 @@
-import { useState, useMemo, Fragment, useId } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { X, Sparkles, Loader2 } from "lucide-react";
-import { validateSkillName } from "@/features/skills/lib/skillParser";
+import { Loader2, Sparkles, X } from "lucide-react";
+import { Fragment, useId, useMemo, useState } from "react";
 import type { Skill } from "@/features/skills/lib/skillParser";
+import { validateSkillName } from "@/features/skills/lib/skillParser";
 import { getConfig } from "@/shared/config";
 
 interface SkillEditorProps {
@@ -129,7 +129,10 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                 <div className="px-5 py-3.5 space-y-3.5">
                   {/* Name field */}
                   <div>
-                    <label htmlFor={nameInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                    <label
+                      htmlFor={nameInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
+                    >
                       Name
                     </label>
                     <input
@@ -173,7 +176,10 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
 
                   {/* Content field */}
                   <div>
-                    <label htmlFor={contentInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                    <label
+                      htmlFor={contentInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
+                    >
                       Instructions
                     </label>
                     <textarea

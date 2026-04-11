@@ -1,8 +1,8 @@
-import { useState, useMemo, type Dispatch } from "react";
-import { ToggleLeft, ToggleRight, Wrench, Plus, X, Server } from "lucide-react";
-import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+import { Plus, Server, ToggleLeft, ToggleRight, Wrench, X } from "lucide-react";
+import { type Dispatch, useMemo, useState } from "react";
 import { BridgeEditor } from "@/features/agent/components/BridgeEditor";
 import type { BridgeServer } from "@/features/agent/types/agent";
+import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
 

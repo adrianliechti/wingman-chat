@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface InteractiveTextProps {
   text: string;
@@ -68,10 +68,10 @@ export function InteractiveText({
 
   // Clear highlighting when text changes
   useEffect(() => {
-    return () => {
+    if (displayText || displayText === "") {
       setSelectedWord(null);
-    };
-  }, [text]);
+    }
+  }, [displayText]);
 
   // Handle text selection
   const handleTextSelection = useCallback(() => {

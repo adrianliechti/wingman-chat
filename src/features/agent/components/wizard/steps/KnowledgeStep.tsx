@@ -1,5 +1,5 @@
-import { useRef, type Dispatch } from "react";
-import { Upload, FileText, X } from "lucide-react";
+import { FileText, Upload, X } from "lucide-react";
+import { type Dispatch, useRef } from "react";
 import { formatBytes } from "@/shared/lib/utils";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";

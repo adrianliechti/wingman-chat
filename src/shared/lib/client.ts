@@ -1,30 +1,30 @@
-import { z } from "zod/v3";
+import mime from "mime";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
-import mime from "mime";
-
-import { Role } from "@/shared/types/chat";
-import type {
-  Tool,
-  Content,
-  ImageContent,
-  FileContent,
-  ToolResultContent,
-  ReasoningContent,
-} from "@/shared/types/chat";
-import type { Message, Model, ModelType } from "@/shared/types/chat";
-import type { SearchResult } from "@/features/research/types/search";
-import { modelType, modelName } from "./models";
-import { simplifyMarkdown, serializeToolResultForApi } from "./utils";
-import { traceGenAI } from "./otel";
-
+import { z } from "zod/v3";
+import instructionsRelatedPrompts from "@/features/chat/prompts/chat-suggestions.txt?raw";
+import instructionsSummarizeTitle from "@/features/chat/prompts/chat-title.txt?raw";
 import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
-import instructionsRelatedPrompts from "@/features/chat/prompts/chat-suggestions.txt?raw";
 import instructionsRewriteSelection from "@/features/chat/prompts/rewrite-selection.txt?raw";
 import instructionsRewriteText from "@/features/chat/prompts/rewrite-text.txt?raw";
-import instructionsSummarizeTitle from "@/features/chat/prompts/chat-title.txt?raw";
+import type { SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
+import type {
+  Content,
+  FileContent,
+  ImageContent,
+  Message,
+  Model,
+  ModelType,
+  ReasoningContent,
+  Tool,
+  ToolResultContent,
+} from "@/shared/types/chat";
+import { Role } from "@/shared/types/chat";
+import { modelName, modelType } from "./models";
+import { traceGenAI } from "./otel";
+import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
 
 function expandToSentences(text: string, start: number, end: number): string {
   const sentenceBoundaries = /[.!?]+\s*|\n+/g;

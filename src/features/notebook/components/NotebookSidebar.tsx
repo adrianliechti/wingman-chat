@@ -1,6 +1,6 @@
-import { useMemo, useCallback, useState, useRef, useEffect } from "react";
-import { Trash, PanelRightOpen, MoreVertical, Search, X, Pencil } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { Trash, PanelRightOpen, MoreVertical, Search, X, Pencil } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 import type { Notebook } from "../types/notebook";
 
@@ -60,9 +60,7 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return sorted;
     const q = searchQuery.toLowerCase();
-    return sorted.filter((n) =>
-      (n.customTitle ?? n.title).toLowerCase().includes(q)
-    );
+    return sorted.filter((n) => (n.customTitle ?? n.title).toLowerCase().includes(q));
   }, [sorted, searchQuery]);
 
   const getDateCategory = useCallback((dateStr: string): string => {

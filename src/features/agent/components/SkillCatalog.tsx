@@ -1,11 +1,11 @@
-import { useState, useMemo, Fragment, useRef, useEffect, useId, useCallback } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { X, Search, Plus, Minus, Download, Pencil, Trash2, ArrowLeft, Sparkles, Loader2 } from "lucide-react";
-import { useSkills } from "@/features/skills/hooks/useSkills";
-import { parseSkillFile, downloadSkill, validateSkillName } from "@/features/skills/lib/skillParser";
-import type { Skill } from "@/features/skills/lib/skillParser";
-import { getConfig } from "@/shared/config";
 import JSZip from "jszip";
+import { X, Search, Plus, Minus, Download, Pencil, Trash2, ArrowLeft, Sparkles, Loader2 } from "lucide-react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useSkills } from "@/features/skills/hooks/useSkills";
+import type { Skill } from "@/features/skills/lib/skillParser";
+import { downloadSkill, parseSkillFile, validateSkillName } from "@/features/skills/lib/skillParser";
+import { getConfig } from "@/shared/config";
 
 interface SkillCatalogProps {
   isOpen: boolean;
@@ -259,7 +259,9 @@ export function SkillCatalog({
                   <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-slate-400 bg-slate-100/80 backdrop-blur-sm dark:border-slate-500 dark:bg-slate-800/80">
                     <div className="text-center">
                       <Plus size={24} className="mx-auto mb-1 text-neutral-600 dark:text-neutral-400" />
-                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Drop skills to import</p>
+                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        Drop skills to import
+                      </p>
                     </div>
                   </div>
                 )}
@@ -294,7 +296,10 @@ export function SkillCatalog({
                   <>
                     <div className="space-y-3.5 px-5 py-3.5">
                       <div>
-                        <label htmlFor={editorNameInputId} className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                        <label
+                          htmlFor={editorNameInputId}
+                          className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+                        >
                           Name
                         </label>
                         <input
@@ -332,7 +337,10 @@ export function SkillCatalog({
                         />
                       </div>
                       <div>
-                        <label htmlFor={editorContentInputId} className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                        <label
+                          htmlFor={editorContentInputId}
+                          className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-300"
+                        >
                           Instructions
                         </label>
                         <textarea

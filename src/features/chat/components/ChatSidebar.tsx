@@ -1,11 +1,11 @@
-import { Trash, PanelRightOpen, MoreVertical, GitBranch, Search, X, Pencil, Pin, PinOff } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { useMemo, useCallback, useState, useRef, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { GitBranch, MoreVertical, PanelRightOpen, Pencil, Pin, PinOff, Search, Trash, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
+import { type Chat, getTextFromContent } from "@/shared/types/chat";
 import { useSidebar } from "@/shell/hooks/useSidebar";
-import { getTextFromContent, type Chat } from "@/shared/types/chat";
 
 export function ChatSidebar() {
   const { chats, chat, deleteChat, createChat, updateChat } = useChat();

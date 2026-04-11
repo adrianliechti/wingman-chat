@@ -106,7 +106,7 @@ export function ChatPage() {
     } else if (!routeChatId && chat) {
       selectChat(null);
     }
-  }, [routeChatId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [routeChatId, chat, selectChat]);
 
   // Sync state → URL when a chat is implicitly created during message send.
   // The URL is still /chat but chatId just appeared — update to /chat/$chatId.
@@ -114,7 +114,7 @@ export function ChatPage() {
     if (chat?.id && !routeChatId) {
       navigate({ to: "/chat/$chatId", params: { chatId: chat.id }, replace: true });
     }
-  }, [chat?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chat?.id, navigate, routeChatId]);
 
   const { layoutMode } = useLayout();
   const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();

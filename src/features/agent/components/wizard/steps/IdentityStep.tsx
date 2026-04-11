@@ -1,4 +1,4 @@
-import { useId, type Dispatch } from "react";
+import { type Dispatch, useId } from "react";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
 
@@ -24,7 +24,10 @@ export function IdentityStep({ name, description, instructions, showValidation, 
       />
 
       <div>
-        <label htmlFor={nameInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+        <label
+          htmlFor={nameInputId}
+          className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
+        >
           Name <span className="text-red-400">*</span>
         </label>
         <input
@@ -43,7 +46,10 @@ export function IdentityStep({ name, description, instructions, showValidation, 
       </div>
 
       <div>
-        <label htmlFor={descriptionInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+        <label
+          htmlFor={descriptionInputId}
+          className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
+        >
           Description
         </label>
         <input
@@ -57,7 +63,10 @@ export function IdentityStep({ name, description, instructions, showValidation, 
       </div>
 
       <div>
-        <label htmlFor={instructionsInputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+        <label
+          htmlFor={instructionsInputId}
+          className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
+        >
           Instructions
         </label>
         <textarea
