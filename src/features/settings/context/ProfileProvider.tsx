@@ -57,11 +57,15 @@ export function ProfileProvider({ children }: ProfileProviderProps) {
       sections.push(personaContent);
     }
 
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
     // Add user profile
     const profileParts: string[] = [];
+
     if (settings.name) profileParts.push(`- **Name**: ${settings.name.trim()}`);
     if (settings.role) profileParts.push(`- **Role**: ${settings.role.trim()}`);
     if (settings.profile) profileParts.push(`- **About**: ${settings.profile.trim()}`);
+    profileParts.push(`- **Timezone**: ${timeZone}`);
 
     if (profileParts.length > 0) {
       sections.push(`## User Profile\n\n${profileParts.join("\n")}`);
