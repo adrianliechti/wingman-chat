@@ -16,26 +16,7 @@ The HTML must be fully self-contained:
 - No external stylesheets, fonts, or CDN links. Everything must work offline.
 - Use only modern browser APIs (no polyfills needed).
 
-## Visual Design
-
-Create a polished, professional report with:
-- A clean sans-serif design (use system font stack: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`)
-- A clear title and optional subtitle at the top
-- Sections with headings, narrative text, and data visualizations
-- Responsive layout that works at any width
-- Light theme with subtle colors — no garish palettes
-- Proper spacing and typography (comfortable line-height, readable font sizes)
-
-## Content Structure
-
-Organize the report with:
-1. **Executive Summary** — 2-3 sentence overview of key findings
-2. **Key Metrics** — highlight 3-5 important numbers/stats in a card layout if applicable
-3. **Analysis Sections** — deeper exploration with supporting data
-4. **Data Tables** — styled HTML tables for structured data (zebra striping, hover states)
-5. **Conclusions** — key takeaways
-
-Not every section is required — use what fits the source material.
+{{STYLE_SECTION}}
 
 ## Charts and Visualizations
 
@@ -46,7 +27,7 @@ When data supports it, include inline SVG charts. Build them with raw SVG elemen
 - **Comparison charts** — grouped bars or stacked bars
 
 For each chart:
-- Use a consistent, professional color palette (blues, teals, grays with one accent)
+- Use a color palette consistent with the report style
 - Include axis labels, legends, and data labels
 - Add `<title>` elements for accessibility
 - Keep them simple and readable

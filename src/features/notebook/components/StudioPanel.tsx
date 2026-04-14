@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { getPodcastStyles, getSlideStyles } from "../hooks/useNotebook";
+import { getPodcastStyles, getReportStyles, getSlideStyles } from "../hooks/useNotebook";
 import type { NotebookOutput, NotebookSource, OutputType } from "../types/notebook";
 
 interface StudioPanelProps {
@@ -43,6 +43,7 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
   const menuRef = useRef<HTMLDivElement>(null);
   const slideStyles = getSlideStyles();
   const podcastStyles = getPodcastStyles();
+  const reportStyles = getReportStyles();
 
   const downloadOutput = async (output: NotebookOutput) => {
     const slug = output.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
@@ -69,8 +70,9 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
   }, []);
 
   const styleMenus: Partial<Record<OutputType, readonly { id: string; label: string }[]>> = {
-    "slides": slideStyles,
-    "podcast": podcastStyles,
+    slides: slideStyles,
+    podcast: podcastStyles,
+    report: reportStyles,
   };
 
   return (

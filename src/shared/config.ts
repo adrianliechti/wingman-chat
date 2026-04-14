@@ -119,9 +119,15 @@ interface CanvasPodcastConfig {
   voices?: string[];
 }
 
+interface CanvasReportConfig {
+  name: string;
+  prompt: string;
+}
+
 interface CanvasConfig {
   slides?: CanvasSlideConfig[];
   podcasts?: CanvasPodcastConfig[];
+  reports?: CanvasReportConfig[];
 }
 
 interface ConfigSchema {

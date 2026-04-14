@@ -19,6 +19,10 @@ import slideStyleDark from "../prompts/slide-style-dark.txt?raw";
 import slideStyleNature from "../prompts/slide-style-nature.txt?raw";
 import slideStyleSwiss from "../prompts/slide-style-swiss.txt?raw";
 import slideStyleWhiteboard from "../prompts/slide-style-whiteboard.txt?raw";
+import reportStyleDashboard from "../prompts/report-style-dashboard.txt?raw";
+import reportStyleExecutive from "../prompts/report-style-executive.txt?raw";
+import reportStyleMagazine from "../prompts/report-style-magazine.txt?raw";
+import reportStyleResearch from "../prompts/report-style-research.txt?raw";
 import studioAudioInstructions from "../prompts/studio-audio-overview.txt?raw";
 import studioInfographicInstructions from "../prompts/studio-infographic.txt?raw";
 import studioMindMapInstructions from "../prompts/studio-mind-map.txt?raw";
@@ -118,6 +122,7 @@ const STUDIO_PROMPTS: Record<OutputType, string> = {
 
 type SlideStyle = { id: string; label: string; prompt: string };
 type PodcastStyle = { id: string; label: string; prompt: string; voices: string[] };
+type ReportStyle = { id: string; label: string; prompt: string };
 
 const DEFAULT_SLIDE_STYLES: SlideStyle[] = [
   { id: "whiteboard", label: "Whiteboard", prompt: slideStyleWhiteboard },
@@ -174,10 +179,38 @@ function buildSlideInstructions(styleId: string): string {
     .replace("{{STYLE_SECTION}}", style.prompt);
 }
 
+const DEFAULT_REPORT_STYLES: ReportStyle[] = [
+  { id: "executive", label: "Executive", prompt: reportStyleExecutive },
+  { id: "dashboard", label: "Dashboard", prompt: reportStyleDashboard },
+  { id: "research", label: "Research", prompt: reportStyleResearch },
+  { id: "magazine", label: "Magazine", prompt: reportStyleMagazine },
+];
+
+export function getReportStyles(): ReportStyle[] {
+  const config = getConfig();
+  const reports = config.canvas?.reports;
+
+  if (reports && reports.length > 0) {
+    return reports.map((r) => ({
+      id: r.name.toLowerCase().replace(/\s+/g, "-"),
+      label: r.name,
+      prompt: r.prompt,
+    }));
+  }
+
+  return DEFAULT_REPORT_STYLES;
+}
+
 function buildAudioInstructions(styleId: string): string {
   const podcastStyles = getPodcastStyles();
   const style = podcastStyles.find((s) => s.id === styleId) ?? podcastStyles[0] ?? DEFAULT_PODCAST_STYLES[0];
   return studioAudioInstructions.replace("{{STYLE_SECTION}}", style.prompt);
+}
+
+function buildReportInstructions(styleId: string): string {
+  const reportStyles = getReportStyles();
+  const style = reportStyles.find((s) => s.id === styleId) ?? reportStyles[0] ?? DEFAULT_REPORT_STYLES[0];
+  return studioReportInstructions.replace("{{STYLE_SECTION}}", style.prompt);
 }
 
 const OUTPUT_TITLES: Record<OutputType, string> = {
@@ -513,7 +546,9 @@ export function useNotebook(notebookId?: string) {
           ? buildSlideInstructions(styleId ?? "whiteboard")
           : type === "podcast"
             ? buildAudioInstructions(styleId ?? "overview")
-            : STUDIO_PROMPTS[type];
+            : type === "report"
+              ? buildReportInstructions(styleId ?? "executive")
+              : STUDIO_PROMPTS[type];
       const userMessage = {
         role: "user" as const,
         content: [

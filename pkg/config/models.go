@@ -142,6 +142,7 @@ type Background struct {
 type Canvas struct {
 	Slides   []CanvasSlide   `json:"slides,omitempty" yaml:"slides,omitempty"`
 	Podcasts []CanvasPodcast `json:"podcasts,omitempty" yaml:"podcasts,omitempty"`
+	Reports  []CanvasReport  `json:"reports,omitempty" yaml:"reports,omitempty"`
 }
 
 type CanvasSlide struct {
@@ -153,6 +154,11 @@ type CanvasPodcast struct {
 	Name   string   `json:"name,omitempty" yaml:"name,omitempty"`
 	Prompt string   `json:"prompt,omitempty" yaml:"prompt,omitempty"`
 	Voices []string `json:"voices,omitempty" yaml:"voices,omitempty"`
+}
+
+type CanvasReport struct {
+	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
+	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
 }
 
 type Bridge struct {
