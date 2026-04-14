@@ -116,21 +116,56 @@ const STUDIO_PROMPTS: Record<OutputType, string> = {
   "mind-map": studioMindMapInstructions,
 };
 
-export const SLIDE_STYLES = [
+const DEFAULT_SLIDE_STYLES: { id: string; label: string; prompt: string }[] = [
   { id: "whiteboard", label: "Whiteboard", prompt: slideStyleWhiteboard },
   { id: "consulting", label: "Consulting", prompt: slideStyleConsulting },
   { id: "dark", label: "Dark", prompt: slideStyleDark },
   { id: "swiss", label: "Swiss", prompt: slideStyleSwiss },
   { id: "nature", label: "Nature", prompt: slideStyleNature },
-] as const;
+];
 
-export const PODCAST_STYLES = [
+function getSlideStyles(): { id: string; label: string; prompt: string }[] {
+  const config = getConfig();
+  const slides = config.canvas?.slides;
+
+  if (slides && slides.length > 0) {
+    return slides.map((s) => ({
+      id: s.name.toLowerCase().replace(/\s+/g, "-"),
+      label: s.name,
+      prompt: s.prompt,
+    }));
+  }
+
+  return DEFAULT_SLIDE_STYLES;
+}
+
+export const SLIDE_STYLES = getSlideStyles();
+
+const DEFAULT_PODCAST_STYLES: { id: string; label: string; prompt: string; voices: string[] }[] = [
   { id: "overview", label: "Overview", prompt: podcastStyleOverview, voices: ["host"] },
   { id: "deep-dive", label: "Deep Dive", prompt: podcastStyleDeepDive, voices: ["analyst"] },
   { id: "briefing", label: "Briefing", prompt: podcastStyleBriefing, voices: ["narrator"] },
   { id: "story", label: "Story", prompt: podcastStyleStory, voices: ["storyteller"] },
   { id: "debate", label: "Debate", prompt: podcastStyleDebate, voices: ["host", "skeptic"] },
-] as const;
+];
+
+function getPodcastStyles(): { id: string; label: string; prompt: string; voices: string[] }[] {
+  const config = getConfig();
+  const podcasts = config.canvas?.podcasts;
+
+  if (podcasts && podcasts.length > 0) {
+    return podcasts.map((p) => ({
+      id: p.name.toLowerCase().replace(/\s+/g, "-"),
+      label: p.name,
+      prompt: p.prompt,
+      voices: p.voices ?? ["host"],
+    }));
+  }
+
+  return DEFAULT_PODCAST_STYLES;
+}
+
+export const PODCAST_STYLES = getPodcastStyles();
 
 function buildSlideInstructions(styleId: string): string {
   const style = SLIDE_STYLES.find((s) => s.id === styleId) ?? SLIDE_STYLES[0];

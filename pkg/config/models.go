@@ -34,6 +34,8 @@ type Config struct {
 	Telemetry *Telemetry `json:"telemetry,omitempty" yaml:"telemetry,omitempty"`
 
 	Backgrounds map[string][]Background `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
+
+	Canvas *Canvas `json:"canvas,omitempty" yaml:"canvas,omitempty"`
 }
 
 type Support struct {
@@ -135,6 +137,22 @@ type Telemetry struct{}
 
 type Background struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
+}
+
+type Canvas struct {
+	Slides   []CanvasSlide   `json:"slides,omitempty" yaml:"slides,omitempty"`
+	Podcasts []CanvasPodcast `json:"podcasts,omitempty" yaml:"podcasts,omitempty"`
+}
+
+type CanvasSlide struct {
+	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
+	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+}
+
+type CanvasPodcast struct {
+	Name   string   `json:"name,omitempty" yaml:"name,omitempty"`
+	Prompt string   `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+	Voices []string `json:"voices,omitempty" yaml:"voices,omitempty"`
 }
 
 type Bridge struct {
