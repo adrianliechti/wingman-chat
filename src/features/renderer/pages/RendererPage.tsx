@@ -433,7 +433,7 @@ export function RendererPage() {
         )}
 
         {/* Main content — centered on full page width */}
-        <div className="flex-1 flex flex-col items-center min-h-0 p-4 pt-16 relative">
+        <div className={`flex-1 flex flex-col items-center min-h-0 p-4 pt-16 relative ${images.length > 0 ? "md:px-24" : ""}`}>
           {selectedImage ? (
             /* Image viewer — centered in space above the refine input */
             <div className="flex items-center justify-center flex-1 min-h-0 pb-24 w-full">
@@ -508,6 +508,7 @@ export function RendererPage() {
                 placeholder="Generate something new..."
                 disabled={isGenerating}
                 autoFocus
+                className="max-w-4xl"
               />
             </div>
           )}
@@ -534,7 +535,7 @@ export function RendererPage() {
                 onSelectStyle={setSelectedStyle}
                 placeholder="Refine the selected image..."
                 disabled={isGenerating}
-                className="pointer-events-auto"
+                className="pointer-events-auto max-w-4xl"
               />
             </div>
           )}

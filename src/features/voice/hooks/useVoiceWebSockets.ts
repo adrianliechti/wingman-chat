@@ -196,9 +196,17 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
             break;
 
           case "input_audio_buffer.speech_stopped":
-            console.log("User stopped speaking, audio playback can resume");
-            // reset track ID so that subsequent add16BitPCM restarts playback
+            console.log("User stopped speaking");
+            break;
+
+          case "response.created":
+            // Reset track ID and clear interrupt state so the new response's
+            // audio deltas are accepted. This must happen here — not on
+            // speech_stopped — because deltas arriving between speech_started
+            // and response.created still belong to the old (cancelled) response
+            // and should remain blocked by the interrupted trackId.
             trackIdRef.current = crypto.randomUUID();
+            wavPlayerRef.current?.clearInterrupts();
             break;
 
           case "conversation.item.input_audio_transcription.delta":

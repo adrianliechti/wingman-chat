@@ -105,7 +105,7 @@ export function RendererInput({
 
   return (
     <div
-      className={`flex flex-col rounded-2xl backdrop-blur-2xl shadow-2xl shadow-black/60 dark:shadow-black/80 border border-neutral-200/50 dark:border-neutral-900 bg-white/60 dark:bg-neutral-950/70 dark:ring-1 dark:ring-white/10 w-full max-w-2xl overflow-hidden ${className}`}
+      className={`flex flex-col rounded-2xl backdrop-blur-2xl shadow-2xl shadow-black/60 dark:shadow-black/80 border border-neutral-200/50 dark:border-neutral-900 bg-white/60 dark:bg-neutral-950/70 dark:ring-1 dark:ring-white/10 w-full overflow-hidden ${className}`}
     >
       {/* Reference images above text (like chat attachments) */}
       {(referenceImages.length > 0 || isLoadingFiles) && (
@@ -137,7 +137,7 @@ export function RendererInput({
       <div className="relative flex-1">
         <textarea
           ref={inputRef}
-          className="px-4 pt-4 pb-2 flex-1 max-h-[40vh] overflow-y-auto min-h-12 resize-none bg-transparent text-sm text-neutral-800 dark:text-neutral-200 focus:outline-none whitespace-pre-wrap wrap-break-word"
+          className="block w-full px-4 pt-4 pb-2 max-h-[40vh] overflow-y-auto min-h-12 resize-none bg-transparent text-sm text-neutral-800 dark:text-neutral-200 focus:outline-none whitespace-pre-wrap wrap-break-word"
           style={{ scrollbarWidth: "thin", minHeight: "2.5rem", height: "auto" }}
           value={prompt}
           placeholder={placeholder}
