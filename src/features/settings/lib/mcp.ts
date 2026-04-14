@@ -301,11 +301,13 @@ export class MCPClient implements ToolProvider {
     }
 
     try {
+      const client = this.client;
+
       // Load instructions
-      this.instructions = this.client.getInstructions();
+      this.instructions = client.getInstructions();
 
       // Load tools
-      const toolsResponse = await this.client.listTools();
+      const toolsResponse = await client.listTools();
       const tools = toolsResponse.tools || [];
       this.toolDefinitions = new Map(tools.map((tool) => [tool.name, tool]));
 
@@ -322,7 +324,9 @@ export class MCPClient implements ToolProvider {
             parameters: tool.inputSchema || {},
 
             function: async (args: Record<string, unknown>, context?: ToolContext) => {
-              if (!this.client) {
+              const activeClient = this.client;
+
+              if (!activeClient) {
                 throw new Error("MCP client not connected");
               }
 
@@ -334,7 +338,7 @@ export class MCPClient implements ToolProvider {
                   tool.name,
                   { toolName: tool.name, serverAddress: this.url },
                   async () => {
-                    const result = await this.client!.callTool({
+                    const result = await activeClient.callTool({
                       name: tool.name,
                       arguments: args,
                     });
@@ -393,7 +397,18 @@ export class MCPClient implements ToolProvider {
     context: ToolContext,
     displayModeOptions?: DisplayModeOptions,
   ): Promise<void> {
-    const renderTarget = await context.render!();
+    const render = context.render;
+    const client = this.client;
+
+    if (!render) {
+      throw new Error("MCP host does not support rendering app UIs");
+    }
+
+    if (!client) {
+      throw new Error("MCP client not connected");
+    }
+
+    const renderTarget = await render();
     const { iframe } = renderTarget;
     const toolDefinition = this.toolDefinitions.get(toolName);
 
@@ -401,15 +416,15 @@ export class MCPClient implements ToolProvider {
       throw new Error(`MCP tool definition not found for ${toolName}`);
     }
 
+    const iframeWindow = iframe.contentWindow;
+    if (!iframeWindow) {
+      throw new Error(`MCP iframe content window unavailable for ${toolName}`);
+    }
+
     const bridge = new AppBridge(
-      this.client!,
+      client,
       HOST_INFO,
-      buildHostCapabilities(
-        resource.meta,
-        this.client!.getServerCapabilities(),
-        !!context.sendMessage,
-        !!context.setContext,
-      ),
+      buildHostCapabilities(resource.meta, client.getServerCapabilities(), !!context.sendMessage, !!context.setContext),
       { hostContext: buildHostContext(toolDefinition, iframe, displayModeOptions?.displayMode) },
     );
 
@@ -433,7 +448,7 @@ export class MCPClient implements ToolProvider {
       }
     });
 
-    const transport = new PostMessageTransport(iframe.contentWindow!, iframe.contentWindow!);
+    const transport = new PostMessageTransport(iframeWindow, iframeWindow);
 
     bridge.onsandboxready = () => {
       bridge
@@ -641,7 +656,9 @@ export class MCPClient implements ToolProvider {
   }
 
   private async loadUIResources(tools: MCPTool[]): Promise<void> {
-    if (!this.client) {
+    const client = this.client;
+
+    if (!client) {
       return;
     }
 
@@ -669,7 +686,7 @@ export class MCPClient implements ToolProvider {
     await Promise.all(
       Array.from(uriToTools.entries()).map(async ([uri, toolNames]) => {
         try {
-          const result = await this.client!.readResource({ uri });
+          const result = await client.readResource({ uri });
           const content = result.contents.find(
             (entry) => entry.mimeType === RESOURCE_MIME_TYPE && entry.uri?.startsWith("ui://"),
           );

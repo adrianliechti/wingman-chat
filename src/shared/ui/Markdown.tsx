@@ -1,27 +1,26 @@
-import { memo, useDeferredValue, useEffect, useRef, useState } from "react";
-import { Fragment, jsx, jsxs } from "react/jsx-runtime";
-import { unified } from "unified";
-import rehypeReact from "rehype-react";
 import type { Components } from "hast-util-to-jsx-runtime";
-import remarkParse from "remark-parse";
-import remarkRehype from "remark-rehype";
-import remarkGfm from "remark-gfm";
+import katex from "katex";
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+import rehypeKatex from "rehype-katex";
+import rehypeReact from "rehype-react";
 import remarkBreaks from "remark-breaks";
 import remarkGemoji from "remark-gemoji";
+import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import katex from "katex";
+import remarkParse from "remark-parse";
+import remarkRehype from "remark-rehype";
+import { unified } from "unified";
 import "katex/dist/katex.min.css";
-import rehypeNotoEmoji from "@/shared/lib/rehype-noto-emoji";
-import { MermaidRenderer } from "./renderers/MermaidRenderer";
-import { CodeRenderer } from "./CodeRenderer";
-import { HtmlRenderer } from "./renderers/HtmlRenderer";
-import { CsvRenderer } from "./renderers/CsvRenderer";
-import { SvgRenderer } from "./renderers/SvgRenderer";
-import { MarkdownRenderer } from "./renderers/MarkdownRenderer";
-import { MediaPlayer } from "./MediaPlayer";
-import { isAudioUrl, isVideoUrl } from "@/shared/lib/utils";
 import type { ReactNode } from "react";
+import rehypeNotoEmoji from "@/shared/lib/rehype-noto-emoji";
+import { isAudioUrl, isVideoUrl } from "@/shared/lib/utils";
+import { CodeRenderer } from "./CodeRenderer";
+import { MediaPlayer } from "./MediaPlayer";
+import { CsvRenderer } from "./renderers/CsvRenderer";
+import { HtmlRenderer } from "./renderers/HtmlRenderer";
+import { MarkdownRenderer } from "./renderers/MarkdownRenderer";
+import { SvgRenderer } from "./renderers/SvgRenderer";
 
 const markdownLinkClassName =
   "text-sky-700 dark:text-sky-300 underline decoration-2 underline-offset-3 decoration-sky-500/60 dark:decoration-sky-400/70 hover:text-sky-800 dark:hover:text-sky-200 hover:decoration-current focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50";
@@ -61,312 +60,313 @@ const extractText = (node: ReactNode): string => {
   return "";
 };
 
-const components: Partial<Components> = {
-  pre: ({ children }) => {
-    return <>{children}</>;
-  },
-  input: ({ type, checked, ...props }) => {
-    if (type === "checkbox") {
-      return (
-        <svg
-          className={`task-checkbox${checked ? " checked" : ""}`}
-          viewBox="0 0 16 16"
-          fill="none"
-          role="checkbox"
-          aria-checked={checked}
-          {...props}
-        >
-          <rect x="1" y="1" width="14" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
-          {checked && (
-            <path
-              d="M4.5 8L7 10.5L11.5 5.5"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          )}
-        </svg>
-      );
-    }
-    return <input type={type} checked={checked} {...props} />;
-  },
-  li: ({ children, className, ...props }) => {
-    const isTask = typeof className === "string" && className.includes("task-list-item");
-    return (
-      <li className={`py-1 ml-0 ${isTask ? "task-list-item" : ""}`} {...props}>
-        {children}
-      </li>
-    );
-  },
-  ul: ({ children, className, ...props }) => {
-    const isTaskList = typeof className === "string" && className.includes("contains-task-list");
-    return (
-      <ul className={isTaskList ? "task-list ml-0 pl-0" : "custom-list ml-5 pl-0"} {...props}>
-        {children}
-      </ul>
-    );
-  },
-  ol: ({ children, ...props }) => {
-    return (
-      <ol className="list-decimal list-outside ml-6 pl-0" {...props}>
-        {children}
-      </ol>
-    );
-  },
-  strong: ({ children, ...props }) => {
-    return (
-      <span className="font-semibold" {...props}>
-        {children}
-      </span>
-    );
-  },
-  a: ({ children, href, ...props }) => {
-    let url = href || "";
-    const internalHash = getInternalHash(url);
+function LatexRenderer({ code, filename }: { code: string; filename?: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [failed, setFailed] = useState(false);
 
-    if (url && !url.startsWith("http") && !url.startsWith("#")) {
-      url = `https://${url}`;
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return;
     }
 
-    // Check if this is an audio link
-    if (isAudioUrl(url)) {
+    try {
+      katex.render(code, container, {
+        displayMode: true,
+        throwOnError: false,
+        strict: "ignore",
+        errorColor: "transparent",
+        trust: true,
+        fleqn: false,
+      });
+      setFailed(false);
+    } catch (error) {
+      console.warn("KaTeX rendering failed:", error);
+      setFailed(true);
+    }
+  }, [code]);
+
+  if (failed) {
+    return <CodeRenderer code={code} language="latex" name={filename} />;
+  }
+
+  return (
+    <div className="my-4">
+      {filename && <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-2 font-mono">{filename}</div>}
+      <div ref={containerRef} className="overflow-x-auto" />
+    </div>
+  );
+}
+
+function createComponents(scopeId: string, isStreaming: boolean): Partial<Components> {
+  let blockIndex = 0;
+
+  return {
+    pre: ({ children }) => {
+      return <>{children}</>;
+    },
+    input: ({ type, checked, className, ...props }) => {
+      if (type === "checkbox") {
+        return (
+          <input
+            type="checkbox"
+            checked={checked}
+            readOnly
+            disabled
+            className={`${className ?? ""} task-checkbox${checked ? " checked" : ""}`.trim()}
+            {...props}
+          />
+        );
+      }
+      return <input type={type} checked={checked} className={className} {...props} />;
+    },
+    li: ({ children, className, ...props }) => {
+      const isTask = typeof className === "string" && className.includes("task-list-item");
       return (
-        <MediaPlayer url={url} type="audio">
+        <li className={`py-1 ml-0 ${isTask ? "task-list-item" : ""}`} {...props}>
           {children}
-        </MediaPlayer>
+        </li>
       );
-    }
-
-    // Check if this is a video link
-    if (isVideoUrl(url)) {
+    },
+    ul: ({ children, className, ...props }) => {
+      const isTaskList = typeof className === "string" && className.includes("contains-task-list");
       return (
-        <MediaPlayer url={url} type="video">
+        <ul className={isTaskList ? "task-list ml-0 pl-0" : "custom-list ml-5 pl-0"} {...props}>
           {children}
-        </MediaPlayer>
+        </ul>
       );
-    }
-
-    // Anchor links scroll within the page
-    if (internalHash) {
+    },
+    ol: ({ children, ...props }) => {
       return (
-        <a
-          className={markdownLinkClassName}
-          href={`#${internalHash}`}
-          onClick={(e) => {
-            e.preventDefault();
-            document.getElementById(internalHash)?.scrollIntoView({ behavior: "smooth" });
-          }}
-          {...props}
-        >
+        <ol className="list-decimal list-inside ml-6 pl-0" {...props}>
+          {children}
+        </ol>
+      );
+    },
+    strong: ({ children, ...props }) => {
+      return (
+        <span className="font-semibold" {...props}>
+          {children}
+        </span>
+      );
+    },
+    a: ({ children, href, ...props }) => {
+      let url = href || "";
+      const internalHash = getInternalHash(url);
+
+      if (url && !url.startsWith("http") && !url.startsWith("#")) {
+        url = `https://${url}`;
+      }
+
+      if (isAudioUrl(url)) {
+        return (
+          <MediaPlayer url={url} type="audio">
+            {children}
+          </MediaPlayer>
+        );
+      }
+
+      if (isVideoUrl(url)) {
+        return (
+          <MediaPlayer url={url} type="video">
+            {children}
+          </MediaPlayer>
+        );
+      }
+
+      if (internalHash) {
+        return (
+          <a
+            className={markdownLinkClassName}
+            href={`#${internalHash}`}
+            onClick={(e) => {
+              e.preventDefault();
+              document.getElementById(internalHash)?.scrollIntoView({ behavior: "smooth" });
+            }}
+            {...props}
+          >
+            {children}
+          </a>
+        );
+      }
+
+      return (
+        <a className={markdownLinkClassName} href={url} target="_blank" rel="noreferrer noopener" {...props}>
           {children}
         </a>
       );
-    }
-
-    return (
-      <a className={markdownLinkClassName} href={url} target="_blank" rel="noreferrer noopener" {...props}>
-        {children}
-      </a>
-    );
-  },
-  h1: ({ children, ...props }) => {
-    return (
-      <h1 id={slugify(children)} className="text-3xl font-semibold mt-6 mb-2" {...props}>
-        {children}
-      </h1>
-    );
-  },
-  h2: ({ children, ...props }) => {
-    return (
-      <h2 id={slugify(children)} className="text-2xl font-semibold mt-6 mb-2" {...props}>
-        {children}
-      </h2>
-    );
-  },
-  h3: ({ children, ...props }) => {
-    return (
-      <h3 id={slugify(children)} className="text-xl font-semibold mt-6 mb-2" {...props}>
-        {children}
-      </h3>
-    );
-  },
-  h4: ({ children, ...props }) => {
-    return (
-      <h4 id={slugify(children)} className="text-lg font-semibold mt-6 mb-2" {...props}>
-        {children}
-      </h4>
-    );
-  },
-  h5: ({ children, ...props }) => {
-    return (
-      <h5 id={slugify(children)} className="text-base font-semibold mt-6 mb-2" {...props}>
-        {children}
-      </h5>
-    );
-  },
-  h6: ({ children, ...props }) => {
-    return (
-      <h6 id={slugify(children)} className="text-sm font-semibold mt-6 mb-2" {...props}>
-        {children}
-      </h6>
-    );
-  },
-  table: ({ children, ...props }) => {
-    return (
-      <div className="overflow-x-auto my-4">
-        <table className="w-full border-collapse border border-neutral-300 dark:border-neutral-700" {...props}>
-          {children}
-        </table>
-      </div>
-    );
-  },
-  thead: ({ children, ...props }) => {
-    return (
-      <thead className="bg-neutral-200 dark:bg-neutral-800" {...props}>
-        {children}
-      </thead>
-    );
-  },
-  tbody: ({ children, ...props }) => {
-    return <tbody {...props}>{children}</tbody>;
-  },
-  tr: ({ children, ...props }) => {
-    return (
-      <tr className="border-b border-neutral-300 dark:border-neutral-700" {...props}>
-        {children}
-      </tr>
-    );
-  },
-  th: ({ children, ...props }) => {
-    return (
-      <th
-        className="p-2 text-left font-semibold border-r last:border-r-0 border-neutral-300 dark:border-neutral-700"
-        {...props}
-      >
-        {children}
-      </th>
-    );
-  },
-  td: ({ children, ...props }) => {
-    return (
-      <td className="p-2 border-r last:border-r-0 border-neutral-300 dark:border-neutral-700" {...props}>
-        {children}
-      </td>
-    );
-  },
-  blockquote: ({ children, ...props }) => {
-    return (
-      <blockquote className="border-l-4 border-neutral-400 dark:border-neutral-600 pl-4 py-1 my-2 italic" {...props}>
-        {children}
-      </blockquote>
-    );
-  },
-  hr: ({ ...props }) => {
-    return <hr className="my-4 border-neutral-300 dark:border-neutral-700" {...props} />;
-  },
-  img: ({ src, alt, ...props }) => {
-    return <img src={src} alt={alt || "Image"} className="max-h-60 my-2 rounded-md" loading="lazy" {...props} />;
-  },
-  code({ children, className, ...rest }) {
-    const match = /language-(\w+)/.exec(className || "");
-
-    // If no match but children contains newlines, it's likely a code block without language
-    const text = extractText(children).replace(/\n$/, "");
-    const isMultiLine = text.includes("\n");
-
-    // Inline code (no language specified and single line)
-    if (!match && !isMultiLine) {
+    },
+    h1: ({ children, ...props }) => {
       return (
-        <code
-          {...rest}
-          className={`${className || ""} bg-neutral-200 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-sm font-mono`}
-          children={children}
+        <h1 id={slugify(children)} className="text-3xl font-semibold mt-6 mb-2" {...props}>
+          {children}
+        </h1>
+      );
+    },
+    h2: ({ children, ...props }) => {
+      return (
+        <h2 id={slugify(children)} className="text-2xl font-semibold mt-6 mb-2" {...props}>
+          {children}
+        </h2>
+      );
+    },
+    h3: ({ children, ...props }) => {
+      return (
+        <h3 id={slugify(children)} className="text-xl font-semibold mt-6 mb-2" {...props}>
+          {children}
+        </h3>
+      );
+    },
+    h4: ({ children, ...props }) => {
+      return (
+        <h4 id={slugify(children)} className="text-lg font-semibold mt-6 mb-2" {...props}>
+          {children}
+        </h4>
+      );
+    },
+    h5: ({ children, ...props }) => {
+      return (
+        <h5 id={slugify(children)} className="text-base font-semibold mt-6 mb-2" {...props}>
+          {children}
+        </h5>
+      );
+    },
+    h6: ({ children, ...props }) => {
+      return (
+        <h6 id={slugify(children)} className="text-sm font-semibold mt-6 mb-2" {...props}>
+          {children}
+        </h6>
+      );
+    },
+    table: ({ children, ...props }) => {
+      return (
+        <div className="overflow-x-auto my-4">
+          <table className="w-full border-collapse border border-neutral-300 dark:border-neutral-700" {...props}>
+            {children}
+          </table>
+        </div>
+      );
+    },
+    thead: ({ children, ...props }) => {
+      return (
+        <thead className="bg-neutral-200 dark:bg-neutral-800" {...props}>
+          {children}
+        </thead>
+      );
+    },
+    tbody: ({ children, ...props }) => {
+      return <tbody {...props}>{children}</tbody>;
+    },
+    tr: ({ children, ...props }) => {
+      return (
+        <tr className="border-b border-neutral-300 dark:border-neutral-700" {...props}>
+          {children}
+        </tr>
+      );
+    },
+    th: ({ children, ...props }) => {
+      return (
+        <th
+          className="p-2 text-left font-semibold border-r last:border-r-0 border-neutral-300 dark:border-neutral-700"
+          {...props}
+        >
+          {children}
+        </th>
+      );
+    },
+    td: ({ children, ...props }) => {
+      return (
+        <td className="p-2 border-r last:border-r-0 border-neutral-300 dark:border-neutral-700" {...props}>
+          {children}
+        </td>
+      );
+    },
+    blockquote: ({ children, ...props }) => {
+      return (
+        <blockquote className="border-l-4 border-neutral-400 dark:border-neutral-600 pl-4 py-1 my-2 italic" {...props}>
+          {children}
+        </blockquote>
+      );
+    },
+    hr: ({ ...props }) => {
+      return <hr className="my-4 border-neutral-300 dark:border-neutral-700" {...props} />;
+    },
+    img: ({ src, alt, ...props }) => {
+      return <img src={src} alt={alt || "Image"} className="max-h-60 my-2 rounded-md" loading="lazy" {...props} />;
+    },
+    code({ children, className, ...rest }) {
+      const match = /language-(\w+)/.exec(className || "");
+      const text = extractText(children).replace(/\n$/, "");
+      const isMultiLine = text.includes("\n");
+
+      if (!match && !isMultiLine) {
+        return (
+          <code
+            {...rest}
+            className={`${className || ""} bg-neutral-200 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-sm font-mono`}
+          >
+            {children}
+          </code>
+        );
+      }
+
+      const blockId = `${scopeId}:code:${blockIndex++}`;
+
+      if (!match) {
+        return <CodeRenderer key={blockId} code={text} language="text" blockId={blockId} isStreaming={isStreaming} />;
+      }
+
+      const language = match[1].toLowerCase();
+
+      if (language === "latex" || language === "tex" || language === "math" || language === "katex") {
+        const filename = extractFilename(text);
+        return <LatexRenderer code={text} filename={filename} />;
+      }
+
+      if (language === "svg") {
+        return <SvgRenderer svg={text} language={language} />;
+      }
+
+      if (language === "html" || language === "htm") {
+        return <HtmlRenderer html={text} language={language} />;
+      }
+
+      if (language === "csv" || language === "tsv") {
+        return <CsvRenderer csv={text} language={language} />;
+      }
+
+      if (language === "undefined" || language === "text" || language === "plain") {
+        return <CodeRenderer key={blockId} code={text} language="text" blockId={blockId} isStreaming={isStreaming} />;
+      }
+
+      if (language === "markdown" || language === "md") {
+        return <MarkdownRenderer content={text} language={language} />;
+      }
+
+      const filename = extractFilename(text);
+      return (
+        <CodeRenderer
+          key={blockId}
+          code={text}
+          language={language}
+          name={filename}
+          blockId={blockId}
+          isStreaming={isStreaming}
         />
       );
-    }
-
-    // Code block without language - render as plain text
-    if (!match) {
-      return <CodeRenderer code={text} language="text" />;
-    }
-
-    const language = match[1].toLowerCase();
-
-    if (language === "latex" || language === "tex" || language === "math" || language === "katex") {
-      // Extract filename if present (e.g., % filepath: navier-stokes.tex)
-      const filename = extractFilename(text);
-
-      try {
-        // Render LaTeX using KaTeX in display mode
-        const html = katex.renderToString(text, {
-          displayMode: true,
-          throwOnError: false,
-          strict: "ignore",
-          errorColor: "transparent",
-          trust: true,
-          fleqn: false,
-        });
-
-        return (
-          <div className="my-4">
-            {filename && (
-              <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-2 font-mono">{filename}</div>
-            )}
-            <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: html }} />
-          </div>
-        );
-      } catch (error) {
-        // If KaTeX fails, fall back to code renderer
-        console.warn("KaTeX rendering failed:", error);
-        return <CodeRenderer code={text} language="latex" name={filename} />;
-      }
-    }
-
-    if (language === "mermaid" || language === "mmd") {
-      return <MermaidRenderer chart={text} language={language} />;
-    }
-
-    if (language === "svg") {
-      return <SvgRenderer svg={text} language={language} />;
-    }
-
-    if (language === "html" || language === "htm") {
-      return <HtmlRenderer html={text} language={language} />;
-    }
-
-    if (language === "csv" || language === "tsv") {
-      return <CsvRenderer csv={text} language={language} />;
-    }
-
-    // Plain text languages - render as text code block
-    if (language === "undefined" || language === "text" || language === "plain") {
-      return <CodeRenderer code={text} language="text" />;
-    }
-
-    // Markdown code blocks - render content as markdown
-    if (language === "markdown" || language === "md") {
-      return <MarkdownRenderer content={text} language={language} />;
-    }
-
-    // Extract filename from code if present
-    const filename = extractFilename(text);
-
-    // Use CodeRenderer for all other code blocks
-    return <CodeRenderer code={text} language={language} name={filename} />;
-  },
-};
+    },
+  };
+}
 
 const katexPluginOptions: Parameters<typeof rehypeKatex>[0] = {
   strict: "ignore",
   errorColor: "transparent",
 };
 
-const rehypeReactOptions: Parameters<typeof rehypeReact>[0] = {
+const baseRehypeReactOptions: Parameters<typeof rehypeReact>[0] = {
   Fragment,
   jsx,
   jsxs,
-  components,
   ignoreInvalidStyle: true,
   passKeys: true,
   passNode: true,
@@ -479,28 +479,40 @@ const preprocessMarkdown = (content: string, isStreaming = false): string => {
   return processedContent;
 };
 
-// Build the processor once at module scope.
-// Disable single $ math to avoid conflicts with currency ($100, R$50, etc.)
-const processor = unified()
-  .use(remarkParse)
-  .use(remarkGfm)
-  .use(remarkBreaks)
-  .use(remarkGemoji)
-  .use(remarkMath, { singleDollarTextMath: false })
-  .use(remarkRehype, { allowDangerousHtml: true })
-  .use(rehypeKatex, katexPluginOptions)
-  .use(rehypeNotoEmoji)
-  .use(rehypeReact, rehypeReactOptions);
+function createMarkdownProcessor(scopeId: string, isStreaming: boolean) {
+  return unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(remarkBreaks)
+    .use(remarkGemoji)
+    .use(remarkMath, { singleDollarTextMath: false })
+    .use(remarkRehype, { allowDangerousHtml: true })
+    .use(rehypeKatex, katexPluginOptions)
+    .use(rehypeNotoEmoji)
+    .use(rehypeReact, { ...baseRehypeReactOptions, components: createComponents(scopeId, isStreaming) });
+}
 
 type MarkdownProps = {
   children: string;
   isStreaming?: boolean;
 };
 
+let markdownInstanceCounter = 0;
+
 const NonMemoizedMarkdown = ({ children, isStreaming = false }: MarkdownProps) => {
   const [throttled, setThrottled] = useState(children);
   const lastFlushRef = useRef(0);
   const timerRef = useRef<number>(undefined);
+  const scopeIdRef = useRef<string | null>(null);
+
+  if (!scopeIdRef.current) {
+    scopeIdRef.current = `markdown-${markdownInstanceCounter++}`;
+  }
+
+  const processor = useMemo(
+    () => createMarkdownProcessor(scopeIdRef.current ?? "markdown", isStreaming),
+    [isStreaming],
+  );
 
   useEffect(() => {
     if (!isStreaming) {

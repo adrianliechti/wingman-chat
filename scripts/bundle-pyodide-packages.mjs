@@ -189,6 +189,7 @@ async function bundlePyodideBuiltins() {
     for (const dep of pkg.depends || []) collect(dep);
   }
   PYODIDE_BUILTIN_TARGETS.forEach(collect);
+  const expectedWheelFiles = new Set();
 
   fs.mkdirSync(PYODIDE_OUTPUT_DIR, { recursive: true });
 
@@ -196,6 +197,7 @@ async function bundlePyodideBuiltins() {
   let cached = 0;
   for (const name of [...allPkgs].sort()) {
     const pkg = lock.packages[name];
+    expectedWheelFiles.add(pkg.file_name);
     const dest = path.join(PYODIDE_OUTPUT_DIR, pkg.file_name);
 
     if (fs.existsSync(dest)) {
@@ -211,6 +213,7 @@ async function bundlePyodideBuiltins() {
   }
 
   console.log(`  ${allPkgs.size} packages resolved (${downloaded} downloaded, ${cached} cached)`);
+  return expectedWheelFiles;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,9 +225,11 @@ async function bundlePypiPackages() {
 
   fs.mkdirSync(PYPI_OUTPUT_DIR, { recursive: true });
   const manifest = {};
+  const expectedWheelFiles = new Set();
 
   for (const pkg of PYPI_PACKAGES) {
     const { url, filename, version } = await getLatestWheel(pkg);
+    expectedWheelFiles.add(filename);
     const dest = path.join(PYPI_OUTPUT_DIR, filename);
 
     if (fs.existsSync(dest)) {
@@ -238,9 +243,21 @@ async function bundlePypiPackages() {
     manifest[pkg] = filename;
   }
 
-  fs.writeFileSync(path.join(PYPI_OUTPUT_DIR, "pypi-manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
+  fs.writeFileSync(path.join(PYPI_OUTPUT_DIR, "pypi-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
   console.log("  Manifest written to", path.join(PYPI_OUTPUT_DIR, "pypi-manifest.json"));
+  return expectedWheelFiles;
+}
+
+function pruneUnexpectedWheelFiles(expectedWheelFiles) {
+  const staleWheelFiles = fs
+    .readdirSync(PYODIDE_OUTPUT_DIR)
+    .filter((file) => file.endsWith(".whl") && !expectedWheelFiles.has(file));
+
+  for (const file of staleWheelFiles) {
+    fs.unlinkSync(path.join(PYODIDE_OUTPUT_DIR, file));
+    console.log(`  - removed stale wheel ${file}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -288,8 +305,9 @@ async function main() {
     }
   }
 
-  await bundlePyodideBuiltins();
-  await bundlePypiPackages();
+  const builtinWheelFiles = await bundlePyodideBuiltins();
+  const pypiWheelFiles = await bundlePypiPackages();
+  pruneUnexpectedWheelFiles(new Set([...builtinWheelFiles, ...pypiWheelFiles]));
   console.log("Done.");
 }
 

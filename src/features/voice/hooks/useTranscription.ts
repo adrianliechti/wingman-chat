@@ -1,7 +1,8 @@
-import { useState, useCallback, useRef } from "react";
-import { getConfig } from "@/shared/config";
+import { useCallback, useRef, useState } from "react";
 import { AudioRecorder } from "@/features/voice/lib/AudioRecorder";
-import { pcm16ToWav, mergePcm16Chunks } from "@/features/voice/lib/audio";
+import { mergePcm16Chunks, pcm16ToWav } from "@/features/voice/lib/audio";
+import { getConfig } from "@/shared/config";
+import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 
 export interface UseTranscriptionReturn {
   canTranscribe: boolean;
@@ -14,6 +15,7 @@ export function useTranscription(): UseTranscriptionReturn {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const audioRecorderRef = useRef<AudioRecorder | null>(null);
   const pcmChunksRef = useRef<Int16Array[]>([]);
+  const { inputDeviceId } = useAudioDevices();
 
   // Check if transcription is available
   const config = getConfig();
@@ -33,7 +35,7 @@ export function useTranscription(): UseTranscriptionReturn {
       pcmChunksRef.current = [];
 
       // Create and start AudioRecorder
-      const recorder = new AudioRecorder({ sampleRate: 24000 });
+      const recorder = new AudioRecorder({ sampleRate: 24000, deviceId: inputDeviceId });
       await recorder.begin();
       await recorder.record((chunk) => {
         pcmChunksRef.current.push(new Int16Array(chunk.mono));
@@ -44,7 +46,7 @@ export function useTranscription(): UseTranscriptionReturn {
     } catch (err) {
       console.error("Failed to start transcription:", err);
     }
-  }, [canTranscribe]);
+  }, [canTranscribe, inputDeviceId]);
 
   const stopTranscription = useCallback(async (): Promise<string> => {
     const recorder = audioRecorderRef.current;

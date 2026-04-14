@@ -4,13 +4,12 @@ export { ChatInputAttachments } from "./components/ChatInputAttachments";
 export { ChatInputSuggestions } from "./components/ChatInputSuggestions";
 export { ChatMessage } from "./components/ChatMessage";
 export { ChatSidebar } from "./components/ChatSidebar";
-
+export type { ChatContextType } from "./context/ChatContext";
 // Context
 export { ChatContext } from "./context/ChatContext";
-export type { ChatContextType } from "./context/ChatContext";
 export { ChatProvider } from "./context/ChatProvider";
-export { ScreenCaptureContext } from "./context/ScreenCaptureContext";
 export type { ScreenCaptureContextType } from "./context/ScreenCaptureContext";
+export { ScreenCaptureContext } from "./context/ScreenCaptureContext";
 export { ScreenCaptureProvider } from "./context/ScreenCaptureProvider";
 
 // Hooks

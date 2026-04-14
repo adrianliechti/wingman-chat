@@ -4,9 +4,10 @@
  * Transforms HTML content to use data URLs for virtual file references,
  * enabling iframes to access files from the artifact filesystem.
  */
-import { isDataUrlContent, normalizeArtifactReferencePath, textToDataUrl } from "@/shared/lib/artifactFiles";
-import { lookupContentType, getFileExt } from "@/shared/lib/utils";
+
 import type { FileSystem } from "@/features/artifacts/types/file";
+import { isDataUrlContent, normalizeArtifactReferencePath, textToDataUrl } from "@/shared/lib/artifactFiles";
+import { getFileExt, lookupContentType } from "@/shared/lib/utils";
 
 // Import the VFS runtime script as raw text
 import vfsRuntimeScript from "./vfs-runtime.js?raw";
@@ -139,7 +140,7 @@ export function transformHtmlForPreview(html: string, files: FileSystem): Transf
 
     const normalized = normalizeArtifactReferencePath(href);
     // Also try with leading slash since artifacts may be stored that way
-    const withSlash = "/" + normalized;
+    const withSlash = `/${normalized}`;
     const file = files[normalized] || files[href] || files[withSlash];
 
     if (file) {
@@ -214,11 +215,11 @@ ${vfsRuntimeScript}
 
   // Inject script after <head> or at start of document
   if (transformed.includes("<head>")) {
-    transformed = transformed.replace("<head>", "<head>" + vfsScript);
+    transformed = transformed.replace("<head>", `<head>${vfsScript}`);
   } else if (transformed.includes("<head ")) {
     transformed = transformed.replace(/<head\s[^>]*>/, (match) => match + vfsScript);
   } else if (transformed.includes("<body>")) {
-    transformed = transformed.replace("<body>", "<body>" + vfsScript);
+    transformed = transformed.replace("<body>", `<body>${vfsScript}`);
   } else if (transformed.includes("<body ")) {
     transformed = transformed.replace(/<body\s[^>]*>/, (match) => match + vfsScript);
   } else if (transformed.includes("<html>") || transformed.includes("<html ")) {

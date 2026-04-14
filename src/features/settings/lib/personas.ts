@@ -1,6 +1,6 @@
-import personaDefault from "@/prompts/persona_default.txt?raw";
 import personaCandid from "@/prompts/persona_candid.txt?raw";
 import personaCynical from "@/prompts/persona_cynical.txt?raw";
+import personaDefault from "@/prompts/persona_default.txt?raw";
 import personaEfficient from "@/prompts/persona_efficient.txt?raw";
 import personaFriendly from "@/prompts/persona_friendly.txt?raw";
 import personaNerdy from "@/prompts/persona_nerdy.txt?raw";

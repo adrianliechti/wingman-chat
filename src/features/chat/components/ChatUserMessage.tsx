@@ -1,14 +1,7 @@
 import { Pencil } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
-import type {
-  AudioContent,
-  Content,
-  FileContent,
-  ImageContent,
-  Message,
-  TextContent,
-} from "@/shared/types/chat";
+import type { AudioContent, Content, FileContent, ImageContent, Message, TextContent } from "@/shared/types/chat";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { CopyButton } from "@/shared/ui/CopyButton";
 import { ChatInputAttachments } from "./ChatInputAttachments";
@@ -19,12 +12,14 @@ type ChatUserMessageProps = {
   index: number;
   isResponding?: boolean;
   isLast?: boolean;
+  onGoToLatest?: () => void;
 };
 
 export const ChatUserMessage = memo(function ChatUserMessage({
   message,
   index,
   isResponding,
+  onGoToLatest,
 }: ChatUserMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
   // Get first text content only (user's typed message)
@@ -64,7 +59,18 @@ export const ChatUserMessage = memo(function ChatUserMessage({
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
-  }, [editContent]);
+  }, []);
+
+  const handleEditContentChange = (value: string) => {
+    setEditContent(value);
+
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+      }
+    });
+  };
 
   const handleStartEdit = () => {
     if (isResponding) return;
@@ -93,6 +99,8 @@ export const ChatUserMessage = memo(function ChatUserMessage({
     // Allow edit if there's text content OR attachments
     if ((editContent.trim() === "" && editAdditionalTextContent.length === 0 && editMediaContent.length === 0) || !chat)
       return;
+
+    onGoToLatest?.();
     setIsEditing(false);
 
     // Truncate history and send edited message, preserving additional text content (file attachments) and media
@@ -123,7 +131,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({
         {isEditing ? (
           <ChatMessageEditor
             editContent={editContent}
-            onEditContentChange={setEditContent}
+            onEditContentChange={handleEditContentChange}
             onKeyDown={handleKeyDown}
             textareaRef={textareaRef}
             editAdditionalTextContent={editAdditionalTextContent}

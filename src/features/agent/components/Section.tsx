@@ -32,11 +32,7 @@ export function Section({ title, isOpen, onOpenToggle, collapsible = true, heade
             <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{title}</span>
           </div>
         )}
-        {headerAction && (
-          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-            {headerAction}
-          </div>
-        )}
+        {headerAction && <div className="shrink-0">{headerAction}</div>}
       </div>
       <div
         className={`grid transition-all duration-200 ease-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}

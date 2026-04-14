@@ -1,16 +1,14 @@
 import { createRootRoute, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
+import { ChatPage } from "./features/chat/pages/ChatPage";
+import { NotebookPage } from "./features/notebook/pages/NotebookPage";
+import { RendererPage } from "./features/renderer/pages/RendererPage";
+import { OAuthCallbackPage } from "./features/settings/pages/OAuthCallbackPage";
+import { TranslatePage } from "./features/translate/pages/TranslatePage";
 import { getConfig } from "./shared/config";
 import { AppLayout } from "./shell/AppLayout";
-import { ChatPage } from "./features/chat/pages/ChatPage";
-import { WorkflowPage } from "./features/workflow/pages/WorkflowPage";
-import { TranslatePage } from "./features/translate/pages/TranslatePage";
-import { RendererPage } from "./features/renderer/pages/RendererPage";
-import { NotebookPage } from "./features/notebook/pages/NotebookPage";
-import { OAuthCallbackPage } from "./features/settings/pages/OAuthCallbackPage";
 
 const hashToRoute: Record<string, string> = {
   chat: "/chat",
-  flow: "/flow",
   translate: "/translate",
   renderer: "/renderer",
   research: "/notebook",
@@ -27,7 +25,7 @@ const appLayoutRoute = createRoute({
   component: AppLayout,
   beforeLoad: () => {
     const hash = window.location.hash;
-    if (hash && hash.startsWith("#")) {
+    if (hash?.startsWith("#")) {
       const page = hash.slice(1);
       const to = hashToRoute[page] ?? "/chat";
       history.replaceState(null, "", window.location.pathname + window.location.search);
@@ -63,16 +61,6 @@ const chatIdRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/chat/$chatId",
   component: ChatPage,
-});
-
-// Feature routes with config guards
-const flowRoute = createRoute({
-  getParentRoute: () => appLayoutRoute,
-  path: "/flow",
-  beforeLoad: () => {
-    if (!getConfig().workflow) throw redirect({ to: "/chat" });
-  },
-  component: WorkflowPage,
 });
 
 const translateRoute = createRoute({
@@ -124,7 +112,6 @@ const routeTree = rootRoute.addChildren([
     indexRoute,
     chatRoute,
     chatIdRoute,
-    flowRoute,
     translateRoute,
     rendererRoute,
     notebookRoute,

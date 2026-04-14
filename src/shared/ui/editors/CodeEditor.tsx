@@ -1,15 +1,25 @@
-import { useState, useEffect } from "react";
-import { codeToHtml } from "shiki";
+import { memo, useEffect, useMemo, useState } from "react";
+import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { useTheme } from "@/shell/hooks/useTheme";
+
+let shikiPromise: Promise<typeof import("shiki")> | null = null;
+function getShiki() {
+  if (!shikiPromise) shikiPromise = import("shiki");
+  return shikiPromise;
+}
 
 interface CodeEditorProps {
   content: string;
   language?: string;
 }
 
-export function CodeEditor({ content, language = "" }: CodeEditorProps) {
+export const CodeEditor = memo(function CodeEditor({ content, language = "" }: CodeEditorProps) {
   const [html, setHtml] = useState<string>("");
   const { isDark } = useTheme();
+  const renderedHtml = useMemo(
+    () => sanitizeHtmlToReact(html, { keyPrefix: `editor-${language}-${isDark}` }),
+    [html, isDark, language],
+  );
 
   // Highlight code when content changes
   useEffect(() => {
@@ -18,6 +28,8 @@ export function CodeEditor({ content, language = "" }: CodeEditorProps) {
     const highlight = async () => {
       try {
         const langId = language.toLowerCase();
+
+        const { codeToHtml } = await getShiki();
 
         const highlighted = await codeToHtml(content, {
           lang: langId || "text",
@@ -41,10 +53,9 @@ export function CodeEditor({ content, language = "" }: CodeEditorProps) {
 
   return (
     <div className="h-full relative">
-      {html && html.trim() ? (
+      {html?.trim() ? (
         <div
           className="h-full overflow-auto"
-          dangerouslySetInnerHTML={{ __html: html }}
           style={{
             margin: 0,
             padding: "1rem",
@@ -53,7 +64,9 @@ export function CodeEditor({ content, language = "" }: CodeEditorProps) {
             fontFamily: "Fira Code, Monaco, Cascadia Code, Roboto Mono, monospace",
             background: "transparent",
           }}
-        />
+        >
+          {renderedHtml}
+        </div>
       ) : (
         <pre className="text-sm text-gray-800 dark:text-neutral-300 whitespace-pre font-mono h-full overflow-auto p-4">
           <code>{content}</code>
@@ -61,4 +74,4 @@ export function CodeEditor({ content, language = "" }: CodeEditorProps) {
       )}
     </div>
   );
-}
+});

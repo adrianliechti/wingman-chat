@@ -91,16 +91,19 @@ registerProcessor('stream-processor', StreamProcessor);
 
 export interface AudioStreamPlayerOptions {
   sampleRate?: number;
+  sinkId?: string;
 }
 
 export class AudioStreamPlayer {
   private sampleRate: number;
+  private sinkId: string | undefined;
   private context: AudioContext | null = null;
   private workletNode: AudioWorkletNode | null = null;
-  private interruptedTrackIds: Set<string> = new Set();
+  private audioEl: HTMLAudioElement | null = null;
 
   constructor(options: AudioStreamPlayerOptions = {}) {
     this.sampleRate = options.sampleRate ?? 24000;
+    this.sinkId = options.sinkId;
   }
 
   /**
@@ -129,7 +132,29 @@ export class AudioStreamPlayer {
 
     // Create and connect the worklet node
     this.workletNode = new AudioWorkletNode(this.context, "stream-processor");
-    this.workletNode.connect(this.context.destination);
+
+    // Route to a specific output device via MediaStream + HTMLAudioElement,
+    // which has broader setSinkId support than AudioContext.setSinkId.
+    if (this.sinkId) {
+      const dest = this.context.createMediaStreamDestination();
+      this.workletNode.connect(dest);
+
+      const audio = new Audio();
+      audio.srcObject = dest.stream;
+
+      if ("setSinkId" in audio) {
+        try {
+          await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(this.sinkId);
+        } catch (err) {
+          console.warn("Failed to set output device, falling back to default:", err);
+        }
+      }
+
+      audio.play().catch(console.warn);
+      this.audioEl = audio;
+    } else {
+      this.workletNode.connect(this.context.destination);
+    }
   }
 
   /**
@@ -137,16 +162,9 @@ export class AudioStreamPlayer {
    */
   add16BitPCM(samples: Int16Array, trackId: string): void {
     if (!this.workletNode) {
-      console.warn("AudioStreamPlayer not connected");
       return;
     }
 
-    // If this track was interrupted, ignore
-    if (this.interruptedTrackIds.has(trackId)) {
-      return;
-    }
-
-    // Send samples to worklet
     this.workletNode.port.postMessage({
       event: "write",
       buffer: samples,
@@ -167,7 +185,6 @@ export class AudioStreamPlayer {
    * Clear interrupted track IDs to allow playback again
    */
   clearInterrupts(): void {
-    this.interruptedTrackIds.clear();
     if (this.workletNode) {
       this.workletNode.port.postMessage({ event: "clear" });
     }
@@ -177,6 +194,11 @@ export class AudioStreamPlayer {
    * Disconnect and clean up resources
    */
   disconnect(): void {
+    if (this.audioEl) {
+      this.audioEl.pause();
+      this.audioEl.srcObject = null;
+      this.audioEl = null;
+    }
     if (this.workletNode) {
       this.workletNode.disconnect();
       this.workletNode = null;

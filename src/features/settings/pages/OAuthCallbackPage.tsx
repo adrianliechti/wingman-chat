@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from "react";
 import { CheckCircle, XCircle } from "lucide-react";
+import { useEffect, useMemo } from "react";
 
 /**
  * Handles the OAuth redirect callback at /oauth/callback.

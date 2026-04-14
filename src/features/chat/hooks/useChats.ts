@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-
-import type { Chat } from "@/shared/types/chat";
-import * as opfs from "@/shared/lib/opfs";
-import type { StoredChat } from "@/shared/lib/opfs";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
+import type { StoredChat } from "@/shared/lib/opfs";
+import * as opfs from "@/shared/lib/opfs";
+import type { Chat } from "@/shared/types/chat";
 
 const COLLECTION = "chats";
 

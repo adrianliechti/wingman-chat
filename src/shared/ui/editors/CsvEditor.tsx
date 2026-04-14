@@ -1,13 +1,13 @@
-import { useRef, useMemo, useState } from "react";
 import {
-  useReactTable,
+  type ColumnDef,
+  flexRender,
   getCoreRowModel,
   getSortedRowModel,
-  flexRender,
-  type ColumnDef,
   type SortingState,
+  useReactTable,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useMemo, useRef, useState } from "react";
 
 interface CsvEditorProps {
   content: string;
@@ -163,19 +163,27 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
                       style={{ width: header.getSize(), flex: "none" }}
                       title={(header.column.columnDef.meta as { title: string } | undefined)?.title ?? ""}
                     >
-                      <span
-                        className={header.column.getCanSort() ? "cursor-pointer" : ""}
+                      <button
+                        type="button"
+                        className={`w-full text-left ${header.column.getCanSort() ? "cursor-pointer" : ""}`}
                         onClick={header.column.getToggleSortingHandler()}
+                        disabled={!header.column.getCanSort()}
                       >
                         {flexRender(header.column.columnDef.header, header.getContext())}
                         {{ asc: " ▲", desc: " ▼" }[header.column.getIsSorted() as string] ?? ""}
-                      </span>
-                      <div
+                      </button>
+                      <button
+                        type="button"
                         onMouseDown={header.getResizeHandler()}
                         onTouchStart={header.getResizeHandler()}
                         onDoubleClick={() => header.column.resetSize()}
-                        className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none opacity-0 group-hover:opacity-100 bg-gray-400 dark:bg-neutral-500 ${
-                          header.column.getIsResizing() ? "!opacity-100 bg-blue-500 dark:bg-blue-400" : ""
+                        aria-label={`Resize ${
+                          (header.column.columnDef.meta as { title: string } | undefined)?.title ?? header.id
+                        } column`}
+                        className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none ${
+                          header.column.getIsResizing()
+                            ? "opacity-100 bg-blue-500 dark:bg-blue-400"
+                            : "opacity-0 group-hover:opacity-100 bg-gray-400 dark:bg-neutral-500"
                         }`}
                       />
                     </th>

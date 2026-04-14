@@ -1,7 +1,7 @@
-import { useState, useMemo, useRef, useEffect, type Dispatch } from "react";
-import { Search, Check, Plus, X } from "lucide-react";
-import { useSkills } from "@/features/skills/hooks/useSkills";
+import { Check, Plus, Search, X } from "lucide-react";
+import { type Dispatch, useEffect, useMemo, useRef, useState } from "react";
 import { SkillCatalog } from "@/features/agent/components/SkillCatalog";
+import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { Skill } from "@/features/skills/lib/skillParser";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
@@ -110,7 +110,9 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
               >
                 <div
                   className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center ${
-                    isSelected ? "bg-neutral-800 dark:bg-neutral-200 border-neutral-800 dark:border-neutral-200 text-white dark:text-neutral-900" : "border-neutral-300 dark:border-neutral-600"
+                    isSelected
+                      ? "bg-neutral-800 dark:bg-neutral-200 border-neutral-800 dark:border-neutral-200 text-white dark:text-neutral-900"
+                      : "border-neutral-300 dark:border-neutral-600"
                   }`}
                 >
                   {isSelected && <Check size={10} />}

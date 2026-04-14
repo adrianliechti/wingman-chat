@@ -1,9 +1,9 @@
-import { useCallback, useMemo } from "react";
 import { Globe } from "lucide-react";
+import { useCallback, useMemo } from "react";
+import researchInstructionsText from "@/features/research/prompts/research.txt?raw";
+import searchInstructionsText from "@/features/research/prompts/search.txt?raw";
 import { getConfig } from "@/shared/config";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
-import searchInstructionsText from "@/features/research/prompts/search.txt?raw";
-import researchInstructionsText from "@/features/research/prompts/research.txt?raw";
 
 export function useInternetProvider(): ToolProvider | null {
   const config = getConfig();

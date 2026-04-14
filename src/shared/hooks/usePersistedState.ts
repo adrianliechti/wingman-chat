@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as opfs from "@/shared/lib/opfs";
 
 /**
@@ -13,9 +13,6 @@ export interface UsePersistedStateOptions<T> {
 
   /** Debounce delay in ms before saving (default: 0 = immediate) */
   debounceMs?: number;
-
-  /** Optional migration function from localStorage or other sources */
-  migrate?: () => T | undefined;
 
   /** Optional validation/transformation on load */
   onLoad?: (data: T) => T;
@@ -40,12 +37,13 @@ export interface UsePersistedStateReturn<T> {
 
 /**
  * Hook for persisting simple key-value state to OPFS.
- * Handles loading, saving, debouncing, and migration automatically.
+ * Handles loading, saving, and debouncing automatically.
  */
 export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UsePersistedStateReturn<T> {
-  const { key, defaultValue, debounceMs = 0, migrate, onLoad, onSave } = options;
+  const { key, defaultValue, debounceMs = 0, onLoad, onSave } = options;
 
   const [value, setValueInternal] = useState<T>(defaultValue);
+  const [saveSequence, setSaveSequence] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Refs to avoid stale closures in async callbacks
@@ -59,10 +57,8 @@ export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UseP
   // Store callbacks in refs to avoid re-triggering effects
   const onLoadRef = useRef(onLoad);
   const onSaveRef = useRef(onSave);
-  const migrateRef = useRef(migrate);
   onLoadRef.current = onLoad;
   onSaveRef.current = onSave;
-  migrateRef.current = migrate;
 
   // Save function using refs
   const save = useCallback(async () => {
@@ -82,24 +78,19 @@ export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UseP
     }
   }, [key]);
 
+  const setValue = useCallback<React.Dispatch<React.SetStateAction<T>>>((nextValue) => {
+    pendingSaveRef.current = true;
+    setSaveSequence((currentSequence) => currentSequence + 1);
+    setValueInternal(nextValue);
+  }, []);
+
   // Load from OPFS on mount
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
       try {
-        let data: T | undefined = await opfs.readJson<T>(key);
-
-        // Try migration if no data found
-        if (data === undefined && migrateRef.current) {
-          data = migrateRef.current();
-          if (data !== undefined) {
-            const toSave = onSaveRef.current ? onSaveRef.current(data) : data;
-            if (toSave !== undefined) {
-              await opfs.writeJson(key, toSave);
-            }
-          }
-        }
+        const data = await opfs.readJson<T>(key);
 
         if (!cancelled && data !== undefined) {
           const processed = onLoadRef.current ? onLoadRef.current(data) : data;
@@ -124,19 +115,23 @@ export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UseP
 
   // Debounced save effect
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || saveSequence === 0 || !pendingSaveRef.current) return;
 
-    pendingSaveRef.current = true;
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
 
     if (debounceMs > 0) {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-      saveTimeoutRef.current = setTimeout(save, debounceMs);
-    } else {
-      save();
+      saveTimeoutRef.current = setTimeout(() => {
+        saveTimeoutRef.current = null;
+        void save();
+      }, debounceMs);
+      return;
     }
-  }, [value, isLoaded, debounceMs, save]);
+
+    void save();
+  }, [debounceMs, isLoaded, save, saveSequence]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -161,5 +156,5 @@ export function usePersistedState<T>(options: UsePersistedStateOptions<T>): UseP
     await save();
   }, [save]);
 
-  return { value, setValue: setValueInternal, isLoaded, flush };
+  return { value, setValue, isLoaded, flush };
 }

@@ -1,17 +1,16 @@
-import { Fragment, useReducer, useMemo, useState, useCallback, useRef } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { X, Bot, Zap, Wrench, Folder, ClipboardCheck } from "lucide-react";
-import { getConfig } from "@/shared/config";
+import { Bot, ClipboardCheck, Folder, Wrench, X, Zap } from "lucide-react";
+import { Fragment, useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
-
-import { WizardStepIndicator, type StepDef } from "./WizardStepIndicator";
-import { WizardNavFooter } from "./WizardNavFooter";
+import { getConfig } from "@/shared/config";
 import { IdentityStep } from "./steps/IdentityStep";
-import { SkillsStep } from "./steps/SkillsStep";
-import { ToolsStep } from "./steps/ToolsStep";
 import { KnowledgeStep } from "./steps/KnowledgeStep";
 import { ReviewStep } from "./steps/ReviewStep";
+import { SkillsStep } from "./steps/SkillsStep";
+import { ToolsStep } from "./steps/ToolsStep";
+import { WizardNavFooter } from "./WizardNavFooter";
+import { type StepDef, WizardStepIndicator } from "./WizardStepIndicator";
 
 // ── State ──
 

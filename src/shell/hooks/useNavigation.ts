@@ -1,6 +1,6 @@
 import { useContext } from "react";
-import { NavigationContext } from "@/shell/context/NavigationContext";
 import type { NavigationContextType } from "@/shell/context/NavigationContext";
+import { NavigationContext } from "@/shell/context/NavigationContext";
 
 export function useNavigation(): NavigationContextType {
   const context = useContext(NavigationContext);

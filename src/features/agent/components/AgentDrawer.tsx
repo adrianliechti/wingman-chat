@@ -1,34 +1,34 @@
-import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Plus,
-  Folder,
-  X,
-  ChevronDown,
-  Check,
-  Edit,
-  Trash2,
-  PenLine,
-  MessageSquare,
-  Sparkles,
   Bot,
+  Check,
+  ChevronDown,
   Download,
+  Edit,
+  Folder,
+  MessageSquare,
+  PenLine,
+  Plus,
+  Sparkles,
+  Trash2,
   Upload,
+  X,
 } from "lucide-react";
-import { useAgents } from "@/features/agent/hooks/useAgents";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
+import { useAgents } from "@/features/agent/hooks/useAgents";
+import type { Agent } from "@/features/agent/types/agent";
 import {
   exportSingleAgentAsZip,
-  importAgentsFromZip,
   importAgentsFromLegacyJson,
+  importAgentsFromZip,
 } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
-import type { Agent } from "@/features/agent/types/agent";
-import { InstructionsSection } from "./InstructionsSection";
 import { FilesSection } from "./FilesSection";
-import { SkillsSection } from "./SkillsSection";
-import { ToolsSection } from "./ToolsSection";
+import { InstructionsSection } from "./InstructionsSection";
 import { MemorySection } from "./MemorySection";
 import { ModelSection } from "./ModelSection";
+import { SkillsSection } from "./SkillsSection";
+import { ToolsSection } from "./ToolsSection";
 import { AgentWizard } from "./wizard/AgentWizard";
 
 // ─── Agent details: sections ───
@@ -64,6 +64,7 @@ export function AgentDrawer() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const inlineEditInputRef = useRef<HTMLInputElement>(null);
 
   // Pending file uploads after wizard creation
   const pendingFilesRef = useRef<{ agentId: string; files: File[] } | null>(null);
@@ -104,6 +105,16 @@ export function AgentDrawer() {
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [isDropdownOpen, inlineEditingId]);
+
+  useEffect(() => {
+    if (!inlineEditingId) return;
+
+    const frame = requestAnimationFrame(() => {
+      inlineEditInputRef.current?.focus();
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [inlineEditingId]);
 
   const startInlineEdit = (agent: Agent) => {
     setInlineEditingId(agent.id);
@@ -173,7 +184,8 @@ export function AgentDrawer() {
           {isDropdownOpen && (
             <div className="absolute z-20 mt-1 w-full max-h-80 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100/80 dark:bg-neutral-800/80 p-1 backdrop-blur-xl">
               {/* None Option */}
-              <div
+              <button
+                type="button"
                 className="group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80 flex items-center gap-2"
                 onClick={() => handleAgentSelect(null)}
               >
@@ -181,7 +193,7 @@ export function AgentDrawer() {
                 <span className={`block truncate text-sm ${!currentAgent ? "font-semibold" : "font-normal"}`}>
                   None
                 </span>
-              </div>
+              </button>
 
               {/* Create New */}
               <div className="group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80">
@@ -215,11 +227,11 @@ export function AgentDrawer() {
                         {isEditing ? (
                           <div className="flex items-center gap-1 flex-1">
                             <input
+                              ref={inlineEditInputRef}
                               type="text"
                               value={editingName}
                               onChange={(e) => setEditingName(e.target.value)}
                               onKeyDown={handleInputKeyDown}
-                              autoFocus
                               className="flex-1 text-sm bg-transparent border-0 border-b border-slate-500 rounded-none px-1 py-0 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-slate-600 dark:focus:border-slate-400"
                               onClick={(e) => e.stopPropagation()}
                             />

@@ -4,7 +4,7 @@
  */
 
 import type { Client } from "@/shared/lib/client";
-import type { Message, Content, Tool } from "@/shared/types/chat";
+import type { Content, Message, Tool } from "@/shared/types/chat";
 
 /**
  * Run an LLM completion with tool support.

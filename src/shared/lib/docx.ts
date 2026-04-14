@@ -135,9 +135,10 @@ async function parseNumbering(zip: JSZip): Promise<NumberingInfo> {
     const numId = num.getAttribute("w:numId");
     const abstractNumIdEl = num.getElementsByTagName("w:abstractNumId")[0];
     const abstractNumId = abstractNumIdEl?.getAttribute("w:val");
+    const abstractNumLevels = abstractNumId ? abstractNums.get(abstractNumId) : undefined;
 
-    if (numId && abstractNumId && abstractNums.has(abstractNumId)) {
-      info.definitions.set(numId, abstractNums.get(abstractNumId)!);
+    if (numId && abstractNumLevels) {
+      info.definitions.set(numId, abstractNumLevels);
     }
   }
 
@@ -188,7 +189,11 @@ function parseParagraph(
       if (!listState.counters.has(numId)) {
         listState.counters.set(numId, []);
       }
-      const counters = listState.counters.get(numId)!;
+      let counters = listState.counters.get(numId);
+      if (!counters) {
+        counters = [];
+        listState.counters.set(numId, counters);
+      }
 
       // Ensure counter array is long enough
       while (counters.length <= ilvl) {
@@ -223,12 +228,12 @@ function parseParagraph(
 
   // Apply heading prefix
   if (headingLevel > 0 && headingLevel <= 6) {
-    return "#".repeat(headingLevel) + " " + textContent;
+    return `${"#".repeat(headingLevel)} ${textContent}`;
   }
 
   // Apply list formatting
   if (listPrefix) {
-    return listIndent + listPrefix + textContent;
+    return `${listIndent}${listPrefix}${textContent}`;
   }
 
   return textContent;
@@ -255,8 +260,6 @@ function extractTextContent(element: Element, relationships: Relationships): str
         parts.push(linkText);
       }
     } else if (tagName === "w:bookmarkStart" || tagName === "w:bookmarkEnd") {
-      // Skip bookmarks
-      continue;
     } else if (child.children.length > 0) {
       // Recursively process nested elements
       parts.push(extractTextContent(child, relationships));
@@ -303,16 +306,16 @@ function parseRun(r: Element): string {
 
   // Apply formatting (innermost to outermost)
   if (isCode) {
-    text = "`" + text + "`";
+    text = `\`${text}\``;
   }
   if (isStrike) {
-    text = "~~" + text + "~~";
+    text = `~~${text}~~`;
   }
   if (isItalic) {
-    text = "*" + text + "*";
+    text = `*${text}*`;
   }
   if (isBold) {
-    text = "**" + text + "**";
+    text = `**${text}**`;
   }
 
   return text;
@@ -391,15 +394,15 @@ function parseTable(tbl: Element, relationships: Relationships): string[] {
 
   // Header row (first row)
   const headerRow = tableData[0];
-  lines.push("| " + headerRow.map((cell) => escapeTableCell(cell)).join(" | ") + " |");
+  lines.push(`| ${headerRow.map((cell) => escapeTableCell(cell)).join(" | ")} |`);
 
   // Separator row
-  lines.push("| " + headerRow.map(() => "---").join(" | ") + " |");
+  lines.push(`| ${headerRow.map(() => "---").join(" | ")} |`);
 
   // Data rows
   for (let i = 1; i < tableData.length; i++) {
     const row = tableData[i];
-    lines.push("| " + row.map((cell) => escapeTableCell(cell)).join(" | ") + " |");
+    lines.push(`| ${row.map((cell) => escapeTableCell(cell)).join(" | ")} |`);
   }
 
   return lines;

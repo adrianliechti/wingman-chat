@@ -1,10 +1,9 @@
-import { useRef, useEffect } from "react";
-import { AudioStreamPlayer } from "@/features/voice/lib/AudioStreamPlayer";
+import { useEffect, useRef } from "react";
 import { AudioRecorder } from "@/features/voice/lib/AudioRecorder";
-import { float32ToPcm16 } from "@/features/voice/lib/audio";
+import { AudioStreamPlayer } from "@/features/voice/lib/AudioStreamPlayer";
 import { serializeToolResultForApi } from "@/shared/lib/utils";
+import type { AudioContent, FileContent, ImageContent, Message, TextContent, Tool } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
-import type { Message, Tool, TextContent, ImageContent, AudioContent, FileContent } from "@/shared/types/chat";
 
 export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: (text: string) => void) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -31,18 +30,20 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
     instructions?: string,
     messages?: Message[],
     tools?: Tool[],
+    inputDeviceId?: string,
+    outputDeviceId?: string,
   ) => {
     if (isActiveRef.current) return;
     isActiveRef.current = true;
 
     try {
       // Initialize AudioStreamPlayer for audio playback
-      const player = new AudioStreamPlayer({ sampleRate: 24000 });
+      const player = new AudioStreamPlayer({ sampleRate: 24000, sinkId: outputDeviceId });
       await player.connect();
       wavPlayerRef.current = player;
 
       // Initialize AudioRecorder for audio input
-      const recorder = new AudioRecorder({ sampleRate: 24000 });
+      const recorder = new AudioRecorder({ sampleRate: 24000, deviceId: inputDeviceId });
       await recorder.begin();
       wavRecorderRef.current = recorder;
 
@@ -145,39 +146,18 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
         console.log("Starting audio recording after WebSocket connection...");
         recorder
           .record((data) => {
-            // Check if session is still active first
-            if (!isActiveRef.current) {
-              return;
+            if (!isActiveRef.current || !data.mono) return;
+
+            try {
+              ws.send(
+                JSON.stringify({
+                  type: "input_audio_buffer.append",
+                  audio: base64EncodePcm16(new Int16Array(data.mono)),
+                }),
+              );
+            } catch (error) {
+              console.error("Error processing audio data:", error);
             }
-
-            const { mono } = data;
-
-            // Handle ArrayBuffer data properly
-            const monoArray = mono ? new Int16Array(mono) : null;
-
-            if (monoArray && isActiveRef.current) {
-              try {
-                // Convert Int16Array audio data to base64 PCM16
-                const float32Array = new Float32Array(monoArray.length);
-
-                for (let i = 0; i < monoArray.length; i++) {
-                  float32Array[i] = monoArray[i] / (monoArray[i] < 0 ? 0x8000 : 0x7fff);
-                }
-                const audio = base64EncodeAudio(float32Array);
-
-                if (audio && isActiveRef.current) {
-                  ws.send(
-                    JSON.stringify({
-                      type: "input_audio_buffer.append",
-                      audio: audio,
-                    }),
-                  );
-                }
-              } catch (error) {
-                console.error("Error processing audio data:", error);
-              }
-            }
-            // Remove the warning log to reduce noise when session is properly stopped
           })
           .catch((error) => {
             console.error("Failed to start recording:", error);
@@ -195,13 +175,13 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
             wavPlayerRef.current?.interrupt();
             break;
 
-          case "input_audio_buffer.speech_stopped":
-            console.log("User stopped speaking, audio playback can resume");
-            // reset track ID so that subsequent add16BitPCM restarts playback
+          case "response.created":
+            // Reset track ID and clear interrupt state so the new response's
+            // audio deltas are accepted. Deltas arriving between speech_started
+            // and response.created belong to the old (cancelled) response and
+            // remain blocked by the interrupted trackId.
             trackIdRef.current = crypto.randomUUID();
-            break;
-
-          case "conversation.item.input_audio_transcription.delta":
+            wavPlayerRef.current?.clearInterrupts();
             break;
 
           case "conversation.item.input_audio_transcription.completed":
@@ -314,43 +294,29 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
   };
 
   const stop = async () => {
-    console.log("Stopping voice session...");
-
-    // First, set the active flag to false to prevent any new audio processing
     isActiveRef.current = false;
 
     // Stop recorder
     if (wavRecorderRef.current) {
       try {
-        console.log("Stopping audio recorder...");
-
-        // End the recording session
         await wavRecorderRef.current.end();
-        wavRecorderRef.current = null;
-      } catch (error) {
-        console.error("Error stopping recorder:", error);
-        // Force cleanup even if end() fails
+      } catch {
         try {
-          if (wavRecorderRef.current) {
-            await wavRecorderRef.current.pause();
-          }
-        } catch (pauseError) {
-          console.error("Error pausing recorder during cleanup:", pauseError);
+          await wavRecorderRef.current?.pause();
+        } catch {
+          /* best effort */
         }
-        wavRecorderRef.current = null;
       }
+      wavRecorderRef.current = null;
     }
 
     // Close WebSocket
     const ws = wsRef.current;
     if (ws) {
       try {
-        if (ws.readyState === WebSocket.OPEN) {
-          console.log("Closing WebSocket connection...");
-          ws.close(1000, "User stopped session");
-        }
-      } catch (error) {
-        console.error("Error closing WebSocket:", error);
+        if (ws.readyState === WebSocket.OPEN) ws.close(1000, "User stopped session");
+      } catch {
+        /* best effort */
       }
       wsRef.current = null;
     }
@@ -358,22 +324,18 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
     // Stop audio player
     if (wavPlayerRef.current) {
       try {
-        console.log("Stopping audio player...");
-        wavPlayerRef.current.interrupt();
-      } catch (error) {
-        console.error("Error interrupting player:", error);
+        wavPlayerRef.current.disconnect();
+      } catch {
+        /* best effort */
       }
       wavPlayerRef.current = null;
     }
-
-    console.log("Voice session stopped");
   };
 
-  // Convert Float32Array of audio data to base64-encoded PCM16
-  const base64EncodeAudio = (float32Array: Float32Array) => {
-    const pcm16 = float32ToPcm16(float32Array);
+  // Encode Int16 PCM samples directly to base64
+  const base64EncodePcm16 = (samples: Int16Array) => {
     let binary = "";
-    const bytes = new Uint8Array(pcm16.buffer);
+    const bytes = new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength);
     const chunkSize = 0x8000; // 32KB chunk size
     for (let i = 0; i < bytes.length; i += chunkSize) {
       const chunk = bytes.subarray(i, i + chunkSize);

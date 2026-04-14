@@ -1,37 +1,38 @@
-import { z } from "zod/v3";
+import mime from "mime";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
-import mime from "mime";
-
-import { Role } from "@/shared/types/chat";
-import type {
-  Tool,
-  Content,
-  ImageContent,
-  FileContent,
-  ToolResultContent,
-  ReasoningContent,
-} from "@/shared/types/chat";
-import type { Message, Model, ModelType } from "@/shared/types/chat";
-import type { SearchResult } from "@/features/research/types/search";
-import { modelType, modelName } from "./models";
-import { simplifyMarkdown, serializeToolResultForApi } from "./utils";
-import { traceGenAI } from "./otel";
-
+import { z } from "zod/v3";
+import instructionsRelatedPrompts from "@/features/chat/prompts/chat-suggestions.txt?raw";
+import instructionsSummarizeTitle from "@/features/chat/prompts/chat-title.txt?raw";
 import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
-import instructionsRelatedPrompts from "@/features/chat/prompts/chat-suggestions.txt?raw";
 import instructionsRewriteSelection from "@/features/chat/prompts/rewrite-selection.txt?raw";
 import instructionsRewriteText from "@/features/chat/prompts/rewrite-text.txt?raw";
-import instructionsSummarizeTitle from "@/features/chat/prompts/chat-title.txt?raw";
+import type { SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
+import type {
+  Content,
+  FileContent,
+  ImageContent,
+  Message,
+  Model,
+  ModelType,
+  ReasoningContent,
+  Tool,
+  ToolResultContent,
+} from "@/shared/types/chat";
+import { Role } from "@/shared/types/chat";
+import { modelName, modelType } from "./models";
+import { traceGenAI } from "./otel";
+import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
 
 function expandToSentences(text: string, start: number, end: number): string {
   const sentenceBoundaries = /[.!?]+\s*|\n+/g;
   const boundaries: number[] = [0];
-  let match;
-  while ((match = sentenceBoundaries.exec(text)) !== null) {
+  let match: RegExpExecArray | null = sentenceBoundaries.exec(text);
+  while (match !== null) {
     boundaries.push(match.index + match[0].length);
+    match = sentenceBoundaries.exec(text);
   }
   boundaries.push(text.length);
 
@@ -501,11 +502,11 @@ export class Client {
 
     const data = new FormData();
     data.append("lang", lang);
-    const headers: HeadersInit = {};
+    const headers: Record<string, string> = {};
 
     if (input instanceof Blob) {
       data.append("file", input);
-      headers["Accept"] = input.type || "application/octet-stream";
+      headers.Accept = input.type || "application/octet-stream";
     } else {
       data.append("text", input);
     }
@@ -581,11 +582,16 @@ export class Client {
     return new Blob([audioBuffer], { type: "audio/wav" });
   }
 
-  async speakText(model: string, input: string, voice?: string): Promise<void> {
+  async speakText(model: string, input: string, voice?: string, sinkId?: string): Promise<void> {
     const audioBlob = await this.generateAudio(model, input, voice);
     const audioUrl = URL.createObjectURL(audioBlob);
 
     const audio = new Audio(audioUrl);
+
+    // Route to selected output device if supported
+    if (sinkId && "setSinkId" in audio) {
+      await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(sinkId);
+    }
 
     return new Promise((resolve, reject) => {
       audio.onended = () => {
@@ -630,7 +636,7 @@ export class Client {
 
     return results.map((result: SearchResult) => {
       let content = simplifyMarkdown(result.content || "");
-      if (content.length > 10000) content = content.slice(0, 10000) + "... [truncated]";
+      if (content.length > 10000) content = `${content.slice(0, 10000)}... [truncated]`;
       return { source: result.source, title: result.title, content, metadata: result.metadata };
     });
   }

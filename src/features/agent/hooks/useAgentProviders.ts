@@ -1,17 +1,16 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { BrainCircuit, Package, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import memoryPrompt from "@/features/agent/prompts/memory.txt?raw";
 import type { Agent } from "@/features/agent/types/agent";
-import { useAgentFiles } from "./useAgentFiles";
-import { useSkills } from "@/features/skills/hooks/useSkills";
-import { MCPClient } from "@/features/settings/lib/mcp";
-import type { Tool, ToolProvider } from "@/shared/types/chat";
-
 import { createRepositoryTools } from "@/features/repository/lib/repository-tools";
 import repositoryInstructions from "@/features/repository/prompts/repository.txt?raw";
+import { MCPClient } from "@/features/settings/lib/mcp";
+import { useSkills } from "@/features/skills/hooks/useSkills";
 import skillsPrompt from "@/features/skills/prompts/skills.txt?raw";
-import memoryPrompt from "@/features/agent/prompts/memory.txt?raw";
-import * as opfs from "@/shared/lib/opfs";
 import { getConfig } from "@/shared/config";
-import { Package, Sparkles, BrainCircuit } from "lucide-react";
+import * as opfs from "@/shared/lib/opfs";
+import type { Tool, ToolProvider } from "@/shared/types/chat";
+import { useAgentFiles } from "./useAgentFiles";
 
 export interface AgentProviders {
   /** All tool providers assembled from this agent's config */
@@ -41,7 +40,7 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
   const enabledServers = useMemo(() => {
     if (!agent) return [];
     return agent.servers.filter((s) => s.enabled);
-  }, [agent?.servers]);
+  }, [agent]);
 
   // Track server configs to detect edits (URL, headers, etc.)
   const serverConfigRef = useRef<Map<string, string>>(new Map());

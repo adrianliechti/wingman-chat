@@ -1,6 +1,6 @@
-import { memo, useRef, useState, useMemo } from "react";
-import { useReactTable, getCoreRowModel, flexRender, type ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { memo, useMemo, useRef, useState } from "react";
 import { CopyButton } from "@/shared/ui/CopyButton";
 import { PreviewButton } from "@/shared/ui/PreviewButton";
 

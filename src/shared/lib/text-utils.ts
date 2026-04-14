@@ -123,7 +123,7 @@ function globToRegex(glob: string): string {
         let classContent = glob.slice(i + 1, classEnd);
         // Handle negation
         if (classContent[0] === "!") {
-          classContent = "^" + classContent.slice(1);
+          classContent = `^${classContent.slice(1)}`;
         }
         regex += `[${classContent}]`;
         i = classEnd + 1;
@@ -234,8 +234,8 @@ export function grepText(
     // Reset regex state for global flag
     regex.lastIndex = 0;
 
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(line)) !== null) {
+    let match: RegExpExecArray | null = regex.exec(line);
+    while (match !== null) {
       lineMatches.push({
         start: match.index,
         end: match.index + match[0].length,
@@ -246,6 +246,8 @@ export function grepText(
       if (match[0].length === 0) {
         regex.lastIndex++;
       }
+
+      match = regex.exec(line);
     }
 
     if (lineMatches.length > 0) {
@@ -303,7 +305,7 @@ export function truncateLine(line: string, maxLength: number = 500): string {
   if (line.length <= maxLength) {
     return line;
   }
-  return line.slice(0, maxLength) + "... (truncated)";
+  return `${line.slice(0, maxLength)}... (truncated)`;
 }
 
 /**

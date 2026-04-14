@@ -5,6 +5,12 @@ export interface ArtifactContent {
   contentType?: string;
 }
 
+/** Shared home directory used by all sandbox runtimes (Pyodide, Bash, etc.). */
+export const SANDBOX_HOME = "/home/user";
+
+// Sandbox mount prefixes that LLMs may include in artifact paths.
+const SANDBOX_PREFIXES = [`${SANDBOX_HOME}/`, "/home/pyodide/"];
+
 export function normalizeArtifactPath(path: string | undefined): string | undefined {
   if (!path) {
     return undefined;
@@ -13,6 +19,14 @@ export function normalizeArtifactPath(path: string | undefined): string | undefi
   let normalized = path.trim();
   if (!normalized) {
     return undefined;
+  }
+
+  // Strip sandbox mount prefixes so "/home/user/chart.py" → "/chart.py"
+  for (const prefix of SANDBOX_PREFIXES) {
+    if (normalized.startsWith(prefix)) {
+      normalized = normalized.slice(prefix.length - 1); // keep leading "/"
+      break;
+    }
   }
 
   if (!normalized.startsWith("/")) {

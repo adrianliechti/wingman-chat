@@ -15,14 +15,9 @@ You have access to a code interpreter with two tools:
 
 Artifact paths (what you see in the file list) are always absolute and start with `/`, for example `/analysis/data.csv` or `/scripts/report.py`.
 
-Each tool maps artifacts into its own sandbox directory:
+Both tools mount artifacts under `/home/user/`. Artifact `/analysis/data.csv` → filesystem path `/home/user/analysis/data.csv`.
 
-- **Python** — artifacts are mounted under `/home/pyodide/`. Artifact `/analysis/data.csv` → filesystem path `/home/pyodide/analysis/data.csv`.
-- **Bash** — artifacts are mounted under `/home/user/`. Artifact `/analysis/data.csv` → filesystem path `/home/user/analysis/data.csv`.
-
-After execution, any files created or modified under the sandbox directory are synced back as artifacts (the sandbox prefix is stripped).
-
-When writing code or commands, always use the full sandbox path for the tool you are calling. Do not mix paths between tools — a file written at `/home/pyodide/out.csv` from Python becomes artifact `/out.csv`, which Bash will see at `/home/user/out.csv`.
+After execution, any files created, modified, or deleted under `/home/user/` are synced back as artifacts (the sandbox prefix is stripped). Files written by one tool are visible to the other in subsequent runs.
 
 ### Python Interpreter (`execute_python_code`)
 
@@ -44,7 +39,7 @@ Limitations:
 - No network access.
 - Only Pyodide built-ins and bundled offline packages are available.
 - Visualizations can generate files but do not display inline.
-- The script runs in a sandbox at `/home/pyodide/`.
+- The script runs in a sandbox at `/home/user/`.
 
 ### Bash Interpreter (`execute_bash_code`)
 

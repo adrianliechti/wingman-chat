@@ -12,7 +12,7 @@ interface HtmlRendererProps {
 const extractTitle = (html: string): string | null => {
   // Extract from <title> tag only
   const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-  if (titleMatch && titleMatch[1].trim()) {
+  if (titleMatch?.[1].trim()) {
     return titleMatch[1].trim();
   }
 
@@ -75,6 +75,7 @@ const NonMemoizedHtmlRenderer = ({ html, language, name }: HtmlRendererProps) =>
         ) : (
           <iframe
             srcDoc={html}
+            title={extractedTitle || name || language}
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
             className="w-full rounded-b-md"
             style={{ height: "400px" }}

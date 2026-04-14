@@ -8,6 +8,7 @@ import {
   Download,
   HardDrive,
   MessageSquare,
+  Mic,
   Settings,
   Trash2,
   Upload,
@@ -15,7 +16,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useSettings } from "@/features/settings/hooks/useSettings";
@@ -34,6 +35,7 @@ import { personaOptions } from "@/features/settings/lib/personas";
 import { rebuildAllIndexes } from "@/features/settings/lib/rebuildIndexes";
 import { useToolsContext } from "@/features/tools";
 import { LOCAL_WINGMAN_ID } from "@/features/tools/hooks/useLocalWingman";
+import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { clearAll, deleteDirectory, getStorageUsage, removeIndexEntry } from "@/shared/lib/opfs";
 import { downloadFolderAsZip } from "@/shared/lib/opfs-zip";
 import { formatBytes } from "@/shared/lib/utils";
@@ -80,9 +82,7 @@ function Select<T extends string | null>({
 }) {
   return (
     <div>
-      {label && (
-        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{label}</label>
-      )}
+      {label && <p className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{label}</p>}
       <Listbox value={value} onChange={onChange}>
         <Listbox.Button className="relative w-full rounded-lg bg-white/50 dark:bg-neutral-800/50 py-2.5 pl-3 pr-10 text-left border border-neutral-300/50 dark:border-neutral-700/50 focus-visible:ring-2 focus-visible:ring-blue-500 data-[headlessui-state=open]:ring-2 data-[headlessui-state=open]:ring-blue-500 backdrop-blur-sm transition-colors">
           <span className="block truncate text-sm">{options.find((o) => o.value === value)?.label ?? "None"}</span>
@@ -93,7 +93,7 @@ function Select<T extends string | null>({
         <Transition as={Fragment} leave="transition ease-in duration-100" leaveFrom="opacity-100" leaveTo="opacity-0">
           <Listbox.Options
             anchor="bottom"
-            className="mt-1 w-(--button-width) max-h-60 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100/90 dark:bg-neutral-800/90 p-1 backdrop-blur-xl sm:text-sm z-[100] transition duration-100 ease-in data-leave:data-closed:opacity-0"
+            className="mt-1 w-(--button-width) max-h-60 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100/90 dark:bg-neutral-800/90 p-1 backdrop-blur-xl sm:text-sm z-100 transition duration-100 ease-in data-leave:data-closed:opacity-0"
           >
             {options.map((option) => (
               <Listbox.Option
@@ -129,7 +129,7 @@ function SegmentedControl<T extends string>({
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">{label}</label>
+      <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">{label}</p>
       <div className="flex rounded-lg overflow-hidden border border-neutral-300/50 dark:border-neutral-700/50">
         {options.map((opt) => (
           <button
@@ -189,6 +189,9 @@ function SectionPanel({ title, icon, isOpen, onClick, children }: SectionPanelPr
 }
 
 export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }: SettingsDrawerProps) {
+  const profileNameInputId = useId();
+  const profileRoleInputId = useId();
+  const profileAboutInputId = useId();
   const [openSection, setOpenSection] = useState<string | null>(null);
   const { providers, getProviderState, localWingmanEnabled, localWingmanAvailable, toggleLocalWingman } =
     useToolsContext();
@@ -213,6 +216,15 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   } = useSettings();
   const { chats, deleteChat } = useChat();
   const { agents } = useAgents();
+  const {
+    inputDeviceId,
+    outputDeviceId,
+    inputDevices,
+    outputDevices,
+    setInputDevice,
+    setOutputDevice,
+    requestPermission,
+  } = useAudioDevices();
 
   const [storageInfo, setStorageInfo] = useState<{
     totalSize: number;
@@ -227,13 +239,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   });
 
   // Load storage info when drawer opens
-  useEffect(() => {
-    if (isOpen) {
-      loadStorageInfo();
-    }
-  }, [isOpen]);
-
-  const loadStorageInfo = async () => {
+  const loadStorageInfo = useCallback(async () => {
     try {
       setStorageInfo((prev) => ({ ...prev, isLoading: true, error: null }));
       const usage = await getStorageUsage();
@@ -250,7 +256,13 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
         error: error instanceof Error ? error.message : "Failed to load storage info",
       }));
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      void loadStorageInfo();
+    }
+  }, [isOpen, loadStorageInfo]);
 
   const deleteChats = () => {
     if (
@@ -258,8 +270,12 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
         `Are you sure you want to delete all ${chats.length} chat${chats.length === 1 ? "" : "s"}? This action cannot be undone.`,
       )
     ) {
-      chats.forEach((chat) => deleteChat(chat.id));
-      setTimeout(() => loadStorageInfo(), 750);
+      chats.forEach((chat) => {
+        deleteChat(chat.id);
+      });
+      setTimeout(() => {
+        void loadStorageInfo();
+      }, 750);
     }
   };
 
@@ -475,7 +491,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
     if (isOpen) {
       setOpenSection(initialSection ?? null);
     }
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, initialSection]);
 
   const toggleSection = (section: string) => {
     setOpenSection(openSection === section ? null : section);
@@ -553,6 +569,61 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   )}
                 </SectionPanel>
 
+                {/* Audio Section */}
+                <SectionPanel
+                  title="Audio"
+                  icon={<Mic size={20} />}
+                  isOpen={openSection === "audio"}
+                  onClick={() => toggleSection("audio")}
+                >
+                  {inputDevices.length === 0 && outputDevices.length === 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                        Allow microphone access to select audio devices.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={requestPermission}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
+                      >
+                        <Mic size={14} />
+                        Allow Access
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {inputDevices.length > 0 && (
+                        <Select
+                          label="Microphone"
+                          value={inputDeviceId ?? null}
+                          onChange={(value) => setInputDevice(value ?? undefined)}
+                          options={[
+                            { value: null, label: "System Default" },
+                            ...inputDevices.map((d) => ({
+                              value: d.deviceId,
+                              label: d.label || `Microphone (${d.deviceId.slice(0, 8)})`,
+                            })),
+                          ]}
+                        />
+                      )}
+                      {outputDevices.length > 0 && (
+                        <Select
+                          label="Speaker"
+                          value={outputDeviceId ?? null}
+                          onChange={(value) => setOutputDevice(value ?? undefined)}
+                          options={[
+                            { value: null, label: "System Default" },
+                            ...outputDevices.map((d) => ({
+                              value: d.deviceId,
+                              label: d.label || `Speaker (${d.deviceId.slice(0, 8)})`,
+                            })),
+                          ]}
+                        />
+                      )}
+                    </>
+                  )}
+                </SectionPanel>
+
                 {/* Profile Section */}
                 <SectionPanel
                   title="Profile"
@@ -561,10 +632,14 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   onClick={() => toggleSection("profile")}
                 >
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                    <label
+                      htmlFor={profileNameInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2"
+                    >
                       Name
                     </label>
                     <input
+                      id={profileNameInputId}
                       type="text"
                       value={profile.name || ""}
                       onChange={(e) => updateProfile({ name: e.target.value })}
@@ -574,10 +649,14 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                    <label
+                      htmlFor={profileRoleInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2"
+                    >
                       Role
                     </label>
                     <input
+                      id={profileRoleInputId}
                       type="text"
                       value={profile.role || ""}
                       onChange={(e) => updateProfile({ role: e.target.value })}
@@ -587,10 +666,14 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                    <label
+                      htmlFor={profileAboutInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2"
+                    >
                       About
                     </label>
                     <textarea
+                      id={profileAboutInputId}
                       value={profile.profile || ""}
                       onChange={(e) => updateProfile({ profile: e.target.value })}
                       className="w-full px-3 py-2.5 text-sm rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none backdrop-blur-sm transition-colors"

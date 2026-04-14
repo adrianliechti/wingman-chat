@@ -61,7 +61,7 @@ export function AppLayout() {
     if (hasPanelOpen && !wasOpen && showSidebar && window.innerWidth >= 768) {
       setShowSidebar(false);
     }
-  }, [hasPanelOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasPanelOpen, showSidebar, setShowSidebar]);
 
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -105,7 +105,7 @@ export function AppLayout() {
       updateSlider(tabletRef, "tablet");
       updateSlider(desktopRef, "desktop");
     }, 0);
-  }, [currentPage, updateSlider]);
+  }, [updateSlider]);
 
   // Auto-close sidebar on mobile screens and update sliders on resize
   useEffect(() => {
@@ -125,7 +125,7 @@ export function AppLayout() {
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [setShowSidebar, currentPage, updateSlider]);
+  }, [setShowSidebar, updateSlider]);
 
   // Prevent default file-drop behavior on the rest of the page (avoid navigation)
   useEffect(() => {
@@ -182,7 +182,9 @@ export function AppLayout() {
         leaveFrom="opacity-100"
         leaveTo="opacity-0"
       >
-        <div
+        <button
+          type="button"
+          aria-label="Close sidebar overlay"
           className="fixed inset-0 z-40 bg-black/40 dark:bg-black/60 hidden md:block"
           onClick={() => setShowSidebar(false)}
         />
@@ -365,6 +367,7 @@ export function AppLayout() {
               <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
 
               <button
+                type="button"
                 onClick={(e) => {
                   setSettingsInitialSection(undefined);
                   setSettingsAdvanced(e.altKey);
@@ -381,7 +384,14 @@ export function AppLayout() {
         )}
 
         {/* Mobile menu backdrop */}
-        {mobileMenuOpen && <div className="fixed inset-0 z-20 md:hidden" onClick={() => setMobileMenuOpen(false)} />}
+        {mobileMenuOpen && (
+          <button
+            type="button"
+            aria-label="Close mobile menu"
+            className="fixed inset-0 z-20 md:hidden"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+        )}
 
         {/* Content area */}
         <div className="flex-1 overflow-hidden flex">

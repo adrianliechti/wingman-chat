@@ -1,35 +1,35 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import { useDropZone } from "@/shared/hooks/useDropZone";
-import { SelectorMenu } from "@/shared/ui/SelectorMenu";
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
-  PilcrowRightIcon,
-  Loader2,
-  PlusIcon,
-  GlobeIcon,
-  FileIcon,
-  UploadIcon,
-  XIcon,
-  DownloadIcon,
-  ThermometerIcon,
-  SwatchBookIcon,
   AlertCircle,
   ChevronDown,
   ChevronRight,
-  SparklesIcon,
+  DownloadIcon,
+  FileIcon,
+  GlobeIcon,
   HardDrive,
+  Loader2,
+  PilcrowRightIcon,
+  PlusIcon,
+  SparklesIcon,
+  SwatchBookIcon,
+  ThermometerIcon,
+  UploadIcon,
+  XIcon,
 } from "lucide-react";
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { useNavigation } from "@/shell/hooks/useNavigation";
-import { useLayout } from "@/shell/hooks/useLayout";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslate } from "@/features/translate/hooks/useTranslate";
+import { getConfig } from "@/shared/config";
+import { useDropZone } from "@/shared/hooks/useDropZone";
+import { getDriveContentUrl } from "@/shared/lib/drives";
+import { downloadFromUrl } from "@/shared/lib/utils";
 import { CopyButton } from "@/shared/ui/CopyButton";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { InteractiveText } from "@/shared/ui/InteractiveText";
 import { PlayButton } from "@/shared/ui/PlayButton";
 import { RewritePopover } from "@/shared/ui/RewritePopover";
-import { InteractiveText } from "@/shared/ui/InteractiveText";
-import { downloadFromUrl } from "@/shared/lib/utils";
-import { getConfig } from "@/shared/config";
-import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { SelectorMenu } from "@/shared/ui/SelectorMenu";
+import { useLayout } from "@/shell/hooks/useLayout";
+import { useNavigation } from "@/shell/hooks/useNavigation";
 
 export function TranslatePage() {
   const { setRightActions } = useNavigation();
@@ -317,13 +317,17 @@ export function TranslatePage() {
                       ? "hover:bg-neutral-50/80 dark:hover:bg-neutral-900/70 hover:scale-[1.02] hover:shadow-2xl"
                       : ""
                   }`}
-                  onClick={() => {
-                    if (translatedFileUrl && translatedFileName) {
-                      handleDownload();
-                    }
-                  }}
-                  title={translatedFileUrl ? "Click to download" : undefined}
                 >
+                  {translatedFileUrl && translatedFileName && (
+                    <button
+                      type="button"
+                      onClick={handleDownload}
+                      className="absolute inset-0 rounded-2xl"
+                      title="Click to download"
+                      aria-label={`Download ${translatedFileName}`}
+                    />
+                  )}
+
                   {/* Delete button */}
                   <button
                     type="button"
@@ -331,37 +335,39 @@ export function TranslatePage() {
                       e.stopPropagation();
                       handleFileClear();
                     }}
-                    className="absolute -top-3 -right-3 p-2 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-lg hover:bg-neutral-200/90 dark:hover:bg-neutral-700/90 rounded-full transition-all border border-neutral-200/70 dark:border-neutral-700/60 shadow-md hover:shadow-lg"
+                    className="absolute -top-3 -right-3 z-10 p-2 bg-neutral-100/90 dark:bg-neutral-800/90 backdrop-blur-lg hover:bg-neutral-200/90 dark:hover:bg-neutral-700/90 rounded-full transition-all border border-neutral-200/70 dark:border-neutral-700/60 shadow-md hover:shadow-lg"
                     title="Remove file"
                   >
                     <XIcon size={14} />
                   </button>
 
-                  {/* File icon with status overlay */}
-                  <div className="relative">
-                    <FileIcon size={96} className="text-neutral-700 dark:text-neutral-300" />
+                  <div className="relative z-1 flex flex-col items-center gap-5 pointer-events-none">
+                    {/* File icon with status overlay */}
+                    <div className="relative">
+                      <FileIcon size={96} className="text-neutral-700 dark:text-neutral-300" />
 
-                    {/* Status icon overlay */}
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      {isLoading ? (
-                        <Loader2 size={32} className="animate-spin text-neutral-800 dark:text-neutral-200" />
-                      ) : translatedFileUrl ? (
-                        <DownloadIcon size={32} className="text-neutral-800 dark:text-neutral-200" />
-                      ) : null}
+                      {/* Status icon overlay */}
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        {isLoading ? (
+                          <Loader2 size={32} className="animate-spin text-neutral-800 dark:text-neutral-200" />
+                        ) : translatedFileUrl ? (
+                          <DownloadIcon size={32} className="text-neutral-800 dark:text-neutral-200" />
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
 
-                  {/* File name */}
-                  <span className="text-base font-medium text-neutral-800 dark:text-neutral-200 text-center max-w-[280px] truncate">
-                    {translatedFileName || getCandidateFileName() || selectedFile?.name}
-                  </span>
-
-                  {/* Status text */}
-                  {(isLoading || translatedFileUrl) && (
-                    <span className="text-sm text-neutral-500 dark:text-neutral-400">
-                      {isLoading ? "Translating..." : "Click to download"}
+                    {/* File name */}
+                    <span className="text-base font-medium text-neutral-800 dark:text-neutral-200 text-center max-w-70 truncate">
+                      {translatedFileName || getCandidateFileName() || selectedFile?.name}
                     </span>
-                  )}
+
+                    {/* Status text */}
+                    {(isLoading || translatedFileUrl) && (
+                      <span className="text-sm text-neutral-500 dark:text-neutral-400">
+                        {isLoading ? "Translating..." : "Click to download"}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Language selector and translate button */}
@@ -395,6 +401,7 @@ export function TranslatePage() {
                   <div className="max-w-md">
                     <div className="border border-red-200 dark:border-red-800 bg-red-50/95 dark:bg-red-950/20 backdrop-blur-lg rounded-lg overflow-hidden">
                       <button
+                        type="button"
                         onClick={() => setErrorExpanded(!errorExpanded)}
                         className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-red-100/50 dark:hover:bg-red-900/20 transition-colors"
                       >
@@ -454,7 +461,7 @@ export function TranslatePage() {
               </div>
             )}
 
-            <div className={`w-full h-full ${layoutMode === "wide" ? "max-w-full mx-auto" : "max-w-[1200px] mx-auto"}`}>
+            <div className={`w-full h-full ${layoutMode === "wide" ? "max-w-full mx-auto" : "max-w-300 mx-auto"}`}>
               <div className="relative h-full w-full overflow-hidden">
                 {/* Responsive layout: vertical stack on mobile/narrow screens, horizontal on wide screens */}
                 <div className="h-full flex flex-col md:flex-row min-h-0 transition-all duration-200">
@@ -462,8 +469,8 @@ export function TranslatePage() {
                   <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
                     {/* File upload controls */}
                     <div className="absolute top-2 left-3 z-10">
-                      {supportedFiles.length > 0 && (
-                        config.drives.length > 0 ? (
+                      {supportedFiles.length > 0 &&
+                        (config.drives.length > 0 ? (
                           <Menu>
                             <MenuButton className="inline-flex items-center gap-1 pl-0.5 pr-2 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
                               <UploadIcon size={14} />
@@ -509,8 +516,7 @@ export function TranslatePage() {
                             <UploadIcon size={14} />
                             <span>Upload file</span>
                           </button>
-                        )
-                      )}
+                        ))}
                       {supportedFiles.length === 0 && <div className="h-8"></div>}
                       <input
                         ref={fileInputRef}
@@ -609,6 +615,7 @@ export function TranslatePage() {
                       <div className="absolute bottom-2 left-2 right-2 z-10">
                         <div className="border border-red-200 dark:border-red-800 bg-red-50/95 dark:bg-red-950/20 backdrop-blur-lg rounded-lg overflow-hidden">
                           <button
+                            type="button"
                             onClick={() => setErrorExpanded(!errorExpanded)}
                             className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-red-100/50 dark:hover:bg-red-900/20 transition-colors"
                           >

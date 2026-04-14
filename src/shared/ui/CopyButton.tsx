@@ -1,6 +1,6 @@
+import { CopyCheck as CopyCheckIcon, Copy as CopyIcon } from "lucide-react";
 import { useState } from "react";
-import { Copy as CopyIcon, CopyCheck as CopyCheckIcon } from "lucide-react";
-import { copyToClipboard, type CopyOptions } from "@/shared/lib/copy";
+import { type CopyOptions, copyToClipboard } from "@/shared/lib/copy";
 
 type CopyButtonProps = CopyOptions & {
   className?: string;

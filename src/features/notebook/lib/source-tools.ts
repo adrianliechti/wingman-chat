@@ -3,7 +3,7 @@
  * Provides list and read tools so the LLM can selectively access source content.
  */
 
-import type { Tool, TextContent } from "@/shared/types/chat";
+import type { TextContent, Tool } from "@/shared/types/chat";
 import type { NotebookSource } from "../types/notebook";
 
 const MAX_READ_CHARS = 15000;

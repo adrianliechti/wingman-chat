@@ -504,7 +504,10 @@ export function parsePath(path: string): { dir: string; name: string } {
     throw new Error("Invalid path: empty");
   }
 
-  const name = parts.pop()!;
+  const name = parts.pop();
+  if (!name) {
+    throw new Error(`Invalid path: ${path}`);
+  }
   const dir = parts.join("/");
 
   return { dir, name };

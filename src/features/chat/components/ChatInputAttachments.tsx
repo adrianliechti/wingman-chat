@@ -1,5 +1,5 @@
+import { File, FileText, Image, Loader2, X } from "lucide-react";
 import { memo } from "react";
-import { Image, File, FileText, Loader2, X } from "lucide-react";
 
 import type { Content } from "@/shared/types/chat";
 
@@ -39,6 +39,17 @@ export const ChatInputAttachments = memo(
       return null;
     }
 
+    const attachmentCounts = new Map<string, number>();
+    const keyedAttachments = attachments.map((content, index) => {
+      const baseKey =
+        content.type === "image" || content.type === "file" || content.type === "audio"
+          ? `${content.type}:${content.name ?? "unnamed"}`
+          : `${content.type}:${content.type === "text" ? content.text.slice(0, 64) : "content"}`;
+      const occurrence = (attachmentCounts.get(baseKey) ?? 0) + 1;
+      attachmentCounts.set(baseKey, occurrence);
+      return { content, index, key: `${baseKey}:${occurrence}` };
+    });
+
     return (
       <div className="flex flex-wrap gap-3">
         {/* Loading attachments */}
@@ -53,9 +64,9 @@ export const ChatInputAttachments = memo(
         ))}
 
         {/* Processed attachments */}
-        {attachments.map((content, index) => (
+        {keyedAttachments.map(({ content, index, key }) => (
           <div
-            key={index}
+            key={key}
             className="relative size-14 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm flex items-center justify-center group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all"
             title={getContentName(content)}
           >

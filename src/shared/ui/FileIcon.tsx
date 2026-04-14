@@ -23,7 +23,6 @@ export const FileIcon = ({ name, contentType, size = 16 }: FileIconProps) => {
       return <ImageIcon size={size} className="text-emerald-600 dark:text-emerald-400" />;
     case "binary":
       return <File size={size} className="text-amber-600 dark:text-amber-400" />;
-    case "text":
     default:
       return <File size={size} className="text-neutral-600 dark:text-neutral-400" />;
   }

@@ -1,6 +1,6 @@
 import { useContext } from "react";
-import { ArtifactsContext } from "@/features/artifacts/context/ArtifactsContext";
 import type { ArtifactsContextType } from "@/features/artifacts/context/ArtifactsContext";
+import { ArtifactsContext } from "@/features/artifacts/context/ArtifactsContext";
 
 export function useArtifacts(): ArtifactsContextType {
   const context = useContext(ArtifactsContext);

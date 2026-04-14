@@ -30,7 +30,7 @@ These phrases should INSTANTLY result in file creation:
 - Data files (CSV, JSON)
 - Scripts or automation files
 - CSS stylesheets
-- Diagrams (Mermaid, PlantUML)
+- Diagrams (SVG)
 - Any content users will likely want to iterate on
 
 **Only use inline responses for:**
@@ -63,8 +63,7 @@ Live preview with full support for:
 - **HTML/CSS/JS** - interactive web pages
 - **React/Vue** - component preview
 - **Markdown** - formatted documentation
-- **SVG** - vector graphics
-- **Mermaid** - diagrams and flowcharts
+- **SVG** - vector graphics and diagrams
 - **CSV/JSON** - structured data
 - **Syntax highlighting** - all code files
 

@@ -1,8 +1,8 @@
-import { type Dispatch } from "react";
-import { ChevronDown, ToggleLeft, ToggleRight, Zap, Wrench, FileText, Server } from "lucide-react";
+import { ChevronDown, FileText, Server, ToggleLeft, ToggleRight, Wrench, Zap } from "lucide-react";
+import { type Dispatch, useId } from "react";
+import type { BridgeServer } from "@/features/agent/types/agent";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
-import type { BridgeServer } from "@/features/agent/types/agent";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
 
@@ -31,6 +31,7 @@ export function ReviewStep({
   memory,
   dispatch,
 }: ReviewStepProps) {
+  const modelSelectId = useId();
   const { models } = useChat();
   const config = getConfig();
 
@@ -43,9 +44,15 @@ export function ReviewStep({
 
       {/* Model */}
       <div>
-        <label className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">Model</label>
+        <label
+          htmlFor={modelSelectId}
+          className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5"
+        >
+          Model
+        </label>
         <div className="relative">
           <select
+            id={modelSelectId}
             value={model || models[0]?.id || ""}
             onChange={(e) => dispatch({ type: "SET_MODEL", id: e.target.value })}
             className="w-full appearance-none rounded-lg bg-white/40 dark:bg-neutral-900/60 py-2 pl-3 pr-8 text-sm text-neutral-900 dark:text-neutral-100 border border-neutral-200/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 hover:border-neutral-300/80 dark:hover:border-neutral-600/80 transition-colors backdrop-blur-lg cursor-pointer"
@@ -108,9 +115,9 @@ export function ReviewStep({
                   <Wrench size={8} /> {t}
                 </span>
               ))}
-              {servers.map((s, i) => (
+              {servers.map((s) => (
                 <span
-                  key={i}
+                  key={s.url}
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
                 >
                   <Server size={8} /> {s.name}
@@ -127,9 +134,9 @@ export function ReviewStep({
               Files
             </div>
             <div className="flex flex-wrap gap-1">
-              {pendingFiles.map((f, i) => (
+              {pendingFiles.map((f) => (
                 <span
-                  key={i}
+                  key={`${f.name}-${f.size}-${f.lastModified}`}
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
                 >
                   <FileText size={8} /> {f.name}

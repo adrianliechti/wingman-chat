@@ -1,15 +1,15 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { getConfig } from "@/shared/config";
-import { resizeImageBlob, readAsDataURL, decodeDataURL } from "@/shared/lib/utils";
-import { X, ImagePlus, Download, PlusIcon, Info, Loader2 } from "lucide-react";
-import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
-import { getDriveContentUrl } from "@/shared/lib/drives";
-import DOMPurify from "dompurify";
-import { useNavigation } from "@/shell/hooks/useNavigation";
-import { useDropZone } from "@/shared/hooks/useDropZone";
-import { useImages } from "@/features/renderer/hooks/useImages";
+import { Download, ImagePlus, Info, Loader2, PlusIcon, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RendererInput } from "@/features/renderer/components/RendererInput";
+import { useImages } from "@/features/renderer/hooks/useImages";
+import { getConfig } from "@/shared/config";
+import { useDropZone } from "@/shared/hooks/useDropZone";
+import { getDriveContentUrl } from "@/shared/lib/drives";
+import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
+import { decodeDataURL, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
 import type { Model } from "@/shared/types/chat";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { useNavigation } from "@/shell/hooks/useNavigation";
 
 const STYLE_INSTRUCTIONS: Record<string, string> = {
   // Photography styles
@@ -120,9 +120,9 @@ const blobs = [
 function CanvasBackground() {
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
-      {blobs.map((b, i) => (
+      {blobs.map((b) => (
         <div
-          key={i}
+          key={`${b.top}-${b.left}-${b.w}-${b.h}`}
           className="absolute"
           style={{
             top: b.top,
@@ -142,8 +142,9 @@ const Disclaimer = () => {
   const disclaimer = useMemo(() => {
     try {
       const config = getConfig();
-      const sanitized = DOMPurify.sanitize(config.renderer?.disclaimer || "");
-      return sanitized?.trim() || null;
+      return config.renderer?.disclaimer?.trim()
+        ? sanitizeHtmlToReact(config.renderer.disclaimer, { keyPrefix: "renderer-disclaimer" })
+        : null;
     } catch {
       return null;
     }
@@ -155,10 +156,7 @@ const Disclaimer = () => {
     <div className="mb-6 mx-auto max-w-2xl">
       <div className="flex items-start justify-center gap-2 px-4 py-3">
         <Info size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-        <p
-          className="text-xs text-neutral-600 dark:text-neutral-400 text-left"
-          dangerouslySetInnerHTML={{ __html: disclaimer }}
-        />
+        <div className="text-xs text-neutral-600 dark:text-neutral-400 text-left">{disclaimer}</div>
       </div>
     </div>
   );
@@ -435,7 +433,9 @@ export function RendererPage() {
         )}
 
         {/* Main content — centered on full page width */}
-        <div className="flex-1 flex flex-col items-center min-h-0 p-4 pt-16 relative">
+        <div
+          className={`flex-1 flex flex-col items-center min-h-0 p-4 pt-16 relative ${images.length > 0 ? "md:px-24" : ""}`}
+        >
           {selectedImage ? (
             /* Image viewer — centered in space above the refine input */
             <div className="flex items-center justify-center flex-1 min-h-0 pb-24 w-full">
@@ -510,6 +510,7 @@ export function RendererPage() {
                 placeholder="Generate something new..."
                 disabled={isGenerating}
                 autoFocus
+                className="max-w-4xl"
               />
             </div>
           )}
@@ -536,7 +537,7 @@ export function RendererPage() {
                 onSelectStyle={setSelectedStyle}
                 placeholder="Refine the selected image..."
                 disabled={isGenerating}
-                className="pointer-events-auto"
+                className="pointer-events-auto max-w-4xl"
               />
             </div>
           )}
@@ -568,20 +569,27 @@ export function RendererPage() {
               return (
                 <div
                   key={img.id}
-                  onClick={() => {
-                    setSelectedImageId(img.id);
-                    setPrompt("");
-                  }}
                   className={`relative size-16 md:size-20 rounded-xl overflow-hidden cursor-pointer group shrink-0 transition-all ${
                     isActive
                       ? "ring-2 ring-blue-500 dark:ring-blue-400 shadow-md"
                       : "border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-500"
                   }`}
                 >
-                  <img src={img.data} alt={img.prompt || "Generated image"} className="size-full object-cover" />
                   <button
                     type="button"
-                    className="absolute top-0.5 right-0.5 size-4 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                    onClick={() => {
+                      setSelectedImageId(img.id);
+                      setPrompt("");
+                    }}
+                    className="block size-full"
+                    aria-pressed={isActive}
+                    title={img.prompt || "Select generated image"}
+                  >
+                    <img src={img.data} alt={img.prompt || "Generated image"} className="size-full object-cover" />
+                  </button>
+                  <button
+                    type="button"
+                    className="absolute top-0.5 right-0.5 z-10 size-4 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm"
                     onClick={(e) => {
                       e.stopPropagation();
                       deleteImage(img.id);

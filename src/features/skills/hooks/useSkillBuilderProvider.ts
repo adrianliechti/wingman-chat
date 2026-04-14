@@ -1,9 +1,9 @@
-import { useMemo } from "react";
 import { PenTool } from "lucide-react";
-import { useSkills } from "./useSkills";
+import { useMemo } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { validateSkillName } from "@/features/skills/lib/skillParser";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
+import { useSkills } from "./useSkills";
 
 export function useSkillBuilderProvider(): ToolProvider {
   const { getSkill, addSkill, updateSkill: updateSkillInLibrary } = useSkills();

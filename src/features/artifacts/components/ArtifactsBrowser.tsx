@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
-import { Folder, FolderOpen, ChevronRight, ChevronDown, MoreVertical, Trash, Edit2 } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { FileIcon } from "@/shared/ui/FileIcon";
-import { FileSystemManager } from "@/features/artifacts/lib/fs";
+import { ChevronDown, ChevronRight, Edit2, Folder, FolderOpen, MoreVertical, Trash } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { FileEntry } from "@/features/artifacts/types/file";
+import { FileIcon } from "@/shared/ui/FileIcon";
 
 // Helper function to build folder tree structure
 interface FileNode {
@@ -29,7 +29,7 @@ function buildFileTree(files: FileEntry[]): FileNode[] {
     // Create folder structure
     for (let i = 0; i < pathParts.length - 1; i++) {
       const folderName = pathParts[i];
-      currentPath += "/" + folderName;
+      currentPath += `/${folderName}`;
 
       let folderNode = folderMap.get(currentPath);
       if (!folderNode) {
@@ -50,7 +50,9 @@ function buildFileTree(files: FileEntry[]): FileNode[] {
         });
       }
 
-      currentLevel = folderNode.children!;
+      const folderChildren = folderNode.children ?? [];
+      folderNode.children = folderChildren;
+      currentLevel = folderChildren;
     }
 
     // Add the file
@@ -100,8 +102,9 @@ function FileTreeNode({
   if (node.type === "folder") {
     return (
       <>
-        <div
-          className="flex items-center gap-2 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0"
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 p-1 text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0"
           style={{ marginLeft: `${level * 10}px` }}
           onClick={() => onToggleFolder(node.path)}
         >
@@ -118,24 +121,21 @@ function FileTreeNode({
             )}
             <span className="text-sm text-neutral-700 dark:text-neutral-300 truncate">{node.name}</span>
           </div>
-        </div>
-        {isExpanded && node.children && (
-          <>
-            {node.children.map((child) => (
-              <FileTreeNode
-                key={child.path}
-                node={child}
-                level={level + 1}
-                openTabs={openTabs}
-                onFileClick={onFileClick}
-                expandedFolders={expandedFolders}
-                onToggleFolder={onToggleFolder}
-                onDeleteFile={onDeleteFile}
-                onRenameFile={onRenameFile}
-              />
-            ))}
-          </>
-        )}
+        </button>
+        {isExpanded &&
+          node.children?.map((child) => (
+            <FileTreeNode
+              key={child.path}
+              node={child}
+              level={level + 1}
+              openTabs={openTabs}
+              onFileClick={onFileClick}
+              expandedFolders={expandedFolders}
+              onToggleFolder={onToggleFolder}
+              onDeleteFile={onDeleteFile}
+              onRenameFile={onRenameFile}
+            />
+          ))}
       </>
     );
   }
@@ -211,6 +211,7 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   // Subscribe to filesystem events for folder expansion/collapse UI
   useEffect(() => {
@@ -223,7 +224,7 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
 
         // Expand all parent folders up to the file
         for (let i = 0; i < pathParts.length - 1; i++) {
-          currentPath += "/" + pathParts[i];
+          currentPath += `/${pathParts[i]}`;
           newExpanded.add(currentPath);
         }
 
@@ -240,7 +241,7 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
         // Also remove any nested expanded folders
         const expandedArray = Array.from(newExpanded);
         for (const expandedPath of expandedArray) {
-          if (expandedPath.startsWith(path + "/")) {
+          if (expandedPath.startsWith(`${path}/`)) {
             newExpanded.delete(expandedPath);
           }
         }
@@ -257,6 +258,13 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
 
   // Build the file tree from files state
   const fileTree = buildFileTree(files);
+
+  useEffect(() => {
+    if (!renamingPath) return;
+
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, [renamingPath]);
 
   const handleToggleFolder = (path: string) => {
     const newExpanded = new Set(expandedFolders);
@@ -329,13 +337,17 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
 
       {/* Rename Dialog */}
       {renamingPath && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={handleRenameCancel}>
-          <div
-            className="bg-white dark:bg-neutral-900 rounded-lg shadow-xl p-4 w-80 max-w-[90vw]"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <button
+            type="button"
+            aria-label="Close rename dialog"
+            className="absolute inset-0 bg-black/50"
+            onClick={handleRenameCancel}
+          />
+          <div className="relative bg-white dark:bg-neutral-900 rounded-lg shadow-xl p-4 w-80 max-w-[90vw]">
             <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-3">Rename File</h3>
             <input
+              ref={renameInputRef}
               type="text"
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
@@ -347,7 +359,6 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
                 }
               }}
               className="w-full px-3 py-2 bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded border border-neutral-300 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              autoFocus
             />
             <div className="flex gap-2 mt-4 justify-end">
               <button

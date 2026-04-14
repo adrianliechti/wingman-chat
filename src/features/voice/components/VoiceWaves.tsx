@@ -58,6 +58,7 @@ export function VoiceWaves() {
           className="w-full h-full"
           preserveAspectRatio="none"
         >
+          <title>Voice activity waves</title>
           {/* Wave line 1 - Main */}
           <path
             d={generateWavePath(0, 1.0, 0.015)}

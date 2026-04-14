@@ -140,10 +140,10 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
 
         {/* Always render media content (images, audio, files) from tool results */}
         {toolResult?.result?.some((c) => c.type === "image" || c.type === "audio" || c.type === "file") && (
-            <div className="ml-4.5 mt-2">
-              <RenderContents contents={toolResult.result} />
-            </div>
-          )}
+          <div className="ml-4.5 mt-2">
+            <RenderContents contents={toolResult.result} />
+          </div>
+        )}
 
         {/* Render inline MCP app for tool results with UI metadata */}
         {typeof toolResult?.meta?.toolProvider === "string" && typeof toolResult?.meta?.toolResource === "string" && (

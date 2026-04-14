@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
-import { ArtifactsContext } from "./ArtifactsContext";
-import { getConfig } from "@/shared/config";
+import { useCallback, useEffect, useState } from "react";
 import { FileSystemManager } from "@/features/artifacts/lib/fs";
+import { getConfig } from "@/shared/config";
+import { ArtifactsContext } from "./ArtifactsContext";
 
 interface ArtifactsProviderProps {
   children: ReactNode;
@@ -31,8 +31,10 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
       fs.setChatId(chatId);
 
       if (!chatId) {
-        // Reset UI state when no chat
+        // Reset file-specific state for draft chats, but preserve drawer visibility
+        // so the panel stays open while the first message creates the chat.
         setActiveFile(null);
+        setIsEnabled(false);
         return;
       }
 

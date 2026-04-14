@@ -7,7 +7,7 @@
  *
  * The __VFS_URLS__ object is populated at injection time with the URL mapping.
  */
-(function () {
+(() => {
   // URL mapping will be injected before this script
   // window.__VFS_URLS__ = { "file.json": "data:application/json;base64,..." }
 
@@ -32,84 +32,92 @@
     );
   }
 
-  // Override native fetch to intercept virtual file requests
-  var originalFetch = window.fetch;
-  window.fetch = function (input, init) {
-    var url = typeof input === "string" ? input : input && input.url;
-    if (url && isVirtualPath(url)) {
-      var resolved = resolveVfsPath(url);
+  function InterceptedXMLHttpRequest() {
+    const xhr = new OriginalXHR();
+    const originalOpen = xhr.open;
+
+    function interceptedOpen(...args) {
+      const url = args[1];
+      const resolved = url && isVirtualPath(url) ? resolveVfsPath(url) : null;
+
       if (resolved) {
-        return originalFetch.call(window, resolved, init);
+        args[1] = resolved;
       }
+
+      return originalOpen.apply(xhr, args);
     }
+
+    xhr.open = interceptedOpen;
+    return xhr;
+  }
+
+  function InterceptedImage(width, height) {
+    const img = new OriginalImage(width, height);
+    const originalSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+
+    if (!originalSrcDescriptor?.get || !originalSrcDescriptor.set) {
+      return img;
+    }
+
+    Object.defineProperty(img, "src", {
+      get: () => originalSrcDescriptor.get.call(img),
+      set: (value) => {
+        let nextValue = value;
+        const resolved = nextValue && isVirtualPath(nextValue) ? resolveVfsPath(nextValue) : null;
+
+        if (resolved) {
+          nextValue = resolved;
+        }
+
+        originalSrcDescriptor.set.call(img, nextValue);
+      },
+    });
+
+    return img;
+  }
+
+  function InterceptedAudio(src) {
+    const resolved = src && isVirtualPath(src) ? resolveVfsPath(src) : null;
+    return new OriginalAudio(resolved || src);
+  }
+
+  // Override native fetch to intercept virtual file requests
+  const originalFetch = window.fetch;
+  window.fetch = (input, init) => {
+    const url = typeof input === "string" ? input : input?.url;
+    const resolved = url && isVirtualPath(url) ? resolveVfsPath(url) : null;
+
+    if (resolved) {
+      return originalFetch.call(window, resolved, init);
+    }
+
     return originalFetch.call(window, input, init);
   };
 
   // Override XMLHttpRequest to intercept virtual file requests
-  var OriginalXHR = window.XMLHttpRequest;
-  window.XMLHttpRequest = function () {
-    var xhr = new OriginalXHR();
-    var originalOpen = xhr.open;
-    xhr.open = function (method, url) {
-      var args = Array.prototype.slice.call(arguments);
-      if (url && isVirtualPath(url)) {
-        var resolved = resolveVfsPath(url);
-        if (resolved) {
-          args[1] = resolved;
-        }
-      }
-      return originalOpen.apply(xhr, args);
-    };
-    return xhr;
-  };
+  const OriginalXHR = window.XMLHttpRequest;
+  window.XMLHttpRequest = InterceptedXMLHttpRequest;
+
   // Copy static properties/methods from original XMLHttpRequest
-  Object.keys(OriginalXHR).forEach(function (key) {
+  Object.keys(OriginalXHR).forEach((key) => {
     window.XMLHttpRequest[key] = OriginalXHR[key];
   });
   window.XMLHttpRequest.prototype = OriginalXHR.prototype;
 
   // Override Image constructor to intercept virtual file requests
-  var OriginalImage = window.Image;
-  window.Image = function (width, height) {
-    var img = new OriginalImage(width, height);
-    var originalSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
-    Object.defineProperty(img, "src", {
-      get: function () {
-        return originalSrcDescriptor.get.call(img);
-      },
-      set: function (value) {
-        if (value && isVirtualPath(value)) {
-          var resolved = resolveVfsPath(value);
-          if (resolved) {
-            value = resolved;
-          }
-        }
-        originalSrcDescriptor.set.call(img, value);
-      },
-    });
-    return img;
-  };
+  const OriginalImage = window.Image;
+  window.Image = InterceptedImage;
   window.Image.prototype = OriginalImage.prototype;
 
   // Override Audio constructor to intercept virtual file requests
-  var OriginalAudio = window.Audio;
-  window.Audio = function (src) {
-    if (src && isVirtualPath(src)) {
-      var resolved = resolveVfsPath(src);
-      if (resolved) {
-        src = resolved;
-      }
-    }
-    return new OriginalAudio(src);
-  };
+  const OriginalAudio = window.Audio;
+  window.Audio = InterceptedAudio;
   window.Audio.prototype = OriginalAudio.prototype;
 
   // VFS helper object for explicit access
   window.vfs = {
     // Resolve a virtual path to its data URL
-    resolve: function (path) {
-      return resolveVfsPath(path) || path;
-    },
+    resolve: (path) => resolveVfsPath(path) || path,
 
     // Fetch from virtual filesystem (uses original fetch)
     fetch: function (path) {
@@ -119,30 +127,22 @@
 
     // Load JSON from virtual filesystem
     loadJSON: function (path) {
-      return this.fetch(path).then(function (res) {
-        return res.json();
-      });
+      return this.fetch(path).then((res) => res.json());
     },
 
     // Load text from virtual filesystem
     loadText: function (path) {
-      return this.fetch(path).then(function (res) {
-        return res.text();
-      });
+      return this.fetch(path).then((res) => res.text());
     },
 
     // Load as Blob
     loadBlob: function (path) {
-      return this.fetch(path).then(function (res) {
-        return res.blob();
-      });
+      return this.fetch(path).then((res) => res.blob());
     },
 
     // Load as ArrayBuffer
     loadArrayBuffer: function (path) {
-      return this.fetch(path).then(function (res) {
-        return res.arrayBuffer();
-      });
+      return this.fetch(path).then((res) => res.arrayBuffer());
     },
 
     // Get image URL for use in src attributes
@@ -152,27 +152,22 @@
 
     // Create and load an Image
     loadImage: function (path) {
-      var self = this;
-      return new Promise(function (resolve, reject) {
-        var img = new OriginalImage();
-        img.onload = function () {
+      return new Promise((resolve, reject) => {
+        const img = new OriginalImage();
+        img.onload = () => {
           resolve(img);
         };
-        img.onerror = function (e) {
+        img.onerror = (e) => {
           reject(e);
         };
-        img.src = self.resolve(path);
+        img.src = this.resolve(path);
       });
     },
 
     // Check if a file exists in the virtual filesystem
-    exists: function (path) {
-      return resolveVfsPath(path) !== null;
-    },
+    exists: (path) => resolveVfsPath(path) !== null,
 
     // List all available files
-    list: function () {
-      return Object.keys(window.__VFS_URLS__);
-    },
+    list: () => Object.keys(window.__VFS_URLS__),
   };
 })();

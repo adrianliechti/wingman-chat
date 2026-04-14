@@ -1,11 +1,11 @@
-import { Trash, PanelRightOpen, MoreVertical, GitBranch, Search, X, Pencil, Pin, PinOff } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { useMemo, useCallback, useState, useRef, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { GitBranch, MoreVertical, PanelRightOpen, Pencil, Pin, PinOff, Search, Trash, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
+import { type Chat, getTextFromContent } from "@/shared/types/chat";
 import { useSidebar } from "@/shell/hooks/useSidebar";
-import { getTextFromContent, type Chat } from "@/shared/types/chat";
 
 export function ChatSidebar() {
   const { chats, chat, deleteChat, createChat, updateChat } = useChat();
@@ -15,9 +15,16 @@ export function ChatSidebar() {
   const [showSearch, setShowSearch] = useState(false);
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState<{ id: string; position: "before" | "after" } | null>(null);
   const dragItemId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (showSearch) {
+      searchInputRef.current?.focus();
+    }
+  }, [showSearch]);
 
   useEffect(() => {
     if (renamingChatId && renameInputRef.current) {
@@ -163,7 +170,10 @@ export function ChatSidebar() {
       if (!categoryMap.has(category)) {
         categoryMap.set(category, []);
       }
-      categoryMap.get(category)!.push(chatItem);
+      const categoryChats = categoryMap.get(category);
+      if (categoryChats) {
+        categoryChats.push(chatItem);
+      }
     });
 
     categoryOrder.forEach((category) => {
@@ -289,17 +299,6 @@ export function ChatSidebar() {
 
     return (
       <div
-        draggable={options?.draggable}
-        onDragStart={options?.draggable ? () => handleDragStart(chatItem.id) : undefined}
-        onDragOver={options?.draggable ? (e) => handleDragOver(e, chatItem.id) : undefined}
-        onDragEnd={options?.draggable ? handleDragEnd : undefined}
-        onDrop={options?.draggable ? () => handleDrop(chatItem.id) : undefined}
-        onClick={() => {
-          openChat(chatItem.id);
-          if (window.innerWidth < 768) {
-            setShowSidebar(false);
-          }
-        }}
         className={`flex items-center cursor-pointer relative shrink-0 group rounded transition-all duration-200 py-2 md:py-1.5 pl-2.5 md:pl-2.5 pr-1 md:pr-0.5 ${dragBorder} ${
           isActive ? "text-neutral-900 dark:text-neutral-100" : "hover:text-neutral-600 dark:hover:text-neutral-300"
         }`}
@@ -322,12 +321,24 @@ export function ChatSidebar() {
             className="flex-1 min-w-0 px-1 py-0 text-base md:text-sm bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-600 rounded outline-none focus:border-blue-500 dark:focus:border-blue-400"
           />
         ) : (
-          <div
-            className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-base md:text-sm text-neutral-800 dark:text-neutral-200 pr-4"
+          <button
+            type="button"
+            draggable={options?.draggable}
+            onDragStart={options?.draggable ? () => handleDragStart(chatItem.id) : undefined}
+            onDragOver={options?.draggable ? (e) => handleDragOver(e, chatItem.id) : undefined}
+            onDragEnd={options?.draggable ? handleDragEnd : undefined}
+            onDrop={options?.draggable ? () => handleDrop(chatItem.id) : undefined}
+            onClick={() => {
+              openChat(chatItem.id);
+              if (window.innerWidth < 768) {
+                setShowSidebar(false);
+              }
+            }}
+            className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap pr-4 text-left text-base md:text-sm text-neutral-800 dark:text-neutral-200"
             title={displayTitle}
           >
             {displayTitle}
-          </div>
+          </button>
         )}
         {renamingChatId !== chatItem.id && (
           <Menu>
@@ -412,12 +423,12 @@ export function ChatSidebar() {
         {showSearch ? (
           <div className="flex-1 flex items-center gap-1">
             <input
+              ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search..."
               className="w-full min-w-0 px-2 py-0.5 text-sm bg-transparent text-neutral-800 dark:text-neutral-200 placeholder-neutral-500 dark:placeholder-neutral-400 focus:outline-none"
-              autoFocus
             />
             <button
               type="button"
@@ -480,7 +491,9 @@ export function ChatSidebar() {
                     <button
                       type="button"
                       onClick={() => {
-                        pinnedChats.forEach((c) => unpinChat(c));
+                        pinnedChats.forEach((c) => {
+                          unpinChat(c);
+                        });
                       }}
                       className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
                     >
@@ -542,7 +555,9 @@ export function ChatSidebar() {
                               type="button"
                               onClick={() => {
                                 const hasActive = group.chats.some((c) => c.id === chat?.id);
-                                group.chats.forEach((chatItem) => deleteChat(chatItem.id));
+                                group.chats.forEach((chatItem) => {
+                                  deleteChat(chatItem.id);
+                                });
                                 if (hasActive) newChat();
                               }}
                               className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"

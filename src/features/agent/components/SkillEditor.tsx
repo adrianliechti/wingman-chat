@@ -1,8 +1,8 @@
-import { useState, useMemo, Fragment } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { X, Sparkles, Loader2 } from "lucide-react";
-import { validateSkillName } from "@/features/skills/lib/skillParser";
+import { Loader2, Sparkles, X } from "lucide-react";
+import { Fragment, useId, useMemo, useState } from "react";
 import type { Skill } from "@/features/skills/lib/skillParser";
+import { validateSkillName } from "@/features/skills/lib/skillParser";
 import { getConfig } from "@/shared/config";
 
 interface SkillEditorProps {
@@ -13,6 +13,9 @@ interface SkillEditorProps {
 }
 
 export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps) {
+  const nameInputId = useId();
+  const descriptionInputId = useId();
+  const contentInputId = useId();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState("");
@@ -126,10 +129,14 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
                 <div className="px-5 py-3.5 space-y-3.5">
                   {/* Name field */}
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-                      Name{" "}
+                    <label
+                      htmlFor={nameInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
+                    >
+                      Name
                     </label>
                     <input
+                      id={nameInputId}
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value.toLowerCase())}
@@ -148,10 +155,14 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
 
                   {/* Description field */}
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-                      Description{" "}
+                    <label
+                      htmlFor={descriptionInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
+                    >
+                      Description
                     </label>
                     <textarea
+                      id={descriptionInputId}
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none transition-colors"
@@ -165,10 +176,14 @@ export function SkillEditor({ isOpen, onClose, onSave, skill }: SkillEditorProps
 
                   {/* Content field */}
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                    <label
+                      htmlFor={contentInputId}
+                      className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
+                    >
                       Instructions
                     </label>
                     <textarea
+                      id={contentInputId}
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
                       className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 font-mono resize-none transition-colors"

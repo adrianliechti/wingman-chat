@@ -1,4 +1,4 @@
-import { Eye, Code } from "lucide-react";
+import { Code, Eye } from "lucide-react";
 
 type PreviewButtonProps = {
   showCode: boolean;

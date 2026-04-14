@@ -1,6 +1,7 @@
-import { useRef } from "react";
-import { X, ImagePlus, ArrowRight, Paintbrush, Sparkles, HardDrive, Upload, Loader2 } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { ArrowRight, HardDrive, ImagePlus, Loader2, Paintbrush, Sparkles, Upload, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+
 import type { Model } from "@/shared/types/chat";
 
 interface RendererInputProps {
@@ -50,20 +51,68 @@ export function RendererInput({
   autoFocus,
   className = "",
 }: RendererInputProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const referenceImageEntries = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    return referenceImages.map((img, index) => {
+      const baseKey = img.dataUrl.slice(0, 64);
+      const occurrence = (counts.get(baseKey) ?? 0) + 1;
+      counts.set(baseKey, occurrence);
+      return { img, index, key: `${baseKey}:${occurrence}` };
+    });
+  }, [referenceImages]);
 
   const canSubmit = (prompt.trim() || referenceImages.length > 0) && !disabled;
 
+  useEffect(() => {
+    if (!inputRef.current) {
+      return;
+    }
+
+    inputRef.current.style.height = "auto";
+    inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
+
+    if (prompt.length === 0) {
+      inputRef.current.style.height = "auto";
+    }
+  }, [prompt]);
+
+  const handleContentChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      onPromptChange(e.target.value);
+    },
+    [onPromptChange],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (canSubmit) {
+          onSubmit();
+        }
+      }
+    },
+    [canSubmit, onSubmit],
+  );
+
+  useEffect(() => {
+    if (autoFocus && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [autoFocus]);
+
   return (
     <div
-      className={`flex flex-col rounded-2xl backdrop-blur-2xl shadow-2xl shadow-black/60 dark:shadow-black/80 border border-neutral-200/50 dark:border-neutral-900 bg-white/60 dark:bg-neutral-950/70 dark:ring-1 dark:ring-white/10 w-full max-w-2xl overflow-hidden ${className}`}
+      className={`flex flex-col rounded-2xl backdrop-blur-2xl shadow-2xl shadow-black/60 dark:shadow-black/80 border border-neutral-200/50 dark:border-neutral-900 bg-white/60 dark:bg-neutral-950/70 dark:ring-1 dark:ring-white/10 w-full overflow-hidden ${className}`}
     >
       {/* Reference images above text (like chat attachments) */}
       {(referenceImages.length > 0 || isLoadingFiles) && (
         <div className="flex flex-wrap gap-2 px-3 pt-3">
-          {referenceImages.map((img, index) => (
+          {referenceImageEntries.map(({ img, index, key }) => (
             <div
-              key={index}
+              key={key}
               className="relative size-14 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all overflow-hidden"
             >
               <img src={img.dataUrl} alt={`Reference ${index + 1}`} className="size-full object-cover" />
@@ -84,31 +133,21 @@ export function RendererInput({
         </div>
       )}
 
-      {/* Textarea */}
-      <textarea
-        ref={textareaRef}
-        value={prompt}
-        onChange={(e) => {
-          onPromptChange(e.target.value);
-          const target = e.target;
-          target.style.height = "auto";
-          target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            if ((prompt.trim() || referenceImages.length > 0) && !disabled) {
-              onSubmit();
-            }
-          }
-        }}
-        onPaste={onPaste}
-        rows={1}
-        placeholder={placeholder}
-        className="px-4 pt-4 pb-2 flex-1 max-h-[30vh] overflow-y-auto min-h-12 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none resize-none"
-        autoFocus={autoFocus}
-        disabled={disabled}
-      />
+      {/* Input area */}
+      <div className="relative flex-1">
+        <textarea
+          ref={inputRef}
+          className="block w-full px-4 pt-4 pb-2 max-h-[40vh] overflow-y-auto min-h-12 resize-none bg-transparent text-sm text-neutral-800 dark:text-neutral-200 focus:outline-none whitespace-pre-wrap wrap-break-word"
+          style={{ scrollbarWidth: "thin", minHeight: "2.5rem", height: "auto" }}
+          value={prompt}
+          placeholder={placeholder}
+          disabled={disabled}
+          rows={1}
+          onChange={handleContentChange}
+          onKeyDown={handleKeyDown}
+          onPaste={onPaste}
+        />
+      </div>
 
       {/* Controls bar */}
       <div className="flex items-center justify-between gap-3 px-3 pb-3">
@@ -193,8 +232,8 @@ export function RendererInput({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {referenceImages.length < 4 && (
-            drives && drives.length > 0 && onDriveSelect ? (
+          {referenceImages.length < 4 &&
+            (drives && drives.length > 0 && onDriveSelect ? (
               <Menu>
                 <MenuButton
                   className="rounded-xl p-2 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors hover:bg-neutral-100/70 dark:hover:bg-white/5"
@@ -241,8 +280,7 @@ export function RendererInput({
               >
                 <ImagePlus size={16} />
               </button>
-            )
-          )}
+            ))}
 
           <button
             type="button"

@@ -58,7 +58,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const chat = chats.find((c) => c.id === chatId) ?? null;
   const agentModel = currentAgent?.model ? (models.find((m) => m.id === currentAgent.model) ?? null) : null;
-  const chatModel = chat?.model ? (models.find((m) => m.id === chat.model!.id) ?? chat.model) : null;
+  const currentChatModel = chat?.model;
+  const chatModel = currentChatModel ? (models.find((m) => m.id === currentChatModel.id) ?? currentChatModel) : null;
   const model = chatModel ?? agentModel ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext("chat", model);
 
@@ -86,9 +87,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const createChat = useCallback(async () => {
     const newChat = await createChatHook();
     setChatId(newChat.id);
+    setArtifactsChatId(newChat.id);
     resetTools();
     return newChat;
-  }, [createChatHook, resetTools]);
+  }, [createChatHook, resetTools, setArtifactsChatId]);
 
   const chatIdRef = useRef(chatId);
   chatIdRef.current = chatId;
@@ -138,13 +140,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
       chatItem.model = model;
 
       setChatId(chatItem.id);
+      setArtifactsChatId(chatItem.id);
       updateChat(chatItem.id, () => ({ model }));
 
       id = chatItem.id;
     }
 
-    return { id: id!, chat: chatItem! };
-  }, [model, createChatHook, updateChat, setChatId, chatId, chats]);
+    if (!id || !chatItem) {
+      throw new Error("failed to create or resolve chat");
+    }
+
+    return { id, chat: chatItem };
+  }, [model, createChatHook, updateChat, chatId, chats, setArtifactsChatId]);
 
   const addMessage = useCallback(
     async (message: Message) => {
@@ -159,7 +166,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
 
   const updateModelContext = useCallback(async (targetChatId: string, text: string | null) => {
-    if (!text || !text.trim()) {
+    if (!text?.trim()) {
       pendingModelContextRef.current.delete(targetChatId);
       return;
     }
@@ -169,6 +176,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   const runMessageInChat = useCallback(
     async function run(id: string, message: Message, historyOverride?: Message[], initialTitle?: string) {
+      const currentModel = model;
+      if (!currentModel) {
+        throw new Error("no model selected");
+      }
+
       const history = historyOverride ?? (chats.find((c) => c.id === id)?.messages || []);
       const pendingModelContext = pendingModelContextRef.current.get(id) ?? null;
       pendingModelContextRef.current.delete(id);
@@ -259,7 +271,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           abortControllerRef.current = abortController;
 
           const assistantMessage = await client.complete(
-            model!.id,
+            currentModel.id,
             instructions,
             modelConversation,
             tools,
@@ -399,7 +411,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         updateStreamingMessage(null);
 
         if (!initialTitle || conversation.length % 3 === 0) {
-          client.summarizeTitle(config.chat?.summarizer || model!.id, conversation).then((title) => {
+          client.summarizeTitle(config.chat?.summarizer || currentModel.id, conversation).then((title) => {
             if (title) {
               updateChat(id, () => ({ title }));
             }
@@ -459,7 +471,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
         updateStreamingMessage(null);
       }
     },
-    [chats, updateChat, client, model, setIsResponding, chatTools, chatInstructions, renderApp, updateModelContext, updateStreamingMessage],
+    [
+      chats,
+      updateChat,
+      client,
+      model,
+      config.chat?.summarizer,
+      chatTools,
+      chatInstructions,
+      renderApp,
+      updateModelContext,
+      updateStreamingMessage,
+    ],
   );
 
   const sendMessage = useCallback(

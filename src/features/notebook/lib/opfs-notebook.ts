@@ -1,26 +1,26 @@
 import {
-  readJson,
-  writeJson,
-  readText,
-  writeText,
-  readBlob,
-  writeBlob,
+  blobToDataUrl,
+  dataUrlToBlob,
   deleteDirectory,
   deleteFile,
   listDirectories,
+  readBlob,
   readIndex,
-  upsertIndexEntry,
+  readJson,
+  readText,
   removeIndexEntry,
-  blobToDataUrl,
-  dataUrlToBlob,
+  upsertIndexEntry,
+  writeBlob,
+  writeJson,
+  writeText,
 } from "@/shared/lib/opfs-core";
 import type {
-  Notebook,
-  NotebookSource,
-  NotebookOutput,
-  NotebookMessage,
-  QuizQuestion,
   MindMapNode,
+  Notebook,
+  NotebookMessage,
+  NotebookOutput,
+  NotebookSource,
+  QuizQuestion,
 } from "../types/notebook";
 
 const COLLECTION = "notebooks";
@@ -111,7 +111,9 @@ async function readSource(notebookId: string, sourceId: string): Promise<Noteboo
   if (!meta) return undefined;
 
   const content = (await readText(`${base}/content.txt`)) || "";
-  return { ...meta, content };
+  const audioBlob = await readBlob(`${base}/audio.wav`);
+  const audioUrl = audioBlob ? await blobToDataUrl(audioBlob) : undefined;
+  return { ...meta, content, ...(audioUrl && { audioUrl }) };
 }
 
 export async function getSources(notebookId: string): Promise<NotebookSource[]> {
@@ -134,11 +136,14 @@ export async function getSources(notebookId: string): Promise<NotebookSource[]> 
 }
 
 export async function addSource(notebookId: string, source: NotebookSource): Promise<void> {
-  const { content, ...meta } = source;
+  const { content, audioUrl, ...meta } = source;
   const base = sourcePath(notebookId, source.id);
 
   await writeJson(`${base}/metadata.json`, meta);
   await writeText(`${base}/content.txt`, content);
+  if (audioUrl) {
+    await writeBlob(`${base}/audio.wav`, dataUrlToBlob(audioUrl));
+  }
 }
 
 export async function removeSource(notebookId: string, sourceId: string): Promise<void> {

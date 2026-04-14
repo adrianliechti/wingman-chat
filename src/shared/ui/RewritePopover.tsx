@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
 import { Popover } from "@headlessui/react";
 import { Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
 
 interface RewritePopoverProps {
@@ -178,14 +178,20 @@ interface AlternativesListProps {
 }
 
 function AlternativesList({ alternatives, keyChanges, onSelect, onMouseEnter, onMouseLeave }: AlternativesListProps) {
+  const keyCounts = new Map<string, number>();
+
   return (
     <div className="py-1">
       {alternatives.map((alternative, index) => {
         const keyChange = keyChanges[index] || alternative;
+        const keySignature = `${keyChange}:${alternative}`;
+        const occurrence = (keyCounts.get(keySignature) ?? 0) + 1;
+        keyCounts.set(keySignature, occurrence);
+
         return (
           <button
             type="button"
-            key={index}
+            key={`${keySignature}:${occurrence}`}
             onClick={() => onSelect(alternative)}
             onMouseEnter={() => onMouseEnter(alternative)}
             onMouseLeave={onMouseLeave}

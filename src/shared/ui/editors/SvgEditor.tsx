@@ -11,9 +11,11 @@ function SvgPreview({ content }: { content: string }) {
     return `<svg${newAttributes} style="width: 100%; height: 100%; max-width: 100%; max-height: 100%;">`;
   });
 
+  const previewUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgContent)}`;
+
   return (
     <div className="h-full p-4">
-      <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: svgContent }} />
+      <img src={previewUrl} alt="SVG preview" className="w-full h-full object-contain" />
     </div>
   );
 }

@@ -1,6 +1,4 @@
 import { useMatch, useNavigate } from "@tanstack/react-router";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import DOMPurify from "dompurify";
 import {
   ArrowDown,
   BotMessageSquare,
@@ -10,7 +8,7 @@ import {
   Paperclip,
   Plus as PlusIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
@@ -20,8 +18,9 @@ import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
-import { useAutoScroll } from "@/shared";
+import { useChatScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
+import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { AppDrawer } from "@/shell/components/AppDrawer";
 import { BackgroundImage } from "@/shell/components/BackgroundImage";
 import { useApp } from "@/shell/hooks/useApp";
@@ -32,8 +31,8 @@ import { useSidebar } from "@/shell/hooks/useSidebar";
 
 // Custom hook to handle drawer animation state
 function useDrawerAnimation(isOpen: boolean) {
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [shouldRender, setShouldRender] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(isOpen);
+  const [shouldRender, setShouldRender] = useState(isOpen);
 
   useEffect(() => {
     let animationTimer: NodeJS.Timeout | undefined;
@@ -68,8 +67,9 @@ const Disclaimer = () => {
   const disclaimer = useMemo(() => {
     try {
       const config = getConfig();
-      const sanitized = DOMPurify.sanitize(config.disclaimer);
-      return sanitized?.trim() || null;
+      return config.disclaimer?.trim()
+        ? sanitizeHtmlToReact(config.disclaimer, { keyPrefix: "chat-disclaimer" })
+        : null;
     } catch {
       return null;
     }
@@ -81,10 +81,7 @@ const Disclaimer = () => {
     <div className="mb-6 mx-auto max-w-2xl">
       <div className="flex items-start justify-center gap-2 px-4 py-3">
         <Info size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-        <p
-          className="text-xs text-neutral-600 dark:text-neutral-400 text-left"
-          dangerouslySetInnerHTML={{ __html: disclaimer }}
-        />
+        <div className="text-xs text-neutral-600 dark:text-neutral-400 text-left">{disclaimer}</div>
       </div>
     </div>
   );
@@ -102,20 +99,27 @@ export function ChatPage() {
   // User-initiated actions (plus button, sidebar clicks) go through useChatNavigate
   // which sets both state and URL directly, so this only catches external URL changes.
   useEffect(() => {
-    if (routeChatId && routeChatId !== chat?.id) {
+    const activeChatId = chat?.id ?? null;
+
+    if (routeChatId && routeChatId !== activeChatId) {
       selectChat(routeChatId);
-    } else if (!routeChatId && chat) {
+    } else if (!routeChatId && activeChatId) {
       selectChat(null);
     }
-  }, [routeChatId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [routeChatId, chat?.id, selectChat]);
 
   // Sync state → URL when a chat is implicitly created during message send.
   // The URL is still /chat but chatId just appeared — update to /chat/$chatId.
   useEffect(() => {
-    if (chat?.id && !routeChatId) {
-      navigate({ to: "/chat/$chatId", params: { chatId: chat.id }, replace: true });
+    const previousChatId = previousChatIdRef.current;
+    const currentChatId = chat?.id ?? null;
+
+    if (currentChatId && !routeChatId && previousChatId === null) {
+      navigate({ to: "/chat/$chatId", params: { chatId: currentChatId }, replace: true });
     }
-  }, [chat?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    previousChatIdRef.current = currentChatId;
+  }, [chat?.id, navigate, routeChatId]);
 
   const { layoutMode } = useLayout();
   const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
@@ -139,45 +143,39 @@ export function ChatPage() {
   const { setSidebarContent, showSidebar } = useSidebar();
   const { setRightActions } = useNavigation();
 
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
-
   // Ref to track chat input height for dynamic padding
   const [chatInputHeight, setChatInputHeight] = useState(112); // Default to pb-28 (7rem = 112px)
+  const messageKeysRef = useRef<string[]>([]);
+  const messageKeyScopeRef = useRef<string | null>(null);
+  const nextMessageKeyRef = useRef(0);
+  const previousChatIdRef = useRef<string | null>(null);
 
-  // Virtualizer for chat messages – the +1 adds a zero-height sentinel at the
-  // end of the list so scrollToIndex always has a stable, measurement-free target.
-  const virtualizer = useVirtualizer({
-    count: messages.length + 1,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: (i) => (i < messages.length ? 120 : 0),
-    paddingEnd: chatInputHeight,
-    scrollPaddingEnd: chatInputHeight,
-    overscan: 10,
-  });
+  const messageRenderKeys = useMemo(() => {
+    const scopeKey = chat?.id ?? routeChatId ?? "__draft__";
 
-  const totalSize = virtualizer.getTotalSize();
-  const virtualItems = virtualizer.getVirtualItems();
-  const previousMessageCountRef = useRef(messages.length);
-
-  const { enableAutoScroll, isAutoScrollEnabled } = useAutoScroll({
-    scrollElement,
-    virtualizer,
-  });
-
-  const handleScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
-    scrollContainerRef.current = element;
-    setScrollElement(element);
-  }, []);
-
-  // Re-enable auto-scroll when the user sends a new message while scrolled up.
-  useEffect(() => {
-    const prev = previousMessageCountRef.current;
-    previousMessageCountRef.current = messages.length;
-    if (messages.length > prev && messages[messages.length - 1]?.role === "user") {
-      enableAutoScroll();
+    if (messageKeyScopeRef.current !== scopeKey) {
+      messageKeysRef.current = [];
+      nextMessageKeyRef.current = 0;
+      messageKeyScopeRef.current = scopeKey;
     }
-  }, [messages, enableAutoScroll]);
+
+    if (messageKeysRef.current.length > messages.length) {
+      messageKeysRef.current.length = messages.length;
+    }
+
+    while (messageKeysRef.current.length < messages.length) {
+      messageKeysRef.current.push(`${scopeKey}-message-${nextMessageKeyRef.current}`);
+      nextMessageKeyRef.current += 1;
+    }
+
+    return messageKeysRef.current.slice(0, messages.length);
+  }, [chat?.id, messages.length, routeChatId]);
+
+  const { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest } = useChatScroll({
+    resetKey: chat?.id ?? routeChatId ?? "__draft__",
+    messages,
+    isResponding,
+  });
 
   // Track window resize for mobile detection
   useEffect(() => {
@@ -261,9 +259,17 @@ export function ChatPage() {
     }
   }, []);
 
+  // Measure footer height synchronously on mount so that the initial
+  // scroll-to-bottom on direct URL loads uses the correct paddingBottom.
+  // The async 100ms measurement below fires too late when messages are cached.
+  useLayoutEffect(() => {
+    observeHeight();
+  }, [observeHeight]);
+
   // Observer for chat input height changes to adjust message container padding
   useEffect(() => {
-    // Initial measurement after a short delay to ensure DOM is ready
+    // Fallback measurement after a short delay in case the layout effect fired
+    // before fonts/styles were fully applied (rare, but keeps the observer setup).
     const timer = setTimeout(observeHeight, 100);
 
     // Create a MutationObserver to watch for changes in the footer area
@@ -334,54 +340,37 @@ export function ChatPage() {
           ) : (
             <div
               className="flex-1 overflow-auto transition-opacity duration-300 relative"
-              style={{ overflowAnchor: "none" }}
               ref={handleScrollContainerRef}
             >
               <div
-                className={`px-3 pt-18 transition-all duration-150 ease-out ${layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width"}`}
+                className={`px-3 pt-18 transition-[max-width] duration-150 ease-out ${layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width"}`}
+                style={{ paddingBottom: chatInputHeight }}
               >
                 <Disclaimer />
 
-                {/* Virtualized message list */}
-                <div style={{ height: totalSize, width: "100%", position: "relative" }}>
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      transform: `translateY(${virtualItems[0]?.start ?? 0}px)`,
-                    }}
-                  >
-                    {virtualItems.map((virtualRow) =>
-                      virtualRow.index < messages.length ? (
-                        <div
-                          key={virtualRow.key}
-                          data-index={virtualRow.index}
-                          ref={virtualizer.measureElement}
-                          className="flow-root"
-                        >
-                          <ChatMessage
-                            index={virtualRow.index}
-                            message={messages[virtualRow.index]}
-                            isLast={virtualRow.index === messages.length - 1}
-                            isResponding={isResponding}
-                          />
-                        </div>
-                      ) : (
-                        <div key="__sentinel" data-index={virtualRow.index} ref={virtualizer.measureElement} />
-                      ),
-                    )}
-                  </div>
+                <div>
+                  {messages.map((message, index) => (
+                    <div key={messageRenderKeys[index]} className="flow-root" data-role={message.role}>
+                      <ChatMessage
+                        index={index}
+                        message={message}
+                        isLast={index === messages.length - 1}
+                        isResponding={isResponding}
+                        onGoToLatest={goToLatest}
+                      />
+                    </div>
+                  ))}
                 </div>
+                {/* Spacer — allows the last user message to scroll to the top */}
+                <div ref={handleSpacerRef} aria-hidden="true" />
               </div>
             </div>
           )}
 
-          {messages.length > 0 && !isAutoScrollEnabled && (
+          {messages.length > 0 && !isAtBottom && (
             <button
               type="button"
-              onClick={enableAutoScroll}
+              onClick={goToLatest}
               className="absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-neutral-200/80 bg-white/95 px-3 py-2 text-sm font-medium text-neutral-700 shadow-sm backdrop-blur transition-colors hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-700/80 dark:bg-neutral-900/95 dark:text-neutral-200 dark:hover:border-neutral-600 dark:hover:text-neutral-50"
               style={{ bottom: chatInputHeight + 16 }}
               title="Jump to latest"
@@ -394,11 +383,7 @@ export function ChatPage() {
 
         {/* Chat Input */}
         <footer
-          className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-500 ease-in-out ${
-            messages.length === 0 && !showArtifactsDrawer && !showAppDrawer && !showAgentDrawer
-              ? "md:bottom-1/3 md:transform md:translate-y-1/2"
-              : ""
-          } ${showSidebar && chats.length > 0 && !showArtifactsDrawer && !showAgentDrawer && !showAppDrawer ? "md:left-59" : ""} ${
+          className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out ${showSidebar && chats.length > 0 && !showArtifactsDrawer && !showAgentDrawer && !showAppDrawer ? "md:left-59" : ""} ${
             showAppDrawer
               ? "right-0 md:right-[calc(50vw+0.75rem)]"
               : showArtifactsDrawer
@@ -408,7 +393,13 @@ export function ChatPage() {
                   : "right-0"
           }`}
         >
-          <div className="relative pointer-events-auto md:max-w-4xl mx-auto">
+          <div
+            className={`relative pointer-events-auto md:max-w-4xl mx-auto transition-transform duration-500 ease-in-out ${
+              messages.length === 0 && !showArtifactsDrawer && !showAppDrawer && !showAgentDrawer
+                ? "md:translate-y-[calc(50%-33.333vh)]"
+                : ""
+            }`}
+          >
             <ChatInput />
           </div>
         </footer>

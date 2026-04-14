@@ -1,7 +1,7 @@
-import { useState } from "react";
 import type { ReactNode } from "react";
-import { NavigationContext } from "./NavigationContext";
+import { useState } from "react";
 import type { NavigationContextType } from "./NavigationContext";
+import { NavigationContext } from "./NavigationContext";
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
   const [leftActions, setLeftActions] = useState<ReactNode>(null);

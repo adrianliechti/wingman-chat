@@ -156,7 +156,12 @@ export function getFileName(path: string): string {
 export function getFileExt(path: string): string {
   const filename = getFileName(path);
   const parts = filename.split(".");
-  return parts.length > 1 ? "." + parts.pop() || "" : "";
+  if (parts.length <= 1) {
+    return "";
+  }
+
+  const extension = parts.pop();
+  return extension ? `.${extension}` : "";
 }
 
 export function isAudioUrl(url: string): boolean {
@@ -194,7 +199,7 @@ export function formatBytes(bytes: number): string {
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+  return `${parseFloat((bytes / k ** i).toFixed(1))} ${sizes[i]}`;
 }
 
 export function getToolDisplayName(toolName: string): string {
@@ -294,7 +299,7 @@ export function markdownToText(markdown: string): string {
     // Restore code blocks
     .replace(new RegExp(CODE_BLOCK_PLACEHOLDER, "g"), () => {
       const code = codeBlocks.shift() || "";
-      return escapeHtml(code) + "\n\n";
+      return `${escapeHtml(code)}\n\n`;
     })
     // Restore inline code
     .replace(new RegExp(INLINE_CODE_PLACEHOLDER, "g"), () => {

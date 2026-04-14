@@ -1,22 +1,18 @@
-import { useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useChat } from "@/features/chat/hooks/useChat";
+import { useCallback } from "react";
 
 export function useChatNavigate() {
   const navigate = useNavigate();
-  const { selectChat } = useChat();
 
   const newChat = useCallback(() => {
-    selectChat(null);
     navigate({ to: "/chat" });
-  }, [navigate, selectChat]);
+  }, [navigate]);
 
   const openChat = useCallback(
     (chatId: string) => {
-      selectChat(chatId);
       navigate({ to: "/chat/$chatId", params: { chatId } });
     },
-    [navigate, selectChat],
+    [navigate],
   );
 
   return { newChat, openChat };

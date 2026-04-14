@@ -17,12 +17,17 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const messageCount = messages.length;
+  const streamingPartCount = streamingContent?.length ?? 0;
+  const messageKeyCounts = new Map<string, number>();
 
   useEffect(() => {
+    if (messageCount === 0 && streamingPartCount === 0) return;
+
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, streamingContent]);
+  }, [messageCount, streamingPartCount]);
 
   const handleSubmit = () => {
     if (!input.trim() || isChatting) return;
@@ -89,10 +94,17 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
           </div>
         ) : (
           <div className="p-4 space-y-4">
-            {messages.map((msg, i) => {
+            {messages.map((msg) => {
               const text = getTextFromContent(msg.content);
+              const messageSignature = `${msg.timestamp}:${msg.role}:${text}`;
+              const occurrence = (messageKeyCounts.get(messageSignature) ?? 0) + 1;
+              messageKeyCounts.set(messageSignature, occurrence);
+
               return (
-                <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div
+                  key={`${messageSignature}:${occurrence}`}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                >
                   <div
                     className={`max-w-[85%] rounded-xl px-4 py-2.5 ${msg.role === "user" ? "bg-neutral-200 dark:bg-neutral-900" : "bg-neutral-100 dark:bg-neutral-800"}`}
                   >
@@ -137,7 +149,7 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
             placeholder={hasSources ? "Ask about your sources..." : "Add sources first to start chatting"}
             disabled={!hasSources || isChatting}
             rows={1}
-            className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 outline-none resize-none min-h-[24px] max-h-[120px] disabled:opacity-50"
+            className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 outline-none resize-none min-h-6 max-h-[120px] disabled:opacity-50"
             style={{ height: "auto" }}
             onInput={(e) => {
               const target = e.target as HTMLTextAreaElement;

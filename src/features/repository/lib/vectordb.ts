@@ -14,8 +14,6 @@ export interface QueryResult {
 export class VectorDB {
   private documents: Map<string, Document> = new Map();
 
-  constructor() {}
-
   addDocument(document: Document): void {
     this.documents.set(document.id, document);
   }
@@ -57,7 +55,6 @@ export class VectorDB {
         similarities.push({ document, similarity });
       } catch (error) {
         console.warn(`Error calculating similarity for document ${document.id}:`, error);
-        continue;
       }
     }
 

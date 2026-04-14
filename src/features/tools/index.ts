@@ -1,6 +1,7 @@
 // Context
-export { ToolsContext } from "./context/ToolsContext";
+
 export type { ToolsContextValue } from "./context/ToolsContext";
+export { ToolsContext } from "./context/ToolsContext";
 export { ToolsProvider } from "./context/ToolsProvider";
 
 // Hooks

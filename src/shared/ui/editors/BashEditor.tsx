@@ -1,16 +1,72 @@
-import { useState, useCallback, useEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import {
-  BASH_HOME,
-  createBashInstance,
-  getBashCwd,
-  getBashEnv,
-  readFilesFromFs,
-  resolveBashCwd,
-} from "@/features/tools/lib/bash";
-import type { BashInstance } from "@/features/tools/lib/bash";
 import type { OverlayFile } from "@/features/artifacts/lib/fs";
+import type { BashInstance } from "@/features/tools/lib/bash";
+import { createBashInstance, getBashCwd, getBashEnv, readFilesFromFs, resolveBashCwd } from "@/features/tools/lib/bash";
+import { SANDBOX_HOME } from "@/shared/lib/artifactFiles";
+
+/**
+ * Use `compgen -A command` and `compgen -A file` for tab-completions.
+ * Note: the short flags `-c` / `-b` are broken in just-bash, but `-A <action>` works.
+ */
+async function getCompletions(
+  bashInstance: BashInstance,
+  input: string,
+  cursorPos: number,
+  cwd: string,
+  env: Record<string, string>,
+): Promise<{ completions: string[]; replaceFrom: number }> {
+  const beforeCursor = input.slice(0, cursorPos);
+  const tokenMatch = beforeCursor.match(/(\S+)$/);
+  const token = tokenMatch ? tokenMatch[1] : "";
+  const replaceFrom = cursorPos - token.length;
+  const isFirstToken = beforeCursor.trimStart() === token;
+
+  const results = new Set<string>();
+  const escaped = escapeShellArg(token);
+  const execOpts = { cwd, env, replaceEnv: true };
+
+  try {
+    // File completions (always)
+    const fileResult = await bashInstance.bash.exec(`compgen -A file -- ${escaped}`, execOpts);
+    if (fileResult.stdout) {
+      for (const line of fileResult.stdout.split("\n")) {
+        if (line) results.add(line);
+      }
+    }
+
+    // Command completions (only for first token)
+    if (isFirstToken) {
+      const cmdResult = await bashInstance.bash.exec(`compgen -A command -- ${escaped}`, execOpts);
+      if (cmdResult.stdout) {
+        for (const line of cmdResult.stdout.split("\n")) {
+          if (line) results.add(line);
+        }
+      }
+    }
+  } catch {
+    // Ignore completion errors
+  }
+
+  return { completions: [...results].sort(), replaceFrom };
+}
+
+function escapeShellArg(arg: string): string {
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
+function longestCommonPrefix(strings: string[]): string {
+  if (strings.length === 0) return "";
+  let prefix = strings[0];
+  for (let i = 1; i < strings.length; i++) {
+    while (!strings[i].startsWith(prefix)) {
+      prefix = prefix.slice(0, -1);
+      if (!prefix) return "";
+    }
+  }
+  return prefix;
+}
 
 interface BashEditorProps {
   /** If provided, this script content is shown as the initial command (for .sh files) */
@@ -28,12 +84,12 @@ interface OutputEntry {
 }
 
 function formatPromptCwd(cwd: string): string {
-  if (cwd === BASH_HOME) {
+  if (cwd === SANDBOX_HOME) {
     return "~";
   }
 
-  if (cwd.startsWith(`${BASH_HOME}/`)) {
-    return `~/${cwd.slice(BASH_HOME.length + 1)}`;
+  if (cwd.startsWith(`${SANDBOX_HOME}/`)) {
+    return `~/${cwd.slice(SANDBOX_HOME.length + 1)}`;
   }
 
   return cwd;
@@ -46,21 +102,28 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
   const [input, setInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  const [cwd, setCwd] = useState(BASH_HOME);
+  const [cwd, setCwd] = useState(SANDBOX_HOME);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const terminalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
   const previousFilesRef = useRef<Record<string, OverlayFile>>({});
   const hasRunInitialScript = useRef(false);
   const isApplyingLocalSyncRef = useRef(false);
-  const cwdRef = useRef(BASH_HOME);
+  const cwdRef = useRef(SANDBOX_HOME);
   const shellEnvRef = useRef<Record<string, string>>({
-    HOME: BASH_HOME,
-    PWD: BASH_HOME,
-    OLDPWD: BASH_HOME,
+    HOME: SANDBOX_HOME,
+    PWD: SANDBOX_HOME,
+    OLDPWD: SANDBOX_HOME,
     PATH: "/usr/bin:/bin",
   });
+  // Tab completion state
+  const tabCompletionsRef = useRef<string[]>([]);
+  const tabIndexRef = useRef(-1);
+  const tabReplaceFromRef = useRef(0);
+  const tabOriginalInputRef = useRef("");
+  const tabOriginalCursorRef = useRef(0);
 
   useEffect(() => {
     cwdRef.current = cwd;
@@ -124,11 +187,13 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
   }, [isReady, initialScript]);
 
   // Auto-scroll to bottom when entries change
+  const outputEntryCount = entries.length;
+
   useEffect(() => {
-    if (outputRef.current) {
+    if (outputEntryCount > 0 && outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
-  }, [entries]);
+  }, [outputEntryCount]);
 
   // Virtualizer for terminal output entries
   const outputVirtualizer = useVirtualizer({
@@ -300,6 +365,67 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
+      const el = e.currentTarget;
+
+      if (e.key === "Tab") {
+        e.preventDefault();
+        if (!instanceRef.current || isRunning) return;
+
+        const cursorPos = el.selectionStart ?? input.length;
+
+        // If we already have completions, cycle through them
+        if (tabCompletionsRef.current.length > 0) {
+          const dir = e.shiftKey ? -1 : 1;
+          tabIndexRef.current =
+            (tabIndexRef.current + dir + tabCompletionsRef.current.length) % tabCompletionsRef.current.length;
+          const match = tabCompletionsRef.current[tabIndexRef.current];
+          const before = tabOriginalInputRef.current.slice(0, tabReplaceFromRef.current);
+          const after = tabOriginalInputRef.current.slice(tabOriginalCursorRef.current);
+          const suffix = match.endsWith("/") ? "" : " ";
+          setInput(`${before}${match}${suffix}${after}`);
+          return;
+        }
+
+        // First tab press — fetch completions
+        tabOriginalInputRef.current = input;
+        tabOriginalCursorRef.current = cursorPos;
+
+        void getCompletions(instanceRef.current, input, cursorPos, cwd, shellEnvRef.current).then(
+          ({ completions, replaceFrom }) => {
+            if (completions.length === 0) return;
+
+            tabCompletionsRef.current = completions;
+            tabReplaceFromRef.current = replaceFrom;
+
+            const before = input.slice(0, replaceFrom);
+            const after = input.slice(cursorPos);
+
+            if (completions.length === 1) {
+              const match = completions[0];
+              const suffix = match.endsWith("/") ? "" : " ";
+              setInput(`${before}${match}${suffix}${after}`);
+              tabCompletionsRef.current = [];
+            } else {
+              const common = longestCommonPrefix(completions);
+              setInput(`${before}${common}${after}`);
+              tabIndexRef.current = -1;
+              setEntries((prev) => [
+                ...prev,
+                { type: "command", text: input, cwd },
+                { type: "stdout", text: completions.join("  ") },
+              ]);
+            }
+          },
+        );
+        return;
+      }
+
+      // Any non-tab key resets tab state
+      if (e.key !== "Shift") {
+        tabCompletionsRef.current = [];
+        tabIndexRef.current = -1;
+      }
+
       if (e.key === "Enter" && !isRunning) {
         e.preventDefault();
         const cmd = input;
@@ -322,38 +448,77 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
           setHistoryIndex(newIndex);
           setInput(history[newIndex]);
         }
-      } else if (e.key === "l" && e.ctrlKey) {
-        e.preventDefault();
-        setEntries([]);
+      } else if (e.ctrlKey) {
+        if (e.key === "l") {
+          e.preventDefault();
+          setEntries([]);
+        } else if (e.key === "a") {
+          e.preventDefault();
+          el.setSelectionRange(0, 0);
+        } else if (e.key === "e") {
+          e.preventDefault();
+          el.setSelectionRange(input.length, input.length);
+        } else if (e.key === "u") {
+          e.preventDefault();
+          const pos = el.selectionStart ?? 0;
+          setInput(input.slice(pos));
+          requestAnimationFrame(() => el.setSelectionRange(0, 0));
+        } else if (e.key === "k") {
+          e.preventDefault();
+          const pos = el.selectionStart ?? input.length;
+          setInput(input.slice(0, pos));
+        } else if (e.key === "w") {
+          e.preventDefault();
+          const pos = el.selectionStart ?? 0;
+          const beforeW = input.slice(0, pos);
+          const match = beforeW.match(/(\s*\S+\s*)$/);
+          const deleteLen = match ? match[1].length : 0;
+          const newPos = pos - deleteLen;
+          setInput(input.slice(0, newPos) + input.slice(pos));
+          requestAnimationFrame(() => el.setSelectionRange(newPos, newPos));
+        } else if (e.key === "c") {
+          e.preventDefault();
+          if (isRunning) return;
+          setInput("");
+          setEntries((prev) => [...prev, { type: "command", text: `${input}^C`, cwd }]);
+        }
       }
     },
-    [input, isRunning, history, historyIndex, executeCommand],
+    [input, isRunning, history, historyIndex, cwd, executeCommand],
   );
 
-  // Focus input when terminal becomes visible
+  // Focus input when terminal becomes visible or command finishes
   useEffect(() => {
-    if (visible && isReady) {
+    if (isReady && visible !== false && !isRunning) {
       inputRef.current?.focus();
     }
-  }, [visible, isReady]);
+  }, [visible, isReady, isRunning]);
 
   useEffect(() => {
-    if (!isReady || isRunning || visible === false) {
+    const terminal = terminalRef.current;
+    if (!terminal) {
       return;
     }
 
-    inputRef.current?.focus();
-  }, [isReady, isRunning, visible]);
+    const handleMouseDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest("button, input, textarea, a")) {
+        return;
+      }
 
-  // Focus input when clicking anywhere in the terminal
-  const handleTerminalClick = useCallback(() => {
-    inputRef.current?.focus();
+      inputRef.current?.focus();
+    };
+
+    terminal.addEventListener("mousedown", handleMouseDown);
+    return () => {
+      terminal.removeEventListener("mousedown", handleMouseDown);
+    };
   }, []);
 
   return (
     <div
+      ref={terminalRef}
       className="h-full flex flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-200 font-mono text-xs cursor-text"
-      onClick={handleTerminalClick}
     >
       {/* Output area */}
       <div ref={outputRef} className="flex-1 overflow-auto p-3" style={{ overflowAnchor: "none" }}>
@@ -405,11 +570,9 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
         )}
       </div>
 
-      {/* Input line */}
-      <div className="shrink-0 flex items-center border-t border-neutral-200/60 dark:border-neutral-800/60 px-3 py-2">
-        <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">
-          {formatPromptCwd(cwd)} ${" "}
-        </span>
+      {/* Input line — inline with output, no separator */}
+      <div className="shrink-0 flex items-center px-3 pb-3 pt-1">
+        <span className="text-emerald-600 dark:text-green-400 shrink-0 select-none mr-1">{formatPromptCwd(cwd)} $</span>
         <input
           ref={inputRef}
           type="text"
@@ -420,8 +583,7 @@ export function BashEditor({ initialScript, visible, onRunReady, onRunningChange
           readOnly={isRunning}
           aria-busy={isRunning}
           className="flex-1 bg-transparent text-neutral-900 dark:text-neutral-100 outline-none placeholder-neutral-400 dark:placeholder-neutral-600 caret-emerald-600 dark:caret-green-400 disabled:opacity-50 read-only:opacity-75"
-          placeholder={isReady ? "Enter a command..." : "Initializing..."}
-          autoFocus
+          placeholder={isReady ? "" : "Initializing..."}
           spellCheck={false}
           autoComplete="off"
           autoCapitalize="off"

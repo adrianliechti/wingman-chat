@@ -1,7 +1,7 @@
 import { docxToMarkdown } from "./docx";
+import { isTextContentType } from "./fileTypes";
 import { pptxToMarkdown } from "./pptx";
 import { xlsxToCsv } from "./xlsx";
-import { isTextContentType } from "./fileTypes";
 
 /**
  * Extracts text content from a file using the same converters as the artifacts module.

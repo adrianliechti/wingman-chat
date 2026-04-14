@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { getConfig } from "@/shared/config";
 import type { Model } from "@/shared/types/chat";
 

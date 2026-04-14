@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, Fragment } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { X, Folder, File, ChevronRight, Trash2, RefreshCw, Loader2, HardDrive } from "lucide-react";
-import { getRoot, deleteFile, deleteDirectory } from "@/shared/lib/opfs";
+import { ChevronRight, File, Folder, HardDrive, Loader2, RefreshCw, Trash2, X } from "lucide-react";
+import { Fragment, useCallback, useEffect, useState } from "react";
+import { deleteDirectory, deleteFile, getRoot } from "@/shared/lib/opfs";
 import { formatBytes } from "@/shared/lib/utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ function TreeItem({ node, depth, onDelete }: { node: TreeNode; depth: number; on
         {/* Meta */}
         <span className="text-[11px] text-neutral-400 dark:text-neutral-500 whitespace-nowrap tabular-nums mr-1">
           {isDir
-            ? `${stats!.files} file${stats!.files === 1 ? "" : "s"} · ${formatBytes(stats!.size)}`
+            ? `${stats?.files ?? 0} file${stats?.files === 1 ? "" : "s"} · ${formatBytes(stats?.size ?? 0)}`
             : formatBytes(node.size ?? 0)}
         </span>
 
@@ -123,7 +123,7 @@ function TreeItem({ node, depth, onDelete }: { node: TreeNode; depth: number; on
       {/* Children */}
       {isDir && expanded && hasChildren && (
         <div>
-          {node.children!.map((child) => (
+          {(node.children ?? []).map((child) => (
             <TreeItem key={child.path} node={child} depth={depth + 1} onDelete={onDelete} />
           ))}
         </div>

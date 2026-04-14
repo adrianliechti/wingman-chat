@@ -50,10 +50,6 @@ interface NotebookConfig {
   model?: string;
 }
 
-interface WorkflowConfig {
-  model?: string;
-}
-
 interface VoiceConfig {
   model?: string;
   transcriber?: string;
@@ -129,7 +125,6 @@ interface ConfigSchema {
   stt?: STTConfig;
 
   notebook?: NotebookConfig;
-  workflow?: WorkflowConfig;
 
   voice?: VoiceConfig;
   vision?: VisionConfig;
@@ -218,7 +213,6 @@ interface Config {
   stt: STTConfig | null;
 
   notebook: NotebookConfig | null;
-  workflow: WorkflowConfig | null;
 
   voice: VoiceConfig | null;
   vision: VisionConfig | null;
@@ -277,7 +271,6 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       stt: cfg.stt ?? null,
 
       notebook: cfg.notebook ?? null,
-      workflow: cfg.workflow ?? null,
 
       voice: cfg.voice ?? null,
       vision: cfg.vision ? { files: cfg.vision.files ?? DEFAULT_VISION_FILES } : null,

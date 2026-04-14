@@ -6,7 +6,7 @@
  */
 
 import JSZip from "jszip";
-import { getRoot, getDirectory, writeJson, writeBlob, readJson, readText, type IndexEntry } from "./opfs-core";
+import { getDirectory, getRoot, type IndexEntry, readJson, readText, writeBlob, writeJson } from "./opfs-core";
 
 // ============================================================================
 // Helpers
@@ -19,7 +19,10 @@ export async function addDirectoryToZip(handle: FileSystemDirectoryHandle, zipFo
       const file = await (entryHandle as FileSystemFileHandle).getFile();
       zipFolder.file(name, await file.arrayBuffer());
     } else {
-      const subFolder = zipFolder.folder(name)!;
+      const subFolder = zipFolder.folder(name);
+      if (!subFolder) {
+        throw new Error(`Failed to add folder to zip: ${name}`);
+      }
       await addDirectoryToZip(entryHandle as FileSystemDirectoryHandle, subFolder);
     }
   }

@@ -1,12 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { FileText, X, Plus, Loader2, Upload, HardDrive } from "lucide-react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { FileText, HardDrive, Loader2, Plus, Upload, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
-import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
-import { getDriveContentUrl } from "@/shared/lib/drives";
-import { getConfig } from "@/shared/config";
 import type { Agent } from "@/features/agent/types/agent";
 import type { RepositoryFile } from "@/features/repository/types/repository";
+import { getConfig } from "@/shared/config";
+import { getDriveContentUrl } from "@/shared/lib/drives";
+import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { Section } from "./Section";
 
 interface FilesSectionProps {
@@ -16,13 +16,11 @@ interface FilesSectionProps {
 export function FilesSection({ agent }: FilesSectionProps) {
   const config = getConfig();
   const { files, addFile, removeFile } = useAgentFiles(agent.id);
-  const acceptFilter = [
-    ...(config.text?.files ?? []),
-    ...(config.extractor?.files ?? []),
-  ].join(",");
+  const acceptFilter = [...(config.text?.files ?? []), ...(config.extractor?.files ?? [])].join(",");
   const [isDragOver, setIsDragOver] = useState(false);
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     return () => {
@@ -30,30 +28,47 @@ export function FilesSection({ agent }: FilesSectionProps) {
     };
   }, []);
 
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-    if (dragTimeoutRef.current) {
-      clearTimeout(dragTimeoutRef.current);
-      dragTimeoutRef.current = null;
-    }
-    const droppedFiles = Array.from(e.dataTransfer.files);
-    for (const file of droppedFiles) {
-      await addFile(file);
-    }
-  };
+  const handleDrop = useCallback(
+    async (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      if (dragTimeoutRef.current) {
+        clearTimeout(dragTimeoutRef.current);
+        dragTimeoutRef.current = null;
+      }
 
-  const handleDragOver = (e: React.DragEvent) => {
+      const droppedFiles = Array.from(e.dataTransfer?.files ?? []);
+      for (const file of droppedFiles) {
+        await addFile(file);
+      }
+    },
+    [addFile],
+  );
+
+  const handleDragOver = useCallback((e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!isDragOver) setIsDragOver(true);
+    setIsDragOver(true);
     if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
     dragTimeoutRef.current = setTimeout(() => {
       setIsDragOver(false);
       dragTimeoutRef.current = null;
     }, 100);
-  };
+  }, []);
+
+  useEffect(() => {
+    const dropZone = dropZoneRef.current;
+    if (!dropZone) return;
+
+    dropZone.addEventListener("drop", handleDrop);
+    dropZone.addEventListener("dragover", handleDragOver);
+
+    return () => {
+      dropZone.removeEventListener("drop", handleDrop);
+      dropZone.removeEventListener("dragover", handleDragOver);
+    };
+  }, [handleDrop, handleDragOver]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
@@ -77,11 +92,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
   );
 
   return (
-    <div
-      className={`relative ${isDragOver ? "bg-slate-50/50 dark:bg-slate-900/50" : ""}`}
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-    >
+    <div ref={dropZoneRef} className={`relative ${isDragOver ? "bg-slate-50/50 dark:bg-slate-900/50" : ""}`}>
       {isDragOver && (
         <div className="absolute inset-0 z-10 bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm border-2 border-dashed border-slate-400 dark:border-slate-500 rounded-lg flex items-center justify-center">
           <div className="text-center">

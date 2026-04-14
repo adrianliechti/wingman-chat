@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { FileText } from "lucide-react";
+import { useState } from "react";
 import { Markdown } from "@/shared/ui/Markdown";
 
 interface SlideViewerProps {
@@ -10,6 +10,7 @@ interface SlideViewerProps {
 export function SlideViewer({ content, slides }: SlideViewerProps) {
   // Index 0 = text view, 1+ = slide images
   const [activeIndex, setActiveIndex] = useState(slides.length > 0 ? 1 : 0);
+  const slideKeyCounts = new Map<string, number>();
 
   return (
     <div className="h-full flex flex-col">
@@ -49,20 +50,25 @@ export function SlideViewer({ content, slides }: SlideViewerProps) {
           </button>
 
           {/* Slide thumbnails */}
-          {slides.map((slideUrl, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => setActiveIndex(i + 1)}
-              className={`shrink-0 w-20 aspect-[16/10] rounded-lg border-2 overflow-hidden transition-colors ${
-                activeIndex === i + 1
-                  ? "border-blue-500"
-                  : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
-              }`}
-            >
-              <img src={slideUrl} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />
-            </button>
-          ))}
+          {slides.map((slideUrl, i) => {
+            const occurrence = (slideKeyCounts.get(slideUrl) ?? 0) + 1;
+            slideKeyCounts.set(slideUrl, occurrence);
+
+            return (
+              <button
+                key={`${slideUrl}:${occurrence}`}
+                type="button"
+                onClick={() => setActiveIndex(i + 1)}
+                className={`shrink-0 w-20 aspect-[16/10] rounded-lg border-2 overflow-hidden transition-colors ${
+                  activeIndex === i + 1
+                    ? "border-blue-500"
+                    : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
+                }`}
+              >
+                <img src={slideUrl} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

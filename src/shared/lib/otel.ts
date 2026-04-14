@@ -1,5 +1,4 @@
-import { trace, SpanKind, SpanStatusCode } from "@opentelemetry/api";
-import { metrics } from "@opentelemetry/api";
+import { metrics, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
 
 const tracer = trace.getTracer("wingman");
 const meter = metrics.getMeter("wingman");
