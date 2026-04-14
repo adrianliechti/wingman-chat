@@ -10,6 +10,7 @@ import { TranslateProvider } from "./features/translate/context/TranslateProvide
 import { VoiceProvider } from "./features/voice/context/VoiceProvider";
 import { router } from "./router";
 import { AppProvider } from "./shell/context/AppProvider";
+import { AudioDeviceProvider } from "./shell/context/AudioDeviceProvider";
 import { BackgroundProvider } from "./shell/context/BackgroundProvider";
 import { EmojiProvider } from "./shell/context/EmojiProvider";
 import { LayoutProvider } from "./shell/context/LayoutProvider";
@@ -22,6 +23,7 @@ const providers = [
   { key: "ThemeProvider", Provider: ThemeProvider },
   { key: "LayoutProvider", Provider: LayoutProvider },
   { key: "EmojiProvider", Provider: EmojiProvider },
+  { key: "AudioDeviceProvider", Provider: AudioDeviceProvider },
   { key: "BackgroundProvider", Provider: BackgroundProvider },
   { key: "ProfileProvider", Provider: ProfileProvider },
   { key: "SkillsProvider", Provider: SkillsProvider },

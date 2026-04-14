@@ -582,11 +582,16 @@ export class Client {
     return new Blob([audioBuffer], { type: "audio/wav" });
   }
 
-  async speakText(model: string, input: string, voice?: string): Promise<void> {
+  async speakText(model: string, input: string, voice?: string, sinkId?: string): Promise<void> {
     const audioBlob = await this.generateAudio(model, input, voice);
     const audioUrl = URL.createObjectURL(audioBlob);
 
     const audio = new Audio(audioUrl);
+
+    // Route to selected output device if supported
+    if (sinkId && "setSinkId" in audio) {
+      await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(sinkId);
+    }
 
     return new Promise((resolve, reject) => {
       audio.onended = () => {

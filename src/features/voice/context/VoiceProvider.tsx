@@ -4,6 +4,7 @@ import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { useVoiceWebSockets } from "@/features/voice/hooks/useVoiceWebSockets";
 import { getConfig } from "@/shared/config";
 import { Role } from "@/shared/types/chat";
+import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import type { VoiceContextType } from "./VoiceContext";
 import { VoiceContext } from "./VoiceContext";
 
@@ -25,6 +26,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const { addMessage, messages, chat, models, model: selectedModel } = useChat();
   const model = chat?.model ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext("voice", model);
+  const { inputDeviceId, outputDeviceId } = useAudioDevices();
 
   const onUserTranscript = useCallback(
     (text: string) => {
@@ -105,7 +107,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     try {
       const realtimeModel = config.voice?.model;
       const transcribeModel = config.voice?.transcriber ?? config.stt?.model;
-      await start(realtimeModel, transcribeModel, chatInstructions(), messages, await chatTools());
+      await start(realtimeModel, transcribeModel, chatInstructions(), messages, await chatTools(), inputDeviceId, outputDeviceId);
       setIsListening(true);
     } catch (error) {
       console.error("Failed to start voice mode:", error);
@@ -117,7 +119,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         alert("Failed to start voice mode. Please check your microphone permissions and try again.");
       }
     }
-  }, [chatInstructions, chatTools, start, messages, config.voice?.model, config.voice?.transcriber, config.stt?.model]);
+  }, [chatInstructions, chatTools, start, messages, config.voice?.model, config.voice?.transcriber, config.stt?.model, inputDeviceId, outputDeviceId]);
 
   const value: VoiceContextType = {
     isAvailable,

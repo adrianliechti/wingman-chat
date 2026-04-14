@@ -8,6 +8,7 @@ import {
   Download,
   HardDrive,
   MessageSquare,
+  Mic,
   Settings,
   Trash2,
   Upload,
@@ -34,6 +35,7 @@ import { personaOptions } from "@/features/settings/lib/personas";
 import { rebuildAllIndexes } from "@/features/settings/lib/rebuildIndexes";
 import { useToolsContext } from "@/features/tools";
 import { LOCAL_WINGMAN_ID } from "@/features/tools/hooks/useLocalWingman";
+import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { clearAll, deleteDirectory, getStorageUsage, removeIndexEntry } from "@/shared/lib/opfs";
 import { downloadFolderAsZip } from "@/shared/lib/opfs-zip";
 import { formatBytes } from "@/shared/lib/utils";
@@ -214,6 +216,15 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   } = useSettings();
   const { chats, deleteChat } = useChat();
   const { agents } = useAgents();
+  const {
+    inputDeviceId,
+    outputDeviceId,
+    inputDevices,
+    outputDevices,
+    setInputDevice,
+    setOutputDevice,
+    requestPermission,
+  } = useAudioDevices();
 
   const [storageInfo, setStorageInfo] = useState<{
     totalSize: number;
@@ -555,6 +566,61 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                       onChange={setBackground}
                       options={backgroundOptions}
                     />
+                  )}
+                </SectionPanel>
+
+                {/* Audio Section */}
+                <SectionPanel
+                  title="Audio"
+                  icon={<Mic size={20} />}
+                  isOpen={openSection === "audio"}
+                  onClick={() => toggleSection("audio")}
+                >
+                  {inputDevices.length === 0 && outputDevices.length === 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                        Allow microphone access to select audio devices.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={requestPermission}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
+                      >
+                        <Mic size={14} />
+                        Allow Access
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {inputDevices.length > 0 && (
+                        <Select
+                          label="Microphone"
+                          value={inputDeviceId ?? null}
+                          onChange={(value) => setInputDevice(value ?? undefined)}
+                          options={[
+                            { value: null, label: "System Default" },
+                            ...inputDevices.map((d) => ({
+                              value: d.deviceId,
+                              label: d.label || `Microphone (${d.deviceId.slice(0, 8)})`,
+                            })),
+                          ]}
+                        />
+                      )}
+                      {outputDevices.length > 0 && (
+                        <Select
+                          label="Speaker"
+                          value={outputDeviceId ?? null}
+                          onChange={(value) => setOutputDevice(value ?? undefined)}
+                          options={[
+                            { value: null, label: "System Default" },
+                            ...outputDevices.map((d) => ({
+                              value: d.deviceId,
+                              label: d.label || `Speaker (${d.deviceId.slice(0, 8)})`,
+                            })),
+                          ]}
+                        />
+                      )}
+                    </>
                   )}
                 </SectionPanel>
 

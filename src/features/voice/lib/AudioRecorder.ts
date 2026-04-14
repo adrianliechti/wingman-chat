@@ -63,6 +63,7 @@ registerProcessor('audio-processor', AudioProcessor);
 
 export interface AudioRecorderOptions {
   sampleRate?: number;
+  deviceId?: string;
 }
 
 export interface AudioChunk {
@@ -73,6 +74,7 @@ export type ChunkCallback = (chunk: AudioChunk) => void;
 
 export class AudioRecorder {
   private sampleRate: number;
+  private deviceId: string | undefined;
   private context: AudioContext | null = null;
   private stream: MediaStream | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
@@ -82,6 +84,7 @@ export class AudioRecorder {
 
   constructor(options: AudioRecorderOptions = {}) {
     this.sampleRate = options.sampleRate ?? 24000;
+    this.deviceId = options.deviceId;
   }
 
   /**
@@ -91,6 +94,7 @@ export class AudioRecorder {
     // Get microphone access
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
+        ...(this.deviceId && { deviceId: { exact: this.deviceId } }),
         sampleRate: this.sampleRate,
         channelCount: 1,
         echoCancellation: true,

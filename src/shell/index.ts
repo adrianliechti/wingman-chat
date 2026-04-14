@@ -2,8 +2,11 @@
 export { AppDrawer } from "./components/AppDrawer";
 export { BackgroundImage } from "./components/BackgroundImage";
 export type { AppContextType } from "./context/AppContext";
+export type { AudioDeviceContextType, AudioDeviceSettings } from "./context/AudioDeviceContext";
 // Context
 export { AppContext } from "./context/AppContext";
+export { AudioDeviceContext } from "./context/AudioDeviceContext";
+export { AudioDeviceProvider } from "./context/AudioDeviceProvider";
 export { AppProvider } from "./context/AppProvider";
 export type {
   BackgroundContextValue,
@@ -28,6 +31,7 @@ export { ThemeProvider } from "./context/ThemeProvider";
 
 // Hooks
 export { useApp } from "./hooks/useApp";
+export { useAudioDevices } from "./hooks/useAudioDevices";
 export { useBackground } from "./hooks/useBackground";
 export { useLayout } from "./hooks/useLayout";
 export { useNavigation } from "./hooks/useNavigation";

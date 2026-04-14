@@ -1,6 +1,7 @@
 import { Loader2, Play, Square } from "lucide-react";
 import { useState } from "react";
 import { getConfig } from "@/shared/config";
+import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 
 type PlayButtonProps = {
   text: string;
@@ -11,6 +12,7 @@ type PlayButtonProps = {
 export function PlayButton({ text, voice, className }: PlayButtonProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const { outputDeviceId } = useAudioDevices();
 
   const handlePlay = async () => {
     if (isPlaying || isLoading) {
@@ -23,7 +25,7 @@ export function PlayButton({ text, voice, className }: PlayButtonProps) {
     try {
       const config = getConfig();
       const model = config.tts?.model ?? "";
-      await config.client.speakText(model, text, voice);
+      await config.client.speakText(model, text, voice, outputDeviceId);
     } catch (error) {
       console.error("Failed to play text:", error);
     } finally {
