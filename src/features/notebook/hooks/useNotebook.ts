@@ -20,10 +20,10 @@ import slideStyleNature from "../prompts/slide-style-nature.txt?raw";
 import slideStyleSwiss from "../prompts/slide-style-swiss.txt?raw";
 import slideStyleWhiteboard from "../prompts/slide-style-whiteboard.txt?raw";
 import studioAudioInstructions from "../prompts/studio-audio-overview.txt?raw";
-import studioDataTableInstructions from "../prompts/studio-data-table.txt?raw";
 import studioInfographicInstructions from "../prompts/studio-infographic.txt?raw";
 import studioMindMapInstructions from "../prompts/studio-mind-map.txt?raw";
 import studioQuizInstructions from "../prompts/studio-quiz.txt?raw";
+import studioReportInstructions from "../prompts/studio-report.txt?raw";
 import studioSlideInstructions from "../prompts/studio-slide-deck.txt?raw";
 import type {
   MindMapNode,
@@ -108,15 +108,18 @@ function writeString(view: DataView, offset: number, str: string) {
 }
 
 const STUDIO_PROMPTS: Record<OutputType, string> = {
-  "audio-overview": studioAudioInstructions,
-  "slide-deck": studioSlideInstructions,
+  podcast: studioAudioInstructions,
+  slides: studioSlideInstructions,
   infographic: studioInfographicInstructions,
-  "data-table": studioDataTableInstructions,
+  report: studioReportInstructions,
   quiz: studioQuizInstructions,
-  "mind-map": studioMindMapInstructions,
+  mindmap: studioMindMapInstructions,
 };
 
-const DEFAULT_SLIDE_STYLES: { id: string; label: string; prompt: string }[] = [
+type SlideStyle = { id: string; label: string; prompt: string };
+type PodcastStyle = { id: string; label: string; prompt: string; voices: string[] };
+
+const DEFAULT_SLIDE_STYLES: SlideStyle[] = [
   { id: "whiteboard", label: "Whiteboard", prompt: slideStyleWhiteboard },
   { id: "consulting", label: "Consulting", prompt: slideStyleConsulting },
   { id: "dark", label: "Dark", prompt: slideStyleDark },
@@ -124,7 +127,7 @@ const DEFAULT_SLIDE_STYLES: { id: string; label: string; prompt: string }[] = [
   { id: "nature", label: "Nature", prompt: slideStyleNature },
 ];
 
-function getSlideStyles(): { id: string; label: string; prompt: string }[] {
+export function getSlideStyles(): SlideStyle[] {
   const config = getConfig();
   const slides = config.canvas?.slides;
 
@@ -139,9 +142,7 @@ function getSlideStyles(): { id: string; label: string; prompt: string }[] {
   return DEFAULT_SLIDE_STYLES;
 }
 
-export const SLIDE_STYLES = getSlideStyles();
-
-const DEFAULT_PODCAST_STYLES: { id: string; label: string; prompt: string; voices: string[] }[] = [
+const DEFAULT_PODCAST_STYLES: PodcastStyle[] = [
   { id: "overview", label: "Overview", prompt: podcastStyleOverview, voices: ["host"] },
   { id: "deep-dive", label: "Deep Dive", prompt: podcastStyleDeepDive, voices: ["analyst"] },
   { id: "briefing", label: "Briefing", prompt: podcastStyleBriefing, voices: ["narrator"] },
@@ -149,7 +150,7 @@ const DEFAULT_PODCAST_STYLES: { id: string; label: string; prompt: string; voice
   { id: "debate", label: "Debate", prompt: podcastStyleDebate, voices: ["host", "skeptic"] },
 ];
 
-function getPodcastStyles(): { id: string; label: string; prompt: string; voices: string[] }[] {
+export function getPodcastStyles(): PodcastStyle[] {
   const config = getConfig();
   const podcasts = config.canvas?.podcasts;
 
@@ -165,27 +166,27 @@ function getPodcastStyles(): { id: string; label: string; prompt: string; voices
   return DEFAULT_PODCAST_STYLES;
 }
 
-export const PODCAST_STYLES = getPodcastStyles();
-
 function buildSlideInstructions(styleId: string): string {
-  const style = SLIDE_STYLES.find((s) => s.id === styleId) ?? SLIDE_STYLES[0];
+  const slideStyles = getSlideStyles();
+  const style = slideStyles.find((s) => s.id === styleId) ?? slideStyles[0] ?? DEFAULT_SLIDE_STYLES[0];
   return studioSlideInstructions
     .replace("{{COMMON_RULES}}", slideCommonRules)
     .replace("{{STYLE_SECTION}}", style.prompt);
 }
 
 function buildAudioInstructions(styleId: string): string {
-  const style = PODCAST_STYLES.find((s) => s.id === styleId) ?? PODCAST_STYLES[0];
+  const podcastStyles = getPodcastStyles();
+  const style = podcastStyles.find((s) => s.id === styleId) ?? podcastStyles[0] ?? DEFAULT_PODCAST_STYLES[0];
   return studioAudioInstructions.replace("{{STYLE_SECTION}}", style.prompt);
 }
 
 const OUTPUT_TITLES: Record<OutputType, string> = {
-  "audio-overview": "Audio Overview",
-  "slide-deck": "Slides",
+  podcast: "Podcast",
+  slides: "Slides",
   infographic: "Infographic",
-  "data-table": "Data Table",
+  report: "Report",
   quiz: "Quiz",
-  "mind-map": "Mind Map",
+  mindmap: "Mind Map",
 };
 
 export function useNotebook(notebookId?: string) {
@@ -508,9 +509,9 @@ export function useNotebook(notebookId?: string) {
       // Fire and forget
       const tools = createSourceTools(sourcesRef.current);
       const instructions =
-        type === "slide-deck"
+        type === "slides"
           ? buildSlideInstructions(styleId ?? "whiteboard")
-          : type === "audio-overview"
+          : type === "podcast"
             ? buildAudioInstructions(styleId ?? "overview")
             : STUDIO_PROMPTS[type];
       const userMessage = {
@@ -523,7 +524,7 @@ export function useNotebook(notebookId?: string) {
         ],
       };
 
-      if (type === "audio-overview") {
+      if (type === "podcast") {
         // Audio overview: LLM generates script → TTS generates audio per paragraph → merge
         runWithTools(client, getModel(), instructions, [userMessage], tools)
           .then(async (response) => {
@@ -535,7 +536,9 @@ export function useNotebook(notebookId?: string) {
             const ttsModel = config.tts?.model || "";
             const voiceMap = config.tts?.voices ?? {};
             const resolveVoice = (role: string) => voiceMap[role] || role;
-            const podcastStyle = PODCAST_STYLES.find((s) => s.id === styleId) ?? PODCAST_STYLES[0];
+            const podcastStyles = getPodcastStyles();
+            const podcastStyle =
+              podcastStyles.find((s) => s.id === styleId) ?? podcastStyles[0] ?? DEFAULT_PODCAST_STYLES[0];
             const voices = podcastStyle.voices;
 
             // Parse segments: for multi-voice styles, extract [1]/[2] speaker tags
@@ -614,7 +617,7 @@ export function useNotebook(notebookId?: string) {
             });
           })
           .catch(failOutput);
-      } else if (type === "slide-deck") {
+      } else if (type === "slides") {
         // Slide deck: LLM generates slide text + image prompts → render each slide sequentially
         // so each slide can use the previous one as a style reference
         runWithTools(client, getModel(), instructions, [userMessage], tools)
@@ -704,7 +707,7 @@ export function useNotebook(notebookId?: string) {
             });
           })
           .catch(failOutput);
-      } else if (type === "mind-map") {
+      } else if (type === "mindmap") {
         // Mind map: LLM reads sources → produces structured JSON tree
         runWithTools(client, getModel(), instructions, [userMessage], tools)
           .then(async (response) => {

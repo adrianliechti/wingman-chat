@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { PODCAST_STYLES, SLIDE_STYLES } from "../hooks/useNotebook";
+import { getPodcastStyles, getSlideStyles } from "../hooks/useNotebook";
 import type { NotebookOutput, NotebookSource, OutputType } from "../types/notebook";
 
 interface StudioPanelProps {
@@ -29,28 +29,32 @@ const OUTPUT_TYPES: {
   label: string;
   icon: typeof AudioLines;
 }[] = [
-  { type: "audio-overview", label: "Podcast", icon: AudioLines },
-  { type: "slide-deck", label: "Slides", icon: Presentation },
-  { type: "data-table", label: "Data Table", icon: Table2 },
+  { type: "podcast", label: "Podcast", icon: AudioLines },
+  { type: "slides", label: "Slides", icon: Presentation },
+  { type: "report", label: "Report", icon: Table2 },
   { type: "infographic", label: "Infographic", icon: BarChart3 },
   { type: "quiz", label: "Quiz", icon: CircleHelp },
-  { type: "mind-map", label: "Mind Map", icon: Network },
+  { type: "mindmap", label: "Mind Map", icon: Network },
 ];
 
 export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSelectOutput }: StudioPanelProps) {
   const hasSources = sources.length > 0;
   const [openMenu, setOpenMenu] = useState<OutputType | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const slideStyles = getSlideStyles();
+  const podcastStyles = getPodcastStyles();
 
   const downloadOutput = async (output: NotebookOutput) => {
     const slug = output.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
 
-    if (output.type === "audio-overview" && output.audioUrl) {
+    if (output.type === "podcast" && output.audioUrl) {
       downloadDataUrl(output.audioUrl, `${slug}.wav`);
     } else if (output.type === "infographic" && output.imageUrl) {
       downloadDataUrl(output.imageUrl, `${slug}.png`);
-    } else if (output.type === "slide-deck" && output.slides?.length) {
+    } else if (output.type === "slides" && output.slides?.length) {
       await downloadSlidesAsPdf(output.slides, slug);
+    } else if (output.type === "report" && output.content) {
+      await downloadReportAsPdf(output.content, slug);
     }
   };
 
@@ -65,8 +69,8 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
   }, []);
 
   const styleMenus: Partial<Record<OutputType, readonly { id: string; label: string }[]>> = {
-    "slide-deck": SLIDE_STYLES,
-    "audio-overview": PODCAST_STYLES,
+    "slides": slideStyles,
+    "podcast": podcastStyles,
   };
 
   return (
@@ -213,9 +217,10 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
 
 function canDownload(output: NotebookOutput): boolean {
   return (
-    (output.type === "audio-overview" && !!output.audioUrl) ||
+    (output.type === "podcast" && !!output.audioUrl) ||
     (output.type === "infographic" && !!output.imageUrl) ||
-    (output.type === "slide-deck" && !!output.slides?.length)
+    (output.type === "slides" && !!output.slides?.length) ||
+    (output.type === "report" && !!output.content)
   );
 }
 
@@ -224,6 +229,55 @@ function downloadDataUrl(dataUrl: string, filename: string) {
   a.href = dataUrl;
   a.download = filename;
   a.click();
+}
+
+async function downloadReportAsPdf(html: string, slug: string) {
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.left = "-9999px";
+  iframe.style.width = "800px";
+  iframe.srcdoc = html;
+
+  document.body.appendChild(iframe);
+
+  await new Promise<void>((resolve) => {
+    iframe.onload = () => resolve();
+  });
+
+  const { jsPDF } = await import("jspdf");
+  const html2canvas = (await import("html2canvas")).default;
+
+  const body = iframe.contentDocument?.body;
+  if (!body) {
+    document.body.removeChild(iframe);
+    return;
+  }
+
+  const canvas = await html2canvas(body, {
+    scale: 2,
+    useCORS: true,
+    logging: false,
+    windowWidth: 800,
+  });
+
+  const imgData = canvas.toDataURL("image/jpeg", 0.85);
+  const pxW = canvas.width;
+  const pxH = canvas.height;
+
+  // A4-width in pt, scale height proportionally
+  const pdfW = 595;
+  const pdfH = (pxH / pxW) * pdfW;
+
+  const doc = new jsPDF({
+    orientation: "portrait",
+    unit: "pt",
+    format: [pdfW, pdfH],
+  });
+
+  doc.addImage(imgData, "JPEG", 0, 0, pdfW, pdfH);
+  doc.save(`${slug}.pdf`);
+
+  document.body.removeChild(iframe);
 }
 
 async function downloadSlidesAsPdf(slides: string[], slug: string) {
