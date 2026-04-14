@@ -8,7 +8,7 @@ import {
   Paperclip,
   Plus as PlusIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
@@ -18,7 +18,7 @@ import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
-import { useAutoScroll } from "@/shared";
+import { useChatScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { AppDrawer } from "@/shell/components/AppDrawer";
@@ -171,8 +171,10 @@ export function ChatPage() {
     return messageKeysRef.current.slice(0, messages.length);
   }, [chat?.id, messages.length, routeChatId]);
 
-  const { handleScrollContainerRef, isAutoFollowEnabled, goToLatest } = useAutoScroll({
+  const { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest } = useChatScroll({
     resetKey: chat?.id ?? routeChatId ?? "__draft__",
+    messages,
+    isResponding,
   });
 
   // Track window resize for mobile detection
@@ -257,9 +259,17 @@ export function ChatPage() {
     }
   }, []);
 
+  // Measure footer height synchronously on mount so that the initial
+  // scroll-to-bottom on direct URL loads uses the correct paddingBottom.
+  // The async 100ms measurement below fires too late when messages are cached.
+  useLayoutEffect(() => {
+    observeHeight();
+  }, [observeHeight]);
+
   // Observer for chat input height changes to adjust message container padding
   useEffect(() => {
-    // Initial measurement after a short delay to ensure DOM is ready
+    // Fallback measurement after a short delay in case the layout effect fired
+    // before fonts/styles were fully applied (rare, but keeps the observer setup).
     const timer = setTimeout(observeHeight, 100);
 
     // Create a MutationObserver to watch for changes in the footer area
@@ -333,14 +343,14 @@ export function ChatPage() {
               ref={handleScrollContainerRef}
             >
               <div
-                className={`px-3 pt-18 transition-all duration-150 ease-out ${layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width"}`}
+                className={`px-3 pt-18 transition-[max-width] duration-150 ease-out ${layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width"}`}
                 style={{ paddingBottom: chatInputHeight }}
               >
                 <Disclaimer />
 
                 <div>
                   {messages.map((message, index) => (
-                    <div key={messageRenderKeys[index]} className="flow-root">
+                    <div key={messageRenderKeys[index]} className="flow-root" data-role={message.role}>
                       <ChatMessage
                         index={index}
                         message={message}
@@ -351,11 +361,13 @@ export function ChatPage() {
                     </div>
                   ))}
                 </div>
+                {/* Spacer — allows the last user message to scroll to the top */}
+                <div ref={handleSpacerRef} aria-hidden="true" />
               </div>
             </div>
           )}
 
-          {messages.length > 0 && !isAutoFollowEnabled && (
+          {messages.length > 0 && !isAtBottom && (
             <button
               type="button"
               onClick={goToLatest}
@@ -371,11 +383,7 @@ export function ChatPage() {
 
         {/* Chat Input */}
         <footer
-          className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-all duration-500 ease-in-out ${
-            messages.length === 0 && !showArtifactsDrawer && !showAppDrawer && !showAgentDrawer
-              ? "md:bottom-1/3 md:transform md:translate-y-1/2"
-              : ""
-          } ${showSidebar && chats.length > 0 && !showArtifactsDrawer && !showAgentDrawer && !showAppDrawer ? "md:left-59" : ""} ${
+          className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out ${showSidebar && chats.length > 0 && !showArtifactsDrawer && !showAgentDrawer && !showAppDrawer ? "md:left-59" : ""} ${
             showAppDrawer
               ? "right-0 md:right-[calc(50vw+0.75rem)]"
               : showArtifactsDrawer
@@ -385,8 +393,14 @@ export function ChatPage() {
                   : "right-0"
           }`}
         >
-          <div className="relative pointer-events-auto md:max-w-4xl mx-auto">
-            <ChatInput onGoToLatest={goToLatest} />
+          <div
+            className={`relative pointer-events-auto md:max-w-4xl mx-auto transition-transform duration-500 ease-in-out ${
+              messages.length === 0 && !showArtifactsDrawer && !showAppDrawer && !showAgentDrawer
+                ? "md:translate-y-[calc(50%-33.333vh)]"
+                : ""
+            }`}
+          >
+            <ChatInput />
           </div>
         </footer>
       </div>

@@ -2,7 +2,7 @@
 export { getConfig, loadConfig } from "./config";
 
 // Hooks
-export { useAutoScroll } from "./hooks/useAutoScroll";
+export { useChatScroll } from "./hooks/useChatScroll";
 export { useDropZone } from "./hooks/useDropZone";
 export type { UsePersistedStateOptions, UsePersistedStateReturn } from "./hooks/usePersistedState";
 export { usePersistedState } from "./hooks/usePersistedState";
