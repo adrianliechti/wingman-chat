@@ -138,7 +138,7 @@ function createComponents(scopeId: string, isStreaming: boolean): Partial<Compon
     },
     ol: ({ children, ...props }) => {
       return (
-        <ol className="list-decimal list-outside ml-6 pl-0" {...props}>
+        <ol className="list-decimal list-inside ml-6 pl-0" {...props}>
           {children}
         </ol>
       );
