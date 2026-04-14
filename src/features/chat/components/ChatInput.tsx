@@ -37,11 +37,7 @@ import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatInputSuggestions } from "./ChatInputSuggestions";
 
-type ChatInputProps = {
-  onGoToLatest?: () => void;
-};
-
-export function ChatInput({ onGoToLatest }: ChatInputProps) {
+export function ChatInput() {
   const config = getConfig();
   const client = config.client;
 
@@ -269,7 +265,6 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
       content: messageContent,
     };
 
-    onGoToLatest?.();
     sendMessage(message);
 
     // Clear attachments after sending
@@ -345,13 +340,12 @@ export function ChatInput({ onGoToLatest }: ChatInputProps) {
           content: messageContent,
         };
 
-        onGoToLatest?.();
         sendMessage(message);
         setContent("");
         setAttachments([]);
       }
     },
-    [isResponding, content, attachments, isContinuousCaptureActive, captureFrame, onGoToLatest, sendMessage],
+    [isResponding, content, attachments, isContinuousCaptureActive, captureFrame, sendMessage],
   );
 
   const handleAttachmentClick = useCallback(() => {
