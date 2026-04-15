@@ -29,7 +29,7 @@
     "@opentelemetry/sdk-metrics": "^2.6.1",
     "@opentelemetry/sdk-trace-web": "^2.6.1",
     "@tailwindcss/vite": "^4.2.2",
-    "@tanstack/react-router": "^1.168.21",
+    "@tanstack/react-router": "^1.168.22",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.23",
     "docx": "^9.6.1",

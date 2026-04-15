@@ -424,12 +424,17 @@ export function ChatInput() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Escape" && isResponding) {
+        e.preventDefault();
+        stopStreaming();
+        return;
+      }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSubmit(e as unknown as FormEvent);
       }
     },
-    [handleSubmit],
+    [handleSubmit, isResponding, stopStreaming],
   );
 
   // Handle transcription button click
@@ -999,7 +1004,7 @@ export function ChatInput() {
                   type="button"
                   className="group/stop p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
                   onClick={stopStreaming}
-                  title="Stop generating"
+                  title="Stop generating (Esc)"
                 >
                   <LoaderCircle size={16} className="animate-spin group-hover/stop:hidden" />
                   <Square size={16} className="hidden group-hover/stop:block" />

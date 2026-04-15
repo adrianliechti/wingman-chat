@@ -102,8 +102,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
       setChatId(id);
       resetTools();
       closeApp();
+
+      // When starting a new chat, reset realtime model back to default
+      if (!id && selectedModel?.id === "realtime") {
+        setSelectedModel(models[0] ?? null);
+      }
     },
-    [resetTools, closeApp],
+    [resetTools, closeApp, selectedModel, models, setSelectedModel],
   );
 
   const deleteChat = useCallback(

@@ -1,4 +1,4 @@
-import { Palette } from "lucide-react";
+import { Image } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import rendererInstructionsText from "@/features/renderer/prompts/renderer.txt?raw";
 import { getConfig } from "@/shared/config";
@@ -178,9 +178,9 @@ export function useRendererProvider(): ToolProvider | null {
 
     return {
       id: "renderer",
-      name: "Image Editor",
+      name: "Canvas",
       description: "Create and edit images",
-      icon: Palette,
+      icon: Image,
       instructions: rendererInstructionsText,
       tools: rendererTools(),
     };
