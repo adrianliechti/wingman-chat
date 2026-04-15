@@ -84,12 +84,14 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
                 transcription: {
                   model: transcribeModel,
                 },
+                noise_reduction: {
+                  type: "far_field",
+                },
                 turn_detection: {
-                  type: "server_vad",
+                  type: "semantic_vad",
+                  eagerness: "auto",
                   create_response: true,
-                  prefix_padding_ms: 300,
-                  silence_duration_ms: 700,
-                  threshold: 0.7,
+                  interrupt_response: true,
                 },
               },
               output: {
