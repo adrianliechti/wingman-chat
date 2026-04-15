@@ -67,6 +67,14 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
 
             ...(instructions && { instructions: instructions }),
 
+            truncation: {
+              type: "retention_ratio",
+              retention_ratio: 0.8,
+              token_limits: {
+                post_instructions: 8000,
+              },
+            },
+
             audio: {
               input: {
                 format: {
