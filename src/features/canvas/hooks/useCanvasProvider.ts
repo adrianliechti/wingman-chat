@@ -1,11 +1,11 @@
 import { Image } from "lucide-react";
 import { useCallback, useMemo } from "react";
-import rendererInstructionsText from "@/features/renderer/prompts/renderer.txt?raw";
+import canvasInstructionsText from "@/features/canvas/prompts/canvas.txt?raw";
 import { getConfig } from "@/shared/config";
 import { readAsDataURL } from "@/shared/lib/utils";
 import type { ImageContent, Tool, ToolContext, ToolProvider } from "@/shared/types/chat";
 
-export function useRendererProvider(): ToolProvider | null {
+export function useCanvasProvider(): ToolProvider | null {
   const config = getConfig();
 
   const isAvailable = useMemo(() => {
@@ -19,7 +19,7 @@ export function useRendererProvider(): ToolProvider | null {
 
   const client = config.client;
 
-  const rendererTools = useCallback((): Tool[] => {
+  const canvasTools = useCallback((): Tool[] => {
     return [
       {
         name: "create_image",
@@ -177,14 +177,14 @@ export function useRendererProvider(): ToolProvider | null {
     }
 
     return {
-      id: "renderer",
+      id: "canvas",
       name: "Canvas",
       description: "Create and edit images",
       icon: Image,
-      instructions: rendererInstructionsText,
-      tools: rendererTools(),
+      instructions: canvasInstructionsText,
+      tools: canvasTools(),
     };
-  }, [isAvailable, rendererTools]);
+  }, [isAvailable, canvasTools]);
 
   return provider;
 }

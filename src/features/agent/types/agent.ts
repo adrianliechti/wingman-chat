@@ -26,7 +26,7 @@ export interface Agent {
   files?: import("@/features/repository/types/repository").RepositoryFile[];
   skills: string[]; // names referencing global skill library
 
-  tools: string[]; // active built-in tool IDs: "internet", "renderer"
+  tools: string[]; // active built-in tool IDs: "internet", "canvas"
   servers: BridgeServer[]; // per-agent MCP server definitions
 
   memory?: boolean; // enable persistent memory via MEMORY.md

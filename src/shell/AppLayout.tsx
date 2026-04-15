@@ -22,7 +22,7 @@ import { useApp } from "@/shell/hooks/useApp";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 
-type Page = "chat" | "translate" | "notebook" | "renderer";
+type Page = "chat" | "translate" | "notebook" | "canvas";
 
 function getPageFromPath(pathname: string): Page {
   const segment = pathname.split("/")[1] || "chat";
@@ -33,8 +33,8 @@ function getPageFromPath(pathname: string): Page {
       return "translate";
     case "notebook":
       return "notebook";
-    case "renderer":
-      return "renderer";
+    case "canvas":
+      return "canvas";
     default:
       return "chat";
   }
@@ -146,12 +146,12 @@ export function AppLayout() {
     { key: "chat" as const, label: "Chat", icon: <MessageCircle size={20} />, to: "/chat" },
     { key: "notebook" as const, label: "Notebook", icon: <Globe size={20} />, to: "/notebook" },
     { key: "translate" as const, label: "Translate", icon: <Languages size={20} />, to: "/translate" },
-    { key: "renderer" as const, label: "Canvas", icon: <Image size={20} />, to: "/renderer" },
+    { key: "canvas" as const, label: "Canvas", icon: <Image size={20} />, to: "/canvas" },
   ].filter((page) => {
     if (page.key === "chat") return true;
     if (page.key === "translate") return !!config.translator;
     if (page.key === "notebook") return !!config.notebook;
-    if (page.key === "renderer") return !!config.renderer;
+    if (page.key === "canvas") return !!config.renderer;
     return true;
   });
   const showNavigation = pages.length > 1;

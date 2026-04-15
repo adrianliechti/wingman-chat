@@ -1,7 +1,7 @@
 import { createRootRoute, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
 import { ChatPage } from "./features/chat/pages/ChatPage";
 import { NotebookPage } from "./features/notebook/pages/NotebookPage";
-import { RendererPage } from "./features/renderer/pages/RendererPage";
+import { CanvasPage } from "./features/canvas/pages/CanvasPage";
 import { OAuthCallbackPage } from "./features/settings/pages/OAuthCallbackPage";
 import { TranslatePage } from "./features/translate/pages/TranslatePage";
 import { getConfig } from "./shared/config";
@@ -10,7 +10,7 @@ import { AppLayout } from "./shell/AppLayout";
 const hashToRoute: Record<string, string> = {
   chat: "/chat",
   translate: "/translate",
-  renderer: "/renderer",
+  canvas: "/canvas",
   research: "/notebook",
   notebook: "/notebook",
 };
@@ -72,13 +72,13 @@ const translateRoute = createRoute({
   component: TranslatePage,
 });
 
-const rendererRoute = createRoute({
+const canvasRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
-  path: "/renderer",
+  path: "/canvas",
   beforeLoad: () => {
     if (!getConfig().renderer) throw redirect({ to: "/chat" });
   },
-  component: RendererPage,
+  component: CanvasPage,
 });
 
 const notebookRoute = createRoute({
@@ -113,7 +113,7 @@ const routeTree = rootRoute.addChildren([
     chatRoute,
     chatIdRoute,
     translateRoute,
-    rendererRoute,
+    canvasRoute,
     notebookRoute,
     notebookIdRoute,
   ]),

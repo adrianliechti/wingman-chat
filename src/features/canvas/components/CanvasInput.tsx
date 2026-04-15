@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { Model } from "@/shared/types/chat";
 
-interface RendererInputProps {
+interface CanvasInputProps {
   prompt: string;
   onPromptChange: (prompt: string) => void;
   onSubmit: () => void;
@@ -28,7 +28,7 @@ interface RendererInputProps {
   className?: string;
 }
 
-export function RendererInput({
+export function CanvasInput({
   prompt,
   onPromptChange,
   onSubmit,
@@ -50,7 +50,7 @@ export function RendererInput({
   disabled,
   autoFocus,
   className = "",
-}: RendererInputProps) {
+}: CanvasInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const referenceImageEntries = useMemo(() => {
     const counts = new Map<string, number>();

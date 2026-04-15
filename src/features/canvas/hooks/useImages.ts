@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { Image } from "@/features/renderer/types/renderer";
+import type { Image } from "@/features/canvas/types/canvas";
 import * as opfs from "@/shared/lib/opfs";
 
 const COLLECTION = "images";

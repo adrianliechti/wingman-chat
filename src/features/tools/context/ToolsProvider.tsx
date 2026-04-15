@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
-import { useRendererProvider } from "@/features/renderer/hooks/useRendererProvider";
+import { useCanvasProvider } from "@/features/canvas/hooks/useCanvasProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import { MCPClient } from "@/features/settings/lib/mcp";
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
@@ -68,7 +68,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Built-in providers
   const internetProvider = useInternetProvider();
-  const rendererProvider = useRendererProvider();
+  const canvasProvider = useCanvasProvider();
   const artifactsProvider = useArtifactsProvider();
   const skillBuilderProvider = useSkillBuilderProvider();
 
@@ -109,7 +109,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: toolsVersion is a cache-bust trigger, not a real dependency
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
-    if (rendererProvider) list.push(rendererProvider);
+    if (canvasProvider) list.push(canvasProvider);
     if (internetProvider) list.push(internetProvider);
     if (artifactsProvider) list.push(artifactsProvider);
     list.push(skillBuilderProvider);
@@ -119,7 +119,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     return list;
   }, [
     internetProvider,
-    rendererProvider,
+    canvasProvider,
     artifactsProvider,
     skillBuilderProvider,
     configMcpClients,
