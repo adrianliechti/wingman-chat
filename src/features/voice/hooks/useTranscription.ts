@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioRecorder } from "@/features/voice/lib/AudioRecorder";
 import { mergePcm16Chunks, pcm16ToWav } from "@/features/voice/lib/audio";
 import { getConfig } from "@/shared/config";
@@ -81,6 +81,13 @@ export function useTranscription(): UseTranscriptionReturn {
       const errorMessage = err instanceof Error ? err.message : "Failed to transcribe audio";
       throw new Error(errorMessage);
     }
+  }, []);
+
+  // Clean up recorder on unmount
+  useEffect(() => {
+    return () => {
+      audioRecorderRef.current?.end().catch(() => {});
+    };
   }, []);
 
   return {

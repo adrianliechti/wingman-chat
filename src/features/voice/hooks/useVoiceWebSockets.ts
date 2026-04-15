@@ -374,5 +374,16 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
     }
   };
 
+  // Keep a ref to stop so the unmount effect doesn't need it as a dependency
+  const stopRef = useRef(stop);
+  stopRef.current = stop;
+
+  // Clean up all resources on unmount
+  useEffect(() => {
+    return () => {
+      void stopRef.current();
+    };
+  }, []);
+
   return { start, stop };
 }
