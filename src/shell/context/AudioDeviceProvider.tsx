@@ -1,19 +1,34 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { usePersistedState } from "@/shared/hooks/usePersistedState";
 import type { AudioDeviceSettings } from "./AudioDeviceContext";
 import { AudioDeviceContext } from "./AudioDeviceContext";
+
+function loadSettings(): AudioDeviceSettings {
+  return {
+    inputDeviceId: localStorage.getItem("app_audio_input") ?? undefined,
+    outputDeviceId: localStorage.getItem("app_audio_output") ?? undefined,
+  };
+}
+
+function saveSettings(settings: AudioDeviceSettings) {
+  if (settings.inputDeviceId) {
+    localStorage.setItem("app_audio_input", settings.inputDeviceId);
+  } else {
+    localStorage.removeItem("app_audio_input");
+  }
+  if (settings.outputDeviceId) {
+    localStorage.setItem("app_audio_output", settings.outputDeviceId);
+  } else {
+    localStorage.removeItem("app_audio_output");
+  }
+}
 
 interface AudioDeviceProviderProps {
   children: ReactNode;
 }
 
 export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
-  const { value: settings, setValue: setSettings } = usePersistedState<AudioDeviceSettings>({
-    key: "audioDevices.json",
-    defaultValue: {},
-    debounceMs: 300,
-  });
+  const [settings, setSettings] = useState<AudioDeviceSettings>(loadSettings);
 
   const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([]);
   const [outputDevices, setOutputDevices] = useState<MediaDeviceInfo[]>([]);
@@ -21,8 +36,24 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
   const enumerateDevices = useCallback(async () => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
-      setInputDevices(devices.filter((d) => d.kind === "audioinput" && d.deviceId));
-      setOutputDevices(devices.filter((d) => d.kind === "audiooutput" && d.deviceId));
+      const inputs = devices.filter((d) => d.kind === "audioinput" && d.deviceId);
+      const outputs = devices.filter((d) => d.kind === "audiooutput" && d.deviceId);
+
+      setInputDevices(inputs);
+      setOutputDevices(outputs);
+
+      // Clear stored device if it no longer exists, falling back to system default
+      setSettings((prev) => {
+        const inputValid = !prev.inputDeviceId || inputs.some((d) => d.deviceId === prev.inputDeviceId);
+        const outputValid = !prev.outputDeviceId || outputs.some((d) => d.deviceId === prev.outputDeviceId);
+
+        if (inputValid && outputValid) return prev;
+
+        return {
+          inputDeviceId: inputValid ? prev.inputDeviceId : undefined,
+          outputDeviceId: outputValid ? prev.outputDeviceId : undefined,
+        };
+      });
     } catch (error) {
       console.warn("Failed to enumerate audio devices:", error);
     }
@@ -43,6 +74,10 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
   }, [enumerateDevices]);
 
   useEffect(() => {
+    saveSettings(settings);
+  }, [settings]);
+
+  useEffect(() => {
     void enumerateDevices();
 
     navigator.mediaDevices.addEventListener("devicechange", enumerateDevices);
@@ -51,19 +86,13 @@ export function AudioDeviceProvider({ children }: AudioDeviceProviderProps) {
     };
   }, [enumerateDevices]);
 
-  const setInputDevice = useCallback(
-    (id: string | undefined) => {
-      setSettings((prev) => ({ ...prev, inputDeviceId: id }));
-    },
-    [setSettings],
-  );
+  const setInputDevice = useCallback((id: string | undefined) => {
+    setSettings((prev) => ({ ...prev, inputDeviceId: id }));
+  }, []);
 
-  const setOutputDevice = useCallback(
-    (id: string | undefined) => {
-      setSettings((prev) => ({ ...prev, outputDeviceId: id }));
-    },
-    [setSettings],
-  );
+  const setOutputDevice = useCallback((id: string | undefined) => {
+    setSettings((prev) => ({ ...prev, outputDeviceId: id }));
+  }, []);
 
   return (
     <AudioDeviceContext.Provider
