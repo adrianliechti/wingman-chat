@@ -555,7 +555,7 @@ export function useArtifactsProvider(): ToolProvider | null {
 
     return {
       id: "artifacts",
-      name: "File System",
+      name: "Artifacts",
       description: "Create and edit files, run Python and Bash code",
       icon: Paperclip,
       instructions: `${artifactsInstructionsText}\n\n${interpreterInstructionsText}`,

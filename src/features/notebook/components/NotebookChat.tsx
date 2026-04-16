@@ -93,7 +93,7 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
             </div>
           </div>
         ) : (
-          <div className="p-4 space-y-4">
+          <div className="p-4 pb-20 space-y-4">
             {messages.map((msg) => {
               const text = getTextFromContent(msg.content);
               const messageSignature = `${msg.timestamp}:${msg.role}:${text}`;

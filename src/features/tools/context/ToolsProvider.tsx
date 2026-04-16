@@ -19,6 +19,9 @@ import type {
 import { ProviderState } from "@/shared/types/chat";
 import { ToolsContext } from "./ToolsContext";
 
+const MCP_CONNECT_MAX_RETRIES = 2;
+const MCP_CONNECT_RETRY_DELAY_MS = 500;
+
 export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const config = getConfig();
 
@@ -164,10 +167,21 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         setMcpStates((prev) => new Map(prev).set(id, ProviderState.Initializing));
         const promise = (async () => {
           try {
-            await client.connect();
-            setMcpStates((prev) => new Map(prev).set(id, ProviderState.Connected));
-          } catch (error) {
-            console.error(`Failed to connect MCP ${id}:`, error);
+            let lastError: unknown;
+            for (let attempt = 0; attempt <= MCP_CONNECT_MAX_RETRIES; attempt++) {
+              try {
+                await client.connect();
+                setMcpStates((prev) => new Map(prev).set(id, ProviderState.Connected));
+                return;
+              } catch (error) {
+                lastError = error;
+                if (attempt < MCP_CONNECT_MAX_RETRIES) {
+                  console.warn(`MCP ${id} connect attempt ${attempt + 1} failed, retrying...`, error);
+                  await new Promise<void>((r) => window.setTimeout(r, MCP_CONNECT_RETRY_DELAY_MS * (attempt + 1)));
+                }
+              }
+            }
+            console.error(`Failed to connect MCP ${id}:`, lastError);
             setMcpStates((prev) => new Map(prev).set(id, ProviderState.Failed));
           } finally {
             connectPromisesRef.current.delete(id);
@@ -247,16 +261,18 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         await connectMcp(id, enabled);
         return;
       }
+
+      // Update user tool set — this feeds into desiredTools which triggers the
+      // reconciliation effect. The effect invokes connectMcp on the next frame,
+      // the same codepath used for agent-enabled servers.
       setUserTools((prev) => {
         const next = new Set(prev);
         if (enabled) next.add(id);
         else next.delete(id);
         return next;
       });
-      // Immediate MCP connection for responsiveness
-      if (mcpIds.has(id)) await connectMcp(id, enabled);
     },
-    [mcpIds, connectMcp],
+    [connectMcp],
   );
 
   // Reset user tool selections (called on new/switch chat)
@@ -276,13 +292,20 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       displayModeOptions?: import("@/features/settings/lib/mcp").DisplayModeOptions,
     ) => {
       const client = allMcpClients.find((c) => c.id === providerId);
-      if (!client?.isConnected()) {
-        console.warn(`Cannot restore tool UI: MCP client ${providerId} not connected`);
-        return;
+      if (!client) {
+        throw new Error(`Cannot restore tool UI: MCP client ${providerId} not found`);
       }
+
+      // Restoring persisted app state needs a live MCP connection even when the
+      // provider was just enabled in the current interaction.
+      await connectMcp(providerId, true);
+      if (!client.isConnected()) {
+        throw new Error(`Cannot restore tool UI: MCP client ${providerId} not connected`);
+      }
+
       await client.restoreToolUI(toolName, resourceUri, args, result, context, displayModeOptions);
     },
-    [allMcpClients],
+    [allMcpClients, connectMcp],
   );
 
   // Check whether a provider currently has an active app bridge (e.g. from a live tool call)
