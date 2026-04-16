@@ -1,5 +1,5 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { Code, Download, Eye, File as FileIcon2, HardDrive, Loader2, Play, TerminalSquare, Upload } from "lucide-react";
+import { Code, Download, Eye, File as FileIcon2, HardDrive, Loader2, Play, Shapes, TerminalSquare, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
@@ -302,13 +302,13 @@ export function ArtifactsDrawer() {
       return (
         <div className="h-full flex flex-col items-center justify-center p-8">
           <div className="w-full max-w-xl">
-            <Code size={32} className="text-neutral-300 dark:text-neutral-600 mb-4" />
+            <Shapes size={32} className="text-neutral-300 dark:text-neutral-600 mb-4" />
             <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
-              {files.length === 0 ? "No files yet" : "Select a file"}
+              {files.length === 0 ? "No artifacts yet" : "Select a file"}
             </h3>
             <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed mb-5">
               {files.length === 0
-                ? "Files you create in the chat appear here. Refine them with follow-up prompts and download when ready. Use the upload button to bring in your own files."
+                ? "Artifacts are files, code, and documents created during the conversation. Upload your own files, run Python or shell commands, and download the results when ready."
                 : "Click a filename in the sidebar to open and edit it."}
             </p>
             {files.length === 0 && (
@@ -318,9 +318,9 @@ export function ArtifactsDrawer() {
                 </p>
                 <ul className="space-y-2">
                   {[
-                    "Turn this dense policy document into a one-page cheat sheet for compliance officers.",
-                    "Create a visually engaging overview document from these rough project notes.",
-                    "Transform this bullet-point draft into a polished, client-ready email.",
+                    "Analyze this CSV and create a chart showing the top trends.",
+                    "Write a Python script that cleans up and merges these two spreadsheets.",
+                    "Turn these rough notes into a polished, client-ready document.",
                   ].map((example) => (
                     <li
                       key={example}

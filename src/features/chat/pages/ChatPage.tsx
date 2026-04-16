@@ -5,8 +5,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Info,
-  Paperclip,
   Plus as PlusIcon,
+  Shapes,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
@@ -197,7 +197,7 @@ export function ChatPage() {
             onClick={toggleArtifactsDrawer}
             title={showArtifactsDrawer ? "Close artifacts" : "Open artifacts"}
           >
-            <Paperclip size={20} />
+            <Shapes size={20} />
           </button>
         )}
         <button

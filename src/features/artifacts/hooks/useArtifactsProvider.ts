@@ -1,4 +1,4 @@
-import { Paperclip } from "lucide-react";
+import { Shapes } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
 import interpreterInstructionsText from "@/features/artifacts/prompts/interpreter.txt?raw";
@@ -557,7 +557,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       id: "artifacts",
       name: "Artifacts",
       description: "Create and edit files, run Python and Bash code",
-      icon: Paperclip,
+      icon: Shapes,
       instructions: `${artifactsInstructionsText}\n\n${interpreterInstructionsText}`,
       tools: artifactsTools(),
     };
