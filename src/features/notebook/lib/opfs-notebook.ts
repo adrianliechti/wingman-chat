@@ -155,11 +155,11 @@ export async function removeSource(notebookId: string, sourceId: string): Promis
 // /notebooks/{id}/outputs/{outputId}/
 //   ├── metadata.json   — output metadata
 //   ├── content.txt     — text content (script, markdown, etc.)
-//   ├── audio.wav       — audio blob (audio-overview)
+//   ├── audio.wav       — audio blob (podcast)
 //   ├── image.png       — infographic image
 //   ├── quiz.json       — quiz questions
 //   ├── mindmap.json    — mind map tree
-//   └── slides/         — slide images (slide-deck)
+//   └── slides/         — slide images (slides)
 //       ├── 000.png
 //       ├── 001.png
 //       └── ...
@@ -266,13 +266,13 @@ async function readOutput(notebookId: string, outputId: string): Promise<Noteboo
   };
 
   // Load type-specific data
-  if (meta.type === "audio-overview") {
+  if (meta.type === "podcast") {
     const blob = await readBlob(`${base}/audio.wav`);
     if (blob) output.audioUrl = await blobToDataUrl(blob);
   } else if (meta.type === "infographic") {
     const blob = await readBlob(`${base}/image.png`);
     if (blob) output.imageUrl = await blobToDataUrl(blob);
-  } else if (meta.type === "slide-deck" && meta.slideCount) {
+  } else if (meta.type === "slides" && meta.slideCount) {
     const slides: string[] = [];
     for (let i = 0; i < meta.slideCount; i++) {
       // Try padded name first (000.png), fall back to unpadded (0.png) for older data
@@ -285,7 +285,7 @@ async function readOutput(notebookId: string, outputId: string): Promise<Noteboo
   } else if (meta.type === "quiz") {
     const quiz = await readJson<QuizQuestion[]>(`${base}/quiz.json`);
     if (quiz) output.quiz = quiz;
-  } else if (meta.type === "mind-map") {
+  } else if (meta.type === "mindmap") {
     const mindMap = await readJson<MindMapNode>(`${base}/mindmap.json`);
     if (mindMap) output.mindMap = mindMap;
   }

@@ -19,11 +19,15 @@ import slideStyleDark from "../prompts/slide-style-dark.txt?raw";
 import slideStyleNature from "../prompts/slide-style-nature.txt?raw";
 import slideStyleSwiss from "../prompts/slide-style-swiss.txt?raw";
 import slideStyleWhiteboard from "../prompts/slide-style-whiteboard.txt?raw";
+import reportStyleDashboard from "../prompts/report-style-dashboard.txt?raw";
+import reportStyleExecutive from "../prompts/report-style-executive.txt?raw";
+import reportStyleMagazine from "../prompts/report-style-magazine.txt?raw";
+import reportStyleResearch from "../prompts/report-style-research.txt?raw";
 import studioAudioInstructions from "../prompts/studio-audio-overview.txt?raw";
-import studioDataTableInstructions from "../prompts/studio-data-table.txt?raw";
 import studioInfographicInstructions from "../prompts/studio-infographic.txt?raw";
 import studioMindMapInstructions from "../prompts/studio-mind-map.txt?raw";
 import studioQuizInstructions from "../prompts/studio-quiz.txt?raw";
+import studioReportInstructions from "../prompts/studio-report.txt?raw";
 import studioSlideInstructions from "../prompts/studio-slide-deck.txt?raw";
 import type {
   MindMapNode,
@@ -108,49 +112,114 @@ function writeString(view: DataView, offset: number, str: string) {
 }
 
 const STUDIO_PROMPTS: Record<OutputType, string> = {
-  "audio-overview": studioAudioInstructions,
-  "slide-deck": studioSlideInstructions,
+  podcast: studioAudioInstructions,
+  slides: studioSlideInstructions,
   infographic: studioInfographicInstructions,
-  "data-table": studioDataTableInstructions,
+  report: studioReportInstructions,
   quiz: studioQuizInstructions,
-  "mind-map": studioMindMapInstructions,
+  mindmap: studioMindMapInstructions,
 };
 
-export const SLIDE_STYLES = [
+type SlideStyle = { id: string; label: string; prompt: string };
+type PodcastStyle = { id: string; label: string; prompt: string; voices: string[] };
+type ReportStyle = { id: string; label: string; prompt: string };
+
+const DEFAULT_SLIDE_STYLES: SlideStyle[] = [
   { id: "whiteboard", label: "Whiteboard", prompt: slideStyleWhiteboard },
   { id: "consulting", label: "Consulting", prompt: slideStyleConsulting },
   { id: "dark", label: "Dark", prompt: slideStyleDark },
   { id: "swiss", label: "Swiss", prompt: slideStyleSwiss },
   { id: "nature", label: "Nature", prompt: slideStyleNature },
-] as const;
+];
 
-export const PODCAST_STYLES = [
+export function getSlideStyles(): SlideStyle[] {
+  const config = getConfig();
+  const slides = config.canvas?.slides;
+
+  if (slides && slides.length > 0) {
+    return slides.map((s) => ({
+      id: s.name.toLowerCase().replace(/\s+/g, "-"),
+      label: s.name,
+      prompt: s.prompt,
+    }));
+  }
+
+  return DEFAULT_SLIDE_STYLES;
+}
+
+const DEFAULT_PODCAST_STYLES: PodcastStyle[] = [
   { id: "overview", label: "Overview", prompt: podcastStyleOverview, voices: ["host"] },
   { id: "deep-dive", label: "Deep Dive", prompt: podcastStyleDeepDive, voices: ["analyst"] },
   { id: "briefing", label: "Briefing", prompt: podcastStyleBriefing, voices: ["narrator"] },
   { id: "story", label: "Story", prompt: podcastStyleStory, voices: ["storyteller"] },
   { id: "debate", label: "Debate", prompt: podcastStyleDebate, voices: ["host", "skeptic"] },
-] as const;
+];
+
+export function getPodcastStyles(): PodcastStyle[] {
+  const config = getConfig();
+  const podcasts = config.canvas?.podcasts;
+
+  if (podcasts && podcasts.length > 0) {
+    return podcasts.map((p) => ({
+      id: p.name.toLowerCase().replace(/\s+/g, "-"),
+      label: p.name,
+      prompt: p.prompt,
+      voices: p.voices ?? ["host"],
+    }));
+  }
+
+  return DEFAULT_PODCAST_STYLES;
+}
 
 function buildSlideInstructions(styleId: string): string {
-  const style = SLIDE_STYLES.find((s) => s.id === styleId) ?? SLIDE_STYLES[0];
+  const slideStyles = getSlideStyles();
+  const style = slideStyles.find((s) => s.id === styleId) ?? slideStyles[0] ?? DEFAULT_SLIDE_STYLES[0];
   return studioSlideInstructions
     .replace("{{COMMON_RULES}}", slideCommonRules)
     .replace("{{STYLE_SECTION}}", style.prompt);
 }
 
+const DEFAULT_REPORT_STYLES: ReportStyle[] = [
+  { id: "executive", label: "Executive", prompt: reportStyleExecutive },
+  { id: "dashboard", label: "Dashboard", prompt: reportStyleDashboard },
+  { id: "research", label: "Research", prompt: reportStyleResearch },
+  { id: "magazine", label: "Magazine", prompt: reportStyleMagazine },
+];
+
+export function getReportStyles(): ReportStyle[] {
+  const config = getConfig();
+  const reports = config.canvas?.reports;
+
+  if (reports && reports.length > 0) {
+    return reports.map((r) => ({
+      id: r.name.toLowerCase().replace(/\s+/g, "-"),
+      label: r.name,
+      prompt: r.prompt,
+    }));
+  }
+
+  return DEFAULT_REPORT_STYLES;
+}
+
 function buildAudioInstructions(styleId: string): string {
-  const style = PODCAST_STYLES.find((s) => s.id === styleId) ?? PODCAST_STYLES[0];
+  const podcastStyles = getPodcastStyles();
+  const style = podcastStyles.find((s) => s.id === styleId) ?? podcastStyles[0] ?? DEFAULT_PODCAST_STYLES[0];
   return studioAudioInstructions.replace("{{STYLE_SECTION}}", style.prompt);
 }
 
+function buildReportInstructions(styleId: string): string {
+  const reportStyles = getReportStyles();
+  const style = reportStyles.find((s) => s.id === styleId) ?? reportStyles[0] ?? DEFAULT_REPORT_STYLES[0];
+  return studioReportInstructions.replace("{{STYLE_SECTION}}", style.prompt);
+}
+
 const OUTPUT_TITLES: Record<OutputType, string> = {
-  "audio-overview": "Audio Overview",
-  "slide-deck": "Slides",
+  podcast: "Podcast",
+  slides: "Slides",
   infographic: "Infographic",
-  "data-table": "Data Table",
+  report: "Report",
   quiz: "Quiz",
-  "mind-map": "Mind Map",
+  mindmap: "Mind Map",
 };
 
 export function useNotebook(notebookId?: string) {
@@ -473,11 +542,13 @@ export function useNotebook(notebookId?: string) {
       // Fire and forget
       const tools = createSourceTools(sourcesRef.current);
       const instructions =
-        type === "slide-deck"
+        type === "slides"
           ? buildSlideInstructions(styleId ?? "whiteboard")
-          : type === "audio-overview"
+          : type === "podcast"
             ? buildAudioInstructions(styleId ?? "overview")
-            : STUDIO_PROMPTS[type];
+            : type === "report"
+              ? buildReportInstructions(styleId ?? "executive")
+              : STUDIO_PROMPTS[type];
       const userMessage = {
         role: "user" as const,
         content: [
@@ -488,7 +559,7 @@ export function useNotebook(notebookId?: string) {
         ],
       };
 
-      if (type === "audio-overview") {
+      if (type === "podcast") {
         // Audio overview: LLM generates script → TTS generates audio per paragraph → merge
         runWithTools(client, getModel(), instructions, [userMessage], tools)
           .then(async (response) => {
@@ -500,7 +571,9 @@ export function useNotebook(notebookId?: string) {
             const ttsModel = config.tts?.model || "";
             const voiceMap = config.tts?.voices ?? {};
             const resolveVoice = (role: string) => voiceMap[role] || role;
-            const podcastStyle = PODCAST_STYLES.find((s) => s.id === styleId) ?? PODCAST_STYLES[0];
+            const podcastStyles = getPodcastStyles();
+            const podcastStyle =
+              podcastStyles.find((s) => s.id === styleId) ?? podcastStyles[0] ?? DEFAULT_PODCAST_STYLES[0];
             const voices = podcastStyle.voices;
 
             // Parse segments: for multi-voice styles, extract [1]/[2] speaker tags
@@ -579,7 +652,7 @@ export function useNotebook(notebookId?: string) {
             });
           })
           .catch(failOutput);
-      } else if (type === "slide-deck") {
+      } else if (type === "slides") {
         // Slide deck: LLM generates slide text + image prompts → render each slide sequentially
         // so each slide can use the previous one as a style reference
         runWithTools(client, getModel(), instructions, [userMessage], tools)
@@ -669,7 +742,7 @@ export function useNotebook(notebookId?: string) {
             });
           })
           .catch(failOutput);
-      } else if (type === "mind-map") {
+      } else if (type === "mindmap") {
         // Mind map: LLM reads sources → produces structured JSON tree
         runWithTools(client, getModel(), instructions, [userMessage], tools)
           .then(async (response) => {

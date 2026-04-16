@@ -41,11 +41,11 @@ import { inferContentTypeFromPath } from "./fileTypes";
  *       └── {outputId}/
  *           ├── metadata.json # Output metadata
  *           ├── content.txt   # Text content
- *           ├── audio.wav     # Audio (audio-overview)
+ *           ├── audio.wav     # Audio (podcast)
  *           ├── image.png     # Image (infographic)
  *           ├── quiz.json     # Questions (quiz)
- *           ├── mindmap.json  # Tree (mind-map)
- *           └── slides/       # Slide images (slide-deck)
+ *           ├── mindmap.json  # Tree (mindmap)
+ *           └── slides/       # Slide images (slides)
  *               ├── 000.png
  *               └── ...
  *   /notebooks/index.json     # Notebooks index for fast listing

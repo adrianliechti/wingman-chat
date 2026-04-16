@@ -23,7 +23,7 @@ export interface NotebookSource {
   addedAt: string;
 }
 
-export type OutputType = "audio-overview" | "slide-deck" | "infographic" | "data-table" | "quiz" | "mind-map";
+export type OutputType = "podcast" | "slides" | "infographic" | "report" | "quiz" | "mindmap";
 
 export interface QuizQuestion {
   question: string;
