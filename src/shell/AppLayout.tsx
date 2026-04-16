@@ -48,7 +48,7 @@ export function AppLayout() {
   const { showArtifactsDrawer } = useArtifacts();
   const { showAgentDrawer } = useAgents();
   const { showAppDrawer } = useApp();
-  const { localWingmanAvailable, localWingmanEnabled } = useToolsContext();
+  const { companionAvailable, companionEnabled } = useToolsContext();
 
   // Detect if any panel is open - sidebar becomes overlay when panels are open
   const hasPanelOpen = showArtifactsDrawer || showAgentDrawer || showAppDrawer;
@@ -305,7 +305,7 @@ export function AppLayout() {
 
             {/* Right section */}
             <div className="flex items-center gap-2 justify-end flex-1">
-              {localWingmanAvailable && (
+              {companionAvailable && (
                 <button
                   type="button"
                   onClick={() => {
@@ -313,7 +313,7 @@ export function AppLayout() {
                     setSettingsAdvanced(false);
                     setSettingsOpen(true);
                   }}
-                  className={`p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 ${localWingmanEnabled ? "" : "opacity-40"}`}
+                  className={`p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 ${companionEnabled ? "" : "opacity-40"}`}
                   title="Companion"
                 >
                   <Coffee size={20} />

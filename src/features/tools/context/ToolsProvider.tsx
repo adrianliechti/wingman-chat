@@ -6,7 +6,7 @@ import { useCanvasProvider } from "@/features/canvas/hooks/useCanvasProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import { MCPClient } from "@/features/settings/lib/mcp";
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
-import { LOCAL_WINGMAN_ID, localWingmanMcpUrl, useLocalWingman } from "@/features/tools/hooks/useLocalWingman";
+import { COMPANION_ID, companionMcpUrl, useCompanion } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
 import type {
   AudioContent,
@@ -47,16 +47,16 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Local Wingman auto-discovery
   const bridgeHost = config.bridge?.url;
-  const { available: localWingmanAvailable } = useLocalWingman(bridgeHost);
-  const [localWingmanEnabled, setLocalWingmanEnabled] = useState(true);
-  const toggleLocalWingman = useCallback(() => setLocalWingmanEnabled((v) => !v), []);
-  const [localWingmanClient] = useState<MCPClient | null>(() =>
+  const { available: companionAvailable } = useCompanion(bridgeHost);
+  const [companionEnabled, setCompanionEnabled] = useState(true);
+  const toggleCompanion = useCallback(() => setCompanionEnabled((v) => !v), []);
+  const [companionClient] = useState<MCPClient | null>(() =>
     bridgeHost
       ? new MCPClient(
-          LOCAL_WINGMAN_ID,
-          localWingmanMcpUrl(bridgeHost),
-          "Wingman (Local)",
-          "Locally running Wingman application",
+          COMPANION_ID,
+          companionMcpUrl(bridgeHost),
+          "Companion",
+          "Locally running companion application",
         )
       : null,
   );
@@ -79,10 +79,10 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const allMcpClients = useMemo(
     () => [
       ...configMcpClients,
-      ...(localWingmanAvailable && localWingmanClient ? [localWingmanClient] : []),
+      ...(companionAvailable && companionClient ? [companionClient] : []),
       ...agentMcpClients,
     ],
-    [configMcpClients, localWingmanAvailable, localWingmanClient, agentMcpClients],
+    [configMcpClients, companionAvailable, companionClient, agentMcpClients],
   );
   const mcpIds = useMemo(() => new Set(allMcpClients.map((c) => c.id)), [allMcpClients]);
 
@@ -104,9 +104,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     for (const id of agentRequired) merged.add(id);
     for (const id of modelEnabledTools) merged.add(id);
     for (const id of modelDisabledTools) merged.delete(id);
-    if (localWingmanAvailable && localWingmanEnabled) merged.add(LOCAL_WINGMAN_ID);
+    if (companionAvailable && companionEnabled) merged.add(COMPANION_ID);
     return merged;
-  }, [userTools, agentRequired, modelEnabledTools, modelDisabledTools, localWingmanAvailable, localWingmanEnabled]);
+  }, [userTools, agentRequired, modelEnabledTools, modelDisabledTools, companionAvailable, companionEnabled]);
 
   // All available providers
   // biome-ignore lint/correctness/useExhaustiveDependencies: toolsVersion is a cache-bust trigger, not a real dependency
@@ -117,7 +117,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     if (artifactsProvider) list.push(artifactsProvider);
     list.push(skillBuilderProvider);
     list.push(...configMcpClients);
-    if (localWingmanAvailable && localWingmanClient) list.push(localWingmanClient);
+    if (companionAvailable && companionClient) list.push(companionClient);
     list.push(...agentProviders);
     return list;
   }, [
@@ -126,8 +126,8 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     artifactsProvider,
     skillBuilderProvider,
     configMcpClients,
-    localWingmanAvailable,
-    localWingmanClient,
+    companionAvailable,
+    companionClient,
     agentProviders,
     toolsVersion,
   ]);
@@ -135,11 +135,11 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // State: MCP clients use lifecycle state, local providers derive from desiredTools
   const getProviderState = useCallback(
     (id: string): ProviderState => {
-      if (id === LOCAL_WINGMAN_ID && !localWingmanEnabled) return ProviderState.Disconnected;
+      if (id === COMPANION_ID && !companionEnabled) return ProviderState.Disconnected;
       if (mcpIds.has(id)) return mcpStates.get(id) ?? ProviderState.Disconnected;
       return desiredTools.has(id) ? ProviderState.Connected : ProviderState.Disconnected;
     },
-    [mcpIds, mcpStates, desiredTools, localWingmanEnabled],
+    [mcpIds, mcpStates, desiredTools, companionEnabled],
   );
 
   // Track in-flight connection promises so callers can await an already-running connect
@@ -253,11 +253,11 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // User-facing toggle
   const setProviderEnabled = useCallback(
     async (id: string, enabled: boolean) => {
-      // Local wingman has its own enable flag that gates desiredTools; toggling
+      // Companion has its own enable flag that gates desiredTools; toggling
       // userTools alone is not enough because desiredTools re-adds the id when
-      // localWingmanEnabled is still true.
-      if (id === LOCAL_WINGMAN_ID) {
-        setLocalWingmanEnabled(enabled);
+      // companionEnabled is still true.
+      if (id === COMPANION_ID) {
+        setCompanionEnabled(enabled);
         await connectMcp(id, enabled);
         return;
       }
@@ -338,9 +338,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         setProviderEnabled,
         setModelOverrides,
         resetTools,
-        localWingmanAvailable,
-        localWingmanEnabled,
-        toggleLocalWingman,
+        companionAvailable: companionAvailable,
+        companionEnabled: companionEnabled,
+        toggleCompanion: toggleCompanion,
         restoreToolUI,
         hasActiveBridge,
       }}
