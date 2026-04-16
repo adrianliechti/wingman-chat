@@ -77,8 +77,37 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false }:
     scrollTargetRef.current = target;
     userScrolledDuringStreamRef.current = false;
 
-    setProgrammaticScroll(600);
-    scrollElement.scrollTo({ top: target, behavior: "smooth" });
+    // Use a manual rAF animation instead of scrollTo({ behavior: "smooth" }).
+    // Chromium-based browsers (Edge) silently cancel native smooth scrolls when
+    // scrollHeight changes significantly in the same or adjacent rendering frame
+    // (which always happens here because of the spacer restore above). A manual
+    // loop writes scrollTop directly every frame, so it is immune to that bug
+    // while still producing the same visual easing effect.
+    const DURATION = 500; // ms
+    const startTop = scrollElement.scrollTop;
+    const distance = target - startTop;
+    const startTime = performance.now();
+
+    setProgrammaticScroll(DURATION + 100);
+
+    const step = (now: number) => {
+      // Bail out if the programmatic lock was already cleared (e.g. a newer
+      // scroll was initiated) so we don't fight with it.
+      if (!programmaticScrollRef.current) return;
+
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / DURATION, 1);
+      // Ease-in-out cubic
+      const eased = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+      scrollElement.scrollTop = startTop + distance * eased;
+
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      }
+    };
+
+    requestAnimationFrame(step);
   }, [scrollElement, restoreSpacer, setProgrammaticScroll]);
 
   // ─── Scroll to bottom (for "Latest" button) ───────────────────────────────
