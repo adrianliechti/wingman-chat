@@ -93,20 +93,26 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     return ids;
   }, [agentTools, agentProviders]);
 
-  // Model config wins by delta:
-  // 1) start from user-selected tools
-  // 2) add agent-required tools
-  // 3) add model-forced enabled tools
-  // 4) remove model-forced disabled tools (highest precedence)
-  // 5) auto-add local wingman when available and user has not disabled it
-  const desiredTools = useMemo(() => {
+  // What the user + agent + companion want connected (ignores model overrides intentionally).
+  // Used by the reconciliation effect to control MCP lifecycle — model-level tool filtering
+  // (enabled/disabled lists) is applied later in chatTools(), not here. Disconnecting an
+  // MCP server because the current model has it in tools.disabled would clear this.client
+  // and break any in-flight tool call.
+  const mcpConnectionDesired = useMemo(() => {
     const merged = new Set(userTools);
     for (const id of agentRequired) merged.add(id);
     for (const id of modelEnabledTools) merged.add(id);
-    for (const id of modelDisabledTools) merged.delete(id);
     if (companionAvailable && companionEnabled) merged.add(COMPANION_ID);
     return merged;
-  }, [userTools, agentRequired, modelEnabledTools, modelDisabledTools, companionAvailable, companionEnabled]);
+  }, [userTools, agentRequired, modelEnabledTools, companionAvailable, companionEnabled]);
+
+  // Full desired set including model overrides — used by getProviderState for non-MCP
+  // built-in providers (internet, canvas, …) which have no lifecycle to manage.
+  const desiredTools = useMemo(() => {
+    const merged = new Set(mcpConnectionDesired);
+    for (const id of modelDisabledTools) merged.delete(id);
+    return merged;
+  }, [mcpConnectionDesired, modelDisabledTools]);
 
   // All available providers
   // biome-ignore lint/correctness/useExhaustiveDependencies: toolsVersion is a cache-bust trigger, not a real dependency
@@ -243,12 +249,12 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       for (const id of mcpIds) {
-        connectMcp(id, desiredTools.has(id)).catch(console.error);
+        connectMcp(id, mcpConnectionDesired.has(id)).catch(console.error);
       }
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [desiredTools, mcpIds, connectMcp]);
+  }, [mcpConnectionDesired, mcpIds, connectMcp]);
 
   // User-facing toggle
   const setProviderEnabled = useCallback(
@@ -263,16 +269,17 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Update user tool set — this feeds into desiredTools which triggers the
-      // reconciliation effect. The effect invokes connectMcp on the next frame,
-      // the same codepath used for agent-enabled servers.
+      // reconciliation effect as a safety net, but for MCP tools we also connect
+      // immediately so the tool is ready before the user can send a message.
       setUserTools((prev) => {
         const next = new Set(prev);
         if (enabled) next.add(id);
         else next.delete(id);
         return next;
       });
+      if (mcpIds.has(id)) await connectMcp(id, enabled);
     },
-    [connectMcp],
+    [mcpIds, connectMcp],
   );
 
   // Reset user tool selections (called on new/switch chat)

@@ -36,7 +36,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const client = config.client;
 
   const { models, selectedModel, setSelectedModel } = useModels();
-  const { chats, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
+  const { chats, isLoaded: chatsLoaded, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
   const { isAvailable: artifactsEnabled, setChatId: setArtifactsChatId } = useArtifacts();
   const { renderApp, closeApp } = useApp();
   const { currentAgent } = useAgents();
@@ -568,6 +568,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     // Chats
     chats,
+    chatsLoaded,
     chat,
     messages,
 
