@@ -108,6 +108,28 @@ interface BridgeConfig {
   url?: string;
 }
 
+interface CanvasSlideConfig {
+  name: string;
+  prompt: string;
+}
+
+interface CanvasPodcastConfig {
+  name: string;
+  prompt: string;
+  voices?: string[];
+}
+
+interface CanvasReportConfig {
+  name: string;
+  prompt: string;
+}
+
+interface CanvasConfig {
+  slides?: CanvasSlideConfig[];
+  podcasts?: CanvasPodcastConfig[];
+  reports?: CanvasReportConfig[];
+}
+
 interface ConfigSchema {
   title: string;
   disclaimer: string;
@@ -120,6 +142,8 @@ interface ConfigSchema {
   drives?: DriveConfig[];
 
   backgrounds?: BackgroundPackConfig;
+
+  canvas?: CanvasConfig;
 
   tts?: TTSConfig;
   stt?: STTConfig;
@@ -235,6 +259,8 @@ interface Config {
   telemetry: boolean;
 
   backgrounds: BackgroundPackConfig;
+
+  canvas: CanvasConfig;
 }
 
 let config: Config;
@@ -300,6 +326,8 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       telemetry: cfg.telemetry != null,
 
       backgrounds: cfg.backgrounds ?? {},
+
+      canvas: cfg.canvas ?? {},
     };
 
     return config;

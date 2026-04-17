@@ -5,8 +5,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Info,
-  Paperclip,
   Plus as PlusIcon,
+  Shapes,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
@@ -88,7 +88,7 @@ const Disclaimer = () => {
 };
 
 export function ChatPage() {
-  const { messages, selectChat, chat, chats, isResponding } = useChat();
+  const { messages, selectChat, chat, chats, chatsLoaded, isResponding } = useChat();
 
   const navigate = useNavigate();
   const { newChat } = useChatNavigate();
@@ -102,11 +102,25 @@ export function ChatPage() {
     const activeChatId = chat?.id ?? null;
 
     if (routeChatId && routeChatId !== activeChatId) {
-      selectChat(routeChatId);
+      // Only select the chat once chats have loaded from storage — otherwise we might
+      // redirect away from a valid chat that hasn't been read from OPFS yet.
+      if (!chatsLoaded) return;
+
+      const chatExists = chats.some((c) => c.id === routeChatId);
+      if (chatExists) {
+        selectChat(routeChatId);
+      } else {
+        // The chat ID in the URL doesn't exist — redirect to new chat
+        navigate({ to: "/chat", replace: true });
+      }
     } else if (!routeChatId && activeChatId) {
-      selectChat(null);
+      // Skip when a chat was just implicitly created (previousChatId was null) —
+      // resetting here would destroy user-selected tools before the first message completes.
+      if (previousChatIdRef.current !== null) {
+        selectChat(null);
+      }
     }
-  }, [routeChatId, chat?.id, selectChat]);
+  }, [routeChatId, chat?.id, selectChat, chats, chatsLoaded, navigate]);
 
   // Sync state → URL when a chat is implicitly created during message send.
   // The URL is still /chat but chatId just appeared — update to /chat/$chatId.
@@ -197,7 +211,7 @@ export function ChatPage() {
             onClick={toggleArtifactsDrawer}
             title={showArtifactsDrawer ? "Close artifacts" : "Open artifacts"}
           >
-            <Paperclip size={20} />
+            <Shapes size={20} />
           </button>
         )}
         <button

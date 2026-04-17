@@ -34,7 +34,7 @@ import type { PersonaKey } from "@/features/settings/lib/personas";
 import { personaOptions } from "@/features/settings/lib/personas";
 import { rebuildAllIndexes } from "@/features/settings/lib/rebuildIndexes";
 import { useToolsContext } from "@/features/tools";
-import { LOCAL_WINGMAN_ID } from "@/features/tools/hooks/useLocalWingman";
+import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { clearAll, deleteDirectory, getStorageUsage, removeIndexEntry } from "@/shared/lib/opfs";
 import { downloadFolderAsZip } from "@/shared/lib/opfs-zip";
@@ -193,11 +193,11 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
   const profileRoleInputId = useId();
   const profileAboutInputId = useId();
   const [openSection, setOpenSection] = useState<string | null>(null);
-  const { providers, getProviderState, localWingmanEnabled, localWingmanAvailable, toggleLocalWingman } =
+  const { providers, getProviderState, companionEnabled, companionAvailable, toggleCompanion } =
     useToolsContext();
-  const wingman = providers.find((p) => p.id === LOCAL_WINGMAN_ID);
-  const wingmanState = wingman ? getProviderState(wingman.id) : ProviderState.Disconnected;
-  const wingmanConnected = wingmanState === ProviderState.Connected && localWingmanEnabled;
+  const companion = providers.find((p) => p.id === COMPANION_ID);
+  const companionState = companion ? getProviderState(companion.id) : ProviderState.Disconnected;
+  const companionConnected = companionState === ProviderState.Connected && companionEnabled;
   const [opfsBrowserOpen, setOpfsBrowserOpen] = useState(false);
   const [isRebuildingIndexes, setIsRebuildingIndexes] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -804,8 +804,8 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   </div>
                 </SectionPanel>
 
-                {/* Companion (Local Wingman) Section */}
-                {localWingmanAvailable && (
+                {/* Companion Section */}
+                {companionAvailable && (
                   <SectionPanel
                     title="Companion"
                     icon={<Coffee size={20} />}
@@ -816,35 +816,35 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                       <span className="text-sm text-neutral-700 dark:text-neutral-300">Enable companion</span>
                       <button
                         type="button"
-                        onClick={toggleLocalWingman}
+                        onClick={toggleCompanion}
                         className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none ${
-                          localWingmanEnabled
+                          companionEnabled
                             ? "bg-emerald-500 dark:bg-emerald-600"
                             : "bg-neutral-300 dark:bg-neutral-600"
                         }`}
                         role="switch"
-                        aria-checked={localWingmanEnabled}
+                        aria-checked={companionEnabled}
                       >
                         <span
                           className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-                            localWingmanEnabled ? "translate-x-4.5" : "translate-x-0.5"
+                            companionEnabled ? "translate-x-4.5" : "translate-x-0.5"
                           }`}
                         />
                       </button>
                     </div>
 
-                    {wingmanConnected && wingman && wingman.tools.length > 0 ? (
+                    {companionConnected && companion && companion.tools.length > 0 ? (
                       <div className="space-y-1">
                         <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                          {wingman.tools.length} tool{wingman.tools.length !== 1 ? "s" : ""} available
+                          {companion.tools.length} tool{companion.tools.length !== 1 ? "s" : ""} available
                         </p>
                         <div className="space-y-1">
-                          {wingman.tools.map((tool) => (
+                          {companion.tools.map((tool) => (
                             <div key={tool.name} className="flex items-center gap-2 py-1.5">
                               <span className="shrink-0 text-neutral-600 dark:text-neutral-400">
                                 {(() => {
                                   const toolIcon =
-                                    tool.icon ?? (typeof wingman.icon === "string" ? wingman.icon : undefined);
+                                    tool.icon ?? (typeof companion.icon === "string" ? companion.icon : undefined);
                                   if (toolIcon) {
                                     return (
                                       <span
@@ -861,9 +861,9 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                       />
                                     );
                                   }
-                                  if (wingman.icon && typeof wingman.icon !== "string") {
-                                    const WingmanIcon = wingman.icon;
-                                    return <WingmanIcon width={16} height={16} />;
+                                  if (companion.icon && typeof companion.icon !== "string") {
+                                    const CompanionIcon = companion.icon;
+                                    return <CompanionIcon width={16} height={16} />;
                                   }
                                   return <Wrench size={16} />;
                                 })()}
@@ -882,7 +882,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                           ))}
                         </div>
                       </div>
-                    ) : wingmanConnected ? (
+                    ) : companionConnected ? (
                       <p className="text-sm text-neutral-400 dark:text-neutral-500">No tools exposed</p>
                     ) : (
                       <p className="text-sm text-neutral-400 dark:text-neutral-500">

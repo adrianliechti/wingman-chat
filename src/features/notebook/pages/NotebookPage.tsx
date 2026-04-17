@@ -7,6 +7,7 @@ import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 import { AudioViewer } from "../components/AudioViewer";
 import { MindMapViewer } from "../components/MindMapViewer";
+import { ReportViewer } from "../components/ReportViewer";
 import { NotebookChat } from "../components/NotebookChat";
 import { NotebookSidebar } from "../components/NotebookSidebar";
 import { QuizViewer } from "../components/QuizViewer";
@@ -228,7 +229,7 @@ export function NotebookPage() {
             <div className="h-full flex flex-col relative">
               {/* Output buttons */}
               <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-                {!viewingOutput.imageUrl && !viewingOutput.audioUrl && <CopyButton text={viewingOutput.content} />}
+                {!viewingOutput.imageUrl && !viewingOutput.audioUrl && viewingOutput.type !== "report" && <CopyButton text={viewingOutput.content} />}
                 <button
                   type="button"
                   onClick={() => setViewingOutput(null)}
@@ -259,6 +260,8 @@ export function NotebookPage() {
                       />
                     </div>
                   </div>
+                ) : viewingOutput.type === "report" ? (
+                  <ReportViewer content={viewingOutput.content} />
                 ) : (
                   <div className="h-full overflow-y-auto p-6">
                     <div className="prose prose-neutral dark:prose-invert max-w-none">

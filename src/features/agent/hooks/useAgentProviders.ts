@@ -15,7 +15,7 @@ import { useAgentFiles } from "./useAgentFiles";
 export interface AgentProviders {
   /** All tool providers assembled from this agent's config */
   providers: ToolProvider[];
-  /** Built-in tool IDs this agent has enabled (e.g. "internet", "renderer") */
+  /** Built-in tool IDs this agent has enabled (e.g. "internet", "canvas") */
   enabledTools: string[];
   /** MCP clients owned by this agent (for lifecycle management) */
   mcpClients: MCPClient[];

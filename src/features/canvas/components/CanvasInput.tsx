@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { Model } from "@/shared/types/chat";
 
-interface RendererInputProps {
+interface CanvasInputProps {
   prompt: string;
   onPromptChange: (prompt: string) => void;
   onSubmit: () => void;
@@ -28,7 +28,7 @@ interface RendererInputProps {
   className?: string;
 }
 
-export function RendererInput({
+export function CanvasInput({
   prompt,
   onPromptChange,
   onSubmit,
@@ -50,7 +50,7 @@ export function RendererInput({
   disabled,
   autoFocus,
   className = "",
-}: RendererInputProps) {
+}: CanvasInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const referenceImageEntries = useMemo(() => {
     const counts = new Map<string, number>();
@@ -113,9 +113,9 @@ export function RendererInput({
           {referenceImageEntries.map(({ img, index, key }) => (
             <div
               key={key}
-              className="relative size-14 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all overflow-hidden"
+              className="relative size-14 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all"
             >
-              <img src={img.dataUrl} alt={`Reference ${index + 1}`} className="size-full object-cover" />
+              <img src={img.dataUrl} alt={`Reference ${index + 1}`} className="size-full object-cover rounded-xl overflow-hidden" />
               <button
                 type="button"
                 className="absolute top-0.5 right-0.5 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"

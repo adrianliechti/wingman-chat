@@ -35,6 +35,7 @@ func loadConfigFiles(cfg *Config) {
 	loadYAML("models.yaml", &cfg.Models)
 	loadYAML("drives.yaml", &cfg.Drives)
 	loadYAML("backgrounds.yaml", &cfg.Backgrounds)
+	loadYAMLPtr("canvas.yaml", &cfg.Canvas)
 
 	loadYAMLPtr("translator.yaml", &cfg.Translator)
 	loadYAMLPtr("vision.yaml", &cfg.Vision)

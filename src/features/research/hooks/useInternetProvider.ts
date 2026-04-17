@@ -193,7 +193,7 @@ export function useInternetProvider(): ToolProvider | null {
     return {
       id: "internet",
       name: internet?.researcher ? "Web Research" : "Web Search",
-      description: "Access the internet",
+      description: "Access up-to-date information from the internet",
       icon: Globe,
       instructions: internet?.researcher ? researchInstructionsText : searchInstructionsText,
       tools: internetTools(),

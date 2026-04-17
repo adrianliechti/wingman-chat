@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 
 const WELL_KNOWN_PATH = "/.well-known/wingman-configuration";
-export const LOCAL_WINGMAN_ID = "local-wingman";
+export const COMPANION_ID = "companion";
 const POLL_INTERVAL_MS = 20_000;
 
-export function localWingmanMcpUrl(url: string): string {
+export function companionMcpUrl(url: string): string {
   return `${url}/mcp`;
 }
 
@@ -20,7 +20,7 @@ async function checkAvailability(url: string): Promise<boolean> {
   }
 }
 
-export function useLocalWingman(url: string | undefined): { available: boolean } {
+export function useCompanion(url: string | undefined): { available: boolean } {
   const [available, setAvailable] = useState(false);
 
   useEffect(() => {

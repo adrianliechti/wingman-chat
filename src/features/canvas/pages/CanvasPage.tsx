@@ -1,7 +1,7 @@
 import { Download, ImagePlus, Info, Loader2, PlusIcon, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RendererInput } from "@/features/renderer/components/RendererInput";
-import { useImages } from "@/features/renderer/hooks/useImages";
+import { CanvasInput } from "@/features/canvas/components/CanvasInput";
+import { useImages } from "@/features/canvas/hooks/useImages";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { getDriveContentUrl } from "@/shared/lib/drives";
@@ -143,7 +143,7 @@ const Disclaimer = () => {
     try {
       const config = getConfig();
       return config.renderer?.disclaimer?.trim()
-        ? sanitizeHtmlToReact(config.renderer.disclaimer, { keyPrefix: "renderer-disclaimer" })
+        ? sanitizeHtmlToReact(config.renderer.disclaimer, { keyPrefix: "canvas-disclaimer" })
         : null;
     } catch {
       return null;
@@ -162,7 +162,7 @@ const Disclaimer = () => {
   );
 };
 
-export function RendererPage() {
+export function CanvasPage() {
   const config = getConfig();
   const { setRightActions } = useNavigation();
   const { images, createImage, deleteImage } = useImages();
@@ -181,7 +181,7 @@ export function RendererPage() {
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
   const [isFetchingDrive, setIsFetchingDrive] = useState(false);
 
-  // Load available renderer models
+  // Load available canvas models
   useEffect(() => {
     const loadModels = async () => {
       try {
@@ -490,7 +490,7 @@ export function RendererPage() {
                 </div>
               )}
 
-              <RendererInput
+              <CanvasInput
                 prompt={prompt}
                 onPromptChange={setPrompt}
                 onSubmit={() => handleGenerate()}
@@ -518,7 +518,7 @@ export function RendererPage() {
           {/* Refine input — floating bottom center overlay */}
           {selectedImage && (
             <div className="pointer-events-none absolute inset-x-0 bottom-6 z-20 flex justify-center px-4">
-              <RendererInput
+              <CanvasInput
                 prompt={prompt}
                 onPromptChange={setPrompt}
                 onSubmit={() => handleGenerate(undefined, selectedImage.data)}
@@ -569,7 +569,7 @@ export function RendererPage() {
               return (
                 <div
                   key={img.id}
-                  className={`relative size-16 md:size-20 rounded-xl overflow-hidden cursor-pointer group shrink-0 transition-all ${
+                  className={`relative size-16 md:size-20 rounded-xl cursor-pointer group shrink-0 transition-all ${
                     isActive
                       ? "ring-2 ring-blue-500 dark:ring-blue-400 shadow-md"
                       : "border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-500"
@@ -581,7 +581,7 @@ export function RendererPage() {
                       setSelectedImageId(img.id);
                       setPrompt("");
                     }}
-                    className="block size-full"
+                    className="block size-full overflow-hidden rounded-xl"
                     aria-pressed={isActive}
                     title={img.prompt || "Select generated image"}
                   >

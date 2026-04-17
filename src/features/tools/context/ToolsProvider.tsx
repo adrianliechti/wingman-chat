@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
-import { useRendererProvider } from "@/features/renderer/hooks/useRendererProvider";
+import { useCanvasProvider } from "@/features/canvas/hooks/useCanvasProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import { MCPClient } from "@/features/settings/lib/mcp";
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
-import { LOCAL_WINGMAN_ID, localWingmanMcpUrl, useLocalWingman } from "@/features/tools/hooks/useLocalWingman";
+import { COMPANION_ID, companionMcpUrl, useCompanion } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
 import type {
   AudioContent,
@@ -18,6 +18,9 @@ import type {
 } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 import { ToolsContext } from "./ToolsContext";
+
+const MCP_CONNECT_MAX_RETRIES = 2;
+const MCP_CONNECT_RETRY_DELAY_MS = 500;
 
 export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const config = getConfig();
@@ -44,16 +47,16 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Local Wingman auto-discovery
   const bridgeHost = config.bridge?.url;
-  const { available: localWingmanAvailable } = useLocalWingman(bridgeHost);
-  const [localWingmanEnabled, setLocalWingmanEnabled] = useState(true);
-  const toggleLocalWingman = useCallback(() => setLocalWingmanEnabled((v) => !v), []);
-  const [localWingmanClient] = useState<MCPClient | null>(() =>
+  const { available: companionAvailable } = useCompanion(bridgeHost);
+  const [companionEnabled, setCompanionEnabled] = useState(true);
+  const toggleCompanion = useCallback(() => setCompanionEnabled((v) => !v), []);
+  const [companionClient] = useState<MCPClient | null>(() =>
     bridgeHost
       ? new MCPClient(
-          LOCAL_WINGMAN_ID,
-          localWingmanMcpUrl(bridgeHost),
-          "Wingman (Local)",
-          "Locally running Wingman application",
+          COMPANION_ID,
+          companionMcpUrl(bridgeHost),
+          "Companion",
+          "Locally running companion application",
         )
       : null,
   );
@@ -68,7 +71,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Built-in providers
   const internetProvider = useInternetProvider();
-  const rendererProvider = useRendererProvider();
+  const canvasProvider = useCanvasProvider();
   const artifactsProvider = useArtifactsProvider();
   const skillBuilderProvider = useSkillBuilderProvider();
 
@@ -76,10 +79,10 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const allMcpClients = useMemo(
     () => [
       ...configMcpClients,
-      ...(localWingmanAvailable && localWingmanClient ? [localWingmanClient] : []),
+      ...(companionAvailable && companionClient ? [companionClient] : []),
       ...agentMcpClients,
     ],
-    [configMcpClients, localWingmanAvailable, localWingmanClient, agentMcpClients],
+    [configMcpClients, companionAvailable, companionClient, agentMcpClients],
   );
   const mcpIds = useMemo(() => new Set(allMcpClients.map((c) => c.id)), [allMcpClients]);
 
@@ -90,41 +93,47 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     return ids;
   }, [agentTools, agentProviders]);
 
-  // Model config wins by delta:
-  // 1) start from user-selected tools
-  // 2) add agent-required tools
-  // 3) add model-forced enabled tools
-  // 4) remove model-forced disabled tools (highest precedence)
-  // 5) auto-add local wingman when available and user has not disabled it
-  const desiredTools = useMemo(() => {
+  // What the user + agent + companion want connected (ignores model overrides intentionally).
+  // Used by the reconciliation effect to control MCP lifecycle — model-level tool filtering
+  // (enabled/disabled lists) is applied later in chatTools(), not here. Disconnecting an
+  // MCP server because the current model has it in tools.disabled would clear this.client
+  // and break any in-flight tool call.
+  const mcpConnectionDesired = useMemo(() => {
     const merged = new Set(userTools);
     for (const id of agentRequired) merged.add(id);
     for (const id of modelEnabledTools) merged.add(id);
-    for (const id of modelDisabledTools) merged.delete(id);
-    if (localWingmanAvailable && localWingmanEnabled) merged.add(LOCAL_WINGMAN_ID);
+    if (companionAvailable && companionEnabled) merged.add(COMPANION_ID);
     return merged;
-  }, [userTools, agentRequired, modelEnabledTools, modelDisabledTools, localWingmanAvailable, localWingmanEnabled]);
+  }, [userTools, agentRequired, modelEnabledTools, companionAvailable, companionEnabled]);
+
+  // Full desired set including model overrides — used by getProviderState for non-MCP
+  // built-in providers (internet, canvas, …) which have no lifecycle to manage.
+  const desiredTools = useMemo(() => {
+    const merged = new Set(mcpConnectionDesired);
+    for (const id of modelDisabledTools) merged.delete(id);
+    return merged;
+  }, [mcpConnectionDesired, modelDisabledTools]);
 
   // All available providers
   // biome-ignore lint/correctness/useExhaustiveDependencies: toolsVersion is a cache-bust trigger, not a real dependency
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
-    if (rendererProvider) list.push(rendererProvider);
+    if (canvasProvider) list.push(canvasProvider);
     if (internetProvider) list.push(internetProvider);
     if (artifactsProvider) list.push(artifactsProvider);
     list.push(skillBuilderProvider);
     list.push(...configMcpClients);
-    if (localWingmanAvailable && localWingmanClient) list.push(localWingmanClient);
+    if (companionAvailable && companionClient) list.push(companionClient);
     list.push(...agentProviders);
     return list;
   }, [
     internetProvider,
-    rendererProvider,
+    canvasProvider,
     artifactsProvider,
     skillBuilderProvider,
     configMcpClients,
-    localWingmanAvailable,
-    localWingmanClient,
+    companionAvailable,
+    companionClient,
     agentProviders,
     toolsVersion,
   ]);
@@ -132,11 +141,11 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // State: MCP clients use lifecycle state, local providers derive from desiredTools
   const getProviderState = useCallback(
     (id: string): ProviderState => {
-      if (id === LOCAL_WINGMAN_ID && !localWingmanEnabled) return ProviderState.Disconnected;
+      if (id === COMPANION_ID && !companionEnabled) return ProviderState.Disconnected;
       if (mcpIds.has(id)) return mcpStates.get(id) ?? ProviderState.Disconnected;
       return desiredTools.has(id) ? ProviderState.Connected : ProviderState.Disconnected;
     },
-    [mcpIds, mcpStates, desiredTools, localWingmanEnabled],
+    [mcpIds, mcpStates, desiredTools, companionEnabled],
   );
 
   // Track in-flight connection promises so callers can await an already-running connect
@@ -164,10 +173,21 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         setMcpStates((prev) => new Map(prev).set(id, ProviderState.Initializing));
         const promise = (async () => {
           try {
-            await client.connect();
-            setMcpStates((prev) => new Map(prev).set(id, ProviderState.Connected));
-          } catch (error) {
-            console.error(`Failed to connect MCP ${id}:`, error);
+            let lastError: unknown;
+            for (let attempt = 0; attempt <= MCP_CONNECT_MAX_RETRIES; attempt++) {
+              try {
+                await client.connect();
+                setMcpStates((prev) => new Map(prev).set(id, ProviderState.Connected));
+                return;
+              } catch (error) {
+                lastError = error;
+                if (attempt < MCP_CONNECT_MAX_RETRIES) {
+                  console.warn(`MCP ${id} connect attempt ${attempt + 1} failed, retrying...`, error);
+                  await new Promise<void>((r) => window.setTimeout(r, MCP_CONNECT_RETRY_DELAY_MS * (attempt + 1)));
+                }
+              }
+            }
+            console.error(`Failed to connect MCP ${id}:`, lastError);
             setMcpStates((prev) => new Map(prev).set(id, ProviderState.Failed));
           } finally {
             connectPromisesRef.current.delete(id);
@@ -229,31 +249,34 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       for (const id of mcpIds) {
-        connectMcp(id, desiredTools.has(id)).catch(console.error);
+        connectMcp(id, mcpConnectionDesired.has(id)).catch(console.error);
       }
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [desiredTools, mcpIds, connectMcp]);
+  }, [mcpConnectionDesired, mcpIds, connectMcp]);
 
   // User-facing toggle
   const setProviderEnabled = useCallback(
     async (id: string, enabled: boolean) => {
-      // Local wingman has its own enable flag that gates desiredTools; toggling
+      // Companion has its own enable flag that gates desiredTools; toggling
       // userTools alone is not enough because desiredTools re-adds the id when
-      // localWingmanEnabled is still true.
-      if (id === LOCAL_WINGMAN_ID) {
-        setLocalWingmanEnabled(enabled);
+      // companionEnabled is still true.
+      if (id === COMPANION_ID) {
+        setCompanionEnabled(enabled);
         await connectMcp(id, enabled);
         return;
       }
+
+      // Update user tool set — this feeds into desiredTools which triggers the
+      // reconciliation effect as a safety net, but for MCP tools we also connect
+      // immediately so the tool is ready before the user can send a message.
       setUserTools((prev) => {
         const next = new Set(prev);
         if (enabled) next.add(id);
         else next.delete(id);
         return next;
       });
-      // Immediate MCP connection for responsiveness
       if (mcpIds.has(id)) await connectMcp(id, enabled);
     },
     [mcpIds, connectMcp],
@@ -276,13 +299,20 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       displayModeOptions?: import("@/features/settings/lib/mcp").DisplayModeOptions,
     ) => {
       const client = allMcpClients.find((c) => c.id === providerId);
-      if (!client?.isConnected()) {
-        console.warn(`Cannot restore tool UI: MCP client ${providerId} not connected`);
-        return;
+      if (!client) {
+        throw new Error(`Cannot restore tool UI: MCP client ${providerId} not found`);
       }
+
+      // Restoring persisted app state needs a live MCP connection even when the
+      // provider was just enabled in the current interaction.
+      await connectMcp(providerId, true);
+      if (!client.isConnected()) {
+        throw new Error(`Cannot restore tool UI: MCP client ${providerId} not connected`);
+      }
+
       await client.restoreToolUI(toolName, resourceUri, args, result, context, displayModeOptions);
     },
-    [allMcpClients],
+    [allMcpClients, connectMcp],
   );
 
   // Check whether a provider currently has an active app bridge (e.g. from a live tool call)
@@ -315,9 +345,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         setProviderEnabled,
         setModelOverrides,
         resetTools,
-        localWingmanAvailable,
-        localWingmanEnabled,
-        toggleLocalWingman,
+        companionAvailable: companionAvailable,
+        companionEnabled: companionEnabled,
+        toggleCompanion: toggleCompanion,
         restoreToolUI,
         hasActiveBridge,
       }}
