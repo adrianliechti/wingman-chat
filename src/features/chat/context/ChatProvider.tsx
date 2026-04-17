@@ -6,6 +6,7 @@ import { useChats } from "@/features/chat/hooks/useChats";
 import { useModels } from "@/features/chat/hooks/useModels";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
+import { getErrorInfo } from "@/shared/lib/errors";
 import type { Content, Message, Model, ToolContext } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import type { Elicitation, ElicitationResult, PendingElicitation } from "@/shared/types/elicitation";
@@ -36,7 +37,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const client = config.client;
 
   const { models, selectedModel, setSelectedModel } = useModels();
-  const { chats, isLoaded: chatsLoaded, createChat: createChatHook, updateChat, deleteChat: deleteChatHook } = useChats();
+  const {
+    chats,
+    isLoaded: chatsLoaded,
+    createChat: createChatHook,
+    updateChat,
+    deleteChat: deleteChatHook,
+  } = useChats();
   const { isAvailable: artifactsEnabled, setChatId: setArtifactsChatId } = useArtifacts();
   const { renderApp, closeApp } = useApp();
   const { currentAgent } = useAgents();
@@ -425,55 +432,29 @@ export function ChatProvider({ children }: ChatProviderProps) {
       } catch (error) {
         console.error(error);
         setIsResponding(false);
+        const aborted = abortControllerRef.current?.signal.aborted ?? false;
         abortControllerRef.current = null;
+        updateStreamingMessage(null);
 
-        if (error?.toString().includes("missing finish_reason")) {
-          updateStreamingMessage(null);
+        // If the stream was aborted by the user, exit cleanly without
+        // surfacing an error. `stopStreaming()` has already committed any
+        // partial content it had buffered.
+        if (aborted) {
           return;
         }
 
-        // Determine error code and user-friendly message based on error type
-        let errorCode = "COMPLETION_ERROR";
-        let errorMessage = "An unexpected error occurred while generating the response.";
-
-        const errorString = error?.toString() || "";
-
-        if (errorString.includes("500")) {
-          errorCode = "SERVER_ERROR";
-          errorMessage = "The server encountered an internal error. Please try again in a moment.";
-        } else if (errorString.includes("401")) {
-          errorCode = "AUTH_ERROR";
-          errorMessage = "Authentication failed. Please check your API key or credentials.";
-        } else if (errorString.includes("403")) {
-          errorCode = "AUTH_ERROR";
-          errorMessage = "Access denied. You may not have permission to use this model.";
-        } else if (errorString.includes("404")) {
-          errorCode = "NOT_FOUND_ERROR";
-          errorMessage = "The requested model or resource was not found.";
-        } else if (errorString.includes("429")) {
-          errorCode = "RATE_LIMIT_ERROR";
-          errorMessage = "Rate limit exceeded. Please wait a moment before trying again.";
-        } else if (errorString.includes("timeout") || errorString.includes("network")) {
-          errorCode = "NETWORK_ERROR";
-          errorMessage = "Network connection failed. Please check your internet connection and try again.";
-        }
+        const { code, message } = getErrorInfo(error);
 
         conversation = [
           ...conversation,
           {
             role: Role.Assistant,
             content: [],
-            error: {
-              code: errorCode,
-              message: errorMessage,
-            },
+            error: { code, message },
           },
         ];
 
         updateChat(id, () => ({ messages: conversation }));
-
-        // Ensure streaming buffer is cleared on errors
-        updateStreamingMessage(null);
       }
     },
     [
