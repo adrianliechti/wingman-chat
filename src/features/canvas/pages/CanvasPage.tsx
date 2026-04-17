@@ -569,7 +569,7 @@ export function CanvasPage() {
               return (
                 <div
                   key={img.id}
-                  className={`relative size-16 md:size-20 rounded-xl overflow-hidden cursor-pointer group shrink-0 transition-all ${
+                  className={`relative size-16 md:size-20 rounded-xl cursor-pointer group shrink-0 transition-all ${
                     isActive
                       ? "ring-2 ring-blue-500 dark:ring-blue-400 shadow-md"
                       : "border border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-500"
@@ -581,7 +581,7 @@ export function CanvasPage() {
                       setSelectedImageId(img.id);
                       setPrompt("");
                     }}
-                    className="block size-full"
+                    className="block size-full overflow-hidden rounded-xl"
                     aria-pressed={isActive}
                     title={img.prompt || "Select generated image"}
                   >
