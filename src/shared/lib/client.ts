@@ -22,6 +22,7 @@ import type {
   ToolResultContent,
 } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
+import { isAbortError } from "./errors";
 import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
 import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
@@ -55,6 +56,10 @@ export class Client {
       baseURL: new URL("/api/v1", window.location.origin).toString(),
       apiKey: apiKey,
       dangerouslyAllowBrowser: true,
+      // Configure automatic retries for rate limits and server errors
+      // maxRetries is set to 3 attempts (default is 2)
+      maxRetries: 3,
+      // Uses SDK default timeout of 10 minutes for complex operations
     });
   }
 
@@ -335,6 +340,13 @@ export class Client {
           options.signal.addEventListener("abort", () => runner.abort(), { once: true });
         }
 
+        // Attach an error listener so mid-stream errors don't surface as
+        // unhandled EventEmitter errors. The same error will also reject
+        // `finalResponse()` below, which is where we actually handle it.
+        runner.on("error", () => {
+          /* handled via finalResponse() rejection */
+        });
+
         try {
           const finalResponse = await runner.finalResponse();
 
@@ -348,13 +360,15 @@ export class Client {
             },
           };
         } catch (error) {
-          // On abort, return partial content accumulated so far
-          if (options?.signal?.aborted) {
+          // On abort (either via our signal or runner.abort()), return the
+          // partial content accumulated so far as a successful result.
+          if (options?.signal?.aborted || isAbortError(error)) {
             return {
               result: { role: Role.Assistant, content: contentParts } as Message,
               response: { id: "", model },
             };
           }
+
           throw error;
         }
       },
@@ -755,6 +769,16 @@ export class Client {
         });
         return { result: response.output_parsed ?? null };
       } catch (error) {
+        // Propagate user-initiated cancellations; otherwise degrade gracefully.
+        // Transient errors (rate limits, 5xx, connection issues) have already
+        // been retried by the SDK (see `maxRetries` in the constructor), so
+        // re-throwing them here would not improve reliability — callers of
+        // these utility methods (titles, suggestions, conversions, rewrites)
+        // expect a best-effort result with a fallback.
+        if (isAbortError(error)) {
+          throw error;
+        }
+
         console.error(`Error in ${name}:`, error);
         return { result: null };
       }
@@ -776,6 +800,7 @@ export class Client {
       headers,
       body: data,
     });
+
     if (!resp.ok) throw new Error(`${path} failed with status ${resp.status}`);
     return resp;
   }
