@@ -420,7 +420,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           try {
             // Load artifact files into Pyodide's VFS
             const artifactFiles: Record<string, { content: string; contentType?: string }> = {};
-            if (fs?.isReady) {
+            if (fs) {
               const snapshot = await fs.getOverlaySnapshot();
               for (const [path, file] of Object.entries(snapshot)) {
                 artifactFiles[path] = { content: file.content, contentType: file.contentType };
@@ -465,7 +465,7 @@ export function useArtifactsProvider(): ToolProvider | null {
             }
 
             // Sync changed files back to artifacts
-            if (fs?.isReady && result.files) {
+            if (fs && result.files) {
               await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
             }
 

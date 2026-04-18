@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { FileSystemManager } from "@/features/artifacts/lib/fs";
+import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { getConfig } from "@/shared/config";
 import { ArtifactsContext } from "./ArtifactsContext";
 
@@ -11,6 +11,7 @@ interface ArtifactsProviderProps {
 export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [showArtifactsDrawer, setShowArtifactsDrawer] = useState(false);
+  const [fs, setFs] = useState<FileSystemManager | null>(null);
   const config = getConfig();
   const [isAvailable] = useState(() => {
     try {
@@ -22,44 +23,61 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   });
   const [isEnabled, setIsEnabled] = useState(false);
 
-  // Create singleton FileSystemManager instance
-  const [fs] = useState(() => new FileSystemManager());
+  // Externally-injected filesystem setter. The chat feature calls this
+  // whenever the active chat changes; artifacts owns no chat knowledge.
+  const setFileSystem = useCallback((next: FileSystemManager | null) => {
+    setFs(next);
+  }, []);
 
-  // Method to set the chat ID for the filesystem (called by ChatProvider)
-  const setChatId = useCallback(
-    async (chatId: string | null) => {
-      fs.setChatId(chatId);
+  // When the active filesystem changes, reconcile UI state:
+  //  - Draft chat (fs === null): clear active file and collapse enabled state
+  //    while preserving drawer visibility so the panel stays open.
+  //  - Existing chat with files: auto-enable artifacts + surface the drawer.
+  //  - Otherwise: clear active file if it no longer exists in the new chat.
+  useEffect(() => {
+    if (!fs) {
+      setActiveFile(null);
+      setIsEnabled(false);
+      return;
+    }
 
-      if (!chatId) {
-        // Reset file-specific state for draft chats, but preserve drawer visibility
-        // so the panel stays open while the first message creates the chat.
-        setActiveFile(null);
-        setIsEnabled(false);
-        return;
-      }
+    let cancelled = false;
 
-      // Check if the chat has files and update UI state
-      const fileCount = await fs.getFileCount();
+    (async () => {
+      try {
+        const fileCount = await fs.getFileCount();
+        if (cancelled) return;
 
-      // Auto-enable artifacts if the chat has files
-      if (fileCount > 0) {
-        setIsEnabled(true);
-        setShowArtifactsDrawer(true);
-      }
-
-      // Clear active file if it doesn't exist in the new chat
-      if (activeFile) {
-        const fileExists = await fs.fileExists(activeFile);
-        if (!fileExists) {
-          setActiveFile(null);
+        if (fileCount > 0) {
+          setIsEnabled(true);
+          setShowArtifactsDrawer(true);
         }
+
+        // Clear active file if it doesn't exist in the new filesystem
+        setActiveFile((current) => {
+          if (!current) return current;
+          // Kick off async existence check; updates state when resolved.
+          fs.fileExists(current).then((exists) => {
+            if (!cancelled && !exists) {
+              setActiveFile((prev) => (prev === current ? null : prev));
+            }
+          });
+          return current;
+        });
+      } catch (error) {
+        console.warn("Failed to reconcile artifacts state for new filesystem:", error);
       }
-    },
-    [fs, activeFile],
-  );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fs]);
 
   // Subscribe to filesystem events for UI state changes
   useEffect(() => {
+    if (!fs) return undefined;
+
     const unsubscribeCreated = fs.subscribe("fileCreated", (path: string) => {
       setActiveFile(path);
       setShowArtifactsDrawer(true);
@@ -101,7 +119,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     openFile,
     setShowArtifactsDrawer,
     toggleArtifactsDrawer,
-    setChatId,
+    setFileSystem,
   };
 
   return <ArtifactsContext.Provider value={value}>{children}</ArtifactsContext.Provider>;

@@ -45,29 +45,18 @@ export interface OverlaySnapshotOptions {
  */
 export class FileSystemManager {
   private eventHandlers = new Map<FileEventType, Set<(...args: unknown[]) => void>>();
-  private _chatId: string | null = null;
+  readonly chatId: string;
 
-  constructor() {
+  constructor(chatId: string) {
+    if (!chatId) {
+      throw new Error("FileSystemManager requires a non-empty chatId");
+    }
+    this.chatId = chatId;
     // Initialize event handler sets
     this.eventHandlers.set("fileCreated", new Set());
     this.eventHandlers.set("fileDeleted", new Set());
     this.eventHandlers.set("fileRenamed", new Set());
     this.eventHandlers.set("fileUpdated", new Set());
-  }
-
-  // Get the current chat ID
-  get chatId(): string | null {
-    return this._chatId;
-  }
-
-  // Check if filesystem is ready (has a chat ID set)
-  get isReady(): boolean {
-    return this._chatId !== null;
-  }
-
-  // Set the current chat ID (called when switching chats)
-  setChatId(chatId: string | null): void {
-    this._chatId = chatId;
   }
 
   // Event subscription methods
@@ -115,16 +104,12 @@ export class FileSystemManager {
    * Writes directly to OPFS, then emits event.
    */
   async createFile(path: string, content: string, contentType?: string): Promise<void> {
-    if (!this._chatId) {
-      throw new Error("No chat ID set - cannot create file");
-    }
-
     // Check if file exists to determine event type
-    const existingFile = await opfs.readArtifact(this._chatId, path);
+    const existingFile = await opfs.readArtifact(this.chatId, path);
     const isUpdate = existingFile !== undefined;
 
     // Write to OPFS
-    await opfs.writeArtifact(this._chatId, path, content, contentType);
+    await opfs.writeArtifact(this.chatId, path, content, contentType);
 
     // Emit event synchronously after write completes
     if (isUpdate) {
@@ -138,25 +123,21 @@ export class FileSystemManager {
    * Delete a file or folder. Returns true if something was deleted.
    */
   async deleteFile(path: string): Promise<boolean> {
-    if (!this._chatId) {
-      return false;
-    }
-
     // Check if this is a file
-    const file = await opfs.readArtifact(this._chatId, path);
+    const file = await opfs.readArtifact(this.chatId, path);
     if (file) {
-      await opfs.deleteArtifact(this._chatId, path);
+      await opfs.deleteArtifact(this.chatId, path);
       this.emit("fileDeleted", path);
       return true;
     }
 
     // Check if this is a folder (has files that start with path + '/')
-    const allFiles = await opfs.listArtifacts(this._chatId);
+    const allFiles = await opfs.listArtifacts(this.chatId);
     const affectedFiles = allFiles.filter((f) => f.startsWith(`${path}/`));
 
     if (affectedFiles.length > 0) {
       // Delete the folder and all contents
-      await opfs.deleteArtifactFolder(this._chatId, path);
+      await opfs.deleteArtifactFolder(this.chatId, path);
 
       // Emit event for each deleted file
       for (const filePath of affectedFiles) {
@@ -172,28 +153,24 @@ export class FileSystemManager {
    * Rename/move a file or folder. Returns true on success.
    */
   async renameFile(oldPath: string, newPath: string): Promise<boolean> {
-    if (!this._chatId) {
-      return false;
-    }
-
     // Check if source is a file
-    const file = await opfs.readArtifact(this._chatId, oldPath);
+    const file = await opfs.readArtifact(this.chatId, oldPath);
     if (file) {
       // Check if destination already exists
-      const destFile = await opfs.readArtifact(this._chatId, newPath);
+      const destFile = await opfs.readArtifact(this.chatId, newPath);
       if (destFile) {
         return false;
       }
 
       // Copy content to new location and delete old
-      await opfs.writeArtifact(this._chatId, newPath, file.content, file.contentType);
-      await opfs.deleteArtifact(this._chatId, oldPath);
+      await opfs.writeArtifact(this.chatId, newPath, file.content, file.contentType);
+      await opfs.deleteArtifact(this.chatId, oldPath);
       this.emit("fileRenamed", oldPath, newPath);
       return true;
     }
 
     // Check if source is a folder
-    const allFiles = await opfs.listArtifacts(this._chatId);
+    const allFiles = await opfs.listArtifacts(this.chatId);
     const affectedFiles = allFiles.filter((f) => f.startsWith(`${oldPath}/`));
 
     if (affectedFiles.length > 0) {
@@ -202,10 +179,10 @@ export class FileSystemManager {
         const relativePath = filePath.substring(oldPath.length);
         const newFilePath = newPath + relativePath;
 
-        const fileData = await opfs.readArtifact(this._chatId, filePath);
+        const fileData = await opfs.readArtifact(this.chatId, filePath);
         if (fileData) {
-          await opfs.writeArtifact(this._chatId, newFilePath, fileData.content, fileData.contentType);
-          await opfs.deleteArtifact(this._chatId, filePath);
+          await opfs.writeArtifact(this.chatId, newFilePath, fileData.content, fileData.contentType);
+          await opfs.deleteArtifact(this.chatId, filePath);
           this.emit("fileRenamed", filePath, newFilePath);
         }
       }
@@ -219,11 +196,7 @@ export class FileSystemManager {
    * Get a file by path. Returns undefined if not found.
    */
   async getFile(path: string): Promise<File | undefined> {
-    if (!this._chatId) {
-      return undefined;
-    }
-
-    const data = await opfs.readArtifact(this._chatId, path);
+    const data = await opfs.readArtifact(this.chatId, path);
     if (!data) {
       return undefined;
     }
@@ -239,11 +212,7 @@ export class FileSystemManager {
    * List file entries without hydrating full content.
    */
   async listEntries(): Promise<FileEntry[]> {
-    if (!this._chatId) {
-      return [];
-    }
-
-    const entries = await opfs.listArtifactEntries(this._chatId);
+    const entries = await opfs.listArtifactEntries(this.chatId);
     return entries.sort((a, b) => a.path.localeCompare(b.path));
   }
 
@@ -251,15 +220,11 @@ export class FileSystemManager {
    * List all files in the filesystem.
    */
   async listFiles(): Promise<File[]> {
-    if (!this._chatId) {
-      return [];
-    }
-
     const entries = await this.listEntries();
     const files: File[] = [];
 
     for (const { path } of entries) {
-      const data = await opfs.readArtifact(this._chatId, path);
+      const data = await opfs.readArtifact(this.chatId, path);
       if (data) {
         files.push({
           path,
@@ -294,10 +259,6 @@ export class FileSystemManager {
    * Apply explicit overlay delta (upserts + deletes) to OPFS.
    */
   async applyOverlayDelta(delta: OverlayDelta): Promise<OverlayCommitSummary> {
-    if (!this._chatId) {
-      throw new Error("No chat ID set - cannot apply overlay delta");
-    }
-
     const existingFiles = await this.listFiles();
     const existingByPath = new Map(existingFiles.map((file) => [this.normalizePath(file.path), file]));
 
@@ -378,11 +339,7 @@ export class FileSystemManager {
    * Check if a file exists at the given path.
    */
   async fileExists(path: string): Promise<boolean> {
-    if (!this._chatId) {
-      return false;
-    }
-
-    const data = await opfs.readArtifact(this._chatId, path);
+    const data = await opfs.readArtifact(this.chatId, path);
     return data !== undefined;
   }
 
@@ -390,10 +347,6 @@ export class FileSystemManager {
    * Get the number of files in the filesystem.
    */
   async getFileCount(): Promise<number> {
-    if (!this._chatId) {
-      return 0;
-    }
-
     return (await this.listEntries()).length;
   }
 
