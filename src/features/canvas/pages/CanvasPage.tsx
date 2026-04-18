@@ -86,53 +86,33 @@ const STYLE_INSTRUCTIONS: Record<string, string> = {
 
 const AVAILABLE_STYLES = Object.keys(STYLE_INSTRUCTIONS);
 
-const blobs = [
-  {
-    bg: "radial-gradient(ellipse 80% 80% at center, rgba(120,119,198,0.18) 0%, transparent 70%)",
-    top: "10%",
-    left: "5%",
-    w: "55%",
-    h: "55%",
-  },
-  {
-    bg: "radial-gradient(ellipse 80% 80% at center, rgba(255,119,198,0.14) 0%, transparent 70%)",
-    top: "15%",
-    left: "45%",
-    w: "50%",
-    h: "50%",
-  },
-  {
-    bg: "radial-gradient(ellipse 80% 80% at center, rgba(78,205,196,0.14) 0%, transparent 70%)",
-    top: "0%",
-    left: "20%",
-    w: "50%",
-    h: "50%",
-  },
-  {
-    bg: "radial-gradient(ellipse 70% 70% at center, rgba(255,177,66,0.12) 0%, transparent 70%)",
-    top: "45%",
-    left: "25%",
-    w: "45%",
-    h: "45%",
-  },
-] as const;
-
 function CanvasBackground() {
+  const mask = "radial-gradient(ellipse at center, black 40%, transparent 85%)";
   return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden">
-      {blobs.map((b) => (
-        <div
-          key={`${b.top}-${b.left}-${b.w}-${b.h}`}
-          className="absolute"
-          style={{
-            top: b.top,
-            left: b.left,
-            width: b.w,
-            height: b.h,
-            backgroundImage: b.bg,
-          }}
-        />
-      ))}
+    <div
+      aria-hidden="true"
+      className="absolute inset-0 pointer-events-none overflow-hidden"
+      style={{
+        WebkitMaskImage: mask,
+        maskImage: mask,
+      }}
+    >
+      {/* Light mode dots */}
+      <div
+        className="absolute inset-0 dark:hidden"
+        style={{
+          backgroundImage: "radial-gradient(rgb(0 0 0 / 0.08) 1px, transparent 1px)",
+          backgroundSize: "22px 22px",
+        }}
+      />
+      {/* Dark mode dots */}
+      <div
+        className="absolute inset-0 hidden dark:block"
+        style={{
+          backgroundImage: "radial-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px)",
+          backgroundSize: "22px 22px",
+        }}
+      />
     </div>
   );
 }
