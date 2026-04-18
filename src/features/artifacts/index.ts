@@ -11,8 +11,8 @@ export { useArtifacts } from "./hooks/useArtifacts";
 export { useArtifactsProvider } from "./hooks/useArtifactsProvider";
 
 // Lib
-export type { ArtifactKind, ProcessedFile, TransformResult } from "./lib/artifacts";
-export { artifactKind, artifactLanguage, processUploadedFile, transformHtmlForPreview } from "./lib/artifacts";
+export type { ArtifactKind, ProcessedFile } from "./lib/artifacts";
+export { artifactKind, artifactLanguage, processUploadedFile } from "./lib/artifacts";
 export { downloadFilesystemAsZip, FileSystemManager } from "./lib/fs";
 
 // Types

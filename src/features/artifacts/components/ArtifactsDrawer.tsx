@@ -376,6 +376,7 @@ export function ArtifactsDrawer() {
         return (
           <HtmlEditor
             key={editorKey}
+            path={activeFileData.path}
             content={activeFileData.content}
             viewMode={viewMode}
             onViewModeChange={setViewMode}

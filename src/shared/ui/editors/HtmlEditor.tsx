@@ -1,88 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { transformHtmlForPreview } from "@/features/artifacts/lib/artifacts";
-import type { File } from "@/features/artifacts/types/file";
+import { HtmlPreview } from "@/shared/ui/HtmlPreview";
 import { CodeEditor } from "./CodeEditor";
 
-// Component to display HTML content in iframe with virtual filesystem support
-function HtmlPreview({ content }: { content: string }) {
-  const { fs } = useArtifacts();
-  const [files, setFiles] = useState<Record<string, File>>({});
-
-  // Load files on mount and subscribe to filesystem events
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadFiles = async () => {
-      if (!fs) {
-        if (!cancelled) setFiles({});
-        return;
-      }
-
-      try {
-        const fileList = await fs.listFiles();
-        if (!cancelled) {
-          const fileMap = fileList.reduce(
-            (acc, file) => {
-              acc[file.path] = file;
-              return acc;
-            },
-            {} as Record<string, File>,
-          );
-          setFiles(fileMap);
-        }
-      } catch (error) {
-        console.error("Error loading files:", error);
-        if (!cancelled) setFiles({});
-      }
-    };
-
-    // Load initial data
-    loadFiles();
-
-    // Subscribe to events for subsequent updates
-    const unsubscribeCreated = fs.subscribe("fileCreated", loadFiles);
-    const unsubscribeDeleted = fs.subscribe("fileDeleted", loadFiles);
-    const unsubscribeRenamed = fs.subscribe("fileRenamed", loadFiles);
-    const unsubscribeUpdated = fs.subscribe("fileUpdated", loadFiles);
-
-    return () => {
-      cancelled = true;
-      unsubscribeCreated();
-      unsubscribeDeleted();
-      unsubscribeRenamed();
-      unsubscribeUpdated();
-    };
-  }, [fs, fs?.chatId]);
-
-  // Transform HTML content with data URLs for artifact references
-  // Data URLs don't need cleanup (unlike blob URLs)
-  const transformedHtml = useMemo(() => {
-    return transformHtmlForPreview(content, files).html;
-  }, [content, files]);
-
-  return (
-    <div className="h-full overflow-hidden">
-      <iframe
-        srcDoc={transformedHtml}
-        title="HTML preview"
-        className="w-full h-full"
-        sandbox="allow-scripts allow-same-origin"
-      />
-    </div>
-  );
-}
-
 interface HtmlEditorProps {
+  path: string;
   content: string;
   viewMode?: "code" | "preview";
   onViewModeChange?: (mode: "code" | "preview") => void;
 }
 
-export function HtmlEditor({ content, viewMode = "preview" }: HtmlEditorProps) {
+export function HtmlEditor({ path, content, viewMode = "preview" }: HtmlEditorProps) {
+  const { fs } = useArtifacts();
+
   return (
     <div className="h-full flex flex-col overflow-hidden relative">
-      {viewMode === "preview" ? <HtmlPreview content={content} /> : <CodeEditor content={content} language="html" />}
+      {viewMode === "preview" ? (
+        <HtmlPreview path={path} content={content} fs={fs} className="w-full h-full" />
+      ) : (
+        <CodeEditor content={content} language="html" />
+      )}
     </div>
   );
 }

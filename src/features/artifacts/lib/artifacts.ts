@@ -7,9 +7,6 @@ import { xlsxToCsv } from "@/shared/lib/xlsx";
 // Artifact kind type
 export type ArtifactKind = "text" | "code" | "svg" | "html" | "csv" | "markdown" | "image" | "binary";
 
-// Re-export HTML transformation utilities
-export { type TransformResult, transformHtmlForPreview } from "./artifactsHtml";
-
 // Result type for processed files
 export interface ProcessedFile {
   path: string;

@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import { CopyButton } from "@/shared/ui/CopyButton";
+import { HtmlPreview } from "@/shared/ui/HtmlPreview";
 import { PreviewButton } from "@/shared/ui/PreviewButton";
 
 interface HtmlRendererProps {
@@ -73,12 +74,12 @@ const NonMemoizedHtmlRenderer = ({ html, language, name }: HtmlRendererProps) =>
             </pre>
           </div>
         ) : (
-          <iframe
-            srcDoc={html}
+          <HtmlPreview
+            content={html}
             title={extractedTitle || name || language}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
             className="w-full rounded-b-md"
             style={{ height: "400px" }}
+            reloadDebounceMs={250}
           />
         )}
       </div>
