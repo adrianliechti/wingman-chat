@@ -1,5 +1,16 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { Code, Download, Eye, File as FileIcon2, HardDrive, Loader2, Play, Shapes, TerminalSquare, Upload } from "lucide-react";
+import {
+  Code,
+  Download,
+  Eye,
+  File as FileIcon2,
+  HardDrive,
+  Loader2,
+  Play,
+  Shapes,
+  TerminalSquare,
+  Upload,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
@@ -337,7 +348,10 @@ export function ArtifactsDrawer() {
       );
     }
 
-    if (!activeFileData) {
+    // While a file switch is in flight, `activeFileData` still holds the
+    // previous file's content. Don't render it — it causes a visible flash
+    // of the old editor with mismatched `key` before the async load lands.
+    if (!activeFileData || activeFileData.path !== activeFile) {
       return null;
     }
 
@@ -405,6 +419,7 @@ export function ArtifactsDrawer() {
           <MarkdownEditor
             key={editorKey}
             content={activeFileData.content}
+            path={activeFileData.path}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
           />

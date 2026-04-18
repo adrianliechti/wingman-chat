@@ -1,5 +1,6 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import type { File } from "@/features/artifacts/types/file";
+import type { FileSystem } from "@/shared/lib/filesystem";
 import { createPreviewSession, type PreviewSession } from "@/shared/lib/htmlPreviewSession";
 
 export interface HtmlPreviewProps {
@@ -21,7 +22,7 @@ export interface HtmlPreviewProps {
    * on mount and live-reload subscriptions are set up for external changes
    * (rename/delete/create/update).
    */
-  fs?: HtmlPreviewFileSource;
+  fs?: FileSystem;
   /**
    * iframe title attribute.
    */
@@ -39,18 +40,6 @@ export interface HtmlPreviewProps {
    * Prevents reload storms while content streams in. Defaults to 150ms.
    */
   reloadDebounceMs?: number;
-}
-
-/**
- * Minimal interface that `HtmlPreview` needs from a filesystem manager.
- * Compatible with `FileSystemManager` in the artifacts feature.
- */
-export interface HtmlPreviewFileSource {
-  listFiles(): Promise<File[]>;
-  getFile(path: string): Promise<File | undefined>;
-  subscribe(eventType: "fileCreated" | "fileUpdated", handler: (path: string) => void): () => void;
-  subscribe(eventType: "fileDeleted", handler: (path: string) => void): () => void;
-  subscribe(eventType: "fileRenamed", handler: (oldPath: string, newPath: string) => void): () => void;
 }
 
 const DEFAULT_PATH = "index.html";
@@ -87,6 +76,9 @@ export function HtmlPreview({
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef(content);
   const pathRef = useRef(path);
+  // Tracks the last (path, content) actually pushed to the session, so we
+  // can skip redundant updateFile + reload cycles that cause iframe flicker.
+  const lastPushedRef = useRef<{ path: string; content: string } | null>(null);
   const [session, setSession] = useState<PreviewSession | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -121,8 +113,6 @@ export function HtmlPreview({
           await newSession.destroy();
           return;
         }
-        localSession = newSession;
-        sessionRef.current = newSession;
 
         // Build the initial file set: fs files, with in-memory content
         // overriding the active path.
@@ -140,19 +130,25 @@ export function HtmlPreview({
             content: activeContent,
             contentType: isHtmlPath(activePath) ? HTML_CONTENT_TYPE : merged.get(activePath)?.contentType,
           });
+          // Record what we just pushed so the content-sync effect below can
+          // skip a redundant updateFile + reload for the same payload.
+          lastPushedRef.current = { path: activePath, content: activeContent };
         }
 
         if (cancelled) {
           await newSession.destroy();
-          sessionRef.current = null;
           return;
         }
         await newSession.setFiles(Array.from(merged.values()));
         if (cancelled) {
           await newSession.destroy();
-          sessionRef.current = null;
           return;
         }
+
+        // Commit: publish the session only after all init work succeeded,
+        // so cleanup can cleanly destroy via `localSession`.
+        localSession = newSession;
+        sessionRef.current = newSession;
         setSession(newSession);
       } catch (err) {
         console.error("Failed to start HTML preview session:", err);
@@ -221,7 +217,12 @@ export function HtmlPreview({
   // When the in-memory `content` changes, push it through and reload.
   useEffect(() => {
     if (!session || !path || content === undefined) return;
+    // Skip if this exact payload was already pushed (e.g. by the initial
+    // session build). Prevents a redundant reload + flicker on open.
+    const last = lastPushedRef.current;
+    if (last && last.path === path && last.content === content) return;
     const contentType = isHtmlPath(path) ? HTML_CONTENT_TYPE : undefined;
+    lastPushedRef.current = { path, content };
     session
       .updateFile(path, { path, content, contentType })
       .then(() => scheduleReload())
