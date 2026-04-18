@@ -51,19 +51,19 @@ function serviceWorkerSupported(): boolean {
   return typeof navigator !== "undefined" && "serviceWorker" in navigator && typeof window !== "undefined";
 }
 
-async function waitForActivation(reg: ServiceWorkerRegistration): Promise<ServiceWorker> {
-  // Already active — done.
-  if (reg.active && reg.active.state === "activated") {
-    return reg.active;
-  }
-  // Fall back to whichever worker is attached to the registration right now.
-  const sw = reg.active || reg.waiting || reg.installing;
-  if (!sw) {
-    throw new Error("Service worker registration has no worker.");
-  }
-  if (sw.state === "activated") {
-    return sw;
-  }
+/**
+ * Wait for the registration's worker to reach the `activated` state.
+ *
+ * We can't use `navigator.serviceWorker.ready` here: it resolves with the
+ * registration that controls the *current page*, but our SW's scope is
+ * `/__preview__/` (the main app is served from `/`), so this page is never
+ * controlled. The SW is still fully functional for fetches made from within
+ * its scope (i.e. the preview iframe).
+ */
+async function waitForActivation(reg: ServiceWorkerRegistration): Promise<void> {
+  if (reg.active) return;
+  const sw = reg.installing || reg.waiting;
+  if (!sw) return;
   await new Promise<void>((resolve) => {
     const onChange = () => {
       if (sw.state === "activated") {
@@ -72,13 +72,7 @@ async function waitForActivation(reg: ServiceWorkerRegistration): Promise<Servic
       }
     };
     sw.addEventListener("statechange", onChange);
-    // In case it activated between the check above and the listener attach.
-    if (sw.state === "activated") {
-      sw.removeEventListener("statechange", onChange);
-      resolve();
-    }
   });
-  return reg.active || sw;
 }
 
 async function ensureRegistration(): Promise<ServiceWorkerRegistration> {
@@ -86,37 +80,24 @@ async function ensureRegistration(): Promise<ServiceWorkerRegistration> {
     throw new Error("Service workers are not available in this context.");
   }
   if (!registrationPromise) {
-    registrationPromise = navigator.serviceWorker
-      .register(SW_URL, { scope: SCOPE_PREFIX })
-      .then(async (reg) => {
-        // NOTE: `navigator.serviceWorker.ready` resolves with the registration
-        // that controls the *current page*. Because our SW's scope is
-        // `/__preview__/` (and the page is served from `/`), this page is
-        // never controlled — so we must wait on the registration's own worker
-        // state instead. The SW is still fully functional for fetches made
-        // from within its scope (the iframe).
+    registrationPromise = (async () => {
+      try {
+        const reg = await navigator.serviceWorker.register(SW_URL, { scope: SCOPE_PREFIX });
         await waitForActivation(reg);
         return reg;
-      })
-      .catch((error) => {
+      } catch (error) {
         registrationPromise = null;
         throw error;
-      });
+      }
+    })();
   }
   return registrationPromise;
 }
 
-async function getWorker(): Promise<ServiceWorker> {
-  const reg = await ensureRegistration();
-  const worker = reg.active || reg.waiting || reg.installing;
-  if (!worker) {
-    throw new Error("Service worker unavailable.");
-  }
-  return worker;
-}
-
 async function postMessage(message: unknown): Promise<void> {
-  const worker = await getWorker();
+  const reg = await ensureRegistration();
+  const worker = reg.active;
+  if (!worker) throw new Error("Service worker unavailable.");
   worker.postMessage(message);
 }
 
@@ -214,11 +195,6 @@ export async function createPreviewSession(): Promise<PreviewSession> {
   const token = generateToken();
   let destroyed = false;
 
-  async function ensureAlive(): Promise<boolean> {
-    if (destroyed) return false;
-    return true;
-  }
-
   const session: PreviewSession = {
     token,
 
@@ -228,7 +204,7 @@ export async function createPreviewSession(): Promise<PreviewSession> {
     },
 
     async setFiles(input) {
-      if (!(await ensureAlive())) return;
+      if (destroyed) return;
       const filesMap: Record<string, PreviewFilePayload> = {};
       const entries = Array.isArray(input) ? input : Object.values(input);
       for (const file of entries) {
@@ -245,7 +221,7 @@ export async function createPreviewSession(): Promise<PreviewSession> {
     },
 
     async updateFile(path, file) {
-      if (!(await ensureAlive())) return;
+      if (destroyed) return;
       const key = normalizeInputPath(path);
       if (!key) return;
       await postMessage({
@@ -257,7 +233,7 @@ export async function createPreviewSession(): Promise<PreviewSession> {
     },
 
     async deleteFile(path) {
-      if (!(await ensureAlive())) return;
+      if (destroyed) return;
       const key = normalizeInputPath(path);
       if (!key) return;
       await postMessage({
@@ -268,7 +244,7 @@ export async function createPreviewSession(): Promise<PreviewSession> {
     },
 
     async renameFile(fromPath, toPath) {
-      if (!(await ensureAlive())) return;
+      if (destroyed) return;
       const fromKey = normalizeInputPath(fromPath);
       const toKey = normalizeInputPath(toPath);
       if (!fromKey || !toKey) return;

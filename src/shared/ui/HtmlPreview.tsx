@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import type { File } from "@/features/artifacts/types/file";
 import { createPreviewSession, type PreviewSession } from "@/shared/lib/htmlPreviewSession";
 
@@ -11,20 +11,15 @@ export interface HtmlPreviewProps {
   path?: string;
   /**
    * In-memory content for the entry document. This overrides whatever is in
-   * `files` / `fs` for the same path so that unsaved editor changes are
-   * visible without a round-trip through the filesystem.
+   * `fs` for the same path so that unsaved editor changes are visible
+   * without a round-trip through the filesystem.
    */
   content?: string;
   /**
-   * Additional files (CSS, JS, images, other HTML documents, ...) to make
-   * available to the preview. Takes precedence over `fs` but is itself
-   * overridden by `content` for the `path` entry.
-   */
-  files?: File[];
-  /**
-   * Optional filesystem manager to source sibling files from. When provided,
-   * all files are loaded on mount and live-reload subscriptions are set up
-   * for external changes (rename/delete/create/update).
+   * Optional filesystem manager to source sibling files from (CSS, JS,
+   * images, other HTML documents, ...). When provided, all files are loaded
+   * on mount and live-reload subscriptions are set up for external changes
+   * (rename/delete/create/update).
    */
   fs?: HtmlPreviewFileSource;
   /**
@@ -71,18 +66,16 @@ function isHtmlPath(path: string): boolean {
  * so relative URLs, fetch, navigation between pages, subfolders and forms
  * all behave as if served from a web server.
  *
- * Supports three input modes (which can be combined):
+ * Supports two input modes (which can be combined):
  *
  * 1. **Single document**: pass `content` (and optionally `path`). Useful for
  *    chat-message code blocks.
- * 2. **Explicit file set**: pass `files` to provide CSS/JS/images alongside.
- * 3. **Filesystem-backed**: pass `fs` to load all files and subscribe to
+ * 2. **Filesystem-backed**: pass `fs` to load all files and subscribe to
  *    live changes — used by the artifacts drawer editor.
  */
 export function HtmlPreview({
   path = DEFAULT_PATH,
   content,
-  files,
   fs,
   title,
   className = "w-full h-full",
@@ -94,28 +87,24 @@ export function HtmlPreview({
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef(content);
   const pathRef = useRef(path);
-  const filesRef = useRef(files);
   const [session, setSession] = useState<PreviewSession | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Keep refs in sync so async callbacks see the latest values.
   contentRef.current = content;
   pathRef.current = path;
-  filesRef.current = files;
 
-  const scheduleReload = useMemo(() => {
-    return () => {
-      if (reloadTimerRef.current) {
-        clearTimeout(reloadTimerRef.current);
-      }
-      reloadTimerRef.current = setTimeout(() => {
-        reloadTimerRef.current = null;
-        const iframe = iframeRef.current;
-        const currentSession = sessionRef.current;
-        if (!iframe || !currentSession) return;
-        iframe.src = currentSession.previewUrl(pathRef.current);
-      }, reloadDebounceMs);
-    };
+  const scheduleReload = useCallback(() => {
+    if (reloadTimerRef.current) {
+      clearTimeout(reloadTimerRef.current);
+    }
+    reloadTimerRef.current = setTimeout(() => {
+      reloadTimerRef.current = null;
+      const iframe = iframeRef.current;
+      const currentSession = sessionRef.current;
+      if (!iframe || !currentSession) return;
+      iframe.src = currentSession.previewUrl(pathRef.current);
+    }, reloadDebounceMs);
   }, [reloadDebounceMs]);
 
   // Create session on mount; tear down on unmount.
@@ -123,35 +112,7 @@ export function HtmlPreview({
   // to the right manager.
   useEffect(() => {
     let cancelled = false;
-
-    const buildInitialFiles = async (): Promise<File[]> => {
-      const merged = new Map<string, File>();
-
-      if (fs) {
-        const fsFiles = await fs.listFiles();
-        for (const file of fsFiles) {
-          merged.set(file.path, file);
-        }
-      }
-
-      const initialFiles = filesRef.current;
-      if (initialFiles) {
-        for (const file of initialFiles) {
-          merged.set(file.path, file);
-        }
-      }
-      const activePath = pathRef.current;
-      const activeContent = contentRef.current;
-      if (activePath && activeContent !== undefined) {
-        merged.set(activePath, {
-          path: activePath,
-          content: activeContent,
-          contentType: isHtmlPath(activePath) ? HTML_CONTENT_TYPE : merged.get(activePath)?.contentType,
-        });
-      }
-
-      return Array.from(merged.values());
-    };
+    let localSession: PreviewSession | null = null;
 
     (async () => {
       try {
@@ -160,15 +121,33 @@ export function HtmlPreview({
           await newSession.destroy();
           return;
         }
+        localSession = newSession;
         sessionRef.current = newSession;
 
-        const initial = await buildInitialFiles();
+        // Build the initial file set: fs files, with in-memory content
+        // overriding the active path.
+        const merged = new Map<string, File>();
+        if (fs) {
+          for (const file of await fs.listFiles()) {
+            merged.set(file.path, file);
+          }
+        }
+        const activePath = pathRef.current;
+        const activeContent = contentRef.current;
+        if (activePath && activeContent !== undefined) {
+          merged.set(activePath, {
+            path: activePath,
+            content: activeContent,
+            contentType: isHtmlPath(activePath) ? HTML_CONTENT_TYPE : merged.get(activePath)?.contentType,
+          });
+        }
+
         if (cancelled) {
           await newSession.destroy();
           sessionRef.current = null;
           return;
         }
-        await newSession.setFiles(initial);
+        await newSession.setFiles(Array.from(merged.values()));
         if (cancelled) {
           await newSession.destroy();
           sessionRef.current = null;
@@ -185,15 +164,12 @@ export function HtmlPreview({
 
     return () => {
       cancelled = true;
-      const current = sessionRef.current;
       sessionRef.current = null;
       if (reloadTimerRef.current) {
         clearTimeout(reloadTimerRef.current);
         reloadTimerRef.current = null;
       }
-      if (current) {
-        current.destroy().catch(() => undefined);
-      }
+      localSession?.destroy().catch(() => undefined);
       setSession(null);
     };
   }, [fs]);
@@ -212,39 +188,33 @@ export function HtmlPreview({
       await session.updateFile(changedPath, { ...file, content: effectiveContent });
     };
 
-    const onCreated = (p: string) => {
+    const onUpsert = (p: string) => {
       loadAndUpdate(p)
         .then(() => scheduleReload())
-        .catch((err) => console.error("artifact preview: update on create failed", err));
-    };
-    const onUpdated = (p: string) => {
-      loadAndUpdate(p)
-        .then(() => scheduleReload())
-        .catch((err) => console.error("artifact preview: update on update failed", err));
+        .catch((err) => console.error("html preview: upsert failed", err));
     };
     const onDeleted = (p: string) => {
       session
         .deleteFile(p)
         .then(() => scheduleReload())
-        .catch((err) => console.error("artifact preview: delete failed", err));
+        .catch((err) => console.error("html preview: delete failed", err));
     };
     const onRenamed = (oldPath: string, newPath: string) => {
       session
         .renameFile(oldPath, newPath)
         .then(() => scheduleReload())
-        .catch((err) => console.error("artifact preview: rename failed", err));
+        .catch((err) => console.error("html preview: rename failed", err));
     };
 
-    const unsubCreated = fs.subscribe("fileCreated", onCreated);
-    const unsubUpdated = fs.subscribe("fileUpdated", onUpdated);
-    const unsubDeleted = fs.subscribe("fileDeleted", onDeleted);
-    const unsubRenamed = fs.subscribe("fileRenamed", onRenamed);
+    const unsubs = [
+      fs.subscribe("fileCreated", onUpsert),
+      fs.subscribe("fileUpdated", onUpsert),
+      fs.subscribe("fileDeleted", onDeleted),
+      fs.subscribe("fileRenamed", onRenamed),
+    ];
 
     return () => {
-      unsubCreated();
-      unsubUpdated();
-      unsubDeleted();
-      unsubRenamed();
+      for (const unsub of unsubs) unsub();
     };
   }, [fs, session, scheduleReload]);
 
@@ -255,28 +225,8 @@ export function HtmlPreview({
     session
       .updateFile(path, { path, content, contentType })
       .then(() => scheduleReload())
-      .catch((err) => console.error("artifact preview: update of active file failed", err));
+      .catch((err) => console.error("html preview: update of active file failed", err));
   }, [session, path, content, scheduleReload]);
-
-  // When explicit `files` prop changes, resync them.
-  useEffect(() => {
-    if (!session || !files) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        for (const file of files) {
-          if (cancelled) return;
-          await session.updateFile(file.path, file);
-        }
-        if (!cancelled) scheduleReload();
-      } catch (err) {
-        console.error("artifact preview: syncing files prop failed", err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [session, files, scheduleReload]);
 
   if (error) {
     return (
