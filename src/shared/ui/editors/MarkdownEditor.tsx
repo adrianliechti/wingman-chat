@@ -8,7 +8,7 @@ function MarkdownPreview({ content, path }: { content: string; path?: string }) 
   return (
     <div className="h-full overflow-auto px-3 py-2">
       <div className="prose prose-neutral dark:prose-invert max-w-none [&>*:first-child]:mt-0">
-        <Markdown fs={fs} basePath={path}>
+        <Markdown fs={fs ?? undefined} basePath={path}>
           {content}
         </Markdown>
       </div>

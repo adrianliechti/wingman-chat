@@ -229,7 +229,9 @@ export function NotebookPage() {
             <div className="h-full flex flex-col relative">
               {/* Output buttons */}
               <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-                {!viewingOutput.imageUrl && !viewingOutput.audioUrl && viewingOutput.type !== "report" && <CopyButton text={viewingOutput.content} />}
+                {!viewingOutput.imageUrl && !viewingOutput.audioUrl && viewingOutput.type !== "report" && (
+                  <CopyButton text={viewingOutput.content} />
+                )}
                 <button
                   type="button"
                   onClick={() => setViewingOutput(null)}

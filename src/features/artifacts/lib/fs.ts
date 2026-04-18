@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import type { File, FileEntry } from "@/features/artifacts/types/file";
 import { artifactContentToZipValue, normalizeArtifactPath } from "@/shared/lib/artifactFiles";
+import type { FileSystem } from "@/shared/lib/filesystem";
 import * as opfs from "@/shared/lib/opfs";
 import { downloadBlob } from "@/shared/lib/utils";
 
@@ -43,7 +44,7 @@ export interface OverlaySnapshotOptions {
  * All operations go directly to OPFS. Events are emitted synchronously
  * after OPFS operations complete to notify UI of changes.
  */
-export class FileSystemManager {
+export class FileSystemManager implements FileSystem {
   private eventHandlers = new Map<FileEventType, Set<(...args: unknown[]) => void>>();
   readonly chatId: string;
 
@@ -259,33 +260,27 @@ export class FileSystemManager {
    * Apply explicit overlay delta (upserts + deletes) to OPFS.
    */
   async applyOverlayDelta(delta: OverlayDelta): Promise<OverlayCommitSummary> {
-    const existingFiles = await this.listFiles();
-    const existingByPath = new Map(existingFiles.map((file) => [this.normalizePath(file.path), file]));
-
     let created = 0;
     let updated = 0;
     let deleted = 0;
 
     for (const [rawPath, file] of Object.entries(delta.upserts)) {
       const path = this.normalizePath(rawPath);
-      const existing = existingByPath.get(path);
+      const existing = await opfs.readArtifact(this.chatId, path);
 
       if (!existing) {
-        await this.createFile(path, file.content, file.contentType);
+        await opfs.writeArtifact(this.chatId, path, file.content, file.contentType);
+        this.emit("fileCreated", path);
         created++;
       } else if (existing.content !== file.content || existing.contentType !== file.contentType) {
-        await this.createFile(path, file.content, file.contentType ?? existing.contentType);
+        await opfs.writeArtifact(this.chatId, path, file.content, file.contentType ?? existing.contentType);
+        this.emit("fileUpdated", path);
         updated++;
       }
     }
 
     for (const rawPath of delta.deletes) {
       const path = this.normalizePath(rawPath);
-
-      if (!existingByPath.has(path)) {
-        continue;
-      }
-
       const didDelete = await this.deleteFile(path);
       if (didDelete) {
         deleted++;
@@ -353,42 +348,24 @@ export class FileSystemManager {
   /**
    * Download all files as a zip archive.
    */
-  async downloadAsZip(filename?: string): Promise<void> {
+  async downloadAsZip(filename: string = "filesystem.zip"): Promise<void> {
     const files = await this.listFiles();
-    const filesystem: Record<string, File> = {};
-    for (const file of files) {
-      filesystem[file.path] = file;
+    if (files.length === 0) {
+      throw new Error("No files to download");
     }
-    return downloadFilesystemAsZip(filesystem, filename);
-  }
-}
 
-export async function downloadFilesystemAsZip(
-  filesystem: Record<string, File>,
-  filename: string = "filesystem.zip",
-): Promise<void> {
-  if (Object.keys(filesystem).length === 0) {
-    throw new Error("No files to download");
-  }
+    const zip = new JSZip();
+    for (const file of files) {
+      // Remove leading slash if present for cleaner zip structure
+      const cleanPath = file.path.startsWith("/") ? file.path.substring(1) : file.path;
+      zip.file(cleanPath, artifactContentToZipValue(file));
+    }
 
-  const zip = new JSZip();
-
-  // Add each file to the zip
-  for (const [path, file] of Object.entries(filesystem)) {
-    // Remove leading slash if present for cleaner zip structure
-    const cleanPath = path.startsWith("/") ? path.substring(1) : path;
-
-    // Add file to zip with its content
-    zip.file(cleanPath, artifactContentToZipValue(file));
-  }
-
-  try {
-    // Generate the zip file as a blob
-    const zipBlob = await zip.generateAsync({ type: "blob" });
-
-    // Download the zip file
-    downloadBlob(zipBlob, filename);
-  } catch (error) {
-    throw new Error(`Failed to create zip file: ${error instanceof Error ? error.message : "Unknown error"}`);
+    try {
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      downloadBlob(zipBlob, filename);
+    } catch (error) {
+      throw new Error(`Failed to create zip file: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
   }
 }

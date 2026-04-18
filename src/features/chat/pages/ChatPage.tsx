@@ -1,13 +1,5 @@
 import { useMatch, useNavigate } from "@tanstack/react-router";
-import {
-  ArrowDown,
-  BotMessageSquare,
-  ChevronLeft,
-  ChevronRight,
-  Info,
-  Plus as PlusIcon,
-  Shapes,
-} from "lucide-react";
+import { ArrowDown, BotMessageSquare, ChevronLeft, ChevronRight, Info, Plus as PlusIcon, Shapes } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { useAgents } from "@/features/agent/hooks/useAgents";

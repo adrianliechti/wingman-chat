@@ -85,10 +85,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // Own the FileSystemManager lifecycle: one instance per active chat, pushed
   // into the artifacts context. The artifacts feature has no chat knowledge;
   // it just receives the filesystem and reacts to its identity changes.
-  const fs = useMemo(
-    () => (artifactsEnabled && chat?.id ? new FileSystemManager(chat.id) : null),
-    [artifactsEnabled, chat?.id],
-  );
+  // The ref lets ensureChat eagerly create an instance that the next render's
+  // useMemo will pick up, so both paths share the same object.
+  const fsRef = useRef<FileSystemManager | null>(null);
+  const fs = useMemo(() => {
+    if (!artifactsEnabled || !chat?.id) {
+      fsRef.current = null;
+      return null;
+    }
+    if (fsRef.current?.chatId === chat.id) {
+      return fsRef.current;
+    }
+    const next = new FileSystemManager(chat.id);
+    fsRef.current = next;
+    return next;
+  }, [artifactsEnabled, chat?.id]);
 
   useEffect(() => {
     setArtifactsFileSystem(fs);
@@ -171,12 +182,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // necessary and returns a FileSystemManager bound to it — callers don't
   // need to wait for React to re-render the artifacts `fs` state.
   const ensureChat = useCallback(async () => {
-    if (chat) {
-      return { chat, fs: new FileSystemManager(chat.id) };
+    if (chat && fs) {
+      return { chat, fs };
     }
     const newChat = await createChat();
-    return { chat: newChat, fs: new FileSystemManager(newChat.id) };
-  }, [chat, createChat]);
+    const newFs = new FileSystemManager(newChat.id);
+    fsRef.current = newFs;
+    return { chat: newChat, fs: newFs };
+  }, [chat, fs, createChat]);
 
   const addMessage = useCallback(
     async (message: Message) => {

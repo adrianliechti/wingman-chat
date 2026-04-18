@@ -121,7 +121,7 @@ function lookupFile(token, path) {
   const store = sessions.get(token);
   if (!store) return null;
   const key = normalizePath(path);
-  let entry = store.get(key);
+  const entry = store.get(key);
   if (entry) return { key, entry };
 
   // Directory index fallback: /pages/ → /pages/index.html
@@ -226,11 +226,11 @@ self.addEventListener("message", (event) => {
       default:
         return;
     }
-    if (event.ports && event.ports[0]) {
+    if (event.ports?.[0]) {
       event.ports[0].postMessage({ ok: true });
     }
   } catch (error) {
-    if (event.ports && event.ports[0]) {
+    if (event.ports?.[0]) {
       event.ports[0].postMessage({ ok: false, error: String(error) });
     }
   }

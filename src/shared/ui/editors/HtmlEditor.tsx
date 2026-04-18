@@ -15,7 +15,7 @@ export function HtmlEditor({ path, content, viewMode = "preview" }: HtmlEditorPr
   return (
     <div className="h-full flex flex-col overflow-hidden relative">
       {viewMode === "preview" ? (
-        <HtmlPreview path={path} content={content} fs={fs} className="w-full h-full" />
+        <HtmlPreview path={path} content={content} fs={fs ?? undefined} className="w-full h-full" />
       ) : (
         <CodeEditor content={content} language="html" />
       )}

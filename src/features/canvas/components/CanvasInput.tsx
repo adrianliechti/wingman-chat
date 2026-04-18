@@ -115,7 +115,11 @@ export function CanvasInput({
               key={key}
               className="relative size-14 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all"
             >
-              <img src={img.dataUrl} alt={`Reference ${index + 1}`} className="size-full object-cover rounded-xl overflow-hidden" />
+              <img
+                src={img.dataUrl}
+                alt={`Reference ${index + 1}`}
+                className="size-full object-cover rounded-xl overflow-hidden"
+              />
               <button
                 type="button"
                 className="absolute top-0.5 right-0.5 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
