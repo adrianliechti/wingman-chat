@@ -70,6 +70,7 @@ export default defineConfig({
             "vendor-reactflow": /\/@xyflow\//,
             "vendor-bash": /\/just-bash\//,
             "vendor-docx": /\/(docx|marked|jspdf)\//,
+            "vendor-pdf": /\/pdfjs-dist\//,
             "vendor-markdown": /\/(unified|rehype-|remark-|emoji-regex|@fontsource\/noto-emoji|katex)\//,
             "vendor-ui": /\/(@headlessui|@floating-ui|lucide-react)\//,
           };

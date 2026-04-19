@@ -5,6 +5,7 @@ import { VectorDB } from "@/features/repository/lib/vectordb";
 import type { RepositoryFile } from "@/features/repository/types/repository";
 import { getConfig } from "@/shared/config";
 import { Client } from "@/shared/lib/client";
+import { convertFileToText } from "@/shared/lib/convert";
 import { useAgents } from "./useAgents";
 
 export interface FileChunk {
@@ -97,7 +98,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
     async (file: File, fileId: string) => {
       const currentId = currentAgentIdRef.current;
 
-      const text = await client.extractText(file);
+      const text = await convertFileToText(file);
       if (currentAgentIdRef.current !== currentId) return;
 
       const currentAgent = agentsRef.current.find((a) => a.id === currentId);

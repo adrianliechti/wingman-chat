@@ -13,16 +13,16 @@ import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
 import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
 import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
 import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
+import reportStyleDashboard from "../prompts/report-style-dashboard.txt?raw";
+import reportStyleExecutive from "../prompts/report-style-executive.txt?raw";
+import reportStyleMagazine from "../prompts/report-style-magazine.txt?raw";
+import reportStyleResearch from "../prompts/report-style-research.txt?raw";
 import slideCommonRules from "../prompts/slide-style-common.txt?raw";
 import slideStyleConsulting from "../prompts/slide-style-consulting.txt?raw";
 import slideStyleDark from "../prompts/slide-style-dark.txt?raw";
 import slideStyleNature from "../prompts/slide-style-nature.txt?raw";
 import slideStyleSwiss from "../prompts/slide-style-swiss.txt?raw";
 import slideStyleWhiteboard from "../prompts/slide-style-whiteboard.txt?raw";
-import reportStyleDashboard from "../prompts/report-style-dashboard.txt?raw";
-import reportStyleExecutive from "../prompts/report-style-executive.txt?raw";
-import reportStyleMagazine from "../prompts/report-style-magazine.txt?raw";
-import reportStyleResearch from "../prompts/report-style-research.txt?raw";
 import studioAudioInstructions from "../prompts/studio-audio-overview.txt?raw";
 import studioInfographicInstructions from "../prompts/studio-infographic.txt?raw";
 import studioMindMapInstructions from "../prompts/studio-mind-map.txt?raw";
@@ -357,7 +357,7 @@ export function useNotebook(notebookId?: string) {
     async (file: File) => {
       if (!notebook) return;
 
-      const content = await convertFileToText(file, (f) => client.extractText(f));
+      const content = await convertFileToText(file);
 
       if (!content?.trim()) {
         throw new Error(`Could not extract text from ${file.name}`);
@@ -378,7 +378,7 @@ export function useNotebook(notebookId?: string) {
       await store.addSource(notebook.id, source);
       setSources((prev) => [...prev, source]);
     },
-    [notebook, client],
+    [notebook],
   );
 
   const addTextSource = useCallback(

@@ -1,65 +1,131 @@
+import { getConfig } from "@/shared/config";
 import { docxToMarkdown } from "./docx";
-import { isTextContentType } from "./fileTypes";
+import { inferContentTypeFromPath, isTextContentType } from "./fileTypes";
+import { pdfToMarkdown } from "./pdf";
 import { pptxToMarkdown } from "./pptx";
 import { xlsxToCsv } from "./xlsx";
 
+// MIME constants
+const MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const MIME_PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
+/** All file types the converter supports — used for file-picker accept filters. */
+export const SUPPORTED_TYPES = [
+  // Text / code
+  "text/csv",
+  "text/markdown",
+  "text/plain",
+  "application/json",
+  "application/sql",
+  "application/toml",
+  "application/x-yaml",
+  "application/xml",
+  "text/css",
+  "text/html",
+  "text/xml",
+  "text/yaml",
+  ".c",
+  ".cpp",
+  ".cs",
+  ".go",
+  ".html",
+  ".java",
+  ".js",
+  ".kt",
+  ".md",
+  ".py",
+  ".rs",
+  ".ts",
+
+  // Office documents & PDF (client-side converters)
+  MIME_DOCX,
+  MIME_XLSX,
+  MIME_PPTX,
+  "application/pdf",
+];
+
+type ConverterKind = "text" | "builtin" | "backend" | null;
+
+function converterKind(file: File, textTypes?: string[], extraTypes?: string[]): ConverterKind {
+  const name = file.name.toLowerCase();
+  const type = file.type;
+
+  if (name.endsWith(".docx") || type === MIME_DOCX) return "builtin";
+  if (name.endsWith(".xlsx") || type === MIME_XLSX) return "builtin";
+  if (name.endsWith(".pptx") || type === MIME_PPTX) return "builtin";
+  if (name.endsWith(".pdf") || type === "application/pdf") return "builtin";
+
+  if (isTextContentType(type || inferContentTypeFromPath(name))) return "text";
+
+  if (textTypes?.some((t) => (t.startsWith(".") ? name.endsWith(t) : type === t))) return "text";
+
+  if (extraTypes?.some((t) => (t.startsWith(".") ? name.endsWith(t) : type === t))) return "backend";
+
+  return null;
+}
+
+/** Whether this module can convert the given file (includes extra types from config). */
+export function canConvert(file: File): boolean {
+  const config = getConfig();
+  return converterKind(file, config.text?.files, config.extractor?.files) !== null;
+}
+
+/** All accepted file types (SUPPORTED_TYPES + text files + extractor files from config). */
+export function acceptTypes(): string[] {
+  const config = getConfig();
+  return [...SUPPORTED_TYPES, ...(config.text?.files ?? []), ...(config.extractor?.files ?? [])];
+}
+
 /**
- * Extracts text content from a file using the same converters as the artifacts module.
+ * Convert a file to text (Markdown or CSV).
  *
- * - XLSX → CSV (multiple sheets joined with headers)
- * - DOCX → Markdown
- * - PPTX → Markdown
- * - PDF / email (.msg, .eml) → Markdown via backend extractor
- * - Text files → raw text
- *
- * @param file         The File to convert
- * @param extractText  Backend extractor for PDF / email (client.extractText)
- * @returns            The extracted text content
+ * Built-in converters handle DOCX, XLSX, PPTX, PDF, and text files.
+ * The backend extractor (via config) is tried first for non-text types (it may
+ * produce better results). If it fails, built-in converters are used as
+ * fallback. For extra types configured in `extractor.files` (e.g. .msg, .eml)
+ * the backend is the only path.
  */
-export async function convertFileToText(file: File, extractText?: (file: File) => Promise<string>): Promise<string> {
+export async function convertFileToText(file: File): Promise<string> {
+  const config = getConfig();
+  const kind = converterKind(file, config.text?.files, config.extractor?.files);
+
+  // Try API extraction first for non-text builtin types
+  if (config.extractor && kind === "builtin") {
+    try {
+      const text = await config.client.extractText(file);
+      if (text?.trim()) return text;
+    } catch {
+      // fall through to client-side converter
+    }
+  }
+
+  // Backend-only types → extractText is the only path
+  if (kind === "backend") {
+    return config.client.extractText(file);
+  }
+
+  // Built-in converters
   const name = file.name.toLowerCase();
 
-  // XLSX → CSV
-  if (name.endsWith(".xlsx") || file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+  if (name.endsWith(".xlsx") || file.type === MIME_XLSX) {
     const results = await xlsxToCsv(file);
     if (results.length === 1) return results[0].csv;
     return results.map((r) => `## ${r.sheetName}\n\n${r.csv}`).join("\n\n");
   }
 
-  // DOCX → Markdown
-  if (
-    name.endsWith(".docx") ||
-    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-  ) {
+  if (name.endsWith(".docx") || file.type === MIME_DOCX) {
     return docxToMarkdown(file);
   }
 
-  // PPTX → Markdown
-  if (
-    name.endsWith(".pptx") ||
-    file.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-  ) {
+  if (name.endsWith(".pptx") || file.type === MIME_PPTX) {
     return pptxToMarkdown(file);
   }
 
-  // PDF → backend extraction
   if (name.endsWith(".pdf") || file.type === "application/pdf") {
-    if (!extractText) throw new Error("PDF extraction requires a backend extractor");
-    return extractText(file);
-  }
-
-  // Email → backend extraction
-  if (name.endsWith(".msg") || name.endsWith(".eml")) {
-    if (!extractText) throw new Error("Email extraction requires a backend extractor");
-    return extractText(file);
+    return pdfToMarkdown(file);
   }
 
   // Text files → read directly
-  const contentType = file.type || "text/plain";
-  if (isTextContentType(contentType)) {
-    return file.text();
-  }
-
-  // Fallback: try reading as text
   return file.text();
 }

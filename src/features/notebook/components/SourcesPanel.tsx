@@ -19,6 +19,7 @@ import {
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
+import { acceptTypes } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
@@ -50,7 +51,7 @@ export function SourcesPanel({
   onDeleteSource,
 }: SourcesPanelProps) {
   const config = getConfig();
-  const acceptFilter = [...(config.text?.files ?? []), ...(config.extractor?.files ?? [])].join(",");
+  const acceptFilter = acceptTypes().join(",");
   const [extracting, setExtracting] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);

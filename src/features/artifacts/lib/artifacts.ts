@@ -1,4 +1,3 @@
-import { getConfig } from "@/shared/config";
 import { convertFileToText } from "@/shared/lib/convert";
 import { isTextContentType } from "@/shared/lib/fileTypes";
 import { readAsDataURL } from "@/shared/lib/utils";
@@ -17,7 +16,6 @@ export interface ProcessedFile {
 // Process an uploaded file, converting XLSX to CSV and DOCX to Markdown when detected
 export async function processUploadedFile(file: File): Promise<ProcessedFile[]> {
   const fileName = file.name.toLowerCase();
-  const extractText = (f: File) => getConfig().client.extractText(f);
 
   // XLSX needs special handling: artifacts wants separate files per sheet
   const isXlsx =
@@ -44,7 +42,7 @@ export async function processUploadedFile(file: File): Promise<ProcessedFile[]> 
 
   // Try shared converter for docx, pptx, pdf, email, text
   try {
-    const content = await convertFileToText(file, extractText);
+    const content = await convertFileToText(file);
     const ext = fileName.split(".").pop() || "";
     const convertedExts: Record<string, { newExt: string; contentType: string }> = {
       docx: { newExt: "md", contentType: "text/markdown" },
