@@ -13,6 +13,17 @@ import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
 import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
 import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
 import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
+import infographicStyleAnime from "../prompts/infographic-style-anime.txt?raw";
+import infographicStyleAuto from "../prompts/infographic-style-auto.txt?raw";
+import infographicStyleBento from "../prompts/infographic-style-bento.txt?raw";
+import infographicStyleBricks from "../prompts/infographic-style-bricks.txt?raw";
+import infographicStyleClay from "../prompts/infographic-style-clay.txt?raw";
+import infographicStyleEditorial from "../prompts/infographic-style-editorial.txt?raw";
+import infographicStyleInstructional from "../prompts/infographic-style-instructional.txt?raw";
+import infographicStyleKawaii from "../prompts/infographic-style-kawaii.txt?raw";
+import infographicStyleProfessional from "../prompts/infographic-style-professional.txt?raw";
+import infographicStyleScientific from "../prompts/infographic-style-scientific.txt?raw";
+import infographicStyleSketchNote from "../prompts/infographic-style-sketch-note.txt?raw";
 import reportStyleDashboard from "../prompts/report-style-dashboard.txt?raw";
 import reportStyleExecutive from "../prompts/report-style-executive.txt?raw";
 import reportStyleMagazine from "../prompts/report-style-magazine.txt?raw";
@@ -199,6 +210,43 @@ export function getReportStyles(): ReportStyle[] {
   }
 
   return DEFAULT_REPORT_STYLES;
+}
+
+type InfographicStyle = { id: string; label: string; prompt: string };
+
+const DEFAULT_INFOGRAPHIC_STYLES: InfographicStyle[] = [
+  { id: "auto", label: "Auto-select", prompt: infographicStyleAuto },
+  { id: "sketch-note", label: "Sketch Note", prompt: infographicStyleSketchNote },
+  { id: "kawaii", label: "Kawaii", prompt: infographicStyleKawaii },
+  { id: "professional", label: "Professional", prompt: infographicStyleProfessional },
+  { id: "scientific", label: "Scientific", prompt: infographicStyleScientific },
+  { id: "anime", label: "Anime", prompt: infographicStyleAnime },
+  { id: "clay", label: "Clay", prompt: infographicStyleClay },
+  { id: "editorial", label: "Editorial", prompt: infographicStyleEditorial },
+  { id: "instructional", label: "Instructional", prompt: infographicStyleInstructional },
+  { id: "bento", label: "Bento Grid", prompt: infographicStyleBento },
+  { id: "bricks", label: "Bricks", prompt: infographicStyleBricks },
+];
+
+export function getInfographicStyles(): InfographicStyle[] {
+  const config = getConfig();
+  const infographics = config.canvas?.infographics;
+
+  if (infographics && infographics.length > 0) {
+    return infographics.map((i) => ({
+      id: i.name.toLowerCase().replace(/\s+/g, "-"),
+      label: i.name,
+      prompt: i.prompt,
+    }));
+  }
+
+  return DEFAULT_INFOGRAPHIC_STYLES;
+}
+
+function buildInfographicInstructions(styleId: string): string {
+  const infographicStyles = getInfographicStyles();
+  const style = infographicStyles.find((s) => s.id === styleId) ?? infographicStyles[0] ?? DEFAULT_INFOGRAPHIC_STYLES[0];
+  return studioInfographicInstructions.replace("{{STYLE_SECTION}}", style.prompt);
 }
 
 function buildAudioInstructions(styleId: string): string {
@@ -548,7 +596,9 @@ export function useNotebook(notebookId?: string) {
             ? buildAudioInstructions(styleId ?? "overview")
             : type === "report"
               ? buildReportInstructions(styleId ?? "executive")
-              : STUDIO_PROMPTS[type];
+              : type === "infographic"
+                ? buildInfographicInstructions(styleId ?? "auto")
+                : STUDIO_PROMPTS[type];
       const userMessage = {
         role: "user" as const,
         content: [

@@ -124,10 +124,16 @@ interface CanvasReportConfig {
   prompt: string;
 }
 
+interface CanvasInfographicConfig {
+  name: string;
+  prompt: string;
+}
+
 interface CanvasConfig {
   slides?: CanvasSlideConfig[];
   podcasts?: CanvasPodcastConfig[];
   reports?: CanvasReportConfig[];
+  infographics?: CanvasInfographicConfig[];
 }
 
 interface ConfigSchema {
