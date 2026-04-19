@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { downloadFromUrl } from "@/shared/lib/utils";
 import { getPodcastStyles, getReportStyles, getSlideStyles } from "../hooks/useNotebook";
 import type { NotebookOutput, NotebookSource, OutputType } from "../types/notebook";
 
@@ -227,10 +228,7 @@ function canDownload(output: NotebookOutput): boolean {
 }
 
 function downloadDataUrl(dataUrl: string, filename: string) {
-  const a = document.createElement("a");
-  a.href = dataUrl;
-  a.download = filename;
-  a.click();
+  downloadFromUrl(dataUrl, filename);
 }
 
 async function downloadReportAsPdf(html: string, slug: string) {

@@ -1,4 +1,4 @@
-import { parseDataUrl } from "./utils";
+import { decodeBase64, parseDataUrl } from "./utils";
 
 export interface ArtifactContent {
   content: string;
@@ -48,17 +48,6 @@ export function normalizeArtifactReferencePath(path: string): string {
 
 export function isDataUrlContent(content: string): boolean {
   return content.startsWith("data:");
-}
-
-export function decodeBase64(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-
-  for (let index = 0; index < binaryString.length; index += 1) {
-    bytes[index] = binaryString.charCodeAt(index);
-  }
-
-  return bytes;
 }
 
 export function encodeBase64(bytes: Uint8Array): string {

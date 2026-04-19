@@ -1,4 +1,5 @@
 import type { PyodideInterface } from "pyodide";
+import { decodeBase64 } from "@/shared/lib/utils";
 
 const RENDER_QUEUE_DIR = "/tmp/__plotly_render_queue__";
 
@@ -55,12 +56,7 @@ function decodeDataUrl(dataUrl: string, format: string): Uint8Array | string {
     return header.includes(";base64") ? atob(payload) : decodeURIComponent(payload);
   }
 
-  const binaryString = atob(payload);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
+  return decodeBase64(payload);
 }
 
 async function renderFigure(manifest: RenderManifest): Promise<{ path: string; data: Uint8Array | string }> {

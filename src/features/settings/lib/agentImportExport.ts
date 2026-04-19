@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import { getDirectory, readIndex, readText, writeBlob, writeJson, writeText } from "@/shared/lib/opfs-core";
 import { addDirectoryToZip, rebuildFolderIndex } from "@/shared/lib/opfs-zip";
+import { downloadBlob } from "@/shared/lib/utils";
 
 function getZipFolder(parent: JSZip, name: string): JSZip {
   const folder = parent.folder(name);
@@ -76,14 +77,7 @@ export async function exportAgentsAsZip(): Promise<void> {
   }
 
   const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `wingman-agents-${new Date().toISOString().split("T")[0]}.zip`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `wingman-agents-${new Date().toISOString().split("T")[0]}.zip`);
 }
 
 /**
@@ -151,14 +145,7 @@ export async function exportSingleAgentAsZip(
   }
 
   const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `wingman-agent-${agentName}-${new Date().toISOString().split("T")[0]}.zip`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `wingman-agent-${agentName}-${new Date().toISOString().split("T")[0]}.zip`);
 }
 
 // ============================================================================

@@ -87,6 +87,7 @@ export { pptxToMarkdown } from "./lib/pptx";
 export { formatLineOutput, getLineRange, splitLines } from "./lib/text-utils";
 // Lib - Utils
 export {
+  decodeBase64,
   decodeDataURL,
   downloadBlob,
   downloadFromUrl,

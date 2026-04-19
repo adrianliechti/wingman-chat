@@ -6,7 +6,7 @@ import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
-import { decodeDataURL, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
+import { decodeDataURL, downloadFromUrl, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
 import type { Model } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { useNavigation } from "@/shell/hooks/useNavigation";
@@ -352,12 +352,7 @@ export function CanvasPage() {
   };
 
   const handleDownload = (imageUrl: string) => {
-    const a = document.createElement("a");
-    a.href = imageUrl;
-    a.download = `generated-${Date.now()}.png`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    downloadFromUrl(imageUrl, `generated-${Date.now()}.png`);
   };
 
   const handlePaste = useCallback(

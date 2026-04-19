@@ -18,7 +18,7 @@
 import type { File } from "@/features/artifacts/types/file";
 import { isDataUrlContent } from "@/shared/lib/artifactFiles";
 import { isBinaryContentType } from "@/shared/lib/fileTypes";
-import { parseDataUrl } from "@/shared/lib/utils";
+import { decodeBase64, parseDataUrl } from "@/shared/lib/utils";
 
 const SW_URL = "/html-preview-sw.js";
 const SCOPE_PREFIX = "/__preview__/";
@@ -119,7 +119,7 @@ export function toPayload(file: File): PreviewFilePayload {
   if (isDataUrlContent(file.content)) {
     const parsed = parseDataUrl(file.content);
     if (parsed) {
-      const bytes = base64ToArrayBuffer(parsed.data);
+      const bytes = decodeBase64(parsed.data).buffer as ArrayBuffer;
       return { bytes, contentType: parsed.mimeType || contentType };
     }
   }
@@ -130,16 +130,6 @@ export function toPayload(file: File): PreviewFilePayload {
   }
 
   return { content: file.content, contentType };
-}
-
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const binary = atob(base64);
-  const buffer = new ArrayBuffer(binary.length);
-  const view = new Uint8Array(buffer);
-  for (let i = 0; i < binary.length; i += 1) {
-    view[i] = binary.charCodeAt(i);
-  }
-  return buffer;
 }
 
 function inferContentType(path: string): string | undefined {

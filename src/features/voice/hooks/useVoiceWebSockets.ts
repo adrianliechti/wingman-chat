@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { AudioRecorder } from "@/features/voice/lib/AudioRecorder";
 import { AudioStreamPlayer } from "@/features/voice/lib/AudioStreamPlayer";
-import { serializeToolResultForApi } from "@/shared/lib/utils";
+import { decodeBase64, serializeToolResultForApi } from "@/shared/lib/utils";
 import type { AudioContent, FileContent, ImageContent, Message, TextContent, Tool } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
 
@@ -354,14 +354,6 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
     return btoa(binary);
   };
 
-  const base64ToArrayBuffer = (base64: string) => {
-    const binary = atob(base64);
-    const len = binary.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
-    return bytes.buffer;
-  };
-
   const playAudioChunk = (base64: string) => {
     const player = wavPlayerRef.current;
     if (!player) {
@@ -375,7 +367,7 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
     }
 
     try {
-      const buf = base64ToArrayBuffer(base64);
+      const buf = decodeBase64(base64).buffer;
       const samples = new Int16Array(buf);
       // use a fresh trackId after interrupts to allow restarting playback
       player.add16BitPCM(samples, trackIdRef.current);

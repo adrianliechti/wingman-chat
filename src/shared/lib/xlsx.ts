@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import { downloadBlob } from "./utils";
 
 interface ConversionResult {
   sheetName: string;
@@ -204,12 +205,5 @@ function escapeCsvValue(value: string): string {
  */
 export function downloadCsv(csv: string, filename: string): void {
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename.endsWith(".csv") ? filename : `${filename}.csv`;
-  link.click();
-
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, filename.endsWith(".csv") ? filename : `${filename}.csv`);
 }

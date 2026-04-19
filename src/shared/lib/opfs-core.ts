@@ -1,5 +1,6 @@
 import { artifactContentToBlob } from "./artifactFiles";
 import { inferContentTypeFromPath } from "./fileTypes";
+import { decodeDataURL, readAsDataURL } from "./utils";
 
 /**
  * OPFS Core — File/folder CRUD, index management, storage usage, and shared utilities.
@@ -438,26 +439,14 @@ export async function getStorageUsage(): Promise<StorageUsage> {
  * Convert a data URL to a Blob.
  */
 export function dataUrlToBlob(dataUrl: string): Blob {
-  const [header, base64] = dataUrl.split(",");
-  const mimeType = header.match(/:(.*?);/)?.[1] || "application/octet-stream";
-  const byteCharacters = atob(base64);
-  const byteNumbers = new Uint8Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-  }
-  return new Blob([byteNumbers], { type: mimeType });
+  return decodeDataURL(dataUrl);
 }
 
 /**
  * Convert a Blob to a data URL.
  */
 export function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
+  return readAsDataURL(blob);
 }
 
 /**

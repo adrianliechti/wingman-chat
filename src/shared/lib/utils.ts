@@ -50,20 +50,7 @@ export function lookupContentType(ext: string): string | undefined {
 }
 
 export function readAsText(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      const text = reader.result as string;
-      resolve(text);
-    };
-
-    reader.onerror = (error) => {
-      reject(error);
-    };
-
-    reader.readAsText(blob);
-  });
+  return blob.text();
 }
 
 export function readAsDataURL(blob: Blob): Promise<string> {
@@ -83,16 +70,19 @@ export function readAsDataURL(blob: Blob): Promise<string> {
   });
 }
 
+export function decodeBase64(base64: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
 export function decodeDataURL(dataURL: string): Blob {
   const [header, base64] = dataURL.split(",");
   const mimeType = header.match(/:(.*?);/)?.[1] || "application/octet-stream";
-  const byteCharacters = atob(base64);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  return new Blob([byteArray], { type: mimeType });
+  return new Blob([decodeBase64(base64)], { type: mimeType });
 }
 
 export async function resizeImageBlob(blob: Blob, maxWidth: number, maxHeight: number): Promise<Blob> {
