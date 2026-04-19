@@ -478,8 +478,8 @@ export class Client {
     return (await this.post("/api/v1/extract", { ...(model && { model }), url, format: "text" })).text();
   }
 
-  async segmentText(blob: Blob): Promise<string[]> {
-    const result = await (await this.post("/api/v1/segment", { file: blob })).json();
+  async segmentText(text: string): Promise<string[]> {
+    const result = await (await this.post("/api/v1/segment", { text })).json();
     if (!Array.isArray(result)) return [];
     return result.map((item: { text?: string } | string) => (typeof item === "string" ? item : item.text || ""));
   }

@@ -113,7 +113,7 @@ export function useAgentFiles(agentId: string): AgentFilesHook {
         uploadedAt: new Date(),
       });
 
-      const segments = await client.segmentText(file);
+      const segments = await client.segmentText(text);
       if (currentAgentIdRef.current !== currentId) return;
 
       const currentAgent2 = agentsRef.current.find((a) => a.id === currentId);

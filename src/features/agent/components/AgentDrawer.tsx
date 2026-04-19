@@ -67,27 +67,25 @@ export function AgentDrawer() {
   const inlineEditInputRef = useRef<HTMLInputElement>(null);
 
   // Pending file uploads after wizard creation
-  const pendingFilesRef = useRef<{ agentId: string; files: File[] } | null>(null);
+  const [pendingWizardFiles, setPendingWizardFiles] = useState<File[] | null>(null);
   const { addFile } = useAgentFiles(currentAgent?.id || "");
 
   // Process pending file uploads when agent becomes current
   useEffect(() => {
-    if (!currentAgent || !pendingFilesRef.current) return;
-    if (pendingFilesRef.current.agentId !== currentAgent.id) return;
+    if (!currentAgent || !pendingWizardFiles) return;
 
-    const files = pendingFilesRef.current.files;
-    pendingFilesRef.current = null;
+    setPendingWizardFiles(null);
 
     (async () => {
-      for (const file of files) {
+      for (const file of pendingWizardFiles) {
         await addFile(file);
       }
     })();
-  }, [currentAgent, addFile]);
+  }, [currentAgent, addFile, pendingWizardFiles]);
 
-  const handleWizardCreated = useCallback((agent: Agent, pendingFiles: File[]) => {
+  const handleWizardCreated = useCallback((_agent: Agent, pendingFiles: File[]) => {
     if (pendingFiles.length > 0) {
-      pendingFilesRef.current = { agentId: agent.id, files: pendingFiles };
+      setPendingWizardFiles(pendingFiles);
     }
   }, []);
 
