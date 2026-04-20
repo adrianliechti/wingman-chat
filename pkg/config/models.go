@@ -140,9 +140,10 @@ type Background struct {
 }
 
 type Canvas struct {
-	Slides   []CanvasSlide   `json:"slides,omitempty" yaml:"slides,omitempty"`
-	Podcasts []CanvasPodcast `json:"podcasts,omitempty" yaml:"podcasts,omitempty"`
-	Reports  []CanvasReport  `json:"reports,omitempty" yaml:"reports,omitempty"`
+	Slides       []CanvasSlide       `json:"slides,omitempty" yaml:"slides,omitempty"`
+	Podcasts     []CanvasPodcast     `json:"podcasts,omitempty" yaml:"podcasts,omitempty"`
+	Reports      []CanvasReport      `json:"reports,omitempty" yaml:"reports,omitempty"`
+	Infographics []CanvasInfographic `json:"infographics,omitempty" yaml:"infographics,omitempty"`
 }
 
 type CanvasSlide struct {
@@ -157,6 +158,11 @@ type CanvasPodcast struct {
 }
 
 type CanvasReport struct {
+	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
+	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+}
+
+type CanvasInfographic struct {
 	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
 	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
 }

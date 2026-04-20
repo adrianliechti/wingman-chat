@@ -13,7 +13,9 @@ import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import "katex/dist/katex.min.css";
 import type { ReactNode } from "react";
+import type { FileSystem } from "@/shared/lib/filesystem";
 import rehypeNotoEmoji from "@/shared/lib/rehype-noto-emoji";
+import { useAssetUrlResolver } from "@/shared/lib/useAssetUrlResolver";
 import { isAudioUrl, isVideoUrl } from "@/shared/lib/utils";
 import { CodeRenderer } from "./CodeRenderer";
 import { MediaPlayer } from "./MediaPlayer";
@@ -98,7 +100,11 @@ function LatexRenderer({ code, filename }: { code: string; filename?: string }) 
   );
 }
 
-function createComponents(scopeId: string, isStreaming: boolean): Partial<Components> {
+function createComponents(
+  scopeId: string,
+  isStreaming: boolean,
+  resolveAsset: (url: string) => string | undefined,
+): Partial<Components> {
   let blockIndex = 0;
 
   return {
@@ -292,7 +298,17 @@ function createComponents(scopeId: string, isStreaming: boolean): Partial<Compon
       return <hr className="my-4 border-neutral-300 dark:border-neutral-700" {...props} />;
     },
     img: ({ src, alt, ...props }) => {
-      return <img src={src} alt={alt || "Image"} className="max-h-60 my-2 rounded-md" loading="lazy" {...props} />;
+      const rawSrc = typeof src === "string" ? src : "";
+      const resolved = rawSrc ? resolveAsset(rawSrc) : undefined;
+      return (
+        <img
+          src={resolved ?? rawSrc}
+          alt={alt || "Image"}
+          className="max-h-60 my-2 rounded-md"
+          loading="lazy"
+          {...props}
+        />
+      );
     },
     code({ children, className, ...rest }) {
       const match = /language-(\w+)/.exec(className || "");
@@ -479,7 +495,11 @@ const preprocessMarkdown = (content: string, isStreaming = false): string => {
   return processedContent;
 };
 
-function createMarkdownProcessor(scopeId: string, isStreaming: boolean) {
+function createMarkdownProcessor(
+  scopeId: string,
+  isStreaming: boolean,
+  resolveAsset: (url: string) => string | undefined,
+) {
   return unified()
     .use(remarkParse)
     .use(remarkGfm)
@@ -489,17 +509,31 @@ function createMarkdownProcessor(scopeId: string, isStreaming: boolean) {
     .use(remarkRehype, { allowDangerousHtml: true })
     .use(rehypeKatex, katexPluginOptions)
     .use(rehypeNotoEmoji)
-    .use(rehypeReact, { ...baseRehypeReactOptions, components: createComponents(scopeId, isStreaming) });
+    .use(rehypeReact, {
+      ...baseRehypeReactOptions,
+      components: createComponents(scopeId, isStreaming, resolveAsset),
+    });
 }
 
 type MarkdownProps = {
   children: string;
   isStreaming?: boolean;
+  /**
+   * Optional filesystem for resolving relative `<img>` references. When
+   * provided, relative image URLs are looked up in `fs` and served as blob
+   * URLs so artifact-local images render without needing a real web server.
+   */
+  fs?: FileSystem;
+  /**
+   * Absolute path of the document being rendered. Used as the base for
+   * resolving relative asset URLs. Only meaningful when `fs` is provided.
+   */
+  basePath?: string;
 };
 
 let markdownInstanceCounter = 0;
 
-const NonMemoizedMarkdown = ({ children, isStreaming = false }: MarkdownProps) => {
+const NonMemoizedMarkdown = ({ children, isStreaming = false, fs, basePath }: MarkdownProps) => {
   const [throttled, setThrottled] = useState(children);
   const lastFlushRef = useRef(0);
   const timerRef = useRef<number>(undefined);
@@ -509,9 +543,11 @@ const NonMemoizedMarkdown = ({ children, isStreaming = false }: MarkdownProps) =
     scopeIdRef.current = `markdown-${markdownInstanceCounter++}`;
   }
 
+  const resolveAsset = useAssetUrlResolver(fs, basePath);
+
   const processor = useMemo(
-    () => createMarkdownProcessor(scopeIdRef.current ?? "markdown", isStreaming),
-    [isStreaming],
+    () => createMarkdownProcessor(scopeIdRef.current ?? "markdown", isStreaming, resolveAsset),
+    [isStreaming, resolveAsset],
   );
 
   useEffect(() => {
@@ -541,7 +577,11 @@ const NonMemoizedMarkdown = ({ children, isStreaming = false }: MarkdownProps) =
 
 export const Markdown = memo(
   NonMemoizedMarkdown,
-  (prev, next) => prev.children === next.children && prev.isStreaming === next.isStreaming,
+  (prev, next) =>
+    prev.children === next.children &&
+    prev.isStreaming === next.isStreaming &&
+    prev.fs === next.fs &&
+    prev.basePath === next.basePath,
 );
 
 const extractFilename = (code: string): string | undefined => {

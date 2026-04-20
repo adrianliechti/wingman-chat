@@ -1,5 +1,6 @@
 import { Shapes } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
+import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
 import interpreterInstructionsText from "@/features/artifacts/prompts/interpreter.txt?raw";
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
@@ -10,6 +11,16 @@ import { useArtifacts } from "./useArtifacts";
 
 export function useArtifactsProvider(): ToolProvider | null {
   const { fs, activeFile, isAvailable } = useArtifacts();
+
+  // Tool functions are compiled once per render and execute later (after a
+  // network round trip). We route `fs`/`activeFile` through refs so the tools
+  // always see the latest values at execution time — otherwise, if the chat
+  // (and thus the filesystem) is created mid-send, tools would run with a
+  // stale `fs = null` captured by closure.
+  const fsRef = useRef<FileSystemManager | null>(fs);
+  fsRef.current = fs;
+  const activeFileRef = useRef<string | null>(activeFile);
+  activeFileRef.current = activeFile;
 
   const artifactsTools = useCallback((): Tool[] => {
     return [
@@ -33,6 +44,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: ["path", "content"],
         },
         function: async (args: Record<string, unknown>) => {
+          const fs = fsRef.current;
           const path = normalizeArtifactPath(args.path as string);
           const content = args.content as string;
 
@@ -75,6 +87,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: [],
         },
         function: async (args: Record<string, unknown>) => {
+          const fs = fsRef.current;
           const path = normalizeArtifactPath((args.directory as string) ?? "/");
 
           if (!fs) {
@@ -122,6 +135,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: ["path"],
         },
         function: async (args: Record<string, unknown>) => {
+          const fs = fsRef.current;
           const path = normalizeArtifactPath(args.path as string);
 
           if (!path) {
@@ -132,30 +146,21 @@ export function useArtifactsProvider(): ToolProvider | null {
             return [{ type: "text" as const, text: JSON.stringify({ error: "File system not available" }) }];
           }
 
-          const file = await fs.getFile(path);
-          const allFiles = await fs.listEntries();
-          const isFolder = allFiles.some((f) => f.path.startsWith(`${path}/`));
-
-          if (!file && !isFolder) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: `File or folder not found: ${path}` }) }];
-          }
-
           try {
             const success = await fs.deleteFile(path);
             if (success) {
-              const itemType = file ? "file" : "folder";
               return [
                 {
                   type: "text" as const,
                   text: JSON.stringify({
                     success: true,
-                    message: `${itemType} deleted: ${path}`,
+                    message: `Deleted: ${path}`,
                     path,
                   }),
                 },
               ];
             } else {
-              return [{ type: "text" as const, text: JSON.stringify({ error: `Failed to delete: ${path}` }) }];
+              return [{ type: "text" as const, text: JSON.stringify({ error: `File or folder not found: ${path}` }) }];
             }
           } catch {
             return [{ type: "text" as const, text: JSON.stringify({ error: "Failed to delete item" }) }];
@@ -180,6 +185,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: ["from", "to"],
         },
         function: async (args: Record<string, unknown>) => {
+          const fs = fsRef.current;
           const fromPath = normalizeArtifactPath(args.from as string);
           const toPath = normalizeArtifactPath(args.to as string);
 
@@ -191,18 +197,6 @@ export function useArtifactsProvider(): ToolProvider | null {
             return [{ type: "text" as const, text: JSON.stringify({ error: "File system not available" }) }];
           }
 
-          const sourceFile = await fs.getFile(fromPath);
-          if (!sourceFile) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: `Source file not found: ${fromPath}` }) }];
-          }
-
-          const destFile = await fs.getFile(toPath);
-          if (destFile) {
-            return [
-              { type: "text" as const, text: JSON.stringify({ error: `Destination file already exists: ${toPath}` }) },
-            ];
-          }
-
           try {
             const success = await fs.renameFile(fromPath, toPath);
 
@@ -211,7 +205,7 @@ export function useArtifactsProvider(): ToolProvider | null {
                 {
                   type: "text" as const,
                   text: JSON.stringify({
-                    error: `Failed to move file from ${fromPath} to ${toPath}. Source may not exist or destination already exists.`,
+                    error: `Failed to move from ${fromPath} to ${toPath}. Source may not exist or destination already exists.`,
                   }),
                 },
               ];
@@ -247,6 +241,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: ["path"],
         },
         function: async (args: Record<string, unknown>) => {
+          const fs = fsRef.current;
           const path = normalizeArtifactPath(args.path as string);
 
           if (!path) {
@@ -294,6 +289,8 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: [],
         },
         function: async () => {
+          const fs = fsRef.current;
+          const activeFile = activeFileRef.current;
           if (!fs) {
             return [{ type: "text" as const, text: JSON.stringify({ error: "File system not available" }) }];
           }
@@ -335,6 +332,8 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: [],
         },
         function: async () => {
+          const fs = fsRef.current;
+          const activeFile = activeFileRef.current;
           if (!fs) {
             return [{ type: "text" as const, text: JSON.stringify({ error: "File system not available" }) }];
           }
@@ -414,13 +413,14 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: [],
         },
         function: async (args: Record<string, unknown>) => {
+          const fs = fsRef.current;
           const { code, packages } = args;
           const path = normalizeArtifactPath(args.path as string | undefined);
 
           try {
             // Load artifact files into Pyodide's VFS
             const artifactFiles: Record<string, { content: string; contentType?: string }> = {};
-            if (fs?.isReady) {
+            if (fs) {
               const snapshot = await fs.getOverlaySnapshot();
               for (const [path, file] of Object.entries(snapshot)) {
                 artifactFiles[path] = { content: file.content, contentType: file.contentType };
@@ -465,7 +465,7 @@ export function useArtifactsProvider(): ToolProvider | null {
             }
 
             // Sync changed files back to artifacts
-            if (fs?.isReady && result.files) {
+            if (fs && result.files) {
               await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
             }
 
@@ -496,11 +496,12 @@ export function useArtifactsProvider(): ToolProvider | null {
           required: ["command"],
         },
         function: async (args: Record<string, unknown>) => {
+          const fs = fsRef.current;
           const { command } = args;
 
           try {
             // Load artifact files into bash's InMemoryFs before execution
-            if (fs?.isReady) {
+            if (fs) {
               const { memFs } = getSingleton();
               const snapshot = await fs.getOverlaySnapshot();
               const artifactFiles = Object.entries(snapshot).map(([path, file]) => ({
@@ -516,7 +517,7 @@ export function useArtifactsProvider(): ToolProvider | null {
             });
 
             // Save changed files back to artifacts after execution
-            if (fs?.isReady) {
+            if (fs) {
               const { memFs } = getSingleton();
               const currentFiles = await readFilesFromFs(memFs);
 
@@ -546,7 +547,10 @@ export function useArtifactsProvider(): ToolProvider | null {
         },
       },
     ];
-  }, [fs, activeFile]);
+    // Refs are intentionally not dependencies — the callback needs to produce
+    // a stable tool array so downstream memoization doesn't thrash. Tool
+    // functions read the latest `fs`/`activeFile` via refs at execution time.
+  }, []);
 
   const provider = useMemo<ToolProvider | null>(() => {
     if (!isAvailable) {

@@ -7,6 +7,7 @@
 
 import JSZip from "jszip";
 import { getDirectory, getRoot, type IndexEntry, readJson, readText, writeBlob, writeJson } from "./opfs-core";
+import { downloadBlob } from "./utils";
 
 // ============================================================================
 // Helpers
@@ -79,14 +80,7 @@ export async function importFolderFromZip(folderPath: string, zipBlob: Blob): Pr
  */
 export async function downloadFolderAsZip(folderPath: string, filename: string): Promise<void> {
   const blob = await exportFolderAsZip(folderPath);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, filename);
 }
 
 // ============================================================================

@@ -6,12 +6,14 @@ You have access to tools that let you list and read research sources:
 
 Start by listing and reading the available sources, then write a single, detailed image generation prompt that an AI image model can use to render a complete infographic.
 
+{{STYLE_SECTION}}
+
 Your output should be ONLY the image generation prompt — nothing else. The prompt should describe:
 - The overall layout and composition of the infographic
 - A clear title and subtitle
 - Key statistics, data points, and numbers to display
 - Sections with their content and visual treatment
-- Color scheme and style direction
+- Color scheme and style direction (following the visual style above)
 - Icons, charts, or diagrams to include
 - Typography hierarchy and visual flow
 

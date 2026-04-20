@@ -1,4 +1,5 @@
 import { createContext } from "react";
+import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { Chat, Message, Model } from "@/shared/types/chat";
 import type { ElicitationResult, PendingElicitation } from "@/shared/types/elicitation";
 
@@ -21,6 +22,14 @@ export interface ChatContextType {
   selectChat: (chatId: string | null) => void;
   deleteChat: (chatId: string) => void;
   updateChat: (chatId: string, updater: (chat: Chat) => Partial<Chat>, options?: { preserveDates?: boolean }) => void;
+
+  /**
+   * Ensure a chat exists and return it along with its filesystem. If a chat
+   * is already active, returns it; otherwise creates a new chat. This is the
+   * preferred entry point for features (drawer, uploads, terminal) that need
+   * a filesystem before the user has sent their first message.
+   */
+  ensureChat: () => Promise<{ chat: Chat; fs: FileSystemManager }>;
 
   addMessage: (message: Message) => Promise<void>;
   sendMessage: (message: Message, historyOverride?: Message[]) => Promise<void>;

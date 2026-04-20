@@ -124,10 +124,16 @@ interface CanvasReportConfig {
   prompt: string;
 }
 
+interface CanvasInfographicConfig {
+  name: string;
+  prompt: string;
+}
+
 interface CanvasConfig {
   slides?: CanvasSlideConfig[];
   podcasts?: CanvasPodcastConfig[];
   reports?: CanvasReportConfig[];
+  infographics?: CanvasInfographicConfig[];
 }
 
 interface ConfigSchema {
@@ -180,44 +186,6 @@ const DEFAULT_TTS_VOICES: Record<string, string> = {
 
 const DEFAULT_VISION_FILES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
-const DEFAULT_TEXT_FILES = [
-  "text/csv",
-  "text/markdown",
-  "text/plain",
-  "application/json",
-  "application/sql",
-  "application/toml",
-  "application/x-yaml",
-  "application/xml",
-  "text/css",
-  "text/html",
-  "text/xml",
-  "text/yaml",
-
-  ".c",
-  ".cpp",
-  ".cs",
-  ".go",
-  ".html",
-  ".java",
-  ".js",
-  ".kt",
-  ".md",
-  ".py",
-  ".rs",
-  ".ts",
-];
-
-const DEFAULT_EXTRACTOR_FILES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-
-  ".msg",
-  ".eml",
-];
-
 const DEFAULT_TRANSLATOR_LANGUAGES = ["en", "de", "fr", "it", "es"];
 
 interface Config {
@@ -241,7 +209,7 @@ interface Config {
   voice: VoiceConfig | null;
   vision: VisionConfig | null;
 
-  text: TextConfig;
+  text: TextConfig | null;
   extractor: ExtractorConfig | null;
 
   internet: InternetConfig | null;
@@ -301,11 +269,9 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       voice: cfg.voice ?? null,
       vision: cfg.vision ? { files: cfg.vision.files ?? DEFAULT_VISION_FILES } : null,
 
-      text: { files: cfg.text?.files ?? DEFAULT_TEXT_FILES },
+      text: cfg.text ? { files: cfg.text.files } : null,
 
-      extractor: cfg.extractor
-        ? { model: cfg.extractor.model, files: cfg.extractor.files ?? DEFAULT_EXTRACTOR_FILES }
-        : null,
+      extractor: cfg.extractor ? { model: cfg.extractor.model, files: cfg.extractor.files ?? [] } : null,
 
       internet: cfg.internet ?? null,
       renderer: cfg.renderer ?? null,

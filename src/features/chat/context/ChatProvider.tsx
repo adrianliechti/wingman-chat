@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useModels } from "@/features/chat/hooks/useModels";
@@ -44,7 +45,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     updateChat,
     deleteChat: deleteChatHook,
   } = useChats();
-  const { isAvailable: artifactsEnabled, setChatId: setArtifactsChatId } = useArtifacts();
+  const { isAvailable: artifactsEnabled, setFileSystem: setArtifactsFileSystem } = useArtifacts();
   const { renderApp, closeApp } = useApp();
   const { currentAgent } = useAgents();
   const { resetTools } = useToolsContext();
@@ -81,23 +82,35 @@ export function ChatProvider({ children }: ChatProviderProps) {
     return baseMessages;
   }, [chat?.messages, chat?.id, streamingMessage]);
 
-  // Set up the artifacts filesystem for the current chat
-  useEffect(() => {
-    if (!artifactsEnabled) {
-      setArtifactsChatId(null);
-      return;
+  // Own the FileSystemManager lifecycle: one instance per active chat, pushed
+  // into the artifacts context. The artifacts feature has no chat knowledge;
+  // it just receives the filesystem and reacts to its identity changes.
+  // The ref lets ensureChat eagerly create an instance that the next render's
+  // useMemo will pick up, so both paths share the same object.
+  const fsRef = useRef<FileSystemManager | null>(null);
+  const fs = useMemo(() => {
+    if (!artifactsEnabled || !chat?.id) {
+      fsRef.current = null;
+      return null;
     }
+    if (fsRef.current?.chatId === chat.id) {
+      return fsRef.current;
+    }
+    const next = new FileSystemManager(chat.id);
+    fsRef.current = next;
+    return next;
+  }, [artifactsEnabled, chat?.id]);
 
-    setArtifactsChatId(chat?.id ?? null);
-  }, [chat?.id, artifactsEnabled, setArtifactsChatId]);
+  useEffect(() => {
+    setArtifactsFileSystem(fs);
+  }, [fs, setArtifactsFileSystem]);
 
   const createChat = useCallback(async () => {
     const newChat = await createChatHook();
     setChatId(newChat.id);
-    setArtifactsChatId(newChat.id);
     resetTools();
     return newChat;
-  }, [createChatHook, resetTools, setArtifactsChatId]);
+  }, [createChatHook, resetTools]);
 
   const chatIdRef = useRef(chatId);
   chatIdRef.current = chatId;
@@ -152,7 +165,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
       chatItem.model = model;
 
       setChatId(chatItem.id);
-      setArtifactsChatId(chatItem.id);
       updateChat(chatItem.id, () => ({ model }));
 
       id = chatItem.id;
@@ -163,7 +175,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     return { id, chat: chatItem };
-  }, [model, createChatHook, updateChat, chatId, chats, setArtifactsChatId]);
+  }, [model, createChatHook, updateChat, chatId, chats]);
+
+  // Public helper for features (drawer, uploads, terminal) that need a
+  // filesystem before the user sends their first message. Creates a chat if
+  // necessary and returns a FileSystemManager bound to it — callers don't
+  // need to wait for React to re-render the artifacts `fs` state.
+  const ensureChat = useCallback(async () => {
+    if (chat && fs) {
+      return { chat, fs };
+    }
+    const newChat = await createChat();
+    const newFs = new FileSystemManager(newChat.id);
+    fsRef.current = newFs;
+    return { chat: newChat, fs: newFs };
+  }, [chat, fs, createChat]);
 
   const addMessage = useCallback(
     async (message: Message) => {
@@ -558,6 +584,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     selectChat,
     deleteChat,
     updateChat,
+    ensureChat,
 
     // Message actions
     addMessage,

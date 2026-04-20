@@ -1,6 +1,6 @@
 import { Download, File } from "lucide-react";
 import mime from "mime";
-import { downloadBlob, downloadFromUrl, parseDataUrl } from "@/shared/lib/utils";
+import { downloadBlob, downloadFromUrl, getFileExt, parseDataUrl } from "@/shared/lib/utils";
 import type { AudioContent, Content, FileContent, ImageContent } from "@/shared/types/chat";
 import { Markdown } from "./Markdown";
 import { CsvRenderer } from "./renderers/CsvRenderer";
@@ -116,13 +116,7 @@ function FileDisplay({ content, className }: { content: FileContent; className?:
     downloadContent(content.data, content.name, mimeType);
   };
 
-  // Extract file extension
-  const getFileExtension = (filename: string): string => {
-    const parts = filename.split(".");
-    return parts.length > 1 ? parts.pop()?.toUpperCase() || "" : "";
-  };
-
-  const fileExtension = getFileExtension(content.name);
+  const fileExtension = getFileExt(content.name).slice(1).toUpperCase();
 
   return (
     <button

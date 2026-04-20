@@ -96,6 +96,10 @@ func applyEnvOverrides(cfg *Config) {
 		envOverride("EXTRACTOR_MODEL", &e.Model)
 	})
 
+	withFeature("TRANSLATOR_ENABLED", &cfg.Translator, func(t *Translator) {
+		envOverride("TRANSLATOR_MODEL", &t.Model)
+	})
+
 	if days := envPositiveInt("CHAT_RETENTION_DAYS", nil); days != nil {
 		cfg.Chat = ensurePtr(cfg.Chat)
 		cfg.Chat.RetentionDays = days

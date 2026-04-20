@@ -29,7 +29,7 @@ export function PythonEditor({ content, onRunReady, onRunningChange }: PythonEdi
     try {
       // Read files fresh from filesystem at execution time
       const files: Record<string, { content: string; contentType?: string }> = {};
-      const fileList = await fs.listFiles();
+      const fileList = (await fs?.listFiles()) ?? [];
       for (const file of fileList) {
         files[file.path] = { content: file.content, contentType: file.contentType };
       }

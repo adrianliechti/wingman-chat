@@ -5,6 +5,7 @@ import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
 import type { Agent } from "@/features/agent/types/agent";
 import type { RepositoryFile } from "@/features/repository/types/repository";
 import { getConfig } from "@/shared/config";
+import { acceptTypes } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { Section } from "./Section";
@@ -16,7 +17,7 @@ interface FilesSectionProps {
 export function FilesSection({ agent }: FilesSectionProps) {
   const config = getConfig();
   const { files, addFile, removeFile } = useAgentFiles(agent.id);
-  const acceptFilter = [...(config.text?.files ?? []), ...(config.extractor?.files ?? [])].join(",");
+  const acceptFilter = acceptTypes().join(",");
   const [isDragOver, setIsDragOver] = useState(false);
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);

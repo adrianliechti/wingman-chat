@@ -13,7 +13,8 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { getPodcastStyles, getReportStyles, getSlideStyles } from "../hooks/useNotebook";
+import { downloadFromUrl } from "@/shared/lib/utils";
+import { getPodcastStyles, getReportStyles, getSlideStyles, getInfographicStyles } from "../hooks/useNotebook";
 import type { NotebookOutput, NotebookSource, OutputType } from "../types/notebook";
 
 interface StudioPanelProps {
@@ -44,6 +45,7 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
   const slideStyles = getSlideStyles();
   const podcastStyles = getPodcastStyles();
   const reportStyles = getReportStyles();
+  const infographicStyles = getInfographicStyles();
 
   const downloadOutput = async (output: NotebookOutput) => {
     const slug = output.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
@@ -73,6 +75,7 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
     slides: slideStyles,
     podcast: podcastStyles,
     report: reportStyles,
+    infographic: infographicStyles,
   };
 
   return (
@@ -227,10 +230,7 @@ function canDownload(output: NotebookOutput): boolean {
 }
 
 function downloadDataUrl(dataUrl: string, filename: string) {
-  const a = document.createElement("a");
-  a.href = dataUrl;
-  a.download = filename;
-  a.click();
+  downloadFromUrl(dataUrl, filename);
 }
 
 async function downloadReportAsPdf(html: string, slug: string) {

@@ -1,8 +1,20 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { Code, Download, Eye, File as FileIcon2, HardDrive, Loader2, Play, Shapes, TerminalSquare, Upload } from "lucide-react";
+import {
+  Code,
+  Download,
+  Eye,
+  File as FileIcon2,
+  HardDrive,
+  Loader2,
+  Play,
+  Shapes,
+  TerminalSquare,
+  Upload,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
+import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { File, FileEntry } from "@/features/artifacts/types/file";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
@@ -25,7 +37,7 @@ import { ArtifactsBrowser } from "./ArtifactsBrowser";
 export function ArtifactsDrawer() {
   const config = getConfig();
   const { fs, activeFile, openFile } = useArtifacts();
-  const { chat, createChat } = useChat();
+  const { ensureChat } = useChat();
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
@@ -46,33 +58,27 @@ export function ArtifactsDrawer() {
   // Processing state for file uploads
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Ensure a chat exists and FS is ready (creates chat if needed)
-  const ensureFs = useCallback(async () => {
-    if (!chat) {
-      await createChat();
-    }
-    if (fs && !fs.isReady) {
-      let attempts = 0;
-      while (!fs.isReady && attempts < 10) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        attempts++;
-      }
-    }
-  }, [chat, createChat, fs]);
+  // Ensure a chat exists and return its `FileSystemManager`. Delegates to the
+  // chat feature so artifacts has no chat-creation logic of its own. Using
+  // the returned `fs` directly avoids observing a stale (null) `fs` from
+  // the current closure before React re-renders.
+  const ensureFs = useCallback(async (): Promise<FileSystemManager> => {
+    if (fs) return fs;
+    const ensured = await ensureChat();
+    return ensured.fs;
+  }, [fs, ensureChat]);
 
   const uploadFiles = useCallback(
     async (fileList: globalThis.File[]) => {
-      await ensureFs();
+      const activeFs = await ensureFs();
       setIsProcessing(true);
       try {
         for (const file of fileList) {
           try {
             const processedFiles = await processUploadedFile(file);
             for (const processed of processedFiles) {
-              if (fs?.isReady) {
-                await fs.createFile(processed.path, processed.content, processed.contentType);
-                openFile(processed.path);
-              }
+              await activeFs.createFile(processed.path, processed.content, processed.contentType);
+              openFile(processed.path);
             }
           } catch (error) {
             console.error(`Error uploading file ${file.name}:`, error);
@@ -82,7 +88,7 @@ export function ArtifactsDrawer() {
         setIsProcessing(false);
       }
     },
-    [ensureFs, fs, openFile],
+    [ensureFs, openFile],
   );
 
   const handleDriveFiles = useCallback(
@@ -121,15 +127,16 @@ export function ArtifactsDrawer() {
 
   // Subscribe to filesystem events and load data
   useEffect(() => {
+    if (!fs) {
+      setFiles([]);
+      setActiveFileData(null);
+      return;
+    }
+
     let cancelled = false;
 
     // Helper to load files list
     const loadFiles = async () => {
-      if (!fs) {
-        setFiles([]);
-        return;
-      }
-
       try {
         const fileList = await fs.listEntries();
         if (!cancelled) {
@@ -145,7 +152,7 @@ export function ArtifactsDrawer() {
 
     // Helper to load active file content
     const loadActiveFile = async () => {
-      if (!fs || !activeFile) {
+      if (!activeFile) {
         if (!cancelled) {
           setActiveFileData(null);
         }
@@ -212,7 +219,7 @@ export function ArtifactsDrawer() {
       unsubscribeRenamed();
       unsubscribeUpdated();
     };
-  }, [fs, fs?.chatId, activeFile]);
+  }, [fs, activeFile]);
 
   // Handle auto-opening single file (needs effect since openFile is async)
   useEffect(() => {
@@ -239,7 +246,7 @@ export function ArtifactsDrawer() {
     }
 
     // Ensure a chat and FS exist before writing files
-    await ensureFs();
+    const activeFs = await ensureFs();
 
     setIsProcessing(true);
     try {
@@ -249,10 +256,8 @@ export function ArtifactsDrawer() {
           const processedFiles = await processUploadedFile(file);
 
           for (const processed of processedFiles) {
-            if (fs?.isReady) {
-              await fs.createFile(processed.path, processed.content, processed.contentType);
-              openFile(processed.path);
-            }
+            await activeFs.createFile(processed.path, processed.content, processed.contentType);
+            openFile(processed.path);
           }
         } catch (error) {
           console.error(`Error processing file ${file.name}:`, error);
@@ -337,7 +342,10 @@ export function ArtifactsDrawer() {
       );
     }
 
-    if (!activeFileData) {
+    // While a file switch is in flight, `activeFileData` still holds the
+    // previous file's content. Don't render it — it causes a visible flash
+    // of the old editor with mismatched `key` before the async load lands.
+    if (!activeFileData || activeFileData.path !== activeFile) {
       return null;
     }
 
@@ -376,6 +384,7 @@ export function ArtifactsDrawer() {
         return (
           <HtmlEditor
             key={editorKey}
+            path={activeFileData.path}
             content={activeFileData.content}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
@@ -404,6 +413,7 @@ export function ArtifactsDrawer() {
           <MarkdownEditor
             key={editorKey}
             content={activeFileData.content}
+            path={activeFileData.path}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
           />

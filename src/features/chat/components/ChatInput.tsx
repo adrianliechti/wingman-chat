@@ -29,8 +29,9 @@ import { useTranscription } from "@/features/voice/hooks/useTranscription";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
+import { acceptTypes, canConvert, convertFileToText } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
-import { getFileExt, readAsDataURL, readAsText, resizeImageBlob } from "@/shared/lib/utils";
+import { readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
 import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
@@ -169,26 +170,20 @@ export function ChatInput() {
       // Set all extracting states at once
       setExtractingAttachments((prev) => new Set([...prev, ...fileIds]));
 
-      const textFiles = config.text?.files ?? [];
       const visionFiles = config.vision?.files ?? [];
-      const extractorFiles = config.extractor?.files ?? [];
 
       const processedContents = await Promise.allSettled(
         files.map(async (file, index) => {
           const fileId = fileIds[index];
           try {
             let content: Content | null = null;
-            const fileType = file.type || getFileExt(file.name);
 
-            if (textFiles.includes(fileType)) {
-              const text = await readAsText(file);
-              content = { type: "text", text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
-            } else if (visionFiles.includes(fileType)) {
+            if (visionFiles.includes(file.type)) {
               const blob = await resizeImageBlob(file, 1920, 1920);
               const dataUrl = await readAsDataURL(blob);
               content = { type: "image", name: file.name, data: dataUrl } as ImageContent;
-            } else if (extractorFiles.includes(fileType)) {
-              const text = await client.extractText(file);
+            } else if (canConvert(file)) {
+              const text = await convertFileToText(file);
               content = { type: "text", text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
             }
 
@@ -211,7 +206,7 @@ export function ChatInput() {
       setAttachments((prev) => [...prev, ...validContents]);
       setExtractingAttachments(new Set()); // Clear all at once
     },
-    [client, config.text?.files, config.vision?.files, config.extractor?.files],
+    [config.vision?.files],
   );
 
   const isDragging = useDropZone(containerRef, handleFiles);
@@ -489,11 +484,7 @@ export function ChatInput() {
           <input
             type="file"
             multiple
-            accept={[
-              ...(config.text?.files ?? []),
-              ...(config.vision?.files ?? []),
-              ...(config.extractor?.files ?? []),
-            ].join(",")}
+            accept={[...(config.vision?.files ?? []), ...acceptTypes()].join(",")}
             ref={fileInputRef}
             className="hidden"
             onChange={handleFileChange}
@@ -1062,11 +1053,7 @@ export function ChatInput() {
           drive={activeDrive}
           onFilesSelected={handleDriveFiles}
           multiple
-          accept={[
-            ...(config.text?.files ?? []),
-            ...(config.vision?.files ?? []),
-            ...(config.extractor?.files ?? []),
-          ].join(",")}
+          accept={[...(config.vision?.files ?? []), ...acceptTypes()].join(",")}
         />
       )}
     </>

@@ -39,35 +39,12 @@
         "enabled": true
     },
 
-    "bridge": {
-        "url": "http://localhost:4242"
-    },
-
     "models1": [
         {
             "id": "gpt-5.1",
 
             "name": "GPT-5.1",
             "description": "Default Model"
-        }
-    ],
-
-    "tools1": [
-        {
-            "id": "context7",
-
-            "url": "https://mcp.context7.com/mcp",
-
-            "name": "Context7",
-            "description": "Provides access to Context7 knowledge base."
-        },
-        {
-            "id": "atlassian",
-
-            "url": "https://mcp.atlassian.com/v1/sse",
-
-            "name": "Atlassian",
-            "description": "Jira and Confluence"
         }
     ],
 

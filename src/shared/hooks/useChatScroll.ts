@@ -98,7 +98,7 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false }:
       const elapsed = now - startTime;
       const progress = Math.min(elapsed / DURATION, 1);
       // Ease-in-out cubic
-      const eased = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+      const eased = progress < 0.5 ? 4 * progress * progress * progress : 1 - (-2 * progress + 2) ** 3 / 2;
 
       scrollElement.scrollTop = startTop + distance * eased;
 

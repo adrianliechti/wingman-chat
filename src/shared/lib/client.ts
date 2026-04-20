@@ -19,6 +19,7 @@ import type {
   ModelType,
   ReasoningContent,
   Tool,
+  ToolCallContent,
   ToolResultContent,
 } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
@@ -30,21 +31,22 @@ import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
 function expandToSentences(text: string, start: number, end: number): string {
   const sentenceBoundaries = /[.!?]+\s*|\n+/g;
   const boundaries: number[] = [0];
-  let match: RegExpExecArray | null = sentenceBoundaries.exec(text);
+  let match = sentenceBoundaries.exec(text);
   while (match !== null) {
     boundaries.push(match.index + match[0].length);
     match = sentenceBoundaries.exec(text);
   }
   boundaries.push(text.length);
 
-  let sentenceStart = 0;
-  let sentenceEnd = text.length;
+  let sentenceStart = -1;
+  let sentenceEnd = -1;
   for (let i = 0; i < boundaries.length - 1; i++) {
     if (boundaries[i] < end && boundaries[i + 1] > start) {
-      sentenceStart = Math.min(sentenceStart === 0 ? boundaries[i] : sentenceStart, boundaries[i]);
-      sentenceEnd = Math.max(sentenceEnd === text.length ? boundaries[i + 1] : sentenceEnd, boundaries[i + 1]);
+      sentenceStart = sentenceStart === -1 ? boundaries[i] : Math.min(sentenceStart, boundaries[i]);
+      sentenceEnd = sentenceEnd === -1 ? boundaries[i + 1] : Math.max(sentenceEnd, boundaries[i + 1]);
     }
   }
+  if (sentenceStart === -1) return text.substring(start, end).trim();
   return text.substring(sentenceStart, sentenceEnd).trim();
 }
 
@@ -406,18 +408,6 @@ export class Client {
     return result?.prompts.map((p) => p.prompt) ?? [];
   }
 
-  async extractUrl(model: string, text: string): Promise<string | null> {
-    if (!text.trim()) return null;
-    const result = await this.parse(
-      model,
-      "Extract a valid URL from the given text. If the text contains a URL, extract it. If no valid URL is found, return null.",
-      text,
-      z.object({ url: z.string().nullable() }).strict(),
-      "extract_url",
-    );
-    return result?.url ?? null;
-  }
-
   async convertCSV(model: string, text: string): Promise<string> {
     if (!text.trim()) return "";
     const result = await this.parse(
@@ -488,8 +478,8 @@ export class Client {
     return (await this.post("/api/v1/extract", { ...(model && { model }), url, format: "text" })).text();
   }
 
-  async segmentText(blob: Blob): Promise<string[]> {
-    const result = await (await this.post("/api/v1/segment", { file: blob })).json();
+  async segmentText(text: string): Promise<string[]> {
+    const result = await (await this.post("/api/v1/segment", { text })).json();
     if (!Array.isArray(result)) return [];
     return result.map((item: { text?: string } | string) => (typeof item === "string" ? item : item.text || ""));
   }
@@ -634,14 +624,10 @@ export class Client {
     query: string,
     options?: { domains?: string[]; limit?: number },
   ): Promise<SearchResult[]> {
-    const fields: Record<string, string | Blob> = {
-      ...(model && { model }),
-      query,
-      limit: String(options?.limit ?? 10),
-    };
-
     const data = new FormData();
-    for (const [k, v] of Object.entries(fields)) data.append(k, v);
+    if (model) data.append("model", model);
+    data.append("query", query);
+    data.append("limit", String(options?.limit ?? 10));
     for (const domain of options?.domains ?? []) data.append("domain", domain);
 
     const resp = await this.postRaw("/api/v1/search", data);
@@ -698,15 +684,13 @@ export class Client {
     const validToolCallIds = new Set(
       messages.flatMap((m) =>
         m.content
-          .filter(
-            (p): p is import("../types/chat").ToolCallContent => p.type === "tool_call" && toolResultIds.has(p.id),
-          )
+          .filter((p): p is ToolCallContent => p.type === "tool_call" && toolResultIds.has(p.id))
           .map((p) => p.id),
       ),
     );
 
     return messages.filter((m) => {
-      const toolCalls = m.content.filter((p): p is import("../types/chat").ToolCallContent => p.type === "tool_call");
+      const toolCalls = m.content.filter((p): p is ToolCallContent => p.type === "tool_call");
       const toolResults = m.content.filter((p): p is ToolResultContent => p.type === "tool_result");
 
       // If message has tool calls, all must have valid results
@@ -787,10 +771,7 @@ export class Client {
 
   private async post(path: string, fields: Record<string, string | Blob>): Promise<Response> {
     const data = new FormData();
-    for (const [k, v] of Object.entries(fields)) {
-      if (v instanceof Blob) data.append(k, v);
-      else data.append(k, v);
-    }
+    for (const [k, v] of Object.entries(fields)) data.append(k, v);
     return this.postRaw(path, data);
   }
 

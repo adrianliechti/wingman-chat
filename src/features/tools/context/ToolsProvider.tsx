@@ -52,12 +52,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const toggleCompanion = useCallback(() => setCompanionEnabled((v) => !v), []);
   const [companionClient] = useState<MCPClient | null>(() =>
     bridgeHost
-      ? new MCPClient(
-          COMPANION_ID,
-          companionMcpUrl(bridgeHost),
-          "Companion",
-          "Locally running companion application",
-        )
+      ? new MCPClient(COMPANION_ID, companionMcpUrl(bridgeHost), "Companion", "Locally running companion application")
       : null,
   );
 
