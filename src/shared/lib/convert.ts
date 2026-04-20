@@ -126,6 +126,31 @@ export async function convertFileToText(file: File): Promise<string> {
     return pdfToMarkdown(file);
   }
 
-  // Text files → read directly
-  return file.text();
+  // Text files → read with encoding detection
+  return readFileAsText(file);
+}
+
+/** Read a File as text, detecting encoding (BOM → UTF-8 → Windows-1252 fallback). */
+export async function readFileAsText(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+
+  // Check BOM
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return new TextDecoder("utf-16le").decode(bytes);
+  }
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return new TextDecoder("utf-16be").decode(bytes);
+  }
+
+  // Try UTF-8 (strict) — fails on invalid sequences
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    // Fall back to Windows-1252 (superset of ISO-8859-1, handles all European accented chars)
+    return new TextDecoder("windows-1252").decode(bytes);
+  }
 }

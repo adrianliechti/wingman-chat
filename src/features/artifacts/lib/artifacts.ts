@@ -1,4 +1,4 @@
-import { convertFileToText } from "@/shared/lib/convert";
+import { convertFileToText, readFileAsText } from "@/shared/lib/convert";
 import { isTextContentType } from "@/shared/lib/fileTypes";
 import { readAsDataURL } from "@/shared/lib/utils";
 import { xlsxToCsv } from "@/shared/lib/xlsx";
@@ -65,7 +65,7 @@ export async function processUploadedFile(file: File): Promise<ProcessedFile[]> 
 
   // Final fallback: binary as data URL
   const contentType = file.type || "text/plain";
-  const content = isTextContentType(contentType) ? await file.text() : await readAsDataURL(file);
+  const content = isTextContentType(contentType) ? await readFileAsText(file) : await readAsDataURL(file);
 
   return [
     {
