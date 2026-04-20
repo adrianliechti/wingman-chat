@@ -225,7 +225,8 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     const tools: Tool[] = [
       {
         name: "write_memory",
-        description: "Write/update your persistent memory. This replaces the entire memory content.",
+        description:
+          "Write/update your persistent memory. Replaces the entire content. Max 25KB. Keep under 200 lines by consolidating older entries.",
         parameters: {
           type: "object",
           properties: {
@@ -241,15 +242,39 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
           if (!content) {
             return [{ type: "text" as const, text: JSON.stringify({ error: "No content provided" }) }];
           }
+
+          const byteSize = new TextEncoder().encode(content).length;
+          const maxBytes = 25 * 1024;
+          if (byteSize > maxBytes) {
+            return [
+              {
+                type: "text" as const,
+                text: `Error: Memory content is ${Math.round(byteSize / 1024)}KB which exceeds the 25KB limit. Please consolidate or remove less important entries and try again.`,
+              },
+            ];
+          }
+
           await opfs.writeText(`${agentPath}/MEMORY.md`, content);
           window.dispatchEvent(new CustomEvent("memory-updated", { detail: { agentId } }));
-          return [{ type: "text" as const, text: "Memory updated successfully." }];
+
+          const lineCount = content.split("\n").length;
+          const warnBytes = 12 * 1024;
+          let response = "Memory updated successfully.";
+          if (byteSize > warnBytes || lineCount > 150) {
+            response += ` Warning: Memory is ${(byteSize / 1024).toFixed(1)}KB / ${lineCount} lines. Consider consolidating to stay under 12KB / 200 lines.`;
+          }
+          return [{ type: "text" as const, text: response }];
         },
       },
     ];
 
     const memorySection = memoryContent.trim()
-      ? `\n\n<memory>\n${memoryContent.trim()}\n</memory>`
+      ? (() => {
+          const bytes = new TextEncoder().encode(memoryContent).length;
+          const lines = memoryContent.split("\n").length;
+          const meta = `<!-- ${(bytes / 1024).toFixed(1)}KB, ${lines} lines -->`;
+          return `\n\n<memory>\n${meta}\n${memoryContent.trim()}\n</memory>`;
+        })()
       : "\n\nNo memories yet.";
 
     return {

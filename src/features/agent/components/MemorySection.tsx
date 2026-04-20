@@ -77,6 +77,7 @@ export function MemorySection({ agent }: MemorySectionProps) {
   };
 
   const clearMemory = async () => {
+    if (!window.confirm("Clear all memory for this agent? This cannot be undone.")) return;
     await opfs.deleteFile(memoryPath);
     setContent("");
     setEditValue("");
@@ -132,6 +133,11 @@ export function MemorySection({ agent }: MemorySectionProps) {
                   <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200/60 dark:border-neutral-800/60">
                     <Dialog.Title className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
                       Memory
+                      {content && (
+                        <span className="ml-2 text-xs font-normal text-neutral-400">
+                          {(new TextEncoder().encode(content).length / 1024).toFixed(1)}KB
+                        </span>
+                      )}
                     </Dialog.Title>
                     <button
                       type="button"

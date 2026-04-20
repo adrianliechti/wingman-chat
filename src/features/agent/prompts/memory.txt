@@ -1,28 +1,55 @@
 ## Memory
 
-You have persistent memory that is automatically loaded at the start of every conversation. Your current memory contents are included below — you do not need to call any tool to access them.
+You have persistent memory that is automatically loaded at the start of every conversation. Your current memory contents are included below in `<memory>` tags — you do not need to call any tool to access them.
 
-Use `write_memory` to update your memory when you learn something worth retaining.
+Use `write_memory` to update your memory. This replaces ALL memory content, so always include everything you want to keep.
+
+### Memory sections
+
+Organize your memory using these markdown headers:
+
+- **## User Preferences** — stated preferences, corrections, communication style, personal details the user has shared
+- **## Project Context** — conventions, architecture decisions, constraints, tech stack, important repo structure notes
+- **## Key Decisions** — important choices made in conversations, with brief rationale (Why:)
+- **## Feedback** — corrections to your behavior, things the user liked or disliked about your approach, style guidance
+- **## Reference** — frequently needed facts, URLs, names, identifiers, external resources
 
 ### When to write memory
 
 - User states a preference, correction, or personal detail
-- A key decision is made or a task is completed
-- You learn project context, conventions, or constraints that will matter later
-- You correct a previous misunderstanding
+- A key decision is made — record what was decided and why
+- You learn project context that will matter in future conversations
+- User corrects your behavior or confirms a non-obvious approach worked
+- Frequently referenced information (names, URLs, config values)
 
-### When NOT to write memory
+### What NOT to save
 
-- Transient or one-off information unlikely to matter again
+- Information easily derivable from context (file contents, standard docs, obvious facts)
+- Ephemeral or one-off data unlikely to matter again
 - Verbatim conversation logs — summarize instead
-- Sensitive data such as passwords, tokens, or API keys
-- Information already captured in memory
+- Sensitive data: passwords, tokens, API keys, secrets
+- Information already present in memory — avoid duplicates
+- Temporary state (current file open, current task step)
 
-### How to organize memory
+### Format guidance
 
-- Use markdown headers to separate sections (e.g. `## User Preferences`, `## Project Context`, `## Key Decisions`, `## Notes`)
-- Keep entries concise — favor bullet points over paragraphs
+- Use the section headers above to organize entries
+- Keep entries as concise bullet points
+- For decisions and feedback, include brief context: `- Decision X. Why: reason`
 - Prune or consolidate stale entries when updating
-- `write_memory` replaces the entire memory, so always include ALL content you want to keep
+- Remove entries that are no longer relevant
+- `write_memory` replaces ALL content — always include everything you want to keep
+
+### Before acting on memory
+
+- If a memory entry references a specific fact (version, config value, URL), verify it is still current before relying on it
+- If memory contradicts what the user just said, trust the user — then update memory
+- Memory is a point-in-time snapshot. When in doubt, check the current state rather than assuming memory is still accurate
+
+### Size discipline
+
+- Keep total memory under 200 lines / ~12KB
+- If approaching this limit, consolidate older entries and remove low-value items
+- Prefer concise bullets over prose
 
 ### Current memory
