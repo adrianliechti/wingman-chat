@@ -13,36 +13,24 @@ const MIME_PPTX = "application/vnd.openxmlformats-officedocument.presentationml.
 /** All file types the converter supports — used for file-picker accept filters. */
 export const SUPPORTED_TYPES = [
   // Text / code
-  "text/csv",
-  "text/markdown",
-  "text/plain",
-  "application/json",
-  "application/sql",
-  "application/toml",
-  "application/x-yaml",
-  "application/xml",
-  "text/css",
-  "text/html",
-  "text/xml",
-  "text/yaml",
-  ".c",
-  ".cpp",
-  ".cs",
-  ".go",
-  ".html",
-  ".java",
-  ".js",
-  ".kt",
-  ".md",
-  ".py",
-  ".rs",
-  ".ts",
+  ".csv", "text/csv",
+  ".md", "text/markdown",
+  ".txt", "text/plain",
+  ".json", "application/json",
+  ".sql", "application/sql",
+  ".toml", "application/toml",
+  ".yaml", ".yml", "application/x-yaml", "text/yaml",
+  ".xml", "application/xml", "text/xml",
+  ".css", "text/css",
+  ".html", "text/html",
+  ".c", ".cpp", ".cs", ".dart", ".go", ".java", ".js", ".jsx", ".kt", ".lua",
+  ".php", ".py", ".r", ".rb", ".rs", ".scala", ".sh", ".swift", ".ts", ".tsx",
 
-  // Office documents & PDF (client-side converters)
-  MIME_DOCX,
-  MIME_XLSX,
-  MIME_PPTX,
-  "application/pdf",
+  // Office documents & PDF
+  ".docx", MIME_DOCX,
+  ".xlsx", MIME_XLSX,
+  ".pptx", MIME_PPTX,
+  ".pdf", "application/pdf",
 ];
 
 type ConverterKind = "text" | "builtin" | "backend" | null;

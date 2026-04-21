@@ -1,5 +1,6 @@
 import { FileText, Upload, X } from "lucide-react";
 import { type Dispatch, useRef } from "react";
+import { acceptTypes } from "@/shared/lib/convert";
 import { formatBytes } from "@/shared/lib/utils";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
@@ -11,6 +12,7 @@ interface KnowledgeStepProps {
 
 export function KnowledgeStep({ pendingFiles, dispatch }: KnowledgeStepProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const acceptFilter = acceptTypes().join(",");
 
   const handleOpenFilePicker = () => {
     inputRef.current?.click();
@@ -37,7 +39,7 @@ export function KnowledgeStep({ pendingFiles, dispatch }: KnowledgeStepProps) {
       />
 
       {/* Drop zone */}
-      <input ref={inputRef} type="file" multiple onChange={handleFileSelect} className="hidden" />
+      <input ref={inputRef} type="file" multiple accept={acceptFilter} onChange={handleFileSelect} className="hidden" />
       <button
         type="button"
         onDrop={handleDrop}
