@@ -1,8 +1,7 @@
-import { FileText, Loader2, SparklesIcon } from "lucide-react";
+import { Loader2, SparklesIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
 import { getTextFromContent } from "@/shared/types/chat";
-import { Markdown } from "@/shared/ui/Markdown";
 import type { NotebookOutput, SlideFormat } from "../types/notebook";
 import { PptxSlidePreview } from "./PptxSlidePreview";
 
@@ -19,13 +18,15 @@ interface SlideViewerProps {
 export function SlideViewer({ content, slides, htmlSlides, pptxSlides, slideFormat, output, onRefine }: SlideViewerProps) {
   const isPptxMode = slideFormat === "pptx" && pptxSlides && pptxSlides.length > 0;
   const isHtmlMode = !isPptxMode && htmlSlides && htmlSlides.length > 0;
-  const slideCount = isPptxMode ? pptxSlides.length : isHtmlMode ? htmlSlides!.length : slides.length;
 
-  const [activeIndex, setActiveIndex] = useState(slideCount > 0 ? 1 : 0);
+  const [activeIndex, setActiveIndex] = useState(1);
   const [refinePrompt, setRefinePrompt] = useState("");
   const [isRefining, setIsRefining] = useState(false);
   const [refineError, setRefineError] = useState<string | null>(null);
   const slideKeyCounts = new Map<string, number>();
+
+  // Generate lightweight image thumbnails from HTML slides one-by-one
+  const thumbnails = useSlideThumbnails(isHtmlMode ? htmlSlides : undefined);
 
   // Scale the 960x540 iframe to fit the container
   const slideContainerRef = useRef<HTMLDivElement>(null);
@@ -144,13 +145,7 @@ export function SlideViewer({ content, slides, htmlSlides, pptxSlides, slideForm
     <div className="h-full flex flex-col">
       {/* Main view */}
       <div className="flex-1 overflow-y-auto min-h-0 relative">
-        {activeIndex === 0 ? (
-          <div className="p-6">
-            <div className="prose prose-neutral dark:prose-invert max-w-none">
-              <Markdown>{content}</Markdown>
-            </div>
-          </div>
-        ) : isPptxMode ? (
+        {isPptxMode ? (
           <div className="h-full flex items-center justify-center p-6">
             <div className="rounded-lg shadow-lg overflow-hidden">
               <PptxSlidePreview xml={pptxSlides![activeIndex - 1]} />
@@ -229,19 +224,6 @@ export function SlideViewer({ content, slides, htmlSlides, pptxSlides, slideForm
       {/* Bottom thumbnail navigation */}
       <div className="shrink-0 overflow-x-auto px-3 py-2">
         <div className="flex items-center gap-2">
-          {/* Text view thumbnail */}
-          <button
-            type="button"
-            onClick={() => setActiveIndex(0)}
-            className={`shrink-0 w-20 aspect-[16/9] rounded-lg border-2 flex items-center justify-center transition-colors ${
-              activeIndex === 0
-                ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30"
-                : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 bg-neutral-50 dark:bg-neutral-800/50"
-            }`}
-          >
-            <FileText size={14} className={activeIndex === 0 ? "text-blue-500" : "text-neutral-400"} />
-          </button>
-
           {/* Slide thumbnails */}
           {isPptxMode
             ? pptxSlides!.map((_, i) => (
@@ -264,13 +246,17 @@ export function SlideViewer({ content, slides, htmlSlides, pptxSlides, slideForm
                     key={`html-slide-${i}`}
                     type="button"
                     onClick={() => setActiveIndex(i + 1)}
-                    className={`shrink-0 w-20 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors flex items-center justify-center text-[9px] font-medium text-neutral-500 ${
+                    className={`shrink-0 w-20 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors bg-neutral-100 dark:bg-neutral-800 ${
                       activeIndex === i + 1
-                        ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30"
-                        : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 bg-neutral-50 dark:bg-neutral-800/50"
+                        ? "border-blue-500"
+                        : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
                     }`}
                   >
-                    {i + 1}
+                    {thumbnails[i] ? (
+                      <img src={thumbnails[i]} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-[9px] font-medium text-neutral-400 flex items-center justify-center h-full">{i + 1}</span>
+                    )}
                   </button>
                 ))
               : slides.map((slideUrl, i) => {
@@ -296,4 +282,83 @@ export function SlideViewer({ content, slides, htmlSlides, pptxSlides, slideForm
       </div>
     </div>
   );
+}
+
+/**
+ * Render HTML slides to small image data URLs one-by-one using a single
+ * off-screen iframe + canvas. Much lighter than mounting N iframes.
+ */
+function useSlideThumbnails(htmlSlides?: string[]): string[] {
+  const [thumbs, setThumbs] = useState<string[]>([]);
+  const slidesRef = useRef(htmlSlides);
+  slidesRef.current = htmlSlides;
+
+  useEffect(() => {
+    if (!htmlSlides?.length) { setThumbs([]); return; }
+
+    const slides = htmlSlides;
+    let cancelled = false;
+    setThumbs([]);
+
+    const THUMB_W = 320;
+    const THUMB_H = 180;
+
+    async function render() {
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.left = "-9999px";
+      iframe.style.width = "1920px";
+      iframe.style.height = "1080px";
+      iframe.style.border = "none";
+      iframe.style.visibility = "hidden";
+      document.body.appendChild(iframe);
+
+      for (let i = 0; i < slides.length; i++) {
+        if (cancelled || slidesRef.current !== slides) break;
+
+        iframe.srcdoc = slides[i];
+        await new Promise<void>((resolve) => { iframe.onload = () => resolve(); });
+
+        // Let layout settle
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+        try {
+          const { default: html2canvas } = await import("html2canvas");
+          const body = iframe.contentDocument?.body;
+          if (!body) continue;
+
+          const canvas = await html2canvas(body, {
+            width: 1920,
+            height: 1080,
+            scale: THUMB_W / 1920,
+            logging: false,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: "#ffffff",
+          });
+
+          if (cancelled || slidesRef.current !== slides) break;
+
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+          setThumbs((prev) => {
+            const next = [...prev];
+            next[i] = dataUrl;
+            return next;
+          });
+        } catch {
+          // skip failed thumbnail
+        }
+
+        // Yield to main thread between slides
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      }
+
+      document.body.removeChild(iframe);
+    }
+
+    render();
+    return () => { cancelled = true; };
+  }, [htmlSlides]);
+
+  return thumbs;
 }

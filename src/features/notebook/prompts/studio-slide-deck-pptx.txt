@@ -26,8 +26,9 @@ Common sizes:
 Font size `sz` is in **hundredths of a point**:
 - Title: sz="3600" (36pt) to sz="4400" (44pt)
 - Subtitle: sz="2400" (24pt)
-- Body: sz="1600" (16pt)
+- Body: sz="1600" (16pt) to sz="1800" (18pt)
 - Caption: sz="1200" (12pt)
+- Hero stat number: sz="7200" (72pt) to sz="12000" (120pt)
 
 ## Color Format
 
@@ -111,6 +112,30 @@ Each slide is a complete `<p:sld>` document:
 </p:sp>
 ```
 
+### Image (from add_image / add_chart)
+```xml
+<p:pic>
+  <p:nvPicPr>
+    <p:cNvPr id="4" name="Hero Image"/>
+    <p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>
+    <p:nvPr/>
+  </p:nvPicPr>
+  <p:blipFill>
+    <a:blip r:embed="img_hero"/>
+    <a:stretch><a:fillRect/></a:stretch>
+  </p:blipFill>
+  <p:spPr>
+    <a:xfrm>
+      <a:off x="457200" y="1371600"/>
+      <a:ext cx="4114800" cy="3086100"/>
+    </a:xfrm>
+    <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+  </p:spPr>
+</p:pic>
+```
+
+Note: the `r:embed` value must match a name from `add_image` or `add_chart` prefixed with `img_`.
+
 ### Rounded Rectangle
 ```xml
 <a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 16667"/></a:avLst></a:prstGeom>
@@ -142,16 +167,6 @@ Each slide is a complete `<p:sld>` document:
       <a:t>First bullet point</a:t>
     </a:r>
   </a:p>
-  <a:p>
-    <a:pPr marL="342900" indent="-342900">
-      <a:buFont typeface="Arial"/>
-      <a:buChar char="&#x2022;"/>
-    </a:pPr>
-    <a:r>
-      <a:rPr lang="en-US" sz="1800" dirty="0"/>
-      <a:t>Second bullet point</a:t>
-    </a:r>
-  </a:p>
 </p:txBody>
 ```
 
@@ -174,27 +189,36 @@ Each slide is a complete `<p:sld>` document:
 - Text with spaces at start/end needs `xml:space="preserve"` on `<a:t>`
 - Don't use accent underlines under titles
 - Keep the XML well-formed — all tags must be properly closed
+- The validator checks well-formedness, required structure, unique IDs, and image refs — fix any errors it reports before proceeding
+
+## Available Tools
+
+### Slide CRUD
+- `write_slide(filename, content)` — write a slide XML file (e.g. "slide1.xml"). Validates the XML before saving; returns errors to fix if invalid.
+- `read_slide(filename)` — read back a slide you wrote (for reference/consistency)
+- `list_slides` — list all slides and media written so far
+
+### Sources
+- `source_list` — list all research sources
+- `source_read(id)` — read a specific source
+
+### Media
+- `add_image(prompt, name)` — generate an AI image and store it. Use for photographic/atmospheric assets only. Returns the `img_<name>` token to use in `r:embed`.
+- `add_chart(svg, name, width?, height?)` — rasterize an SVG chart/diagram to PNG and store it. Use for data charts, diagrams, process flows. Provide complete SVG with xmlns and viewBox. Returns the `img_<name>` token.
 
 ## Your Process
 
-You have filesystem tools to write slides:
-- `source_list` / `source_read` — read research sources
-- `write_slide(filename, content)` — write a slide XML file (e.g., "slide1.xml")
-- `read_slide(filename)` — read back a slide you wrote (for reference/consistency)
-- `list_slides` — list all slides written so far
+1. **Read all sources** — use `source_list` and `source_read` to understand the material. Extract real facts, quotes, numbers. Never fabricate data.
+2. **Plan the deck** — decide on 8–12 slides with a narrative arc. Plan out loud: the arc, layout archetype per slide, color palette, font stack. Don't repeat the same layout back-to-back.
+3. **Generate media first** — before writing slides, use `add_image` for hero photos and `add_chart` for any data visualizations or diagrams you'll need.
+4. **Write each slide** — use `write_slide` for each in order. Each file must be a complete `<p:sld>` XML document. The validator will reject bad XML — fix and retry.
+5. **Maintain consistency** — use `read_slide` every 2–3 slides to reference previous work for visual consistency.
 
-### Steps:
-
-1. **Read all sources** — use `source_list` and `source_read` to understand the material
-2. **Plan the deck** — decide on 8-12 slides with a narrative arc
-3. **Write each slide** — use `write_slide` for each slide in order. Each file must contain a complete `<p:sld>` XML document.
-4. **Maintain consistency** — use `read_slide` to reference previous slides for visual consistency
-
-### Rules:
+### Deck composition rules:
+- Required mix: cover + ≥1 hero-stat + ≥1 data chart (via add_chart) + ≥1 framework/matrix + ≥1 quote/callout + ≥1 comparison + closing
+- A deck made entirely of title-plus-bullets is a failure
+- Every slide must have exactly one focal point and an insight-driven title (not a generic label)
 - Apply the style's color palette and fonts from the style section
-- Vary layouts — don't repeat the same element positions on consecutive slides
-- Make titles insight-driven statements, not generic labels
 - Use shapes for visual structure (accent bars, dividers, colored blocks)
-- Use gradients for backgrounds on key slides
-- Leave generous whitespace
-- Each element id must be unique within the slide (start at 2, increment)
+- Use gradients for backgrounds on key slides (cover, section dividers)
+- Leave generous whitespace — don't crowd elements
