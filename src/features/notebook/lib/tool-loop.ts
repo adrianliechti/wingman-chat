@@ -17,12 +17,11 @@ export async function runWithTools(
   messages: Message[],
   tools: Tool[],
   onStream?: (content: Content[]) => void,
-  options?: { effort?: "none" | "minimal" | "low" | "medium" | "high" },
 ): Promise<Message> {
   let conversation = [...messages];
 
   while (true) {
-    const assistantMessage = await client.complete(model, instructions, conversation, tools, onStream, options);
+    const assistantMessage = await client.complete(model, instructions, conversation, tools, onStream);
 
     conversation = [...conversation, assistantMessage];
 

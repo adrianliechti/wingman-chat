@@ -51,7 +51,6 @@ export function NotebookPage() {
     sendMessage,
     generateOutput,
     deleteOutput,
-    exportEditablePptx,
   } = useNotebook(notebookId);
 
   // Load notebook list
@@ -311,7 +310,6 @@ export function NotebookPage() {
               onGenerate={generateOutput}
               onDeleteOutput={deleteOutput}
               onSelectOutput={setViewingOutput}
-              onExportEditablePptx={exportEditablePptx}
             />
           )}
         </div>

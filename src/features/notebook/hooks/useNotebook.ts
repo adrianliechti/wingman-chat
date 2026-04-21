@@ -920,15 +920,6 @@ export function useNotebook(notebookId?: string) {
     [notebook],
   );
 
-  /** LLM-powered export: convert HTML slides → editable PPTX */
-  const exportEditablePptx = useCallback(
-    async (htmlSlides: string[], slug: string, onProgress?: (current: number, total: number, phase?: string) => void) => {
-      const { exportHtmlSlidesAsEditablePptx } = await import("../lib/pptx-export-two-pass");
-      await exportHtmlSlidesAsEditablePptx(htmlSlides, slug, client, getModel(), onProgress);
-    },
-    [client, getModel],
-  );
-
   return {
     notebook,
     loading,
@@ -955,6 +946,5 @@ export function useNotebook(notebookId?: string) {
 
     generateOutput,
     deleteOutput,
-    exportEditablePptx,
   };
 }

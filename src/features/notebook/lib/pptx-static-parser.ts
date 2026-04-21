@@ -17,7 +17,7 @@ const EMU_PER_PX = SLIDE_CX / CANVAS_W;
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-interface ParsedParagraph {
+export interface ParsedParagraph {
   text: string;
   fontSize?: number;
   fontFamily?: string;
@@ -28,12 +28,17 @@ interface ParsedParagraph {
   isBullet?: boolean;
 }
 
-interface ParsedElement {
+export interface ParsedElement {
   type: "text" | "image" | "shape";
   x: number;
   y: number;
   w: number;
   h: number;
+  paddingTop?: number;
+  paddingRight?: number;
+  paddingBottom?: number;
+  paddingLeft?: number;
+  lineHeight?: number;
   fontSize?: number;
   fontFamily?: string;
   fontWeight?: string;
@@ -49,7 +54,7 @@ interface ParsedElement {
   imageData?: string;
 }
 
-interface ParsedSlide {
+export interface ParsedSlide {
   background: string;
   elements: ParsedElement[];
 }
@@ -91,7 +96,7 @@ export async function parseAndBuildSlide(
 
 // ── DOM Parser ──────────────────────────────────────────────────────────────
 
-async function parseSlideHtml(html: string): Promise<ParsedSlide> {
+export async function parseSlideHtml(html: string): Promise<ParsedSlide> {
   const iframe = document.createElement("iframe");
   iframe.style.position = "fixed";
   iframe.style.left = "-9999px";
@@ -171,11 +176,11 @@ async function parseSlideHtml(html: string): Promise<ParsedSlide> {
         continue;
       }
 
-      const hasDirectText = hasOwnText(el);
+      const isLeaf = isLeafTextBlock(el);
       const hasBg = style.backgroundColor !== "rgba(0, 0, 0, 0)" && style.backgroundColor !== "transparent";
       const hasBorder = style.borderWidth !== "0px" && style.borderStyle !== "none";
 
-      if ((hasBg || hasBorder) && !hasDirectText) {
+      if ((hasBg || hasBorder) && !isLeaf) {
         elements.push({
           type: "shape",
           x: rect.left, y: rect.top, w: rect.width, h: rect.height,
@@ -187,7 +192,7 @@ async function parseSlideHtml(html: string): Promise<ParsedSlide> {
         });
       }
 
-      if (hasDirectText) {
+      if (isLeaf) {
         const paragraphs = extractParagraphs(el, win);
         if (paragraphs.length > 0) {
           elements.push({
@@ -214,23 +219,64 @@ async function parseSlideHtml(html: string): Promise<ParsedSlide> {
 
 // ── DOM helpers ─────────────────────────────────────────────────────────────
 
-function hasOwnText(el: HTMLElement): boolean {
-  for (const child of el.childNodes) {
-    if (child.nodeType === Node.TEXT_NODE && child.textContent?.trim()) return true;
+/**
+ * Check if this element is a "leaf text block" — an element that contains
+ * text and has no block-level children that would create their own text boxes.
+ * This prevents duplicate extraction (parent AND child both becoming text boxes).
+ */
+function isLeafTextBlock(el: HTMLElement): boolean {
+  const text = el.textContent?.trim();
+  if (!text) return false;
+
+  // Must have some text content (direct text nodes or inline children)
+  const blockTags = new Set(["DIV", "SECTION", "ARTICLE", "MAIN", "NAV", "ASIDE", "HEADER", "FOOTER", "UL", "OL", "TABLE", "FIGURE"]);
+
+  // If this is a pure container (div, section) with block children, skip it —
+  // the children will be visited by the walker individually
+  if (blockTags.has(el.tagName)) {
+    // Only treat as leaf if ALL children are inline (no block subdivisions)
+    for (const child of el.children) {
+      if (blockTags.has(child.tagName) || ["H1", "H2", "H3", "H4", "H5", "H6", "P", "BLOCKQUOTE", "PRE", "LI"].includes(child.tagName)) {
+        return false;
+      }
+    }
   }
-  const textTags = ["H1", "H2", "H3", "H4", "H5", "H6", "P", "SPAN", "LI", "A", "STRONG", "EM", "B", "I", "LABEL", "TD", "TH", "DT", "DD", "FIGCAPTION", "BLOCKQUOTE", "CODE", "PRE"];
-  if (textTags.includes(el.tagName) && el.textContent?.trim()) return true;
+
+  // Text-bearing tags or elements with direct text nodes
+  const textTags = new Set(["H1", "H2", "H3", "H4", "H5", "H6", "P", "LI", "BLOCKQUOTE", "PRE", "FIGCAPTION", "TD", "TH", "DT", "DD", "LABEL"]);
+  if (textTags.has(el.tagName)) return true;
+
+  // Inline wrappers (span, a, strong, em) — only if they're the top-level text container
+  // (i.e., their parent is a non-text container like div)
+  const inlineTags = new Set(["SPAN", "A", "STRONG", "EM", "B", "I", "CODE"]);
+  if (inlineTags.has(el.tagName)) {
+    // Only extract if parent wouldn't be extracted
+    const parent = el.parentElement;
+    if (parent && !textTags.has(parent.tagName) && !inlineTags.has(parent.tagName)) {
+      return true;
+    }
+    return false; // parent will handle this
+  }
+
+  // Generic divs with only inline content
+  if (el.tagName === "DIV") {
+    // Check it has direct text nodes
+    for (const child of el.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE && child.textContent?.trim()) return true;
+    }
+  }
+
   return false;
 }
 
 function extractParagraphs(el: HTMLElement, win: Window): ParsedParagraph[] {
-  const paragraphs: ParsedParagraph[] = [];
   const style = win.getComputedStyle(el);
 
+  // Lists: each LI is a paragraph
   if (el.tagName === "UL" || el.tagName === "OL") {
-    for (const li of el.querySelectorAll("li")) {
+    return [...el.querySelectorAll("li")].map((li) => {
       const liStyle = win.getComputedStyle(li);
-      paragraphs.push({
+      return {
         text: li.textContent?.trim() || "",
         fontSize: parseFloat(liStyle.fontSize) || parseFloat(style.fontSize) || 16,
         fontFamily: liStyle.fontFamily?.split(",")[0]?.replace(/["']/g, "").trim() || "Calibri",
@@ -239,47 +285,23 @@ function extractParagraphs(el: HTMLElement, win: Window): ParsedParagraph[] {
         color: liStyle.color,
         textAlign: liStyle.textAlign,
         isBullet: true,
-      });
-    }
-    return paragraphs;
+      };
+    }).filter((p) => p.text);
   }
 
-  const blockChildren = el.querySelectorAll("p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre");
-  if (blockChildren.length > 0) {
-    for (const child of blockChildren) {
-      if (child.closest("ul, ol, svg, img") && child.tagName !== "LI") continue;
-      const childStyle = win.getComputedStyle(child);
-      const text = child.textContent?.trim();
-      if (text) {
-        paragraphs.push({
-          text,
-          fontSize: parseFloat(childStyle.fontSize) || 16,
-          fontFamily: childStyle.fontFamily?.split(",")[0]?.replace(/["']/g, "").trim() || "Calibri",
-          fontWeight: childStyle.fontWeight,
-          fontStyle: childStyle.fontStyle,
-          color: childStyle.color,
-          textAlign: childStyle.textAlign,
-        });
-      }
-    }
-  }
+  // Single text element → single paragraph
+  const text = el.textContent?.trim();
+  if (!text) return [];
 
-  if (paragraphs.length === 0) {
-    const text = el.textContent?.trim();
-    if (text) {
-      paragraphs.push({
-        text,
-        fontSize: parseFloat(style.fontSize) || 16,
-        fontFamily: style.fontFamily?.split(",")[0]?.replace(/["']/g, "").trim() || "Calibri",
-        fontWeight: style.fontWeight,
-        fontStyle: style.fontStyle,
-        color: style.color,
-        textAlign: style.textAlign,
-      });
-    }
-  }
-
-  return paragraphs;
+  return [{
+    text,
+    fontSize: parseFloat(style.fontSize) || 16,
+    fontFamily: style.fontFamily?.split(",")[0]?.replace(/["']/g, "").trim() || "Calibri",
+    fontWeight: style.fontWeight,
+    fontStyle: style.fontStyle,
+    color: style.color,
+    textAlign: style.textAlign,
+  }];
 }
 
 function skipChildren(walker: TreeWalker, parent: Element) {
@@ -347,8 +369,11 @@ function cssColorToHex(color: string): string {
   return "000000";
 }
 
+// Slide is 720pt wide (10" × 72pt) across CANVAS_W=1920px → 0.375 pt per CSS px.
+// PPTX `sz` is in hundredths of a point, so multiply by 100.
+const PT_PER_PX = (SLIDE_CX / 914400) * 72 / 1920; // = 0.375
 function fontSizeToPptx(px: number): number {
-  return Math.round((px / 1.333) * 100);
+  return Math.round(px * PT_PER_PX * 100);
 }
 
 function isBold(weight: string | undefined): boolean {

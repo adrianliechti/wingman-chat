@@ -7,7 +7,7 @@
  * 3. Render text/shapes via SVG foreignObject with transparent background
  * 4. Composite: background fill → images → foreignObject layer
  *
- * Editable PPTX export is handled by pptx-export-two-pass.ts.
+ * Editable PPTX export is handled by pptx-export-hybrid.ts.
  */
 
 import { downloadFromUrl } from "@/shared/lib/utils";
@@ -153,11 +153,31 @@ function utf8ToBase64(str: string): string {
  */
 async function rasterizeSlideDoc(
   iframe: HTMLIFrameElement,
+  options: { hideText?: boolean } = {},
 ): Promise<HTMLCanvasElement> {
   const doc = iframe.contentDocument;
   if (!doc?.documentElement) throw new Error("Slide iframe has no document");
   const win = iframe.contentWindow;
   if (!win) throw new Error("Slide iframe has no window");
+
+  // ── Optionally hide all text (used by hybrid PPTX export so the
+  //    rasterized background doesn't double-render text that's also
+  //    drawn as an editable overlay). We inject a stylesheet rather
+  //    than mutate every element so layout stays identical.
+  let hideTextStyle: HTMLStyleElement | null = null;
+  if (options.hideText) {
+    hideTextStyle = doc.createElement("style");
+    hideTextStyle.textContent = `
+      * {
+        color: transparent !important;
+        text-shadow: none !important;
+        -webkit-text-fill-color: transparent !important;
+        text-decoration-color: transparent !important;
+        caret-color: transparent !important;
+      }
+    `;
+    doc.head.appendChild(hideTextStyle);
+  }
 
   // ── Collect the slide background color ────────────────────────────────
   let bgColor = "#ffffff";
@@ -327,6 +347,7 @@ async function rasterizeSlideDoc(
   // Restore hidden elements
   for (const { el, vis } of savedImgVis) el.style.visibility = vis;
   for (const { el, orig } of savedBgEls) el.style.backgroundImage = orig;
+  if (hideTextStyle?.parentNode) hideTextStyle.parentNode.removeChild(hideTextStyle);
 
   return canvas;
 }
@@ -346,11 +367,18 @@ async function renderSlideToPngDataUrl(html: string): Promise<string> {
  * Render a slide to a JPEG data URL at 2× the slide resolution.
  * JPEG is ~10× smaller than PNG for slide-style content and visually
  * lossless at q=0.85.
+ *
+ * `hideText` suppresses all rendered text in the rasterization, which is
+ * used by the hybrid PPTX export to avoid rendering text into the
+ * background image (since it's also drawn as an editable overlay).
  */
-async function renderSlideToJpegDataUrl(html: string): Promise<string> {
+export async function renderSlideToJpegDataUrl(
+  html: string,
+  options: { hideText?: boolean } = {},
+): Promise<string> {
   const { iframe, teardown } = await mountSlide(html);
   try {
-    const canvas = await rasterizeSlideDoc(iframe);
+    const canvas = await rasterizeSlideDoc(iframe, options);
     return canvas.toDataURL("image/jpeg", JPEG_QUALITY);
   } finally {
     teardown();

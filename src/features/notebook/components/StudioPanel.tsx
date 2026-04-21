@@ -25,7 +25,6 @@ interface StudioPanelProps {
   onGenerate: (type: OutputType, styleId?: string, slideFormat?: SlideFormat) => void;
   onDeleteOutput: (outputId: string) => void;
   onSelectOutput: (output: NotebookOutput) => void;
-  onExportEditablePptx?: (htmlSlides: string[], slug: string, onProgress?: (current: number, total: number, phase?: string) => void) => Promise<void>;
 }
 
 const OUTPUT_TYPES: {
@@ -41,9 +40,9 @@ const OUTPUT_TYPES: {
   { type: "mindmap", label: "Mind Map", icon: Network },
 ];
 
-type ExportFormat = "pdf" | "pptx-image" | "pptx-editable" | "png";
+type ExportFormat = "pdf" | "pptx-image" | "pptx-hybrid" | "pptx-editable" | "png";
 
-export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSelectOutput, onExportEditablePptx }: StudioPanelProps) {
+export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSelectOutput }: StudioPanelProps) {
   const hasSources = sources.length > 0;
   const [openMenu, setOpenMenu] = useState<OutputType | null>(null);
   const [exportOverlay, setExportOverlay] = useState<NotebookOutput | null>(null);
@@ -91,11 +90,11 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
       } else if (format === "pptx-image") {
         const { downloadHtmlSlidesAsPptx } = await import("../lib/html-slide-export");
         await downloadHtmlSlidesAsPptx(exportOverlay.htmlSlides, slug);
-      } else if (format === "pptx-editable") {
-        setExportProgress("Parsing slides...");
-        await onExportEditablePptx?.(exportOverlay.htmlSlides, slug, (current, total, phase) => {
-          const label = phase === "refining" ? "Refining" : "Parsing";
-          setExportProgress(`${label} slide ${current} of ${total}...`);
+      } else if (format === "pptx-hybrid") {
+        setExportProgress("Exporting slides...");
+        const { downloadHtmlSlidesAsHybridPptx } = await import("../lib/pptx-export-hybrid");
+        await downloadHtmlSlidesAsHybridPptx(exportOverlay.htmlSlides, slug, (current, total) => {
+          setExportProgress(`Exporting slide ${current} of ${total}...`);
         });
       } else if (format === "png") {
         const { downloadHtmlSlidesAsPng } = await import("../lib/html-slide-export");
@@ -341,13 +340,13 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleExport("pptx-editable")}
+                    onClick={() => handleExport("pptx-hybrid")}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left"
                   >
                     <Presentation size={16} className="text-neutral-400 shrink-0" />
                     <div>
                       <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PowerPoint (Editable)</p>
-                      <p className="text-[10px] text-neutral-400">Native text and shapes, AI-converted</p>
+                      <p className="text-[10px] text-neutral-400">Pixel-perfect design with editable text</p>
                     </div>
                   </button>
                 </div>
