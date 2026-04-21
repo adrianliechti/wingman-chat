@@ -5,7 +5,17 @@ import { decodeBase64, serializeToolResultForApi } from "@/shared/lib/utils";
 import type { AudioContent, FileContent, ImageContent, Message, TextContent, Tool } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
 
-export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: (text: string) => void) {
+export function useVoiceWebSockets(
+  onUser: (text: string) => void,
+  onAssistant: (text: string) => void,
+  onToolCall?: (toolName: string) => void,
+  onToolCallDone?: () => void,
+  onToolResult?: (
+    toolName: string,
+    callId: string,
+    result: (TextContent | ImageContent | AudioContent | FileContent)[],
+  ) => void,
+) {
   const wsRef = useRef<WebSocket | null>(null);
   const wavPlayerRef = useRef<AudioStreamPlayer | null>(null);
   const wavRecorderRef = useRef<AudioRecorder | null>(null);
@@ -17,12 +27,18 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
   // Use refs to always have the latest callbacks
   const onUserRef = useRef(onUser);
   const onAssistantRef = useRef(onAssistant);
+  const onToolCallRef = useRef(onToolCall);
+  const onToolCallDoneRef = useRef(onToolCallDone);
+  const onToolResultRef = useRef(onToolResult);
 
   // Keep refs updated with latest callbacks
   useEffect(() => {
     onUserRef.current = onUser;
     onAssistantRef.current = onAssistant;
-  }, [onUser, onAssistant]);
+    onToolCallRef.current = onToolCall;
+    onToolCallDoneRef.current = onToolCallDone;
+    onToolResultRef.current = onToolResult;
+  }, [onUser, onAssistant, onToolCall, onToolCallDone, onToolResult]);
 
   const start = async (
     realtimeModel: string = "gpt-realtime-1.5",
@@ -32,6 +48,7 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
     tools?: Tool[],
     inputDeviceId?: string,
     outputDeviceId?: string,
+    onAudioLevel?: (level: number) => void,
   ) => {
     if (isActiveRef.current) return;
     isActiveRef.current = true;
@@ -158,6 +175,17 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
           .record((data) => {
             if (!isActiveRef.current || !data.mono) return;
 
+            // Compute RMS audio level from PCM samples
+            if (onAudioLevel) {
+              const samples = new Int16Array(data.mono);
+              let sum = 0;
+              for (let i = 0; i < samples.length; i++) {
+                const normalized = samples[i] / 32768;
+                sum += normalized * normalized;
+              }
+              onAudioLevel(Math.sqrt(sum / samples.length));
+            }
+
             try {
               ws.send(
                 JSON.stringify({
@@ -223,23 +251,28 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
               if (tool && msg.item.arguments) {
                 console.log(`Executing tool: ${tool.name} with arguments:`, msg.item.arguments);
 
+                onToolCallRef.current?.(tool.name);
+
                 let output: string;
 
                 try {
                   const args = JSON.parse(msg.item.arguments);
                   const result = await tool.function(args);
                   // Serialize result, stripping binary data from images/audio/files
-                  output =
+                  const rawResult =
                     typeof result === "string"
-                      ? result
-                      : serializeToolResultForApi(
-                          result as (TextContent | ImageContent | AudioContent | FileContent)[],
-                        );
+                      ? [{ type: "text" as const, text: result }]
+                      : (result as (TextContent | ImageContent | AudioContent | FileContent)[]);
+                  output = serializeToolResultForApi(rawResult);
+                  // Notify caller with the raw result so rich content (images etc.) can be shown in chat
+                  onToolResultRef.current?.(tool.name, msg.item.call_id, rawResult);
                   console.log("Function result:", result);
                 } catch (error) {
                   console.error("Error executing tool:", error);
                   const errorMessage = error instanceof Error ? error.message : "Tool execution failed";
                   output = JSON.stringify({ error: errorMessage });
+                } finally {
+                  onToolCallDoneRef.current?.();
                 }
 
                 // Send the function result back to the conversation
@@ -272,13 +305,13 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
             }
             break;
 
-          case "response.done":
+          case "response.done": {
             console.log("Response complete:", msg.response);
-
-            if (msg.response?.output?.[0]?.content?.[0]?.transcript) {
-              onAssistantRef.current(msg.response.output[0].content[0].transcript);
-            }
+            const output = msg.response?.output?.[0]?.content?.[0];
+            const text = output?.transcript ?? output?.text;
+            if (text) onAssistantRef.current(text);
             break;
+          }
 
           case "error":
             console.error("OpenAI Error:", msg.error);
@@ -376,6 +409,24 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
     }
   };
 
+  const sendText = (text: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    ws.send(
+      JSON.stringify({
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text }],
+        },
+      }),
+    );
+
+    ws.send(JSON.stringify({ type: "response.create" }));
+  };
+
   // Keep a ref to stop so the unmount effect doesn't need it as a dependency
   const stopRef = useRef(stop);
   stopRef.current = stop;
@@ -387,5 +438,5 @@ export function useVoiceWebSockets(onUser: (text: string) => void, onAssistant: 
     };
   }, []);
 
-  return { start, stop };
+  return { start, stop, sendText };
 }

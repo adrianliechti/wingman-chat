@@ -1,10 +1,12 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
+  AudioLines,
   Bot,
   Check,
   HardDrive,
   Loader2,
   LoaderCircle,
+  MessageSquare,
   Mic,
   Paperclip,
   Rocket,
@@ -23,7 +25,6 @@ import { useChat } from "@/features/chat/hooks/useChat";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
-import { VoiceWaves } from "@/features/voice/components/VoiceWaves";
 import { useTranscription } from "@/features/voice/hooks/useTranscription";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
@@ -50,22 +51,21 @@ export function ChatInput() {
     captureFrame,
   } = useScreenCapture();
   const { providers, getProviderState, setProviderEnabled, setModelOverrides } = useToolsContext();
-  const { isAvailable: voiceAvailable, isListening, startVoice, stopVoice } = useVoice();
+  const { isAvailable: voiceAvailable, isListening, audioLevel, startVoice, stopVoice, sendText: sendVoiceText } = useVoice();
 
-  // Track if realtime mode model is selected
-  const isRealtimeSelected = model?.id === "realtime";
+  // Track if realtime mode model is selected (either via model picker or agent's model)
+  const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
 
-  // Start/stop voice when realtime mode model is selected/deselected
+  // Stop voice when realtime is deselected
   useEffect(() => {
-    if (isRealtimeSelected && voiceAvailable && !isListening) {
-      startVoice();
-    } else if (!isRealtimeSelected && isListening) {
+    if (!isRealtimeSelected && isListening) {
       stopVoice();
     }
-  }, [isRealtimeSelected, voiceAvailable, isListening, startVoice, stopVoice]);
+  }, [isRealtimeSelected, isListening, stopVoice]);
 
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
+  const [voiceTextInput, setVoiceTextInput] = useState("");
 
   const [attachments, setAttachments] = useState<Content[]>([]);
   const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
@@ -74,8 +74,21 @@ export function ChatInput() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const contentInputRef = useRef<HTMLTextAreaElement>(null);
+  const voiceInputRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const modeSliderRef = useRef<HTMLDivElement>(null);
+  const [modeSliderStyle, setModeSliderStyle] = useState({ left: 0, width: 0 });
   const profileName = profile?.name;
+
+  useEffect(() => {
+    const container = modeSliderRef.current;
+    if (!container) return;
+    const active = container.querySelector<HTMLElement>(`[data-mode="${isRealtimeSelected ? 'voice' : 'chat'}"]`);
+    if (!active) return;
+    const cr = container.getBoundingClientRect();
+    const br = active.getBoundingClientRect();
+    setModeSliderStyle({ left: br.left - cr.left, width: br.width });
+  }, [isRealtimeSelected]);
 
   // Generate static random placeholder text for new chats only
   const randomPlaceholder = useMemo(() => {
@@ -393,18 +406,29 @@ export function ChatInput() {
     }
   }, [content]);
 
+  useEffect(() => {
+    if (!voiceInputRef.current) {
+      return;
+    }
+
+    voiceInputRef.current.style.height = "auto";
+    voiceInputRef.current.style.height = `${voiceInputRef.current.scrollHeight}px`;
+
+    if (voiceTextInput.length === 0) {
+      voiceInputRef.current.style.height = "auto";
+    }
+  }, [voiceTextInput]);
+
   return (
     <>
       <form onSubmit={handleSubmit}>
         <div
           ref={containerRef}
-          className={`contain-[layout_style] will-change-[height] ${
-            isDragging
-              ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl"
-              : `border-0 md:border-2 border-t-2 border-solid ${messages.length === 0 ? "border-neutral-200/50" : "border-neutral-200"} dark:border-neutral-900 ${
-                  messages.length === 0 ? "bg-white/60 dark:bg-neutral-950/70" : "bg-white/30 dark:bg-neutral-950/50"
-                } rounded-t-2xl md:rounded-2xl`
-          } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 transition-all duration-200`}
+          className={`relative contain-[layout_style] will-change-[height] ${isDragging
+            ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl"
+            : `border-0 md:border border-t border-solid border-neutral-200/60 dark:border-neutral-700/60 ${messages.length === 0 ? "bg-white/60 dark:bg-neutral-950/70" : "bg-white/30 dark:bg-neutral-950/50"
+            } rounded-t-2xl md:rounded-2xl`
+            } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-sm transition-all duration-200`}
         >
           <input
             type="file"
@@ -414,6 +438,8 @@ export function ChatInput() {
             className="hidden"
             onChange={handleFileChange}
           />
+
+
 
           {/* Drop zone overlay */}
           {isDragging && (
@@ -440,10 +466,42 @@ export function ChatInput() {
 
           {/* Input area */}
           <div className="relative flex-1">
-            {isListening ? (
-              <div className="p-3 md:p-4 flex items-center justify-center h-14">
-                <VoiceWaves />
-              </div>
+            {isRealtimeSelected ? (
+              <>
+                <textarea
+                  className="block w-full resize-none border-0 bg-transparent p-3 md:p-4 max-h-[40vh] overflow-y-auto min-h-10 whitespace-pre-wrap wrap-break-word text-neutral-800 dark:text-neutral-200 focus:outline-none"
+                  style={{ scrollbarWidth: "thin", minHeight: "2.5rem", height: "auto" }}
+                  ref={voiceInputRef}
+                  value={voiceTextInput}
+                  rows={1}
+                  aria-label="Voice text input"
+                  readOnly={!isListening}
+                  onChange={(e) => isListening && setVoiceTextInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (isListening && e.key === "Enter" && !e.shiftKey && voiceTextInput.trim()) {
+                      e.preventDefault();
+                      sendVoiceText(voiceTextInput.trim());
+                      setVoiceTextInput("");
+                    }
+                  }}
+                />
+
+                {isListening && !voiceTextInput && (
+                  <div
+                    className="absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none flex items-center gap-2 text-neutral-500 dark:text-neutral-400"
+                    aria-live="polite"
+                  >
+                    <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-red-500/50 animate-ping" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                    </span>
+                    <span className="text-sm">
+                      <span className="font-medium text-neutral-700 dark:text-neutral-300">Listening</span>
+                      <span className="text-neutral-500 dark:text-neutral-400"> — speak or type a message</span>
+                    </span>
+                  </div>
+                )}
+              </>
             ) : (
               <>
                 <textarea
@@ -496,9 +554,9 @@ export function ChatInput() {
                     style={
                       messages.length === 0
                         ? ({
-                            "--text-length": placeholderText.length,
-                            "--animation-duration": `${Math.max(1.5, placeholderText.length * 0.1)}s`,
-                          } as React.CSSProperties & { "--text-length": number; "--animation-duration": string })
+                          "--text-length": placeholderText.length,
+                          "--animation-duration": `${Math.max(1.5, placeholderText.length * 0.1)}s`,
+                        } as React.CSSProperties & { "--text-length": number; "--animation-duration": string })
                         : {}
                     }
                   >
@@ -510,31 +568,142 @@ export function ChatInput() {
           </div>
 
           {/* Controls */}
-          <div className="flex items-center justify-between p-3 pt-0 pb-8 md:pb-3">
+          <div className="relative flex items-center justify-between p-3 pt-0 pb-8 md:pb-3">
+            {isRealtimeSelected && !isListening && (
+              <button
+                type="button"
+                className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pb-10 group"
+                onClick={startVoice}
+              >
+                <div className="flex items-center justify-center w-8 h-8 shrink-0 rounded-full bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-hover:bg-neutral-300 dark:group-hover:bg-neutral-600 group-hover:text-neutral-800 dark:group-hover:text-neutral-100 transition-all duration-200">
+                  <Mic size={15} />
+                </div>
+                <span className="text-xs text-neutral-500 dark:text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200 transition-colors whitespace-nowrap">
+                  Click to start voice conversation
+                </span>
+              </button>
+            )}
+
+            {isRealtimeSelected && isListening && (
+              <div
+                className="pointer-events-none absolute inset-0 p-3 pt-0 pb-8 md:pb-3 flex items-center justify-center"
+                aria-hidden="true"
+              >
+                <div className="flex items-center gap-0.75 h-6">
+                  {[
+                    { id: "w1", freq: 1.7, phase: 0.0, minH: 3, maxH: 10 },
+                    { id: "w2", freq: 2.3, phase: 0.6, minH: 4, maxH: 16 },
+                    { id: "w3", freq: 1.5, phase: 1.1, minH: 5, maxH: 20 },
+                    { id: "w4", freq: 2.8, phase: 0.3, minH: 5, maxH: 24 },
+                    { id: "w5", freq: 1.5, phase: 1.4, minH: 5, maxH: 20 },
+                    { id: "w6", freq: 2.1, phase: 0.9, minH: 4, maxH: 16 },
+                    { id: "w7", freq: 1.8, phase: 0.2, minH: 3, maxH: 10 },
+                  ].map(({ id, freq, phase, minH, maxH }) => {
+                    const amp = Math.min(1, audioLevel * 5);
+                    const range = (maxH - minH) * amp;
+                    return (
+                      <span
+                        key={id}
+                        className="w-0.75 rounded-full bg-neutral-500 dark:bg-neutral-400"
+                        style={{
+                          minHeight: `${minH}px`,
+                          height: `${minH + range}px`,
+                          opacity: 0.35 + amp * 0.65,
+                          transition: "height 80ms ease-out, opacity 120ms ease-out",
+                          animation: `waveBar ${(1 / freq).toFixed(2)}s ${phase.toFixed(2)}s ease-in-out infinite alternate`,
+                          "--wave-min": `${minH}px`,
+                          "--wave-max": `${minH + (maxH - minH) * Math.max(0.12, amp)}px`,
+                        } as React.CSSProperties}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-2">
+              {voiceAvailable && !currentAgent?.model && (
+                <div
+                  ref={modeSliderRef}
+                  role="tablist"
+                  aria-label="Input mode"
+                  className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5"
+                >
+                  {/* Animated slider background */}
+                  {modeSliderStyle.width > 0 && (
+                    <div
+                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
+                      style={{
+                        left: `${modeSliderStyle.left}px`,
+                        width: `${modeSliderStyle.width}px`,
+                        height: "calc(100% - 4px)",
+                        top: "2px",
+                      }}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    data-mode="chat"
+                    role="tab"
+                    aria-selected={!isRealtimeSelected}
+                    aria-label="Chat mode"
+                    className={`relative z-10 flex items-center justify-start gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${!isRealtimeSelected
+                      ? "w-[4.5rem] text-neutral-900 dark:text-neutral-50"
+                      : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      }`}
+                    title="Chat mode"
+                    onClick={() => isRealtimeSelected ? onModelChange(models[0]) : undefined}
+                  >
+                    <MessageSquare size={12} strokeWidth={2.25} className="shrink-0" />
+                    {!isRealtimeSelected && <span>Chat</span>}
+                  </button>
+                  <button
+                    type="button"
+                    data-mode="voice"
+                    role="tab"
+                    aria-selected={isRealtimeSelected}
+                    aria-label="Voice mode"
+                    className={`relative z-10 flex items-center justify-end gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${isRealtimeSelected
+                      ? "w-[4.5rem] text-neutral-900 dark:text-neutral-50"
+                      : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      }`}
+                    title="Voice mode"
+                    onClick={() =>
+                      !isRealtimeSelected
+                        ? onModelChange({ id: "realtime", name: "Voice Mode", description: "Real-time voice conversation" })
+                        : undefined
+                    }
+                  >
+                    {isRealtimeSelected && <span>Voice</span>}
+                    <AudioLines size={12} strokeWidth={2.25} className="shrink-0" />
+                  </button>
+                </div>
+              )}
+
               {currentAgent?.model ? (
                 /* Agent overrides model — show agent badge instead of model selector */
-                <button
-                  type="button"
-                  onClick={() => setCurrentAgent(null)}
-                  className="hidden lg:flex group items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors max-w-48"
-                  title="Deselect agent"
-                >
-                  <span className="shrink-0 w-3.5 flex justify-center relative">
-                    <Bot size={14} className="transition-opacity group-hover:opacity-0" />
-                    <X
-                      size={14}
-                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
-                    />
-                  </span>
-                  <span className="truncate min-w-0">{currentAgent.name}</span>
-                </button>
+                <div className="hidden lg:flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentAgent(null)}
+                    className="flex group items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors max-w-48"
+                    title="Deselect agent"
+                  >
+                    <span className="shrink-0 w-3.5 flex justify-center relative">
+                      <Bot size={14} className="transition-opacity group-hover:opacity-0" />
+                      <X
+                        size={14}
+                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
+                      />
+                    </span>
+                    <span className="truncate min-w-0">{currentAgent.name}</span>
+                  </button>
+                </div>
               ) : (
                 <>
-                  {models.length > 0 && (
+                  {models.length > 0 && !isRealtimeSelected && (
                     <Menu>
-                      <MenuButton className="flex items-center gap-1 px-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm max-w-48">
-                        <span className="shrink-0 w-3.5 flex justify-center">{toolIndicator}</span>
+                      <MenuButton className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors max-w-48">
+                        <span className="shrink-0 flex justify-center">{toolIndicator}</span>
                         <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
                       </MenuButton>
                       <MenuItems
@@ -580,10 +749,10 @@ export function ChatInput() {
                                   isRealtimeSelected
                                     ? models[0]
                                     : {
-                                        id: "realtime",
-                                        name: "Voice Mode",
-                                        description: "Real-time voice conversation",
-                                      },
+                                      id: "realtime",
+                                      name: "Voice Mode",
+                                      description: "Real-time voice conversation",
+                                    },
                                 )
                               }
                               className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
@@ -629,16 +798,89 @@ export function ChatInput() {
                   )}
                 </>
               )}
+
             </div>
 
-            <div className="flex items-center gap-2 md:gap-1">
-              {/* Hide all buttons except stop button when in realtime mode */}
-              {!isRealtimeSelected && (
-                <>
-                  {/* Features - Show inline buttons for 2 or fewer providers, otherwise show menu */}
-                  {visibleProviders.length > 0 && visibleProviders.length <= 2 ? (
-                    // Inline toggle buttons for 2 or fewer providers
-                    visibleProviders.map((provider: ToolProvider) => {
+            <div className="flex items-center gap-2 md:gap-1 min-h-7">
+              {/* Features - Show inline buttons for 2 or fewer providers, otherwise show menu */}
+              {visibleProviders.length > 0 && visibleProviders.length <= 2 ? (
+                // Inline toggle buttons for 2 or fewer providers
+                visibleProviders.map((provider: ToolProvider) => {
+                  const icon = provider.icon || Sparkles;
+                  const state = getProviderState(provider.id);
+                  const providerEnabled = state === ProviderState.Connected;
+                  const providerInitializing = state === ProviderState.Initializing;
+                  const providerFailed = state === ProviderState.Failed;
+
+                  const renderIcon = () => {
+                    if (providerInitializing) return <LoaderCircle size={14} className="animate-spin" />;
+                    if (providerFailed) return <TriangleAlert size={14} />;
+                    if (typeof icon === "string")
+                      return (
+                        <span
+                          className="shrink-0 bg-current inline-block"
+                          style={{
+                            width: 14,
+                            height: 14,
+                            maskImage: `url(${icon})`,
+                            WebkitMaskImage: `url(${icon})`,
+                            maskSize: "contain",
+                            maskRepeat: "no-repeat",
+                            maskPosition: "center",
+                          }}
+                        />
+                      );
+                    const Icon = icon;
+                    return <Icon size={14} />;
+                  };
+
+                  return (
+                    <button
+                      key={provider.id}
+                      type="button"
+                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${providerEnabled
+                        ? "text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg"
+                        : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        }`}
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (providerInitializing) return;
+                        try {
+                          await setProviderEnabled(provider.id, !providerEnabled);
+                        } catch (error) {
+                          console.error(`Failed to toggle provider ${provider.name}:`, error);
+                        }
+                      }}
+                      disabled={providerInitializing}
+                      title={
+                        providerFailed
+                          ? `${provider.name} - Failed to connect (click to retry)`
+                          : providerEnabled
+                            ? `${provider.name} - Click to disable`
+                            : `${provider.name} - Click to enable`
+                      }
+                    >
+                      {renderIcon()}
+                    </button>
+                  );
+                })
+              ) : visibleProviders.length > 2 ? (
+                // Menu for more than 2 providers
+                <Menu>
+                  <MenuButton
+                    className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    title="Features"
+                  >
+                    <Sliders size={16} />
+                  </MenuButton>
+                  <MenuItems
+                    modal={false}
+                    transition
+                    anchor="bottom end"
+                    className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto"
+                  >
+                    {visibleProviders.map((provider: ToolProvider) => {
                       const icon = provider.icon || Sparkles;
                       const state = getProviderState(provider.id);
                       const providerEnabled = state === ProviderState.Connected;
@@ -646,15 +888,13 @@ export function ChatInput() {
                       const providerFailed = state === ProviderState.Failed;
 
                       const renderIcon = () => {
-                        if (providerInitializing) return <LoaderCircle size={14} className="animate-spin" />;
-                        if (providerFailed) return <TriangleAlert size={14} />;
                         if (typeof icon === "string")
                           return (
                             <span
                               className="shrink-0 bg-current inline-block"
                               style={{
-                                width: 14,
-                                height: 14,
+                                width: 16,
+                                height: 16,
                                 maskImage: `url(${icon})`,
                                 WebkitMaskImage: `url(${icon})`,
                                 maskSize: "contain",
@@ -664,148 +904,75 @@ export function ChatInput() {
                             />
                           );
                         const Icon = icon;
-                        return <Icon size={14} />;
+                        return <Icon size={16} />;
                       };
 
                       return (
-                        <button
-                          key={provider.id}
-                          type="button"
-                          className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${
-                            providerEnabled
-                              ? "text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg"
-                              : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                          }`}
-                          onClick={async (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if (providerInitializing) return;
-                            try {
-                              await setProviderEnabled(provider.id, !providerEnabled);
-                            } catch (error) {
-                              console.error(`Failed to toggle provider ${provider.name}:`, error);
-                            }
-                          }}
-                          disabled={providerInitializing}
-                          title={
-                            providerFailed
-                              ? `${provider.name} - Failed to connect (click to retry)`
-                              : providerEnabled
-                                ? `${provider.name} - Click to disable`
-                                : `${provider.name} - Click to enable`
-                          }
-                        >
-                          {renderIcon()}
-                        </button>
-                      );
-                    })
-                  ) : visibleProviders.length > 2 ? (
-                    // Menu for more than 2 providers
-                    <Menu>
-                      <MenuButton
-                        className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        title="Features"
-                      >
-                        <Sliders size={16} />
-                      </MenuButton>
-                      <MenuItems
-                        modal={false}
-                        transition
-                        anchor="bottom end"
-                        className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto"
-                      >
-                        {visibleProviders.map((provider: ToolProvider) => {
-                          const icon = provider.icon || Sparkles;
-                          const state = getProviderState(provider.id);
-                          const providerEnabled = state === ProviderState.Connected;
-                          const providerInitializing = state === ProviderState.Initializing;
-                          const providerFailed = state === ProviderState.Failed;
-
-                          const renderIcon = () => {
-                            if (typeof icon === "string")
-                              return (
-                                <span
-                                  className="shrink-0 bg-current inline-block"
-                                  style={{
-                                    width: 16,
-                                    height: 16,
-                                    maskImage: `url(${icon})`,
-                                    WebkitMaskImage: `url(${icon})`,
-                                    maskSize: "contain",
-                                    maskRepeat: "no-repeat",
-                                    maskPosition: "center",
-                                  }}
+                        <MenuItem key={provider.id}>
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              try {
+                                await setProviderEnabled(provider.id, !providerEnabled);
+                              } catch (error) {
+                                console.error(`Failed to toggle provider ${provider.name}:`, error);
+                              }
+                            }}
+                            disabled={providerInitializing}
+                            className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50`}
+                          >
+                            <div className="flex items-center gap-3">
+                              {renderIcon()}
+                              <div className="flex flex-col items-start">
+                                <span className="font-medium text-sm">{provider.name}</span>
+                                {provider.description && (
+                                  <span className="text-xs text-neutral-600 dark:text-neutral-400">
+                                    {provider.description}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 pl-2">
+                              {providerInitializing ? (
+                                <LoaderCircle
+                                  size={16}
+                                  className="animate-spin text-neutral-600 dark:text-neutral-400"
                                 />
-                              );
-                            const Icon = icon;
-                            return <Icon size={16} />;
-                          };
+                              ) : providerFailed ? (
+                                <TriangleAlert
+                                  size={16}
+                                  className="text-neutral-600 dark:text-neutral-400"
+                                  strokeWidth={2.5}
+                                />
+                              ) : providerEnabled ? (
+                                <Check
+                                  size={16}
+                                  className="text-neutral-800 dark:text-neutral-200"
+                                  strokeWidth={2.5}
+                                />
+                              ) : (
+                                <div className="w-4 h-4" />
+                              )}
+                            </div>
+                          </button>
+                        </MenuItem>
+                      );
+                    })}
+                  </MenuItems>
+                </Menu>
+              ) : null}
 
-                          return (
-                            <MenuItem key={provider.id}>
-                              <button
-                                type="button"
-                                onClick={async (e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  try {
-                                    await setProviderEnabled(provider.id, !providerEnabled);
-                                  } catch (error) {
-                                    console.error(`Failed to toggle provider ${provider.name}:`, error);
-                                  }
-                                }}
-                                disabled={providerInitializing}
-                                className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50`}
-                              >
-                                <div className="flex items-center gap-3">
-                                  {renderIcon()}
-                                  <div className="flex flex-col items-start">
-                                    <span className="font-medium text-sm">{provider.name}</span>
-                                    {provider.description && (
-                                      <span className="text-xs text-neutral-600 dark:text-neutral-400">
-                                        {provider.description}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2 pl-2">
-                                  {providerInitializing ? (
-                                    <LoaderCircle
-                                      size={16}
-                                      className="animate-spin text-neutral-600 dark:text-neutral-400"
-                                    />
-                                  ) : providerFailed ? (
-                                    <TriangleAlert
-                                      size={16}
-                                      className="text-neutral-600 dark:text-neutral-400"
-                                      strokeWidth={2.5}
-                                    />
-                                  ) : providerEnabled ? (
-                                    <Check
-                                      size={16}
-                                      className="text-neutral-800 dark:text-neutral-200"
-                                      strokeWidth={2.5}
-                                    />
-                                  ) : (
-                                    <div className="w-4 h-4" />
-                                  )}
-                                </div>
-                              </button>
-                            </MenuItem>
-                          );
-                        })}
-                      </MenuItems>
-                    </Menu>
-                  ) : null}
-
-                  {!isRealtimeSelected && isScreenCaptureAvailable && (
+              {!isRealtimeSelected && (
+                <>
+                  {isScreenCaptureAvailable && (
                     <button
                       type="button"
-                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
-                        isContinuousCaptureActive
-                          ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg"
-                          : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      }`}
+                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isContinuousCaptureActive
+                        ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg"
+                        : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        }`}
                       onClick={handleContinuousCaptureToggle}
                       title={
                         isContinuousCaptureActive ? "Stop continuous screen capture" : "Start continuous screen capture"
@@ -816,84 +983,100 @@ export function ChatInput() {
                     </button>
                   )}
 
-                  {!isRealtimeSelected &&
-                    (config.drives.length > 0 ? (
-                      <Menu>
-                        <MenuButton className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200">
-                          <Paperclip size={16} />
-                        </MenuButton>
-                        <MenuItems
-                          modal={false}
-                          transition
-                          anchor="bottom end"
-                          className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-48 dark:ring-1 dark:ring-white/10"
-                        >
-                          <MenuItem>
+                  {config.drives.length > 0 ? (
+                    <Menu>
+                      <MenuButton className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200">
+                        <Paperclip size={16} />
+                      </MenuButton>
+                      <MenuItems
+                        modal={false}
+                        transition
+                        anchor="bottom end"
+                        className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-48 dark:ring-1 dark:ring-white/10"
+                      >
+                        <MenuItem>
+                          <button
+                            type="button"
+                            onClick={handleAttachmentClick}
+                            className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10"
+                          >
+                            <Paperclip size={16} />
+                            <span className="font-medium text-sm">Upload</span>
+                          </button>
+                        </MenuItem>
+                        {config.drives.map((fp) => (
+                          <MenuItem key={fp.id}>
                             <button
                               type="button"
-                              onClick={handleAttachmentClick}
-                              className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10"
+                              onClick={() => setActiveDrive(fp)}
+                              className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                             >
-                              <Paperclip size={16} />
-                              <span className="font-medium text-sm">Upload</span>
+                              {fp.icon ? (
+                                <span
+                                  className="shrink-0 bg-current inline-block"
+                                  style={{
+                                    width: 16,
+                                    height: 16,
+                                    maskImage: `url(${fp.icon})`,
+                                    WebkitMaskImage: `url(${fp.icon})`,
+                                    maskSize: "contain",
+                                    maskRepeat: "no-repeat",
+                                    maskPosition: "center",
+                                  }}
+                                />
+                              ) : (
+                                <HardDrive size={16} />
+                              )}
+                              <span className="font-medium text-sm">{fp.name}</span>
                             </button>
                           </MenuItem>
-                          {config.drives.map((fp) => (
-                            <MenuItem key={fp.id}>
-                              <button
-                                type="button"
-                                onClick={() => setActiveDrive(fp)}
-                                className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                              >
-                                {fp.icon ? (
-                                  <span
-                                    className="shrink-0 bg-current inline-block"
-                                    style={{
-                                      width: 16,
-                                      height: 16,
-                                      maskImage: `url(${fp.icon})`,
-                                      WebkitMaskImage: `url(${fp.icon})`,
-                                      maskSize: "contain",
-                                      maskRepeat: "no-repeat",
-                                      maskPosition: "center",
-                                    }}
-                                  />
-                                ) : (
-                                  <HardDrive size={16} />
-                                )}
-                                <span className="font-medium text-sm">{fp.name}</span>
-                              </button>
-                            </MenuItem>
-                          ))}
-                        </MenuItems>
-                      </Menu>
-                    ) : (
-                      <button
-                        type="button"
-                        className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        onClick={handleAttachmentClick}
-                      >
-                        <Paperclip size={16} />
-                      </button>
-                    ))}
+                        ))}
+                      </MenuItems>
+                    </Menu>
+                  ) : (
+                    <button
+                      type="button"
+                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      onClick={handleAttachmentClick}
+                    >
+                      <Paperclip size={16} />
+                    </button>
+                  )}
                 </>
               )}
 
               {/* Dynamic Send/Mic/Voice/Loading Button */}
               {isRealtimeSelected ? (
-                <button
-                  type="button"
-                  className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
-                  onClick={() => {
-                    // Stop voice mode by selecting the first regular model
-                    if (models.length > 0) {
-                      onModelChange(models[0]);
-                    }
-                  }}
-                  title="Stop voice mode"
-                >
-                  <Square size={16} />
-                </button>
+                isListening ? (
+                  <>
+                    {voiceTextInput.trim() && (
+                      <button
+                        type="button"
+                        className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        onClick={() => {
+                          sendVoiceText(voiceTextInput.trim());
+                          setVoiceTextInput("");
+                        }}
+                        title="Send text"
+                      >
+                        <Send size={16} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200 transition-all text-xs font-medium"
+                      onClick={async () => {
+                        await stopVoice();
+                      }}
+                      title="Stop voice mode"
+                    >
+                      <Square size={12} />
+                      <span>Stop</span>
+                    </button>
+                  </>
+                ) : (
+                  null
+                )
               ) : isResponding ? (
                 <button
                   type="button"
@@ -911,7 +1094,7 @@ export function ChatInput() {
                 >
                   <Send size={16} />
                 </button>
-              ) : canTranscribe ? (
+              ) : canTranscribe && !isListening ? (
                 transcribingContent ? (
                   <button
                     type="button"
@@ -924,11 +1107,10 @@ export function ChatInput() {
                 ) : (
                   <button
                     type="button"
-                    className={`p-2.5 md:p-1.5 transition-colors ${
-                      isTranscribing
-                        ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
-                        : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                    }`}
+                    className={`p-2.5 md:p-1.5 transition-colors ${isTranscribing
+                      ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                      : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      }`}
                     onClick={handleTranscriptionClick}
                     title={isTranscribing ? "Stop recording" : "Start recording"}
                     disabled={isResponding}
