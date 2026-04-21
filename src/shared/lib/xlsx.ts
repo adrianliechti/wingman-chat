@@ -204,6 +204,7 @@ function escapeCsvValue(value: string): string {
  * Triggers download of a CSV file
  */
 export function downloadCsv(csv: string, filename: string): void {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  // Prepend UTF-8 BOM so Excel detects encoding correctly
+  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
   downloadBlob(blob, filename.endsWith(".csv") ? filename : `${filename}.csv`);
 }
