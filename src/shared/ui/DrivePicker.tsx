@@ -14,6 +14,7 @@ export interface SelectedFile {
   name: string;
   driveId: string;
   mime?: string;
+  kind?: "file" | "directory";
 }
 
 interface DrivePickerProps {
@@ -25,6 +26,8 @@ interface DrivePickerProps {
   accept?: string;
   /** Allow selecting multiple files (default: false, like native file input) */
   multiple?: boolean;
+  /** Allow selecting folders (default: false) */
+  folders?: boolean;
 }
 
 function parseAccept(accept?: string): { extensions: Set<string>; mimePatterns: string[] } | null {
@@ -76,14 +79,16 @@ interface TreeItemProps {
   selected: Map<string, DriveEntry>;
   onToggleSelect: (entry: DriveEntry) => void;
   acceptFilter: ReturnType<typeof parseAccept>;
+  folders?: boolean;
 }
 
-function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilter }: TreeItemProps) {
+function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilter, folders }: TreeItemProps) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<DriveEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
   const isDir = entry.kind === "directory";
   const isSelected = selected.has(entry.id);
+  const isFolderSelectable = isDir && !!folders;
   const isDisabled = !isDir && acceptFilter != null && !fileMatchesAccept(entry, acceptFilter);
 
   const handleExpand = useCallback(async () => {
@@ -142,19 +147,34 @@ function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilte
           disabled={isDisabled}
           onClick={() => {
             if (isDisabled) return;
-            isDir ? handleExpand() : onToggleSelect(entry);
+            if (isFolderSelectable) {
+              onToggleSelect(entry);
+            } else if (isDir) {
+              handleExpand();
+            } else {
+              onToggleSelect(entry);
+            }
           }}
         >
-          {isDir ? (
+          {isSelected ? (
+            <SquareCheckBig size={15} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+          ) : isDir && !isFolderSelectable ? (
             expanded ? (
               <FolderOpen size={15} className="shrink-0 text-amber-500 dark:text-amber-400" />
             ) : (
               <Folder size={15} className="shrink-0 text-amber-500 dark:text-amber-400" />
             )
-          ) : isSelected ? (
-            <SquareCheckBig size={15} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
           ) : isDisabled ? (
             <File size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+          ) : isFolderSelectable ? (
+            <>
+              {expanded ? (
+                <FolderOpen size={15} className="shrink-0 text-amber-500 dark:text-amber-400 group-hover:hidden" />
+              ) : (
+                <Folder size={15} className="shrink-0 text-amber-500 dark:text-amber-400 group-hover:hidden" />
+              )}
+              <Square size={15} className="shrink-0 text-neutral-300 dark:text-neutral-600 hidden group-hover:block" />
+            </>
           ) : (
             <>
               <File size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500 group-hover:hidden" />
@@ -191,6 +211,7 @@ function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilte
                 selected={selected}
                 onToggleSelect={onToggleSelect}
                 acceptFilter={acceptFilter}
+                folders={folders}
               />
             ))
           )}
@@ -200,7 +221,7 @@ function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilte
   );
 }
 
-export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, multiple = false }: DrivePickerProps) {
+export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, multiple = false, folders = false }: DrivePickerProps) {
   const [entries, setEntries] = useState<DriveEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -261,6 +282,7 @@ export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, m
       name: entry.name,
       driveId: drive.id,
       mime: entry.mime,
+      kind: entry.kind === "directory" ? "directory" : "file",
     }));
 
     onFilesSelected(files);
@@ -336,6 +358,7 @@ export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, m
                         selected={selected}
                         onToggleSelect={handleToggleSelect}
                         acceptFilter={acceptFilter}
+                        folders={folders}
                       />
                     ))}
                 </div>
@@ -343,7 +366,9 @@ export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, m
                 {/* Footer */}
                 <div className="flex items-center justify-between px-5 py-3 border-t border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/30 rounded-b-xl shrink-0">
                   <span className="text-[11px] text-neutral-500">
-                    {selected.size > 0 ? `${selected.size} file${selected.size === 1 ? "" : "s"} selected` : ""}
+                    {selected.size > 0
+                      ? `${selected.size} ${folders ? "item" : "file"}${selected.size === 1 ? "" : "s"} selected`
+                      : ""}
                   </span>
                   <div className="flex items-center gap-2.5">
                     <button

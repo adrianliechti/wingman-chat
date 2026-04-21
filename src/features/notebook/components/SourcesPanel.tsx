@@ -20,7 +20,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { acceptTypes } from "@/shared/lib/convert";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { getDriveContentUrl, listAllDriveFiles } from "@/shared/lib/drives";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { Markdown } from "@/shared/ui/Markdown";
@@ -88,31 +88,76 @@ export function SourcesPanel({
   const handleDriveFiles = useCallback(
     async (files: SelectedFile[]) => {
       for (const f of files) {
-        setExtracting((prev) => new Set([...prev, f.name]));
-        try {
-          const url = getDriveContentUrl(f.driveId, f.id);
-          const resp = await fetch(url);
-          if (!resp.ok) {
-            setError(`Failed to fetch ${f.name}: ${resp.statusText}`);
-            continue;
+        if (f.kind === "directory") {
+          setExtracting((prev) => new Set([...prev, f.name]));
+          try {
+            const entries = await listAllDriveFiles(f.driveId, f.id, f.name);
+            setExtracting((prev) => {
+              const next = new Set(prev);
+              next.delete(f.name);
+              return next;
+            });
+            for (const entry of entries) {
+              setExtracting((prev) => new Set([...prev, entry.name]));
+              try {
+                const url = getDriveContentUrl(f.driveId, entry.id);
+                const resp = await fetch(url);
+                if (!resp.ok) {
+                  setError(`Failed to fetch ${entry.name}: ${resp.statusText}`);
+                  continue;
+                }
+                const blob = await resp.blob();
+                const type = entry.mime || blob.type || "";
+                const file = new File([blob], entry.name, { type });
+                setExtracting((prev) => {
+                  const next = new Set(prev);
+                  next.delete(entry.name);
+                  return next;
+                });
+                await handleFiles([file]);
+              } catch (err) {
+                setError(`Failed to add ${entry.name}: ${err instanceof Error ? err.message : "Unknown error"}`);
+                setExtracting((prev) => {
+                  const next = new Set(prev);
+                  next.delete(entry.name);
+                  return next;
+                });
+              }
+            }
+          } catch (err) {
+            setError(`Failed to list ${f.name}: ${err instanceof Error ? err.message : "Unknown error"}`);
+            setExtracting((prev) => {
+              const next = new Set(prev);
+              next.delete(f.name);
+              return next;
+            });
           }
-          const blob = await resp.blob();
-          const type = f.mime || blob.type || "";
-          const file = new File([blob], f.name, { type });
-          // handleFiles also adds to extracting, so remove our entry first
-          setExtracting((prev) => {
-            const next = new Set(prev);
-            next.delete(f.name);
-            return next;
-          });
-          await handleFiles([file]);
-        } catch (err) {
-          setError(`Failed to add ${f.name}: ${err instanceof Error ? err.message : "Unknown error"}`);
-          setExtracting((prev) => {
-            const next = new Set(prev);
-            next.delete(f.name);
-            return next;
-          });
+        } else {
+          setExtracting((prev) => new Set([...prev, f.name]));
+          try {
+            const url = getDriveContentUrl(f.driveId, f.id);
+            const resp = await fetch(url);
+            if (!resp.ok) {
+              setError(`Failed to fetch ${f.name}: ${resp.statusText}`);
+              continue;
+            }
+            const blob = await resp.blob();
+            const type = f.mime || blob.type || "";
+            const file = new File([blob], f.name, { type });
+            setExtracting((prev) => {
+              const next = new Set(prev);
+              next.delete(f.name);
+              return next;
+            });
+            await handleFiles([file]);
+          } catch (err) {
+            setError(`Failed to add ${f.name}: ${err instanceof Error ? err.message : "Unknown error"}`);
+            setExtracting((prev) => {
+              const next = new Set(prev);
+              next.delete(f.name);
+              return next;
+            });
+          }
         }
       }
     },
@@ -355,6 +400,7 @@ export function SourcesPanel({
           onFilesSelected={handleDriveFiles}
           multiple
           accept={acceptFilter}
+          folders
         />
       )}
     </div>

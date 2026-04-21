@@ -26,3 +26,26 @@ export function getDriveContentUrl(driveId: string, id: string): string {
   const params = new URLSearchParams({ id });
   return `/api/v1/drives/${driveId}/content?${params}`;
 }
+
+export interface DriveFileEntry extends DriveEntry {
+  path: string;
+}
+
+export async function listAllDriveFiles(driveId: string, folderId: string, folderName: string): Promise<DriveFileEntry[]> {
+  const results: DriveFileEntry[] = [];
+
+  async function walk(id: string, prefix: string) {
+    const entries = await listDriveEntries(driveId, id);
+    for (const entry of entries) {
+      const path = `${prefix}/${entry.name}`;
+      if (entry.kind === "directory") {
+        await walk(entry.id, path);
+      } else {
+        results.push({ ...entry, path });
+      }
+    }
+  }
+
+  await walk(folderId, folderName);
+  return results;
+}

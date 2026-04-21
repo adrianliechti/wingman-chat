@@ -18,7 +18,7 @@ import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { File, FileEntry } from "@/features/artifacts/types/file";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
-import { getDriveContentUrl } from "@/shared/lib/drives";
+import { getDriveContentUrl, listAllDriveFiles } from "@/shared/lib/drives";
 import { markdownToDocx } from "@/shared/lib/markdownToDocx";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
@@ -97,10 +97,20 @@ export function ArtifactsDrawer() {
       try {
         const fetched: globalThis.File[] = [];
         for (const f of selected) {
-          const url = getDriveContentUrl(f.driveId, f.id);
-          const resp = await fetch(url);
-          const blob = await resp.blob();
-          fetched.push(new globalThis.File([blob], f.name, { type: f.mime || blob.type || "" }));
+          if (f.kind === "directory") {
+            const entries = await listAllDriveFiles(f.driveId, f.id, f.name);
+            for (const entry of entries) {
+              const url = getDriveContentUrl(f.driveId, entry.id);
+              const resp = await fetch(url);
+              const blob = await resp.blob();
+              fetched.push(new globalThis.File([blob], entry.path, { type: entry.mime || blob.type || "" }));
+            }
+          } else {
+            const url = getDriveContentUrl(f.driveId, f.id);
+            const resp = await fetch(url);
+            const blob = await resp.blob();
+            fetched.push(new globalThis.File([blob], f.name, { type: f.mime || blob.type || "" }));
+          }
         }
         await uploadFiles(fetched);
       } finally {
@@ -690,6 +700,7 @@ export function ArtifactsDrawer() {
           drive={activeDrive}
           onFilesSelected={handleDriveFiles}
           multiple
+          folders
         />
       )}
     </div>
