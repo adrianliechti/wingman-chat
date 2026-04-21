@@ -3,7 +3,6 @@ import {
   Bot,
   Check,
   HardDrive,
-  Lightbulb,
   Loader2,
   LoaderCircle,
   Mic,
@@ -36,11 +35,9 @@ import type { Content, ImageContent, Message, TextContent, ToolProvider } from "
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { ChatInputAttachments } from "./ChatInputAttachments";
-import { ChatInputSuggestions } from "./ChatInputSuggestions";
 
 export function ChatInput() {
   const config = getConfig();
-  const client = config.client;
 
   const { sendMessage, models, model, setModel: onModelChange, messages, isResponding, stopStreaming } = useChat();
   const { currentAgent, setCurrentAgent } = useAgents();
@@ -73,12 +70,7 @@ export function ChatInput() {
   const [attachments, setAttachments] = useState<Content[]>([]);
   const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
 
-  // Prompt suggestions state
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
-
-  const [showPromptSuggestions, setShowPromptSuggestions] = useState(false);
-  const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
-  const [loadingPrompts, setLoadingPrompts] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const contentInputRef = useRef<HTMLTextAreaElement>(null);
@@ -210,64 +202,6 @@ export function ChatInput() {
   );
 
   const isDragging = useDropZone(containerRef, handleFiles);
-
-  // Handle prompt suggestions click
-  const handlePromptSuggestionsClick = async () => {
-    if (!model) return;
-
-    if (showPromptSuggestions) {
-      setShowPromptSuggestions(false);
-      return;
-    }
-
-    setLoadingPrompts(true);
-    setShowPromptSuggestions(true);
-    setPromptSuggestions([]); // Clear old suggestions immediately
-
-    try {
-      let suggestions: string[];
-
-      if (messages.length === 0) {
-        // For new chats, use model prompts if available, otherwise get related prompts
-        if (model.prompts && model.prompts.length > 0) {
-          suggestions = model.prompts;
-        } else {
-          suggestions = await client.relatedPrompts(config.chat?.summarizer || model.id, "");
-        }
-      } else {
-        // Get the last few messages for context
-        const contextMessages = messages.slice(-6);
-        const contextText = contextMessages.map((msg) => `${msg.role}: ${msg.content}`).join("\n");
-
-        suggestions = await client.relatedPrompts(config.chat?.summarizer || model.id, contextText);
-      }
-
-      setPromptSuggestions(suggestions);
-    } catch (error) {
-      console.error("Error fetching prompt suggestions:", error);
-      setPromptSuggestions([]);
-    } finally {
-      setLoadingPrompts(false);
-    }
-  };
-
-  // Handle selecting a prompt suggestion
-  const handlePromptSelect = (suggestion: string) => {
-    // Create and send message immediately
-    const messageContent: Content[] = [{ type: "text", text: suggestion }, ...attachments];
-    const message: Message = {
-      role: Role.User,
-      content: messageContent,
-    };
-
-    sendMessage(message);
-
-    // Clear attachments after sending
-    setAttachments([]);
-
-    // Hide prompt suggestions
-    setShowPromptSuggestions(false);
-  };
 
   // Force layout recalculation on mount to fix initial sizing issues
   useEffect(() => {
@@ -404,18 +338,9 @@ export function ChatInput() {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const handleContentChange = useCallback(
-    (e: ChangeEvent<HTMLTextAreaElement>) => {
-      const input = e.target.value;
-
-      setContent(input);
-
-      if (input.trim() && showPromptSuggestions) {
-        setShowPromptSuggestions(false);
-      }
-    },
-    [showPromptSuggestions],
-  );
+  const handleContentChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
+    setContent(e.target.value);
+  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -513,14 +438,6 @@ export function ChatInput() {
             </div>
           )}
 
-          {/* Prompt suggestions */}
-          <ChatInputSuggestions
-            show={showPromptSuggestions}
-            loading={loadingPrompts}
-            suggestions={promptSuggestions}
-            onSelect={handlePromptSelect}
-          />
-
           {/* Input area */}
           <div className="relative flex-1">
             {isListening ? (
@@ -559,10 +476,6 @@ export function ChatInput() {
                       const nextContent = `${content.slice(0, selectionStart)}${text}${content.slice(selectionEnd)}`;
                       setContent(nextContent);
 
-                      if (text.trim() && showPromptSuggestions) {
-                        setShowPromptSuggestions(false);
-                      }
-
                       requestAnimationFrame(() => {
                         const nextPosition = selectionStart + text.length;
                         input.setSelectionRange(nextPosition, nextPosition);
@@ -599,15 +512,6 @@ export function ChatInput() {
           {/* Controls */}
           <div className="flex items-center justify-between p-3 pt-0 pb-8 md:pb-3">
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                onClick={handlePromptSuggestionsClick}
-                title="Show prompt suggestions"
-              >
-                {loadingPrompts ? <Loader2 size={16} className="animate-spin" /> : <Lightbulb size={16} />}
-              </button>
-
               {currentAgent?.model ? (
                 /* Agent overrides model — show agent badge instead of model selector */
                 <button
@@ -629,7 +533,7 @@ export function ChatInput() {
                 <>
                   {models.length > 0 && (
                     <Menu>
-                      <MenuButton className="flex items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm max-w-48">
+                      <MenuButton className="flex items-center gap-1 px-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm max-w-48">
                         <span className="shrink-0 w-3.5 flex justify-center">{toolIndicator}</span>
                         <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
                       </MenuButton>

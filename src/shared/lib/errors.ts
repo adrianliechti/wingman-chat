@@ -89,7 +89,25 @@ function getServerMessage(error: APIError): string | undefined {
   const body = error.error as { message?: unknown } | undefined;
   const msg = body?.message;
   if (typeof msg === "string" && msg.trim()) return msg;
-  return error.message || undefined;
+
+  // Streaming errors may embed raw JSON in the message (e.g. "received error
+  // while streaming: {...}"). Try to extract the human-readable message.
+  const raw = error.message;
+  if (raw) {
+    const jsonStart = raw.indexOf("{");
+    if (jsonStart >= 0) {
+      try {
+        const parsed = JSON.parse(raw.slice(jsonStart)) as { message?: string };
+        if (typeof parsed.message === "string" && parsed.message.trim()) {
+          return parsed.message;
+        }
+      } catch {
+        // not valid JSON, fall through
+      }
+    }
+  }
+
+  return raw || undefined;
 }
 
 /**
