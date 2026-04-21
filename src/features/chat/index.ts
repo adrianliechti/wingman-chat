@@ -1,7 +1,6 @@
 // Components
 export { ChatInput } from "./components/ChatInput";
 export { ChatInputAttachments } from "./components/ChatInputAttachments";
-export { ChatInputSuggestions } from "./components/ChatInputSuggestions";
 export { ChatMessage } from "./components/ChatMessage";
 export { ChatSidebar } from "./components/ChatSidebar";
 export type { ChatContextType } from "./context/ChatContext";

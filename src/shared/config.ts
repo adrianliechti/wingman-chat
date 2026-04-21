@@ -34,7 +34,6 @@ interface ModelConfig {
     enabled: string[];
     disabled: string[];
   };
-  prompts?: string[];
 }
 
 interface TTSConfig {

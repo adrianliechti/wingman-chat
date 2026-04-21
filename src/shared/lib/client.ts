@@ -2,7 +2,6 @@ import mime from "mime";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod/v3";
-import instructionsRelatedPrompts from "@/features/chat/prompts/chat-suggestions.txt?raw";
 import instructionsSummarizeTitle from "@/features/chat/prompts/chat-title.txt?raw";
 import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
@@ -388,24 +387,6 @@ export class Client {
       "summarize_title",
     );
     return result?.title ?? null;
-  }
-
-  async relatedPrompts(model: string, prompt: string): Promise<string[]> {
-    const result = await this.parse(
-      model,
-      instructionsRelatedPrompts,
-      prompt || "No input",
-      z
-        .object({
-          prompts: z
-            .array(z.object({ prompt: z.string() }).strict())
-            .min(3)
-            .max(10),
-        })
-        .strict(),
-      "list_prompts",
-    );
-    return result?.prompts.map((p) => p.prompt) ?? [];
   }
 
   async convertCSV(model: string, text: string): Promise<string> {

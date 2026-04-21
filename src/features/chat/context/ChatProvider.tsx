@@ -508,6 +508,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [getOrCreateChat, runMessageInChat],
   );
 
+  const retryMessage = useCallback(async () => {
+    if (!chat) return;
+    const msgs = chat.messages;
+    if (msgs.length === 0) return;
+
+    // Find the trailing error message (assistant with error, no content)
+    const lastMsg = msgs[msgs.length - 1];
+    if (lastMsg.role !== Role.Assistant || !lastMsg.error) return;
+
+    // Strip the error message and find the last user message to re-send
+    const withoutError = msgs.slice(0, -1);
+    const lastUserIndex = withoutError.findLastIndex((m) => m.role === Role.User);
+    if (lastUserIndex < 0) return;
+
+    const lastUserMessage = withoutError[lastUserIndex];
+    const historyBeforeUser = withoutError.slice(0, lastUserIndex);
+
+    // Persist the trimmed history, then re-run
+    updateChat(chat.id, () => ({ messages: historyBeforeUser }));
+    await runMessageInChat(chat.id, lastUserMessage, historyBeforeUser, chat.title);
+  }, [chat, updateChat, runMessageInChat]);
+
   const resolveElicitation = useCallback(
     (result: ElicitationResult) => {
       if (!pendingElicitation) return;
@@ -589,6 +611,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Message actions
     addMessage,
     sendMessage,
+    retryMessage,
 
     isResponding,
     stopStreaming,

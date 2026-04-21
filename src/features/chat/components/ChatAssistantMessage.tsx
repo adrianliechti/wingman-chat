@@ -1,4 +1,4 @@
-import { AlertCircle, ChevronRight, Loader2 } from "lucide-react";
+import { AlertCircle, ChevronRight, Loader2, RotateCcw } from "lucide-react";
 import { memo, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
@@ -13,7 +13,7 @@ import { ChatMessageElicitation } from "./ChatMessageElicitation";
 import { getToolCallPreview } from "./chatMessageUtils";
 
 // Error message component
-function ErrorMessage({ title, message }: { title: string; message: string }) {
+function ErrorMessage({ title, message, onRetry }: { title: string; message: string; onRetry?: () => void }) {
   const displayTitle = title
     .replace(/_/g, " ")
     .toLowerCase()
@@ -29,6 +29,16 @@ function ErrorMessage({ title, message }: { title: string; message: string }) {
             <div className="flex-1 min-w-0">
               <h4 className="font-medium text-red-800 dark:text-red-200 mb-1">{displayTitle}</h4>
               <p className="text-sm text-red-700 dark:text-red-300 leading-relaxed">{displayMessage}</p>
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-red-700 dark:text-red-300 hover:text-red-900 dark:hover:text-red-100 transition-colors"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Retry
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -109,7 +119,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   isLast,
   isResponding,
 }: ChatAssistantMessageProps) {
-  const { pendingElicitation, resolveElicitation } = useChat();
+  const { pendingElicitation, resolveElicitation, retryMessage } = useChat();
 
   const toolCallParts = message.content.filter((p) => p.type === "tool_call");
   const hasToolCalls = toolCallParts.length > 0;
@@ -129,7 +139,13 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
   // Handle error messages
   if (message.error) {
-    return <ErrorMessage title={message.error.code || "Error"} message={message.error.message} />;
+    return (
+      <ErrorMessage
+        title={message.error.code || "Error"}
+        message={message.error.message}
+        onRetry={isLast && !isResponding ? retryMessage : undefined}
+      />
+    );
   }
 
   // Handle loading states (no text content yet)

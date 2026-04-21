@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"path"
 	"strconv"
 
 	"github.com/adrianliechti/wingman-chat/pkg/drive"
@@ -114,7 +116,10 @@ func ToEntry(driveID string, item DriveItem) drive.Entry {
 		entry.Kind = "directory"
 	} else {
 		entry.Kind = "file"
-		if item.File != nil {
+		if ext := path.Ext(item.Name); ext != "" {
+			entry.Mime = mime.TypeByExtension(ext)
+		}
+		if entry.Mime == "" && item.File != nil {
 			entry.Mime = item.File.MimeType
 		}
 	}

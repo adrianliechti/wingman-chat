@@ -20,8 +20,6 @@ export type Model = {
     enabled: string[];
     disabled: string[];
   };
-
-  prompts?: string[];
 };
 
 export type MCP = {

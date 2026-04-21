@@ -370,7 +370,8 @@ export function getInfographicStyles(): InfographicStyle[] {
 
 function buildInfographicInstructions(styleId: string): string {
   const infographicStyles = getInfographicStyles();
-  const style = infographicStyles.find((s) => s.id === styleId) ?? infographicStyles[0] ?? DEFAULT_INFOGRAPHIC_STYLES[0];
+  const style =
+    infographicStyles.find((s) => s.id === styleId) ?? infographicStyles[0] ?? DEFAULT_INFOGRAPHIC_STYLES[0];
   return studioInfographicInstructions.replace("{{STYLE_SECTION}}", style.prompt);
 }
 

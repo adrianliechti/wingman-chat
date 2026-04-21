@@ -28,7 +28,7 @@
     "@opentelemetry/sdk-logs": "^0.215.0",
     "@opentelemetry/sdk-metrics": "^2.7.0",
     "@opentelemetry/sdk-trace-web": "^2.7.0",
-    "@tailwindcss/vite": "^4.2.2",
+    "@tailwindcss/vite": "^4.2.3",
     "@tanstack/react-router": "^1.168.23",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.24",
@@ -73,6 +73,6 @@
     "globals": "^16.5.0",
     "tailwindcss": "^4.0.12",
     "typescript": "^5.9.3",
-    "vite": "^8.0.8"
+    "vite": "^8.0.9"
   }
 }
