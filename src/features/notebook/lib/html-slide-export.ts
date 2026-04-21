@@ -1,6 +1,16 @@
 /**
  * Export HTML slides as PDF, PNG, image-based PPTX, or editable PPTX.
- * Uses html2canvas to rasterize slides for image-based exports.
+ *
+ * Slides are rasterized by mounting them in an isolated off-screen iframe
+ * (so global CSS — `html`, `body`, `*` rules, viewport backgrounds — stays
+ * sandboxed) and then serializing the iframe's document into an SVG
+ * `<foreignObject>` which is loaded as an image onto a canvas. The slide
+ * HTML is already fully self-contained after `assembleSlideHtml` (inlined
+ * `<style>` blocks + data-URL images), so no resource fetching is needed
+ * at rasterization time. The browser does real layout, so output matches
+ * the preview pixel-for-pixel. Data URLs inside foreignObject work in
+ * both Chromium and WebKit; only *network* fetches are blocked.
+ *
  * Uses DOM parsing to convert HTML→PPTX XML for the editable export.
  */
 
@@ -12,76 +22,364 @@ import { downloadFromUrl } from "@/shared/lib/utils";
 const CANVAS_W = 1920;
 const CANVAS_H = 1080;
 
+/** Export rasterization scale — 2× gives ~3840×2160 output, crisp on 4K */
+const RASTER_SCALE = 2;
+
 /** Slide dimensions in EMU (914400 EMU = 1 inch) */
 const SLIDE_CX = 9144000; // 10"
 const SLIDE_CY = 5143500; // 5.625"
 const EMU_PER_PX = SLIDE_CX / CANVAS_W;
 
+/** JPEG quality for exported slide rasters (0–1). 0.85 is visually lossless for slides. */
+const JPEG_QUALITY = 0.85;
+
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
 /**
- * Render a single HTML slide to a canvas element.
+ * Strip anything that would trigger an external network fetch during
+ * rasterization or preview. The assembled slide HTML is already fully
+ * self-contained (inlined <style> blocks + data-URL images), so a stray
+ * <link rel="stylesheet"> or <script> would only cause trouble.
  */
-async function renderSlideToCanvas(html: string): Promise<HTMLCanvasElement> {
-  const html2canvas = (await import("html2canvas")).default;
+function sanitizeSlideDoc(doc: Document): void {
+  doc.querySelectorAll("link, script").forEach((el) => {
+    el.remove();
+  });
+}
+
+/**
+ * Mount the slide HTML inside an isolated off-screen iframe at native slide
+ * resolution. The iframe gives the slide its own document so its CSS doesn't
+ * leak onto the host page, and provides a real layout context.
+ */
+async function mountSlide(
+  html: string,
+): Promise<{ iframe: HTMLIFrameElement; doc: Document; teardown: () => void }> {
+  // Strip external-network tags from the source HTML before handing it to the
+  // iframe, so `srcdoc` never even sees them.
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  sanitizeSlideDoc(parsed);
+  const srcdoc = `<!doctype html>${parsed.documentElement.outerHTML}`;
 
   const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.setAttribute("sandbox", "allow-same-origin");
   iframe.style.position = "fixed";
-  iframe.style.left = "-9999px";
+  iframe.style.left = "-100000px";
+  iframe.style.top = "0";
   iframe.style.width = `${CANVAS_W}px`;
   iframe.style.height = `${CANVAS_H}px`;
-  iframe.style.border = "none";
-  iframe.srcdoc = html;
+  iframe.style.border = "0";
+  iframe.style.pointerEvents = "none";
+  iframe.style.visibility = "hidden";
+  iframe.srcdoc = srcdoc;
 
   document.body.appendChild(iframe);
 
-  await new Promise<void>((resolve) => {
-    iframe.onload = () => resolve();
+  const teardown = () => {
+    if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+  };
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onLoad = () => {
+        iframe.removeEventListener("load", onLoad);
+        resolve();
+      };
+      const onError = () => {
+        iframe.removeEventListener("error", onError);
+        reject(new Error("Slide iframe failed to load"));
+      };
+      iframe.addEventListener("load", onLoad);
+      iframe.addEventListener("error", onError);
+    });
+
+    const doc = iframe.contentDocument;
+    if (!doc?.documentElement) throw new Error("Slide iframe has no document");
+
+    // Force viewport size regardless of what the slide CSS declares.
+    doc.documentElement.style.width = `${CANVAS_W}px`;
+    doc.documentElement.style.height = `${CANVAS_H}px`;
+    if (doc.body) {
+      doc.body.style.width = `${CANVAS_W}px`;
+      doc.body.style.height = `${CANVAS_H}px`;
+      doc.body.style.margin = "0";
+    }
+
+    // Wait for every inline <img> to decode.
+    const imgs = Array.from(doc.images);
+    await Promise.all(
+      imgs.map((img) =>
+        img.complete && img.naturalWidth > 0
+          ? Promise.resolve()
+          : new Promise<void>((resolve) => {
+              img.addEventListener("load", () => resolve(), { once: true });
+              img.addEventListener("error", () => resolve(), { once: true });
+            }),
+      ),
+    );
+
+    // One rAF to let layout settle before we serialize.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    return { iframe, doc, teardown };
+  } catch (err) {
+    teardown();
+    throw err;
+  }
+}
+
+/**
+ * UTF-8-safe base64 encoder. `btoa` can't handle non-Latin1 characters
+ * (emoji, typographic punctuation) which are common in slide content.
+ */
+function utf8ToBase64(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[]);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Rasterize a mounted slide into a canvas using a layered approach:
+ *
+ * Data-URL images inside an SVG foreignObject don't render (Chrome blocks
+ * nested data URLs; Safari taints the canvas). To work around this we
+ * extract every image from the DOM, render the text/shape layout via
+ * foreignObject (with a transparent background), and composite everything
+ * in the correct order:
+ *
+ *   canvas = background fill → images → foreignObject text/shapes
+ *
+ * The foreignObject layer has a transparent background so images underneath
+ * show through, preserving alpha/transparency from PNG sources.
+ */
+async function rasterizeSlideDoc(
+  iframe: HTMLIFrameElement,
+): Promise<HTMLCanvasElement> {
+  const doc = iframe.contentDocument;
+  if (!doc?.documentElement) throw new Error("Slide iframe has no document");
+  const win = iframe.contentWindow;
+  if (!win) throw new Error("Slide iframe has no window");
+
+  // ── Collect the slide background color ────────────────────────────────
+  let bgColor = "#ffffff";
+  const bodyBg = win.getComputedStyle(doc.body).backgroundColor;
+  if (bodyBg && bodyBg !== "rgba(0, 0, 0, 0)" && bodyBg !== "transparent") {
+    bgColor = bodyBg;
+  } else {
+    const first = doc.body.firstElementChild as HTMLElement | null;
+    if (first) {
+      const firstBg = win.getComputedStyle(first).backgroundColor;
+      if (firstBg && firstBg !== "rgba(0, 0, 0, 0)" && firstBg !== "transparent") {
+        bgColor = firstBg;
+      }
+    }
+  }
+
+  // ── Collect images and hide them ──────────────────────────────────────
+  interface ImageOverlay {
+    dataUrl: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    opacity: number;
+  }
+  const overlays: ImageOverlay[] = [];
+
+  // Collect <img> elements
+  const imgEls = Array.from(doc.querySelectorAll("img")) as HTMLImageElement[];
+  const savedImgVis: { el: HTMLImageElement; vis: string }[] = [];
+
+  for (const img of imgEls) {
+    const rect = img.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) continue;
+
+    let dataUrl: string | null = null;
+    if (img.src.startsWith("data:")) {
+      dataUrl = img.src;
+    } else if (img.complete && img.naturalWidth > 0) {
+      try {
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        const cx = c.getContext("2d");
+        if (cx) {
+          cx.drawImage(img, 0, 0);
+          dataUrl = c.toDataURL("image/png");
+        }
+      } catch {
+        /* cross-origin — skip */
+      }
+    }
+
+    if (dataUrl) {
+      const opacity = parseFloat(win.getComputedStyle(img).opacity) || 1;
+      overlays.push({ dataUrl, x: rect.left, y: rect.top, w: rect.width, h: rect.height, opacity });
+      savedImgVis.push({ el: img, vis: img.style.visibility });
+      img.style.visibility = "hidden";
+    }
+  }
+
+  // Collect elements with CSS background-image data URLs
+  const savedBgEls: { el: HTMLElement; orig: string }[] = [];
+  for (const node of doc.querySelectorAll("*")) {
+    const el = node as HTMLElement;
+    const computed = win.getComputedStyle(el);
+    const bg = computed.backgroundImage;
+    if (!bg || !bg.includes("data:image")) continue;
+
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) continue;
+
+    const match = bg.match(/url\(["']?(data:[^"')]+)["']?\)/);
+    if (match) {
+      const opacity = parseFloat(computed.opacity) || 1;
+      overlays.push({ dataUrl: match[1], x: rect.left, y: rect.top, w: rect.width, h: rect.height, opacity });
+      savedBgEls.push({ el, orig: el.style.backgroundImage });
+      el.style.backgroundImage = "none";
+    }
+  }
+
+  // ── Make full-slide backgrounds transparent ───────────────────────────
+  // Only clear backgrounds on elements that span the full slide (body,
+  // html, wrapper divs) — leave smaller elements (cards, badges) alone.
+  const savedFullBgs: { el: HTMLElement; orig: string }[] = [];
+  const bgCandidates = [doc.documentElement, doc.body, ...doc.body.children];
+  for (const node of bgCandidates) {
+    const el = node as HTMLElement;
+    if (!el.getBoundingClientRect) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < CANVAS_W * 0.9 || rect.height < CANVAS_H * 0.9) continue;
+    const elBg = win.getComputedStyle(el).backgroundColor;
+    if (elBg && elBg !== "rgba(0, 0, 0, 0)" && elBg !== "transparent") {
+      savedFullBgs.push({ el, orig: el.style.backgroundColor });
+      el.style.backgroundColor = "transparent";
+    }
+  }
+
+  // ── Render layout via SVG foreignObject ───────────────────────────────
+  doc.documentElement.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+  const xhtml = new XMLSerializer().serializeToString(doc.documentElement);
+
+  // Restore backgrounds
+  for (const { el, orig } of savedFullBgs) el.style.backgroundColor = orig;
+
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_W}" height="${CANVAS_H}" viewBox="0 0 ${CANVAS_W} ${CANVAS_H}">` +
+    `<foreignObject x="0" y="0" width="${CANVAS_W}" height="${CANVAS_H}">${xhtml}</foreignObject>` +
+    `</svg>`;
+
+  const svgDataUrl = `data:image/svg+xml;base64,${utf8ToBase64(svg)}`;
+
+  const svgImg = new Image();
+  svgImg.decoding = "sync";
+  await new Promise<void>((resolve, reject) => {
+    svgImg.onload = () => resolve();
+    svgImg.onerror = (event) => {
+      console.error("[slide-export] SVG image failed to load", event);
+      reject(new Error("Failed to rasterize slide (SVG img load failed)"));
+    };
+    svgImg.src = svgDataUrl;
   });
 
   try {
-    await iframe.contentDocument?.fonts.ready;
+    await svgImg.decode();
   } catch {
-    // fonts.ready may not be available in all contexts
+    /* decode() can reject even when the image is usable — not fatal */
   }
 
-  const body = iframe.contentDocument?.body;
-  if (!body) {
-    document.body.removeChild(iframe);
-    throw new Error("Could not access iframe content");
+  // ── Composite: background → images → text/shapes ─────────────────────
+  const canvas = document.createElement("canvas");
+  canvas.width = CANVAS_W * RASTER_SCALE;
+  canvas.height = CANVAS_H * RASTER_SCALE;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not get 2D canvas context");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
+  // Layer 1: solid background
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Layer 2: images (drawn on top of background, behind text/shapes)
+  for (const info of overlays) {
+    const overlayImg = new Image();
+    await new Promise<void>((resolve) => {
+      overlayImg.onload = () => resolve();
+      overlayImg.onerror = () => resolve();
+      overlayImg.src = info.dataUrl;
+    });
+    if (overlayImg.naturalWidth > 0) {
+      ctx.globalAlpha = info.opacity;
+      ctx.drawImage(
+        overlayImg,
+        info.x * RASTER_SCALE,
+        info.y * RASTER_SCALE,
+        info.w * RASTER_SCALE,
+        info.h * RASTER_SCALE,
+      );
+      ctx.globalAlpha = 1;
+    }
   }
 
-  const canvas = await html2canvas(body, {
-    width: CANVAS_W,
-    height: CANVAS_H,
-    scale: 2,
-    useCORS: true,
-    allowTaint: true,
-    logging: false,
-    windowWidth: CANVAS_W,
-    windowHeight: CANVAS_H,
-  });
+  // Layer 3: foreignObject (text, shapes — transparent background)
+  ctx.drawImage(svgImg, 0, 0, canvas.width, canvas.height);
 
-  document.body.removeChild(iframe);
+  // Restore hidden elements
+  for (const { el, vis } of savedImgVis) el.style.visibility = vis;
+  for (const { el, orig } of savedBgEls) el.style.backgroundImage = orig;
+
   return canvas;
 }
+
+/** Render a slide to a PNG data URL at 2× the slide resolution. */
+async function renderSlideToPngDataUrl(html: string): Promise<string> {
+  const { iframe, teardown } = await mountSlide(html);
+  try {
+    const canvas = await rasterizeSlideDoc(iframe);
+    return canvas.toDataURL("image/png");
+  } finally {
+    teardown();
+  }
+}
+
+/**
+ * Render a slide to a JPEG data URL at 2× the slide resolution.
+ * JPEG is ~10× smaller than PNG for slide-style content and visually
+ * lossless at q=0.85.
+ */
+async function renderSlideToJpegDataUrl(html: string): Promise<string> {
+  const { iframe, teardown } = await mountSlide(html);
+  try {
+    const canvas = await rasterizeSlideDoc(iframe);
+    return canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+  } finally {
+    teardown();
+  }
+}
+
 
 // ── PDF export ───────────────────────────────────────────────────────────────
 
 export async function downloadHtmlSlidesAsPdf(htmlSlides: string[], slug: string) {
   const { jsPDF } = await import("jspdf");
 
-  const firstCanvas = await renderSlideToCanvas(htmlSlides[0]);
-  const w = firstCanvas.width;
-  const h = firstCanvas.height;
+  const w = CANVAS_W * RASTER_SCALE;
+  const h = CANVAS_H * RASTER_SCALE;
 
+  const firstJpeg = await renderSlideToJpegDataUrl(htmlSlides[0]);
   const doc = new jsPDF({ orientation: "landscape", unit: "px", format: [w, h] });
-  doc.addImage(firstCanvas.toDataURL("image/png"), "PNG", 0, 0, w, h);
+  doc.addImage(firstJpeg, "JPEG", 0, 0, w, h);
 
   for (let i = 1; i < htmlSlides.length; i++) {
-    const canvas = await renderSlideToCanvas(htmlSlides[i]);
+    const jpeg = await renderSlideToJpegDataUrl(htmlSlides[i]);
     doc.addPage([w, h], "landscape");
-    doc.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, w, h);
+    doc.addImage(jpeg, "JPEG", 0, 0, w, h);
   }
 
   doc.save(`${slug}.pdf`);
@@ -94,8 +392,7 @@ export async function downloadHtmlSlidesAsPng(htmlSlides: string[], slug: string
   const zip = new JSZip();
 
   for (let i = 0; i < htmlSlides.length; i++) {
-    const canvas = await renderSlideToCanvas(htmlSlides[i]);
-    const dataUrl = canvas.toDataURL("image/png");
+    const dataUrl = await renderSlideToPngDataUrl(htmlSlides[i]);
     const base64 = dataUrl.split(",")[1];
     zip.file(`slide-${i + 1}.png`, base64, { base64: true });
   }
@@ -115,24 +412,17 @@ export async function downloadHtmlSlidesAsPptx(htmlSlides: string[], slug: strin
 
   const images: string[] = [];
   for (const html of htmlSlides) {
-    const canvas = await renderSlideToCanvas(html);
-    images.push(canvas.toDataURL("image/png"));
+    images.push(await renderSlideToJpegDataUrl(html));
   }
 
   addPptxBoilerplate(zip, slideCount);
 
   for (let i = 0; i < slideCount; i++) {
     const base64 = images[i].split(",")[1];
-    zip.file(`ppt/media/image${i + 1}.png`, base64, { base64: true });
+    zip.file(`ppt/media/image${i + 1}.jpeg`, base64, { base64: true });
 
-    zip.file(
-      `ppt/slides/slide${i + 1}.xml`,
-      slideXmlWithImage(i + 1),
-    );
-    zip.file(
-      `ppt/slides/_rels/slide${i + 1}.xml.rels`,
-      slideRelsWithImage(i + 1),
-    );
+    zip.file(`ppt/slides/slide${i + 1}.xml`, slideXmlWithImage(i + 1));
+    zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, slideRelsWithImage(i + 1));
   }
 
   const blob = await zip.generateAsync({
@@ -163,7 +453,7 @@ function slideRelsWithImage(n: number): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${n}.png"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${n}.jpeg"/>
 </Relationships>`;
 }
 
@@ -213,7 +503,11 @@ export async function downloadHtmlSlidesAsEditablePptx(htmlSlides: string[], slu
 
     // Build relationship IDs: rId1 = layout, rId2+ = images
     const rels: { id: string; type: string; target: string }[] = [
-      { id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout", target: "../slideLayouts/slideLayout1.xml" },
+      {
+        id: "rId1",
+        type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout",
+        target: "../slideLayouts/slideLayout1.xml",
+      },
     ];
 
     // Map element indices to rIds
@@ -247,7 +541,9 @@ ${shapes}
     );
 
     // Slide rels
-    const relEntries = rels.map((r) => `  <Relationship Id="${r.id}" Type="${r.type}" Target="${r.target}"/>`).join("\n");
+    const relEntries = rels
+      .map((r) => `  <Relationship Id="${r.id}" Type="${r.type}" Target="${r.target}"/>`)
+      .join("\n");
     zip.file(
       `ppt/slides/_rels/slide${si + 1}.xml.rels`,
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -483,7 +779,31 @@ function hasOwnText(el: HTMLElement): boolean {
     }
   }
   // Also consider elements that are leaf text containers (h1, p, span, li, etc.)
-  const textTags = ["H1", "H2", "H3", "H4", "H5", "H6", "P", "SPAN", "LI", "A", "STRONG", "EM", "B", "I", "LABEL", "TD", "TH", "DT", "DD", "FIGCAPTION", "BLOCKQUOTE", "CODE", "PRE"];
+  const textTags = [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "P",
+    "SPAN",
+    "LI",
+    "A",
+    "STRONG",
+    "EM",
+    "B",
+    "I",
+    "LABEL",
+    "TD",
+    "TH",
+    "DT",
+    "DD",
+    "FIGCAPTION",
+    "BLOCKQUOTE",
+    "CODE",
+    "PRE",
+  ];
   if (textTags.includes(el.tagName) && el.textContent?.trim()) {
     return true;
   }
@@ -643,16 +963,20 @@ function isBold(weight: string | undefined): boolean {
 
 function alignmentToPptx(align: string | undefined): string {
   switch (align) {
-    case "center": return "ctr";
-    case "right": return "r";
-    case "justify": return "just";
-    default: return "l";
+    case "center":
+      return "ctr";
+    case "right":
+      return "r";
+    case "justify":
+      return "just";
+    default:
+      return "l";
   }
 }
 
 function buildBackground(bg: string): string {
   const hex = cssColorToHex(bg);
-  if (hex === "FFFFFF" || hex === "000000" && bg.includes("0, 0, 0, 0")) {
+  if (hex === "FFFFFF" || (hex === "000000" && bg.includes("0, 0, 0, 0"))) {
     return "";
   }
   return `
@@ -702,22 +1026,23 @@ function buildSlideShapes(slide: ParsedSlide, imageRids: Map<number, string>): s
         </p:spPr>
       </p:sp>`);
     } else if (el.type === "text" && el.paragraphs?.length) {
-      const parasXml = el.paragraphs.map((p) => {
-        const sz = fontSizeToPptx(p.fontSize || el.fontSize || 16);
-        const bold = isBold(p.fontWeight || el.fontWeight) ? ' b="1"' : "";
-        const italic = (p.fontStyle || el.fontStyle) === "italic" ? ' i="1"' : "";
-        const colorHex = cssColorToHex(p.color || el.color || "rgb(0,0,0)");
-        const font = p.fontFamily || el.fontFamily || "Calibri";
-        const align = alignmentToPptx(p.textAlign || el.textAlign);
+      const parasXml = el.paragraphs
+        .map((p) => {
+          const sz = fontSizeToPptx(p.fontSize || el.fontSize || 16);
+          const bold = isBold(p.fontWeight || el.fontWeight) ? ' b="1"' : "";
+          const italic = (p.fontStyle || el.fontStyle) === "italic" ? ' i="1"' : "";
+          const colorHex = cssColorToHex(p.color || el.color || "rgb(0,0,0)");
+          const font = p.fontFamily || el.fontFamily || "Calibri";
+          const align = alignmentToPptx(p.textAlign || el.textAlign);
 
-        let bulletXml = "";
-        if (p.isBullet) {
-          bulletXml = `<a:buFont typeface="Arial"/><a:buChar char="&#x2022;"/>`;
-        }
+          let bulletXml = "";
+          if (p.isBullet) {
+            bulletXml = `<a:buFont typeface="Arial"/><a:buChar char="&#x2022;"/>`;
+          }
 
-        const escapedText = escapeXml(p.text);
+          const escapedText = escapeXml(p.text);
 
-        return `        <a:p>
+          return `        <a:p>
           <a:pPr algn="${align}"${p.isBullet ? ' marL="342900" indent="-342900"' : ""}>${bulletXml}</a:pPr>
           <a:r>
             <a:rPr lang="en-US" sz="${sz}"${bold}${italic} dirty="0">
@@ -727,7 +1052,8 @@ function buildSlideShapes(slide: ParsedSlide, imageRids: Map<number, string>): s
             <a:t>${escapedText}</a:t>
           </a:r>
         </a:p>`;
-      }).join("\n");
+        })
+        .join("\n");
 
       shapes.push(`      <p:sp>
         <p:nvSpPr><p:cNvPr id="${id}" name="TextBox ${id}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
@@ -770,7 +1096,10 @@ function addPptxBoilerplate(zip: import("jszip"), slideCount: number) {
 
   zip.file("[Content_Types].xml", buildContentTypesWithImages(slideCount));
 
-  const slideIds = Array.from({ length: slideCount }, (_, i) => `    <p:sldId id="${256 + i}" r:id="rId${i + 2}"/>`).join("\n");
+  const slideIds = Array.from(
+    { length: slideCount },
+    (_, i) => `    <p:sldId id="${256 + i}" r:id="rId${i + 2}"/>`,
+  ).join("\n");
   zip.file(
     "ppt/presentation.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -786,7 +1115,8 @@ ${slideIds}
 
   const slideRels = Array.from(
     { length: slideCount },
-    (_, i) => `  <Relationship Id="rId${i + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i + 1}.xml"/>`,
+    (_, i) =>
+      `  <Relationship Id="rId${i + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i + 1}.xml"/>`,
   ).join("\n");
   zip.file(
     "ppt/_rels/presentation.xml.rels",
@@ -847,7 +1177,8 @@ ${slideRels}
 function buildContentTypesWithImages(slideCount: number): string {
   const slideOverrides = Array.from(
     { length: slideCount },
-    (_, i) => `  <Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`,
+    (_, i) =>
+      `  <Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`,
   ).join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

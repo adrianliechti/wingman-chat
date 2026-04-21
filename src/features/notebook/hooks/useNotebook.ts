@@ -4,15 +4,12 @@ import { convertFileToText } from "@/shared/lib/convert";
 import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { Content } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
+import { assembleSlideHtml, getOrderedHtmlSlides } from "../lib/html-slide-assembly";
+import { createHtmlSlideTools } from "../lib/html-slide-tools";
 import * as store from "../lib/opfs-notebook";
 import { createSourceTools } from "../lib/source-tools";
 import { runWithTools } from "../lib/tool-loop";
 import chatInstructions from "../prompts/chat.txt?raw";
-import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
-import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
-import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
-import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
-import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
 import infographicStyleAnime from "../prompts/infographic-style-anime.txt?raw";
 import infographicStyleAuto from "../prompts/infographic-style-auto.txt?raw";
 import infographicStyleBento from "../prompts/infographic-style-bento.txt?raw";
@@ -24,6 +21,11 @@ import infographicStyleKawaii from "../prompts/infographic-style-kawaii.txt?raw"
 import infographicStyleProfessional from "../prompts/infographic-style-professional.txt?raw";
 import infographicStyleScientific from "../prompts/infographic-style-scientific.txt?raw";
 import infographicStyleSketchNote from "../prompts/infographic-style-sketch-note.txt?raw";
+import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
+import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
+import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
+import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
+import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
 import reportStyleDashboard from "../prompts/report-style-dashboard.txt?raw";
 import reportStyleExecutive from "../prompts/report-style-executive.txt?raw";
 import reportStyleMagazine from "../prompts/report-style-magazine.txt?raw";
@@ -42,8 +44,6 @@ import studioReportInstructions from "../prompts/studio-report.txt?raw";
 import studioSlideInstructions from "../prompts/studio-slide-deck.txt?raw";
 // import studioSlidePptxInstructions from "../prompts/studio-slide-deck-pptx.txt?raw";
 import studioSlideHtmlInstructions from "../prompts/studio-slide-deck-html.txt?raw";
-import { createHtmlSlideTools } from "../lib/html-slide-tools";
-import { assembleSlideHtml, getOrderedHtmlSlides } from "../lib/html-slide-assembly";
 import type {
   MindMapNode,
   Notebook,
@@ -58,8 +58,6 @@ import type {
 function generateId(): string {
   return crypto.randomUUID();
 }
-
-
 
 // ── PPTX slide filesystem tools (commented out — replaced by HTML slide tools) ──
 // See html-slide-tools.ts for the HTML-based replacement.
@@ -304,7 +302,6 @@ function buildSlideInstructions(styleId: string): string {
     .replace("{{COMMON_RULES}}", slideCommonRules)
     .replace("{{STYLE_SECTION}}", style.prompt);
 }
-
 
 /* PPTX instructions — commented out, replaced by HTML
 function buildSlidePptxInstructions(styleId: string): string {
@@ -696,7 +693,7 @@ export function useNotebook(notebookId?: string) {
         type,
         title: OUTPUT_TITLES[type],
         content: "",
-        slideFormat: type === "slides" ? slideFormat ?? "pdf" : undefined,
+        slideFormat: type === "slides" ? (slideFormat ?? "pdf") : undefined,
         status: "generating",
         createdAt: new Date().toISOString(),
       };
@@ -851,30 +848,31 @@ export function useNotebook(notebookId?: string) {
           const rawSlides = getOrderedHtmlSlides(slideFs);
           if (rawSlides.length > 0) {
             const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
-            setOutputs((prev) =>
-              prev.map((o) =>
-                o.id === output.id ? { ...o, htmlSlides: [...htmlSlides] } : o,
-              ),
-            );
+            setOutputs((prev) => prev.map((o) => (o.id === output.id ? { ...o, htmlSlides: [...htmlSlides] } : o)));
           }
         });
 
         const allTools = [...tools, ...fsTools];
         const htmlMessage = {
           role: "user" as const,
-          content: [{ type: "text" as const, text: [
-            "Create a polished, professionally-designed slide deck from the available sources.",
-            "",
-            "Workflow:",
-            "1. Call `source_list`, then `source_read` every source. Extract concrete facts, quotes, and numbers. Never fabricate data.",
-            "2. Plan the deck out loud BEFORE writing any files: the 8–12 slide arc, the layout archetype for each slide (do not repeat archetypes back-to-back), the single background color, the palette, the type stack.",
-            "3. Write `styles/theme.css` with your CSS custom properties (colors, type scale, spacing) and the shared component classes.",
-            "4. Write each slide in `slides/slide1.html`, `slides/slide2.html`, ... Every slide must have exactly one focal point and an insight-driven title.",
-            "5. Use `generate_image` only for real photographic/atmospheric assets. For charts, diagrams, icons use SVG or CSS.",
-            "6. After every few slides, re-read a prior slide to stay consistent.",
-            "",
-            "Required deck mix: cover + (optional section dividers) + ≥1 hero-stat + ≥1 data chart + ≥1 framework/matrix/timeline + ≥1 quote/callout + ≥1 comparison + closing. A deck made entirely of title-plus-bullets is a failure.",
-          ].join("\n") }],
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                "Create a polished, professionally-designed slide deck from the available sources.",
+                "",
+                "Workflow:",
+                "1. Call `source_list`, then `source_read` every source. Extract concrete facts, quotes, and numbers. Never fabricate data.",
+                "2. Plan the deck out loud BEFORE writing any files: the 8–12 slide arc, the layout archetype for each slide (do not repeat archetypes back-to-back), the single background color, the palette, the type stack.",
+                "3. Write `styles/theme.css` with your CSS custom properties (colors, type scale, spacing) and the shared component classes.",
+                "4. Write each slide in `slides/slide1.html`, `slides/slide2.html`, ... Every slide must have exactly one focal point and an insight-driven title.",
+                "5. Use `generate_image` only for real photographic/atmospheric assets. For charts, diagrams, icons use SVG or CSS.",
+                "6. After every few slides, re-read a prior slide to stay consistent.",
+                "",
+                "Required deck mix: cover + (optional section dividers) + ≥1 hero-stat + ≥1 data chart + ≥1 framework/matrix/timeline + ≥1 quote/callout + ≥1 comparison + closing. A deck made entirely of title-plus-bullets is a failure.",
+              ].join("\n"),
+            },
+          ],
         };
 
         runWithTools(client, getModel(), htmlInstructions, [htmlMessage], allTools)

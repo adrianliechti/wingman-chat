@@ -33,17 +33,27 @@ function collectStyles(fs: Map<string, string>): string[] {
  * Handles: src="images/..." and url('images/...') / url("images/...") / url(images/...)
  */
 function resolveImagePaths(content: string, fs: Map<string, string>): string {
-  return content.replace(
-    /(src=["']|url\(["']?)(images\/[^"')]+)(["']?\)?)/g,
-    (match, prefix, imagePath, suffix) => {
-      const dataUrl = fs.get(imagePath);
-      if (dataUrl) {
-        return `${prefix}${dataUrl}${suffix}`;
-      }
-      return match;
-    },
-  );
+  return content.replace(/(src=["']|url\(["']?)(images\/[^"')]+)(["']?\)?)/g, (match, prefix, imagePath, suffix) => {
+    const dataUrl = fs.get(imagePath);
+    if (dataUrl) {
+      return `${prefix}${dataUrl}${suffix}`;
+    }
+    return match;
+  });
 }
+
+/**
+ * Remove tags that would trigger external-network fetches (stylesheets,
+ * scripts) from a slide HTML fragment. The model sometimes emits
+ * `<link rel="stylesheet" href="styles/theme.css">` even though all
+ * stylesheets are inlined at assembly time — this would cause the browser
+ * to try to fetch it as a relative URL against the host page, producing a
+ * MIME error.
+ */
+function stripExternalRefs(html: string): string {
+  return html.replace(/<link\b[^>]*>/gi, "").replace(/<script\b[\s\S]*?<\/script>/gi, "");
+}
+
 
 /**
  * Assemble a single slide HTML fragment into a complete, self-contained HTML document.
@@ -54,7 +64,7 @@ export function assembleSlideHtml(slideHtml: string, fs: Map<string, string>): s
 
   // Resolve image paths in both styles and slide HTML
   const resolvedStyles = styles.map((css) => resolveImagePaths(css, fs));
-  const resolvedSlideHtml = resolveImagePaths(slideHtml, fs);
+  const resolvedSlideHtml = stripExternalRefs(resolveImagePaths(slideHtml, fs));
 
   const styleBlocks = resolvedStyles.map((css) => `<style>${css}</style>`).join("\n");
 
