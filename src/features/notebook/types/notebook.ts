@@ -37,6 +37,8 @@ export interface MindMapNode {
   children?: MindMapNode[];
 }
 
+export type SlideFormat = "pdf" | "pptx";
+
 export interface NotebookOutput {
   id: string;
   type: OutputType;
@@ -44,6 +46,9 @@ export interface NotebookOutput {
   content: string;
   imageUrl?: string;
   slides?: string[];
+  htmlSlides?: string[];
+  pptxSlides?: string[];
+  slideFormat?: SlideFormat;
   audioUrl?: string;
   quiz?: QuizQuestion[];
   mindMap?: MindMapNode;

@@ -175,6 +175,9 @@ interface OutputMeta {
   error?: string;
   createdAt: string;
   slideCount?: number;
+  htmlSlideCount?: number;
+  pptxSlideCount?: number;
+  slideFormat?: string;
 }
 
 function outputsDir(notebookId: string) {
@@ -227,6 +230,16 @@ async function writeOutput(notebookId: string, output: NotebookOutput): Promise<
       }),
     );
   }
+  let htmlSlideCount: number | undefined;
+  if (output.htmlSlides?.length) {
+    htmlSlideCount = output.htmlSlides.length;
+    await writeJson(`${base}/html-slides.json`, output.htmlSlides);
+  }
+  let pptxSlideCount: number | undefined;
+  if (output.pptxSlides?.length) {
+    pptxSlideCount = output.pptxSlides.length;
+    await writeJson(`${base}/pptx-slides.json`, output.pptxSlides);
+  }
   if (output.quiz) {
     await writeJson(`${base}/quiz.json`, output.quiz);
   }
@@ -243,6 +256,9 @@ async function writeOutput(notebookId: string, output: NotebookOutput): Promise<
     error: output.error,
     createdAt: output.createdAt,
     slideCount,
+    htmlSlideCount,
+    pptxSlideCount,
+    slideFormat: output.slideFormat,
   };
   await writeJson(`${base}/metadata.json`, meta);
 }
@@ -272,7 +288,16 @@ async function readOutput(notebookId: string, outputId: string): Promise<Noteboo
   } else if (meta.type === "infographic") {
     const blob = await readBlob(`${base}/image.png`);
     if (blob) output.imageUrl = await blobToDataUrl(blob);
+  } else if (meta.type === "slides" && meta.pptxSlideCount) {
+    output.slideFormat = (meta.slideFormat as NotebookOutput["slideFormat"]) ?? "pptx";
+    const pptxSlides = await readJson<string[]>(`${base}/pptx-slides.json`);
+    if (pptxSlides) output.pptxSlides = pptxSlides;
+  } else if (meta.type === "slides" && meta.htmlSlideCount) {
+    output.slideFormat = (meta.slideFormat as NotebookOutput["slideFormat"]) ?? "pptx";
+    const htmlSlides = await readJson<string[]>(`${base}/html-slides.json`);
+    if (htmlSlides) output.htmlSlides = htmlSlides;
   } else if (meta.type === "slides" && meta.slideCount) {
+    output.slideFormat = (meta.slideFormat as NotebookOutput["slideFormat"]) ?? "pdf";
     const slides: string[] = [];
     for (let i = 0; i < meta.slideCount; i++) {
       // Try padded name first (000.png), fall back to unpadded (0.png) for older data

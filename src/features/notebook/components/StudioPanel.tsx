@@ -15,12 +15,12 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import { getPodcastStyles, getReportStyles, getSlideStyles, getInfographicStyles } from "../hooks/useNotebook";
-import type { NotebookOutput, NotebookSource, OutputType } from "../types/notebook";
+import type { NotebookOutput, NotebookSource, OutputType, SlideFormat } from "../types/notebook";
 
 interface StudioPanelProps {
   sources: NotebookSource[];
   outputs: NotebookOutput[];
-  onGenerate: (type: OutputType, styleId?: string) => void;
+  onGenerate: (type: OutputType, styleId?: string, slideFormat?: SlideFormat) => void;
   onDeleteOutput: (outputId: string) => void;
   onSelectOutput: (output: NotebookOutput) => void;
 }
@@ -41,6 +41,7 @@ const OUTPUT_TYPES: {
 export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSelectOutput }: StudioPanelProps) {
   const hasSources = sources.length > 0;
   const [openMenu, setOpenMenu] = useState<OutputType | null>(null);
+  const [slideFormat, setSlideFormat] = useState<SlideFormat>("pdf");
   const menuRef = useRef<HTMLDivElement>(null);
   const slideStyles = getSlideStyles();
   const podcastStyles = getPodcastStyles();
@@ -54,6 +55,9 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
       downloadDataUrl(output.audioUrl, `${slug}.wav`);
     } else if (output.type === "infographic" && output.imageUrl) {
       downloadDataUrl(output.imageUrl, `${slug}.png`);
+    } else if (output.type === "slides" && output.slideFormat === "pptx" && output.pptxSlides?.length) {
+      const { downloadPptxFromXml } = await import("../lib/pptx-templates");
+      await downloadPptxFromXml(output.pptxSlides, slug);
     } else if (output.type === "slides" && output.slides?.length) {
       await downloadSlidesAsPdf(output.slides, slug);
     } else if (output.type === "report" && output.content) {
@@ -100,13 +104,40 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                   </button>
                   {openMenu === type && (
                     <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-2 border-white/40 dark:border-neutral-700/60 rounded-lg shadow-2xl shadow-black/40 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 py-1">
+                      {type === "slides" && (
+                        <div className="flex border-b border-neutral-200/60 dark:border-neutral-700/60">
+                          <button
+                            type="button"
+                            onClick={() => setSlideFormat("pdf")}
+                            className={`flex-1 text-[10px] font-medium py-1 transition-colors ${
+                              slideFormat === "pdf"
+                                ? "bg-neutral-800 text-white dark:bg-white dark:text-neutral-900"
+                                : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                            }`}
+                          >
+                            PDF
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSlideFormat("pptx")}
+                            className={`flex-1 text-[10px] font-medium py-1 transition-colors ${
+                              slideFormat === "pptx"
+                                ? "bg-neutral-800 text-white dark:bg-white dark:text-neutral-900"
+                                : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                            }`}
+                          >
+                            PPTX
+                          </button>
+                        </div>
+                      )}
                       {styles.map((s) => (
                         <button
                           key={s.id}
                           type="button"
                           onClick={() => {
+                            const fmt = type === "slides" ? slideFormat : undefined;
                             setOpenMenu(null);
-                            onGenerate(type, s.id);
+                            onGenerate(type, s.id, fmt);
                           }}
                           className="w-full text-left px-3 py-1.5 text-xs text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
                         >
@@ -224,7 +255,7 @@ function canDownload(output: NotebookOutput): boolean {
   return (
     (output.type === "podcast" && !!output.audioUrl) ||
     (output.type === "infographic" && !!output.imageUrl) ||
-    (output.type === "slides" && !!output.slides?.length) ||
+    (output.type === "slides" && (!!output.slides?.length || !!output.htmlSlides?.length || !!output.pptxSlides?.length)) ||
     (output.type === "report" && !!output.content)
   );
 }
@@ -306,6 +337,8 @@ async function downloadSlidesAsPdf(slides: string[], slug: string) {
 
   doc.save(`${slug}.pdf`);
 }
+
+
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {

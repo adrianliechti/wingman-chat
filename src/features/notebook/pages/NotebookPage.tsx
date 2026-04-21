@@ -250,8 +250,18 @@ export function NotebookPage() {
                   <MindMapViewer root={viewingOutput.mindMap} />
                 ) : viewingOutput.audioUrl ? (
                   <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
-                ) : viewingOutput.slides && viewingOutput.slides.length > 0 ? (
-                  <SlideViewer content={viewingOutput.content} slides={viewingOutput.slides} />
+                ) : (viewingOutput.slides && viewingOutput.slides.length > 0) ||
+                  (viewingOutput.htmlSlides && viewingOutput.htmlSlides.length > 0) ||
+                  (viewingOutput.pptxSlides && viewingOutput.pptxSlides.length > 0) ? (
+                  <SlideViewer
+                    content={viewingOutput.content}
+                    slides={viewingOutput.slides ?? []}
+                    htmlSlides={viewingOutput.htmlSlides}
+                    pptxSlides={viewingOutput.pptxSlides}
+                    slideFormat={viewingOutput.slideFormat}
+                    onRefine={(updatedOutput) => setViewingOutput(updatedOutput)}
+                    output={viewingOutput}
+                  />
                 ) : viewingOutput.imageUrl ? (
                   <div className="h-full overflow-y-auto p-6">
                     <div className="flex flex-col items-center gap-4">

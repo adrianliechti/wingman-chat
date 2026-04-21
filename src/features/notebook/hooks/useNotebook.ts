@@ -40,6 +40,7 @@ import studioMindMapInstructions from "../prompts/studio-mind-map.txt?raw";
 import studioQuizInstructions from "../prompts/studio-quiz.txt?raw";
 import studioReportInstructions from "../prompts/studio-report.txt?raw";
 import studioSlideInstructions from "../prompts/studio-slide-deck.txt?raw";
+import studioSlidePptxInstructions from "../prompts/studio-slide-deck-pptx.txt?raw";
 import type {
   MindMapNode,
   Notebook,
@@ -48,11 +49,126 @@ import type {
   NotebookSource,
   OutputType,
   QuizQuestion,
+  SlideFormat,
 } from "../types/notebook";
 
 function generateId(): string {
   return crypto.randomUUID();
 }
+
+
+
+// ── In-memory slide filesystem tools for PPTX generation ─────────────────────
+
+function createSlideFileTools(fs: Map<string, string>, onWrite: () => void): import("@/shared/types/chat").Tool[] {
+  const textResult = (text: string): import("@/shared/types/chat").TextContent[] => [{ type: "text", text }];
+
+  return [
+    {
+      name: "write_slide",
+      description: "Write a slide XML file. The filename should be slide1.xml, slide2.xml, etc. Content must be a complete <p:sld> XML document.",
+      parameters: {
+        type: "object",
+        properties: {
+          filename: { type: "string", description: "Filename, e.g. slide1.xml" },
+          content: { type: "string", description: "Complete PPTX slide XML content" },
+        },
+        required: ["filename", "content"],
+      },
+      function: async (args) => {
+        const filename = args.filename as string;
+        const content = args.content as string;
+
+        // Validate XML well-formedness
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(content, "application/xml");
+        const parseError = doc.querySelector("parsererror");
+        if (parseError) {
+          const msg = parseError.textContent?.slice(0, 300) || "Unknown parse error";
+          console.warn(`[PPTX] Invalid XML for ${filename}:`, msg);
+          return textResult(`Error: Invalid XML — ${msg}\n\nFix the XML and try write_slide again.`);
+        }
+
+        // Structural validation
+        const errors: string[] = [];
+        const root = doc.documentElement;
+
+        // Check root element
+        if (root.localName !== "sld" || !root.namespaceURI?.includes("presentationml")) {
+          errors.push("Root element must be <p:sld> with xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"");
+        }
+
+        // Check required namespaces
+        const nsP = root.getAttribute("xmlns:p") || root.lookupNamespaceURI("p");
+        const nsA = root.getAttribute("xmlns:a") || root.lookupNamespaceURI("a");
+        const nsR = root.getAttribute("xmlns:r") || root.lookupNamespaceURI("r");
+        if (!nsP) errors.push("Missing namespace xmlns:p (presentationml)");
+        if (!nsA) errors.push("Missing namespace xmlns:a (drawingml)");
+        if (!nsR) errors.push("Missing namespace xmlns:r (relationships)");
+
+        // Check required children
+        const cSld = root.getElementsByTagNameNS("*", "cSld")[0];
+        if (!cSld) errors.push("Missing required child <p:cSld>");
+        const spTree = cSld?.getElementsByTagNameNS("*", "spTree")[0];
+        if (cSld && !spTree) errors.push("Missing required child <p:spTree> inside <p:cSld>");
+
+        if (errors.length > 0) {
+          console.warn(`[PPTX] Structural errors in ${filename}:`, errors);
+          return textResult(`Error: Structural issues in ${filename}:\n- ${errors.join("\n- ")}\n\nFix and try write_slide again.`);
+        }
+
+        // Count elements for feedback
+        const shapes = doc.getElementsByTagNameNS("*", "sp");
+        const pics = doc.getElementsByTagNameNS("*", "pic");
+
+        fs.set(filename, content);
+        console.log(`[PPTX] Wrote ${filename}, length: ${content.length}, shapes: ${shapes.length}, pics: ${pics.length}`);
+        onWrite();
+        return textResult(`OK: wrote ${filename} (${content.length} bytes, ${shapes.length} shapes, ${pics.length} images)`);
+      },
+    },
+    {
+      name: "read_slide",
+      description: "Read a previously written slide XML file.",
+      parameters: {
+        type: "object",
+        properties: {
+          filename: { type: "string", description: "Filename to read, e.g. slide1.xml" },
+        },
+        required: ["filename"],
+      },
+      function: async (args) => {
+        const filename = args.filename as string;
+        const content = fs.get(filename);
+        if (!content) return textResult(`Error: ${filename} not found`);
+        return textResult(content);
+      },
+    },
+    {
+      name: "list_slides",
+      description: "List all slide files that have been written so far.",
+      parameters: { type: "object", properties: {}, required: [] },
+      function: async () => {
+        const files = [...fs.keys()].sort();
+        if (files.length === 0) return textResult("No slides written yet.");
+        return textResult(files.map((f) => `- ${f} (${fs.get(f)!.length} bytes)`).join("\n"));
+      },
+    },
+  ];
+}
+
+function getOrderedSlides(fs: Map<string, string>): string[] {
+  return [...fs.entries()]
+    .filter(([name]) => /^slide\d+\.xml$/i.test(name))
+    .sort(([a], [b]) => {
+      const numA = parseInt(a.match(/\d+/)?.[0] || "0", 10);
+      const numB = parseInt(b.match(/\d+/)?.[0] || "0", 10);
+      return numA - numB;
+    })
+    .map(([, content]) => content);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Merge multiple WAV blobs into a single WAV blob.
@@ -186,6 +302,15 @@ function buildSlideInstructions(styleId: string): string {
   const slideStyles = getSlideStyles();
   const style = slideStyles.find((s) => s.id === styleId) ?? slideStyles[0] ?? DEFAULT_SLIDE_STYLES[0];
   return studioSlideInstructions
+    .replace("{{COMMON_RULES}}", slideCommonRules)
+    .replace("{{STYLE_SECTION}}", style.prompt);
+}
+
+
+function buildSlidePptxInstructions(styleId: string): string {
+  const slideStyles = getSlideStyles();
+  const style = slideStyles.find((s) => s.id === styleId) ?? slideStyles[0] ?? DEFAULT_SLIDE_STYLES[0];
+  return studioSlidePptxInstructions
     .replace("{{COMMON_RULES}}", slideCommonRules)
     .replace("{{STYLE_SECTION}}", style.prompt);
 }
@@ -553,7 +678,7 @@ export function useNotebook(notebookId?: string) {
   // ── Outputs ────────────────────────────────────────────────────────
 
   const generateOutput = useCallback(
-    (type: OutputType, styleId?: string) => {
+    (type: OutputType, styleId?: string, slideFormat?: SlideFormat) => {
       if (!notebook || sources.length === 0) return;
 
       const output: NotebookOutput = {
@@ -561,6 +686,7 @@ export function useNotebook(notebookId?: string) {
         type,
         title: OUTPUT_TITLES[type],
         content: "",
+        slideFormat: type === "slides" ? slideFormat ?? "pdf" : undefined,
         status: "generating",
         createdAt: new Date().toISOString(),
       };
@@ -702,8 +828,48 @@ export function useNotebook(notebookId?: string) {
             });
           })
           .catch(failOutput);
+      } else if (type === "slides" && output.slideFormat === "pptx") {
+        // PPTX mode: LLM uses filesystem tools to write slide XML files
+        const pptxInstructions = buildSlidePptxInstructions(styleId ?? "whiteboard");
+
+        // In-memory filesystem for the LLM to write slides into
+        const slideFs = new Map<string, string>();
+
+        const fsTools = createSlideFileTools(slideFs, () => {
+          // Progressive update on each write
+          const pptxSlides = getOrderedSlides(slideFs);
+          if (pptxSlides.length > 0) {
+            setOutputs((prev) =>
+              prev.map((o) =>
+                o.id === output.id ? { ...o, pptxSlides: [...pptxSlides] } : o,
+              ),
+            );
+          }
+        });
+
+        const allTools = [...tools, ...fsTools];
+        const pptxMessage = {
+          role: "user" as const,
+          content: [{ type: "text" as const, text: "Create a slide deck from the available sources. Read the sources first, then write each slide as a separate XML file using write_slide." }],
+        };
+
+        runWithTools(client, getModel(), pptxInstructions, [pptxMessage], allTools)
+          .then(async () => {
+            const pptxSlides = getOrderedSlides(slideFs);
+            console.log("[PPTX] Generation complete, slides:", pptxSlides.length);
+
+            if (pptxSlides.length === 0) throw new Error("No slides generated");
+
+            await completeOutput({
+              ...output,
+              content: `${pptxSlides.length} slides generated`,
+              pptxSlides,
+              status: "completed",
+            });
+          })
+          .catch(failOutput);
       } else if (type === "slides") {
-        // Slide deck: LLM generates slide text + image prompts → render each slide sequentially
+        // PDF mode: LLM generates slide text + image prompts → render each slide sequentially
         // so each slide can use the previous one as a style reference
         runWithTools(client, getModel(), instructions, [userMessage], tools)
           .then(async (response) => {
