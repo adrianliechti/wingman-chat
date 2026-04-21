@@ -1,5 +1,5 @@
 import { FileText, Loader2, SparklesIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
 import { getTextFromContent } from "@/shared/types/chat";
 import { Markdown } from "@/shared/ui/Markdown";
@@ -18,7 +18,7 @@ interface SlideViewerProps {
 
 export function SlideViewer({ content, slides, htmlSlides, pptxSlides, slideFormat, output, onRefine }: SlideViewerProps) {
   const isPptxMode = slideFormat === "pptx" && pptxSlides && pptxSlides.length > 0;
-  const isHtmlMode = !isPptxMode && slideFormat === "pptx" && htmlSlides && htmlSlides.length > 0;
+  const isHtmlMode = !isPptxMode && htmlSlides && htmlSlides.length > 0;
   const slideCount = isPptxMode ? pptxSlides.length : isHtmlMode ? htmlSlides!.length : slides.length;
 
   const [activeIndex, setActiveIndex] = useState(slideCount > 0 ? 1 : 0);
@@ -26,6 +26,25 @@ export function SlideViewer({ content, slides, htmlSlides, pptxSlides, slideForm
   const [isRefining, setIsRefining] = useState(false);
   const [refineError, setRefineError] = useState<string | null>(null);
   const slideKeyCounts = new Map<string, number>();
+
+  // Scale the 960x540 iframe to fit the container
+  const slideContainerRef = useRef<HTMLDivElement>(null);
+  const [slideScale, setSlideScale] = useState(1);
+
+  useEffect(() => {
+    const el = slideContainerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const cw = entry.contentRect.width;
+      const ch = entry.contentRect.height;
+      // Fit 960x540 inside the container, maintaining aspect ratio
+      const scaleX = cw / 1920;
+      const scaleY = ch / 1080;
+      setSlideScale(Math.min(scaleX, scaleY));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const handleRefineSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -66,11 +85,11 @@ export function SlideViewer({ content, slides, htmlSlides, pptxSlides, slideForm
           onRefine?.({ ...output, pptxSlides: updatedPptxSlides });
         }
       } else if (isHtmlMode) {
-        // Refine HTML slide (legacy)
+        // Refine HTML slide
         const currentHtml = htmlSlides![slideIdx];
         const result = await client.complete(
           model,
-          `You are refining a single HTML slide. The slide is a self-contained HTML document (960x540px, 16:9). Apply the user's refinement request. Return ONLY the complete updated HTML document.`,
+          `You are refining a single HTML slide. The slide is a self-contained HTML document (1920x1080px, 16:9). Apply the user's refinement request. Return ONLY the complete updated HTML document.`,
           [
             { role: "user", content: [{ type: "text", text: `Current slide HTML:\n\n${currentHtml}\n\nRefinement request: ${refinePrompt.trim()}` }] },
           ],
@@ -138,11 +157,23 @@ export function SlideViewer({ content, slides, htmlSlides, pptxSlides, slideForm
             </div>
           </div>
         ) : isHtmlMode ? (
-          <div className="h-full flex items-center justify-center p-6">
-            <div className="relative w-full max-w-4xl aspect-[16/9] rounded-lg shadow-lg overflow-hidden bg-white">
+          <div className="h-full flex items-center justify-center p-6" ref={slideContainerRef}>
+            <div
+              className="rounded-lg shadow-lg overflow-hidden bg-white"
+              style={{
+                width: 1920 * slideScale,
+                height: 1080 * slideScale,
+              }}
+            >
               <iframe
                 srcDoc={htmlSlides![activeIndex - 1]}
-                className="w-full h-full border-0"
+                style={{
+                  width: 1920,
+                  height: 1080,
+                  border: "none",
+                  transform: `scale(${slideScale})`,
+                  transformOrigin: "top left",
+                }}
                 sandbox="allow-scripts"
                 title={`Slide ${activeIndex}`}
               />
@@ -202,7 +233,7 @@ export function SlideViewer({ content, slides, htmlSlides, pptxSlides, slideForm
           <button
             type="button"
             onClick={() => setActiveIndex(0)}
-            className={`shrink-0 w-20 aspect-[16/10] rounded-lg border-2 flex items-center justify-center transition-colors ${
+            className={`shrink-0 w-20 aspect-[16/9] rounded-lg border-2 flex items-center justify-center transition-colors ${
               activeIndex === 0
                 ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30"
                 : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 bg-neutral-50 dark:bg-neutral-800/50"
@@ -218,7 +249,7 @@ export function SlideViewer({ content, slides, htmlSlides, pptxSlides, slideForm
                   key={`pptx-slide-${i}`}
                   type="button"
                   onClick={() => setActiveIndex(i + 1)}
-                  className={`shrink-0 w-20 aspect-[16/10] rounded-lg border-2 overflow-hidden transition-colors flex items-center justify-center text-[9px] font-medium text-neutral-500 ${
+                  className={`shrink-0 w-20 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors flex items-center justify-center text-[9px] font-medium text-neutral-500 ${
                     activeIndex === i + 1
                       ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30"
                       : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 bg-neutral-50 dark:bg-neutral-800/50"
@@ -233,7 +264,7 @@ export function SlideViewer({ content, slides, htmlSlides, pptxSlides, slideForm
                     key={`html-slide-${i}`}
                     type="button"
                     onClick={() => setActiveIndex(i + 1)}
-                    className={`shrink-0 w-20 aspect-[16/10] rounded-lg border-2 overflow-hidden transition-colors flex items-center justify-center text-[9px] font-medium text-neutral-500 ${
+                    className={`shrink-0 w-20 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors flex items-center justify-center text-[9px] font-medium text-neutral-500 ${
                       activeIndex === i + 1
                         ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30"
                         : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 bg-neutral-50 dark:bg-neutral-800/50"
@@ -251,7 +282,7 @@ export function SlideViewer({ content, slides, htmlSlides, pptxSlides, slideForm
                       key={`${slideUrl}:${occurrence}`}
                       type="button"
                       onClick={() => setActiveIndex(i + 1)}
-                      className={`shrink-0 w-20 aspect-[16/10] rounded-lg border-2 overflow-hidden transition-colors ${
+                      className={`shrink-0 w-20 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors ${
                         activeIndex === i + 1
                           ? "border-blue-500"
                           : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"

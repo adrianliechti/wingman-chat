@@ -40,7 +40,10 @@ import studioMindMapInstructions from "../prompts/studio-mind-map.txt?raw";
 import studioQuizInstructions from "../prompts/studio-quiz.txt?raw";
 import studioReportInstructions from "../prompts/studio-report.txt?raw";
 import studioSlideInstructions from "../prompts/studio-slide-deck.txt?raw";
-import studioSlidePptxInstructions from "../prompts/studio-slide-deck-pptx.txt?raw";
+// import studioSlidePptxInstructions from "../prompts/studio-slide-deck-pptx.txt?raw";
+import studioSlideHtmlInstructions from "../prompts/studio-slide-deck-html.txt?raw";
+import { createHtmlSlideTools } from "../lib/html-slide-tools";
+import { assembleSlideHtml, getOrderedHtmlSlides } from "../lib/html-slide-assembly";
 import type {
   MindMapNode,
   Notebook,
@@ -58,8 +61,9 @@ function generateId(): string {
 
 
 
-// ── In-memory slide filesystem tools for PPTX generation ─────────────────────
-
+// ── PPTX slide filesystem tools (commented out — replaced by HTML slide tools) ──
+// See html-slide-tools.ts for the HTML-based replacement.
+/*
 function createSlideFileTools(fs: Map<string, string>, onWrite: () => void): import("@/shared/types/chat").Tool[] {
   const textResult = (text: string): import("@/shared/types/chat").TextContent[] => [{ type: "text", text }];
 
@@ -79,7 +83,6 @@ function createSlideFileTools(fs: Map<string, string>, onWrite: () => void): imp
         const filename = args.filename as string;
         const content = args.content as string;
 
-        // Validate XML well-formedness
         const parser = new DOMParser();
         const doc = parser.parseFromString(content, "application/xml");
         const parseError = doc.querySelector("parsererror");
@@ -89,16 +92,13 @@ function createSlideFileTools(fs: Map<string, string>, onWrite: () => void): imp
           return textResult(`Error: Invalid XML — ${msg}\n\nFix the XML and try write_slide again.`);
         }
 
-        // Structural validation
         const errors: string[] = [];
         const root = doc.documentElement;
 
-        // Check root element
         if (root.localName !== "sld" || !root.namespaceURI?.includes("presentationml")) {
           errors.push("Root element must be <p:sld> with xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"");
         }
 
-        // Check required namespaces
         const nsP = root.getAttribute("xmlns:p") || root.lookupNamespaceURI("p");
         const nsA = root.getAttribute("xmlns:a") || root.lookupNamespaceURI("a");
         const nsR = root.getAttribute("xmlns:r") || root.lookupNamespaceURI("r");
@@ -106,7 +106,6 @@ function createSlideFileTools(fs: Map<string, string>, onWrite: () => void): imp
         if (!nsA) errors.push("Missing namespace xmlns:a (drawingml)");
         if (!nsR) errors.push("Missing namespace xmlns:r (relationships)");
 
-        // Check required children
         const cSld = root.getElementsByTagNameNS("*", "cSld")[0];
         if (!cSld) errors.push("Missing required child <p:cSld>");
         const spTree = cSld?.getElementsByTagNameNS("*", "spTree")[0];
@@ -117,7 +116,6 @@ function createSlideFileTools(fs: Map<string, string>, onWrite: () => void): imp
           return textResult(`Error: Structural issues in ${filename}:\n- ${errors.join("\n- ")}\n\nFix and try write_slide again.`);
         }
 
-        // Count elements for feedback
         const shapes = doc.getElementsByTagNameNS("*", "sp");
         const pics = doc.getElementsByTagNameNS("*", "pic");
 
@@ -167,6 +165,7 @@ function getOrderedSlides(fs: Map<string, string>): string[] {
     })
     .map(([, content]) => content);
 }
+*/
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -307,10 +306,20 @@ function buildSlideInstructions(styleId: string): string {
 }
 
 
+/* PPTX instructions — commented out, replaced by HTML
 function buildSlidePptxInstructions(styleId: string): string {
   const slideStyles = getSlideStyles();
   const style = slideStyles.find((s) => s.id === styleId) ?? slideStyles[0] ?? DEFAULT_SLIDE_STYLES[0];
   return studioSlidePptxInstructions
+    .replace("{{COMMON_RULES}}", slideCommonRules)
+    .replace("{{STYLE_SECTION}}", style.prompt);
+}
+*/
+
+function buildSlideHtmlInstructions(styleId: string): string {
+  const slideStyles = getSlideStyles();
+  const style = slideStyles.find((s) => s.id === styleId) ?? slideStyles[0] ?? DEFAULT_SLIDE_STYLES[0];
+  return studioSlideHtmlInstructions
     .replace("{{COMMON_RULES}}", slideCommonRules)
     .replace("{{STYLE_SECTION}}", style.prompt);
 }
@@ -830,41 +839,57 @@ export function useNotebook(notebookId?: string) {
           })
           .catch(failOutput);
       } else if (type === "slides" && output.slideFormat === "pptx") {
-        // PPTX mode: LLM uses filesystem tools to write slide XML files
-        const pptxInstructions = buildSlidePptxInstructions(styleId ?? "whiteboard");
+        // HTML slide mode: LLM uses filesystem tools to write HTML/CSS/images
+        const htmlInstructions = buildSlideHtmlInstructions(styleId ?? "whiteboard");
 
         // In-memory filesystem for the LLM to write slides into
         const slideFs = new Map<string, string>();
+        const rendererModel = config.renderer?.model || "";
 
-        const fsTools = createSlideFileTools(slideFs, () => {
+        const fsTools = createHtmlSlideTools(slideFs, client, rendererModel, () => {
           // Progressive update on each write
-          const pptxSlides = getOrderedSlides(slideFs);
-          if (pptxSlides.length > 0) {
+          const rawSlides = getOrderedHtmlSlides(slideFs);
+          if (rawSlides.length > 0) {
+            const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
             setOutputs((prev) =>
               prev.map((o) =>
-                o.id === output.id ? { ...o, pptxSlides: [...pptxSlides] } : o,
+                o.id === output.id ? { ...o, htmlSlides: [...htmlSlides] } : o,
               ),
             );
           }
         });
 
         const allTools = [...tools, ...fsTools];
-        const pptxMessage = {
+        const htmlMessage = {
           role: "user" as const,
-          content: [{ type: "text" as const, text: "Create a slide deck from the available sources. Read the sources first, then write each slide as a separate XML file using write_slide." }],
+          content: [{ type: "text" as const, text: [
+            "Create a polished, professionally-designed slide deck from the available sources.",
+            "",
+            "Workflow:",
+            "1. Call `source_list`, then `source_read` every source. Extract concrete facts, quotes, and numbers. Never fabricate data.",
+            "2. Plan the deck out loud BEFORE writing any files: the 8–12 slide arc, the layout archetype for each slide (do not repeat archetypes back-to-back), the single background color, the palette, the type stack.",
+            "3. Write `styles/theme.css` with your CSS custom properties (colors, type scale, spacing) and the shared component classes.",
+            "4. Write each slide in `slides/slide1.html`, `slides/slide2.html`, ... Every slide must have exactly one focal point and an insight-driven title.",
+            "5. Use `generate_image` only for real photographic/atmospheric assets. For charts, diagrams, icons use SVG or CSS.",
+            "6. After every few slides, re-read a prior slide to stay consistent.",
+            "",
+            "Required deck mix: cover + (optional section dividers) + ≥1 hero-stat + ≥1 data chart + ≥1 framework/matrix/timeline + ≥1 quote/callout + ≥1 comparison + closing. A deck made entirely of title-plus-bullets is a failure.",
+          ].join("\n") }],
         };
 
-        runWithTools(client, getModel(), pptxInstructions, [pptxMessage], allTools)
+        runWithTools(client, getModel(), htmlInstructions, [htmlMessage], allTools)
           .then(async () => {
-            const pptxSlides = getOrderedSlides(slideFs);
-            console.log("[PPTX] Generation complete, slides:", pptxSlides.length);
+            const rawSlides = getOrderedHtmlSlides(slideFs);
+            console.log("[HTML Slides] Generation complete, slides:", rawSlides.length);
 
-            if (pptxSlides.length === 0) throw new Error("No slides generated");
+            if (rawSlides.length === 0) throw new Error("No slides generated");
+
+            const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
 
             await completeOutput({
               ...output,
-              content: `${pptxSlides.length} slides generated`,
-              pptxSlides,
+              content: `${htmlSlides.length} slides generated`,
+              htmlSlides,
               status: "completed",
             });
           })

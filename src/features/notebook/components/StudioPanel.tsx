@@ -5,6 +5,8 @@ import {
   ChevronDown,
   CircleHelp,
   Download,
+  FileImage,
+  FileText,
   Loader2,
   Network,
   Presentation,
@@ -38,10 +40,14 @@ const OUTPUT_TYPES: {
   { type: "mindmap", label: "Mind Map", icon: Network },
 ];
 
+type ExportFormat = "pdf" | "pptx-image" | "pptx-editable" | "png";
+
 export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSelectOutput }: StudioPanelProps) {
   const hasSources = sources.length > 0;
   const [openMenu, setOpenMenu] = useState<OutputType | null>(null);
-  const [slideFormat, setSlideFormat] = useState<SlideFormat>("pdf");
+  const [exportOverlay, setExportOverlay] = useState<NotebookOutput | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const slideStyles = getSlideStyles();
   const podcastStyles = getPodcastStyles();
@@ -49,19 +55,55 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
   const infographicStyles = getInfographicStyles();
 
   const downloadOutput = async (output: NotebookOutput) => {
+    // For HTML slides, show export overlay instead of direct download
+    if (output.type === "slides" && output.htmlSlides?.length) {
+      setExportOverlay(output);
+      setExportError(null);
+      return;
+    }
+
     const slug = output.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
 
     if (output.type === "podcast" && output.audioUrl) {
       downloadDataUrl(output.audioUrl, `${slug}.wav`);
     } else if (output.type === "infographic" && output.imageUrl) {
       downloadDataUrl(output.imageUrl, `${slug}.png`);
-    } else if (output.type === "slides" && output.slideFormat === "pptx" && output.pptxSlides?.length) {
+    } else if (output.type === "slides" && output.pptxSlides?.length) {
+      // Legacy PPTX outputs
       const { downloadPptxFromXml } = await import("../lib/pptx-templates");
       await downloadPptxFromXml(output.pptxSlides, slug);
     } else if (output.type === "slides" && output.slides?.length) {
       await downloadSlidesAsPdf(output.slides, slug);
     } else if (output.type === "report" && output.content) {
       await downloadReportAsPdf(output.content, slug);
+    }
+  };
+
+  const handleExport = async (format: ExportFormat) => {
+    if (!exportOverlay?.htmlSlides?.length) return;
+    const slug = exportOverlay.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    setIsExporting(true);
+    setExportError(null);
+
+    try {
+      if (format === "pdf") {
+        const { downloadHtmlSlidesAsPdf } = await import("../lib/html-slide-export");
+        await downloadHtmlSlidesAsPdf(exportOverlay.htmlSlides, slug);
+      } else if (format === "pptx-image") {
+        const { downloadHtmlSlidesAsPptx } = await import("../lib/html-slide-export");
+        await downloadHtmlSlidesAsPptx(exportOverlay.htmlSlides, slug);
+      } else if (format === "pptx-editable") {
+        const { downloadHtmlSlidesAsEditablePptx } = await import("../lib/html-slide-export");
+        await downloadHtmlSlidesAsEditablePptx(exportOverlay.htmlSlides, slug);
+      } else if (format === "png") {
+        const { downloadHtmlSlidesAsPng } = await import("../lib/html-slide-export");
+        await downloadHtmlSlidesAsPng(exportOverlay.htmlSlides, slug);
+      }
+      setExportOverlay(null);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -104,39 +146,14 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                   </button>
                   {openMenu === type && (
                     <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-2 border-white/40 dark:border-neutral-700/60 rounded-lg shadow-2xl shadow-black/40 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 py-1">
-                      {type === "slides" && (
-                        <div className="flex border-b border-neutral-200/60 dark:border-neutral-700/60">
-                          <button
-                            type="button"
-                            onClick={() => setSlideFormat("pdf")}
-                            className={`flex-1 text-[10px] font-medium py-1 transition-colors ${
-                              slideFormat === "pdf"
-                                ? "bg-neutral-800 text-white dark:bg-white dark:text-neutral-900"
-                                : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-                            }`}
-                          >
-                            PDF
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSlideFormat("pptx")}
-                            className={`flex-1 text-[10px] font-medium py-1 transition-colors ${
-                              slideFormat === "pptx"
-                                ? "bg-neutral-800 text-white dark:bg-white dark:text-neutral-900"
-                                : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-                            }`}
-                          >
-                            PPTX
-                          </button>
-                        </div>
-                      )}
                       {styles.map((s) => (
                         <button
                           key={s.id}
                           type="button"
                           onClick={() => {
-                            const fmt = type === "slides" ? slideFormat : undefined;
                             setOpenMenu(null);
+                            // Slides always use "pptx" format (which triggers HTML generation)
+                            const fmt = type === "slides" ? ("pptx" as SlideFormat) : undefined;
                             onGenerate(type, s.id, fmt);
                           }}
                           className="w-full text-left px-3 py-1.5 text-xs text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
@@ -247,6 +264,86 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
           </div>
         )}
       </div>
+
+      {/* Export format overlay */}
+      {exportOverlay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-neutral-200 dark:border-neutral-700 w-80 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+              <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Export Slides</h3>
+              <button
+                type="button"
+                onClick={() => { setExportOverlay(null); setExportError(null); }}
+                className="p-1 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <X size={14} className="text-neutral-400" />
+              </button>
+            </div>
+            <div className="p-3 space-y-1.5">
+              <button
+                type="button"
+                onClick={() => handleExport("pdf")}
+                disabled={isExporting}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left disabled:opacity-50"
+              >
+                <FileText size={18} className="text-red-500 shrink-0" />
+                <div>
+                  <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PDF</p>
+                  <p className="text-[10px] text-neutral-400">Image-based pages, best for sharing</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExport("png")}
+                disabled={isExporting}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left disabled:opacity-50"
+              >
+                <FileImage size={18} className="text-green-500 shrink-0" />
+                <div>
+                  <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PNG Images</p>
+                  <p className="text-[10px] text-neutral-400">Individual slide images in a ZIP</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExport("pptx-image")}
+                disabled={isExporting}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left disabled:opacity-50"
+              >
+                <Presentation size={18} className="text-orange-500 shrink-0" />
+                <div>
+                  <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PowerPoint (Image)</p>
+                  <p className="text-[10px] text-neutral-400">Image-based slides, pixel-perfect</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExport("pptx-editable")}
+                disabled={isExporting}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left disabled:opacity-50"
+              >
+                <Presentation size={18} className="text-blue-500 shrink-0" />
+                <div>
+                  <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PowerPoint (Editable)</p>
+                  <p className="text-[10px] text-neutral-400">Native text boxes, shapes, and embedded images</p>
+                </div>
+              </button>
+
+              {isExporting && (
+                <div className="flex items-center justify-center gap-2 py-2 text-xs text-neutral-500">
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>Exporting...</span>
+                </div>
+              )}
+              {exportError && (
+                <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-3 py-2 rounded-lg">
+                  {exportError}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -337,8 +434,6 @@ async function downloadSlidesAsPdf(slides: string[], slug: string) {
 
   doc.save(`${slug}.pdf`);
 }
-
-
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
