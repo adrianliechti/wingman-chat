@@ -301,7 +301,6 @@ function useSlideThumbnails(htmlSlides?: string[]): string[] {
     setThumbs([]);
 
     const THUMB_W = 320;
-    const THUMB_H = 180;
 
     async function render() {
       const iframe = document.createElement("iframe");
@@ -313,47 +312,47 @@ function useSlideThumbnails(htmlSlides?: string[]): string[] {
       iframe.style.visibility = "hidden";
       document.body.appendChild(iframe);
 
-      for (let i = 0; i < slides.length; i++) {
-        if (cancelled || slidesRef.current !== slides) break;
-
-        iframe.srcdoc = slides[i];
-        await new Promise<void>((resolve) => { iframe.onload = () => resolve(); });
-
-        // Let layout settle
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-
-        try {
-          const { default: html2canvas } = await import("html2canvas");
-          const body = iframe.contentDocument?.body;
-          if (!body) continue;
-
-          const canvas = await html2canvas(body, {
-            width: 1920,
-            height: 1080,
-            scale: THUMB_W / 1920,
-            logging: false,
-            useCORS: true,
-            allowTaint: true,
-            backgroundColor: "#ffffff",
-          });
-
+      try {
+        for (let i = 0; i < slides.length; i++) {
           if (cancelled || slidesRef.current !== slides) break;
 
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
-          setThumbs((prev) => {
-            const next = [...prev];
-            next[i] = dataUrl;
-            return next;
-          });
-        } catch {
-          // skip failed thumbnail
+          iframe.srcdoc = slides[i];
+          await new Promise<void>((resolve) => { iframe.onload = () => resolve(); });
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+          try {
+            const { default: html2canvas } = await import("html2canvas");
+            const body = iframe.contentDocument?.body;
+            if (!body) continue;
+
+            const canvas = await html2canvas(body, {
+              width: 1920,
+              height: 1080,
+              scale: THUMB_W / 1920,
+              logging: false,
+              useCORS: true,
+              allowTaint: true,
+              backgroundColor: "#ffffff",
+            });
+
+            if (cancelled || slidesRef.current !== slides) break;
+
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+            setThumbs((prev) => {
+              const next = [...prev];
+              next[i] = dataUrl;
+              return next;
+            });
+          } catch {
+            // skip failed thumbnail
+          }
+
+          // Yield to main thread between slides
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
         }
-
-        // Yield to main thread between slides
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      } finally {
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
       }
-
-      document.body.removeChild(iframe);
     }
 
     render();

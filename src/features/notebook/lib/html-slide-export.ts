@@ -329,10 +329,12 @@ async function rasterizeSlideDoc(
       );
       ctx.globalAlpha = 1;
     }
+    overlayImg.src = ""; // release data URL reference
   }
 
   // Layer 3: foreignObject (text, shapes — transparent background)
   ctx.drawImage(svgImg, 0, 0, canvas.width, canvas.height);
+  svgImg.src = ""; // release SVG data URL reference
 
   // Restore hidden elements
   for (const { el, vis } of savedImgVis) el.style.visibility = vis;

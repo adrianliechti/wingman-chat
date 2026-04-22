@@ -71,103 +71,106 @@ export async function parseSlideHtml(html: string): Promise<ParsedSlide> {
     // ignore
   }
 
-  const doc = iframe.contentDocument!;
-  const win = iframe.contentWindow!;
-  const body = doc.body;
+  try {
+    const doc = iframe.contentDocument!;
+    const win = iframe.contentWindow!;
+    const body = doc.body;
 
-  const bodyStyle = win.getComputedStyle(body);
-  let background = bodyStyle.backgroundColor || "rgb(255, 255, 255)";
+    const bodyStyle = win.getComputedStyle(body);
+    let background = bodyStyle.backgroundColor || "rgb(255, 255, 255)";
 
-  if (background === "rgba(0, 0, 0, 0)" || background === "transparent") {
-    const firstChild = body.firstElementChild;
-    if (firstChild) {
-      const childStyle = win.getComputedStyle(firstChild);
-      background = childStyle.backgroundColor || "rgb(255, 255, 255)";
+    if (background === "rgba(0, 0, 0, 0)" || background === "transparent") {
+      const firstChild = body.firstElementChild;
+      if (firstChild) {
+        const childStyle = win.getComputedStyle(firstChild);
+        background = childStyle.backgroundColor || "rgb(255, 255, 255)";
+      }
     }
-  }
 
-  const elements: ParsedElement[] = [];
-  const walker = doc.createTreeWalker(body, NodeFilter.SHOW_ELEMENT);
-  const visited = new Set<Element>();
+    const elements: ParsedElement[] = [];
+    const walker = doc.createTreeWalker(body, NodeFilter.SHOW_ELEMENT);
+    const visited = new Set<Element>();
 
-  let node: Element | null = walker.currentNode as Element;
-  while (node) {
-    if (node !== body && !visited.has(node)) {
-      visited.add(node);
-      const el = node as HTMLElement;
-      const style = win.getComputedStyle(el);
+    let node: Element | null = walker.currentNode as Element;
+    while (node) {
+      if (node !== body && !visited.has(node)) {
+        visited.add(node);
+        const el = node as HTMLElement;
+        const style = win.getComputedStyle(el);
 
-      if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
-        node = walker.nextNode() as Element | null;
-        continue;
-      }
-
-      const rect = el.getBoundingClientRect();
-      if (rect.width < 1 || rect.height < 1) {
-        node = walker.nextNode() as Element | null;
-        continue;
-      }
-
-      // SVG → rasterize
-      if (el.tagName === "SVG" || el.tagName === "svg") {
-        const dataUrl = await rasterizeSvg(el as unknown as SVGSVGElement, rect.width, rect.height);
-        if (dataUrl) {
-          elements.push({ type: "image", x: rect.left, y: rect.top, w: rect.width, h: rect.height, imageData: dataUrl });
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
+          node = walker.nextNode() as Element | null;
+          continue;
         }
-        skipChildren(walker, el);
-        node = walker.nextNode() as Element | null;
-        continue;
-      }
 
-      // IMG
-      if (el.tagName === "IMG") {
-        const dataUrl = await getImageDataUrl(el as HTMLImageElement);
-        if (dataUrl) {
-          elements.push({ type: "image", x: rect.left, y: rect.top, w: rect.width, h: rect.height, imageData: dataUrl });
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) {
+          node = walker.nextNode() as Element | null;
+          continue;
         }
-        node = walker.nextNode() as Element | null;
-        continue;
-      }
 
-      const isLeaf = isLeafTextBlock(el);
-      const hasBg = style.backgroundColor !== "rgba(0, 0, 0, 0)" && style.backgroundColor !== "transparent";
-      const hasBorder = style.borderWidth !== "0px" && style.borderStyle !== "none";
-
-      if ((hasBg || hasBorder) && !isLeaf) {
-        elements.push({
-          type: "shape",
-          x: rect.left, y: rect.top, w: rect.width, h: rect.height,
-          backgroundColor: hasBg ? style.backgroundColor : undefined,
-          borderRadius: parseFloat(style.borderRadius) || 0,
-          borderColor: hasBorder ? style.borderColor : undefined,
-          borderWidth: hasBorder ? parseFloat(style.borderWidth) || 0 : 0,
-          opacity: parseFloat(style.opacity),
-        });
-      }
-
-      if (isLeaf) {
-        const paragraphs = extractParagraphs(el, win);
-        if (paragraphs.length > 0) {
-          elements.push({
-            type: "text",
-            x: rect.left, y: rect.top, w: rect.width, h: rect.height,
-            fontSize: parseFloat(style.fontSize) || 16,
-            fontFamily: style.fontFamily?.split(",")[0]?.replace(/["']/g, "").trim() || "Calibri",
-            fontWeight: style.fontWeight,
-            fontStyle: style.fontStyle,
-            color: style.color,
-            textAlign: style.textAlign,
-            paragraphs,
-          });
+        // SVG → rasterize
+        if (el.tagName === "SVG" || el.tagName === "svg") {
+          const dataUrl = await rasterizeSvg(el as unknown as SVGSVGElement, rect.width, rect.height);
+          if (dataUrl) {
+            elements.push({ type: "image", x: rect.left, y: rect.top, w: rect.width, h: rect.height, imageData: dataUrl });
+          }
           skipChildren(walker, el);
+          node = walker.nextNode() as Element | null;
+          continue;
+        }
+
+        // IMG
+        if (el.tagName === "IMG") {
+          const dataUrl = await getImageDataUrl(el as HTMLImageElement);
+          if (dataUrl) {
+            elements.push({ type: "image", x: rect.left, y: rect.top, w: rect.width, h: rect.height, imageData: dataUrl });
+          }
+          node = walker.nextNode() as Element | null;
+          continue;
+        }
+
+        const isLeaf = isLeafTextBlock(el);
+        const hasBg = style.backgroundColor !== "rgba(0, 0, 0, 0)" && style.backgroundColor !== "transparent";
+        const hasBorder = style.borderWidth !== "0px" && style.borderStyle !== "none";
+
+        if ((hasBg || hasBorder) && !isLeaf) {
+          elements.push({
+            type: "shape",
+            x: rect.left, y: rect.top, w: rect.width, h: rect.height,
+            backgroundColor: hasBg ? style.backgroundColor : undefined,
+            borderRadius: parseFloat(style.borderRadius) || 0,
+            borderColor: hasBorder ? style.borderColor : undefined,
+            borderWidth: hasBorder ? parseFloat(style.borderWidth) || 0 : 0,
+            opacity: parseFloat(style.opacity),
+          });
+        }
+
+        if (isLeaf) {
+          const paragraphs = extractParagraphs(el, win);
+          if (paragraphs.length > 0) {
+            elements.push({
+              type: "text",
+              x: rect.left, y: rect.top, w: rect.width, h: rect.height,
+              fontSize: parseFloat(style.fontSize) || 16,
+              fontFamily: style.fontFamily?.split(",")[0]?.replace(/["']/g, "").trim() || "Calibri",
+              fontWeight: style.fontWeight,
+              fontStyle: style.fontStyle,
+              color: style.color,
+              textAlign: style.textAlign,
+              paragraphs,
+            });
+            skipChildren(walker, el);
+          }
         }
       }
+      node = walker.nextNode() as Element | null;
     }
-    node = walker.nextNode() as Element | null;
-  }
 
-  document.body.removeChild(iframe);
-  return { background, elements };
+    return { background, elements };
+  } finally {
+    if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+  }
 }
 
 // ── DOM helpers ─────────────────────────────────────────────────────────────
@@ -253,15 +256,16 @@ function skipChildren(walker: TreeWalker, parent: Element) {
 }
 
 async function rasterizeSvg(svg: SVGSVGElement, width: number, height: number): Promise<string | null> {
+  let url: string | undefined;
   try {
     const svgStr = new XMLSerializer().serializeToString(svg);
     const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    url = URL.createObjectURL(blob);
     const img = new Image();
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve();
       img.onerror = reject;
-      img.src = url;
+      img.src = url!;
     });
     const canvas = document.createElement("canvas");
     canvas.width = width * 2;
@@ -269,10 +273,11 @@ async function rasterizeSvg(svg: SVGSVGElement, width: number, height: number): 
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.drawImage(img, 0, 0, width * 2, height * 2);
-    URL.revokeObjectURL(url);
     return canvas.toDataURL("image/png");
   } catch {
     return null;
+  } finally {
+    if (url) URL.revokeObjectURL(url);
   }
 }
 
