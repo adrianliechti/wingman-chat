@@ -431,7 +431,7 @@ export async function downloadHtmlSlidesAsPptx(htmlSlides: string[], slug: strin
     const base64 = images[i].split(",")[1];
     zip.file(`ppt/media/image${i + 1}.jpeg`, base64, { base64: true });
 
-    zip.file(`ppt/slides/slide${i + 1}.xml`, slideXmlWithImage(i + 1));
+    zip.file(`ppt/slides/slide${i + 1}.xml`, slideXmlWithImage());
     zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, slideRelsWithImage(i + 1));
   }
 
@@ -444,7 +444,7 @@ export async function downloadHtmlSlidesAsPptx(htmlSlides: string[], slug: strin
   URL.revokeObjectURL(url);
 }
 
-function slideXmlWithImage(n: number): string {
+function slideXmlWithImage(): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
   <p:cSld><p:spTree>
