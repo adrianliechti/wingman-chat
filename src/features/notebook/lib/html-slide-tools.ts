@@ -24,6 +24,8 @@ interface SlideMeasurement {
   topGap: number;
   /** Number of overlapping text element pairs detected */
   textOverlaps: number;
+  /** Length of the longest h1/h2 title text in characters */
+  titleLength: number;
   /** Gap in px between last visible content and canvas bottom */
   bottomGap: number;
 }
@@ -31,7 +33,7 @@ interface SlideMeasurement {
 const NO_MEASUREMENT: SlideMeasurement = {
   contentWidth: 0, contentHeight: 0,
   overflow: { top: 0, right: 0, bottom: 0, left: 0 },
-  verticalFill: 0, topGap: 0, bottomGap: 0, textOverlaps: 0,
+  verticalFill: 0, topGap: 0, bottomGap: 0, textOverlaps: 0, titleLength: 0,
 };
 
 /**
@@ -104,6 +106,13 @@ async function measureSlideOverflow(html: string): Promise<SlideMeasurement> {
           }
         }
 
+        // Measure longest title
+        let titleLength = 0;
+        for (const el of slide.querySelectorAll("h1, h2")) {
+          const len = (el.textContent || "").trim().length;
+          if (len > titleLength) titleLength = len;
+        }
+
         // Also consider scroll dimensions (catches padding/margin overflow
         // that may not produce a positioned descendant)
         const contentW = Math.max(slide.scrollWidth, maxRight - origin.left);
@@ -128,6 +137,7 @@ async function measureSlideOverflow(html: string): Promise<SlideMeasurement> {
           topGap: Math.max(0, Math.ceil(usedTop)),
           bottomGap: Math.max(0, Math.ceil(CANVAS_H - usedBottom)),
           textOverlaps,
+          titleLength,
         });
       } catch {
         // don't resolve — let the timeout handle cleanup
@@ -182,7 +192,7 @@ export function createHtmlSlideTools(
           console.debug(
             `[HTML Slides] ${path} ${m.contentWidth}×${m.contentHeight}px` +
             ` fill:${Math.round(m.verticalFill * 100)}% topGap:${m.topGap} bottomGap:${m.bottomGap}` +
-            ` overlaps:${m.textOverlaps} overflow T:${ov.top} R:${ov.right} B:${ov.bottom} L:${ov.left}`,
+            ` overlaps:${m.textOverlaps} title:${m.titleLength}ch overflow T:${ov.top} R:${ov.right} B:${ov.bottom} L:${ov.left}`,
           );
 
           // Errors: content clipped
@@ -205,6 +215,9 @@ export function createHtmlSlideTools(
           }
           if (m.textOverlaps > 0) {
             hints.push(`${m.textOverlaps} text overlap(s) detected — elements are stacking on top of each other. Fix positioning or reduce content.`);
+          }
+          if (m.titleLength > 80) {
+            hints.push(`Title is ${m.titleLength} characters — aim for ~80 or fewer. Shorten to a punchy insight statement that fits 1–2 lines.`);
           }
 
           if (errors.length > 0 || hints.length > 0) {

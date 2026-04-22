@@ -56,7 +56,7 @@ These are concrete minimums. Go bigger when the slide calls for it.
 |----------------|-------------|-----------|----------------------------------------------|
 | Hero stat      | 240–400     | 700–900   | One massive number dominates a slide         |
 | Display title  | 96–140      | 700–900   | Title slide, section divider                 |
-| Slide title    | 56–88       | 600–800   | The insight statement on content slides      |
+| Slide title    | 56–88       | 600–800   | Insight statement — **max ~80 characters**   |
 | Subtitle       | 32–44       | 400–500   | Context under the title                      |
 | Body           | 26–32       | 400       | Paragraph / supporting copy                  |
 | Label / caption| 20–24       | 500–600   | Small caps, chart labels, source cites       |
