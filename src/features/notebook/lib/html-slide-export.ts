@@ -11,19 +11,11 @@
  */
 
 import { downloadFromUrl } from "@/shared/lib/utils";
-
-// ── Constants ────────────────────────────────────────────────────────────────
-
-/** Slide canvas resolution in pixels */
-const CANVAS_W = 1920;
-const CANVAS_H = 1080;
+import { CANVAS_W, CANVAS_H, SLIDE_CX, SLIDE_CY, addPptxBoilerplate } from "./pptx-utils";
 
 /** Export rasterization scale — 2× gives ~3840×2160 output, crisp on 4K */
 const RASTER_SCALE = 2;
 
-/** Slide dimensions in EMU (914400 EMU = 1 inch) */
-const SLIDE_CX = 9144000; // 10"
-const SLIDE_CY = 5143500; // 5.625"
 /** JPEG quality for exported slide rasters (0–1). 0.85 is visually lossless for slides. */
 const JPEG_QUALITY = 0.85;
 
@@ -46,9 +38,7 @@ function sanitizeSlideDoc(doc: Document): void {
  * resolution. The iframe gives the slide its own document so its CSS doesn't
  * leak onto the host page, and provides a real layout context.
  */
-async function mountSlide(
-  html: string,
-): Promise<{ iframe: HTMLIFrameElement; doc: Document; teardown: () => void }> {
+async function mountSlide(html: string): Promise<{ iframe: HTMLIFrameElement; doc: Document; teardown: () => void }> {
   // Strip external-network tags from the source HTML before handing it to the
   // iframe, so `srcdoc` never even sees them.
   const parsed = new DOMParser().parseFromString(html, "text/html");
@@ -372,10 +362,7 @@ async function renderSlideToPngDataUrl(html: string): Promise<string> {
  * used by the hybrid PPTX export to avoid rendering text into the
  * background image (since it's also drawn as an editable overlay).
  */
-export async function renderSlideToJpegDataUrl(
-  html: string,
-  options: { hideText?: boolean } = {},
-): Promise<string> {
+export async function renderSlideToJpegDataUrl(html: string, options: { hideText?: boolean } = {}): Promise<string> {
   const { iframe, teardown } = await mountSlide(html);
   try {
     const canvas = await rasterizeSlideDoc(iframe, options);
@@ -384,7 +371,6 @@ export async function renderSlideToJpegDataUrl(
     teardown();
   }
 }
-
 
 // ── PDF export ───────────────────────────────────────────────────────────────
 
@@ -479,114 +465,3 @@ function slideRelsWithImage(n: number): string {
 </Relationships>`;
 }
 
-// ── PPTX boilerplate ──────────────────────────────────────────────────
-
-function addPptxBoilerplate(zip: import("jszip"), slideCount: number) {
-  zip.file(
-    "_rels/.rels",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
-</Relationships>`,
-  );
-
-  zip.file("[Content_Types].xml", buildContentTypesWithImages(slideCount));
-
-  const slideIds = Array.from(
-    { length: slideCount },
-    (_, i) => `    <p:sldId id="${256 + i}" r:id="rId${i + 2}"/>`,
-  ).join("\n");
-  zip.file(
-    "ppt/presentation.xml",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>
-  <p:sldIdLst>
-${slideIds}
-  </p:sldIdLst>
-  <p:sldSz cx="${SLIDE_CX}" cy="${SLIDE_CY}"/>
-  <p:notesSz cx="6858000" cy="9144000"/>
-</p:presentation>`,
-  );
-
-  const slideRels = Array.from(
-    { length: slideCount },
-    (_, i) =>
-      `  <Relationship Id="rId${i + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i + 1}.xml"/>`,
-  ).join("\n");
-  zip.file(
-    "ppt/_rels/presentation.xml.rels",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
-${slideRels}
-  <Relationship Id="rId${slideCount + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
-</Relationships>`,
-  );
-
-  zip.file(
-    "ppt/slideMasters/slideMaster1.xml",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:cSld><p:bg><p:bgRef idx="1001"><a:schemeClr val="bg1"/></p:bgRef></p:bg><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld>
-  <p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>
-  <p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>
-</p:sldMaster>`,
-  );
-  zip.file(
-    "ppt/slideMasters/_rels/slideMaster1.xml.rels",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
-</Relationships>`,
-  );
-
-  zip.file(
-    "ppt/slideLayouts/slideLayout1.xml",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank">
-  <p:cSld name="Blank"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld>
-</p:sldLayout>`,
-  );
-  zip.file(
-    "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
-</Relationships>`,
-  );
-
-  zip.file(
-    "ppt/theme/theme1.xml",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Default">
-  <a:themeElements>
-    <a:clrScheme name="Default"><a:dk1><a:srgbClr val="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1F497D"/></a:dk2><a:lt2><a:srgbClr val="EEECE1"/></a:lt2><a:accent1><a:srgbClr val="4472C4"/></a:accent1><a:accent2><a:srgbClr val="ED7D31"/></a:accent2><a:accent3><a:srgbClr val="A5A5A5"/></a:accent3><a:accent4><a:srgbClr val="FFC000"/></a:accent4><a:accent5><a:srgbClr val="5B9BD5"/></a:accent5><a:accent6><a:srgbClr val="70AD47"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme>
-    <a:fontScheme name="Default"><a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme>
-    <a:fmtScheme name="Default"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="12700"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="19050"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme>
-  </a:themeElements>
-</a:theme>`,
-  );
-}
-
-function buildContentTypesWithImages(slideCount: number): string {
-  const slideOverrides = Array.from(
-    { length: slideCount },
-    (_, i) =>
-      `  <Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`,
-  ).join("\n");
-
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Default Extension="png" ContentType="image/png"/>
-  <Default Extension="jpeg" ContentType="image/jpeg"/>
-  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
-  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
-  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
-  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
-${slideOverrides}
-</Types>`;
-}
