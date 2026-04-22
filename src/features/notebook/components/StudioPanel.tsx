@@ -17,12 +17,12 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import { getPodcastStyles, getReportStyles, getSlideStyles, getInfographicStyles } from "../hooks/useNotebook";
-import type { NotebookOutput, NotebookSource, OutputType, SlideFormat } from "../types/notebook";
+import type { NotebookOutput, NotebookSource, OutputType } from "../types/notebook";
 
 interface StudioPanelProps {
   sources: NotebookSource[];
   outputs: NotebookOutput[];
-  onGenerate: (type: OutputType, styleId?: string, slideFormat?: SlideFormat) => void;
+  onGenerate: (type: OutputType, styleId?: string) => void;
   onDeleteOutput: (outputId: string) => void;
   onSelectOutput: (output: NotebookOutput) => void;
 }
@@ -154,9 +154,7 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                           type="button"
                           onClick={() => {
                             setOpenMenu(null);
-                            // Slides always use "pptx" format (which triggers HTML generation)
-                            const fmt = type === "slides" ? ("pptx" as SlideFormat) : undefined;
-                            onGenerate(type, s.id, fmt);
+                            onGenerate(type, s.id);
                           }}
                           className="w-full text-left px-3 py-1.5 text-xs text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
                         >
@@ -202,12 +200,12 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                   <button
                     type="button"
                     onClick={() => {
-                      if (output.status === "completed") {
+                      if (output.status !== "error") {
                         onSelectOutput(output);
                       }
                     }}
                     className={`flex flex-1 min-w-0 items-center gap-2 text-left ${
-                      output.status === "completed" ? "cursor-pointer" : "cursor-default"
+                      output.status === "error" ? "cursor-default" : "cursor-pointer"
                     }`}
                   >
                     <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
@@ -363,7 +361,7 @@ function canDownload(output: NotebookOutput): boolean {
   return (
     (output.type === "podcast" && !!output.audioUrl) ||
     (output.type === "infographic" && !!output.imageUrl) ||
-    (output.type === "slides" && (!!output.slides?.length || !!output.htmlSlides?.length || !!output.pptxSlides?.length)) ||
+    (output.type === "slides" && (!!output.slides?.length || !!output.htmlSlides?.length)) ||
     (output.type === "report" && !!output.content)
   );
 }

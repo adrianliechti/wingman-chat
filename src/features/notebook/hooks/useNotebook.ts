@@ -42,7 +42,6 @@ import studioMindMapInstructions from "../prompts/studio-mind-map.txt?raw";
 import studioQuizInstructions from "../prompts/studio-quiz.txt?raw";
 import studioReportInstructions from "../prompts/studio-report.txt?raw";
 import studioSlideInstructions from "../prompts/studio-slide-deck.txt?raw";
-import studioSlideHtmlInstructions from "../prompts/studio-slide-deck-html.txt?raw";
 import type {
   MindMapNode,
   Notebook,
@@ -51,7 +50,6 @@ import type {
   NotebookSource,
   OutputType,
   QuizQuestion,
-  SlideFormat,
 } from "../types/notebook";
 
 function generateId(): string {
@@ -192,14 +190,6 @@ function buildSlideInstructions(styleId: string): string {
   const slideStyles = getSlideStyles();
   const style = slideStyles.find((s) => s.id === styleId) ?? slideStyles[0] ?? DEFAULT_SLIDE_STYLES[0];
   return studioSlideInstructions
-    .replace("{{COMMON_RULES}}", slideCommonRules)
-    .replace("{{STYLE_SECTION}}", style.prompt);
-}
-
-function buildSlideHtmlInstructions(styleId: string): string {
-  const slideStyles = getSlideStyles();
-  const style = slideStyles.find((s) => s.id === styleId) ?? slideStyles[0] ?? DEFAULT_SLIDE_STYLES[0];
-  return studioSlideHtmlInstructions
     .replace("{{COMMON_RULES}}", slideCommonRules)
     .replace("{{STYLE_SECTION}}", style.prompt);
 }
@@ -568,7 +558,7 @@ export function useNotebook(notebookId?: string) {
   // ── Outputs ────────────────────────────────────────────────────────
 
   const generateOutput = useCallback(
-    (type: OutputType, styleId?: string, slideFormat?: SlideFormat) => {
+    (type: OutputType, styleId?: string) => {
       if (!notebook || sources.length === 0) return;
 
       const output: NotebookOutput = {
@@ -576,7 +566,7 @@ export function useNotebook(notebookId?: string) {
         type,
         title: OUTPUT_TITLES[type],
         content: "",
-        slideFormat: type === "slides" ? (slideFormat ?? "pdf") : undefined,
+        slideFormat: type === "slides" ? "pptx" : undefined,
         status: "generating",
         createdAt: new Date().toISOString(),
       };
@@ -606,9 +596,7 @@ export function useNotebook(notebookId?: string) {
       // Fire and forget
       const tools = createSourceTools(sourcesRef.current);
       const instructions =
-        type === "slides"
-          ? buildSlideInstructions(styleId ?? "whiteboard")
-          : type === "podcast"
+        type === "podcast"
             ? buildAudioInstructions(styleId ?? "overview")
             : type === "report"
               ? buildReportInstructions(styleId ?? "executive")
@@ -718,9 +706,9 @@ export function useNotebook(notebookId?: string) {
             });
           })
           .catch(failOutput);
-      } else if (type === "slides" && output.slideFormat === "pptx") {
+      } else if (type === "slides") {
         // HTML slide mode: LLM uses filesystem tools to write HTML/CSS/images
-        const htmlInstructions = buildSlideHtmlInstructions(styleId ?? "whiteboard");
+        const htmlInstructions = buildSlideInstructions(styleId ?? "whiteboard");
 
         // In-memory filesystem for the LLM to write slides into
         const slideFs = new Map<string, string>();
@@ -771,71 +759,6 @@ export function useNotebook(notebookId?: string) {
               ...output,
               content: `${htmlSlides.length} slides generated`,
               htmlSlides,
-              status: "completed",
-            });
-          })
-          .catch(failOutput);
-      } else if (type === "slides") {
-        // PDF mode: LLM generates slide text + image prompts → render each slide sequentially
-        // so each slide can use the previous one as a style reference
-        runWithTools(client, getModel(), instructions, [userMessage], tools)
-          .then(async (response) => {
-            const fullContent = getTextFromContent(response.content);
-            if (!fullContent?.trim()) {
-              throw new Error("Could not generate slide deck");
-            }
-
-            // Parse slides: split by ---SLIDE--- separator
-            const slideBlocks = fullContent
-              .split(/---SLIDE---/i)
-              .map((s) => s.trim())
-              .filter(Boolean);
-
-            // Extract text content and image prompts per slide
-            const slideTexts: string[] = [];
-            const imagePrompts: string[] = [];
-
-            for (const block of slideBlocks) {
-              const parts = block.split(/---PROMPT---/i);
-              slideTexts.push((parts[0] || "").trim());
-              if (parts[1]) {
-                imagePrompts.push(parts[1].trim());
-              }
-            }
-
-            const textContent = slideTexts.join("\n\n---\n\n");
-
-            // Generate first slide alone to establish style, then remaining in parallel batches of 4
-            const rendererModel = config.renderer?.model || "";
-            const slideImages: string[] = new Array(imagePrompts.length).fill("");
-
-            if (imagePrompts.length > 0) {
-              try {
-                const firstBlob = await client.generateImage(rendererModel, imagePrompts[0]);
-                slideImages[0] = await blobToDataUrl(firstBlob);
-
-                const remaining = imagePrompts.slice(1);
-                for (let i = 0; i < remaining.length; i += 4) {
-                  const batch = remaining.slice(i, i + 4);
-                  const results = await Promise.allSettled(
-                    batch.map((prompt) =>
-                      client.generateImage(rendererModel, prompt, [firstBlob]).then((blob) => blobToDataUrl(blob)),
-                    ),
-                  );
-                  for (let j = 0; j < results.length; j++) {
-                    const result = results[j];
-                    slideImages[1 + i + j] = result.status === "fulfilled" ? result.value : "";
-                  }
-                }
-              } catch {
-                // first slide failed — skip all image generation
-              }
-            }
-
-            await completeOutput({
-              ...output,
-              content: textContent,
-              slides: slideImages.filter(Boolean),
               status: "completed",
             });
           })
