@@ -401,6 +401,7 @@ export function useNotebook(notebookId?: string) {
       };
 
       await store.addSource(notebook.id, source);
+      store.touchNotebook(notebook.id);
       setSources((prev) => [...prev, source]);
     },
     [notebook],
@@ -429,6 +430,7 @@ export function useNotebook(notebookId?: string) {
       };
 
       await store.addSource(notebook.id, source);
+      store.touchNotebook(notebook.id);
       setSources((prev) => [...prev, source]);
     },
     [notebook],
@@ -448,6 +450,7 @@ export function useNotebook(notebookId?: string) {
       };
 
       await store.addSource(notebook.id, source);
+      store.touchNotebook(notebook.id);
       setSources((prev) => [...prev, source]);
     },
     [notebook],
@@ -482,6 +485,7 @@ export function useNotebook(notebookId?: string) {
       };
 
       await store.addSource(notebook.id, source);
+      store.touchNotebook(notebook.id);
       setSources((prev) => [...prev, source]);
     },
     [notebook],
@@ -533,6 +537,7 @@ export function useNotebook(notebookId?: string) {
         const finalMessages = [...newMessages, assistantMsg];
         setMessages(finalMessages);
         await store.saveMessages(notebook.id, finalMessages);
+        store.touchNotebook(notebook.id);
       } catch (err) {
         setStreamingContent(null);
 
@@ -577,6 +582,7 @@ export function useNotebook(notebookId?: string) {
       const completeOutput = async (completed: NotebookOutput) => {
         setOutputs((prev) => prev.map((o) => (o.id === output.id ? completed : o)));
         await store.addOutput(notebook.id, completed);
+        store.touchNotebook(notebook.id);
       };
 
       const failOutput = (err: unknown) => {

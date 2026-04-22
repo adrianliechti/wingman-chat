@@ -12,15 +12,26 @@ const CANVAS_W = 1920;
 const CANVAS_H = 1080;
 const OVERFLOW_TOLERANCE = 8; // px – ignore sub-pixel rounding noise
 
+const TEXT_TAGS = new Set(["H1","H2","H3","H4","H5","H6","P","LI","SPAN","A","LABEL","FIGCAPTION","BLOCKQUOTE","TD","TH","DT","DD"]);
+
 interface SlideMeasurement {
   contentWidth: number;
   contentHeight: number;
   overflow: { top: number; right: number; bottom: number; left: number };
+  /** Fraction of the 1080px canvas used vertically by content (0–1) */
+  verticalFill: number;
+  /** Gap in px between slide top and first visible content */
+  topGap: number;
+  /** Number of overlapping text element pairs detected */
+  textOverlaps: number;
+  /** Gap in px between last visible content and canvas bottom */
+  bottomGap: number;
 }
 
 const NO_MEASUREMENT: SlideMeasurement = {
   contentWidth: 0, contentHeight: 0,
   overflow: { top: 0, right: 0, bottom: 0, left: 0 },
+  verticalFill: 0, topGap: 0, bottomGap: 0, textOverlaps: 0,
 };
 
 /**
@@ -53,7 +64,7 @@ async function measureSlideOverflow(html: string): Promise<SlideMeasurement> {
           el.style.setProperty("overflow", "visible", "important");
         }
         slide.style.setProperty("width", "auto", "important");
-        slide.style.setProperty("min-width", CANVAS_W + "px", "important");
+        slide.style.setProperty("min-width", `${CANVAS_W}px`, "important");
         slide.style.setProperty("height", "auto", "important");
         slide.style.setProperty("overflow", "visible", "important");
 
@@ -73,10 +84,35 @@ async function measureSlideOverflow(html: string): Promise<SlideMeasurement> {
           maxBottom = Math.max(maxBottom, r.bottom);
         }
 
+        // Detect overlapping text elements
+        const textRects: DOMRect[] = [];
+        for (const el of slide.querySelectorAll("*")) {
+          if (!TEXT_TAGS.has(el.tagName)) continue;
+          if ((el as HTMLElement).offsetHeight === 0) continue;
+          // Only leaf text nodes (skip containers whose children we'll check)
+          if (el.querySelector(Array.from(TEXT_TAGS).join(",")) ) continue;
+          textRects.push(el.getBoundingClientRect());
+        }
+        let textOverlaps = 0;
+        for (let i = 0; i < textRects.length; i++) {
+          for (let j = i + 1; j < textRects.length; j++) {
+            const a = textRects[i], b = textRects[j];
+            // Check for meaningful overlap (> 4px in both axes to ignore hairline touches)
+            const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+            const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+            if (overlapX > 4 && overlapY > 4) textOverlaps++;
+          }
+        }
+
         // Also consider scroll dimensions (catches padding/margin overflow
         // that may not produce a positioned descendant)
         const contentW = Math.max(slide.scrollWidth, maxRight - origin.left);
         const contentH = Math.max(slide.scrollHeight, maxBottom - origin.top);
+
+        // Content span relative to the slide origin
+        const usedTop = minTop - origin.top;
+        const usedBottom = maxBottom - origin.top;
+        const usedHeight = usedBottom - usedTop;
 
         iframe.remove();
         resolve({
@@ -88,6 +124,10 @@ async function measureSlideOverflow(html: string): Promise<SlideMeasurement> {
             bottom: Math.max(0, Math.ceil(contentH - CANVAS_H)),
             left: Math.max(0, Math.ceil(origin.left - minLeft)),
           },
+          verticalFill: Math.round((usedHeight / CANVAS_H) * 100) / 100,
+          topGap: Math.max(0, Math.ceil(usedTop)),
+          bottomGap: Math.max(0, Math.ceil(CANVAS_H - usedBottom)),
+          textOverlaps,
         });
       } catch {
         // don't resolve — let the timeout handle cleanup
@@ -140,21 +180,44 @@ export function createHtmlSlideTools(
           const m = await measureSlideOverflow(assembled);
           const { overflow: ov } = m;
           console.debug(
-            `[HTML Slides] ${path} measured ${m.contentWidth}×${m.contentHeight}px` +
-            ` (canvas ${CANVAS_W}×${CANVAS_H}) → overflow T:${ov.top} R:${ov.right} B:${ov.bottom} L:${ov.left}`,
+            `[HTML Slides] ${path} ${m.contentWidth}×${m.contentHeight}px` +
+            ` fill:${Math.round(m.verticalFill * 100)}% topGap:${m.topGap} bottomGap:${m.bottomGap}` +
+            ` overlaps:${m.textOverlaps} overflow T:${ov.top} R:${ov.right} B:${ov.bottom} L:${ov.left}`,
           );
-          const issues: string[] = [];
-          if (ov.top > OVERFLOW_TOLERANCE) issues.push(`Top: ${ov.top}px above the slide`);
-          if (ov.bottom > OVERFLOW_TOLERANCE) issues.push(`Bottom: ${ov.bottom}px below the slide`);
-          if (ov.left > OVERFLOW_TOLERANCE) issues.push(`Left: ${ov.left}px outside left edge`);
-          if (ov.right > OVERFLOW_TOLERANCE) issues.push(`Right: ${ov.right}px outside right edge`);
-          if (issues.length > 0) {
-            return textResult(
-              `Wrote ${path} (${content.length} bytes)\n\n` +
-              `⚠️ OVERFLOW: Content extends beyond the ${CANVAS_W}×${CANVAS_H}px canvas:\n` +
-              issues.map((i) => `  - ${i}`).join("\n") + "\n" +
-              `Overflowing content will be clipped. Rewrite this slide to fit within the canvas bounds.`,
+
+          // Errors: content clipped
+          const errors: string[] = [];
+          if (ov.top > OVERFLOW_TOLERANCE) errors.push(`Top: ${ov.top}px above the slide`);
+          if (ov.bottom > OVERFLOW_TOLERANCE) errors.push(`Bottom: ${ov.bottom}px below the slide`);
+          if (ov.left > OVERFLOW_TOLERANCE) errors.push(`Left: ${ov.left}px outside left edge`);
+          if (ov.right > OVERFLOW_TOLERANCE) errors.push(`Right: ${ov.right}px outside right edge`);
+
+          // Hints: layout could be improved
+          const hints: string[] = [];
+          if (m.verticalFill > 0 && m.verticalFill < 0.7) {
+            hints.push(
+              `Content only fills ${Math.round(m.verticalFill * 100)}% of the vertical canvas.` +
+              ` Use larger typography, more generous spacing, or bigger visuals to fill the 1080px height.`,
             );
+          }
+          if (m.bottomGap > 250) {
+            hints.push(`${m.bottomGap}px of empty space at the bottom — spread content more evenly or increase element sizes.`);
+          }
+          if (m.textOverlaps > 0) {
+            hints.push(`${m.textOverlaps} text overlap(s) detected — elements are stacking on top of each other. Fix positioning or reduce content.`);
+          }
+
+          if (errors.length > 0 || hints.length > 0) {
+            let feedback = `Wrote ${path} (${content.length} bytes)`;
+            if (errors.length > 0) {
+              feedback += `\n\n⚠️ OVERFLOW: Content extends beyond the ${CANVAS_W}×${CANVAS_H}px canvas:\n` +
+                errors.map((e) => `  - ${e}`).join("\n") +
+                `\nOverflowing content will be clipped. Rewrite this slide to fit within the canvas bounds.`;
+            }
+            if (hints.length > 0) {
+              feedback += `\n\n💡 LAYOUT HINT:\n` + hints.map((h) => `  - ${h}`).join("\n");
+            }
+            return textResult(feedback);
           }
         }
 

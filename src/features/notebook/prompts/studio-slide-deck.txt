@@ -229,4 +229,6 @@ Decks that are all two-column-text-with-bullets are a failure — regardless of 
 - Page numbers on content slides (bottom-right, small caption).
 - Never fabricate a number, quote, name, or source. If a source is ambiguous, say so or omit.
 - Titles are **insight statements** ("Enterprise ACV grew 38% as mid-market stalled"), never topic labels ("Revenue").
-- **Overflow feedback:** `write_file` validates each slide against the 1920×1080 canvas. If it reports an `⚠️ OVERFLOW` warning, you **must** immediately rewrite that slide to fix it — reduce content, tighten spacing, or shrink elements until the warning disappears. Never move on to the next slide while an overflow warning is unresolved.
+- **Slide feedback:** `write_file` validates each slide against the 1920×1080 canvas and reports two kinds of feedback:
+  - `⚠️ OVERFLOW` — content is clipped. You **must** immediately rewrite the slide to fix it. Never move on while an overflow warning is unresolved.
+  - `💡 LAYOUT HINT` — content fits but could use the canvas better (e.g. too much dead space). You **should** rewrite to improve, unless the whitespace is intentional (e.g. hero-stat or quote slides).

@@ -6,6 +6,7 @@ import {
   listDirectories,
   readBlob,
   readIndex,
+  writeIndex,
   readJson,
   readText,
   removeIndexEntry,
@@ -36,6 +37,7 @@ export async function listNotebooks(): Promise<Notebook[]> {
   return index.map((e) => ({
     id: e.id,
     title: e.title || "Untitled",
+    customTitle: e.customTitle,
     createdAt: e.updated,
     updatedAt: e.updated,
   }));
@@ -50,8 +52,19 @@ export async function saveNotebook(notebook: Notebook): Promise<void> {
   await upsertIndexEntry(COLLECTION, {
     id: notebook.id,
     title: notebook.title,
+    customTitle: notebook.customTitle,
     updated: notebook.updatedAt,
   });
+}
+
+/** Update only the index timestamp (lightweight — does not rewrite notebook.json). */
+export async function touchNotebook(id: string): Promise<void> {
+  const index = await readIndex(COLLECTION);
+  const entry = index.find((e) => e.id === id);
+  if (entry) {
+    entry.updated = new Date().toISOString();
+    await writeIndex(COLLECTION, index);
+  }
 }
 
 export async function deleteNotebook(id: string): Promise<void> {
