@@ -781,14 +781,20 @@ export function useNotebook(notebookId?: string) {
         const slideFs = new Map<string, string>();
         const rendererModel = config.renderer?.model || "";
 
-        const fsTools = createHtmlSlideTools(slideFs, client, rendererModel, () => {
-          // Progressive update on each write
-          const rawSlides = getOrderedHtmlSlides(slideFs);
-          if (rawSlides.length > 0) {
-            const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
-            setOutputs((prev) => prev.map((o) => (o.id === output.id ? { ...o, htmlSlides: [...htmlSlides] } : o)));
-          }
-        });
+        const fsTools = createHtmlSlideTools(
+          slideFs,
+          client,
+          rendererModel,
+          () => {
+            // Progressive update on each write
+            const rawSlides = getOrderedHtmlSlides(slideFs);
+            if (rawSlides.length > 0) {
+              const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
+              setOutputs((prev) => prev.map((o) => (o.id === output.id ? { ...o, htmlSlides: [...htmlSlides] } : o)));
+            }
+          },
+          () => sourcesRef.current,
+        );
 
         const allTools = [...tools, ...fsTools];
         const htmlMessage = {
@@ -800,11 +806,11 @@ export function useNotebook(notebookId?: string) {
                 "Create a polished, professionally-designed slide deck from the available sources.",
                 "",
                 "Workflow:",
-                "1. Call `source_list_files`, then `source_read_file` every source. Extract concrete facts, quotes, and numbers. Never fabricate data.",
+                "1. Call `source_list_files`, then `source_read_file` every source. Extract concrete facts, quotes, and numbers. Never fabricate data. Binary sources (images) will return a stub — do not try to read their contents.",
                 "2. Plan the deck out loud BEFORE writing any files: the 8–12 slide arc, the layout archetype for each slide (do not repeat archetypes back-to-back), the single background color, the palette, the type stack.",
                 "3. Write `styles/theme.css` with your CSS custom properties (colors, type scale, spacing) and the shared component classes.",
                 "4. Write each slide in `slides/slide1.html`, `slides/slide2.html`, ... Every slide must have exactly one focal point and an insight-driven title.",
-                "5. Use `generate_image` only for real photographic/atmospheric assets. For charts, diagrams, icons use SVG or CSS.",
+                "5. If the user uploaded image sources, prefer `import_image` to bring them into the slide filesystem instead of regenerating them. Use `generate_image` for additional photographic/atmospheric assets that are not already provided. For charts, diagrams, icons use SVG or CSS.",
                 "6. After every few slides, re-read a prior slide to stay consistent.",
                 "",
                 "Required deck mix: cover + (optional section dividers) + ≥1 hero-stat + ≥1 data chart + ≥1 framework/matrix/timeline + ≥1 quote/callout + ≥1 comparison + closing. A deck made entirely of title-plus-bullets is a failure.",

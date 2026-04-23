@@ -163,10 +163,16 @@ function buildSlideXml(
     if (!media) continue;
     const id = nextId++;
 
+    // Fit the source image into the rect according to CSS `object-fit`.
+    // PPTX stretches the full source image to fill the placement rect, so
+    // without correction any rect whose aspect ratio differs from the
+    // image's natural aspect ratio will visibly distort the picture.
+    const fit = fitImageToRect(img);
+
     parts.push(`    <p:pic>
       <p:nvPicPr><p:cNvPr id="${id}" name="Image ${id}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>
-      <p:blipFill><a:blip r:embed="${media.rId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>
-      <p:spPr><a:xfrm><a:off x="${pxToEmu(img.x)}" y="${pxToEmu(img.y)}"/><a:ext cx="${pxToEmu(img.w)}" cy="${pxToEmu(img.h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>
+      <p:blipFill><a:blip r:embed="${media.rId}"/>${fit.srcRect}<a:stretch><a:fillRect/></a:stretch></p:blipFill>
+      <p:spPr><a:xfrm><a:off x="${pxToEmu(fit.x)}" y="${pxToEmu(fit.y)}"/><a:ext cx="${pxToEmu(fit.w)}" cy="${pxToEmu(fit.h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>
     </p:pic>`);
   }
 
@@ -201,6 +207,73 @@ ${parts.join("\n")}
     </p:spTree>
   </p:cSld>
 </p:sld>`;
+}
+
+/**
+ * Fit the source image into its CSS rect according to `object-fit`, returning
+ * both the adjusted PPTX placement rect and an optional `<a:srcRect>` crop.
+ *
+ * PPTX has no direct equivalent of CSS `object-fit`; it always stretches the
+ * source to fill the placement rect. To reproduce the browser's rendering:
+ *
+ *   - `cover`: keep the rect, crop the source with `<a:srcRect>` so the
+ *     visible portion has the rect's aspect ratio.
+ *   - `contain` / `scale-down`: shrink the placement rect to match the
+ *     natural aspect, centered inside the original rect.
+ *   - `fill` / unknown: leave as-is (stretch to rect).
+ *
+ * `object-position` is assumed to be center (the CSS default).
+ */
+function fitImageToRect(img: ParsedElement): {
+  x: number; y: number; w: number; h: number; srcRect: string;
+} {
+  const { x, y, w, h, naturalW, naturalH, objectFit } = img;
+  const base = { x, y, w, h, srcRect: "" };
+  if (!naturalW || !naturalH || w <= 0 || h <= 0) return base;
+
+  const rectAR = w / h;
+  const imgAR = naturalW / naturalH;
+  // Treat near-equal aspect ratios as identical (≤0.5% difference).
+  if (Math.abs(rectAR - imgAR) / Math.max(rectAR, imgAR) < 0.005) return base;
+
+  const fit = objectFit || "fill";
+
+  if (fit === "cover") {
+    // <a:srcRect l/t/r/b> values are in 1/1000 of a percent (50% = 50000).
+    let lPct = 0, tPct = 0, rPct = 0, bPct = 0;
+    if (rectAR > imgAR) {
+      // Rect wider than source → scale to width, crop top/bottom.
+      const cropFrac = (1 - imgAR / rectAR) / 2;
+      tPct = Math.round(cropFrac * 100000);
+      bPct = tPct;
+    } else {
+      // Rect taller than source → scale to height, crop left/right.
+      const cropFrac = (1 - rectAR / imgAR) / 2;
+      lPct = Math.round(cropFrac * 100000);
+      rPct = lPct;
+    }
+    return { ...base, srcRect: `<a:srcRect l="${lPct}" t="${tPct}" r="${rPct}" b="${bPct}"/>` };
+  }
+
+  if (fit === "contain" || fit === "scale-down") {
+    // Fit the natural image inside the rect, preserving aspect ratio.
+    let vw = w, vh = h;
+    if (rectAR > imgAR) {
+      vw = h * imgAR;
+    } else {
+      vh = w / imgAR;
+    }
+    return {
+      x: x + (w - vw) / 2,
+      y: y + (h - vh) / 2,
+      w: vw,
+      h: vh,
+      srcRect: "",
+    };
+  }
+
+  // `fill` (default), `none`, or unknown → stretch to rect.
+  return base;
 }
 
 function buildParagraphsXml(paragraphs: ParsedParagraph[], parent: ParsedElement): string {

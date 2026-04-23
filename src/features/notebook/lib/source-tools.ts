@@ -31,6 +31,27 @@ function createSourceAdapter(getSources: () => File[]): ReadableFileSource {
     async read(path: string): Promise<FileData | undefined> {
       const source = getSources().find((s) => s.path === path);
       if (!source) return undefined;
+      // Binary sources (images, audio, etc.) are stored as data URLs.
+      // Returning the raw data URL as "text" blows the model's context
+      // and gets truncated mid-string by the read tool. Replace with a
+      // short stub that explains how the model can actually use it.
+      if (source.content.startsWith("data:")) {
+        const ct = source.contentType ?? inferContentTypeFromPath(source.path) ?? "application/octet-stream";
+        // Rough byte size: data URL is base64, so decoded ≈ len * 3/4
+        // after the comma header.
+        const commaIdx = source.content.indexOf(",");
+        const b64Len = commaIdx >= 0 ? source.content.length - commaIdx - 1 : source.content.length;
+        const approxBytes = Math.floor(b64Len * 0.75);
+        const kb = approxBytes >= 1024 ? `${Math.round(approxBytes / 1024)} KB` : `${approxBytes} bytes`;
+        const isImage = ct.startsWith("image/");
+        const hint = isImage
+          ? "This is a binary image source. To use it in a slide, call `import_image` with this path — do not try to read its contents."
+          : "This is a binary source. Its raw contents are not meaningful as text.";
+        return {
+          path: source.path,
+          content: `[binary source: ${ct}, ≈${kb}]\n${hint}`,
+        };
+      }
       return {
         path: source.path,
         content: source.content,

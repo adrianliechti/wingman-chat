@@ -399,7 +399,7 @@ async function readOutput(notebookId: string, outputId: string): Promise<Noteboo
     const pptxSlides = await readJson<string[]>(`${base}/pptx-slides.json`);
     if (pptxSlides) output.pptxSlides = pptxSlides;
   } else if (meta.type === "slides" && meta.htmlSlideCount) {
-    output.slideFormat = (meta.slideFormat as NotebookOutput["slideFormat"]) ?? "pptx";
+    output.slideFormat = (meta.slideFormat as NotebookOutput["slideFormat"]) ?? "html";
     const htmlSlides = await readJson<string[]>(`${base}/html-slides.json`);
     if (htmlSlides) output.htmlSlides = htmlSlides;
   } else if (meta.type === "slides" && meta.slideCount) {

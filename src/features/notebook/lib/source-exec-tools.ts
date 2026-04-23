@@ -28,11 +28,34 @@ interface FileRecord {
 
 type FileMap = Record<string, FileRecord>;
 
+/**
+ * Normalize a path to the notebook-source canonical form (no leading slash).
+ *
+ * Sandbox runtimes (Pyodide, Bash) return paths like `/foo.csv`, but
+ * notebook sources are stored without a leading slash. Without this,
+ * diffing/persisting would create duplicate entries (`foo.csv` and
+ * `/foo.csv`) every time the sandbox writes a file.
+ */
+function normalizeSourceKey(path: string): string {
+  let p = path.trim();
+  while (p.startsWith("/")) p = p.slice(1);
+  return p;
+}
+
+function normalizeMapKeys(map: FileMap): FileMap {
+  const out: FileMap = {};
+  for (const [path, rec] of Object.entries(map)) {
+    const key = normalizeSourceKey(path);
+    if (key) out[key] = rec;
+  }
+  return out;
+}
+
 /** Convert the sources array to the Record<path, {content, contentType}> shape. */
 function sourcesToFileMap(sources: readonly File[]): FileMap {
   const map: FileMap = {};
   for (const s of sources) {
-    map[s.path] = { content: s.content, contentType: s.contentType };
+    map[normalizeSourceKey(s.path)] = { content: s.content, contentType: s.contentType };
   }
   return map;
 }
@@ -118,7 +141,7 @@ export function createSourceExecTools(
             return [{ type: "text" as const, text: `Error executing code: ${result.error || "Unknown error"}` }];
           }
 
-          const after = result.files ?? {};
+          const after = normalizeMapKeys(result.files ?? {});
           const written = await persistWrites(before, after);
 
           const parts: string[] = [result.output || "(no output)"];
@@ -170,7 +193,7 @@ export function createSourceExecTools(
 
           const result = await executeBash({ command });
 
-          const after = await readFilesFromFs(memFs);
+          const after = normalizeMapKeys(await readFilesFromFs(memFs));
           const written = await persistWrites(before, after);
 
           const parts: string[] = [];

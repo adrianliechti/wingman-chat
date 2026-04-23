@@ -6,6 +6,7 @@
 import type { Client } from "@/shared/lib/client";
 import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { TextContent, Tool } from "@/shared/types/chat";
+import type { File } from "@/shared/types/file";
 import { assembleSlideHtml } from "./html-slide-assembly";
 
 const CANVAS_W = 1920;
@@ -60,7 +61,12 @@ async function measureSlideOverflow(html: string): Promise<SlideMeasurement> {
 
         clearTimeout(timeout);
 
-        // Remove all fixed-size / overflow constraints for measurement
+        // Remove fixed-size constraints so content that overflows the
+        // canvas becomes visible to getBoundingClientRect/scroll metrics.
+        // Note: we intentionally keep `.slide` at `overflow: hidden` to
+        // preserve its block formatting context — otherwise the first
+        // child's `margin-top` collapses through the slide and produces
+        // a phantom "top overflow" that the model cannot fix.
         for (const el of [doc.documentElement, doc.body]) {
           el.style.setProperty("height", "auto", "important");
           el.style.setProperty("overflow", "visible", "important");
@@ -68,7 +74,6 @@ async function measureSlideOverflow(html: string): Promise<SlideMeasurement> {
         slide.style.setProperty("width", "auto", "important");
         slide.style.setProperty("min-width", `${CANVAS_W}px`, "important");
         slide.style.setProperty("height", "auto", "important");
-        slide.style.setProperty("overflow", "visible", "important");
 
         // Walk all descendants to find the true content bounding box
         const origin = slide.getBoundingClientRect();
@@ -154,8 +159,15 @@ export function createHtmlSlideTools(
   client: Client,
   rendererModel: string,
   onWrite: () => void,
+  getSources?: () => File[],
 ): Tool[] {
   const textResult = (text: string): TextContent[] => [{ type: "text", text }];
+
+  const sanitizeFilename = (name: string): string => {
+    // Strip any directory components and keep a filesystem-friendly name.
+    const base = name.split(/[\\/]/).pop() ?? name;
+    return base.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^_+|_+$/g, "") || "image";
+  };
 
   return [
     {
@@ -195,42 +207,23 @@ export function createHtmlSlideTools(
             ` overlaps:${m.textOverlaps} title:${m.titleLength}ch overflow T:${ov.top} R:${ov.right} B:${ov.bottom} L:${ov.left}`,
           );
 
-          // Errors: content clipped
+          // Only report hard errors (content clipped beyond the canvas).
+          // Soft layout hints (fill %, whitespace, title length) were
+          // removed: they trapped the model in rewrite loops because
+          // "improvement" is subjective and every new version triggers
+          // a new hint.
           const errors: string[] = [];
           if (ov.top > OVERFLOW_TOLERANCE) errors.push(`Top: ${ov.top}px above the slide`);
           if (ov.bottom > OVERFLOW_TOLERANCE) errors.push(`Bottom: ${ov.bottom}px below the slide`);
           if (ov.left > OVERFLOW_TOLERANCE) errors.push(`Left: ${ov.left}px outside left edge`);
           if (ov.right > OVERFLOW_TOLERANCE) errors.push(`Right: ${ov.right}px outside right edge`);
 
-          // Hints: layout could be improved
-          const hints: string[] = [];
-          if (m.verticalFill > 0 && m.verticalFill < 0.7) {
-            hints.push(
-              `Content only fills ${Math.round(m.verticalFill * 100)}% of the vertical canvas.` +
-              ` Use larger typography, more generous spacing, or bigger visuals to fill the 1080px height.`,
-            );
-          }
-          if (m.bottomGap > 250) {
-            hints.push(`${m.bottomGap}px of empty space at the bottom — spread content more evenly or increase element sizes.`);
-          }
-          if (m.textOverlaps > 0) {
-            hints.push(`${m.textOverlaps} text overlap(s) detected — elements are stacking on top of each other. Fix positioning or reduce content.`);
-          }
-          if (m.titleLength > 80) {
-            hints.push(`Title is ${m.titleLength} characters — aim for ~80 or fewer. Shorten to a punchy insight statement that fits 1–2 lines.`);
-          }
-
-          if (errors.length > 0 || hints.length > 0) {
-            let feedback = `Wrote ${path} (${content.length} bytes)`;
-            if (errors.length > 0) {
-              feedback += `\n\n⚠️ OVERFLOW: Content extends beyond the ${CANVAS_W}×${CANVAS_H}px canvas:\n` +
+          if (errors.length > 0) {
+            return textResult(
+              `Wrote ${path} (${content.length} bytes)\n\n⚠️ OVERFLOW: Content extends beyond the ${CANVAS_W}×${CANVAS_H}px canvas:\n` +
                 errors.map((e) => `  - ${e}`).join("\n") +
-                `\nOverflowing content will be clipped. Rewrite this slide to fit within the canvas bounds.`;
-            }
-            if (hints.length > 0) {
-              feedback += `\n\n💡 LAYOUT HINT:\n` + hints.map((h) => `  - ${h}`).join("\n");
-            }
-            return textResult(feedback);
+                `\nOverflowing content will be clipped. Rewrite this slide to fit within the canvas bounds.`,
+            );
           }
         }
 
@@ -259,20 +252,78 @@ export function createHtmlSlideTools(
     },
     {
       name: "list_files",
-      description: "List all files that have been written so far.",
+      description: "List all files that have been written so far, plus any uploaded image sources available for import via `import_image`.",
       parameters: { type: "object", properties: {}, required: [] },
       function: async () => {
         const files = [...fs.keys()].sort();
-        if (files.length === 0) return textResult("No files written yet.");
+        const lines: string[] = [];
+        if (files.length === 0) {
+          lines.push("No files written yet.");
+        } else {
+          for (const f of files) {
+            const content = fs.get(f) ?? "";
+            const isImage = f.startsWith("images/");
+            const size = isImage ? "(image)" : `(${content.length} bytes)`;
+            lines.push(`- ${f} ${size}`);
+          }
+        }
+
+        // Surface uploaded image sources so the model knows what can be imported.
+        const sources = getSources?.() ?? [];
+        const imageSources = sources.filter(
+          (s) => (s.contentType ?? "").startsWith("image/") || s.content.startsWith("data:image/"),
+        );
+        if (imageSources.length > 0) {
+          lines.push("", "Uploaded image sources (call `import_image` to use them in a slide):");
+          for (const s of imageSources) {
+            lines.push(`- ${s.path} (${s.contentType ?? "image"})`);
+          }
+        }
+
+        return textResult(lines.join("\n"));
+      },
+    },
+    {
+      name: "import_image",
+      description:
+        "Copy an uploaded image source into the slide filesystem so it can be referenced in HTML/CSS. Use this instead of `generate_image` when the user has already uploaded a suitable image. Reference the result in HTML as <img src=\"images/filename.png\"> or in CSS as url('images/filename.png').",
+      parameters: {
+        type: "object",
+        properties: {
+          source_path: {
+            type: "string",
+            description: "The path of the uploaded image source (see `source_list_files` or `list_files`).",
+          },
+          filename: {
+            type: "string",
+            description: "Optional target filename under images/. Defaults to the source's basename.",
+          },
+        },
+        required: ["source_path"],
+      },
+      function: async (args) => {
+        const sourcePath = (args.source_path as string | undefined)?.trim();
+        const requestedFilename = (args.filename as string | undefined)?.trim();
+        if (!sourcePath) return textResult("Error: source_path is required.");
+
+        const sources = getSources?.() ?? [];
+        const source = sources.find((s) => s.path === sourcePath);
+        if (!source) return textResult(`Error: no source found at ${sourcePath}.`);
+
+        const ct = source.contentType ?? "";
+        const isImage = ct.startsWith("image/") || source.content.startsWith("data:image/");
+        if (!isImage) return textResult(`Error: ${sourcePath} is not an image (contentType: ${ct || "unknown"}).`);
+        if (!source.content.startsWith("data:")) {
+          return textResult(`Error: ${sourcePath} is not stored as a data URL and cannot be imported.`);
+        }
+
+        const filename = sanitizeFilename(requestedFilename || sourcePath);
+        const path = `images/${filename}`;
+        fs.set(path, source.content);
+        console.log(`[HTML Slides] Imported ${sourcePath} → ${path}`);
+        onWrite();
         return textResult(
-          files
-            .map((f) => {
-              const content = fs.get(f)!;
-              const isImage = f.startsWith("images/");
-              const size = isImage ? "(image)" : `(${content.length} bytes)`;
-              return `- ${f} ${size}`;
-            })
-            .join("\n"),
+          `OK: imported ${sourcePath} as ${path}. Reference it in HTML as src="images/${filename}" or in CSS as url('images/${filename}').`,
         );
       },
     },

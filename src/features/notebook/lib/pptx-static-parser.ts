@@ -40,6 +40,11 @@ export interface ParsedElement {
   borderWidth?: number;
   opacity?: number;
   imageData?: string;
+  /** Natural pixel dimensions of the source image — used to preserve aspect ratio in PPTX. */
+  naturalW?: number;
+  naturalH?: number;
+  /** CSS `object-fit` for <img> elements (`cover`, `contain`, `fill`, …). */
+  objectFit?: string;
 }
 
 export interface ParsedSlide {
@@ -122,9 +127,20 @@ export async function parseSlideHtml(html: string): Promise<ParsedSlide> {
 
         // IMG
         if (el.tagName === "IMG") {
-          const dataUrl = await getImageDataUrl(el as HTMLImageElement);
+          const imgEl = el as HTMLImageElement;
+          const dataUrl = await getImageDataUrl(imgEl);
           if (dataUrl) {
-            elements.push({ type: "image", x: rect.left, y: rect.top, w: rect.width, h: rect.height, imageData: dataUrl });
+            elements.push({
+              type: "image",
+              x: rect.left,
+              y: rect.top,
+              w: rect.width,
+              h: rect.height,
+              imageData: dataUrl,
+              naturalW: imgEl.naturalWidth || undefined,
+              naturalH: imgEl.naturalHeight || undefined,
+              objectFit: style.objectFit || undefined,
+            });
           }
           node = walker.nextNode() as Element | null;
           continue;
