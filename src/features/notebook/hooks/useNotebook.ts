@@ -4,16 +4,13 @@ import { convertFileToText } from "@/shared/lib/convert";
 import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { Content } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
+import { assembleSlideHtml, getOrderedHtmlSlides } from "../lib/html-slide-assembly";
+import { createHtmlSlideTools } from "../lib/html-slide-tools";
 import * as store from "../lib/opfs-notebook";
 import { createSourceExecTools } from "../lib/source-exec-tools";
 import { createSourceTools } from "../lib/source-tools";
 import { run } from "@/shared/lib/agent";
 import chatInstructions from "../prompts/chat.txt?raw";
-import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
-import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
-import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
-import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
-import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
 import infographicStyleAnime from "../prompts/infographic-style-anime.txt?raw";
 import infographicStyleAuto from "../prompts/infographic-style-auto.txt?raw";
 import infographicStyleBento from "../prompts/infographic-style-bento.txt?raw";
@@ -25,6 +22,11 @@ import infographicStyleKawaii from "../prompts/infographic-style-kawaii.txt?raw"
 import infographicStyleProfessional from "../prompts/infographic-style-professional.txt?raw";
 import infographicStyleScientific from "../prompts/infographic-style-scientific.txt?raw";
 import infographicStyleSketchNote from "../prompts/infographic-style-sketch-note.txt?raw";
+import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
+import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
+import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
+import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
+import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
 import reportStyleDashboard from "../prompts/report-style-dashboard.txt?raw";
 import reportStyleExecutive from "../prompts/report-style-executive.txt?raw";
 import reportStyleMagazine from "../prompts/report-style-magazine.txt?raw";
@@ -54,6 +56,8 @@ import type { File } from "@/shared/types/file";
 function generateId(): string {
   return crypto.randomUUID();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Merge multiple WAV blobs into a single WAV blob.
@@ -398,6 +402,7 @@ export function useNotebook(notebookId?: string) {
 
       const source: File = { path, content };
       await store.addSource(notebook.id, source);
+      store.touchNotebook(notebook.id);
       setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
     [notebook],
@@ -437,6 +442,7 @@ export function useNotebook(notebookId?: string) {
 
       const source: File = { path, content };
       await store.addSource(notebook.id, source);
+      store.touchNotebook(notebook.id);
       setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
     [notebook],
@@ -473,6 +479,7 @@ export function useNotebook(notebookId?: string) {
         added.push(audioSource);
       }
 
+      store.touchNotebook(notebook.id);
       setSources((prev) => {
         const paths = new Set(added.map((s) => s.path));
         return [...prev.filter((s) => !paths.has(s.path)), ...added];
@@ -511,6 +518,7 @@ export function useNotebook(notebookId?: string) {
 
       const source: File = { path, content };
       await store.addSource(notebook.id, source);
+      store.touchNotebook(notebook.id);
       setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
     [notebook],
@@ -587,6 +595,7 @@ export function useNotebook(notebookId?: string) {
         const finalMessages = [...newMessages, assistantMsg];
         setMessages(finalMessages);
         await store.saveMessages(notebook.id, finalMessages);
+        store.touchNotebook(notebook.id);
       } catch (err) {
         setStreamingContent(null);
 
@@ -620,6 +629,7 @@ export function useNotebook(notebookId?: string) {
         type,
         title: OUTPUT_TITLES[type],
         content: "",
+        slideFormat: type === "slides" ? "pptx" : undefined,
         status: "generating",
         createdAt: new Date().toISOString(),
       };
@@ -630,6 +640,7 @@ export function useNotebook(notebookId?: string) {
       const completeOutput = async (completed: NotebookOutput) => {
         setOutputs((prev) => prev.map((o) => (o.id === output.id ? completed : o)));
         await store.addOutput(notebook.id, completed);
+        store.touchNotebook(notebook.id);
       };
 
       const failOutput = (err: unknown) => {
@@ -764,67 +775,57 @@ export function useNotebook(notebookId?: string) {
           })
           .catch(failOutput);
       } else if (type === "slides") {
-        // Slide deck: LLM generates slide text + image prompts → render each slide sequentially
-        // so each slide can use the previous one as a style reference
-        run(client, getModel(), instructions, [userMessage], tools)
-          .then(async (result) => {
-            const response = result[result.length - 1];
-            const fullContent = getTextFromContent(response.content);
-            if (!fullContent?.trim()) {
-              throw new Error("Could not generate slide deck");
-            }
+        // HTML slide mode: LLM uses filesystem tools to write HTML/CSS/images
+        // into an in-memory slide fs. Each `write_file` on a slide re-assembles
+        // the deck so the UI can show progress.
+        const slideFs = new Map<string, string>();
+        const rendererModel = config.renderer?.model || "";
 
-            // Parse slides: split by ---SLIDE--- separator
-            const slideBlocks = fullContent
-              .split(/---SLIDE---/i)
-              .map((s) => s.trim())
-              .filter(Boolean);
+        const fsTools = createHtmlSlideTools(slideFs, client, rendererModel, () => {
+          // Progressive update on each write
+          const rawSlides = getOrderedHtmlSlides(slideFs);
+          if (rawSlides.length > 0) {
+            const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
+            setOutputs((prev) => prev.map((o) => (o.id === output.id ? { ...o, htmlSlides: [...htmlSlides] } : o)));
+          }
+        });
 
-            // Extract text content and image prompts per slide
-            const slideTexts: string[] = [];
-            const imagePrompts: string[] = [];
+        const allTools = [...tools, ...fsTools];
+        const htmlMessage = {
+          role: "user" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                "Create a polished, professionally-designed slide deck from the available sources.",
+                "",
+                "Workflow:",
+                "1. Call `source_list_files`, then `source_read_file` every source. Extract concrete facts, quotes, and numbers. Never fabricate data.",
+                "2. Plan the deck out loud BEFORE writing any files: the 8–12 slide arc, the layout archetype for each slide (do not repeat archetypes back-to-back), the single background color, the palette, the type stack.",
+                "3. Write `styles/theme.css` with your CSS custom properties (colors, type scale, spacing) and the shared component classes.",
+                "4. Write each slide in `slides/slide1.html`, `slides/slide2.html`, ... Every slide must have exactly one focal point and an insight-driven title.",
+                "5. Use `generate_image` only for real photographic/atmospheric assets. For charts, diagrams, icons use SVG or CSS.",
+                "6. After every few slides, re-read a prior slide to stay consistent.",
+                "",
+                "Required deck mix: cover + (optional section dividers) + ≥1 hero-stat + ≥1 data chart + ≥1 framework/matrix/timeline + ≥1 quote/callout + ≥1 comparison + closing. A deck made entirely of title-plus-bullets is a failure.",
+              ].join("\n"),
+            },
+          ],
+        };
 
-            for (const block of slideBlocks) {
-              const parts = block.split(/---PROMPT---/i);
-              slideTexts.push((parts[0] || "").trim());
-              if (parts[1]) {
-                imagePrompts.push(parts[1].trim());
-              }
-            }
+        run(client, getModel(), instructions, [htmlMessage], allTools)
+          .then(async () => {
+            const rawSlides = getOrderedHtmlSlides(slideFs);
+            console.log("[HTML Slides] Generation complete, slides:", rawSlides.length);
 
-            const textContent = slideTexts.join("\n\n---\n\n");
+            if (rawSlides.length === 0) throw new Error("No slides generated");
 
-            // Generate first slide alone to establish style, then remaining in parallel batches of 4
-            const rendererModel = config.renderer?.model || "";
-            const slideImages: string[] = new Array(imagePrompts.length).fill("");
-
-            if (imagePrompts.length > 0) {
-              try {
-                const firstBlob = await client.generateImage(rendererModel, imagePrompts[0]);
-                slideImages[0] = await blobToDataUrl(firstBlob);
-
-                const remaining = imagePrompts.slice(1);
-                for (let i = 0; i < remaining.length; i += 4) {
-                  const batch = remaining.slice(i, i + 4);
-                  const results = await Promise.allSettled(
-                    batch.map((prompt) =>
-                      client.generateImage(rendererModel, prompt, [firstBlob]).then((blob) => blobToDataUrl(blob)),
-                    ),
-                  );
-                  for (let j = 0; j < results.length; j++) {
-                    const result = results[j];
-                    slideImages[1 + i + j] = result.status === "fulfilled" ? result.value : "";
-                  }
-                }
-              } catch {
-                // first slide failed — skip all image generation
-              }
-            }
+            const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
 
             await completeOutput({
               ...output,
-              content: textContent,
-              slides: slideImages.filter(Boolean),
+              content: `${htmlSlides.length} slides generated`,
+              htmlSlides,
               status: "completed",
             });
           })

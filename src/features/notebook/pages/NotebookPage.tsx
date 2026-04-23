@@ -29,7 +29,7 @@ export function NotebookPage() {
   const [notebookId, setNotebookId] = useState<string | undefined>();
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [viewingOutput, setViewingOutput] = useState<NotebookOutput | null>(null);
+  const [viewingOutputId, setViewingOutputId] = useState<string | null>(null);
 
   const {
     notebook,
@@ -53,6 +53,19 @@ export function NotebookPage() {
     deleteOutput,
   } = useNotebook(notebookId);
 
+  // Derive viewingOutput from outputs array so it stays in sync during generation.
+  // refinedOutput holds local edits from the refine flow until they're persisted.
+  const [refinedOutput, setRefinedOutput] = useState<NotebookOutput | null>(null);
+  const liveOutput = viewingOutputId ? outputs.find((o) => o.id === viewingOutputId) ?? null : null;
+  // Use liveOutput during generation (status syncs in real-time), refinedOutput only for completed outputs
+  const viewingOutput = liveOutput?.status === "generating" ? liveOutput
+    : refinedOutput?.id === viewingOutputId ? refinedOutput
+    : liveOutput;
+  const setViewingOutput = useCallback((o: NotebookOutput | null) => {
+    setViewingOutputId(o?.id ?? null);
+    setRefinedOutput(null);
+  }, []);
+
   // Load notebook list
   const loadNotebooks = useCallback(async () => {
     const list = await store.listNotebooks();
@@ -64,7 +77,7 @@ export function NotebookPage() {
   useEffect(() => {
     if (routeNotebookId && routeNotebookId !== notebookId) {
       setNotebookId(routeNotebookId);
-      setViewingOutput(null);
+      setViewingOutputId(null);
     }
   }, [routeNotebookId, notebookId]);
 
@@ -76,7 +89,7 @@ export function NotebookPage() {
     }
     const id = await initNotebook();
     setNotebookId(id);
-    setViewingOutput(null);
+    setViewingOutputId(null);
     navigate({ to: "/notebook/$notebookId", params: { notebookId: id } });
     await loadNotebooks();
   }, [initNotebook, loadNotebooks, navigate, notebook, sources, messages, outputs]);
@@ -100,7 +113,7 @@ export function NotebookPage() {
           navigate({ to: "/notebook/$notebookId", params: { notebookId: newId } });
           await loadNotebooks();
         }
-        setViewingOutput(null);
+        setViewingOutputId(null);
       }
     },
     [notebookId, loadNotebooks, initNotebook, navigate],
@@ -120,7 +133,7 @@ export function NotebookPage() {
     (id: string) => {
       if (id !== notebookId) {
         setNotebookId(id);
-        setViewingOutput(null);
+        setViewingOutputId(null);
         navigate({ to: "/notebook/$notebookId", params: { notebookId: id } });
       }
     },
@@ -234,7 +247,7 @@ export function NotebookPage() {
                 )}
                 <button
                   type="button"
-                  onClick={() => setViewingOutput(null)}
+                  onClick={() => setViewingOutputId(null)}
                   className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
                   title="Back to chat"
                 >
@@ -250,8 +263,11 @@ export function NotebookPage() {
                   <MindMapViewer root={viewingOutput.mindMap} />
                 ) : viewingOutput.audioUrl ? (
                   <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
-                ) : viewingOutput.slides && viewingOutput.slides.length > 0 ? (
-                  <SlideViewer content={viewingOutput.content} slides={viewingOutput.slides} />
+                ) : viewingOutput.type === "slides" ? (
+                  <SlideViewer
+                    output={viewingOutput}
+                    onRefine={(updatedOutput) => setRefinedOutput(updatedOutput)}
+                  />
                 ) : viewingOutput.imageUrl ? (
                   <div className="h-full overflow-y-auto p-6">
                     <div className="flex flex-col items-center gap-4">
