@@ -30,7 +30,7 @@ import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { acceptTypes, canConvert, convertFileToText } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
-import { readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
+import { lookupContentType, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
 import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
@@ -170,11 +170,21 @@ export function ChatInput() {
           try {
             let content: Content | null = null;
 
-            if (visionFiles.includes(file.type)) {
-              const blob = await resizeImageBlob(file, 1920, 1920);
+            // Infer MIME from extension when browser didn't detect it
+            const effectiveType =
+              file.type && file.type !== "application/octet-stream"
+                ? file.type
+                : lookupContentType(file.name.split(".").pop() ?? "") ?? file.type;
+
+            // Re-wrap with correct type if it was wrong
+            const effectiveFile =
+              effectiveType !== file.type ? new File([file], file.name, { type: effectiveType }) : file;
+
+            if (visionFiles.includes(effectiveType)) {
+              const blob = await resizeImageBlob(effectiveFile, 1920, 1920);
               const dataUrl = await readAsDataURL(blob);
               content = { type: "image", name: file.name, data: dataUrl } as ImageContent;
-            } else if (canConvert(file)) {
+            } else if (canConvert(effectiveFile)) {
               const text = await convertFileToText(file);
               content = { type: "text", text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
             }

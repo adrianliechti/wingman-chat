@@ -119,6 +119,9 @@ export async function resizeImageBlob(blob: Blob, maxWidth: number, maxHeight: n
 
       ctx.drawImage(img, 0, 0, newWidth, newHeight);
 
+      // Use blob's type if it's a valid image MIME, otherwise default to PNG
+      const outputType = blob.type?.startsWith("image/") ? blob.type : "image/png";
+
       canvas.toBlob(
         (resizedBlob) => {
           if (resizedBlob) {
@@ -127,7 +130,7 @@ export async function resizeImageBlob(blob: Blob, maxWidth: number, maxHeight: n
             reject(new Error("Failed to create blob from canvas"));
           }
         },
-        blob.type,
+        outputType,
         0.9,
       );
     };
