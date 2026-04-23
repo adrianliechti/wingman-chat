@@ -437,7 +437,7 @@ export function ChatInput() {
           className={`relative contain-[layout_style] will-change-[height] ${isDragging
             ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl"
             : `border-0 md:border border-t border-solid border-neutral-200/60 dark:border-neutral-700/60 ${messages.length === 0 ? "bg-white/60 dark:bg-neutral-950/70" : "bg-white/30 dark:bg-neutral-950/50"
-            } rounded-t-2xl md:rounded-2xl`
+            } md:rounded-2xl`
             } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-sm transition-all duration-200`}
         >
           <input
@@ -453,7 +453,7 @@ export function ChatInput() {
 
           {/* Drop zone overlay */}
           {isDragging && (
-            <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 rounded-t-2xl md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-sm">
+            <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-sm">
               <div className="text-slate-700 dark:text-slate-300 font-semibold text-lg text-center">
                 Drop files here
               </div>
@@ -578,7 +578,7 @@ export function ChatInput() {
           </div>
 
           {/* Controls */}
-          <div className="relative flex items-center justify-between p-3 pt-0 pb-8 md:pb-3">
+          <div className="relative flex items-center justify-between p-3 pt-0 pb-3">
             {isRealtimeSelected && !isListening && (
               <button
                 type="button"
@@ -589,7 +589,8 @@ export function ChatInput() {
                   <Mic size={15} />
                 </div>
                 <span className="text-xs text-neutral-500 dark:text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200 transition-colors whitespace-nowrap">
-                  Click to start voice conversation
+                  <span className="hidden sm:inline">Click to start voice conversation</span>
+                  <span className="sm:hidden">Click to start conversation</span>
                 </span>
               </button>
             )}
@@ -657,14 +658,14 @@ export function ChatInput() {
                     aria-selected={!isRealtimeSelected}
                     aria-label="Chat mode"
                     className={`relative z-10 flex items-center justify-start gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${!isRealtimeSelected
-                      ? "w-[4.5rem] text-neutral-900 dark:text-neutral-50"
+                      ? "w-9 sm:w-18 text-neutral-900 dark:text-neutral-50"
                       : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
                       }`}
                     title="Chat mode"
                     onClick={() => isRealtimeSelected ? onModelChange(models[0]) : undefined}
                   >
                     <MessageSquare size={12} strokeWidth={2.25} className="shrink-0" />
-                    {!isRealtimeSelected && <span>Chat</span>}
+                    {!isRealtimeSelected && <span className="hidden sm:inline">Chat</span>}
                   </button>
                   <button
                     type="button"
@@ -673,7 +674,7 @@ export function ChatInput() {
                     aria-selected={isRealtimeSelected}
                     aria-label="Voice mode"
                     className={`relative z-10 flex items-center justify-end gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${isRealtimeSelected
-                      ? "w-[4.5rem] text-neutral-900 dark:text-neutral-50"
+                      ? "w-9 sm:w-[4.5rem] text-neutral-900 dark:text-neutral-50"
                       : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
                       }`}
                     title="Voice mode"
@@ -683,7 +684,7 @@ export function ChatInput() {
                         : undefined
                     }
                   >
-                    {isRealtimeSelected && <span>Voice</span>}
+                    {isRealtimeSelected && <span className="hidden sm:inline">Voice</span>}
                     <AudioLines size={12} strokeWidth={2.25} className="shrink-0" />
                   </button>
                 </div>
