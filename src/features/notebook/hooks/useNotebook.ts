@@ -1,18 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
+import { run } from "@/shared/lib/agent";
 import { convertFileToText } from "@/shared/lib/convert";
 import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { Content } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
 import * as store from "../lib/opfs-notebook";
 import { createSourceTools } from "../lib/source-tools";
-import { run } from "@/shared/lib/agent";
 import chatInstructions from "../prompts/chat.txt?raw";
-import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
-import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
-import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
-import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
-import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
 import infographicStyleAnime from "../prompts/infographic-style-anime.txt?raw";
 import infographicStyleAuto from "../prompts/infographic-style-auto.txt?raw";
 import infographicStyleBento from "../prompts/infographic-style-bento.txt?raw";
@@ -24,6 +19,11 @@ import infographicStyleKawaii from "../prompts/infographic-style-kawaii.txt?raw"
 import infographicStyleProfessional from "../prompts/infographic-style-professional.txt?raw";
 import infographicStyleScientific from "../prompts/infographic-style-scientific.txt?raw";
 import infographicStyleSketchNote from "../prompts/infographic-style-sketch-note.txt?raw";
+import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
+import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
+import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
+import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
+import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
 import reportStyleDashboard from "../prompts/report-style-dashboard.txt?raw";
 import reportStyleExecutive from "../prompts/report-style-executive.txt?raw";
 import reportStyleMagazine from "../prompts/report-style-magazine.txt?raw";
@@ -611,16 +611,18 @@ export function useNotebook(notebookId?: string) {
         ],
       };
 
+      const runForText = async (errorMessage: string): Promise<string> => {
+        const result = await run(client, getModel(), instructions, [userMessage], tools);
+        const response = result[result.length - 1];
+        const text = getTextFromContent(response.content);
+        if (!text?.trim()) throw new Error(errorMessage);
+        return text;
+      };
+
       if (type === "podcast") {
         // Audio overview: LLM generates script → TTS generates audio per paragraph → merge
-        run(client, getModel(), instructions, [userMessage], tools)
-          .then(async (result) => {
-            const response = result[result.length - 1];
-            const script = getTextFromContent(response.content);
-            if (!script?.trim()) {
-              throw new Error("Could not generate audio script");
-            }
-
+        runForText("Could not generate audio script")
+          .then(async (script) => {
             const ttsModel = config.tts?.model || "";
             const voiceMap = config.tts?.voices ?? {};
             const resolveVoice = (role: string) => voiceMap[role] || role;
@@ -686,14 +688,8 @@ export function useNotebook(notebookId?: string) {
           .catch(failOutput);
       } else if (type === "infographic") {
         // Infographic: LLM generates image prompt → renderer creates image
-        run(client, getModel(), instructions, [userMessage], tools)
-          .then(async (result) => {
-            const response = result[result.length - 1];
-            const imagePrompt = getTextFromContent(response.content);
-            if (!imagePrompt?.trim()) {
-              throw new Error("Could not generate image prompt");
-            }
-
+        runForText("Could not generate image prompt")
+          .then(async (imagePrompt) => {
             const rendererModel = config.renderer?.model || "";
             const imageBlob = await client.generateImage(rendererModel, imagePrompt);
             const imageUrl = await blobToDataUrl(imageBlob);
@@ -709,14 +705,8 @@ export function useNotebook(notebookId?: string) {
       } else if (type === "slides") {
         // Slide deck: LLM generates slide text + image prompts → render each slide sequentially
         // so each slide can use the previous one as a style reference
-        run(client, getModel(), instructions, [userMessage], tools)
-          .then(async (result) => {
-            const response = result[result.length - 1];
-            const fullContent = getTextFromContent(response.content);
-            if (!fullContent?.trim()) {
-              throw new Error("Could not generate slide deck");
-            }
-
+        runForText("Could not generate slide deck")
+          .then(async (fullContent) => {
             // Parse slides: split by ---SLIDE--- separator
             const slideBlocks = fullContent
               .split(/---SLIDE---/i)
@@ -774,12 +764,8 @@ export function useNotebook(notebookId?: string) {
           .catch(failOutput);
       } else if (type === "quiz") {
         // Quiz: LLM reads sources → produces structured JSON
-        run(client, getModel(), instructions, [userMessage], tools)
-          .then(async (result) => {
-            const response = result[result.length - 1];
-            const raw = getTextFromContent(response.content);
-            if (!raw?.trim()) throw new Error("Could not generate quiz");
-
+        runForText("Could not generate quiz")
+          .then(async (raw) => {
             const jsonStr = raw
               .replace(/^```json?\s*/i, "")
               .replace(/```\s*$/i, "")
@@ -800,12 +786,8 @@ export function useNotebook(notebookId?: string) {
           .catch(failOutput);
       } else if (type === "mindmap") {
         // Mind map: LLM reads sources → produces structured JSON tree
-        run(client, getModel(), instructions, [userMessage], tools)
-          .then(async (result) => {
-            const response = result[result.length - 1];
-            const raw = getTextFromContent(response.content);
-            if (!raw?.trim()) throw new Error("Could not generate mind map");
-
+        runForText("Could not generate mind map")
+          .then(async (raw) => {
             const jsonStr = raw
               .replace(/^```json?\s*/i, "")
               .replace(/```\s*$/i, "")
@@ -826,14 +808,8 @@ export function useNotebook(notebookId?: string) {
           .catch(failOutput);
       } else {
         // Other types: LLM generates text content
-        run(client, getModel(), instructions, [userMessage], tools)
-          .then(async (result) => {
-            const response = result[result.length - 1];
-            const content = getTextFromContent(response.content);
-            if (!content?.trim()) {
-              throw new Error("Could not generate output");
-            }
-
+        runForText("Could not generate output")
+          .then(async (content) => {
             await completeOutput({
               ...output,
               content,

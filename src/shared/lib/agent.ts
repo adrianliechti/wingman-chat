@@ -8,22 +8,8 @@
 import type { Content, Message, Tool, ToolCallContent, ToolContext } from "../types/chat";
 import type { Client } from "./client";
 
-/** Default maximum turns (LLM calls) before the loop exits. */
-const DEFAULT_MAX_TURNS = 25;
-
 /** Options forwarded verbatim to `client.complete`. */
 export type CompleteOptions = Parameters<Client["complete"]>[5];
-
-/** Thrown when the loop exceeds `maxTurns` without the model stopping. */
-export class MaxTurnsExceededError extends Error {
-  readonly maxTurns: number;
-
-  constructor(maxTurns: number) {
-    super(`Agent loop exceeded max turns (${maxTurns})`);
-    this.name = "MaxTurnsExceededError";
-    this.maxTurns = maxTurns;
-  }
-}
 
 /** Per-turn hooks the caller can supply. All optional. */
 export interface RunHooks {
@@ -36,14 +22,20 @@ export interface RunHooks {
   /** Called after each LLM response is received with the new assistant message. */
   onTurnEnd?: (assistant: Message) => void;
 
-  /** Build a ToolContext for a given tool call (chat uses this for elicitation, render, etc.). */
-  createToolContext?: (toolCall: ToolCallContent) => {
-    context: ToolContext;
-    getResultMeta: () => Record<string, unknown> | undefined;
-  };
+  /**
+   * Build a ToolContext for a given tool call (chat uses this for elicitation, render, etc.).
+   * The harness injects `setMeta`/`updateMeta` automatically — callers should not supply them.
+   */
+  createToolContext?: (toolCall: ToolCallContent) => ToolContext | undefined;
 
   /** Called after each tool result message is appended. */
   onToolResult?: (toolResult: Message) => void;
+
+  /**
+   * Called when a tool updates its meta *after* the tool_result has already been appended
+   * (via `setMeta`/`updateMeta` on the tool context). Callers use this to persist late meta.
+   */
+  onToolMeta?: (toolCallId: string, meta: Record<string, unknown>) => void;
 
   /**
    * Transform messages before they're sent to the LLM.
@@ -53,12 +45,6 @@ export interface RunHooks {
 
   /** Options forwarded to `client.complete` (includes signal, effort, verbosity, …). */
   options?: CompleteOptions;
-
-  /**
-   * Maximum number of LLM turns before the loop stops.
-   * Prevents runaway tool-calling. Default: 25.
-   */
-  maxTurns?: number;
 }
 
 /**
@@ -66,8 +52,6 @@ export interface RunHooks {
  *
  * Calls `client.complete()`, executes any tool calls, feeds results back,
  * and repeats until the model stops calling tools or the signal is aborted.
- *
- * Throws `MaxTurnsExceededError` if the loop exceeds `maxTurns`.
  */
 export async function run(
   client: Client,
@@ -79,16 +63,16 @@ export async function run(
 ): Promise<Message[]> {
   let conversation = [...messages];
 
-  const { onStream, onTurnStart, onTurnEnd, createToolContext, onToolResult, prepareMessages, options } = hooks;
+  const { onStream, onTurnStart, onTurnEnd, createToolContext, onToolResult, onToolMeta, prepareMessages, options } =
+    hooks;
   const signal = options?.signal;
-  const maxTurns = hooks.maxTurns ?? DEFAULT_MAX_TURNS;
 
   const appendToolResult = (message: Message) => {
     conversation = [...conversation, message];
     onToolResult?.(message);
   };
 
-  for (let turn = 0; turn < maxTurns; turn++) {
+  while (true) {
     onTurnStart?.();
 
     const modelMessages = prepareMessages ? prepareMessages(conversation) : conversation;
@@ -133,9 +117,26 @@ export async function run(
 
       try {
         const args = JSON.parse(toolCall.arguments || "{}");
-        const toolCtx = createToolContext?.(toolCall);
-        const result = await tool.function(args, toolCtx?.context);
-        const meta = toolCtx?.getResultMeta();
+
+        let resultMeta: Record<string, unknown> | undefined;
+        let committed = false;
+
+        const baseContext = createToolContext?.(toolCall);
+        const toolContext: ToolContext | undefined = baseContext
+          ? {
+              ...baseContext,
+              setMeta: (meta: Record<string, unknown>) => {
+                resultMeta = meta;
+                if (committed) onToolMeta?.(toolCall.id, { ...meta });
+              },
+              updateMeta: (meta: Record<string, unknown>) => {
+                resultMeta = { ...resultMeta, ...meta };
+                if (committed) onToolMeta?.(toolCall.id, { ...resultMeta });
+              },
+            }
+          : undefined;
+
+        const result = await tool.function(args, toolContext);
 
         appendToolResult({
           role: "user",
@@ -146,10 +147,11 @@ export async function run(
               name: toolCall.name,
               arguments: toolCall.arguments,
               result,
-              ...(meta ? { meta } : {}),
+              ...(resultMeta ? { meta: resultMeta } : {}),
             },
           ],
         });
+        committed = true;
       } catch (error) {
         console.error("Tool failed", error);
 
@@ -181,6 +183,4 @@ export async function run(
       }
     }
   }
-
-  throw new MaxTurnsExceededError(maxTurns);
 }

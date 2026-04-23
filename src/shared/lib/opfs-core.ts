@@ -194,7 +194,7 @@ export async function readFileMetadata(path: string): Promise<{ size: number; co
 
   return {
     size: blob.size,
-    contentType: blob.type || inferContentType(path),
+    contentType: inferContentType(path) || blob.type,
   };
 }
 
