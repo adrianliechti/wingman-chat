@@ -13,7 +13,7 @@ import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import "katex/dist/katex.min.css";
 import type { ReactNode } from "react";
-import type { FileSystem } from "@/shared/lib/filesystem";
+import type { FileSystem } from "@/shared/types/file";
 import rehypeNotoEmoji from "@/shared/lib/rehype-noto-emoji";
 import { useAssetUrlResolver } from "@/shared/lib/useAssetUrlResolver";
 import { isAudioUrl, isVideoUrl } from "@/shared/lib/utils";

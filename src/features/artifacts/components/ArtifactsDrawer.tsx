@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
-import type { File, FileEntry } from "@/features/artifacts/types/file";
+import type { File, FileEntry } from "@/shared/types/file";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
 import { getDriveContentUrl } from "@/shared/lib/drives";

@@ -2,7 +2,7 @@ import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { ChevronDown, ChevronRight, Edit2, Folder, FolderOpen, MoreVertical, Trash } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
-import type { FileEntry } from "@/features/artifacts/types/file";
+import type { FileEntry } from "@/shared/types/file";
 import { FileIcon } from "@/shared/ui/FileIcon";
 
 // Helper function to build folder tree structure

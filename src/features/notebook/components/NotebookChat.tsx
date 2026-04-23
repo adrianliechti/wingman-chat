@@ -3,11 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import type { Content } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
 import { Markdown } from "@/shared/ui/Markdown";
-import type { NotebookMessage, NotebookSource } from "../types/notebook";
+import type { NotebookMessage } from "../types/notebook";
+import type { File } from "@/shared/types/file";
 
 interface NotebookChatProps {
   messages: NotebookMessage[];
-  sources: NotebookSource[];
+  sources: File[];
   isChatting: boolean;
   streamingContent: Content[] | null;
   onSend: (message: string) => void;

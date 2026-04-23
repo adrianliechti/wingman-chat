@@ -5,6 +5,7 @@ import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { Content } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
 import * as store from "../lib/opfs-notebook";
+import { createSourceExecTools } from "../lib/source-exec-tools";
 import { createSourceTools } from "../lib/source-tools";
 import { run } from "@/shared/lib/agent";
 import chatInstructions from "../prompts/chat.txt?raw";
@@ -45,10 +46,10 @@ import type {
   Notebook,
   NotebookMessage,
   NotebookOutput,
-  NotebookSource,
   OutputType,
   QuizQuestion,
 } from "../types/notebook";
+import type { File } from "@/shared/types/file";
 
 function generateId(): string {
   return crypto.randomUUID();
@@ -276,7 +277,7 @@ export function useNotebook(notebookId?: string) {
   const client = config.client;
 
   const [notebook, setNotebook] = useState<Notebook | null>(null);
-  const [sources, setSources] = useState<NotebookSource[]>([]);
+  const [sources, setSources] = useState<File[]>([]);
   const [outputs, setOutputs] = useState<NotebookOutput[]>([]);
   const [messages, setMessages] = useState<NotebookMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -384,36 +385,49 @@ export function useNotebook(notebookId?: string) {
   );
 
   const addSearchResult = useCallback(
-    async (query: string, mode: "web" | "research", content: string) => {
+    async (query: string, _mode: "web" | "research", content: string) => {
       if (!notebook) return;
 
-      const name = query.slice(0, 60);
-      let id: string;
+      let path: string;
       try {
-        id = store.normalizeSourcePath(name) || generateId();
+        path = store.normalizeSourcePath(query.slice(0, 60)) || generateId();
       } catch {
-        id = generateId();
+        path = generateId();
       }
-      id = store.withDefaultExtension(id, "md");
+      path = store.withDefaultExtension(path, "md");
 
-      const source: NotebookSource = {
-        id,
-        type: "web",
-        name,
-        content,
-        metadata: { query, url: mode },
-        addedAt: new Date().toISOString(),
-      };
-
+      const source: File = { path, content };
       await store.addSource(notebook.id, source);
-      setSources((prev) => [...prev.filter((s) => s.id !== id), source]);
+      setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
     [notebook],
   );
 
   const addFileSource = useCallback(
-    async (file: File) => {
+    async (file: globalThis.File) => {
       if (!notebook) return;
+
+      let path: string;
+      try {
+        path = store.normalizeSourcePath(file.name) || generateId();
+      } catch {
+        path = generateId();
+      }
+
+      // Images are stored verbatim as binary sources (data URLs) — we don't
+      // try to extract text from them. Models with vision can read the content
+      // directly, and python tools can open them from the sandbox.
+      if (file.type.startsWith("image/")) {
+        const dataUrl = await blobToDataUrl(file);
+        const source: File = {
+          path,
+          content: dataUrl,
+          contentType: file.type,
+        };
+        await store.addSource(notebook.id, source);
+        setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
+        return;
+      }
 
       const content = await convertFileToText(file);
 
@@ -421,27 +435,9 @@ export function useNotebook(notebookId?: string) {
         throw new Error(`Could not extract text from ${file.name}`);
       }
 
-      let id: string;
-      try {
-        id = store.normalizeSourcePath(file.name) || generateId();
-      } catch {
-        id = generateId();
-      }
-
-      const source: NotebookSource = {
-        id,
-        type: "file",
-        name: file.name,
-        content,
-        metadata: {
-          fileType: file.type,
-          fileSize: file.size,
-        },
-        addedAt: new Date().toISOString(),
-      };
-
+      const source: File = { path, content };
       await store.addSource(notebook.id, source);
-      setSources((prev) => [...prev.filter((s) => s.id !== id), source]);
+      setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
     [notebook],
   );
@@ -451,26 +447,37 @@ export function useNotebook(notebookId?: string) {
       if (!notebook) throw new Error("No notebook loaded");
 
       const displayName = name || "Pasted text";
-      let id: string;
+      let basePath: string;
       try {
-        id = store.normalizeSourcePath(displayName) || generateId();
+        basePath = store.normalizeSourcePath(displayName) || generateId();
       } catch {
-        id = generateId();
+        basePath = generateId();
       }
-      id = store.withDefaultExtension(id, "md");
+      const textPath = store.withDefaultExtension(basePath, "md");
 
-      const source: NotebookSource = {
-        id,
-        type: "text",
-        name: displayName,
-        content: text,
-        ...(audioUrl && { audioUrl }),
-        addedAt: new Date().toISOString(),
-      };
+      const textSource: File = { path: textPath, content: text };
+      await store.addSource(notebook.id, textSource);
+      const added: File[] = [textSource];
 
-      await store.addSource(notebook.id, source);
-      setSources((prev) => [...prev.filter((s) => s.id !== id), source]);
-      return source.id;
+      // Audio companion becomes its own `.wav` source so it lives on the
+      // filesystem like any other binary artifact.
+      if (audioUrl) {
+        const stem = textPath.replace(/\.[a-z0-9]{1,5}$/i, "");
+        const audioPath = store.withDefaultExtension(stem, "wav");
+        const audioSource: File = {
+          path: audioPath,
+          content: audioUrl,
+          contentType: "audio/wav",
+        };
+        await store.addSource(notebook.id, audioSource);
+        added.push(audioSource);
+      }
+
+      setSources((prev) => {
+        const paths = new Set(added.map((s) => s.path));
+        return [...prev.filter((s) => !paths.has(s.path)), ...added];
+      });
+      return textSource.path;
     },
     [notebook],
   );
@@ -494,34 +501,42 @@ export function useNotebook(notebookId?: string) {
     async (url: string, content: string) => {
       if (!notebook) return;
 
-      let id: string;
+      let path: string;
       try {
-        id = store.normalizeSourcePath(url) || generateId();
+        path = store.normalizeSourcePath(url) || generateId();
       } catch {
-        id = generateId();
+        path = generateId();
       }
-      id = store.withDefaultExtension(id, "md");
+      path = store.withDefaultExtension(path, "md");
 
-      const source: NotebookSource = {
-        id,
-        type: "web",
-        name: url,
-        content,
-        metadata: { url },
-        addedAt: new Date().toISOString(),
-      };
-
+      const source: File = { path, content };
       await store.addSource(notebook.id, source);
-      setSources((prev) => [...prev.filter((s) => s.id !== id), source]);
+      setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
     [notebook],
   );
 
   const deleteSource = useCallback(
-    async (sourceId: string) => {
+    async (path: string) => {
       if (!notebook) return;
-      await store.removeSource(notebook.id, sourceId);
-      setSources((prev) => prev.filter((s) => s.id !== sourceId));
+      await store.removeSource(notebook.id, path);
+      setSources((prev) => prev.filter((s) => s.path !== path));
+    },
+    [notebook],
+  );
+
+  /**
+   * Write (or overwrite) a source at the given path. Used by the python/bash
+   * execution tools to persist files the sandbox produced back into the
+   * notebook. Paths are taken verbatim; content may be utf-8 text or a
+   * `data:` URL for binary payloads.
+   */
+  const writeSource = useCallback(
+    async (path: string, content: string, contentType?: string) => {
+      if (!notebook) return;
+      const source: File = contentType ? { path, content, contentType } : { path, content };
+      await store.addSource(notebook.id, source);
+      setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
     [notebook],
   );
@@ -544,10 +559,15 @@ export function useNotebook(notebookId?: string) {
       setMessages(newMessages);
 
       try {
-        const tools = createSourceTools(
-          () => sourcesRef.current,
-          { onCreate: (path, content) => addTextSource(path, content) },
-        );
+        const tools = [
+          ...createSourceTools(
+            () => sourcesRef.current,
+            { onCreate: (path, content) => addTextSource(path, content) },
+          ),
+          ...createSourceExecTools(() => sourcesRef.current, {
+            onWrite: writeSource,
+          }),
+        ];
 
         // Build Message[] for the LLM (strip timestamps)
         const conversation = newMessages.map(({ timestamp, ...msg }) => msg);
@@ -586,7 +606,7 @@ export function useNotebook(notebookId?: string) {
         setIsChatting(false);
       }
     },
-    [notebook, messages, client, getModel, isChatting, addTextSource],
+    [notebook, messages, client, getModel, isChatting, addTextSource, writeSource],
   );
 
   // ── Outputs ────────────────────────────────────────────────────────

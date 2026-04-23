@@ -1,6 +1,7 @@
 import type { Command, CommandContext, ExecResult } from "just-bash/browser";
 import { defineCommand } from "just-bash/browser";
-import { bytesToDataUrl, dataUrlToBytes, SANDBOX_HOME } from "@/shared/lib/artifactFiles";
+import { bytesToDataUrl, dataUrlToBytes } from "@/shared/lib/fileContent";
+import { SANDBOX_HOME } from "@/shared/lib/sandbox";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { executeCode } from "./interpreter";
 

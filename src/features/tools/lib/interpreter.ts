@@ -1,5 +1,6 @@
 import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodide";
-import { bytesToDataUrl, dataUrlToBytes, isDataUrlContent, SANDBOX_HOME } from "@/shared/lib/artifactFiles";
+import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
+import { SANDBOX_HOME } from "@/shared/lib/sandbox";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { clearRenderQueue, processRenderQueue } from "./plotlyRenderer";
 import PLOTLY_IMAGE_SHIM from "./plotlyShim.py?raw";
@@ -89,7 +90,7 @@ function syncFilesToPyodide(pyodide: PyodideInterface, files: ArtifactFiles): vo
     const dir = fsPath.substring(0, fsPath.lastIndexOf("/"));
     if (dir) ensureDir(pyodide, dir);
 
-    if (isDataUrlContent(file.content) || (file.contentType && !isTextContentType(file.contentType))) {
+    if (isDataUrl(file.content) || (file.contentType && !isTextContentType(file.contentType))) {
       const parsed = dataUrlToBytes(file.content);
       pyodide.FS.writeFile(fsPath, parsed ? parsed.bytes : new TextEncoder().encode(file.content));
     } else {

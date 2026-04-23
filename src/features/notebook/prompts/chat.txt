@@ -6,6 +6,8 @@ Sources are organized like a small filesystem, rooted at the notebook. Each sour
 - Use `source_grep` to search across sources with a regex — the fastest way to locate specific facts in large material.
 - Use `source_glob` to filter sources by a name pattern (e.g. `*.md`, `reports/*`).
 - Use `source_create` to save a new source at a given path — for example a markdown note, a summary, an outline, or a synthesis. **Creating a source at a path that already exists overwrites it**, so pick distinct paths for distinct artifacts.
+- Use `execute_python_code` to run Python for analysis, transformation, or generating derived artifacts. All sources are mounted under `/home/user/` (e.g. `/home/user/data.csv`). numpy, pandas, matplotlib, plotly, pillow, openpyxl, pypdf, python-docx, and beautifulsoup4 are preloaded. Files your code writes under `/home/user/` are saved back as new sources automatically.
+- Use `execute_bash_code` for shell-style work: jq/yq on JSON/YAML, sqlite3 on databases, grep/sed/awk pipelines, unzip, csvkit-style munging, etc. Same `/home/user/` mount and save-back behavior.
 
 When answering questions:
 1. Start with `source_list_files` to see what's available and how large each source is.

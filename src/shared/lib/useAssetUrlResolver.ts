@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { artifactContentToBlob } from "@/shared/lib/artifactFiles";
-import type { FileSystem } from "@/shared/lib/filesystem";
+import { contentToBlob } from "@/shared/lib/fileContent";
+import type { FileSystem } from "@/shared/types/file";
 
 /**
  * Normalize a reference `url` against a `basePath` into an absolute-from-root
@@ -73,7 +73,7 @@ export function useAssetUrlResolver(
         const file = await fs.getFile(absPath);
         cacheRef.current.set(
           absPath,
-          file ? URL.createObjectURL(artifactContentToBlob(file.content, file.contentType)) : null,
+          file ? URL.createObjectURL(contentToBlob(file.content, file.contentType)) : null,
         );
       } catch {
         cacheRef.current.set(absPath, null);

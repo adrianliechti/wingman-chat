@@ -9,29 +9,30 @@ import {
   type FileEntry,
   type ReadableFileSource,
 } from "@/shared/lib/file-tools";
+import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import type { Tool } from "@/shared/types/chat";
-import type { NotebookSource } from "../types/notebook";
+import type { File } from "@/shared/types/file";
 
 /**
  * Adapt a sources getter into a ReadableFileSource.
  * Uses a getter so freshly-created sources are visible to later tool calls
  * within the same agent run.
  */
-function createSourceAdapter(getSources: () => NotebookSource[]): ReadableFileSource {
+function createSourceAdapter(getSources: () => File[]): ReadableFileSource {
   return {
     async list(): Promise<FileEntry[]> {
       return getSources().map((s) => ({
-        path: s.id,
+        path: s.path,
         size: s.content.length,
-        contentType: s.type === "web" ? "text/html" : "text/plain",
+        contentType: s.contentType ?? inferContentTypeFromPath(s.path) ?? "text/plain",
       }));
     },
 
     async read(path: string): Promise<FileData | undefined> {
-      const source = getSources().find((s) => s.id === path);
+      const source = getSources().find((s) => s.path === path);
       if (!source) return undefined;
       return {
-        path: source.id,
+        path: source.path,
         content: source.content,
       };
     },
@@ -57,7 +58,7 @@ export interface SourceToolsOptions {
  * sources back to the notebook. Paths are file-system style
  * ("notes.md", "reports/q3.md"); identical paths overwrite.
  */
-export function createSourceTools(getSources: () => NotebookSource[], options?: SourceToolsOptions): Tool[] {
+export function createSourceTools(getSources: () => File[], options?: SourceToolsOptions): Tool[] {
   const tools = createReadOnlyFileTools(createSourceAdapter(getSources), {
     namespace: "source_",
   });

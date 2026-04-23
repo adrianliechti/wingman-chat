@@ -66,6 +66,21 @@ export const SUPPORTED_TYPES = [
   MIME_PPTX,
   ".pdf",
   "application/pdf",
+
+  // Images — stored verbatim as binary sources (not converted to text).
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".svg",
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/bmp",
+  "image/svg+xml",
 ];
 
 type ConverterKind = "text" | "builtin" | "backend" | null;
@@ -90,6 +105,9 @@ function converterKind(file: File, textTypes?: string[], extraTypes?: string[]):
 
 /** Whether this module can convert the given file (includes extra types from config). */
 export function canConvert(file: File): boolean {
+  // Images are handled by the caller (stored verbatim as binary sources),
+  // but we advertise them as accepted so the picker lets them through.
+  if (file.type.startsWith("image/")) return true;
   const config = getConfig();
   return converterKind(file, config.text?.files, config.extractor?.files) !== null;
 }

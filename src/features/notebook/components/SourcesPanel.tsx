@@ -5,6 +5,7 @@ import {
   FileText,
   Globe,
   HardDrive,
+  Image as ImageIcon,
   Link,
   Loader2,
   Mic,
@@ -23,17 +24,17 @@ import { getDriveContentUrl } from "@/shared/lib/drives";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { Markdown } from "@/shared/ui/Markdown";
-import type { NotebookSource } from "../types/notebook";
+import type { File } from "@/shared/types/file";
 import { FieldRecorderOverlay } from "./FieldRecorderOverlay";
 
 interface SourcesPanelProps {
-  sources: NotebookSource[];
+  sources: File[];
   isSearching: boolean;
   searchWeb: (query: string, mode: "web" | "research") => Promise<string>;
   addSearchResult: (query: string, mode: "web" | "research", content: string) => Promise<void>;
   scrapeWeb: (url: string) => Promise<string>;
   addScrapeResult: (url: string, content: string) => Promise<void>;
-  onFileAdd: (file: File) => Promise<void>;
+  onFileAdd: (file: globalThis.File) => Promise<void>;
   onTextAdd: (name: string, text: string, audioUrl?: string) => Promise<string>;
   onDeleteSource: (sourceId: string) => void;
 }
@@ -64,7 +65,7 @@ export function SourcesPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = useCallback(
-    async (files: File[]) => {
+    async (files: globalThis.File[]) => {
       for (const file of files) {
         const fileId = file.name;
         setExtracting((prev) => new Set([...prev, fileId]));
@@ -97,7 +98,7 @@ export function SourcesPanel({
           }
           const blob = await resp.blob();
           const type = f.mime || blob.type || "";
-          const file = new File([blob], f.name, { type });
+          const file = new globalThis.File([blob], f.name, { type });
           // handleFiles also adds to extracting, so remove our entry first
           setExtracting((prev) => {
             const next = new Set(prev);
@@ -148,7 +149,7 @@ export function SourcesPanel({
 
             {/* Source items */}
             {sources.map((source) => (
-              <SourceItem key={source.id} source={source} onDelete={() => onDeleteSource(source.id)} />
+              <SourceItem key={source.path} source={source} onDelete={() => onDeleteSource(source.path)} />
             ))}
           </div>
         )}
@@ -331,14 +332,13 @@ export function SourcesPanel({
       {/* Field Recorder */}
       {showRecordOverlay && (
         <FieldRecorderOverlay
-          onComplete={async ({ transcript, audioUrl }) => {
+          onSave={async (transcript, audioUrl) => {
             setError(null);
             try {
               await onTextAdd("Field Recording", transcript, audioUrl);
-              setShowRecordOverlay(false);
             } catch (err) {
               setError(err instanceof Error ? err.message : "Failed to add recording");
-              setShowRecordOverlay(false);
+              throw err;
             }
           }}
           onClose={() => setShowRecordOverlay(false)}
@@ -752,16 +752,28 @@ function TextInputOverlay({ onAdd, onClose }: { onAdd: (name: string, text: stri
 
 // ── Source Item ─────────────────────────────────────────────────────────
 
-function sourceIcon(source: NotebookSource) {
-  if (source.audioUrl) return Mic;
-  if (source.type === "web") return Globe;
-  if (source.type === "text") return Type;
+function sourceIcon(source: File) {
+  if (source.contentType?.startsWith("audio/")) return Mic;
+  if (source.contentType?.startsWith("image/")) return ImageIcon;
+  if (/^https?:\/\//i.test(source.path)) return Globe;
   return FileText;
 }
 
-function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: () => void }) {
+function isBinarySource(source: File): boolean {
+  return typeof source.content === "string" && source.content.startsWith("data:");
+}
+
+function basename(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash >= 0 ? path.slice(slash + 1) : path;
+}
+
+function SourceItem({ source, onDelete }: { source: File; onDelete: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const Icon = sourceIcon(source);
+  const binary = isBinarySource(source);
+  const isAudio = source.contentType?.startsWith("audio/") ?? false;
+  const isImage = source.contentType?.startsWith("image/") ?? false;
 
   return (
     <div className="group/source">
@@ -776,18 +788,18 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
           </div>
           <span
             className="flex-1 truncate text-xs text-neutral-700 dark:text-neutral-300"
-            title={source.id}
+            title={source.path}
           >
-            {source.id}
+            {source.path}
           </span>
         </button>
         <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/source:opacity-100 transition-opacity">
-          {source.audioUrl && (
+          {binary && (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                downloadFromUrl(source.audioUrl as string, "recording.wav");
+                downloadFromUrl(source.content, basename(source.path));
               }}
               className="p-1 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
             >
@@ -809,10 +821,18 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
 
       {expanded && (
         <div className="ml-8.5 mr-2 mb-1 px-2.5 py-2 rounded-md bg-neutral-50 dark:bg-neutral-800/40 max-h-64 overflow-y-auto">
-          <p className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap">
-            {source.content.slice(0, 2000)}
-            {source.content.length > 2000 && "..."}
-          </p>
+          {isAudio ? (
+            // biome-ignore lint/a11y/useMediaCaption: user-recorded audio, no captions available
+            <audio controls className="w-full" src={source.content} />
+          ) : isImage ? (
+            <img src={source.content} alt={source.path} className="max-w-full max-h-60 rounded" />
+          ) : (
+            <p className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap">
+              {binary
+                ? `(${source.contentType ?? "binary"} content)`
+                : `${source.content.slice(0, 2000)}${source.content.length > 2000 ? "..." : ""}`}
+            </p>
+          )}
         </div>
       )}
     </div>

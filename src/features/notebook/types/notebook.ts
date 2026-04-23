@@ -8,21 +8,6 @@ export interface Notebook {
   updatedAt: string;
 }
 
-export interface NotebookSource {
-  id: string;
-  type: "web" | "file" | "text";
-  name: string;
-  content: string;
-  audioUrl?: string;
-  metadata?: {
-    url?: string;
-    query?: string;
-    fileType?: string;
-    fileSize?: number;
-  };
-  addedAt: string;
-}
-
 export type OutputType = "podcast" | "slides" | "infographic" | "report" | "quiz" | "mindmap";
 
 export interface QuizQuestion {

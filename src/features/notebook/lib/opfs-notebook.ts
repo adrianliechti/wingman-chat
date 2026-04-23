@@ -14,14 +14,15 @@ import {
   writeJson,
   writeText,
 } from "@/shared/lib/opfs-core";
+import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import type {
   MindMapNode,
   Notebook,
   NotebookMessage,
   NotebookOutput,
-  NotebookSource,
   QuizQuestion,
 } from "../types/notebook";
+import type { File } from "@/shared/types/file";
 
 const COLLECTION = "notebooks";
 
@@ -62,33 +63,26 @@ export async function deleteNotebook(id: string): Promise<void> {
 // ── Sources ────────────────────────────────────────────────────────────
 //
 // /notebooks/{id}/sources/{encodedPath}/
-//   ├── metadata.json   — source metadata (no content)
-//   └── content.txt     — extracted text
+//   ├── content.txt     — extracted text
+//   └── audio.wav       — optional audio blob (voice recordings)
 //
 // Source ids are normalized paths (e.g. "research-notes.md",
 // "reports/q3.md"). Storage directory names are URI-encoded so nested
 // paths don't create real OPFS subdirectories (keeps listing flat).
 //
-// Discovery: listDirectories() + read each metadata.json (same as agents)
+// Discovery: listDirectories() + read each content.txt
 // Legacy: /notebooks/{id}/sources.json — migrated on first read
+// Legacy: per-source metadata.json — ignored (no longer read or written)
 
 // Guard against concurrent migration (React StrictMode fires effects twice)
 const migrating = new Set<string>();
-
-interface SourceMeta {
-  id: string;
-  type: "web" | "file" | "text";
-  name: string;
-  metadata?: NotebookSource["metadata"];
-  addedAt: string;
-}
 
 function sourcesDir(notebookId: string) {
   return `${notebookPath(notebookId)}/sources`;
 }
 
-function sourcePath(notebookId: string, sourceId: string) {
-  return `${sourcesDir(notebookId)}/${encodeURIComponent(sourceId)}`;
+function sourceDir(notebookId: string, path: string) {
+  return `${sourcesDir(notebookId)}/${encodeURIComponent(path)}`;
 }
 
 /**
@@ -131,39 +125,72 @@ export function withDefaultExtension(path: string, ext: string): string {
   return hasExt ? path : `${path}.${ext.replace(/^\./, "")}`;
 }
 
-/** Migrate legacy sources.json → per-source directories. */
-async function migrateLegacySources(notebookId: string): Promise<NotebookSource[] | undefined> {
+/** Migrate legacy sources.json → per-source content files. */
+async function migrateLegacySources(notebookId: string): Promise<File[] | undefined> {
   const legacyPath = `${notebookPath(notebookId)}/sources.json`;
-  const legacy = await readJson<NotebookSource[]>(legacyPath);
+  const legacy = await readJson<Array<{ id?: string; path?: string; content: string; audioUrl?: string }>>(legacyPath);
   if (!legacy || legacy.length === 0) return undefined;
 
+  const migrated: File[] = [];
   for (const source of legacy) {
-    const { content, ...meta } = source;
-    const base = sourcePath(notebookId, source.id);
-    await writeJson(`${base}/metadata.json`, meta);
-    await writeText(`${base}/content.txt`, content);
+    const path = source.path ?? source.id ?? "";
+    if (!path) continue;
+    await addSource(notebookId, { path, content: source.content });
+    migrated.push({ path, content: source.content });
+
+    // Legacy sources with audio become a separate .wav source.
+    if (source.audioUrl) {
+      const wavPath = withDefaultExtension(path.replace(/\.[a-z0-9]{1,5}$/i, ""), "wav");
+      const blob = dataUrlToBlob(source.audioUrl);
+      const dataUrl = await blobToDataUrl(blob);
+      await addSource(notebookId, { path: wavPath, content: dataUrl, contentType: "audio/wav" });
+      migrated.push({ path: wavPath, content: dataUrl, contentType: "audio/wav" });
+    }
   }
 
   await deleteFile(legacyPath);
-  return legacy;
+  return migrated;
 }
 
 /** Read a single source from its directory. */
-async function readSource(notebookId: string, sourceId: string): Promise<NotebookSource | undefined> {
-  const base = sourcePath(notebookId, sourceId);
-  const meta = await readJson<SourceMeta>(`${base}/metadata.json`);
-  if (!meta) return undefined;
+async function readSource(notebookId: string, path: string): Promise<File | undefined> {
+  const base = sourceDir(notebookId, path);
+  const contentType = inferContentTypeFromPath(path);
 
-  const content = (await readText(`${base}/content.txt`)) || "";
-  const audioBlob = await readBlob(`${base}/audio.wav`);
-  const audioUrl = audioBlob ? await blobToDataUrl(audioBlob) : undefined;
-  return { ...meta, content, ...(audioUrl && { audioUrl }) };
+  if (isTextContentType(contentType)) {
+    const content = await readText(`${base}/content`);
+    if (content == null) {
+      // Legacy layout: content.txt + optional audio.wav, with a metadata.json.
+      return readLegacySource(notebookId, path);
+    }
+    return { path, content, ...(contentType && { contentType }) };
+  }
+
+  const blob = await readBlob(`${base}/content`);
+  if (!blob) {
+    return readLegacySource(notebookId, path);
+  }
+  const dataUrl = await blobToDataUrl(blob);
+  return { path, content: dataUrl, contentType: contentType ?? "application/octet-stream" };
 }
 
-export async function getSources(notebookId: string): Promise<NotebookSource[]> {
+/**
+ * Read a source in the old `content.txt` + `audio.wav` + `metadata.json`
+ * layout. Returns only the text part — audio is surfaced via a lazy
+ * best-effort migration that splits it off as a separate source on next write.
+ */
+async function readLegacySource(notebookId: string, path: string): Promise<File | undefined> {
+  const base = sourceDir(notebookId, path);
+  const content = await readText(`${base}/content.txt`);
+  if (content == null) return undefined;
+  const contentType = inferContentTypeFromPath(path);
+  return { path, content, ...(contentType && { contentType }) };
+}
+
+export async function getSources(notebookId: string): Promise<File[]> {
   const entries = await listDirectories(sourcesDir(notebookId));
-  // Stored dir names are URI-encoded; decode back to the source id.
-  const ids = entries.map((name) => {
+  // Stored dir names are URI-encoded; decode back to the source path.
+  const paths = entries.map((name) => {
     try {
       return decodeURIComponent(name);
     } catch {
@@ -172,7 +199,7 @@ export async function getSources(notebookId: string): Promise<NotebookSource[]> 
     }
   });
 
-  if (ids.length === 0) {
+  if (paths.length === 0) {
     const key = `sources:${notebookId}`;
     if (migrating.has(key)) return [];
     migrating.add(key);
@@ -184,23 +211,36 @@ export async function getSources(notebookId: string): Promise<NotebookSource[]> 
     }
   }
 
-  const sources = await Promise.all(ids.map((id) => readSource(notebookId, id)));
-  return sources.filter((s): s is NotebookSource => s !== undefined);
+  const sources = await Promise.all(paths.map((p) => readSource(notebookId, p)));
+  return sources.filter((s): s is File => s !== undefined);
 }
 
-export async function addSource(notebookId: string, source: NotebookSource): Promise<void> {
-  const { content, audioUrl, ...meta } = source;
-  const base = sourcePath(notebookId, source.id);
+export async function addSource(notebookId: string, source: File): Promise<void> {
+  const base = sourceDir(notebookId, source.path);
+  const contentType = source.contentType ?? inferContentTypeFromPath(source.path);
 
-  await writeJson(`${base}/metadata.json`, meta);
-  await writeText(`${base}/content.txt`, content);
-  if (audioUrl) {
-    await writeBlob(`${base}/audio.wav`, dataUrlToBlob(audioUrl));
+  if (isTextContentType(contentType) && !isDataUrl(source.content)) {
+    await writeText(`${base}/content`, source.content);
+  } else {
+    // Binary payload stored as a data URL — decode to a blob on disk.
+    const blob = isDataUrl(source.content)
+      ? dataUrlToBlob(source.content)
+      : new Blob([source.content], { type: contentType ?? "application/octet-stream" });
+    await writeBlob(`${base}/content`, blob);
   }
+
+  // Clean up any stale legacy files (migration from the old per-source layout).
+  await deleteFile(`${base}/content.txt`).catch(() => {});
+  await deleteFile(`${base}/metadata.json`).catch(() => {});
+  await deleteFile(`${base}/audio.wav`).catch(() => {});
 }
 
-export async function removeSource(notebookId: string, sourceId: string): Promise<void> {
-  await deleteDirectory(sourcePath(notebookId, sourceId));
+export async function removeSource(notebookId: string, path: string): Promise<void> {
+  await deleteDirectory(sourceDir(notebookId, path));
+}
+
+function isDataUrl(value: string): boolean {
+  return typeof value === "string" && value.startsWith("data:");
 }
 
 // ── Outputs ────────────────────────────────────────────────────────────

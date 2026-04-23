@@ -15,10 +15,11 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import { getPodcastStyles, getReportStyles, getSlideStyles, getInfographicStyles } from "../hooks/useNotebook";
-import type { NotebookOutput, NotebookSource, OutputType } from "../types/notebook";
+import type { NotebookOutput, OutputType } from "../types/notebook";
+import type { File } from "@/shared/types/file";
 
 interface StudioPanelProps {
-  sources: NotebookSource[];
+  sources: File[];
   outputs: NotebookOutput[];
   onGenerate: (type: OutputType, styleId?: string) => void;
   onDeleteOutput: (outputId: string) => void;

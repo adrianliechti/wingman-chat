@@ -2,7 +2,8 @@
  * OPFS Artifacts — Artifact file CRUD within chat folders.
  */
 
-import { artifactContentToBlob, normalizeArtifactPath } from "./artifactFiles";
+import { contentToBlob } from "./fileContent";
+import { normalizeArtifactPath } from "./sandbox";
 import { isBinaryContentType } from "./fileTypes";
 
 import {
@@ -44,12 +45,12 @@ export async function writeArtifact(
   const fullPath = `chats/${chatId}/artifacts/${normalizedPath}`;
 
   if (content.startsWith("data:")) {
-    await writeBlob(fullPath, artifactContentToBlob(content, contentType));
+    await writeBlob(fullPath, contentToBlob(content, contentType));
     return;
   }
 
   if (isBinaryContentType(contentType)) {
-    await writeBlob(fullPath, artifactContentToBlob(content, contentType));
+    await writeBlob(fullPath, contentToBlob(content, contentType));
     return;
   }
 
