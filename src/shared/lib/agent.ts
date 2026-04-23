@@ -8,8 +8,22 @@
 import type { Content, Message, Tool, ToolCallContent, ToolContext } from "../types/chat";
 import type { Client } from "./client";
 
+/** Default maximum turns (LLM calls) before the loop exits. */
+const DEFAULT_MAX_TURNS = 25;
+
 /** Options forwarded verbatim to `client.complete`. */
 export type CompleteOptions = Parameters<Client["complete"]>[5];
+
+/** Thrown when the loop exceeds `maxTurns` without the model stopping. */
+export class MaxTurnsExceededError extends Error {
+  readonly maxTurns: number;
+
+  constructor(maxTurns: number) {
+    super(`Agent loop exceeded max turns (${maxTurns})`);
+    this.name = "MaxTurnsExceededError";
+    this.maxTurns = maxTurns;
+  }
+}
 
 /** Per-turn hooks the caller can supply. All optional. */
 export interface RunHooks {
@@ -19,8 +33,8 @@ export interface RunHooks {
   /** Called before each LLM request (e.g. to set up streaming UI). */
   onTurnStart?: () => void;
 
-  /** Called after each LLM response is received with the full assistant message and current conversation. */
-  onTurnEnd?: (assistant: Message, conversation: Message[]) => void;
+  /** Called after each LLM response is received with the new assistant message. */
+  onTurnEnd?: (assistant: Message) => void;
 
   /** Build a ToolContext for a given tool call (chat uses this for elicitation, render, etc.). */
   createToolContext?: (toolCall: ToolCallContent) => {
@@ -28,11 +42,8 @@ export interface RunHooks {
     getResultMeta: () => Record<string, unknown> | undefined;
   };
 
-  /**
-   * Called after each tool result message is constructed.
-   * Lets the caller persist / display intermediate state.
-   */
-  onToolResult?: (toolResult: Message, conversation: Message[]) => void;
+  /** Called after each tool result message is appended. */
+  onToolResult?: (toolResult: Message) => void;
 
   /**
    * Transform messages before they're sent to the LLM.
@@ -42,15 +53,21 @@ export interface RunHooks {
 
   /** Options forwarded to `client.complete` (includes signal, effort, verbosity, …). */
   options?: CompleteOptions;
+
+  /**
+   * Maximum number of LLM turns before the loop stops.
+   * Prevents runaway tool-calling. Default: 25.
+   */
+  maxTurns?: number;
 }
 
 /**
  * Run an LLM completion loop with tool support.
  *
  * Calls `client.complete()`, executes any tool calls, feeds results back,
- * and repeats until the model stops calling tools.
+ * and repeats until the model stops calling tools or the signal is aborted.
  *
- * Returns the full conversation (input messages + all new messages).
+ * Throws `MaxTurnsExceededError` if the loop exceeds `maxTurns`.
  */
 export async function run(
   client: Client,
@@ -64,13 +81,14 @@ export async function run(
 
   const { onStream, onTurnStart, onTurnEnd, createToolContext, onToolResult, prepareMessages, options } = hooks;
   const signal = options?.signal;
+  const maxTurns = hooks.maxTurns ?? DEFAULT_MAX_TURNS;
 
   const appendToolResult = (message: Message) => {
     conversation = [...conversation, message];
-    onToolResult?.(message, conversation);
+    onToolResult?.(message);
   };
 
-  while (true) {
+  for (let turn = 0; turn < maxTurns; turn++) {
     onTurnStart?.();
 
     const modelMessages = prepareMessages ? prepareMessages(conversation) : conversation;
@@ -82,7 +100,7 @@ export async function run(
     }
 
     conversation = [...conversation, assistantMessage];
-    onTurnEnd?.(assistantMessage, conversation);
+    onTurnEnd?.(assistantMessage);
 
     const toolCalls = assistantMessage.content.filter((p): p is ToolCallContent => p.type === "tool_call");
 
@@ -157,6 +175,12 @@ export async function run(
           },
         });
       }
+
+      if (signal?.aborted) {
+        return conversation;
+      }
     }
   }
+
+  throw new MaxTurnsExceededError(maxTurns);
 }

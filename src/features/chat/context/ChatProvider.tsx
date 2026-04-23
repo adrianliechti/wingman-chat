@@ -303,6 +303,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const abortController = new AbortController();
         abortControllerRef.current = abortController;
 
+        let running = [...conversation];
         conversation = await agentRun(client, currentModel.id, instructions, conversation, tools, {
           options: {
             effort: model?.effort,
@@ -318,14 +319,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
           onStream: (contentParts) => {
             updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: contentParts } });
           },
-          onTurnEnd: (_assistant, currentConversation) => {
-            updateChat(id, () => ({ messages: currentConversation }));
+          onTurnEnd: (assistant) => {
+            running = [...running, assistant];
+            updateChat(id, () => ({ messages: running }));
             updateStreamingMessage(null);
           },
           createToolContext: (toolCall: ToolCallContent) => createToolContext(toolCall),
-          onToolResult: (_toolResult, currentConversation) => {
+          onToolResult: (toolResult) => {
+            running = [...running, toolResult];
             setPendingElicitation(null);
-            updateChat(id, () => ({ messages: currentConversation }));
+            updateChat(id, () => ({ messages: running }));
           },
         });
 
