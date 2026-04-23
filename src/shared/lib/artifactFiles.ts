@@ -95,5 +95,11 @@ export function artifactContentToZipValue(file: ArtifactContent): string | Uint8
     return parsed.bytes;
   }
 
+  // Prepend UTF-8 BOM for CSV/TSV so Excel detects encoding correctly
+  const ct = file.contentType?.toLowerCase();
+  if (ct === "text/csv" || ct === "text/tab-separated-values") {
+    return new TextEncoder().encode(`\uFEFF${file.content}`);
+  }
+
   return file.content;
 }
