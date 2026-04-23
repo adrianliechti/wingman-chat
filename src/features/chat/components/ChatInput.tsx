@@ -621,7 +621,7 @@ export function ChatInput() {
               </div>
             )}
             <div className="flex items-center gap-2">
-              {voiceAvailable && !currentAgent?.model && (
+              {voiceAvailable && !currentAgent?.model && messages.length === 0 && (
                 <div
                   ref={modeSliderRef}
                   role="tablist"
@@ -681,11 +681,11 @@ export function ChatInput() {
 
               {currentAgent?.model ? (
                 /* Agent overrides model — show agent badge instead of model selector */
-                <div className="hidden lg:flex items-center gap-1.5">
+                <div className="items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => setCurrentAgent(null)}
-                    className="flex group items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors max-w-48"
+                    className="flex group items-center gap-1 pl-1 pr-1.5 py-1 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors max-w-48"
                     title="Deselect agent"
                   >
                     <span className="shrink-0 w-3.5 flex justify-center relative">
@@ -702,7 +702,7 @@ export function ChatInput() {
                 <>
                   {models.length > 0 && !isRealtimeSelected && (
                     <Menu>
-                      <MenuButton className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors max-w-48">
+                      <MenuButton className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48">
                         <span className="shrink-0 flex justify-center">{toolIndicator}</span>
                         <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
                       </MenuButton>
@@ -712,7 +712,7 @@ export function ChatInput() {
                         anchor="bottom start"
                         className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 whitespace-nowrap dark:ring-1 dark:ring-white/10"
                       >
-                        {models.map((modelItem) => (
+                        {models.filter((modelItem) => modelItem.id !== "realtime").map((modelItem) => (
                           <MenuItem key={modelItem.id}>
                             <button
                               type="button"
@@ -740,41 +740,7 @@ export function ChatInput() {
                             </button>
                           </MenuItem>
                         ))}
-                        {voiceAvailable && (
-                          <MenuItem>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onModelChange(
-                                  isRealtimeSelected
-                                    ? models[0]
-                                    : {
-                                      id: "realtime",
-                                      name: "Voice Mode",
-                                      description: "Real-time voice conversation",
-                                    },
-                                )
-                              }
-                              className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                            >
-                              <div className="flex items-center gap-2.5 w-full">
-                                <div className="shrink-0 w-3.5 flex justify-center">
-                                  {isRealtimeSelected && (
-                                    <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
-                                  )}
-                                </div>
-                                <div className="flex flex-col items-start flex-1 min-w-0">
-                                  <div className="font-semibold text-sm leading-tight whitespace-nowrap">
-                                    Voice Mode
-                                  </div>
-                                  <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
-                                    Real-time voice conversation
-                                  </div>
-                                </div>
-                              </div>
-                            </button>
-                          </MenuItem>
-                        )}
+
                       </MenuItems>
                     </Menu>
                   )}
@@ -783,7 +749,7 @@ export function ChatInput() {
                     <button
                       type="button"
                       onClick={() => setCurrentAgent(null)}
-                      className="hidden lg:flex group items-center gap-1 pr-1.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors"
+                      className="hidden lg:flex group items-center gap-1 pl-2 pr-1.5 py-1 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors"
                       title="Deselect agent"
                     >
                       <span className="shrink-0 w-3.5 flex justify-center relative">

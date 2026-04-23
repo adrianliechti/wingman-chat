@@ -1,5 +1,5 @@
 import { Dialog, Transition } from "@headlessui/react";
-import { Bot, ClipboardCheck, Folder, LayoutGrid, Mic, Wrench, X, Zap } from "lucide-react";
+import { Bot, ClipboardCheck, Folder, LayoutGrid, Wrench, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
@@ -128,24 +128,20 @@ function reducer(state: WizardState, action: WizardAction): WizardState {
 
 // ── Steps config ──
 
-function getSteps(agentType: "model" | "realtime"): StepDef[] {
+function getSteps(): StepDef[] {
   const config = getConfig();
   const steps: StepDef[] = [];
 
   if (config.voice) {
-    steps.push({ id: "type", label: "Type", icon: agentType === "realtime" ? Mic : LayoutGrid });
+    steps.push({ id: "type", label: "Type", icon: LayoutGrid });
   }
 
   steps.push({ id: "identity", label: "Identity", icon: Bot });
-
-  if (agentType === "model") {
-    steps.push({ id: "skills", label: "Skills", icon: Zap });
-    steps.push({ id: "tools", label: "Tools", icon: Wrench });
-    if (config.repository) {
-      steps.push({ id: "knowledge", label: "Knowledge", icon: Folder });
-    }
+  steps.push({ id: "skills", label: "Skills", icon: Zap });
+  steps.push({ id: "tools", label: "Tools", icon: Wrench });
+  if (config.repository) {
+    steps.push({ id: "knowledge", label: "Knowledge", icon: Folder });
   }
-
   steps.push({ id: "review", label: "Review", icon: ClipboardCheck });
   return steps;
 }
@@ -165,7 +161,7 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  const steps = useMemo(() => getSteps(state.agentType), [state.agentType]);
+  const steps = useMemo(() => getSteps(), []);
   const isLastStep = state.currentStep === steps.length - 1;
   const currentStepId = steps[state.currentStep]?.id;
 

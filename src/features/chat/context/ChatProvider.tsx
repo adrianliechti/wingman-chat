@@ -124,7 +124,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       closeApp();
 
       // When starting a new chat, reset realtime model back to default
-      if (!id && selectedModel?.id === "realtime") {
+      if (!id && (selectedModel?.id === "realtime" || chatModel?.id === "realtime")) {
         setSelectedModel(models[0] ?? null);
       }
 
@@ -133,7 +133,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setCurrentAgent(null);
       }
     },
-    [resetTools, closeApp, selectedModel, models, setSelectedModel, setCurrentAgent],
+    [resetTools, closeApp, selectedModel, chatModel, models, setSelectedModel, setCurrentAgent],
   );
 
   const deleteChat = useCallback(
