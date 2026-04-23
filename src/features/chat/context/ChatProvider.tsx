@@ -7,8 +7,9 @@ import { useChats } from "@/features/chat/hooks/useChats";
 import { useModels } from "@/features/chat/hooks/useModels";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
+import { run as agentRun } from "@/shared/lib/agent";
 import { getErrorInfo } from "@/shared/lib/errors";
-import type { Content, Message, Model, ToolContext } from "@/shared/types/chat";
+import type { Content, Message, Model, ToolCallContent, ToolContext } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import type { Elicitation, ElicitationResult, PendingElicitation } from "@/shared/types/elicitation";
 import { useApp } from "@/shell/hooks/useApp";
@@ -226,7 +227,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const outgoingMessage = appendTextContent(message, pendingModelContext);
 
       let conversation = [...history, outgoingMessage];
-      let modelConversation = pruneAtCompaction(conversation);
 
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
@@ -300,153 +300,48 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const tools = await chatTools();
         const instructions = chatInstructions();
 
-        // Main completion loop to handle tool calls
-        while (true) {
-          // Track streaming content in-memory to avoid writing the full conversation on every token
-          updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: [] } });
+        const abortController = new AbortController();
+        abortControllerRef.current = abortController;
 
-          const abortController = new AbortController();
-          abortControllerRef.current = abortController;
+        conversation = await agentRun(client, currentModel.id, instructions, conversation, tools, {
+          options: {
+            effort: model?.effort,
+            summary: model?.summary,
+            verbosity: model?.verbosity,
+            compactThreshold: model?.compactThreshold,
+            signal: abortController.signal,
+          },
+          prepareMessages: pruneAtCompaction,
+          onTurnStart: () => {
+            updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: [] } });
+          },
+          onStream: (contentParts) => {
+            updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: contentParts } });
+          },
+          onTurnEnd: (_assistant, currentConversation) => {
+            updateChat(id, () => ({ messages: currentConversation }));
+            updateStreamingMessage(null);
+          },
+          createToolContext: (toolCall: ToolCallContent) => createToolContext(toolCall),
+          onToolResult: (_toolResult, currentConversation) => {
+            setPendingElicitation(null);
+            updateChat(id, () => ({ messages: currentConversation }));
+          },
+        });
 
-          const assistantMessage = await client.complete(
-            currentModel.id,
-            instructions,
-            modelConversation,
-            tools,
-            (contentParts) => {
-              updateStreamingMessage({
-                chatId: id,
-                message: {
-                  role: Role.Assistant,
-                  content: contentParts,
-                },
-              });
-            },
-            {
-              effort: model?.effort,
-              summary: model?.summary,
-              verbosity: model?.verbosity,
-              compactThreshold: model?.compactThreshold,
-              signal: abortController.signal,
-            },
-          );
-
-          abortControllerRef.current = null;
-
-          // If the stream was stopped by the user, exit cleanly
-          if (abortController.signal.aborted) {
-            return;
-          }
-
-          // Add the assistant message to conversation
-          conversation = [...conversation, assistantMessage];
-          modelConversation = pruneAtCompaction([...modelConversation, assistantMessage]);
-
-          // Commit the completed message once per turn
-          updateChat(id, () => ({ messages: conversation }));
-
-          // Clear streaming buffer now that the message is persisted
-          updateStreamingMessage(null);
-
-          // Check if there are tool calls to handle
-          const toolCalls = assistantMessage.content.filter((p) => p.type === "tool_call");
-
-          if (toolCalls.length === 0) {
-            // No tool calls, we're done
-            break;
-          }
-
-          // Handle each tool call
-          for (const toolCall of toolCalls) {
-            if (toolCall.type !== "tool_call") continue;
-
-            const tool = tools.find((t) => t.name === toolCall.name);
-
-            if (!tool) {
-              // Tool not found - add error message as user message with tool result
-              conversation = [
-                ...conversation,
-                {
-                  role: Role.User,
-                  content: [
-                    {
-                      type: "tool_result",
-                      id: toolCall.id,
-                      name: toolCall.name,
-                      arguments: toolCall.arguments,
-                      result: [{ type: "text", text: `Error: Tool "${toolCall.name}" not found or not executable.` }],
-                    },
-                  ],
-                  error: {
-                    code: "TOOL_NOT_FOUND",
-                    message: `Tool "${toolCall.name}" is not available or not executable.`,
-                  },
-                },
-              ];
-              modelConversation = [...modelConversation, conversation[conversation.length - 1]];
-
-              continue;
-            }
-
-            try {
-              const args = JSON.parse(toolCall.arguments || "{}");
-              const { context: toolContext, getResultMeta } = createToolContext(toolCall);
-
-              const result = await tool.function(args, toolContext);
-
-              // Clear pending elicitation after tool completes
-              setPendingElicitation(null);
-
-              // Add tool result to conversation as user message
-              const toolResultMessage: Message = {
-                role: Role.User,
-                content: [
-                  {
-                    type: "tool_result",
-                    id: toolCall.id,
-                    name: toolCall.name,
-                    arguments: toolCall.arguments,
-                    result: result,
-                    ...(getResultMeta() ? { meta: getResultMeta() } : {}),
-                  },
-                ],
-              };
-              conversation = [...conversation, toolResultMessage];
-              modelConversation = [...modelConversation, toolResultMessage];
-            } catch (error) {
-              console.error("Tool failed", error);
-
-              // Add tool error to conversation as user message
-              const toolErrorMessage: Message = {
-                role: Role.User,
-                content: [
-                  {
-                    type: "tool_result",
-                    id: toolCall.id,
-                    name: toolCall.name,
-                    arguments: toolCall.arguments,
-                    result: [{ type: "text", text: "error: tool execution failed." }],
-                  },
-                ],
-                error: {
-                  code: "TOOL_EXECUTION_ERROR",
-                  message:
-                    "The tool could not complete the requested action. Please try again or use a different approach.",
-                },
-              };
-              conversation = [...conversation, toolErrorMessage];
-              modelConversation = [...modelConversation, toolErrorMessage];
-            }
-          }
-
-          // Update conversation with tool results before next iteration
-          updateChat(id, () => ({ messages: conversation }));
-        }
+        const aborted = abortController.signal.aborted;
+        abortControllerRef.current = null;
 
         setIsResponding(false);
 
         // Ensure streaming buffer is cleared after completion
         updateStreamingMessage(null);
+
+        // If the stream was stopped by the user, don't run follow-up work
+        // (title summarization etc.) on the partial conversation.
+        if (aborted) {
+          return;
+        }
 
         if (!initialTitle || conversation.length % 3 === 0) {
           client.summarizeTitle(config.chat?.summarizer || currentModel.id, conversation).then((title) => {

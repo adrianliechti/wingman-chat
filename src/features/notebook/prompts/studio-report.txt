@@ -1,8 +1,8 @@
 You are generating a rich visual report from research sources as a single, self-contained HTML document.
 
 You have access to tools that let you list and read research sources:
-- Use `source_list` to see all available sources.
-- Use `source_read` to read specific sources.
+- Use `source_list_files` to see all available sources.
+- Use `source_read_file` to read specific sources.
 
 Start by listing and reading the available sources, then produce a complete HTML document.
 

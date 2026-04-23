@@ -6,7 +6,7 @@ import type { Content } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
 import * as store from "../lib/opfs-notebook";
 import { createSourceTools } from "../lib/source-tools";
-import { runWithTools } from "../lib/tool-loop";
+import { run } from "@/shared/lib/agent";
 import chatInstructions from "../prompts/chat.txt?raw";
 import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
 import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
@@ -515,9 +515,10 @@ export function useNotebook(notebookId?: string) {
         // Build Message[] for the LLM (strip timestamps)
         const conversation = newMessages.map(({ timestamp, ...msg }) => msg);
 
-        const response = await runWithTools(client, getModel(), chatInstructions, conversation, tools, (content) =>
-          setStreamingContent(content),
-        );
+        const result = await run(client, getModel(), chatInstructions, conversation, tools, {
+          onStream: (content) => setStreamingContent(content),
+        });
+        const response = result[result.length - 1];
 
         setStreamingContent(null);
 
@@ -612,8 +613,9 @@ export function useNotebook(notebookId?: string) {
 
       if (type === "podcast") {
         // Audio overview: LLM generates script → TTS generates audio per paragraph → merge
-        runWithTools(client, getModel(), instructions, [userMessage], tools)
-          .then(async (response) => {
+        run(client, getModel(), instructions, [userMessage], tools)
+          .then(async (result) => {
+            const response = result[result.length - 1];
             const script = getTextFromContent(response.content);
             if (!script?.trim()) {
               throw new Error("Could not generate audio script");
@@ -684,8 +686,9 @@ export function useNotebook(notebookId?: string) {
           .catch(failOutput);
       } else if (type === "infographic") {
         // Infographic: LLM generates image prompt → renderer creates image
-        runWithTools(client, getModel(), instructions, [userMessage], tools)
-          .then(async (response) => {
+        run(client, getModel(), instructions, [userMessage], tools)
+          .then(async (result) => {
+            const response = result[result.length - 1];
             const imagePrompt = getTextFromContent(response.content);
             if (!imagePrompt?.trim()) {
               throw new Error("Could not generate image prompt");
@@ -706,8 +709,9 @@ export function useNotebook(notebookId?: string) {
       } else if (type === "slides") {
         // Slide deck: LLM generates slide text + image prompts → render each slide sequentially
         // so each slide can use the previous one as a style reference
-        runWithTools(client, getModel(), instructions, [userMessage], tools)
-          .then(async (response) => {
+        run(client, getModel(), instructions, [userMessage], tools)
+          .then(async (result) => {
+            const response = result[result.length - 1];
             const fullContent = getTextFromContent(response.content);
             if (!fullContent?.trim()) {
               throw new Error("Could not generate slide deck");
@@ -770,8 +774,9 @@ export function useNotebook(notebookId?: string) {
           .catch(failOutput);
       } else if (type === "quiz") {
         // Quiz: LLM reads sources → produces structured JSON
-        runWithTools(client, getModel(), instructions, [userMessage], tools)
-          .then(async (response) => {
+        run(client, getModel(), instructions, [userMessage], tools)
+          .then(async (result) => {
+            const response = result[result.length - 1];
             const raw = getTextFromContent(response.content);
             if (!raw?.trim()) throw new Error("Could not generate quiz");
 
@@ -795,8 +800,9 @@ export function useNotebook(notebookId?: string) {
           .catch(failOutput);
       } else if (type === "mindmap") {
         // Mind map: LLM reads sources → produces structured JSON tree
-        runWithTools(client, getModel(), instructions, [userMessage], tools)
-          .then(async (response) => {
+        run(client, getModel(), instructions, [userMessage], tools)
+          .then(async (result) => {
+            const response = result[result.length - 1];
             const raw = getTextFromContent(response.content);
             if (!raw?.trim()) throw new Error("Could not generate mind map");
 
@@ -820,8 +826,9 @@ export function useNotebook(notebookId?: string) {
           .catch(failOutput);
       } else {
         // Other types: LLM generates text content
-        runWithTools(client, getModel(), instructions, [userMessage], tools)
-          .then(async (response) => {
+        run(client, getModel(), instructions, [userMessage], tools)
+          .then(async (result) => {
+            const response = result[result.length - 1];
             const content = getTextFromContent(response.content);
             if (!content?.trim()) {
               throw new Error("Could not generate output");
