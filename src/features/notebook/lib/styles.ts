@@ -55,6 +55,7 @@ export interface Style {
   id: string;
   label: string;
   prompt: string;
+  description?: string;
   voices?: string[];
 }
 
@@ -85,22 +86,22 @@ const toId = (name: string) => name.toLowerCase().replace(/\s+/g, "-");
 
 export const slideStyles: StyleRegistry = makeRegistry(
   [
-    { id: "whiteboard", label: "Whiteboard", prompt: slideStyleWhiteboard },
-    { id: "consulting", label: "Consulting", prompt: slideStyleConsulting },
-    { id: "dark", label: "Dark", prompt: slideStyleDark },
-    { id: "swiss", label: "Swiss", prompt: slideStyleSwiss },
-    { id: "nature", label: "Nature", prompt: slideStyleNature },
+    { id: "whiteboard", label: "Whiteboard", description: "Clean minimal design with hand-drawn feel and open whitespace", prompt: slideStyleWhiteboard },
+    { id: "consulting", label: "Consulting", description: "Professional business style with structured layouts and accent colors", prompt: slideStyleConsulting },
+    { id: "dark", label: "Dark", description: "Bold dark backgrounds with high-contrast text and vibrant highlights", prompt: slideStyleDark },
+    { id: "swiss", label: "Swiss", description: "Grid-based typography-first design inspired by Swiss graphic style", prompt: slideStyleSwiss },
+    { id: "nature", label: "Nature", description: "Warm earthy tones with organic shapes and natural imagery", prompt: slideStyleNature },
   ],
   () => getConfig().canvas?.slides?.map((s) => ({ id: toId(s.name), label: s.name, prompt: s.prompt })),
 );
 
 export const podcastStyles: StyleRegistry = makeRegistry(
   [
-    { id: "overview", label: "Overview", prompt: podcastStyleOverview, voices: ["host"] },
-    { id: "deep-dive", label: "Deep Dive", prompt: podcastStyleDeepDive, voices: ["analyst"] },
-    { id: "briefing", label: "Briefing", prompt: podcastStyleBriefing, voices: ["narrator"] },
-    { id: "story", label: "Story", prompt: podcastStyleStory, voices: ["storyteller"] },
-    { id: "debate", label: "Debate", prompt: podcastStyleDebate, voices: ["host", "skeptic"] },
+    { id: "overview", label: "Overview", description: "A single-host overview of the key points and main takeaways", prompt: podcastStyleOverview, voices: ["host"] },
+    { id: "deep-dive", label: "Deep Dive", description: "An in-depth exploration of the topic with detailed analysis", prompt: podcastStyleDeepDive, voices: ["analyst"] },
+    { id: "briefing", label: "Briefing", description: "A concise narrated briefing of the essential facts", prompt: podcastStyleBriefing, voices: ["narrator"] },
+    { id: "story", label: "Story", description: "A narrative retelling that weaves sources into a compelling story", prompt: podcastStyleStory, voices: ["storyteller"] },
+    { id: "debate", label: "Debate", description: "A two-host debate examining different perspectives", prompt: podcastStyleDebate, voices: ["host", "skeptic"] },
   ],
   () =>
     getConfig().canvas?.podcasts?.map((p) => ({
@@ -113,10 +114,10 @@ export const podcastStyles: StyleRegistry = makeRegistry(
 
 export const reportStyles: StyleRegistry = makeRegistry(
   [
-    { id: "executive", label: "Executive", prompt: reportStyleExecutive },
-    { id: "dashboard", label: "Dashboard", prompt: reportStyleDashboard },
-    { id: "research", label: "Research", prompt: reportStyleResearch },
-    { id: "magazine", label: "Magazine", prompt: reportStyleMagazine },
+    { id: "executive", label: "Executive", description: "A polished summary with key findings and recommendations", prompt: reportStyleExecutive },
+    { id: "dashboard", label: "Dashboard", description: "A data-focused report with metrics and visual indicators", prompt: reportStyleDashboard },
+    { id: "research", label: "Research", description: "An academic-style analysis with methodology and citations", prompt: reportStyleResearch },
+    { id: "magazine", label: "Magazine", description: "An editorial-style article designed for broad audiences", prompt: reportStyleMagazine },
   ],
   () => getConfig().canvas?.reports?.map((r) => ({ id: toId(r.name), label: r.name, prompt: r.prompt })),
 );
@@ -180,6 +181,15 @@ export const OUTPUT_META: Record<OutputType, OutputMeta> = {
 
 // ── Instruction assembly ───────────────────────────────────────────────
 
+export interface BuildInstructionsOptions {
+  /** Target language for the generated output (e.g. "English", "German"). */
+  language?: string;
+  /** Requested slide count for slide decks. Overrides the default 8–12 range. */
+  slideCount?: number;
+  /** Free-form user instructions appended to the prompt (e.g. audience, focus, tone). */
+  instructions?: string;
+}
+
 /**
  * Assemble the final system prompt for an output generation.
  *
@@ -190,22 +200,48 @@ export const OUTPUT_META: Record<OutputType, OutputMeta> = {
  *
  * All other output types substitute `{{STYLE_SECTION}}` when a style registry
  * is registered for them.
+ *
+ * Optional `language` and `slideCount` directives are appended as a trailing
+ * override block so they take precedence over any defaults baked into the
+ * template prompts.
  */
-export function buildInstructions(type: OutputType, styleId?: string): string {
+export function buildInstructions(type: OutputType, styleId?: string, options?: BuildInstructionsOptions): string {
+  let prompt: string;
+
   if (type === "slides" && getConfig().notebook?.mode === "images") {
-    return studioSlideImageInstructions;
+    prompt = studioSlideImageInstructions;
+  } else {
+    const meta = OUTPUT_META[type];
+    prompt = meta.template;
+
+    if (type === "slides") {
+      prompt = prompt.replace("{{COMMON_RULES}}", slideCommonRules);
+    }
+
+    if (meta.styles) {
+      const style = meta.styles.get(styleId ?? meta.defaultStyleId);
+      prompt = prompt.replace("{{STYLE_SECTION}}", style.prompt);
+    }
   }
 
-  const meta = OUTPUT_META[type];
-  let prompt = meta.template;
-
-  if (type === "slides") {
-    prompt = prompt.replace("{{COMMON_RULES}}", slideCommonRules);
+  const overrides: string[] = [];
+  if (options?.language) {
+    overrides.push(
+      `- Write **all output text in ${options.language}** (titles, body copy, labels, captions, speaker lines). This overrides any language used in the source material.`,
+    );
+  }
+  if (type === "slides" && options?.slideCount && options.slideCount > 0) {
+    const n = Math.round(options.slideCount);
+    overrides.push(
+      `- Produce **exactly ${n} slides**. This overrides any slide count mentioned elsewhere in the instructions (e.g. "8–12 slides"). Plan the deck arc to fit this exact length.`,
+    );
+  }
+  if (options?.instructions) {
+    overrides.push(`- Additional user instructions: ${options.instructions}`);
   }
 
-  if (meta.styles) {
-    const style = meta.styles.get(styleId ?? meta.defaultStyleId);
-    prompt = prompt.replace("{{STYLE_SECTION}}", style.prompt);
+  if (overrides.length > 0) {
+    prompt += `\n\n---\n\n## User overrides (highest priority)\n\n${overrides.join("\n")}\n`;
   }
 
   return prompt;

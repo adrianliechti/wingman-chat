@@ -18,7 +18,7 @@ import {
 } from "../lib/output-generators";
 import { createSourceExecTools } from "../lib/source-exec-tools";
 import { createSourceTools } from "../lib/source-tools";
-import { buildInstructions, chatInstructions, OUTPUT_META } from "../lib/styles";
+import { type BuildInstructionsOptions, buildInstructions, chatInstructions, OUTPUT_META } from "../lib/styles";
 import type { Notebook, NotebookMessage, NotebookOutput, OutputType } from "../types/notebook";
 
 function generateId(): string {
@@ -367,7 +367,7 @@ export function useNotebook(notebookId?: string) {
   // ── Outputs ────────────────────────────────────────────────────────
 
   const generateOutput = useCallback(
-    (type: OutputType, styleId?: string) => {
+    (type: OutputType, styleId?: string, options?: BuildInstructionsOptions) => {
       if (!notebook || sources.length === 0) return;
 
       const output: NotebookOutput = {
@@ -385,7 +385,7 @@ export function useNotebook(notebookId?: string) {
       const ctx: GenerateContext = {
         client,
         model: getModel(),
-        instructions: buildInstructions(type, styleId),
+        instructions: buildInstructions(type, styleId, options),
         sourceTools: createSourceTools(() => sourcesRef.current),
         getSources: () => sourcesRef.current,
         onProgress: (partial) => {

@@ -2,7 +2,6 @@ import {
   AlertCircle,
   AudioLines,
   BarChart3,
-  ChevronDown,
   CircleHelp,
   Download,
   FileImage,
@@ -14,17 +13,20 @@ import {
   Table2,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { getConfig } from "@/shared/config";
+import { useRef, useState } from "react";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import type { File } from "@/shared/types/file";
-import { infographicStyles, podcastStyles, reportStyles, slideStyles } from "../lib/styles";
 import type { NotebookOutput, OutputType } from "../types/notebook";
+import { type GeneratorOptions, OutputGeneratorDialog } from "./OutputGeneratorDialog";
 
 interface StudioPanelProps {
   sources: File[];
   outputs: NotebookOutput[];
-  onGenerate: (type: OutputType, styleId?: string) => void;
+  onGenerate: (
+    type: OutputType,
+    styleId?: string,
+    options?: { language?: string; slideCount?: number; instructions?: string },
+  ) => void;
   onDeleteOutput: (outputId: string) => void;
   onSelectOutput: (output: NotebookOutput) => void;
 }
@@ -46,12 +48,14 @@ type ExportFormat = "pdf" | "pptx-image" | "pptx-hybrid" | "pptx-editable" | "pn
 
 export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSelectOutput }: StudioPanelProps) {
   const hasSources = sources.length > 0;
-  const [openMenu, setOpenMenu] = useState<OutputType | null>(null);
+  const [dialogType, setDialogType] = useState<OutputType | null>(null);
   const [exportOverlay, setExportOverlay] = useState<NotebookOutput | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  // Keep the type stable during the exit animation.
+  const stableDialogType = useRef<OutputType>("slides");
+  if (dialogType) stableDialogType.current = dialogType;
 
   const downloadOutput = async (output: NotebookOutput) => {
     // For HTML slides, show export overlay instead of direct download
@@ -108,22 +112,14 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
     }
   };
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenu(null);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  const DIALOG_TYPES = new Set<OutputType>(["slides", "podcast", "report", "infographic"]);
 
-  const isSlidesImageMode = getConfig().notebook?.mode === "images";
-  const styleMenus: Partial<Record<OutputType, readonly { id: string; label: string }[]>> = {
-    ...(isSlidesImageMode ? {} : { slides: slideStyles.getAll() }),
-    podcast: podcastStyles.getAll(),
-    report: reportStyles.getAll(),
-    infographic: infographicStyles.getAll(),
+  const handleDialogGenerate = (_type: OutputType, opts: GeneratorOptions) => {
+    onGenerate(_type, opts.styleId, {
+      language: opts.language,
+      slideCount: opts.slideCount,
+      instructions: opts.instructions,
+    });
   };
 
   return (
@@ -132,38 +128,18 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
       <div className="px-3 py-3 border-b border-neutral-200 dark:border-neutral-800">
         <div className="grid grid-cols-2 gap-2">
           {OUTPUT_TYPES.map(({ type, label, icon: Icon }) => {
-            const styles = styleMenus[type];
-            if (styles) {
+            if (DIALOG_TYPES.has(type)) {
               return (
-                <div key={type} className="relative" ref={openMenu === type ? menuRef : undefined}>
-                  <button
-                    type="button"
-                    onClick={() => setOpenMenu((v) => (v === type ? null : type))}
-                    disabled={!hasSources}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
-                  >
-                    <Icon size={16} className="shrink-0" />
-                    <span className="text-xs font-medium flex-1">{label}</span>
-                    <ChevronDown size={12} className="shrink-0 opacity-50" />
-                  </button>
-                  {openMenu === type && (
-                    <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-2 border-white/40 dark:border-neutral-700/60 rounded-lg shadow-2xl shadow-black/40 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 py-1">
-                      {styles.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => {
-                            setOpenMenu(null);
-                            onGenerate(type, s.id);
-                          }}
-                          className="w-full text-left px-3 py-1.5 text-xs text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
-                        >
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setDialogType(type)}
+                  disabled={!hasSources}
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
+                >
+                  <Icon size={16} className="shrink-0" />
+                  <span className="text-xs font-medium">{label}</span>
+                </button>
               );
             }
             return (
@@ -358,6 +334,14 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
           </div>
         </div>
       )}
+
+      {/* Output generator dialog */}
+      <OutputGeneratorDialog
+        open={dialogType !== null}
+        type={stableDialogType.current}
+        onClose={() => setDialogType(null)}
+        onGenerate={handleDialogGenerate}
+      />
     </div>
   );
 }
