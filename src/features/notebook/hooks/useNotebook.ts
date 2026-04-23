@@ -55,65 +55,81 @@ function generateId(): string {
 }
 
 /**
- * Merge multiple WAV blobs into a single WAV blob.
- * Assumes all blobs are PCM WAV with the same sample rate and format.
+ * Encode a Web Audio API AudioBuffer as a 16-bit PCM WAV Blob.
  */
-async function mergeWavBlobs(blobs: Blob[]): Promise<Blob> {
-  if (blobs.length === 1) return blobs[0];
-
-  const buffers = await Promise.all(blobs.map((b) => b.arrayBuffer()));
-
-  // Read header from first WAV to get format info
-  const firstView = new DataView(buffers[0]);
-  const numChannels = firstView.getUint16(22, true);
-  const sampleRate = firstView.getUint32(24, true);
-  const bitsPerSample = firstView.getUint16(34, true);
-
-  // Extract raw PCM data from each WAV (skip 44-byte header)
-  const pcmChunks: ArrayBuffer[] = [];
-  let totalDataSize = 0;
-  for (const buf of buffers) {
-    const dataStart = 44;
-    const chunk = buf.slice(dataStart);
-    pcmChunks.push(chunk);
-    totalDataSize += chunk.byteLength;
-  }
-
-  // Build new WAV
-  const headerSize = 44;
-  const result = new ArrayBuffer(headerSize + totalDataSize);
-  const view = new DataView(result);
-  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+function encodeWavFromAudioBuffer(audioBuffer: AudioBuffer): Blob {
+  const numChannels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const numSamples = audioBuffer.length;
+  const bitsPerSample = 16;
   const blockAlign = numChannels * (bitsPerSample / 8);
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = numSamples * blockAlign;
 
-  // RIFF header
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
   writeString(view, 0, "RIFF");
-  view.setUint32(4, 36 + totalDataSize, true);
+  view.setUint32(4, 36 + dataSize, true);
   writeString(view, 8, "WAVE");
-
-  // fmt chunk
   writeString(view, 12, "fmt ");
-  view.setUint32(16, 16, true); // chunk size
+  view.setUint32(16, 16, true);
   view.setUint16(20, 1, true); // PCM
   view.setUint16(22, numChannels, true);
   view.setUint32(24, sampleRate, true);
   view.setUint32(28, byteRate, true);
   view.setUint16(32, blockAlign, true);
   view.setUint16(34, bitsPerSample, true);
-
-  // data chunk
   writeString(view, 36, "data");
-  view.setUint32(40, totalDataSize, true);
+  view.setUint32(40, dataSize, true);
 
-  // Copy PCM data
-  const output = new Uint8Array(result);
-  let offset = headerSize;
-  for (const chunk of pcmChunks) {
-    output.set(new Uint8Array(chunk), offset);
-    offset += chunk.byteLength;
+  // Interleave channel samples, converting float32 → int16
+  let offset = 44;
+  for (let i = 0; i < numSamples; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const s = Math.max(-1, Math.min(1, audioBuffer.getChannelData(ch)[i]));
+      view.setInt16(offset, s < 0 ? s * 32768 : s * 32767, true);
+      offset += 2;
+    }
   }
 
-  return new Blob([result], { type: "audio/wav" });
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
+/**
+ * Merge multiple audio Blobs into a single WAV Blob.
+ * Uses the browser's AudioContext.decodeAudioData for robust decoding —
+ * works with any valid audio format regardless of WAV chunk layout.
+ */
+async function mergeWavBlobs(blobs: Blob[]): Promise<Blob> {
+  if (blobs.length === 1) return blobs[0];
+
+  const audioCtx = new AudioContext();
+  try {
+    const audioBuffers = await Promise.all(
+      blobs.map(async (blob) => {
+        const arrayBuffer = await blob.arrayBuffer();
+        return audioCtx.decodeAudioData(arrayBuffer);
+      }),
+    );
+
+    const sampleRate = audioBuffers[0].sampleRate;
+    const numChannels = audioBuffers[0].numberOfChannels;
+    const totalLength = audioBuffers.reduce((sum, buf) => sum + buf.length, 0);
+
+    const outputBuffer = audioCtx.createBuffer(numChannels, totalLength, sampleRate);
+    let offset = 0;
+    for (const buf of audioBuffers) {
+      for (let ch = 0; ch < numChannels; ch++) {
+        outputBuffer.copyToChannel(buf.getChannelData(ch), ch, offset);
+      }
+      offset += buf.length;
+    }
+
+    return encodeWavFromAudioBuffer(outputBuffer);
+  } finally {
+    audioCtx.close();
+  }
 }
 
 function writeString(view: DataView, offset: number, str: string) {
