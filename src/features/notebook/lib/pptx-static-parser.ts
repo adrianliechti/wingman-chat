@@ -6,7 +6,7 @@
  * Used by the hybrid PPTX export to create editable overlays.
  */
 
-import { CANVAS_W, CANVAS_H } from "./pptx-utils";
+import { CANVAS_H, CANVAS_W } from "./pptx-utils";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -77,8 +77,9 @@ export async function parseSlideHtml(html: string): Promise<ParsedSlide> {
   }
 
   try {
-    const doc = iframe.contentDocument!;
-    const win = iframe.contentWindow!;
+    const doc = iframe.contentDocument;
+    const win = iframe.contentWindow;
+    if (!doc || !win) throw new Error("iframe content unavailable");
     const body = doc.body;
 
     const bodyStyle = win.getComputedStyle(body);
@@ -118,7 +119,14 @@ export async function parseSlideHtml(html: string): Promise<ParsedSlide> {
         if (el.tagName === "SVG" || el.tagName === "svg") {
           const dataUrl = await rasterizeSvg(el as unknown as SVGSVGElement, rect.width, rect.height);
           if (dataUrl) {
-            elements.push({ type: "image", x: rect.left, y: rect.top, w: rect.width, h: rect.height, imageData: dataUrl });
+            elements.push({
+              type: "image",
+              x: rect.left,
+              y: rect.top,
+              w: rect.width,
+              h: rect.height,
+              imageData: dataUrl,
+            });
           }
           skipChildren(walker, el);
           node = walker.nextNode() as Element | null;
@@ -153,7 +161,10 @@ export async function parseSlideHtml(html: string): Promise<ParsedSlide> {
         if ((hasBg || hasBorder) && !isLeaf) {
           elements.push({
             type: "shape",
-            x: rect.left, y: rect.top, w: rect.width, h: rect.height,
+            x: rect.left,
+            y: rect.top,
+            w: rect.width,
+            h: rect.height,
             backgroundColor: hasBg ? style.backgroundColor : undefined,
             borderRadius: parseFloat(style.borderRadius) || 0,
             borderColor: hasBorder ? style.borderColor : undefined,
@@ -167,7 +178,10 @@ export async function parseSlideHtml(html: string): Promise<ParsedSlide> {
           if (paragraphs.length > 0) {
             elements.push({
               type: "text",
-              x: rect.left, y: rect.top, w: rect.width, h: rect.height,
+              x: rect.left,
+              y: rect.top,
+              w: rect.width,
+              h: rect.height,
               fontSize: parseFloat(style.fontSize) || 16,
               fontFamily: style.fontFamily?.split(",")[0]?.replace(/["']/g, "").trim() || "Calibri",
               fontWeight: style.fontWeight,
@@ -195,17 +209,50 @@ function isLeafTextBlock(el: HTMLElement): boolean {
   const text = el.textContent?.trim();
   if (!text) return false;
 
-  const blockTags = new Set(["DIV", "SECTION", "ARTICLE", "MAIN", "NAV", "ASIDE", "HEADER", "FOOTER", "UL", "OL", "TABLE", "FIGURE"]);
+  const blockTags = new Set([
+    "DIV",
+    "SECTION",
+    "ARTICLE",
+    "MAIN",
+    "NAV",
+    "ASIDE",
+    "HEADER",
+    "FOOTER",
+    "UL",
+    "OL",
+    "TABLE",
+    "FIGURE",
+  ]);
 
   if (blockTags.has(el.tagName)) {
     for (const child of el.children) {
-      if (blockTags.has(child.tagName) || ["H1", "H2", "H3", "H4", "H5", "H6", "P", "BLOCKQUOTE", "PRE", "LI"].includes(child.tagName)) {
+      if (
+        blockTags.has(child.tagName) ||
+        ["H1", "H2", "H3", "H4", "H5", "H6", "P", "BLOCKQUOTE", "PRE", "LI"].includes(child.tagName)
+      ) {
         return false;
       }
     }
   }
 
-  const textTags = new Set(["H1", "H2", "H3", "H4", "H5", "H6", "P", "LI", "BLOCKQUOTE", "PRE", "FIGCAPTION", "TD", "TH", "DT", "DD", "LABEL"]);
+  const textTags = new Set([
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "P",
+    "LI",
+    "BLOCKQUOTE",
+    "PRE",
+    "FIGCAPTION",
+    "TD",
+    "TH",
+    "DT",
+    "DD",
+    "LABEL",
+  ]);
   if (textTags.has(el.tagName)) return true;
 
   const inlineTags = new Set(["SPAN", "A", "STRONG", "EM", "B", "I", "CODE"]);
@@ -277,11 +324,12 @@ async function rasterizeSvg(svg: SVGSVGElement, width: number, height: number): 
     const svgStr = new XMLSerializer().serializeToString(svg);
     const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
     url = URL.createObjectURL(blob);
+    const objUrl = url;
     const img = new Image();
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve();
       img.onerror = reject;
-      img.src = url!;
+      img.src = objUrl;
     });
     const canvas = document.createElement("canvas");
     canvas.width = width * 2;

@@ -85,10 +85,7 @@ export interface SourceExecToolsOptions {
  * the working filesystem. Sources are mounted at `/home/user/` before
  * execution and changes are persisted back via `onWrite`.
  */
-export function createSourceExecTools(
-  getSources: () => readonly File[],
-  options: SourceExecToolsOptions,
-): Tool[] {
+export function createSourceExecTools(getSources: () => readonly File[], options: SourceExecToolsOptions): Tool[] {
   const { onWrite } = options;
 
   async function persistWrites(before: FileMap, after: FileMap): Promise<string[]> {

@@ -80,10 +80,7 @@ export function escapeTextForPptx(text: string): { escaped: string; preserve: bo
 // ── PPTX boilerplate ────────────────────────────────────────────────────────
 
 export function addPptxBoilerplate(zip: import("jszip"), slideCount: number): void {
-  zip.file(
-    "[Content_Types].xml",
-    buildContentTypes(slideCount),
-  );
+  zip.file("[Content_Types].xml", buildContentTypes(slideCount));
 
   zip.file(
     "_rels/.rels",

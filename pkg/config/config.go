@@ -35,7 +35,6 @@ func loadConfigFiles(cfg *Config) {
 	loadYAML("models.yaml", &cfg.Models)
 	loadYAML("drives.yaml", &cfg.Drives)
 	loadYAML("backgrounds.yaml", &cfg.Backgrounds)
-	loadYAMLPtr("canvas.yaml", &cfg.Canvas)
 
 	loadYAMLPtr("translator.yaml", &cfg.Translator)
 	loadYAMLPtr("vision.yaml", &cfg.Vision)
@@ -89,7 +88,9 @@ func applyEnvOverrides(cfg *Config) {
 	withFeature("MEMORY_ENABLED", &cfg.Memory, nil)
 
 	withFeature("NOTEBOOK_ENABLED", &cfg.Notebook, func(n *Notebook) {
+		envOverride("NOTEBOOK_MODE", &n.Mode)
 		envOverride("NOTEBOOK_MODEL", &n.Model)
+		envOverride("NOTEBOOK_RENDERER", &n.Renderer)
 	})
 
 	withFeature("EXTRACTOR_ENABLED", &cfg.Extractor, func(e *Extractor) {

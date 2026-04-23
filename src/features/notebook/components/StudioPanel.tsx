@@ -15,10 +15,11 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { getConfig } from "@/shared/config";
 import { downloadFromUrl } from "@/shared/lib/utils";
-import { getPodcastStyles, getReportStyles, getSlideStyles, getInfographicStyles } from "../hooks/useNotebook";
-import type { NotebookOutput, OutputType } from "../types/notebook";
 import type { File } from "@/shared/types/file";
+import { infographicStyles, podcastStyles, reportStyles, slideStyles } from "../lib/styles";
+import type { NotebookOutput, OutputType } from "../types/notebook";
 
 interface StudioPanelProps {
   sources: File[];
@@ -51,14 +52,10 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const slideStyles = getSlideStyles();
-  const podcastStyles = getPodcastStyles();
-  const reportStyles = getReportStyles();
-  const infographicStyles = getInfographicStyles();
 
   const downloadOutput = async (output: NotebookOutput) => {
     // For HTML slides, show export overlay instead of direct download
-    if (output.type === "slides" && output.htmlSlides?.length) {
+    if (output.type === "slides" && output.slideContentType === "text/html" && output.slides?.length) {
       setExportOverlay(output);
       setExportError(null);
       return;
@@ -78,7 +75,8 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
   };
 
   const handleExport = async (format: ExportFormat) => {
-    if (!exportOverlay?.htmlSlides?.length) return;
+    if (!exportOverlay?.slides?.length) return;
+    const slides = exportOverlay.slides;
     const slug = exportOverlay.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
     setIsExporting(true);
     setExportError(null);
@@ -87,19 +85,19 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
     try {
       if (format === "pdf") {
         const { downloadHtmlSlidesAsPdf } = await import("../lib/html-slide-export");
-        await downloadHtmlSlidesAsPdf(exportOverlay.htmlSlides, slug);
+        await downloadHtmlSlidesAsPdf(slides, slug);
       } else if (format === "pptx-image") {
         const { downloadHtmlSlidesAsPptx } = await import("../lib/html-slide-export");
-        await downloadHtmlSlidesAsPptx(exportOverlay.htmlSlides, slug);
+        await downloadHtmlSlidesAsPptx(slides, slug);
       } else if (format === "pptx-hybrid") {
         setExportProgress("Exporting slides...");
         const { downloadHtmlSlidesAsHybridPptx } = await import("../lib/pptx-export-hybrid");
-        await downloadHtmlSlidesAsHybridPptx(exportOverlay.htmlSlides, slug, (current, total) => {
+        await downloadHtmlSlidesAsHybridPptx(slides, slug, (current, total) => {
           setExportProgress(`Exporting slide ${current} of ${total}...`);
         });
       } else if (format === "png") {
         const { downloadHtmlSlidesAsPng } = await import("../lib/html-slide-export");
-        await downloadHtmlSlidesAsPng(exportOverlay.htmlSlides, slug);
+        await downloadHtmlSlidesAsPng(slides, slug);
       }
       setExportOverlay(null);
     } catch (err) {
@@ -120,11 +118,12 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  const isSlidesImageMode = getConfig().notebook?.mode === "images";
   const styleMenus: Partial<Record<OutputType, readonly { id: string; label: string }[]>> = {
-    slides: slideStyles,
-    podcast: podcastStyles,
-    report: reportStyles,
-    infographic: infographicStyles,
+    ...(isSlidesImageMode ? {} : { slides: slideStyles.getAll() }),
+    podcast: podcastStyles.getAll(),
+    report: reportStyles.getAll(),
+    infographic: infographicStyles.getAll(),
   };
 
   return (
@@ -275,7 +274,10 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
               {!isExporting && (
                 <button
                   type="button"
-                  onClick={() => { setExportOverlay(null); setExportError(null); }}
+                  onClick={() => {
+                    setExportOverlay(null);
+                    setExportError(null);
+                  }}
                   className="p-1 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
                 >
                   <X size={14} className="text-neutral-400" />
@@ -344,7 +346,9 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                   >
                     <Presentation size={16} className="text-neutral-400 shrink-0" />
                     <div>
-                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PowerPoint (Editable)</p>
+                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        PowerPoint (Editable)
+                      </p>
                       <p className="text-[10px] text-neutral-400">Pixel-perfect design with editable text</p>
                     </div>
                   </button>
@@ -362,7 +366,7 @@ function canDownload(output: NotebookOutput): boolean {
   return (
     (output.type === "podcast" && !!output.audioUrl) ||
     (output.type === "infographic" && !!output.imageUrl) ||
-    (output.type === "slides" && (!!output.slides?.length || !!output.htmlSlides?.length)) ||
+    (output.type === "slides" && !!output.slides?.length) ||
     (output.type === "report" && !!output.content)
   );
 }

@@ -12,42 +12,57 @@ import { assembleSlideHtml } from "./html-slide-assembly";
 const CANVAS_W = 1920;
 const CANVAS_H = 1080;
 const OVERFLOW_TOLERANCE = 8; // px – ignore sub-pixel rounding noise
+const MIN_VERTICAL_FILL = 0.35; // below this, the slide looks empty
 
-const TEXT_TAGS = new Set(["H1","H2","H3","H4","H5","H6","P","LI","SPAN","A","LABEL","FIGCAPTION","BLOCKQUOTE","TD","TH","DT","DD"]);
+// Leaf text elements considered for overlap detection
+const TEXT_TAGS = new Set([
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
+  "P",
+  "LI",
+  "SPAN",
+  "A",
+  "LABEL",
+  "FIGCAPTION",
+  "BLOCKQUOTE",
+  "TD",
+  "TH",
+  "DT",
+  "DD",
+]);
 
 interface SlideMeasurement {
-  contentWidth: number;
-  contentHeight: number;
   overflow: { top: number; right: number; bottom: number; left: number };
-  /** Fraction of the 1080px canvas used vertically by content (0–1) */
+  /** Fraction of the 1080px canvas vertically covered by content (0–1) */
   verticalFill: number;
-  /** Gap in px between slide top and first visible content */
-  topGap: number;
-  /** Number of overlapping text element pairs detected */
+  /** Number of overlapping leaf text element pairs (> 4px in both axes) */
   textOverlaps: number;
-  /** Length of the longest h1/h2 title text in characters */
-  titleLength: number;
-  /** Gap in px between last visible content and canvas bottom */
-  bottomGap: number;
 }
 
 const NO_MEASUREMENT: SlideMeasurement = {
-  contentWidth: 0, contentHeight: 0,
   overflow: { top: 0, right: 0, bottom: 0, left: 0 },
-  verticalFill: 0, topGap: 0, bottomGap: 0, textOverlaps: 0, titleLength: 0,
+  verticalFill: 0,
+  textOverlaps: 0,
 };
 
 /**
  * Render assembled slide HTML in a hidden iframe and measure content overflow
- * on all four edges (with fixed-size constraints removed via inline styles).
- * Returns zero overflow if measurement fails (e.g. non-browser environment).
+ * on all four edges plus a couple of objective layout signals.
+ * Returns a zero measurement if measurement fails (e.g. non-browser environment).
  */
-async function measureSlideOverflow(html: string): Promise<SlideMeasurement> {
+async function measureSlide(html: string): Promise<SlideMeasurement> {
   if (typeof document === "undefined") return NO_MEASUREMENT;
 
   return new Promise<SlideMeasurement>((resolve) => {
     const iframe = document.createElement("iframe");
-    const timeout = setTimeout(() => { iframe.remove(); resolve(NO_MEASUREMENT); }, 5000);
+    const timeout = setTimeout(() => {
+      iframe.remove();
+      resolve(NO_MEASUREMENT);
+    }, 5000);
 
     iframe.style.cssText =
       "position:fixed;left:-9999px;top:-9999px;width:1920px;height:10000px;border:none;visibility:hidden;pointer-events:none;";
@@ -91,58 +106,42 @@ async function measureSlideOverflow(html: string): Promise<SlideMeasurement> {
           maxBottom = Math.max(maxBottom, r.bottom);
         }
 
-        // Detect overlapping text elements
+        // Detect overlapping leaf text elements — an objective bug signal.
         const textRects: DOMRect[] = [];
+        const leafSelector = Array.from(TEXT_TAGS).join(",");
         for (const el of slide.querySelectorAll("*")) {
           if (!TEXT_TAGS.has(el.tagName)) continue;
           if ((el as HTMLElement).offsetHeight === 0) continue;
-          // Only leaf text nodes (skip containers whose children we'll check)
-          if (el.querySelector(Array.from(TEXT_TAGS).join(",")) ) continue;
+          if (el.querySelector(leafSelector)) continue; // skip containers
           textRects.push(el.getBoundingClientRect());
         }
         let textOverlaps = 0;
         for (let i = 0; i < textRects.length; i++) {
           for (let j = i + 1; j < textRects.length; j++) {
-            const a = textRects[i], b = textRects[j];
-            // Check for meaningful overlap (> 4px in both axes to ignore hairline touches)
+            const a = textRects[i];
+            const b = textRects[j];
             const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
             const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
             if (overlapX > 4 && overlapY > 4) textOverlaps++;
           }
         }
 
-        // Measure longest title
-        let titleLength = 0;
-        for (const el of slide.querySelectorAll("h1, h2")) {
-          const len = (el.textContent || "").trim().length;
-          if (len > titleLength) titleLength = len;
-        }
-
         // Also consider scroll dimensions (catches padding/margin overflow
         // that may not produce a positioned descendant)
         const contentW = Math.max(slide.scrollWidth, maxRight - origin.left);
         const contentH = Math.max(slide.scrollHeight, maxBottom - origin.top);
-
-        // Content span relative to the slide origin
-        const usedTop = minTop - origin.top;
-        const usedBottom = maxBottom - origin.top;
-        const usedHeight = usedBottom - usedTop;
+        const usedHeight = maxBottom - minTop;
 
         iframe.remove();
         resolve({
-          contentWidth: Math.ceil(contentW),
-          contentHeight: Math.ceil(contentH),
           overflow: {
             top: Math.max(0, Math.ceil(origin.top - minTop)),
             right: Math.max(0, Math.ceil(contentW - CANVAS_W)),
             bottom: Math.max(0, Math.ceil(contentH - CANVAS_H)),
             left: Math.max(0, Math.ceil(origin.left - minLeft)),
           },
-          verticalFill: Math.round((usedHeight / CANVAS_H) * 100) / 100,
-          topGap: Math.max(0, Math.ceil(usedTop)),
-          bottomGap: Math.max(0, Math.ceil(CANVAS_H - usedBottom)),
+          verticalFill: Math.max(0, Math.min(1, usedHeight / CANVAS_H)),
           textOverlaps,
-          titleLength,
         });
       } catch {
         // don't resolve — let the timeout handle cleanup
@@ -199,31 +198,52 @@ export function createHtmlSlideTools(
         // Validate slide bounds and give model corrective feedback
         if (/^slides\/slide\d+\.html$/i.test(path)) {
           const assembled = assembleSlideHtml(content, fs);
-          const m = await measureSlideOverflow(assembled);
-          const { overflow: ov } = m;
+          const m = await measureSlide(assembled);
+          const ov = m.overflow;
           console.debug(
-            `[HTML Slides] ${path} ${m.contentWidth}×${m.contentHeight}px` +
-            ` fill:${Math.round(m.verticalFill * 100)}% topGap:${m.topGap} bottomGap:${m.bottomGap}` +
-            ` overlaps:${m.textOverlaps} title:${m.titleLength}ch overflow T:${ov.top} R:${ov.right} B:${ov.bottom} L:${ov.left}`,
+            `[HTML Slides] ${path} fill:${Math.round(m.verticalFill * 100)}%` +
+              ` overlaps:${m.textOverlaps}` +
+              ` overflow T:${ov.top} R:${ov.right} B:${ov.bottom} L:${ov.left}`,
           );
 
-          // Only report hard errors (content clipped beyond the canvas).
-          // Soft layout hints (fill %, whitespace, title length) were
-          // removed: they trapped the model in rewrite loops because
-          // "improvement" is subjective and every new version triggers
-          // a new hint.
+          // Hard errors — content clipped beyond the canvas. Always report.
           const errors: string[] = [];
           if (ov.top > OVERFLOW_TOLERANCE) errors.push(`Top: ${ov.top}px above the slide`);
           if (ov.bottom > OVERFLOW_TOLERANCE) errors.push(`Bottom: ${ov.bottom}px below the slide`);
           if (ov.left > OVERFLOW_TOLERANCE) errors.push(`Left: ${ov.left}px outside left edge`);
           if (ov.right > OVERFLOW_TOLERANCE) errors.push(`Right: ${ov.right}px outside right edge`);
 
-          if (errors.length > 0) {
-            return textResult(
-              `Wrote ${path} (${content.length} bytes)\n\n⚠️ OVERFLOW: Content extends beyond the ${CANVAS_W}×${CANVAS_H}px canvas:\n` +
-                errors.map((e) => `  - ${e}`).join("\n") +
-                `\nOverflowing content will be clipped. Rewrite this slide to fit within the canvas bounds.`,
+          // Soft hints — objective layout bugs. These use hard thresholds
+          // (not "could be better") so they disappear once fixed and don't
+          // cause rewrite loops.
+          const hints: string[] = [];
+          if (m.textOverlaps > 0) {
+            hints.push(
+              `${m.textOverlaps} pair(s) of text elements overlap — fix spacing or z-order so text does not collide.`,
             );
+          }
+          if (m.verticalFill > 0 && m.verticalFill < MIN_VERTICAL_FILL) {
+            hints.push(
+              `Content only fills ${Math.round(m.verticalFill * 100)}% of the slide height — the slide looks empty. Add more content or grow the hero element to use the canvas.`,
+            );
+          }
+
+          if (errors.length > 0 || hints.length > 0) {
+            const parts = [`Wrote ${path} (${content.length} bytes)`];
+            if (errors.length > 0) {
+              parts.push(
+                `\n⚠️ OVERFLOW: Content extends beyond the ${CANVAS_W}×${CANVAS_H}px canvas:\n` +
+                  errors.map((e) => `  - ${e}`).join("\n") +
+                  `\nOverflowing content will be clipped. Rewrite this slide to fit within the canvas bounds.`,
+              );
+            }
+            if (hints.length > 0) {
+              parts.push(
+                `\nHints (not blocking, address only if they make the slide better):\n` +
+                  hints.map((h) => `  - ${h}`).join("\n"),
+              );
+            }
+            return textResult(parts.join(""));
           }
         }
 
@@ -252,7 +272,8 @@ export function createHtmlSlideTools(
     },
     {
       name: "list_files",
-      description: "List all files that have been written so far, plus any uploaded image sources available for import via `import_image`.",
+      description:
+        "List all files that have been written so far, plus any uploaded image sources available for import via `import_image`.",
       parameters: { type: "object", properties: {}, required: [] },
       function: async () => {
         const files = [...fs.keys()].sort();
@@ -356,7 +377,9 @@ export function createHtmlSlideTools(
           fs.set(path, dataUrl);
           console.log(`[HTML Slides] Generated image ${path}`);
           onWrite();
-          return textResult(`OK: generated and stored ${path}. Reference it in HTML as src="images/${filename}" or in CSS as url('images/${filename}').`);
+          return textResult(
+            `OK: generated and stored ${path}. Reference it in HTML as src="images/${filename}" or in CSS as url('images/${filename}').`,
+          );
         } catch (error) {
           const msg = error instanceof Error ? error.message : "Image generation failed";
           console.warn(`[HTML Slides] Image generation failed for ${path}:`, msg);

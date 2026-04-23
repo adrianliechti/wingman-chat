@@ -54,7 +54,6 @@ function stripExternalRefs(html: string): string {
   return html.replace(/<link\b[^>]*>/gi, "").replace(/<script\b[\s\S]*?<\/script>/gi, "");
 }
 
-
 /**
  * Assemble a single slide HTML fragment into a complete, self-contained HTML document.
  * Injects shared CSS, resolves image paths, and wraps in a fixed 960×540 viewport.

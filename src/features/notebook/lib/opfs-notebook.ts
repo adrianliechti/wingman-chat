@@ -1,29 +1,24 @@
+import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import {
   blobToDataUrl,
   dataUrlToBlob,
   deleteDirectory,
   deleteFile,
   listDirectories,
+  listFiles,
   readBlob,
   readIndex,
-  writeIndex,
   readJson,
   readText,
   removeIndexEntry,
   upsertIndexEntry,
   writeBlob,
+  writeIndex,
   writeJson,
   writeText,
 } from "@/shared/lib/opfs-core";
-import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
-import type {
-  MindMapNode,
-  Notebook,
-  NotebookMessage,
-  NotebookOutput,
-  QuizQuestion,
-} from "../types/notebook";
 import type { File } from "@/shared/types/file";
+import type { MindMapNode, Notebook, NotebookMessage, NotebookOutput, QuizQuestion } from "../types/notebook";
 
 const COLLECTION = "notebooks";
 
@@ -265,13 +260,18 @@ function isDataUrl(value: string): boolean {
 //   ├── image.png       — infographic image
 //   ├── quiz.json       — quiz questions
 //   ├── mindmap.json    — mind map tree
-//   └── slides/         — slide images (slides)
-//       ├── 000.png
-//       ├── 001.png
+//   └── slides/         — one file per slide
+//       ├── 000.{html|png}
+//       ├── 001.{html|png}
 //       └── ...
+//
+// Slide files use their extension as the content-type discriminator:
+// `.html` → `text/html`, `.png` → `image/png`. Metadata never duplicates
+// counts or formats — everything is derived from the directory.
 //
 // Discovery: listDirectories() + read each metadata.json (same as agents)
 // Legacy: /notebooks/{id}/outputs.json — migrated on first read
+// Legacy: html-slides.json / pptx-slides.json — read and converted on first access
 
 interface OutputMeta {
   id: string;
@@ -280,10 +280,6 @@ interface OutputMeta {
   status: NotebookOutput["status"];
   error?: string;
   createdAt: string;
-  slideCount?: number;
-  htmlSlideCount?: number;
-  pptxSlideCount?: number;
-  slideFormat?: string;
 }
 
 function outputsDir(notebookId: string) {
@@ -317,9 +313,7 @@ async function writeOutput(notebookId: string, output: NotebookOutput): Promise<
     await writeText(`${base}/content.txt`, output.content);
   }
 
-  // Type-specific binary/structured data
-  let slideCount: number | undefined;
-
+  // Type-specific payloads
   if (output.audioUrl) {
     await writeBlob(`${base}/audio.wav`, dataUrlToBlob(output.audioUrl));
   }
@@ -327,24 +321,18 @@ async function writeOutput(notebookId: string, output: NotebookOutput): Promise<
     await writeBlob(`${base}/image.png`, dataUrlToBlob(output.imageUrl));
   }
   if (output.slides?.length) {
-    slideCount = output.slides.length;
+    const ext = slideExtension(output.slideContentType);
     await Promise.all(
-      output.slides.map(async (dataUrl, i) => {
-        if (dataUrl) {
-          await writeBlob(`${base}/slides/${String(i).padStart(3, "0")}.png`, dataUrlToBlob(dataUrl));
+      output.slides.map(async (payload, i) => {
+        if (!payload) return;
+        const filename = `${String(i).padStart(3, "0")}.${ext}`;
+        if (ext === "html") {
+          await writeText(`${base}/slides/${filename}`, payload);
+        } else {
+          await writeBlob(`${base}/slides/${filename}`, dataUrlToBlob(payload));
         }
       }),
     );
-  }
-  let htmlSlideCount: number | undefined;
-  if (output.htmlSlides?.length) {
-    htmlSlideCount = output.htmlSlides.length;
-    await writeJson(`${base}/html-slides.json`, output.htmlSlides);
-  }
-  let pptxSlideCount: number | undefined;
-  if (output.pptxSlides?.length) {
-    pptxSlideCount = output.pptxSlides.length;
-    await writeJson(`${base}/pptx-slides.json`, output.pptxSlides);
   }
   if (output.quiz) {
     await writeJson(`${base}/quiz.json`, output.quiz);
@@ -361,12 +349,35 @@ async function writeOutput(notebookId: string, output: NotebookOutput): Promise<
     status: output.status,
     error: output.error,
     createdAt: output.createdAt,
-    slideCount,
-    htmlSlideCount,
-    pptxSlideCount,
-    slideFormat: output.slideFormat,
   };
   await writeJson(`${base}/metadata.json`, meta);
+}
+
+/** Map a slide content-type to its file extension. Defaults to PNG. */
+function slideExtension(contentType: string | undefined): "html" | "png" {
+  return contentType === "text/html" ? "html" : "png";
+}
+
+/** Read slides from the `slides/` directory. Returns `undefined` when empty. */
+async function readSlides(base: string): Promise<{ slides: string[]; contentType: string } | undefined> {
+  const files = await listFiles(`${base}/slides`);
+  if (!files || files.length === 0) return undefined;
+
+  const sorted = [...files].sort();
+  const contentType = sorted[0].toLowerCase().endsWith(".html") ? "text/html" : "image/png";
+
+  const slides = await Promise.all(
+    sorted.map(async (name) => {
+      const path = `${base}/slides/${name}`;
+      if (name.toLowerCase().endsWith(".html")) {
+        return (await readText(path)) ?? "";
+      }
+      const blob = await readBlob(path);
+      return blob ? await blobToDataUrl(blob) : "";
+    }),
+  );
+
+  return { slides, contentType };
 }
 
 /** Rehydrate a single output from its directory. */
@@ -394,25 +405,21 @@ async function readOutput(notebookId: string, outputId: string): Promise<Noteboo
   } else if (meta.type === "infographic") {
     const blob = await readBlob(`${base}/image.png`);
     if (blob) output.imageUrl = await blobToDataUrl(blob);
-  } else if (meta.type === "slides" && meta.pptxSlideCount) {
-    output.slideFormat = (meta.slideFormat as NotebookOutput["slideFormat"]) ?? "pptx";
-    const pptxSlides = await readJson<string[]>(`${base}/pptx-slides.json`);
-    if (pptxSlides) output.pptxSlides = pptxSlides;
-  } else if (meta.type === "slides" && meta.htmlSlideCount) {
-    output.slideFormat = (meta.slideFormat as NotebookOutput["slideFormat"]) ?? "html";
-    const htmlSlides = await readJson<string[]>(`${base}/html-slides.json`);
-    if (htmlSlides) output.htmlSlides = htmlSlides;
-  } else if (meta.type === "slides" && meta.slideCount) {
-    output.slideFormat = (meta.slideFormat as NotebookOutput["slideFormat"]) ?? "pdf";
-    const slides: string[] = [];
-    for (let i = 0; i < meta.slideCount; i++) {
-      // Try padded name first (000.png), fall back to unpadded (0.png) for older data
-      const blob =
-        (await readBlob(`${base}/slides/${String(i).padStart(3, "0")}.png`)) ??
-        (await readBlob(`${base}/slides/${i}.png`));
-      slides.push(blob ? await blobToDataUrl(blob) : "");
+  } else if (meta.type === "slides") {
+    const slides = await readSlides(base);
+    if (slides) {
+      output.slides = slides.slides;
+      output.slideContentType = slides.contentType;
+    } else {
+      // Legacy: html-slides.json (HTML array) or pptx-slides.json (HTML array).
+      const legacyHtml =
+        (await readJson<string[]>(`${base}/html-slides.json`)) ??
+        (await readJson<string[]>(`${base}/pptx-slides.json`));
+      if (legacyHtml && legacyHtml.length > 0) {
+        output.slides = legacyHtml;
+        output.slideContentType = "text/html";
+      }
     }
-    output.slides = slides;
   } else if (meta.type === "quiz") {
     const quiz = await readJson<QuizQuestion[]>(`${base}/quiz.json`);
     if (quiz) output.quiz = quiz;

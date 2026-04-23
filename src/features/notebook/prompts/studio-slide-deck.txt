@@ -185,57 +185,17 @@ Inline SVG, sized in px, styled from theme tokens. Always include data labels *o
 ## Color, Typography, and "System" Discipline
 
 - Use **oklch()** or the style's stated hex palette. If the style gives you a palette, do not invent new colors — derive tints with oklch if you need more range.
-- **60 / 30 / 10**: one color dominates (~60% visual weight), a secondary tone carries structure (~30%), an accent snaps attention (~10%). Never give all colors equal weight.
-- Max **two type families** per deck. Define them in `--font-display` and `--font-body`. Never mix three.
 - Numbers in stats/charts: `font-variant-numeric: tabular-nums;` so figures line up.
-- Use `text-wrap: balance` on titles, `text-wrap: pretty` on body.
 
 ---
 
-## Anti-AI-slop checklist — AVOID
-
-Every one of these is a sign of a lazy machine-generated deck:
-
-- ❌ Rounded rectangles with a left-border accent color as "callout boxes" (the classic AI tell).
-- ❌ Heavy gradient backgrounds on every slide. Use gradients sparingly and only as an accent, not as wallpaper.
-- ❌ Emoji as decoration or as icons. (Not unless the style explicitly calls for them.)
-- ❌ Drop shadows on everything. At most one level of elevation, if the style permits it at all.
-- ❌ Three-bullet lists as the default format. Find the archetype that actually fits the content.
-- ❌ "Cute" SVG illustrations attempting to look hand-drawn. Use real photos via `generate_image` or geometric placeholders.
-- ❌ Every slide the same density. Rhythm matters — alternate dense data slides with breathing-room stat/quote slides.
-- ❌ Text smaller than 24px.
-- ❌ Decorative underlines or thin lines beneath every title.
-- ❌ Generic "Overview / Agenda / Conclusion" topic labels as titles. Titles are insights.
-- ❌ Filler stats or icons added to "fill space." If a slide feels empty, solve it with scale, composition, and whitespace — not invented content.
-
----
-
-## Mandatory Deck Mix
-
-A 10-slide deck should include roughly:
-
-- 1 cover
-- 1–2 section dividers (if the deck has 2+ sections)
-- ≥ 1 hero-stat slide
-- ≥ 1 data chart slide
-- ≥ 1 framework / 2×2 / matrix / timeline
-- ≥ 1 quote or narrative-callout slide
-- ≥ 1 comparison or before/after
-- 1 closing / takeaway
-
-Decks that are all two-column-text-with-bullets are a failure — regardless of how polished the CSS is.
-
----
-
-## Rules
+## HTML-Specific Rules
 
 - **No JavaScript.** Static HTML + CSS only. Animations/transitions are fine via CSS but do not rely on them.
 - Slide files: `slides/slide1.html`, `slides/slide2.html`, … (sequential, no gaps).
 - All styles go under `styles/` (split by concern if it helps: `theme.css`, `components.css`, `charts.css`).
-- Images under `images/` only, via `generate_image`.
+- Images under `images/` only, via `generate_image` or `import_image`.
 - Use `px` for layout-critical sizing on this fixed canvas. `em`/`rem` are allowed inside components.
 - Cite sources on data slides (small caption, bottom-left or bottom-right).
 - Page numbers on content slides (bottom-right, small caption).
-- Never fabricate a number, quote, name, or source. If a source is ambiguous, say so or omit.
-- Titles are **insight statements** ("Enterprise ACV grew 38% as mid-market stalled"), never topic labels ("Revenue").
 - **Slide feedback:** `write_file` validates each slide against the 1920×1080 canvas. If it returns an `⚠️ OVERFLOW` warning, content is being clipped — rewrite the slide to fit. Otherwise move on to the next slide; do not re-edit slides chasing subjective layout improvements.

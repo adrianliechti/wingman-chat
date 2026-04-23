@@ -33,4 +33,3 @@ export interface FileSystem {
   subscribe(eventType: "fileDeleted", handler: (path: string) => void): () => void;
   subscribe(eventType: "fileRenamed", handler: (oldPath: string, newPath: string) => void): () => void;
 }
-

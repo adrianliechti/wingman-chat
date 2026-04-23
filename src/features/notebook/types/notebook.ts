@@ -22,18 +22,18 @@ export interface MindMapNode {
   children?: MindMapNode[];
 }
 
-export type SlideFormat = "pdf" | "pptx";
-
 export interface NotebookOutput {
   id: string;
   type: OutputType;
   title: string;
   content: string;
   imageUrl?: string;
+  /** Slide payloads. Interpretation depends on `slideContentType`:
+   *  - `text/html`  → each entry is a self-contained HTML document (1920×1080)
+   *  - `image/png`  → each entry is a PNG data URL
+   */
   slides?: string[];
-  htmlSlides?: string[];
-  pptxSlides?: string[];
-  slideFormat?: SlideFormat;
+  slideContentType?: string;
   audioUrl?: string;
   quiz?: QuizQuestion[];
   mindMap?: MindMapNode;

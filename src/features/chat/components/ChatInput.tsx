@@ -174,7 +174,7 @@ export function ChatInput() {
             const effectiveType =
               file.type && file.type !== "application/octet-stream"
                 ? file.type
-                : lookupContentType(file.name.split(".").pop() ?? "") ?? file.type;
+                : (lookupContentType(file.name.split(".").pop() ?? "") ?? file.type);
 
             // Re-wrap with correct type if it was wrong
             const effectiveFile =

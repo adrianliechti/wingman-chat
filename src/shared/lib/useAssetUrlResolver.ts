@@ -71,10 +71,7 @@ export function useAssetUrlResolver(
       cacheRef.current.set(absPath, "pending");
       try {
         const file = await fs.getFile(absPath);
-        cacheRef.current.set(
-          absPath,
-          file ? URL.createObjectURL(contentToBlob(file.content, file.contentType)) : null,
-        );
+        cacheRef.current.set(absPath, file ? URL.createObjectURL(contentToBlob(file.content, file.contentType)) : null);
       } catch {
         cacheRef.current.set(absPath, null);
       }

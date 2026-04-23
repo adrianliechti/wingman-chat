@@ -12,18 +12,18 @@
 
 import { downloadFromUrl } from "@/shared/lib/utils";
 import { renderSlideToJpegDataUrl } from "./html-slide-export";
-import { parseSlideHtml, type ParsedElement, type ParsedParagraph, type ParsedSlide } from "./pptx-static-parser";
+import { type ParsedElement, type ParsedParagraph, type ParsedSlide, parseSlideHtml } from "./pptx-static-parser";
 import {
-  SLIDE_CX,
-  SLIDE_CY,
-  pxToEmu,
+  addPptxBoilerplate,
+  alignmentToPptx,
   cssColorToHex,
+  escapeTextForPptx,
+  escapeXml,
   fontSizeToPptx,
   isBold,
-  alignmentToPptx,
-  escapeXml,
-  escapeTextForPptx,
-  addPptxBoilerplate,
+  pxToEmu,
+  SLIDE_CX,
+  SLIDE_CY,
 } from "./pptx-utils";
 
 export type ExportProgress = (current: number, total: number) => void;
@@ -73,9 +73,11 @@ export async function downloadHtmlSlidesAsHybridPptx(
 
     for (const img of imageElements) {
       mediaCounter++;
-      const ext = img.imageData!.startsWith("data:image/jpeg") ? "jpeg" : "png";
+      const imageData = img.imageData;
+      if (!imageData) continue;
+      const ext = imageData.startsWith("data:image/jpeg") ? "jpeg" : "png";
       const mediaName = `media${mediaCounter}.${ext}`;
-      const base64 = img.imageData!.split(",")[1];
+      const base64 = imageData.split(",")[1];
       if (base64) {
         zip.file(`ppt/media/${mediaName}`, base64, { base64: true });
         imageMedia.push({ rId: `rId${3 + imageMedia.length}`, mediaPath: mediaName });
@@ -92,8 +94,9 @@ export async function downloadHtmlSlidesAsHybridPptx(
     const rels = [
       `  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>`,
       `  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/${bgMediaName}"/>`,
-      ...imageMedia.map((m) =>
-        `  <Relationship Id="${m.rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/${m.mediaPath}"/>`,
+      ...imageMedia.map(
+        (m) =>
+          `  <Relationship Id="${m.rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/${m.mediaPath}"/>`,
       ),
     ];
 
@@ -225,7 +228,11 @@ ${parts.join("\n")}
  * `object-position` is assumed to be center (the CSS default).
  */
 function fitImageToRect(img: ParsedElement): {
-  x: number; y: number; w: number; h: number; srcRect: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  srcRect: string;
 } {
   const { x, y, w, h, naturalW, naturalH, objectFit } = img;
   const base = { x, y, w, h, srcRect: "" };
@@ -240,7 +247,10 @@ function fitImageToRect(img: ParsedElement): {
 
   if (fit === "cover") {
     // <a:srcRect l/t/r/b> values are in 1/1000 of a percent (50% = 50000).
-    let lPct = 0, tPct = 0, rPct = 0, bPct = 0;
+    let lPct = 0,
+      tPct = 0,
+      rPct = 0,
+      bPct = 0;
     if (rectAR > imgAR) {
       // Rect wider than source → scale to width, crop top/bottom.
       const cropFrac = (1 - imgAR / rectAR) / 2;
@@ -257,7 +267,8 @@ function fitImageToRect(img: ParsedElement): {
 
   if (fit === "contain" || fit === "scale-down") {
     // Fit the natural image inside the rect, preserving aspect ratio.
-    let vw = w, vh = h;
+    let vw = w,
+      vh = h;
     if (rectAR > imgAR) {
       vw = h * imgAR;
     } else {

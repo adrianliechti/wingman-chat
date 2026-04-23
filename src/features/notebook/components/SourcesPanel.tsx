@@ -786,10 +786,7 @@ function SourceItem({ source, onDelete }: { source: File; onDelete: () => void }
           <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-neutral-100 dark:bg-neutral-800">
             <Icon size={12} className="text-neutral-500" />
           </div>
-          <span
-            className="flex-1 truncate text-xs text-neutral-700 dark:text-neutral-300"
-            title={source.path}
-          >
+          <span className="flex-1 truncate text-xs text-neutral-700 dark:text-neutral-300" title={source.path}>
             {source.path}
           </span>
         </button>

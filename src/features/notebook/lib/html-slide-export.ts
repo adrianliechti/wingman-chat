@@ -11,7 +11,7 @@
  */
 
 import { downloadFromUrl } from "@/shared/lib/utils";
-import { CANVAS_W, CANVAS_H, SLIDE_CX, SLIDE_CY, addPptxBoilerplate } from "./pptx-utils";
+import { addPptxBoilerplate, CANVAS_H, CANVAS_W, SLIDE_CX, SLIDE_CY } from "./pptx-utils";
 
 /** Export rasterization scale — 2× gives ~3840×2160 output, crisp on 4K */
 const RASTER_SCALE = 2;
@@ -235,7 +235,7 @@ async function rasterizeSlideDoc(
     const el = node as HTMLElement;
     const computed = win.getComputedStyle(el);
     const bg = computed.backgroundImage;
-    if (!bg || !bg.includes("data:image")) continue;
+    if (!bg?.includes("data:image")) continue;
 
     const rect = el.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) continue;
@@ -466,4 +466,3 @@ function slideRelsWithImage(n: number): string {
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${n}.jpeg"/>
 </Relationships>`;
 }
-

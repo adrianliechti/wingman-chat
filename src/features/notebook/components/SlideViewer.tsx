@@ -1,7 +1,6 @@
 import { Loader2, SparklesIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { getConfig } from "@/shared/config";
-import { getTextFromContent } from "@/shared/types/chat";
+import { refineSlide } from "../lib/slide-refine";
 import type { NotebookOutput } from "../types/notebook";
 
 interface SlideViewerProps {
@@ -10,22 +9,24 @@ interface SlideViewerProps {
 }
 
 export function SlideViewer({ output, onRefine }: SlideViewerProps) {
-  const htmlSlides = output.htmlSlides;
   const slides = output.slides ?? [];
+  const isHtml = output.slideContentType === "text/html";
   const isGenerating = output.status === "generating";
-  const slideCount = htmlSlides?.length ?? slides.length;
+  const slideCount = slides.length;
 
   const [activeIndex, setActiveIndex] = useState(1);
   const [refinePrompt, setRefinePrompt] = useState("");
   const [isRefining, setIsRefining] = useState(false);
   const [refineError, setRefineError] = useState<string | null>(null);
 
-  const thumbnails = useSlideThumbnails(htmlSlides);
-
-  // Reset to slide 1 when switching to a different output
-  useEffect(() => {
+  // Derived-state pattern: reset to slide 1 when the viewed output changes.
+  const [prevOutputId, setPrevOutputId] = useState(output.id);
+  if (prevOutputId !== output.id) {
+    setPrevOutputId(output.id);
     setActiveIndex(1);
-  }, [output.id]);
+  }
+
+  const thumbnails = useSlideThumbnails(isHtml ? slides : undefined);
 
   // Auto-follow the latest slide during generation
   const prevSlideCount = useRef(slideCount);
@@ -39,7 +40,7 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
   // Auto-scroll thumbnail bar to keep latest visible
   const thumbBarRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (isGenerating && thumbBarRef.current) {
+    if (isGenerating && slideCount > 0 && thumbBarRef.current) {
       thumbBarRef.current.scrollLeft = thumbBarRef.current.scrollWidth;
     }
   }, [slideCount, isGenerating]);
@@ -69,55 +70,10 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
     setRefineError(null);
 
     try {
-      const config = getConfig();
-      const client = config.client;
-      const model = config.notebook?.model || "";
-
-      if (htmlSlides?.[slideIdx]) {
-        const result = await client.complete(
-          model,
-          `You are refining a single HTML slide. The slide is a self-contained HTML document (1920x1080px, 16:9). Apply the user's refinement request. Return ONLY the complete updated HTML document.`,
-          [
-            { role: "user", content: [{ type: "text", text: `Current slide HTML:\n\n${htmlSlides[slideIdx]}\n\nRefinement request: ${refinePrompt.trim()}` }] },
-          ],
-          [],
-        );
-
-        const newHtml = getTextFromContent(result.content);
-        if (newHtml?.trim()) {
-          const cleaned = newHtml
-            .replace(/^```html?\s*/i, "")
-            .replace(/```\s*$/i, "")
-            .trim();
-          const updated = [...htmlSlides];
-          updated[slideIdx] = cleaned;
-          onRefine?.({ ...output, htmlSlides: updated });
-        }
-      } else if (slides[slideIdx]) {
-        const rendererModel = config.renderer?.model || "";
-        const slideTexts = output.content.split(/\n\n---\n\n/);
-        const slideText = slideTexts[slideIdx] || "";
-
-        const result = await client.complete(
-          model,
-          `You are generating an image prompt for a presentation slide. Based on the slide content and refinement request, create a detailed image generation prompt. Return ONLY the prompt. End with "16:9 aspect ratio."`,
-          [
-            { role: "user", content: [{ type: "text", text: `Slide content:\n${slideText}\n\nRefinement request: ${refinePrompt.trim()}` }] },
-          ],
-          [],
-        );
-
-        const imagePrompt = getTextFromContent(result.content);
-        if (imagePrompt?.trim()) {
-          const { blobToDataUrl } = await import("@/shared/lib/opfs-core");
-          const imageBlob = await client.generateImage(rendererModel, imagePrompt.trim());
-          const imageUrl = await blobToDataUrl(imageBlob);
-          const updated = [...slides];
-          updated[slideIdx] = imageUrl;
-          onRefine?.({ ...output, slides: updated });
-        }
+      const updated = await refineSlide(output, slideIdx, refinePrompt.trim());
+      if (updated !== output) {
+        onRefine?.(updated);
       }
-
       setRefinePrompt("");
     } catch (err) {
       setRefineError(err instanceof Error ? err.message : "Refinement failed");
@@ -127,8 +83,9 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
   };
 
   // Determine what to show in the main view
-  const currentSlideHtml = htmlSlides?.[activeIndex - 1];
-  const currentSlideImg = slides[activeIndex - 1];
+  const currentSlide = slides[activeIndex - 1];
+  const currentSlideHtml = isHtml ? currentSlide : undefined;
+  const currentSlideImg = isHtml ? undefined : currentSlide;
 
   return (
     <div className="h-full flex flex-col">
@@ -156,7 +113,11 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
           </div>
         ) : currentSlideImg ? (
           <div className="h-full flex items-center justify-center p-6">
-            <img src={currentSlideImg} alt={`Slide ${activeIndex}`} className="max-w-full max-h-full rounded-lg shadow-lg" />
+            <img
+              src={currentSlideImg}
+              alt={`Slide ${activeIndex}`}
+              className="max-w-full max-h-full rounded-lg shadow-lg"
+            />
           </div>
         ) : isGenerating ? (
           <div className="h-full flex flex-col items-center justify-center gap-3 p-6">
@@ -190,9 +151,7 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
                   {isRefining ? <Loader2 size={14} className="animate-spin" /> : <SparklesIcon size={14} />}
                 </button>
               </div>
-              {refineError && (
-                <p className="text-[10px] text-red-500 mt-1 px-3">{refineError}</p>
-              )}
+              {refineError && <p className="text-[10px] text-red-500 mt-1 px-3">{refineError}</p>}
             </form>
           </div>
         )}
@@ -201,40 +160,36 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
       {/* Bottom thumbnail navigation */}
       <div className="shrink-0 overflow-x-auto px-3 py-2" ref={thumbBarRef}>
         <div className="flex items-center gap-2">
-          {(htmlSlides ?? []).map((_, i) => (
-            <button
-              key={`slide-${i}`}
-              type="button"
-              onClick={() => setActiveIndex(i + 1)}
-              className={`shrink-0 w-20 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors bg-neutral-100 dark:bg-neutral-800 ${
-                activeIndex === i + 1
-                  ? "border-blue-500"
-                  : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
-              }`}
-            >
-              {thumbnails[i] ? (
-                <img src={thumbnails[i]} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-[9px] font-medium text-neutral-400 flex items-center justify-center h-full">{i + 1}</span>
-              )}
-            </button>
-          ))}
-          {!htmlSlides?.length && slides.map((slideUrl, i) => (
-            <button
-              key={`img-slide-${i}`}
-              type="button"
-              onClick={() => setActiveIndex(i + 1)}
-              className={`shrink-0 w-20 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors ${
-                activeIndex === i + 1
-                  ? "border-blue-500"
-                  : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
-              }`}
-            >
-              <img src={slideUrl} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />
-            </button>
-          ))}
+          {slides.map((slide, i) => {
+            const thumb = isHtml ? thumbnails[i] : slide;
+            // Slides are fixed-position and append-only during generation, so
+            // the slide content itself is a stable, unique key.
+            return (
+              <button
+                key={slide}
+                type="button"
+                onClick={() => setActiveIndex(i + 1)}
+                className={`shrink-0 w-20 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors bg-neutral-100 dark:bg-neutral-800 ${
+                  activeIndex === i + 1
+                    ? "border-blue-500"
+                    : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
+                }`}
+              >
+                {thumb ? (
+                  <img src={thumb} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-[9px] font-medium text-neutral-400 flex items-center justify-center h-full">
+                    {i + 1}
+                  </span>
+                )}
+              </button>
+            );
+          })}
           {isGenerating && (
-            <div style={{ width: 80, height: 45, flexShrink: 0 }} className="rounded-lg border-2 border-dashed border-neutral-300 dark:border-neutral-600 flex items-center justify-center bg-neutral-100 dark:bg-neutral-800">
+            <div
+              style={{ width: 80, height: 45, flexShrink: 0 }}
+              className="rounded-lg border-2 border-dashed border-neutral-300 dark:border-neutral-600 flex items-center justify-center bg-neutral-100 dark:bg-neutral-800"
+            >
               <Loader2 size={12} className="animate-spin text-neutral-400" />
             </div>
           )}
@@ -254,7 +209,10 @@ function useSlideThumbnails(htmlSlides?: string[]): string[] {
   slidesRef.current = htmlSlides;
 
   useEffect(() => {
-    if (!htmlSlides?.length) { setThumbs([]); return; }
+    if (!htmlSlides?.length) {
+      setThumbs([]);
+      return;
+    }
 
     const slides = htmlSlides;
     let cancelled = false;
@@ -277,7 +235,9 @@ function useSlideThumbnails(htmlSlides?: string[]): string[] {
           if (cancelled || slidesRef.current !== slides) break;
 
           iframe.srcdoc = slides[i];
-          await new Promise<void>((resolve) => { iframe.onload = () => resolve(); });
+          await new Promise<void>((resolve) => {
+            iframe.onload = () => resolve();
+          });
           await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
           try {
@@ -315,7 +275,9 @@ function useSlideThumbnails(htmlSlides?: string[]): string[] {
     }
 
     render();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [htmlSlides]);
 
   return thumbs;
