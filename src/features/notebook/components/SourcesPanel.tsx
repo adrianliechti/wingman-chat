@@ -1,7 +1,6 @@
 import { Dialog, Transition } from "@headlessui/react";
 import {
   ArrowRight,
-  ChevronDown,
   Download,
   FileText,
   Globe,
@@ -35,7 +34,7 @@ interface SourcesPanelProps {
   scrapeWeb: (url: string) => Promise<string>;
   addScrapeResult: (url: string, content: string) => Promise<void>;
   onFileAdd: (file: File) => Promise<void>;
-  onTextAdd: (name: string, text: string, audioUrl?: string) => Promise<void>;
+  onTextAdd: (name: string, text: string, audioUrl?: string) => Promise<string>;
   onDeleteSource: (sourceId: string) => void;
 }
 
@@ -376,18 +375,15 @@ function WebSearchOverlay({
 }) {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<"web" | "research">("web");
-  const [showModeMenu, setShowModeMenu] = useState(false);
   const [preview, setPreview] = useState("");
   const [previewQuery, setPreviewQuery] = useState("");
   const [previewMode, setPreviewMode] = useState<"web" | "research">("web");
   const queryInputRef = useRef<HTMLInputElement>(null);
 
   const modes = {
-    web: { label: "Web", icon: Globe },
-    research: { label: "Research", icon: Zap },
+    web: { label: "Search", icon: Globe, hint: "Quick web search" },
+    research: { label: "Deep Research", icon: Zap, hint: "Deep research with synthesis" },
   };
-
-  const ModeIcon = modes[mode].icon;
 
   useEffect(() => {
     queryInputRef.current?.focus();
@@ -455,53 +451,30 @@ function WebSearchOverlay({
 
           {/* Mode selector */}
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowModeMenu(!showModeMenu)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-full text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
-              >
-                <ModeIcon size={12} />
-                {modes[mode].label}
-                <ChevronDown size={10} />
-              </button>
-
-              {showModeMenu && (
-                <>
+            <div className="inline-flex items-center gap-0.5 p-0.5 bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-full">
+              {(Object.keys(modes) as Array<"web" | "research">).map((m) => {
+                const Icon = modes[m].icon;
+                const isActive = mode === m;
+                return (
                   <button
+                    key={m}
                     type="button"
-                    aria-label="Close search mode menu"
-                    className="fixed inset-0 z-40"
-                    onClick={() => setShowModeMenu(false)}
-                  />
-                  <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg py-1 min-w-32.5">
-                    {(Object.keys(modes) as Array<"web" | "research">).map((m) => {
-                      const Icon = modes[m].icon;
-                      return (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => {
-                            setMode(m);
-                            setShowModeMenu(false);
-                          }}
-                          className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors ${
-                            mode === m ? "text-neutral-900 dark:text-white" : "text-neutral-600 dark:text-neutral-400"
-                          }`}
-                        >
-                          <Icon size={12} />
-                          {modes[m].label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
+                    onClick={() => setMode(m)}
+                    aria-pressed={isActive}
+                    className={`flex items-center gap-1.5 px-3 py-1 text-xs rounded-full transition-colors ${
+                      isActive
+                        ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm"
+                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+                    }`}
+                  >
+                    <Icon size={12} />
+                    {modes[m].label}
+                  </button>
+                );
+              })}
             </div>
 
-            <span className="text-xs text-neutral-400 flex-1">
-              {mode === "research" ? "Deep research with synthesis" : "Quick web search"}
-            </span>
+            <span className="text-xs text-neutral-400 flex-1 truncate">{modes[mode].hint}</span>
           </div>
 
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/40 min-h-48 max-h-72 overflow-y-auto">
@@ -801,7 +774,12 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
           <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-neutral-100 dark:bg-neutral-800">
             <Icon size={12} className="text-neutral-500" />
           </div>
-          <span className="flex-1 truncate text-xs text-neutral-700 dark:text-neutral-300">{source.name}</span>
+          <span
+            className="flex-1 truncate text-xs text-neutral-700 dark:text-neutral-300"
+            title={source.id}
+          >
+            {source.id}
+          </span>
         </button>
         <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/source:opacity-100 transition-opacity">
           {source.audioUrl && (

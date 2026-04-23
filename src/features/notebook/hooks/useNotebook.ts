@@ -387,17 +387,26 @@ export function useNotebook(notebookId?: string) {
     async (query: string, mode: "web" | "research", content: string) => {
       if (!notebook) return;
 
+      const name = query.slice(0, 60);
+      let id: string;
+      try {
+        id = store.normalizeSourcePath(name) || generateId();
+      } catch {
+        id = generateId();
+      }
+      id = store.withDefaultExtension(id, "md");
+
       const source: NotebookSource = {
-        id: generateId(),
+        id,
         type: "web",
-        name: query.slice(0, 60),
+        name,
         content,
         metadata: { query, url: mode },
         addedAt: new Date().toISOString(),
       };
 
       await store.addSource(notebook.id, source);
-      setSources((prev) => [...prev, source]);
+      setSources((prev) => [...prev.filter((s) => s.id !== id), source]);
     },
     [notebook],
   );
@@ -412,8 +421,15 @@ export function useNotebook(notebookId?: string) {
         throw new Error(`Could not extract text from ${file.name}`);
       }
 
+      let id: string;
+      try {
+        id = store.normalizeSourcePath(file.name) || generateId();
+      } catch {
+        id = generateId();
+      }
+
       const source: NotebookSource = {
-        id: generateId(),
+        id,
         type: "file",
         name: file.name,
         content,
@@ -425,26 +441,36 @@ export function useNotebook(notebookId?: string) {
       };
 
       await store.addSource(notebook.id, source);
-      setSources((prev) => [...prev, source]);
+      setSources((prev) => [...prev.filter((s) => s.id !== id), source]);
     },
     [notebook],
   );
 
   const addTextSource = useCallback(
-    async (name: string, text: string, audioUrl?: string) => {
-      if (!notebook) return;
+    async (name: string, text: string, audioUrl?: string): Promise<string> => {
+      if (!notebook) throw new Error("No notebook loaded");
+
+      const displayName = name || "Pasted text";
+      let id: string;
+      try {
+        id = store.normalizeSourcePath(displayName) || generateId();
+      } catch {
+        id = generateId();
+      }
+      id = store.withDefaultExtension(id, "md");
 
       const source: NotebookSource = {
-        id: generateId(),
+        id,
         type: "text",
-        name: name || "Pasted text",
+        name: displayName,
         content: text,
         ...(audioUrl && { audioUrl }),
         addedAt: new Date().toISOString(),
       };
 
       await store.addSource(notebook.id, source);
-      setSources((prev) => [...prev, source]);
+      setSources((prev) => [...prev.filter((s) => s.id !== id), source]);
+      return source.id;
     },
     [notebook],
   );
@@ -468,8 +494,16 @@ export function useNotebook(notebookId?: string) {
     async (url: string, content: string) => {
       if (!notebook) return;
 
+      let id: string;
+      try {
+        id = store.normalizeSourcePath(url) || generateId();
+      } catch {
+        id = generateId();
+      }
+      id = store.withDefaultExtension(id, "md");
+
       const source: NotebookSource = {
-        id: generateId(),
+        id,
         type: "web",
         name: url,
         content,
@@ -478,7 +512,7 @@ export function useNotebook(notebookId?: string) {
       };
 
       await store.addSource(notebook.id, source);
-      setSources((prev) => [...prev, source]);
+      setSources((prev) => [...prev.filter((s) => s.id !== id), source]);
     },
     [notebook],
   );
@@ -510,7 +544,10 @@ export function useNotebook(notebookId?: string) {
       setMessages(newMessages);
 
       try {
-        const tools = createSourceTools(sourcesRef.current);
+        const tools = createSourceTools(
+          () => sourcesRef.current,
+          { onCreate: (path, content) => addTextSource(path, content) },
+        );
 
         // Build Message[] for the LLM (strip timestamps)
         const conversation = newMessages.map(({ timestamp, ...msg }) => msg);
@@ -549,7 +586,7 @@ export function useNotebook(notebookId?: string) {
         setIsChatting(false);
       }
     },
-    [notebook, messages, client, getModel, isChatting],
+    [notebook, messages, client, getModel, isChatting, addTextSource],
   );
 
   // ── Outputs ────────────────────────────────────────────────────────
@@ -590,7 +627,7 @@ export function useNotebook(notebookId?: string) {
       };
 
       // Fire and forget
-      const tools = createSourceTools(sourcesRef.current);
+      const tools = createSourceTools(() => sourcesRef.current);
       const instructions =
         type === "slides"
           ? buildSlideInstructions(styleId ?? "whiteboard")

@@ -61,9 +61,13 @@ export async function deleteNotebook(id: string): Promise<void> {
 
 // ── Sources ────────────────────────────────────────────────────────────
 //
-// /notebooks/{id}/sources/{sourceId}/
+// /notebooks/{id}/sources/{encodedPath}/
 //   ├── metadata.json   — source metadata (no content)
 //   └── content.txt     — extracted text
+//
+// Source ids are normalized paths (e.g. "research-notes.md",
+// "reports/q3.md"). Storage directory names are URI-encoded so nested
+// paths don't create real OPFS subdirectories (keeps listing flat).
 //
 // Discovery: listDirectories() + read each metadata.json (same as agents)
 // Legacy: /notebooks/{id}/sources.json — migrated on first read
@@ -73,7 +77,7 @@ const migrating = new Set<string>();
 
 interface SourceMeta {
   id: string;
-  type: "web" | "file";
+  type: "web" | "file" | "text";
   name: string;
   metadata?: NotebookSource["metadata"];
   addedAt: string;
@@ -84,7 +88,47 @@ function sourcesDir(notebookId: string) {
 }
 
 function sourcePath(notebookId: string, sourceId: string) {
-  return `${sourcesDir(notebookId)}/${sourceId}`;
+  return `${sourcesDir(notebookId)}/${encodeURIComponent(sourceId)}`;
+}
+
+/**
+ * Normalize a user- or LLM-supplied path for use as a source id.
+ *
+ * Rules:
+ * - Leading/trailing slashes are stripped (notebook is the root).
+ * - Multiple consecutive slashes are collapsed.
+ * - Empty segments, ".", and ".." are rejected (no escaping the notebook).
+ * - Whitespace at segment boundaries is trimmed.
+ * - Returns "" if the input is empty.
+ */
+export function normalizeSourcePath(raw: string): string {
+  if (!raw) return "";
+  const parts = raw
+    .split("/")
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+
+  for (const p of parts) {
+    if (p === "." || p === "..") {
+      throw new Error(`Invalid path segment: "${p}"`);
+    }
+  }
+
+  return parts.join("/");
+}
+
+/**
+ * Append a default extension to the last path segment if it has none.
+ * Short trailing tokens (1–5 chars, alphanumeric) are treated as existing
+ * extensions. `ext` should be provided without a leading dot.
+ */
+export function withDefaultExtension(path: string, ext: string): string {
+  if (!path) return path;
+  const slash = path.lastIndexOf("/");
+  const last = slash >= 0 ? path.slice(slash + 1) : path;
+  const dot = last.lastIndexOf(".");
+  const hasExt = dot > 0 && /^[a-z0-9]{1,5}$/i.test(last.slice(dot + 1));
+  return hasExt ? path : `${path}.${ext.replace(/^\./, "")}`;
 }
 
 /** Migrate legacy sources.json → per-source directories. */
@@ -117,7 +161,16 @@ async function readSource(notebookId: string, sourceId: string): Promise<Noteboo
 }
 
 export async function getSources(notebookId: string): Promise<NotebookSource[]> {
-  const ids = await listDirectories(sourcesDir(notebookId));
+  const entries = await listDirectories(sourcesDir(notebookId));
+  // Stored dir names are URI-encoded; decode back to the source id.
+  const ids = entries.map((name) => {
+    try {
+      return decodeURIComponent(name);
+    } catch {
+      // Legacy entries (pre-encoding) — use as-is.
+      return name;
+    }
+  });
 
   if (ids.length === 0) {
     const key = `sources:${notebookId}`;
