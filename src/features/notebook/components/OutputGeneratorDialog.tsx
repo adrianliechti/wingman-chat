@@ -279,9 +279,7 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                         }`}
                       >
                         {s.label}
-                        {styleId === s.id && (
-                          <Check size={11} className="shrink-0 text-blue-500 dark:text-blue-400" />
-                        )}
+                        {styleId === s.id && <Check size={11} className="shrink-0 text-blue-500 dark:text-blue-400" />}
                       </button>
                     ))}
                   </div>
@@ -293,9 +291,7 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                 <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">Language</p>
                 <Listbox value={selectedLang} onChange={setSelectedLang} by="code">
                   <Listbox.Button className="relative w-full rounded-lg bg-white/50 dark:bg-neutral-800/50 py-2.5 pl-3 pr-10 text-left text-sm border border-neutral-300/50 dark:border-neutral-700/50 focus-visible:ring-2 focus-visible:ring-blue-500 data-[headlessui-state=open]:ring-2 data-[headlessui-state=open]:ring-blue-500 backdrop-blur-sm transition-colors">
-                    <span className="block truncate text-neutral-800 dark:text-neutral-200">
-                      {selectedLang.name}
-                    </span>
+                    <span className="block truncate text-neutral-800 dark:text-neutral-200">{selectedLang.name}</span>
                     <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5">
                       <ChevronsUpDown size={14} className="text-neutral-400" aria-hidden="true" />
                     </span>

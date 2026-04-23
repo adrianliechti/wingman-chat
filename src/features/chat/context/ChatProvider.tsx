@@ -232,66 +232,39 @@ export function ChatProvider({ children }: ChatProviderProps) {
       setIsResponding(true);
 
       // Create tool context with current message content and elicitation support
-      const createToolContext = (currentToolCall: {
-        id: string;
-        name: string;
-      }): { context: ToolContext; getResultMeta: () => Record<string, unknown> | undefined } => {
-        let resultMeta: Record<string, unknown> | undefined;
+      const createToolContext = (currentToolCall: { id: string; name: string }): ToolContext => {
         return {
-          context: {
-            content: () =>
-              outgoingMessage.content.filter(
-                (p: Content) => p.type === "text" || p.type === "image" || p.type === "file",
-              ) as Content[],
-            sendMessage: async (appMessage: Message) => {
-              await run(id, appMessage, conversation, initialTitle);
-            },
-            setContext: async (text: string | null) => {
-              await updateModelContext(id, text);
-            },
-            elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
-              return new Promise((resolve) => {
-                setPendingElicitation({
-                  toolCallId: currentToolCall.id,
-                  toolName: currentToolCall.name,
-                  elicitation,
-                  resolve,
-                });
-              });
-            },
-            onElicitationComplete: (elicitationId: string) => {
-              const cb = elicitationCompleteCallbacksRef.current.get(elicitationId);
-              if (cb) {
-                elicitationCompleteCallbacksRef.current.delete(elicitationId);
-                cb();
-              }
-            },
-            render: async () => {
-              console.log("[Render] Getting iframe for tool call:", currentToolCall.id, currentToolCall.name);
-
-              return renderApp();
-            },
-            setMeta: (meta: Record<string, unknown>) => {
-              resultMeta = meta;
-            },
-            updateMeta: (meta: Record<string, unknown>) => {
-              resultMeta = { ...resultMeta, ...meta };
-              // Also update the persisted chat data since this may be called
-              // asynchronously after the tool result message has been committed
-              updateChat(id, (prev) => ({
-                messages: prev.messages.map((msg) => ({
-                  ...msg,
-                  content: msg.content.map((part) => {
-                    if (part.type === "tool_result" && part.id === currentToolCall.id) {
-                      return { ...part, meta: { ...part.meta, ...meta } };
-                    }
-                    return part;
-                  }),
-                })),
-              }));
-            },
+          content: () =>
+            outgoingMessage.content.filter(
+              (p: Content) => p.type === "text" || p.type === "image" || p.type === "file",
+            ) as Content[],
+          sendMessage: async (appMessage: Message) => {
+            await run(id, appMessage, conversation, initialTitle);
           },
-          getResultMeta: () => resultMeta,
+          setContext: async (text: string | null) => {
+            await updateModelContext(id, text);
+          },
+          elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
+            return new Promise((resolve) => {
+              setPendingElicitation({
+                toolCallId: currentToolCall.id,
+                toolName: currentToolCall.name,
+                elicitation,
+                resolve,
+              });
+            });
+          },
+          onElicitationComplete: (elicitationId: string) => {
+            const cb = elicitationCompleteCallbacksRef.current.get(elicitationId);
+            if (cb) {
+              elicitationCompleteCallbacksRef.current.delete(elicitationId);
+              cb();
+            }
+          },
+          render: async () => {
+            console.log("[Render] Getting iframe for tool call:", currentToolCall.id, currentToolCall.name);
+            return renderApp();
+          },
         };
       };
 
@@ -303,7 +276,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const abortController = new AbortController();
         abortControllerRef.current = abortController;
 
-        let running = [...conversation];
         conversation = await agentRun(client, currentModel.id, instructions, conversation, tools, {
           options: {
             effort: model?.effort,
@@ -320,15 +292,29 @@ export function ChatProvider({ children }: ChatProviderProps) {
             updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: contentParts } });
           },
           onTurnEnd: (assistant) => {
-            running = [...running, assistant];
-            updateChat(id, () => ({ messages: running }));
+            conversation = [...conversation, assistant];
+            updateChat(id, () => ({ messages: conversation }));
             updateStreamingMessage(null);
           },
           createToolContext: (toolCall: ToolCallContent) => createToolContext(toolCall),
           onToolResult: (toolResult) => {
-            running = [...running, toolResult];
+            conversation = [...conversation, toolResult];
             setPendingElicitation(null);
-            updateChat(id, () => ({ messages: running }));
+            updateChat(id, () => ({ messages: conversation }));
+          },
+          onToolMeta: (toolCallId, meta) => {
+            // Late meta update — tool_result message is already committed; patch it in place.
+            updateChat(id, (prev) => ({
+              messages: prev.messages.map((msg) => ({
+                ...msg,
+                content: msg.content.map((part) => {
+                  if (part.type === "tool_result" && part.id === toolCallId) {
+                    return { ...part, meta: { ...part.meta, ...meta } };
+                  }
+                  return part;
+                }),
+              })),
+            }));
           },
         });
 

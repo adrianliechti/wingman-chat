@@ -86,22 +86,77 @@ const toId = (name: string) => name.toLowerCase().replace(/\s+/g, "-");
 
 export const slideStyles: StyleRegistry = makeRegistry(
   [
-    { id: "whiteboard", label: "Whiteboard", description: "Clean minimal design with hand-drawn feel and open whitespace", prompt: slideStyleWhiteboard },
-    { id: "consulting", label: "Consulting", description: "Professional business style with structured layouts and accent colors", prompt: slideStyleConsulting },
-    { id: "dark", label: "Dark", description: "Bold dark backgrounds with high-contrast text and vibrant highlights", prompt: slideStyleDark },
-    { id: "swiss", label: "Swiss", description: "Grid-based typography-first design inspired by Swiss graphic style", prompt: slideStyleSwiss },
-    { id: "nature", label: "Nature", description: "Warm earthy tones with organic shapes and natural imagery", prompt: slideStyleNature },
+    {
+      id: "whiteboard",
+      label: "Whiteboard",
+      description: "Clean minimal design with hand-drawn feel and open whitespace",
+      prompt: slideStyleWhiteboard,
+    },
+    {
+      id: "consulting",
+      label: "Consulting",
+      description: "Professional business style with structured layouts and accent colors",
+      prompt: slideStyleConsulting,
+    },
+    {
+      id: "dark",
+      label: "Dark",
+      description: "Bold dark backgrounds with high-contrast text and vibrant highlights",
+      prompt: slideStyleDark,
+    },
+    {
+      id: "swiss",
+      label: "Swiss",
+      description: "Grid-based typography-first design inspired by Swiss graphic style",
+      prompt: slideStyleSwiss,
+    },
+    {
+      id: "nature",
+      label: "Nature",
+      description: "Warm earthy tones with organic shapes and natural imagery",
+      prompt: slideStyleNature,
+    },
   ],
   () => getConfig().canvas?.slides?.map((s) => ({ id: toId(s.name), label: s.name, prompt: s.prompt })),
 );
 
 export const podcastStyles: StyleRegistry = makeRegistry(
   [
-    { id: "overview", label: "Overview", description: "A single-host overview of the key points and main takeaways", prompt: podcastStyleOverview, voices: ["host"] },
-    { id: "deep-dive", label: "Deep Dive", description: "An in-depth exploration of the topic with detailed analysis", prompt: podcastStyleDeepDive, voices: ["analyst"] },
-    { id: "briefing", label: "Briefing", description: "A concise narrated briefing of the essential facts", prompt: podcastStyleBriefing, voices: ["narrator"] },
-    { id: "story", label: "Story", description: "A narrative retelling that weaves sources into a compelling story", prompt: podcastStyleStory, voices: ["storyteller"] },
-    { id: "debate", label: "Debate", description: "A two-host debate examining different perspectives", prompt: podcastStyleDebate, voices: ["host", "skeptic"] },
+    {
+      id: "overview",
+      label: "Overview",
+      description: "A single-host overview of the key points and main takeaways",
+      prompt: podcastStyleOverview,
+      voices: ["host"],
+    },
+    {
+      id: "deep-dive",
+      label: "Deep Dive",
+      description: "An in-depth exploration of the topic with detailed analysis",
+      prompt: podcastStyleDeepDive,
+      voices: ["analyst"],
+    },
+    {
+      id: "briefing",
+      label: "Briefing",
+      description: "A concise narrated briefing of the essential facts",
+      prompt: podcastStyleBriefing,
+      voices: ["narrator"],
+    },
+    {
+      id: "story",
+      label: "Story",
+      description: "A narrative retelling that weaves sources into a compelling story",
+      prompt: podcastStyleStory,
+      voices: ["storyteller"],
+    },
+    {
+      id: "debate",
+      label: "Debate",
+      description: "A two-host debate examining different perspectives",
+      prompt: podcastStyleDebate,
+      voices: ["host", "skeptic"],
+    },
   ],
   () =>
     getConfig().canvas?.podcasts?.map((p) => ({
@@ -114,10 +169,30 @@ export const podcastStyles: StyleRegistry = makeRegistry(
 
 export const reportStyles: StyleRegistry = makeRegistry(
   [
-    { id: "executive", label: "Executive", description: "A polished summary with key findings and recommendations", prompt: reportStyleExecutive },
-    { id: "dashboard", label: "Dashboard", description: "A data-focused report with metrics and visual indicators", prompt: reportStyleDashboard },
-    { id: "research", label: "Research", description: "An academic-style analysis with methodology and citations", prompt: reportStyleResearch },
-    { id: "magazine", label: "Magazine", description: "An editorial-style article designed for broad audiences", prompt: reportStyleMagazine },
+    {
+      id: "executive",
+      label: "Executive",
+      description: "A polished summary with key findings and recommendations",
+      prompt: reportStyleExecutive,
+    },
+    {
+      id: "dashboard",
+      label: "Dashboard",
+      description: "A data-focused report with metrics and visual indicators",
+      prompt: reportStyleDashboard,
+    },
+    {
+      id: "research",
+      label: "Research",
+      description: "An academic-style analysis with methodology and citations",
+      prompt: reportStyleResearch,
+    },
+    {
+      id: "magazine",
+      label: "Magazine",
+      description: "An editorial-style article designed for broad audiences",
+      prompt: reportStyleMagazine,
+    },
   ],
   () => getConfig().canvas?.reports?.map((r) => ({ id: toId(r.name), label: r.name, prompt: r.prompt })),
 );
