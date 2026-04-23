@@ -117,7 +117,8 @@ export class Client {
                   content.push({ type: "input_text", text: part.text });
                 } else if (part.type === "image") {
                   const imgPart = part as ImageContent;
-                  // data is already a full data URL
+                  // Skip attachments with unrecognized MIME (e.g. application/octet-stream)
+                  if (imgPart.data.startsWith("data:application/octet-stream")) continue;
                   content.push({
                     type: "input_image",
                     image_url: imgPart.data,
@@ -125,7 +126,7 @@ export class Client {
                   });
                 } else if (part.type === "file") {
                   const filePart = part as FileContent;
-                  // data is already a full data URL
+                  if (filePart.data.startsWith("data:application/octet-stream")) continue;
                   content.push({
                     type: "input_file",
                     file_data: filePart.data,
