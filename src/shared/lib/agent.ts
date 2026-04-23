@@ -8,22 +8,8 @@
 import type { Content, Message, Tool, ToolCallContent, ToolContext } from "../types/chat";
 import type { Client } from "./client";
 
-/** Default maximum turns (LLM calls) before the loop exits. */
-const DEFAULT_MAX_TURNS = 25;
-
 /** Options forwarded verbatim to `client.complete`. */
 export type CompleteOptions = Parameters<Client["complete"]>[5];
-
-/** Thrown when the loop exceeds `maxTurns` without the model stopping. */
-export class MaxTurnsExceededError extends Error {
-  readonly maxTurns: number;
-
-  constructor(maxTurns: number) {
-    super(`Agent loop exceeded max turns (${maxTurns})`);
-    this.name = "MaxTurnsExceededError";
-    this.maxTurns = maxTurns;
-  }
-}
 
 /** Per-turn hooks the caller can supply. All optional. */
 export interface RunHooks {
@@ -53,12 +39,6 @@ export interface RunHooks {
 
   /** Options forwarded to `client.complete` (includes signal, effort, verbosity, …). */
   options?: CompleteOptions;
-
-  /**
-   * Maximum number of LLM turns before the loop stops.
-   * Prevents runaway tool-calling. Default: 25.
-   */
-  maxTurns?: number;
 }
 
 /**
@@ -66,8 +46,6 @@ export interface RunHooks {
  *
  * Calls `client.complete()`, executes any tool calls, feeds results back,
  * and repeats until the model stops calling tools or the signal is aborted.
- *
- * Throws `MaxTurnsExceededError` if the loop exceeds `maxTurns`.
  */
 export async function run(
   client: Client,
@@ -81,14 +59,13 @@ export async function run(
 
   const { onStream, onTurnStart, onTurnEnd, createToolContext, onToolResult, prepareMessages, options } = hooks;
   const signal = options?.signal;
-  const maxTurns = hooks.maxTurns ?? DEFAULT_MAX_TURNS;
 
   const appendToolResult = (message: Message) => {
     conversation = [...conversation, message];
     onToolResult?.(message);
   };
 
-  for (let turn = 0; turn < maxTurns; turn++) {
+  while (true) {
     onTurnStart?.();
 
     const modelMessages = prepareMessages ? prepareMessages(conversation) : conversation;
@@ -181,6 +158,4 @@ export async function run(
       }
     }
   }
-
-  throw new MaxTurnsExceededError(maxTurns);
 }
