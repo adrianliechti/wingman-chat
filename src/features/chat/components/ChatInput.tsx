@@ -658,14 +658,13 @@ export function ChatInput() {
                     aria-selected={!isRealtimeSelected}
                     aria-label="Chat mode"
                     className={`relative z-10 flex items-center justify-start gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${!isRealtimeSelected
-                      ? "w-9 sm:w-18 text-neutral-900 dark:text-neutral-50"
+                      ? "w-9 text-neutral-900 dark:text-neutral-50"
                       : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
                       }`}
                     title="Chat mode"
                     onClick={() => isRealtimeSelected ? onModelChange(models[0]) : undefined}
                   >
                     <MessageSquare size={12} strokeWidth={2.25} className="shrink-0" />
-                    {!isRealtimeSelected && <span className="hidden sm:inline">Chat</span>}
                   </button>
                   <button
                     type="button"
@@ -674,7 +673,7 @@ export function ChatInput() {
                     aria-selected={isRealtimeSelected}
                     aria-label="Voice mode"
                     className={`relative z-10 flex items-center justify-end gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${isRealtimeSelected
-                      ? "w-9 sm:w-[4.5rem] text-neutral-900 dark:text-neutral-50"
+                      ? "w-9 text-neutral-900 dark:text-neutral-50"
                       : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
                       }`}
                     title="Voice mode"
@@ -684,7 +683,6 @@ export function ChatInput() {
                         : undefined
                     }
                   >
-                    {isRealtimeSelected && <span className="hidden sm:inline">Voice</span>}
                     <AudioLines size={12} strokeWidth={2.25} className="shrink-0" />
                   </button>
                 </div>
