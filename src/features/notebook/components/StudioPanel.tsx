@@ -6,15 +6,17 @@ import {
   CircleHelp,
   Download,
   Loader2,
+  MoreHorizontal,
   Network,
   Presentation,
   StickyNote,
   Table2,
-  X,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { downloadFromUrl } from "@/shared/lib/utils";
-import { getPodcastStyles, getReportStyles, getSlideStyles, getInfographicStyles } from "../hooks/useNotebook";
+import { getInfographicStyles, getPodcastStyles, getReportStyles, getSlideStyles } from "../hooks/useNotebook";
 import type { NotebookOutput, NotebookSource, OutputType } from "../types/notebook";
 
 interface StudioPanelProps {
@@ -30,17 +32,19 @@ const OUTPUT_TYPES: {
   label: string;
   icon: typeof AudioLines;
 }[] = [
-  { type: "podcast", label: "Podcast", icon: AudioLines },
-  { type: "slides", label: "Slides", icon: Presentation },
-  { type: "report", label: "Report", icon: Table2 },
-  { type: "infographic", label: "Infographic", icon: BarChart3 },
-  { type: "quiz", label: "Quiz", icon: CircleHelp },
-  { type: "mindmap", label: "Mind Map", icon: Network },
-];
+    { type: "podcast", label: "Podcast", icon: AudioLines },
+    { type: "slides", label: "Slides", icon: Presentation },
+    { type: "report", label: "Report", icon: Table2 },
+    { type: "infographic", label: "Infographic", icon: BarChart3 },
+    { type: "quiz", label: "Quiz", icon: CircleHelp },
+    { type: "mindmap", label: "Mind Map", icon: Network },
+  ];
 
 export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSelectOutput }: StudioPanelProps) {
   const hasSources = sources.length > 0;
   const [openMenu, setOpenMenu] = useState<OutputType | null>(null);
+  const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
+  const [actionMenuPos, setActionMenuPos] = useState<{ top: number; right: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const slideStyles = getSlideStyles();
   const podcastStyles = getPodcastStyles();
@@ -147,7 +151,7 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
               return (
                 <div
                   key={output.id}
-                  className={`group/output flex items-center gap-2 py-1.5 transition-colors ${isGenerating ? "opacity-60" : isError ? "opacity-75" : ""}`}
+                  className={`relative flex items-center gap-2 py-1.5 transition-colors ${isGenerating ? "opacity-60" : isError ? "opacity-75" : ""}`}
                 >
                   <button
                     type="button"
@@ -156,9 +160,8 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                         onSelectOutput(output);
                       }
                     }}
-                    className={`flex flex-1 min-w-0 items-center gap-2 text-left ${
-                      output.status === "completed" ? "cursor-pointer" : "cursor-default"
-                    }`}
+                    className={`flex flex-1 min-w-0 items-center gap-2 text-left ${output.status === "completed" ? "cursor-pointer" : "cursor-default"
+                      }`}
                   >
                     <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
                       {isGenerating ? (
@@ -182,31 +185,30 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                       </p>
                     </div>
                   </button>
+
+                  {/* Actions menu — always visible, works on touch */}
                   {!isGenerating && (
-                    <div className="invisible group-hover/output:visible flex items-center shrink-0">
-                      {output.status === "completed" && canDownload(output) && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            downloadOutput(output);
-                          }}
-                          className="p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-                          title="Download"
-                        >
-                          <Download size={12} className="text-neutral-400" />
-                        </button>
-                      )}
+                    <div className="shrink-0">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onDeleteOutput(output.id);
+                          if (openActionMenu === output.id) {
+                            setOpenActionMenu(null);
+                            setActionMenuPos(null);
+                          } else {
+                            const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                            setActionMenuPos({
+                              top: rect.bottom + 4,
+                              right: window.innerWidth - rect.right,
+                            });
+                            setOpenActionMenu(output.id);
+                          }
                         }}
-                        className="p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-                        title="Delete"
+                        className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                        title="Actions"
                       >
-                        <X size={12} className="text-neutral-400" />
+                        <MoreHorizontal size={14} />
                       </button>
                     </div>
                   )}
@@ -216,6 +218,61 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
           </div>
         )}
       </div>
+
+      {/* Action popover rendered in a portal to escape overflow clipping */}
+      {openActionMenu && actionMenuPos && (() => {
+        const output = outputs.find((o) => o.id === openActionMenu);
+        if (!output) return null;
+        const downloadable = output.status === "completed" && canDownload(output);
+        return createPortal(
+          <>
+            {/* backdrop */}
+            <button
+              type="button"
+              aria-label="Close menu"
+              className="fixed inset-0 z-40 cursor-default"
+              onMouseDown={() => {
+                setOpenActionMenu(null);
+                setActionMenuPos(null);
+              }}
+            />
+            <div
+              className="fixed z-50 min-w-30 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl shadow-black/20 dark:shadow-black/60 py-1 overflow-hidden"
+              style={{ top: actionMenuPos.top, right: actionMenuPos.right }}
+            >
+              {downloadable && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenActionMenu(null);
+                    setActionMenuPos(null);
+                    downloadOutput(output);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <Download size={13} className="text-neutral-400 shrink-0" />
+                  Download
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenActionMenu(null);
+                  setActionMenuPos(null);
+                  onDeleteOutput(output.id);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+              >
+                <Trash2 size={13} className="shrink-0" />
+                Delete
+              </button>
+            </div>
+          </>,
+          document.body,
+        );
+      })()}
     </div>
   );
 }

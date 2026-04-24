@@ -8,11 +8,6 @@ import * as store from "../lib/opfs-notebook";
 import { createSourceTools } from "../lib/source-tools";
 import { runWithTools } from "../lib/tool-loop";
 import chatInstructions from "../prompts/chat.txt?raw";
-import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
-import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
-import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
-import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
-import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
 import infographicStyleAnime from "../prompts/infographic-style-anime.txt?raw";
 import infographicStyleAuto from "../prompts/infographic-style-auto.txt?raw";
 import infographicStyleBento from "../prompts/infographic-style-bento.txt?raw";
@@ -24,6 +19,11 @@ import infographicStyleKawaii from "../prompts/infographic-style-kawaii.txt?raw"
 import infographicStyleProfessional from "../prompts/infographic-style-professional.txt?raw";
 import infographicStyleScientific from "../prompts/infographic-style-scientific.txt?raw";
 import infographicStyleSketchNote from "../prompts/infographic-style-sketch-note.txt?raw";
+import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
+import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
+import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
+import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
+import podcastStyleStory from "../prompts/podcast-style-story.txt?raw";
 import reportStyleDashboard from "../prompts/report-style-dashboard.txt?raw";
 import reportStyleExecutive from "../prompts/report-style-executive.txt?raw";
 import reportStyleMagazine from "../prompts/report-style-magazine.txt?raw";
@@ -339,12 +339,58 @@ export function useNotebook(notebookId?: string) {
     return rid;
   }, []);
 
+  // Keep a ref to current notebook so async flows can read the latest id
+  const notebookRef = useRef<Notebook | null>(notebook);
+  notebookRef.current = notebook;
+
+  // Lazily create a notebook on first write if none exists yet
+  const ensureNotebook = useCallback(async (): Promise<Notebook> => {
+    if (notebookRef.current) return notebookRef.current;
+    const now = new Date().toISOString();
+    const r: Notebook = {
+      id: generateId(),
+      title: "Untitled notebook",
+      createdAt: now,
+      updatedAt: now,
+    };
+    await store.saveNotebook(r);
+    notebookRef.current = r;
+    setNotebook(r);
+    setSources([]);
+    setOutputs([]);
+    setMessages([]);
+    return r;
+  }, []);
+
+  // Reset to the empty state (no active notebook)
+  const resetNotebook = useCallback(() => {
+    loadIdRef.current++;
+    notebookRef.current = null;
+    setNotebook(null);
+    setSources([]);
+    setOutputs([]);
+    setMessages([]);
+    setStreamingContent(null);
+  }, []);
+
   useEffect(() => {
-    if (notebookId) {
-      // Clear stale data immediately to avoid showing old notebook content
+    if (!notebookId) {
+      // No id (new/empty state) — reset to blank slate
+      loadIdRef.current++;
+      notebookRef.current = null;
       setNotebook(null);
-      initNotebook(notebookId);
+      setSources([]);
+      setOutputs([]);
+      setMessages([]);
+      setStreamingContent(null);
+      setLoading(false);
+      return;
     }
+    // Skip reload if we already hold this notebook (e.g. just created via ensureNotebook)
+    if (notebookRef.current?.id === notebookId) return;
+    // Clear stale data immediately to avoid showing old notebook content
+    setNotebook(null);
+    initNotebook(notebookId);
   }, [notebookId, initNotebook]);
 
   // ── Title ──────────────────────────────────────────────────────────
@@ -385,7 +431,7 @@ export function useNotebook(notebookId?: string) {
 
   const addSearchResult = useCallback(
     async (query: string, mode: "web" | "research", content: string) => {
-      if (!notebook) return;
+      const nb = await ensureNotebook();
 
       const source: NotebookSource = {
         id: generateId(),
@@ -396,21 +442,21 @@ export function useNotebook(notebookId?: string) {
         addedAt: new Date().toISOString(),
       };
 
-      await store.addSource(notebook.id, source);
+      await store.addSource(nb.id, source);
       setSources((prev) => [...prev, source]);
     },
-    [notebook],
+    [ensureNotebook],
   );
 
   const addFileSource = useCallback(
     async (file: File) => {
-      if (!notebook) return;
-
       const content = await convertFileToText(file);
 
       if (!content?.trim()) {
         throw new Error(`Could not extract text from ${file.name}`);
       }
+
+      const nb = await ensureNotebook();
 
       const source: NotebookSource = {
         id: generateId(),
@@ -424,15 +470,15 @@ export function useNotebook(notebookId?: string) {
         addedAt: new Date().toISOString(),
       };
 
-      await store.addSource(notebook.id, source);
+      await store.addSource(nb.id, source);
       setSources((prev) => [...prev, source]);
     },
-    [notebook],
+    [ensureNotebook],
   );
 
   const addTextSource = useCallback(
     async (name: string, text: string, audioUrl?: string) => {
-      if (!notebook) return;
+      const nb = await ensureNotebook();
 
       const source: NotebookSource = {
         id: generateId(),
@@ -443,10 +489,10 @@ export function useNotebook(notebookId?: string) {
         addedAt: new Date().toISOString(),
       };
 
-      await store.addSource(notebook.id, source);
+      await store.addSource(nb.id, source);
       setSources((prev) => [...prev, source]);
     },
-    [notebook],
+    [ensureNotebook],
   );
 
   const scrapeWeb = useCallback(
@@ -466,7 +512,7 @@ export function useNotebook(notebookId?: string) {
 
   const addScrapeResult = useCallback(
     async (url: string, content: string) => {
-      if (!notebook) return;
+      const nb = await ensureNotebook();
 
       const source: NotebookSource = {
         id: generateId(),
@@ -477,10 +523,10 @@ export function useNotebook(notebookId?: string) {
         addedAt: new Date().toISOString(),
       };
 
-      await store.addSource(notebook.id, source);
+      await store.addSource(nb.id, source);
       setSources((prev) => [...prev, source]);
     },
-    [notebook],
+    [ensureNotebook],
   );
 
   const deleteSource = useCallback(
@@ -860,6 +906,7 @@ export function useNotebook(notebookId?: string) {
     isChatting,
 
     initNotebook,
+    resetNotebook,
     updateTitle,
 
     searchWeb,
