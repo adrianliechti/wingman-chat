@@ -10,6 +10,7 @@
  * generator resolves.
  */
 
+import { z } from "zod/v3";
 import { getConfig } from "@/shared/config";
 import { run } from "@/shared/lib/agent";
 import type { Client } from "@/shared/lib/client";
@@ -46,6 +47,26 @@ function stripJsonFence(raw: string): string {
     .replace(/^```json?\s*/i, "")
     .replace(/```\s*$/i, "")
     .trim();
+}
+
+/** Extract the first top-level JSON object from a response that may contain leading/trailing prose. */
+function extractJson(raw: string): string {
+  // Try stripping code fences first
+  const stripped = stripJsonFence(raw);
+
+  // Find the first '{' and match to the closing '}'
+  const start = stripped.indexOf("{");
+  if (start === -1) return stripped;
+
+  let depth = 0;
+  for (let i = start; i < stripped.length; i++) {
+    if (stripped[i] === "{") depth++;
+    else if (stripped[i] === "}") depth--;
+    if (depth === 0) return stripped.slice(start, i + 1);
+  }
+
+  // Fallback: return from first '{' to end
+  return stripped.slice(start);
 }
 
 // ── Podcast ────────────────────────────────────────────────────────────
@@ -219,14 +240,29 @@ export async function generateQuiz(ctx: GenerateContext): Promise<Result> {
 
 // ── Mind map ───────────────────────────────────────────────────────────
 
+const mindMapNodeSchema: z.ZodType<MindMapNode> = z.lazy(() =>
+  z.object({
+    label: z.string(),
+    children: z.array(mindMapNodeSchema).optional(),
+  }),
+);
+
 export async function generateMindMap(ctx: GenerateContext): Promise<Result> {
+  // Step 1: tool-calling loop reads sources and drafts the mind map as text
   const result = await run(ctx.client, ctx.model, ctx.instructions, [USER_MESSAGE("Mind Map")], ctx.sourceTools);
   const raw = getTextFromContent(result[result.length - 1].content);
   if (!raw?.trim()) throw new Error("Could not generate mind map");
 
-  const parsed = JSON.parse(stripJsonFence(raw)) as MindMapNode;
-  if (!parsed.label) throw new Error("Invalid mind map structure");
+  // Step 2: structured output pass to guarantee valid JSON
+  const parsed = await ctx.client.parse(
+    ctx.model,
+    "Convert the following mind map description into the exact JSON structure requested. Preserve all labels and hierarchy.",
+    raw,
+    mindMapNodeSchema,
+    "mindmap",
+  );
 
+  if (!parsed?.label) throw new Error("Invalid mind map structure");
   return { content: raw, mindMap: parsed };
 }
 
