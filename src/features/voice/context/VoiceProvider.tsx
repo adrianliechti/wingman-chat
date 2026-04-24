@@ -99,9 +99,12 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     [addMessage],
   );
 
-  const onToolCall = useCallback((toolName: string) => {
-    setVoiceToolCall(toolName);
-  }, [setVoiceToolCall]);
+  const onToolCall = useCallback(
+    (toolName: string) => {
+      setVoiceToolCall(toolName);
+    },
+    [setVoiceToolCall],
+  );
 
   const onToolCallDone = useCallback(() => {
     setVoiceToolCall(null);
@@ -126,7 +129,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     [addMessage],
   );
 
-  const { start, stop, sendText } = useVoiceWebSockets(onUserTranscript, onAssistantTranscript, onToolCall, onToolCallDone, onToolResult);
+  const { start, stop, sendText } = useVoiceWebSockets(
+    onUserTranscript,
+    onAssistantTranscript,
+    onToolCall,
+    onToolCallDone,
+    onToolResult,
+  );
 
   const stopVoice = useCallback(async () => {
     await stop();

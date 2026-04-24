@@ -464,10 +464,11 @@ function WebSearchOverlay({
                     type="button"
                     onClick={() => setMode(m)}
                     aria-pressed={isActive}
-                    className={`flex items-center gap-1.5 px-3 py-1 text-xs rounded-full transition-colors ${isActive
+                    className={`flex items-center gap-1.5 px-3 py-1 text-xs rounded-full transition-colors ${
+                      isActive
                         ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm"
                         : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
-                      }`}
+                    }`}
                   >
                     <Icon size={12} />
                     {modes[m].label}
@@ -832,48 +833,53 @@ function SourceItem({ source, onDelete }: { source: File; onDelete: () => void }
         </div>
       )}
 
-      {menuOpen && menuPos && createPortal(
-        <>
-          <button
-            type="button"
-            aria-label="Close menu"
-            className="fixed inset-0 z-40 cursor-default"
-            onMouseDown={() => { setMenuOpen(false); setMenuPos(null); }}
-          />
-          <div
-            className="fixed z-50 min-w-30 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl shadow-black/20 dark:shadow-black/60 py-1 overflow-hidden"
-            style={{ top: menuPos.top, right: menuPos.right }}
-          >
-            {binary && (
+      {menuOpen &&
+        menuPos &&
+        createPortal(
+          <>
+            <button
+              type="button"
+              aria-label="Close menu"
+              className="fixed inset-0 z-40 cursor-default"
+              onMouseDown={() => {
+                setMenuOpen(false);
+                setMenuPos(null);
+              }}
+            />
+            <div
+              className="fixed z-50 min-w-30 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl shadow-black/20 dark:shadow-black/60 py-1 overflow-hidden"
+              style={{ top: menuPos.top, right: menuPos.right }}
+            >
+              {binary && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setMenuPos(null);
+                    downloadFromUrl(source.content, basename(source.path));
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <Download size={13} className="text-neutral-400 shrink-0" />
+                  Download
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
                   setMenuOpen(false);
                   setMenuPos(null);
-                  downloadFromUrl(source.content, basename(source.path));
+                  onDelete();
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
               >
-                <Download size={13} className="text-neutral-400 shrink-0" />
-                Download
+                <Trash2 size={13} className="shrink-0" />
+                Delete
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setMenuOpen(false);
-                setMenuPos(null);
-                onDelete();
-              }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-            >
-              <Trash2 size={13} className="shrink-0" />
-              Delete
-            </button>
-          </div>
-        </>,
-        document.body,
-      )}
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }

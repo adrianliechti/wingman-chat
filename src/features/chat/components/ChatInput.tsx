@@ -51,7 +51,14 @@ export function ChatInput() {
     captureFrame,
   } = useScreenCapture();
   const { providers, getProviderState, setProviderEnabled, setModelOverrides } = useToolsContext();
-  const { isAvailable: voiceAvailable, isListening, audioLevel, startVoice, stopVoice, sendText: sendVoiceText } = useVoice();
+  const {
+    isAvailable: voiceAvailable,
+    isListening,
+    audioLevel,
+    startVoice,
+    stopVoice,
+    sendText: sendVoiceText,
+  } = useVoice();
 
   // Track if realtime mode model is selected (either via model picker or agent's model)
   const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
@@ -83,7 +90,7 @@ export function ChatInput() {
   useEffect(() => {
     const container = modeSliderRef.current;
     if (!container) return;
-    const active = container.querySelector<HTMLElement>(`[data-mode="${isRealtimeSelected ? 'voice' : 'chat'}"]`);
+    const active = container.querySelector<HTMLElement>(`[data-mode="${isRealtimeSelected ? "voice" : "chat"}"]`);
     if (!active) return;
     const cr = container.getBoundingClientRect();
     const br = active.getBoundingClientRect();
@@ -434,11 +441,13 @@ export function ChatInput() {
       <form onSubmit={handleSubmit}>
         <div
           ref={containerRef}
-          className={`relative contain-[layout_style] will-change-[height] ${isDragging
-            ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl"
-            : `border-0 md:border border-t border-solid border-neutral-200/60 dark:border-neutral-700/60 ${messages.length === 0 ? "bg-white/60 dark:bg-neutral-950/70" : "bg-white/30 dark:bg-neutral-950/50"
-            } md:rounded-2xl`
-            } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-sm transition-all duration-200`}
+          className={`relative contain-[layout_style] will-change-[height] ${
+            isDragging
+              ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl"
+              : `border-0 md:border border-t border-solid border-neutral-200/60 dark:border-neutral-700/60 ${
+                  messages.length === 0 ? "bg-white/60 dark:bg-neutral-950/70" : "bg-white/30 dark:bg-neutral-950/50"
+                } md:rounded-2xl`
+          } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-sm transition-all duration-200`}
         >
           <input
             type="file"
@@ -448,8 +457,6 @@ export function ChatInput() {
             className="hidden"
             onChange={handleFileChange}
           />
-
-
 
           {/* Drop zone overlay */}
           {isDragging && (
@@ -564,9 +571,9 @@ export function ChatInput() {
                     style={
                       messages.length === 0
                         ? ({
-                          "--text-length": placeholderText.length,
-                          "--animation-duration": `${Math.max(1.5, placeholderText.length * 0.1)}s`,
-                        } as React.CSSProperties & { "--text-length": number; "--animation-duration": string })
+                            "--text-length": placeholderText.length,
+                            "--animation-duration": `${Math.max(1.5, placeholderText.length * 0.1)}s`,
+                          } as React.CSSProperties & { "--text-length": number; "--animation-duration": string })
                         : {}
                     }
                   >
@@ -616,15 +623,17 @@ export function ChatInput() {
                       <span
                         key={id}
                         className="w-0.75 rounded-full bg-neutral-500 dark:bg-neutral-400"
-                        style={{
-                          minHeight: `${minH}px`,
-                          height: `${minH + range}px`,
-                          opacity: 0.35 + amp * 0.65,
-                          transition: "height 80ms ease-out, opacity 120ms ease-out",
-                          animation: `waveBar ${(1 / freq).toFixed(2)}s ${phase.toFixed(2)}s ease-in-out infinite alternate`,
-                          "--wave-min": `${minH}px`,
-                          "--wave-max": `${minH + (maxH - minH) * Math.max(0.12, amp)}px`,
-                        } as React.CSSProperties}
+                        style={
+                          {
+                            minHeight: `${minH}px`,
+                            height: `${minH + range}px`,
+                            opacity: 0.35 + amp * 0.65,
+                            transition: "height 80ms ease-out, opacity 120ms ease-out",
+                            animation: `waveBar ${(1 / freq).toFixed(2)}s ${phase.toFixed(2)}s ease-in-out infinite alternate`,
+                            "--wave-min": `${minH}px`,
+                            "--wave-max": `${minH + (maxH - minH) * Math.max(0.12, amp)}px`,
+                          } as React.CSSProperties
+                        }
                       />
                     );
                   })}
@@ -657,12 +666,13 @@ export function ChatInput() {
                     role="tab"
                     aria-selected={!isRealtimeSelected}
                     aria-label="Chat mode"
-                    className={`relative z-10 flex items-center justify-start gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${!isRealtimeSelected
-                      ? "w-9 text-neutral-900 dark:text-neutral-50"
-                      : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                      }`}
+                    className={`relative z-10 flex items-center justify-start gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${
+                      !isRealtimeSelected
+                        ? "w-9 text-neutral-900 dark:text-neutral-50"
+                        : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                    }`}
                     title="Chat mode"
-                    onClick={() => isRealtimeSelected ? onModelChange(models[0]) : undefined}
+                    onClick={() => (isRealtimeSelected ? onModelChange(models[0]) : undefined)}
                   >
                     <MessageSquare size={12} strokeWidth={2.25} className="shrink-0" />
                   </button>
@@ -672,14 +682,19 @@ export function ChatInput() {
                     role="tab"
                     aria-selected={isRealtimeSelected}
                     aria-label="Voice mode"
-                    className={`relative z-10 flex items-center justify-end gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${isRealtimeSelected
-                      ? "w-9 text-neutral-900 dark:text-neutral-50"
-                      : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                      }`}
+                    className={`relative z-10 flex items-center justify-end gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${
+                      isRealtimeSelected
+                        ? "w-9 text-neutral-900 dark:text-neutral-50"
+                        : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                    }`}
                     title="Voice mode"
                     onClick={() =>
                       !isRealtimeSelected
-                        ? onModelChange({ id: "realtime", name: "Voice Mode", description: "Real-time voice conversation" })
+                        ? onModelChange({
+                            id: "realtime",
+                            name: "Voice Mode",
+                            description: "Real-time voice conversation",
+                          })
                         : undefined
                     }
                   >
@@ -721,30 +736,31 @@ export function ChatInput() {
                         anchor="bottom start"
                         className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 whitespace-nowrap dark:ring-1 dark:ring-white/10"
                       >
-                        {models.filter((modelItem) => modelItem.id !== "realtime").map((modelItem) => (
-                          <MenuItem key={modelItem.id}>
-                            <button
-                              type="button"
-                              onClick={() => onModelChange(modelItem)}
-                              title={modelItem.description}
-                              className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                            >
-                              <div className="flex items-center gap-2.5 w-full">
-                                <div className="flex flex-col items-start flex-1 min-w-0">
-                                  <div className="font-semibold text-sm leading-tight whitespace-nowrap">
-                                    {modelItem.name ?? modelItem.id}
-                                  </div>
-                                  {modelItem.description && (
-                                    <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
-                                      {modelItem.description}
+                        {models
+                          .filter((modelItem) => modelItem.id !== "realtime")
+                          .map((modelItem) => (
+                            <MenuItem key={modelItem.id}>
+                              <button
+                                type="button"
+                                onClick={() => onModelChange(modelItem)}
+                                title={modelItem.description}
+                                className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
+                              >
+                                <div className="flex items-center gap-2.5 w-full">
+                                  <div className="flex flex-col items-start flex-1 min-w-0">
+                                    <div className="font-semibold text-sm leading-tight whitespace-nowrap">
+                                      {modelItem.name ?? modelItem.id}
                                     </div>
-                                  )}
+                                    {modelItem.description && (
+                                      <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
+                                        {modelItem.description}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            </button>
-                          </MenuItem>
-                        ))}
-
+                              </button>
+                            </MenuItem>
+                          ))}
                       </MenuItems>
                     </Menu>
                   )}
@@ -768,7 +784,6 @@ export function ChatInput() {
                   )}
                 </>
               )}
-
             </div>
 
             <div className="flex items-center gap-2 md:gap-1 min-h-7">
@@ -808,10 +823,11 @@ export function ChatInput() {
                     <button
                       key={provider.id}
                       type="button"
-                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${providerEnabled
-                        ? "text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg"
-                        : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        }`}
+                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${
+                        providerEnabled
+                          ? "text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg"
+                          : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      }`}
                       onClick={async (e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -917,11 +933,7 @@ export function ChatInput() {
                                   strokeWidth={2.5}
                                 />
                               ) : providerEnabled ? (
-                                <Check
-                                  size={16}
-                                  className="text-neutral-800 dark:text-neutral-200"
-                                  strokeWidth={2.5}
-                                />
+                                <Check size={16} className="text-neutral-800 dark:text-neutral-200" strokeWidth={2.5} />
                               ) : (
                                 <div className="w-4 h-4" />
                               )}
@@ -939,10 +951,11 @@ export function ChatInput() {
                   {isScreenCaptureAvailable && (
                     <button
                       type="button"
-                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isContinuousCaptureActive
-                        ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg"
-                        : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        }`}
+                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
+                        isContinuousCaptureActive
+                          ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg"
+                          : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      }`}
                       onClick={handleContinuousCaptureToggle}
                       title={
                         isContinuousCaptureActive ? "Stop continuous screen capture" : "Start continuous screen capture"
@@ -1044,9 +1057,7 @@ export function ChatInput() {
                       <span>Stop</span>
                     </button>
                   </>
-                ) : (
-                  null
-                )
+                ) : null
               ) : isResponding ? (
                 <button
                   type="button"
@@ -1077,10 +1088,11 @@ export function ChatInput() {
                 ) : (
                   <button
                     type="button"
-                    className={`p-2.5 md:p-1.5 transition-colors ${isTranscribing
-                      ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
-                      : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      }`}
+                    className={`p-2.5 md:p-1.5 transition-colors ${
+                      isTranscribing
+                        ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                        : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                    }`}
                     onClick={handleTranscriptionClick}
                     title={isTranscribing ? "Stop recording" : "Start recording"}
                     disabled={isResponding}
