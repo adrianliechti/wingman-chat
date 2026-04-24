@@ -730,11 +730,6 @@ export function ChatInput() {
                               className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                             >
                               <div className="flex items-center gap-2.5 w-full">
-                                <div className="shrink-0 w-3.5 flex justify-center">
-                                  {model?.id === modelItem.id && (
-                                    <Check size={14} className="text-neutral-600 dark:text-neutral-400" />
-                                  )}
-                                </div>
                                 <div className="flex flex-col items-start flex-1 min-w-0">
                                   <div className="font-semibold text-sm leading-tight whitespace-nowrap">
                                     {modelItem.name ?? modelItem.id}

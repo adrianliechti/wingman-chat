@@ -9,22 +9,25 @@ import {
   Link,
   Loader2,
   Mic,
+  MoreHorizontal,
   Plus,
   Search,
+  Trash2,
   Type,
   Upload,
   X,
   Zap,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { acceptTypes } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { downloadFromUrl } from "@/shared/lib/utils";
+import type { File } from "@/shared/types/file";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { Markdown } from "@/shared/ui/Markdown";
-import type { File } from "@/shared/types/file";
 import { FieldRecorderOverlay } from "./FieldRecorderOverlay";
 
 interface SourcesPanelProps {
@@ -156,7 +159,7 @@ export function SourcesPanel({
       </div>
 
       {/* Bottom: Add sources dropdown */}
-      <div className="px-3 pt-3 pb-5 relative">
+      <div className="px-3 pt-3 pb-4 relative">
         <button
           type="button"
           onClick={() => setShowAddMenu(!showAddMenu)}
@@ -461,11 +464,10 @@ function WebSearchOverlay({
                     type="button"
                     onClick={() => setMode(m)}
                     aria-pressed={isActive}
-                    className={`flex items-center gap-1.5 px-3 py-1 text-xs rounded-full transition-colors ${
-                      isActive
+                    className={`flex items-center gap-1.5 px-3 py-1 text-xs rounded-full transition-colors ${isActive
                         ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm"
                         : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
-                    }`}
+                      }`}
                   >
                     <Icon size={12} />
                     {modes[m].label}
@@ -770,13 +772,15 @@ function basename(path: string): string {
 
 function SourceItem({ source, onDelete }: { source: File; onDelete: () => void }) {
   const [expanded, setExpanded] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const Icon = sourceIcon(source);
   const binary = isBinarySource(source);
   const isAudio = source.contentType?.startsWith("audio/") ?? false;
   const isImage = source.contentType?.startsWith("image/") ?? false;
 
   return (
-    <div className="group/source">
+    <div>
       <div className="flex items-center gap-2.5 rounded-lg px-1 py-1.5 transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
         <button
           type="button"
@@ -790,30 +794,25 @@ function SourceItem({ source, onDelete }: { source: File; onDelete: () => void }
             {source.path}
           </span>
         </button>
-        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/source:opacity-100 transition-opacity">
-          {binary && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                downloadFromUrl(source.content, basename(source.path));
-              }}
-              className="p-1 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-            >
-              <Download size={12} className="text-neutral-400" />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="p-1 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-          >
-            <X size={12} className="text-neutral-400" />
-          </button>
-        </div>
+
+        <button
+          type="button"
+          title="Actions"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (menuOpen) {
+              setMenuOpen(false);
+              setMenuPos(null);
+            } else {
+              const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+              setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+              setMenuOpen(true);
+            }
+          }}
+          className="shrink-0 p-1 rounded-md text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+        >
+          <MoreHorizontal size={13} />
+        </button>
       </div>
 
       {expanded && (
@@ -831,6 +830,49 @@ function SourceItem({ source, onDelete }: { source: File; onDelete: () => void }
             </p>
           )}
         </div>
+      )}
+
+      {menuOpen && menuPos && createPortal(
+        <>
+          <button
+            type="button"
+            aria-label="Close menu"
+            className="fixed inset-0 z-40 cursor-default"
+            onMouseDown={() => { setMenuOpen(false); setMenuPos(null); }}
+          />
+          <div
+            className="fixed z-50 min-w-30 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl shadow-black/20 dark:shadow-black/60 py-1 overflow-hidden"
+            style={{ top: menuPos.top, right: menuPos.right }}
+          >
+            {binary && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setMenuPos(null);
+                  downloadFromUrl(source.content, basename(source.path));
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <Download size={13} className="text-neutral-400 shrink-0" />
+                Download
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                setMenuPos(null);
+                onDelete();
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+            >
+              <Trash2 size={13} className="shrink-0" />
+              Delete
+            </button>
+          </div>
+        </>,
+        document.body,
       )}
     </div>
   );

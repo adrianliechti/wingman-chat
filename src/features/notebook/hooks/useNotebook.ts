@@ -18,8 +18,24 @@ import {
 } from "../lib/output-generators";
 import { createSourceExecTools } from "../lib/source-exec-tools";
 import { createSourceTools } from "../lib/source-tools";
-import { type BuildInstructionsOptions, buildInstructions, chatInstructions, OUTPUT_META } from "../lib/styles";
+import { type BuildInstructionsOptions, buildInstructions, chatInstructions, infographicStyles, OUTPUT_META, podcastStyles, reportStyles, slideStyles } from "../lib/styles";
 import type { Notebook, NotebookMessage, NotebookOutput, OutputType } from "../types/notebook";
+
+export function getSlideStyles() {
+  return slideStyles.getAll();
+}
+
+export function getPodcastStyles() {
+  return podcastStyles.getAll();
+}
+
+export function getReportStyles() {
+  return reportStyles.getAll();
+}
+
+export function getInfographicStyles() {
+  return infographicStyles.getAll();
+}
 
 function generateId(): string {
   return crypto.randomUUID();
@@ -93,12 +109,58 @@ export function useNotebook(notebookId?: string) {
     return rid;
   }, []);
 
+  // Keep a ref to current notebook so async flows can read the latest id
+  const notebookRef = useRef<Notebook | null>(notebook);
+  notebookRef.current = notebook;
+
+  // Lazily create a notebook on first write if none exists yet
+  const ensureNotebook = useCallback(async (): Promise<Notebook> => {
+    if (notebookRef.current) return notebookRef.current;
+    const now = new Date().toISOString();
+    const r: Notebook = {
+      id: generateId(),
+      title: "Untitled notebook",
+      createdAt: now,
+      updatedAt: now,
+    };
+    await store.saveNotebook(r);
+    notebookRef.current = r;
+    setNotebook(r);
+    setSources([]);
+    setOutputs([]);
+    setMessages([]);
+    return r;
+  }, []);
+
+  // Reset to the empty state (no active notebook)
+  const resetNotebook = useCallback(() => {
+    loadIdRef.current++;
+    notebookRef.current = null;
+    setNotebook(null);
+    setSources([]);
+    setOutputs([]);
+    setMessages([]);
+    setStreamingContent(null);
+  }, []);
+
   useEffect(() => {
-    if (notebookId) {
-      // Clear stale data immediately to avoid showing old notebook content
+    if (!notebookId) {
+      // No id (new/empty state) — reset to blank slate
+      loadIdRef.current++;
+      notebookRef.current = null;
       setNotebook(null);
-      initNotebook(notebookId);
+      setSources([]);
+      setOutputs([]);
+      setMessages([]);
+      setStreamingContent(null);
+      setLoading(false);
+      return;
     }
+    // Skip reload if we already hold this notebook (e.g. just created via ensureNotebook)
+    if (notebookRef.current?.id === notebookId) return;
+    // Clear stale data immediately to avoid showing old notebook content
+    setNotebook(null);
+    initNotebook(notebookId);
   }, [notebookId, initNotebook]);
 
   // ── Title ──────────────────────────────────────────────────────────
@@ -139,7 +201,7 @@ export function useNotebook(notebookId?: string) {
 
   const addSearchResult = useCallback(
     async (query: string, _mode: "web" | "research", content: string) => {
-      if (!notebook) return;
+      const nb = await ensureNotebook();
 
       let path: string;
       try {
@@ -150,11 +212,10 @@ export function useNotebook(notebookId?: string) {
       path = store.withDefaultExtension(path, "md");
 
       const source: File = { path, content };
-      await store.addSource(notebook.id, source);
-      store.touchNotebook(notebook.id);
+      await store.addSource(nb.id, source);
       setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
-    [notebook],
+    [ensureNotebook],
   );
 
   const addFileSource = useCallback(
@@ -199,7 +260,7 @@ export function useNotebook(notebookId?: string) {
 
   const addTextSource = useCallback(
     async (name: string, text: string, audioUrl?: string): Promise<string> => {
-      if (!notebook) throw new Error("No notebook loaded");
+      const nb = await ensureNotebook();
 
       const displayName = name || "Pasted text";
       let basePath: string;
@@ -211,7 +272,7 @@ export function useNotebook(notebookId?: string) {
       const textPath = store.withDefaultExtension(basePath, "md");
 
       const textSource: File = { path: textPath, content: text };
-      await store.addSource(notebook.id, textSource);
+      await store.addSource(nb.id, textSource);
       const added: File[] = [textSource];
 
       // Audio companion becomes its own `.wav` source so it lives on the
@@ -224,18 +285,17 @@ export function useNotebook(notebookId?: string) {
           content: audioUrl,
           contentType: "audio/wav",
         };
-        await store.addSource(notebook.id, audioSource);
+        await store.addSource(nb.id, audioSource);
         added.push(audioSource);
       }
 
-      store.touchNotebook(notebook.id);
       setSources((prev) => {
         const paths = new Set(added.map((s) => s.path));
         return [...prev.filter((s) => !paths.has(s.path)), ...added];
       });
       return textSource.path;
     },
-    [notebook],
+    [ensureNotebook],
   );
 
   const scrapeWeb = useCallback(
@@ -255,7 +315,7 @@ export function useNotebook(notebookId?: string) {
 
   const addScrapeResult = useCallback(
     async (url: string, content: string) => {
-      if (!notebook) return;
+      const nb = await ensureNotebook();
 
       let path: string;
       try {
@@ -266,11 +326,10 @@ export function useNotebook(notebookId?: string) {
       path = store.withDefaultExtension(path, "md");
 
       const source: File = { path, content };
-      await store.addSource(notebook.id, source);
-      store.touchNotebook(notebook.id);
+      await store.addSource(nb.id, source);
       setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
-    [notebook],
+    [ensureNotebook],
   );
 
   const deleteSource = useCallback(
@@ -450,6 +509,7 @@ export function useNotebook(notebookId?: string) {
     isChatting,
 
     initNotebook,
+    resetNotebook,
     updateTitle,
 
     searchWeb,
