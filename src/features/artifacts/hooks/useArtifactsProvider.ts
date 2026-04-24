@@ -5,9 +5,55 @@ import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.tx
 import interpreterInstructionsText from "@/features/artifacts/prompts/interpreter.txt?raw";
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
-import { normalizeArtifactPath } from "@/shared/lib/artifactFiles";
+import { normalizeArtifactPath } from "@/shared/lib/sandbox";
+import { createFileTools, type FileData, type FileEntry, type WritableFileSource } from "@/shared/lib/file-tools";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
 import { useArtifacts } from "./useArtifacts";
+
+/**
+ * Adapt FileSystemManager into a WritableFileSource for the shared file tools.
+ */
+function createFsAdapter(fsRef: React.RefObject<FileSystemManager | null>): WritableFileSource {
+  const requireFs = () => {
+    const fs = fsRef.current;
+    if (!fs) throw new Error("File system not available");
+    return fs;
+  };
+
+  return {
+    async list(): Promise<FileEntry[]> {
+      const fs = requireFs();
+      const entries = await fs.listEntries();
+      return entries.map((e) => ({
+        path: e.path,
+        size: e.size,
+        contentType: e.contentType,
+      }));
+    },
+
+    async read(path: string): Promise<FileData | undefined> {
+      const fs = requireFs();
+      const file = await fs.getFile(path);
+      if (!file) return undefined;
+      return { path: file.path, content: file.content, contentType: file.contentType };
+    },
+
+    async write(path: string, content: string, contentType?: string): Promise<void> {
+      const fs = requireFs();
+      await fs.createFile(path, content, contentType);
+    },
+
+    async remove(path: string): Promise<boolean> {
+      const fs = requireFs();
+      return fs.deleteFile(path);
+    },
+
+    async move(from: string, to: string): Promise<boolean> {
+      const fs = requireFs();
+      return fs.renameFile(from, to);
+    },
+  };
+}
 
 export function useArtifactsProvider(): ToolProvider | null {
   const { fs, activeFile, isAvailable } = useArtifacts();
@@ -23,263 +69,10 @@ export function useArtifactsProvider(): ToolProvider | null {
   activeFileRef.current = activeFile;
 
   const artifactsTools = useCallback((): Tool[] => {
-    return [
-      {
-        name: "create_file",
-        description:
-          "Create a new file or update an existing file in the virtual filesystem with the specified path and content.",
-        parameters: {
-          type: "object",
-          properties: {
-            path: {
-              type: "string",
-              description:
-                "The file path (e.g., /projects/test.go, /src/index.js). Should start with / and include the full directory structure.",
-            },
-            content: {
-              type: "string",
-              description: "The content of the file to create.",
-            },
-          },
-          required: ["path", "content"],
-        },
-        function: async (args: Record<string, unknown>) => {
-          const fs = fsRef.current;
-          const path = normalizeArtifactPath(args.path as string);
-          const content = args.content as string;
+    const fsAdapter = createFsAdapter(fsRef);
+    const fileTools = createFileTools(fsAdapter);
 
-          if (!path || !content) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Path and content are required" }) }];
-          }
-
-          try {
-            if (!fs) {
-              return [{ type: "text" as const, text: JSON.stringify({ error: "File system not available" }) }];
-            }
-            await fs.createFile(path, content);
-            return [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  success: true,
-                  message: `File created: ${path}`,
-                  path,
-                }),
-              },
-            ];
-          } catch {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Failed to create file" }) }];
-          }
-        },
-      },
-      {
-        name: "list_files",
-        description: "List all files in the virtual filesystem, optionally filtered by directory path.",
-        parameters: {
-          type: "object",
-          properties: {
-            directory: {
-              type: "string",
-              description:
-                "Optional directory path to filter files (e.g., /src, /components). If not provided, lists all files.",
-            },
-          },
-          required: [],
-        },
-        function: async (args: Record<string, unknown>) => {
-          const fs = fsRef.current;
-          const path = normalizeArtifactPath((args.directory as string) ?? "/");
-
-          if (!fs) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "File system not available" }) }];
-          }
-
-          try {
-            const allFiles = await fs.listEntries();
-            const filteredFiles =
-              !path || path === "/" ? allFiles : allFiles.filter((file) => file.path.startsWith(path));
-
-            const fileList = filteredFiles.map((file) => ({
-              path: file.path,
-              size: file.size,
-              contentType: file.contentType,
-            }));
-
-            return [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  success: true,
-                  files: fileList,
-                  count: fileList.length,
-                }),
-              },
-            ];
-          } catch {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Failed to list files" }) }];
-          }
-        },
-      },
-      {
-        name: "delete_file",
-        description:
-          "Delete a file or folder from the virtual filesystem. When deleting a folder, all files within it will be deleted.",
-        parameters: {
-          type: "object",
-          properties: {
-            path: {
-              type: "string",
-              description: "The file or folder path to delete (e.g., /src/index.js or /src/components)",
-            },
-          },
-          required: ["path"],
-        },
-        function: async (args: Record<string, unknown>) => {
-          const fs = fsRef.current;
-          const path = normalizeArtifactPath(args.path as string);
-
-          if (!path) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Path is required" }) }];
-          }
-
-          if (!fs) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "File system not available" }) }];
-          }
-
-          try {
-            const success = await fs.deleteFile(path);
-            if (success) {
-              return [
-                {
-                  type: "text" as const,
-                  text: JSON.stringify({
-                    success: true,
-                    message: `Deleted: ${path}`,
-                    path,
-                  }),
-                },
-              ];
-            } else {
-              return [{ type: "text" as const, text: JSON.stringify({ error: `File or folder not found: ${path}` }) }];
-            }
-          } catch {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Failed to delete item" }) }];
-          }
-        },
-      },
-      {
-        name: "move_file",
-        description: "Move or rename a file in the virtual filesystem from one path to another.",
-        parameters: {
-          type: "object",
-          properties: {
-            from: {
-              type: "string",
-              description: "The source file path (e.g., /src/old-name.js)",
-            },
-            to: {
-              type: "string",
-              description: "The destination file path (e.g., /src/new-name.js)",
-            },
-          },
-          required: ["from", "to"],
-        },
-        function: async (args: Record<string, unknown>) => {
-          const fs = fsRef.current;
-          const fromPath = normalizeArtifactPath(args.from as string);
-          const toPath = normalizeArtifactPath(args.to as string);
-
-          if (!fromPath || !toPath) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Both from and to path are required" }) }];
-          }
-
-          if (!fs) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "File system not available" }) }];
-          }
-
-          try {
-            const success = await fs.renameFile(fromPath, toPath);
-
-            if (!success) {
-              return [
-                {
-                  type: "text" as const,
-                  text: JSON.stringify({
-                    error: `Failed to move from ${fromPath} to ${toPath}. Source may not exist or destination already exists.`,
-                  }),
-                },
-              ];
-            }
-
-            return [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  success: true,
-                  message: `File moved from ${fromPath} to ${toPath}`,
-                  fromPath,
-                  toPath,
-                }),
-              },
-            ];
-          } catch {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Failed to move file" }) }];
-          }
-        },
-      },
-      {
-        name: "read_file",
-        description: "Read the content of a specific file from the virtual filesystem.",
-        parameters: {
-          type: "object",
-          properties: {
-            path: {
-              type: "string",
-              description: "The file path to read (e.g., /src/index.js)",
-            },
-          },
-          required: ["path"],
-        },
-        function: async (args: Record<string, unknown>) => {
-          const fs = fsRef.current;
-          const path = normalizeArtifactPath(args.path as string);
-
-          if (!path) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Path is required" }) }];
-          }
-
-          if (!fs) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "File system not available" }) }];
-          }
-
-          const file = await fs.getFile(path);
-
-          if (!file) {
-            return [{ type: "text" as const, text: JSON.stringify({ error: `File not found: ${path}` }) }];
-          }
-
-          try {
-            const fileInfo = {
-              path,
-              size: file.content.length,
-              content: file.content,
-              contentType: file.contentType,
-            };
-
-            return [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  success: true,
-                  file: fileInfo,
-                }),
-              },
-            ];
-          } catch {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Failed to read file content" }) }];
-          }
-        },
-      },
+    const contextTools: Tool[] = [
       {
         name: "current_path",
         description: "Get the file path of the currently opened file in the artifacts editor.",
@@ -385,7 +178,9 @@ export function useArtifactsProvider(): ToolProvider | null {
           }
         },
       },
-      // --- Code Execution Tools ---
+    ];
+
+    const executionTools: Tool[] = [
       {
         name: "execute_python_code",
         description:
@@ -547,6 +342,8 @@ export function useArtifactsProvider(): ToolProvider | null {
         },
       },
     ];
+
+    return [...fileTools, ...contextTools, ...executionTools];
     // Refs are intentionally not dependencies — the callback needs to produce
     // a stable tool array so downstream memoization doesn't thrash. Tool
     // functions read the latest `fs`/`activeFile` via refs at execution time.

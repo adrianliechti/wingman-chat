@@ -1,19 +1,27 @@
-import { ArrowRight, FileText, Globe, Loader2, MessageSquare, Sparkles } from "lucide-react";
+import { ArrowRight, BookOpen, FileText, FlaskConical, Globe, Loader2, MessageSquare, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Content } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
 import { Markdown } from "@/shared/ui/Markdown";
-import type { NotebookMessage, NotebookSource } from "../types/notebook";
+import type { NotebookMessage } from "../types/notebook";
+import type { File } from "@/shared/types/file";
 
 interface NotebookChatProps {
   messages: NotebookMessage[];
-  sources: NotebookSource[];
+  sources: File[];
   isChatting: boolean;
   streamingContent: Content[] | null;
   onSend: (message: string) => void;
+  showSourcesActive?: boolean;
+  showStudioActive?: boolean;
+  onShowSources?: () => void;
+  onShowStudio?: () => void;
+  isSearching?: boolean;
+  outputCount?: number;
+  isGeneratingOutput?: boolean;
 }
 
-export function NotebookChat({ messages, sources, isChatting, streamingContent, onSend }: NotebookChatProps) {
+export function NotebookChat({ messages, sources, isChatting, streamingContent, onSend, showSourcesActive, showStudioActive, onShowSources, onShowStudio, isSearching, outputCount, isGeneratingOutput }: NotebookChatProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -74,7 +82,7 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
                     Add sources from the web or upload files, then chat with your sources or generate outputs in the
                     studio.
                   </p>
-                  <div className="flex items-center justify-center gap-6 text-xs text-neutral-400 dark:text-neutral-500">
+                  <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-neutral-400 dark:text-neutral-500">
                     <div className="flex items-center gap-1.5">
                       <Globe size={13} />
                       <span>Web search</span>
@@ -139,8 +147,68 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
       </div>
 
       {/* Floating input */}
-      <div className="absolute bottom-4 left-4 right-4 z-20">
-        <div className="flex items-end gap-2 bg-white/60 dark:bg-neutral-950/70 backdrop-blur-2xl rounded-2xl border border-neutral-200/50 dark:border-neutral-900 shadow-2xl shadow-black/60 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 px-3 py-2">
+      <div className="absolute bottom-4 left-4 right-4 z-20 flex flex-col gap-2">
+        {/* Mobile panel toggle chips — only visible on small screens */}
+        {(onShowSources || onShowStudio) && (
+          <div className="flex items-center gap-2 md:hidden px-1">
+            {onShowSources && (
+              <button
+                type="button"
+                onClick={onShowSources}
+                className={`group flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${showSourcesActive
+                  ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 border-transparent shadow-md"
+                  : "bg-white/70 dark:bg-neutral-900/70 backdrop-blur-sm text-neutral-600 dark:text-neutral-400 border-neutral-200/80 dark:border-neutral-700/80 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  }`}
+              >
+                {isSearching ? (
+                  <Loader2 size={12} className="animate-spin shrink-0" />
+                ) : (
+                  <BookOpen size={12} className="shrink-0" />
+                )}
+                <span>Sources</span>
+                {sources.length > 0 && (
+                  <span
+                    className={`inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold leading-none ${showSourcesActive
+                      ? "bg-white/25 dark:bg-black/20 text-white dark:text-neutral-900"
+                      : "bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300"
+                      }`}
+                  >
+                    {sources.length}
+                  </span>
+                )}
+              </button>
+            )}
+            {onShowStudio && (
+              <button
+                type="button"
+                onClick={onShowStudio}
+                className={`group flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${showStudioActive
+                  ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 border-transparent shadow-md"
+                  : "bg-white/70 dark:bg-neutral-900/70 backdrop-blur-sm text-neutral-600 dark:text-neutral-400 border-neutral-200/80 dark:border-neutral-700/80 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  }`}
+              >
+                {isGeneratingOutput ? (
+                  <Loader2 size={12} className="animate-spin shrink-0" />
+                ) : (
+                  <FlaskConical size={12} className="shrink-0" />
+                )}
+                <span>Output</span>
+                {(outputCount ?? 0) > 0 && (
+                  <span
+                    className={`inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold leading-none ${showStudioActive
+                      ? "bg-white/25 dark:bg-black/20 text-white dark:text-neutral-900"
+                      : "bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300"
+                      }`}
+                  >
+                    {outputCount}
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 bg-white/60 dark:bg-neutral-950/70 backdrop-blur-2xl rounded-2xl shadow-sm border-0 md:border border-t border-solid border-neutral-200/60 dark:border-neutral-700/60 px-3">
           <textarea
             ref={inputRef}
             value={input}
@@ -149,7 +217,7 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
             placeholder={hasSources ? "Ask about your sources..." : "Add sources first to start chatting"}
             disabled={!hasSources || isChatting}
             rows={1}
-            className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 outline-none resize-none min-h-6 max-h-[120px] disabled:opacity-50"
+            className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 outline-none resize-none py-2 max-h-30 disabled:opacity-50"
             style={{ height: "auto" }}
             onInput={(e) => {
               const target = e.target as HTMLTextAreaElement;
@@ -161,9 +229,9 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
             type="button"
             onClick={handleSubmit}
             disabled={!input.trim() || isChatting || !hasSources}
-            className="p-1.5 rounded-lg bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-80 transition-opacity disabled:opacity-30 shrink-0"
+            className="rounded-xl p-2 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors hover:bg-neutral-100/70 dark:hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
           >
-            <ArrowRight size={14} />
+            <ArrowRight size={18} />
           </button>
         </div>
       </div>

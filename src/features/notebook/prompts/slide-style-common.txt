@@ -1,57 +1,74 @@
 ## General Slide Design Rules
 
-Follow these rules alongside the specific style instructions for every slide you create.
+These rules apply to every deck, regardless of visual style. The style block that follows defines *how* things look; these rules define *what* a good slide is.
 
-### Layout Variety
+### The "earn your place" principle
 
-NEVER repeat the same layout on consecutive slides. Vary across these patterns:
-- Two-column: text left, visual right (or reversed)
-- Full-bleed visual with content overlay or inset
-- Hero number or quote dominating the slide with supporting text below
-- Icon + text rows (2-3 key points with visual markers)
-- 2x2 or 2x3 grid of content blocks
-- Timeline or process flow (horizontal or vertical steps)
-- Comparison layout (before/after, side-by-side options)
-- Large stat callouts: big numbers (60-72pt) with small labels
+Every element on a slide must serve the message. If you can remove something and the slide still reads, remove it.
+
+- **No filler.** No icons-for-decoration, no "visual interest" shapes, no padded stat grids where you invented the third metric to match the layout. One thousand no's for every yes.
+- **No lorem / placeholder copy.** Pull real content from sources or leave space.
+- **No "data slop."** Fake percentages, generic icon sets, meaningless sparklines — all forbidden.
+- **Ask the content, not the template.** The right format for a quote is not the right format for a comparison. Let the content pick the layout.
+
+### Commit to a system up front
+
+Before writing slide 1:
+
+- Pick **one** background color for content slides (a second is allowed only for section dividers).
+- Pick **at most two** type families (display + body). Declare them as `--font-display` and `--font-body`.
+- Pick a **palette of 4–6 colors max**: one dominant, one secondary, one accent, plus 1–2 neutrals. Use the 60/30/10 weighting.
+- Pick a **type scale** and **spacing scale** as CSS custom properties. Reuse them everywhere.
+
+Consistency across slides is what separates "professional deck" from "ten random slides."
+
+### Layout Variety & Rhythm
+
+Never repeat the same archetype on consecutive slides. A good deck alternates dense/breathing, text/visual, wide/focused.
+
+A 10-slide deck should include a mix of: hero cover, section divider, hero-stat, data chart, KPI grid, framework/matrix/timeline, quote/callout, comparison, closing. Never a whole deck of "title + three bullets."
 
 ### Visual Hierarchy
 
-- Every slide needs ONE clear focal point — the thing the viewer's eye hits first
-- Use dramatic size contrast: titles should be 3-5x larger than body text
-- One color dominates (60-70% visual weight), with 1-2 supporting tones and one sharp accent. Never give all colors equal weight.
-- Key statistics and numbers should be displayed large and prominently
+- Every slide has **exactly one focal point** — the element the eye hits first.
+- Use dramatic size contrast: titles are 3–5× body, hero stats 8–12×.
+- Apply 60/30/10 color weighting. Never give all colors equal weight.
+- Key numbers are displayed **large**, with a tiny label beneath — not buried in prose.
 
-### Typography
+### Typography Discipline
 
-- Titles should be insight statements when possible ("Revenue grew 23% driven by enterprise") not topic labels ("Revenue Overview"). The title IS the takeaway.
-- Left-align body text. Center only titles or hero elements.
-- Maintain generous line spacing for readability
+- Titles are **insights**: "Enterprise ACV grew 38%" — never topic labels like "Revenue".
+- `text-wrap: balance` on titles; `text-wrap: pretty` on body paragraphs.
+- Left-align body and lists. Center only titles, hero stats, and cover text.
+- Generous line-height: 1.1–1.2 on display, 1.4–1.6 on body.
+- Numbers: `font-variant-numeric: tabular-nums` everywhere digits align.
+- Minimum readable size on this 1920×1080 canvas: **24px**. Never smaller.
 
-### Every Slide Needs a Visual Element
+### Every Slide Earns its Visual
 
-Never create text-only slides — they are forgettable. Every slide should include at least one of:
-- Chart, graph, or data visualization
-- Illustration, icon, or diagram
-- Large hero number or statistic
-- Visual framework (matrix, flow, timeline, comparison)
+No text-only slides. Every slide includes at least one of: a chart, an image, a hero number, a framework diagram, a quote treated as a visual element, or a dramatic typographic composition.
 
-### Things to AVOID
+### Spacing & Margins
 
-- NEVER use accent lines or underlines beneath titles — this is a hallmark of AI-generated slides. Use whitespace or color instead.
-- Don't use low-contrast text (light on light, dark on dark). Icons and text both need strong contrast against the background.
-- Don't center body text or lists — left-align them.
-- Don't cram content edge-to-edge — leave generous margins and breathing room.
-- Don't describe generic clip art — describe specific, content-relevant visuals that serve the data.
-- Don't make every slide equally dense — vary rhythm between dense data slides and breathing-room slides.
-- Don't default to "three bullet points" — find the information format that best serves each slide's purpose.
-- Don't style one slide and leave the rest different — commit to the style fully and consistently.
+- Outer margin: **minimum 80px**; prefer 96–160px.
+- Use the 8-based spacing scale: `4, 8, 16, 24, 32, 48, 64, 96, 128, 160`.
+- Never crowd to the pixel edge. Whitespace is the design.
 
-### Writing Smart Image Prompts
+### AVOID (AI-slop checklist)
 
-For each slide, compose a COMPLETE, standalone image generation prompt. Don't use a rote formula — think about what THIS slide needs:
-1. Start with the overall visual setting (background, mood, aesthetic)
-2. Describe the layout: where will the title be? Where's the visual element? Where's the body text?
-3. Include ALL text content that should appear on the slide (titles, bullet points, labels, numbers)
-4. Describe specific visual elements: "a horizontal bar chart comparing Q1-Q4 with Q3 highlighted in amber" not just "a chart"
-5. Specify positions: "top-left", "right half", "bottom third", "centered"
-6. End every prompt with "16:9 aspect ratio."
+These are the tells of a machine-generated deck. Every one is forbidden unless the style explicitly calls for it:
+
+- Rounded rectangles with a colored left border as callout boxes
+- Gradient backgrounds on every slide (use them sparingly, as accent only)
+- Emoji as icons or decoration
+- Drop shadows on everything; excessive depth / glassmorphism
+- Cute hand-drawn-style SVG illustrations (unless the style is Whiteboard)
+- Decorative accent lines or underlines beneath every title
+- Three-bullet lists as the default for everything
+- Low-contrast text (light on light, dark on dark)
+- Centered body text or centered bulleted lists
+- Content crammed edge-to-edge with no margin
+- Equal density across every slide (no rhythm)
+- Generic topic-label titles ("Overview," "Agenda," "Conclusion")
+- Made-up statistics or fabricated quotes
+- Styling one slide beautifully and leaving the rest inconsistent

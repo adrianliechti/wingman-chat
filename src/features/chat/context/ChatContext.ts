@@ -34,6 +34,7 @@ export interface ChatContextType {
   addMessage: (message: Message) => Promise<void>;
   sendMessage: (message: Message, historyOverride?: Message[]) => Promise<void>;
   retryMessage: () => Promise<void>;
+  setVoiceToolCall: (toolName: string | null) => void;
 
   // Elicitation state
   pendingElicitation: PendingElicitation | null;

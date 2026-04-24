@@ -2,25 +2,31 @@ import {
   AlertCircle,
   AudioLines,
   BarChart3,
-  ChevronDown,
   CircleHelp,
   Download,
+  FileImage,
+  FileText,
   Loader2,
+  MoreHorizontal,
   Network,
   Presentation,
   StickyNote,
   Table2,
+  Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { downloadFromUrl } from "@/shared/lib/utils";
-import { getPodcastStyles, getReportStyles, getSlideStyles, getInfographicStyles } from "../hooks/useNotebook";
-import type { NotebookOutput, NotebookSource, OutputType } from "../types/notebook";
+import type { File } from "@/shared/types/file";
+import type { BuildInstructionsOptions } from "../lib/styles";
+import type { NotebookOutput, OutputType } from "../types/notebook";
+import { type GeneratorOptions, OutputGeneratorDialog } from "./OutputGeneratorDialog";
 
 interface StudioPanelProps {
-  sources: NotebookSource[];
+  sources: File[];
   outputs: NotebookOutput[];
-  onGenerate: (type: OutputType, styleId?: string) => void;
+  onGenerate: (type: OutputType, styleId?: string, options?: BuildInstructionsOptions) => void;
   onDeleteOutput: (outputId: string) => void;
   onSelectOutput: (output: NotebookOutput) => void;
 }
@@ -38,16 +44,30 @@ const OUTPUT_TYPES: {
   { type: "mindmap", label: "Mind Map", icon: Network },
 ];
 
+type ExportFormat = "pdf" | "pptx-image" | "pptx-hybrid" | "pptx-editable" | "png";
+
 export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSelectOutput }: StudioPanelProps) {
   const hasSources = sources.length > 0;
-  const [openMenu, setOpenMenu] = useState<OutputType | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const slideStyles = getSlideStyles();
-  const podcastStyles = getPodcastStyles();
-  const reportStyles = getReportStyles();
-  const infographicStyles = getInfographicStyles();
+  const [dialogType, setDialogType] = useState<OutputType | null>(null);
+  const [exportOverlay, setExportOverlay] = useState<NotebookOutput | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportProgress, setExportProgress] = useState<string | null>(null);
+  // Keep the type stable during the exit animation.
+  const stableDialogType = useRef<OutputType>("slides");
+  if (dialogType) stableDialogType.current = dialogType;
+
+  const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
+  const [actionMenuPos, setActionMenuPos] = useState<{ top: number; right: number } | null>(null);
 
   const downloadOutput = async (output: NotebookOutput) => {
+    // For HTML slides, show export overlay instead of direct download
+    if (output.type === "slides" && output.slideContentType === "text/html" && output.slides?.length) {
+      setExportOverlay(output);
+      setExportError(null);
+      return;
+    }
+
     const slug = output.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
 
     if (output.type === "podcast" && output.audioUrl) {
@@ -61,21 +81,44 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
     }
   };
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenu(null);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  const handleExport = async (format: ExportFormat) => {
+    if (!exportOverlay?.slides?.length) return;
+    const slides = exportOverlay.slides;
+    const slug = exportOverlay.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    setIsExporting(true);
+    setExportError(null);
+    setExportProgress(null);
 
-  const styleMenus: Partial<Record<OutputType, readonly { id: string; label: string }[]>> = {
-    slides: slideStyles,
-    podcast: podcastStyles,
-    report: reportStyles,
-    infographic: infographicStyles,
+    try {
+      if (format === "pdf") {
+        const { downloadHtmlSlidesAsPdf } = await import("../lib/html-slide-export");
+        await downloadHtmlSlidesAsPdf(slides, slug);
+      } else if (format === "pptx-image") {
+        const { downloadHtmlSlidesAsPptx } = await import("../lib/html-slide-export");
+        await downloadHtmlSlidesAsPptx(slides, slug);
+      } else if (format === "pptx-hybrid") {
+        setExportProgress("Exporting slides...");
+        const { downloadHtmlSlidesAsHybridPptx } = await import("../lib/pptx-export-hybrid");
+        await downloadHtmlSlidesAsHybridPptx(slides, slug, (current, total) => {
+          setExportProgress(`Exporting slide ${current} of ${total}...`);
+        });
+      } else if (format === "png") {
+        const { downloadHtmlSlidesAsPng } = await import("../lib/html-slide-export");
+        await downloadHtmlSlidesAsPng(slides, slug);
+      }
+      setExportOverlay(null);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setIsExporting(false);
+      setExportProgress(null);
+    }
+  };
+
+  const DIALOG_TYPES = new Set<OutputType>(["slides", "podcast", "report", "infographic"]);
+
+  const handleDialogGenerate = (_type: OutputType, { styleId, ...rest }: GeneratorOptions) => {
+    onGenerate(_type, styleId, rest);
   };
 
   return (
@@ -84,38 +127,18 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
       <div className="px-3 py-3 border-b border-neutral-200 dark:border-neutral-800">
         <div className="grid grid-cols-2 gap-2">
           {OUTPUT_TYPES.map(({ type, label, icon: Icon }) => {
-            const styles = styleMenus[type];
-            if (styles) {
+            if (DIALOG_TYPES.has(type)) {
               return (
-                <div key={type} className="relative" ref={openMenu === type ? menuRef : undefined}>
-                  <button
-                    type="button"
-                    onClick={() => setOpenMenu((v) => (v === type ? null : type))}
-                    disabled={!hasSources}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
-                  >
-                    <Icon size={16} className="shrink-0" />
-                    <span className="text-xs font-medium flex-1">{label}</span>
-                    <ChevronDown size={12} className="shrink-0 opacity-50" />
-                  </button>
-                  {openMenu === type && (
-                    <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-2 border-white/40 dark:border-neutral-700/60 rounded-lg shadow-2xl shadow-black/40 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 py-1">
-                      {styles.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => {
-                            setOpenMenu(null);
-                            onGenerate(type, s.id);
-                          }}
-                          className="w-full text-left px-3 py-1.5 text-xs text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
-                        >
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setDialogType(type)}
+                  disabled={!hasSources}
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
+                >
+                  <Icon size={16} className="shrink-0" />
+                  <span className="text-xs font-medium">{label}</span>
+                </button>
               );
             }
             return (
@@ -147,7 +170,7 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
               return (
                 <div
                   key={output.id}
-                  className={`group/output flex items-center gap-2 py-1.5 transition-colors ${isGenerating ? "opacity-60" : isError ? "opacity-75" : ""}`}
+                  className={`relative flex items-center gap-2 py-1.5 transition-colors ${isGenerating ? "opacity-60" : isError ? "opacity-75" : ""}`}
                 >
                   <button
                     type="button"
@@ -182,31 +205,30 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                       </p>
                     </div>
                   </button>
+
+                  {/* Actions menu — always visible, works on touch */}
                   {!isGenerating && (
-                    <div className="invisible group-hover/output:visible flex items-center shrink-0">
-                      {output.status === "completed" && canDownload(output) && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            downloadOutput(output);
-                          }}
-                          className="p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-                          title="Download"
-                        >
-                          <Download size={12} className="text-neutral-400" />
-                        </button>
-                      )}
+                    <div className="shrink-0">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onDeleteOutput(output.id);
+                          if (openActionMenu === output.id) {
+                            setOpenActionMenu(null);
+                            setActionMenuPos(null);
+                          } else {
+                            const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                            setActionMenuPos({
+                              top: rect.bottom + 4,
+                              right: window.innerWidth - rect.right,
+                            });
+                            setOpenActionMenu(output.id);
+                          }
                         }}
-                        className="p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-                        title="Delete"
+                        className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                        title="Actions"
                       >
-                        <X size={12} className="text-neutral-400" />
+                        <MoreHorizontal size={14} />
                       </button>
                     </div>
                   )}
@@ -216,6 +238,163 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
           </div>
         )}
       </div>
+
+      {/* Action popover rendered in a portal to escape overflow clipping */}
+      {openActionMenu && actionMenuPos && (() => {
+        const output = outputs.find((o) => o.id === openActionMenu);
+        if (!output) return null;
+        const downloadable = output.status === "completed" && canDownload(output);
+        return createPortal(
+          <>
+            {/* backdrop */}
+            <button
+              type="button"
+              aria-label="Close menu"
+              className="fixed inset-0 z-40 cursor-default"
+              onMouseDown={() => {
+                setOpenActionMenu(null);
+                setActionMenuPos(null);
+              }}
+            />
+            <div
+              className="fixed z-50 min-w-30 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl shadow-black/20 dark:shadow-black/60 py-1 overflow-hidden"
+              style={{ top: actionMenuPos.top, right: actionMenuPos.right }}
+            >
+              {downloadable && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenActionMenu(null);
+                    setActionMenuPos(null);
+                    downloadOutput(output);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <Download size={13} className="text-neutral-400 shrink-0" />
+                  Download
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenActionMenu(null);
+                  setActionMenuPos(null);
+                  onDeleteOutput(output.id);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+              >
+                <Trash2 size={13} className="shrink-0" />
+                Delete
+              </button>
+            </div>
+          </>,
+          document.body,
+        );
+      })()}
+
+      {/* Export format overlay */}
+      {exportOverlay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-neutral-200 dark:border-neutral-700 w-80 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+              <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Export Slides</h3>
+              {!isExporting && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExportOverlay(null);
+                    setExportError(null);
+                  }}
+                  className="p-1 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <X size={14} className="text-neutral-400" />
+                </button>
+              )}
+            </div>
+            <div className="p-3">
+              {isExporting ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-8">
+                  <Loader2 size={24} className="animate-spin text-neutral-400" />
+                  <span className="text-xs text-neutral-500">{exportProgress || "Exporting..."}</span>
+                </div>
+              ) : exportError ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-3 py-2.5 rounded-lg">
+                    <AlertCircle size={14} className="shrink-0" />
+                    <span>{exportError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setExportError(null)}
+                    className="w-full text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 py-1.5"
+                  >
+                    Try again
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => handleExport("pdf")}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left"
+                  >
+                    <FileText size={16} className="text-neutral-400 shrink-0" />
+                    <div>
+                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PDF</p>
+                      <p className="text-[10px] text-neutral-400">Image-based pages, best for sharing</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExport("png")}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left"
+                  >
+                    <FileImage size={16} className="text-neutral-400 shrink-0" />
+                    <div>
+                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PNG Images</p>
+                      <p className="text-[10px] text-neutral-400">Individual slide images in a ZIP</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExport("pptx-image")}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left"
+                  >
+                    <Presentation size={16} className="text-neutral-400 shrink-0" />
+                    <div>
+                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PowerPoint (Image)</p>
+                      <p className="text-[10px] text-neutral-400">Pixel-perfect, not editable</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExport("pptx-hybrid")}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left"
+                  >
+                    <Presentation size={16} className="text-neutral-400 shrink-0" />
+                    <div>
+                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        PowerPoint (Editable)
+                      </p>
+                      <p className="text-[10px] text-neutral-400">Pixel-perfect design with editable text</p>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Output generator dialog */}
+      <OutputGeneratorDialog
+        open={dialogType !== null}
+        type={stableDialogType.current}
+        onClose={() => setDialogType(null)}
+        onGenerate={handleDialogGenerate}
+      />
     </div>
   );
 }

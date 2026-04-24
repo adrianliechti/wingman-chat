@@ -47,9 +47,11 @@ interface STTConfig {
 
 interface NotebookConfig {
   model?: string;
+  renderer?: string;
 }
 
 interface VoiceConfig {
+  enabled?: boolean;
   model?: string;
   transcriber?: string;
 }
@@ -265,7 +267,10 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       notebook: cfg.notebook ?? null,
 
-      voice: cfg.voice ?? null,
+      voice:
+        cfg.voice && cfg.voice.enabled !== false
+          ? { model: cfg.voice.model, transcriber: cfg.voice.transcriber }
+          : null,
       vision: cfg.vision ? { files: cfg.vision.files ?? DEFAULT_VISION_FILES } : null,
 
       text: cfg.text ? { files: cfg.text.files } : null,

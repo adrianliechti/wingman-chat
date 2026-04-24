@@ -8,21 +8,6 @@ export interface Notebook {
   updatedAt: string;
 }
 
-export interface NotebookSource {
-  id: string;
-  type: "web" | "file" | "text";
-  name: string;
-  content: string;
-  audioUrl?: string;
-  metadata?: {
-    url?: string;
-    query?: string;
-    fileType?: string;
-    fileSize?: number;
-  };
-  addedAt: string;
-}
-
 export type OutputType = "podcast" | "slides" | "infographic" | "report" | "quiz" | "mindmap";
 
 export interface QuizQuestion {
@@ -43,7 +28,12 @@ export interface NotebookOutput {
   title: string;
   content: string;
   imageUrl?: string;
+  /** Slide payloads. Interpretation depends on `slideContentType`:
+   *  - `text/html`  → each entry is a self-contained HTML document (1920×1080)
+   *  - `image/png`  → each entry is a PNG data URL
+   */
   slides?: string[];
+  slideContentType?: string;
   audioUrl?: string;
   quiz?: QuizQuestion[];
   mindMap?: MindMapNode;

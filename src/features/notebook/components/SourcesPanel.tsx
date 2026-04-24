@@ -1,41 +1,44 @@
 import { Dialog, Transition } from "@headlessui/react";
 import {
   ArrowRight,
-  ChevronDown,
   Download,
   FileText,
   Globe,
   HardDrive,
+  Image as ImageIcon,
   Link,
   Loader2,
   Mic,
+  MoreHorizontal,
   Plus,
   Search,
+  Trash2,
   Type,
   Upload,
   X,
   Zap,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { acceptTypes } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { downloadFromUrl } from "@/shared/lib/utils";
+import type { File } from "@/shared/types/file";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { Markdown } from "@/shared/ui/Markdown";
-import type { NotebookSource } from "../types/notebook";
 import { FieldRecorderOverlay } from "./FieldRecorderOverlay";
 
 interface SourcesPanelProps {
-  sources: NotebookSource[];
+  sources: File[];
   isSearching: boolean;
   searchWeb: (query: string, mode: "web" | "research") => Promise<string>;
   addSearchResult: (query: string, mode: "web" | "research", content: string) => Promise<void>;
   scrapeWeb: (url: string) => Promise<string>;
   addScrapeResult: (url: string, content: string) => Promise<void>;
-  onFileAdd: (file: File) => Promise<void>;
-  onTextAdd: (name: string, text: string, audioUrl?: string) => Promise<void>;
+  onFileAdd: (file: globalThis.File) => Promise<void>;
+  onTextAdd: (name: string, text: string, audioUrl?: string) => Promise<string>;
   onDeleteSource: (sourceId: string) => void;
 }
 
@@ -65,7 +68,7 @@ export function SourcesPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = useCallback(
-    async (files: File[]) => {
+    async (files: globalThis.File[]) => {
       for (const file of files) {
         const fileId = file.name;
         setExtracting((prev) => new Set([...prev, fileId]));
@@ -98,7 +101,7 @@ export function SourcesPanel({
           }
           const blob = await resp.blob();
           const type = f.mime || blob.type || "";
-          const file = new File([blob], f.name, { type });
+          const file = new globalThis.File([blob], f.name, { type });
           // handleFiles also adds to extracting, so remove our entry first
           setExtracting((prev) => {
             const next = new Set(prev);
@@ -149,14 +152,14 @@ export function SourcesPanel({
 
             {/* Source items */}
             {sources.map((source) => (
-              <SourceItem key={source.id} source={source} onDelete={() => onDeleteSource(source.id)} />
+              <SourceItem key={source.path} source={source} onDelete={() => onDeleteSource(source.path)} />
             ))}
           </div>
         )}
       </div>
 
       {/* Bottom: Add sources dropdown */}
-      <div className="px-3 pt-3 pb-5 relative">
+      <div className="px-3 pt-3 pb-4 relative">
         <button
           type="button"
           onClick={() => setShowAddMenu(!showAddMenu)}
@@ -332,14 +335,13 @@ export function SourcesPanel({
       {/* Field Recorder */}
       {showRecordOverlay && (
         <FieldRecorderOverlay
-          onComplete={async ({ transcript, audioUrl }) => {
+          onSave={async (transcript, audioUrl) => {
             setError(null);
             try {
               await onTextAdd("Field Recording", transcript, audioUrl);
-              setShowRecordOverlay(false);
             } catch (err) {
               setError(err instanceof Error ? err.message : "Failed to add recording");
-              setShowRecordOverlay(false);
+              throw err;
             }
           }}
           onClose={() => setShowRecordOverlay(false)}
@@ -376,18 +378,15 @@ function WebSearchOverlay({
 }) {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<"web" | "research">("web");
-  const [showModeMenu, setShowModeMenu] = useState(false);
   const [preview, setPreview] = useState("");
   const [previewQuery, setPreviewQuery] = useState("");
   const [previewMode, setPreviewMode] = useState<"web" | "research">("web");
   const queryInputRef = useRef<HTMLInputElement>(null);
 
   const modes = {
-    web: { label: "Web", icon: Globe },
-    research: { label: "Research", icon: Zap },
+    web: { label: "Search", icon: Globe, hint: "Quick web search" },
+    research: { label: "Deep Research", icon: Zap, hint: "Deep research with synthesis" },
   };
-
-  const ModeIcon = modes[mode].icon;
 
   useEffect(() => {
     queryInputRef.current?.focus();
@@ -455,53 +454,29 @@ function WebSearchOverlay({
 
           {/* Mode selector */}
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowModeMenu(!showModeMenu)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-full text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
-              >
-                <ModeIcon size={12} />
-                {modes[mode].label}
-                <ChevronDown size={10} />
-              </button>
-
-              {showModeMenu && (
-                <>
+            <div className="inline-flex items-center gap-0.5 p-0.5 bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-full">
+              {(Object.keys(modes) as Array<"web" | "research">).map((m) => {
+                const Icon = modes[m].icon;
+                const isActive = mode === m;
+                return (
                   <button
+                    key={m}
                     type="button"
-                    aria-label="Close search mode menu"
-                    className="fixed inset-0 z-40"
-                    onClick={() => setShowModeMenu(false)}
-                  />
-                  <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg py-1 min-w-32.5">
-                    {(Object.keys(modes) as Array<"web" | "research">).map((m) => {
-                      const Icon = modes[m].icon;
-                      return (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => {
-                            setMode(m);
-                            setShowModeMenu(false);
-                          }}
-                          className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors ${
-                            mode === m ? "text-neutral-900 dark:text-white" : "text-neutral-600 dark:text-neutral-400"
-                          }`}
-                        >
-                          <Icon size={12} />
-                          {modes[m].label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
+                    onClick={() => setMode(m)}
+                    aria-pressed={isActive}
+                    className={`flex items-center gap-1.5 px-3 py-1 text-xs rounded-full transition-colors ${isActive
+                        ? "bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm"
+                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+                      }`}
+                  >
+                    <Icon size={12} />
+                    {modes[m].label}
+                  </button>
+                );
+              })}
             </div>
 
-            <span className="text-xs text-neutral-400 flex-1">
-              {mode === "research" ? "Deep research with synthesis" : "Quick web search"}
-            </span>
+            <span className="text-xs text-neutral-400 flex-1 truncate">{modes[mode].hint}</span>
           </div>
 
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/40 min-h-48 max-h-72 overflow-y-auto">
@@ -779,19 +754,33 @@ function TextInputOverlay({ onAdd, onClose }: { onAdd: (name: string, text: stri
 
 // ── Source Item ─────────────────────────────────────────────────────────
 
-function sourceIcon(source: NotebookSource) {
-  if (source.audioUrl) return Mic;
-  if (source.type === "web") return Globe;
-  if (source.type === "text") return Type;
+function sourceIcon(source: File) {
+  if (source.contentType?.startsWith("audio/")) return Mic;
+  if (source.contentType?.startsWith("image/")) return ImageIcon;
+  if (/^https?:\/\//i.test(source.path)) return Globe;
   return FileText;
 }
 
-function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: () => void }) {
+function isBinarySource(source: File): boolean {
+  return typeof source.content === "string" && source.content.startsWith("data:");
+}
+
+function basename(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash >= 0 ? path.slice(slash + 1) : path;
+}
+
+function SourceItem({ source, onDelete }: { source: File; onDelete: () => void }) {
   const [expanded, setExpanded] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const Icon = sourceIcon(source);
+  const binary = isBinarySource(source);
+  const isAudio = source.contentType?.startsWith("audio/") ?? false;
+  const isImage = source.contentType?.startsWith("image/") ?? false;
 
   return (
-    <div className="group/source">
+    <div>
       <div className="flex items-center gap-2.5 rounded-lg px-1 py-1.5 transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
         <button
           type="button"
@@ -801,41 +790,89 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
           <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-neutral-100 dark:bg-neutral-800">
             <Icon size={12} className="text-neutral-500" />
           </div>
-          <span className="flex-1 truncate text-xs text-neutral-700 dark:text-neutral-300">{source.name}</span>
+          <span className="flex-1 truncate text-xs text-neutral-700 dark:text-neutral-300" title={source.path}>
+            {source.path}
+          </span>
         </button>
-        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/source:opacity-100 transition-opacity">
-          {source.audioUrl && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                downloadFromUrl(source.audioUrl as string, "recording.wav");
-              }}
-              className="p-1 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-            >
-              <Download size={12} className="text-neutral-400" />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="p-1 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-          >
-            <X size={12} className="text-neutral-400" />
-          </button>
-        </div>
+
+        <button
+          type="button"
+          title="Actions"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (menuOpen) {
+              setMenuOpen(false);
+              setMenuPos(null);
+            } else {
+              const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+              setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+              setMenuOpen(true);
+            }
+          }}
+          className="shrink-0 p-1 rounded-md text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+        >
+          <MoreHorizontal size={13} />
+        </button>
       </div>
 
       {expanded && (
         <div className="ml-8.5 mr-2 mb-1 px-2.5 py-2 rounded-md bg-neutral-50 dark:bg-neutral-800/40 max-h-64 overflow-y-auto">
-          <p className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap">
-            {source.content.slice(0, 2000)}
-            {source.content.length > 2000 && "..."}
-          </p>
+          {isAudio ? (
+            // biome-ignore lint/a11y/useMediaCaption: user-recorded audio, no captions available
+            <audio controls className="w-full" src={source.content} />
+          ) : isImage ? (
+            <img src={source.content} alt={source.path} className="max-w-full max-h-60 rounded" />
+          ) : (
+            <p className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap">
+              {binary
+                ? `(${source.contentType ?? "binary"} content)`
+                : `${source.content.slice(0, 2000)}${source.content.length > 2000 ? "..." : ""}`}
+            </p>
+          )}
         </div>
+      )}
+
+      {menuOpen && menuPos && createPortal(
+        <>
+          <button
+            type="button"
+            aria-label="Close menu"
+            className="fixed inset-0 z-40 cursor-default"
+            onMouseDown={() => { setMenuOpen(false); setMenuPos(null); }}
+          />
+          <div
+            className="fixed z-50 min-w-30 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl shadow-black/20 dark:shadow-black/60 py-1 overflow-hidden"
+            style={{ top: menuPos.top, right: menuPos.right }}
+          >
+            {binary && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setMenuPos(null);
+                  downloadFromUrl(source.content, basename(source.path));
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <Download size={13} className="text-neutral-400 shrink-0" />
+                Download
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                setMenuPos(null);
+                onDelete();
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+            >
+              <Trash2 size={13} className="shrink-0" />
+              Delete
+            </button>
+          </div>
+        </>,
+        document.body,
       )}
     </div>
   );

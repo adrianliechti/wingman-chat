@@ -15,8 +15,8 @@
  *   session.destroy();
  */
 
-import type { File } from "@/features/artifacts/types/file";
-import { isDataUrlContent } from "@/shared/lib/artifactFiles";
+import type { File } from "@/shared/types/file";
+import { isDataUrl } from "@/shared/lib/fileContent";
 import { isBinaryContentType } from "@/shared/lib/fileTypes";
 import { decodeBase64, parseDataUrl } from "@/shared/lib/utils";
 
@@ -116,7 +116,7 @@ function generateToken(): string {
 export function toPayload(file: File): PreviewFilePayload {
   const contentType = file.contentType || inferContentType(file.path) || "text/plain;charset=utf-8";
 
-  if (isDataUrlContent(file.content)) {
+  if (isDataUrl(file.content)) {
     const parsed = parseDataUrl(file.content);
     if (parsed) {
       const bytes = decodeBase64(parsed.data).buffer as ArrayBuffer;
