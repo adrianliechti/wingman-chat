@@ -14,7 +14,6 @@ interface WizardNavFooterProps {
 export function WizardNavFooter({
   currentStep,
   totalSteps,
-  canNext,
   isLastStep,
   onBack,
   onNext,
