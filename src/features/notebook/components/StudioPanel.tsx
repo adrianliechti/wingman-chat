@@ -240,59 +240,61 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
       </div>
 
       {/* Action popover rendered in a portal to escape overflow clipping */}
-      {openActionMenu && actionMenuPos && (() => {
-        const output = outputs.find((o) => o.id === openActionMenu);
-        if (!output) return null;
-        const downloadable = output.status === "completed" && canDownload(output);
-        return createPortal(
-          <>
-            {/* backdrop */}
-            <button
-              type="button"
-              aria-label="Close menu"
-              className="fixed inset-0 z-40 cursor-default"
-              onMouseDown={() => {
-                setOpenActionMenu(null);
-                setActionMenuPos(null);
-              }}
-            />
-            <div
-              className="fixed z-50 min-w-30 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl shadow-black/20 dark:shadow-black/60 py-1 overflow-hidden"
-              style={{ top: actionMenuPos.top, right: actionMenuPos.right }}
-            >
-              {downloadable && (
+      {openActionMenu &&
+        actionMenuPos &&
+        (() => {
+          const output = outputs.find((o) => o.id === openActionMenu);
+          if (!output) return null;
+          const downloadable = output.status === "completed" && canDownload(output);
+          return createPortal(
+            <>
+              {/* backdrop */}
+              <button
+                type="button"
+                aria-label="Close menu"
+                className="fixed inset-0 z-40 cursor-default"
+                onMouseDown={() => {
+                  setOpenActionMenu(null);
+                  setActionMenuPos(null);
+                }}
+              />
+              <div
+                className="fixed z-50 min-w-30 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl shadow-black/20 dark:shadow-black/60 py-1 overflow-hidden"
+                style={{ top: actionMenuPos.top, right: actionMenuPos.right }}
+              >
+                {downloadable && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenActionMenu(null);
+                      setActionMenuPos(null);
+                      downloadOutput(output);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    <Download size={13} className="text-neutral-400 shrink-0" />
+                    Download
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     setOpenActionMenu(null);
                     setActionMenuPos(null);
-                    downloadOutput(output);
+                    onDeleteOutput(output.id);
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
                 >
-                  <Download size={13} className="text-neutral-400 shrink-0" />
-                  Download
+                  <Trash2 size={13} className="shrink-0" />
+                  Delete
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setOpenActionMenu(null);
-                  setActionMenuPos(null);
-                  onDeleteOutput(output.id);
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-              >
-                <Trash2 size={13} className="shrink-0" />
-                Delete
-              </button>
-            </div>
-          </>,
-          document.body,
-        );
-      })()}
+              </div>
+            </>,
+            document.body,
+          );
+        })()}
 
       {/* Export format overlay */}
       {exportOverlay && (

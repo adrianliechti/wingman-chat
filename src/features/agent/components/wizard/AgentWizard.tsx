@@ -283,10 +283,7 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
                     />
                   )}
                   {currentStepId === "identity" && (
-                    <IdentityStep
-                      instructions={state.instructions}
-                      dispatch={dispatch}
-                    />
+                    <IdentityStep instructions={state.instructions} dispatch={dispatch} />
                   )}
                   {currentStepId === "skills" && (
                     <SkillsStep selectedSkills={state.selectedSkills} dispatch={dispatch} />

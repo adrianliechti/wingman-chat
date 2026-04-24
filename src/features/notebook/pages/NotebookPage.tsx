@@ -224,10 +224,13 @@ export function NotebookPage() {
     };
   }, [setRightActions, handleNew]);
 
-  const handleSelectOutput = useCallback((output: NotebookOutput) => {
-    setViewingOutput(output);
-    setShowStudioDrawer(false);
-  }, [setViewingOutput]);
+  const handleSelectOutput = useCallback(
+    (output: NotebookOutput) => {
+      setViewingOutput(output);
+      setShowStudioDrawer(false);
+    },
+    [setViewingOutput],
+  );
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden relative">
@@ -235,7 +238,6 @@ export function NotebookPage() {
       <Outlet />
       {/* Main layout */}
       <main className="w-full grow overflow-hidden flex pt-14 relative">
-
         {/* ── Desktop: Left Sources panel ── */}
         <div className="hidden md:block w-72 shrink-0 h-full overflow-hidden">
           {loading ? (
@@ -360,8 +362,9 @@ export function NotebookPage() {
         <button
           type="button"
           aria-label="Close panel"
-          className={`md:hidden absolute inset-0 z-20 bg-black/40 transition-opacity duration-300 cursor-default ${showSourcesDrawer || showStudioDrawer ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-            }`}
+          className={`md:hidden absolute inset-0 z-20 bg-black/40 transition-opacity duration-300 cursor-default ${
+            showSourcesDrawer || showStudioDrawer ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          }`}
           onClick={() => {
             setShowSourcesDrawer(false);
             setShowStudioDrawer(false);
@@ -370,8 +373,9 @@ export function NotebookPage() {
 
         {/* ── Mobile: Sources bottom sheet ── */}
         <div
-          className={`md:hidden absolute inset-x-0 bottom-0 z-30 h-[75vh] rounded-t-2xl bg-white dark:bg-neutral-950 shadow-2xl overflow-hidden flex flex-col transition-transform duration-300 ease-in-out ${showSourcesDrawer ? "translate-y-0" : "translate-y-full"
-            }`}
+          className={`md:hidden absolute inset-x-0 bottom-0 z-30 h-[75vh] rounded-t-2xl bg-white dark:bg-neutral-950 shadow-2xl overflow-hidden flex flex-col transition-transform duration-300 ease-in-out ${
+            showSourcesDrawer ? "translate-y-0" : "translate-y-full"
+          }`}
         >
           <div className="flex justify-center pt-3 pb-1 shrink-0">
             <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />
@@ -393,8 +397,9 @@ export function NotebookPage() {
 
         {/* ── Mobile: Studio bottom sheet ── */}
         <div
-          className={`md:hidden absolute inset-x-0 bottom-0 z-30 h-[75vh] rounded-t-2xl bg-white dark:bg-neutral-950 shadow-2xl overflow-hidden flex flex-col transition-transform duration-300 ease-in-out ${showStudioDrawer ? "translate-y-0" : "translate-y-full"
-            }`}
+          className={`md:hidden absolute inset-x-0 bottom-0 z-30 h-[75vh] rounded-t-2xl bg-white dark:bg-neutral-950 shadow-2xl overflow-hidden flex flex-col transition-transform duration-300 ease-in-out ${
+            showStudioDrawer ? "translate-y-0" : "translate-y-full"
+          }`}
         >
           <div className="flex justify-center pt-3 pb-1 shrink-0">
             <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />
