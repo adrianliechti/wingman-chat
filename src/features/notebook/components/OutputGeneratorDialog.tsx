@@ -1,4 +1,4 @@
-import { Listbox, Transition } from "@headlessui/react";
+import { Listbox, Transition, TransitionChild } from "@headlessui/react";
 import { AudioLines, BarChart3, Check, ChevronsUpDown, Image as ImageIcon, LayoutTemplate, Presentation, Sparkles, Table2, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { getConfig } from "@/shared/config";
@@ -162,9 +162,9 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
 
   return (
     <Transition show={open} as={Fragment}>
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
         {/* Backdrop */}
-        <Transition.Child
+        <TransitionChild
           as={Fragment}
           enter="ease-out duration-200"
           enterFrom="opacity-0"
@@ -179,30 +179,30 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
             onClick={onClose}
             className="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm cursor-default"
           />
-        </Transition.Child>
+        </TransitionChild>
 
         {/* Panel */}
-        <Transition.Child
+        <TransitionChild
           as={Fragment}
           enter="ease-out duration-200"
-          enterFrom="opacity-0 scale-95"
-          enterTo="opacity-100 scale-100"
+          enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+          enterTo="opacity-100 translate-y-0 sm:scale-100"
           leave="ease-in duration-150"
-          leaveFrom="opacity-100 scale-100"
-          leaveTo="opacity-0 scale-95"
+          leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+          leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
         >
           <div
             role="dialog"
             aria-modal="true"
-            className="relative w-[42rem] max-w-[calc(100vw-2rem)] bg-white/90 dark:bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-200/80 dark:border-neutral-700/80 overflow-hidden"
+            className="relative w-full sm:w-2xl sm:max-w-[calc(100vw-2rem)] bg-white/90 dark:bg-neutral-900/95 backdrop-blur-xl rounded-t-2xl sm:rounded-2xl shadow-2xl border border-neutral-200/80 dark:border-neutral-700/80 overflow-hidden"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200/60 dark:border-neutral-800/60">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-200/60 dark:border-neutral-800/60">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
+                <div className="shrink-0 w-7 h-7 rounded-lg bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
                   <Icon size={14} className="text-neutral-600 dark:text-neutral-400" />
                 </div>
-                <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{meta.title}</h3>
+                <span className="text-sm font-semibold leading-none text-neutral-900 dark:text-neutral-100">{meta.title}</span>
               </div>
               <button
                 type="button"
@@ -214,12 +214,12 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
             </div>
 
             {/* Body */}
-            <div className="px-5 py-4 space-y-5 max-h-[70vh] overflow-y-auto">
+            <div className="px-5 py-4 space-y-5 max-h-[60vh] sm:max-h-[70vh] overflow-y-auto">
               {/* ── Slide mode toggle ── */}
               {isSlides && (
                 <div>
                   <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">Mode</p>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
                     {([
                       { id: "html" as const, label: "Structured", desc: "Editable, PowerPoint-compatible", icon: LayoutTemplate },
                       { id: "images" as const, label: "Creative", desc: "AI-generated visuals, non-editable", icon: ImageIcon },
@@ -228,11 +228,10 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                         key={m.id}
                         type="button"
                         onClick={() => setSlideMode(m.id)}
-                        className={`relative text-left p-3 rounded-lg border transition-colors ${
-                          slideMode === m.id
-                            ? "border-blue-500/60 dark:border-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30"
-                            : "border-neutral-300/50 dark:border-neutral-700/50 bg-white/50 dark:bg-neutral-800/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 backdrop-blur-sm"
-                        }`}
+                        className={`relative text-left p-3 rounded-lg border transition-colors ${slideMode === m.id
+                          ? "border-blue-500/60 dark:border-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30"
+                          : "border-neutral-300/50 dark:border-neutral-700/50 bg-white/50 dark:bg-neutral-800/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 backdrop-blur-sm"
+                          }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2">
@@ -256,25 +255,23 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
               {showStylePicker && showDescriptionCards && (
                 <div>
                   <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">Format</p>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {styles.map((s) => (
                       <button
                         key={s.id}
                         type="button"
                         onClick={() => setStyleId(s.id)}
-                        className={`relative text-left p-3 rounded-lg border transition-colors ${
-                          styleId === s.id
-                            ? "border-blue-500/60 dark:border-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30"
-                            : "border-neutral-300/50 dark:border-neutral-700/50 bg-white/50 dark:bg-neutral-800/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 backdrop-blur-sm"
-                        }`}
+                        className={`relative text-left p-3 rounded-lg border transition-colors ${styleId === s.id
+                          ? "border-blue-500/60 dark:border-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30"
+                          : "border-neutral-300/50 dark:border-neutral-700/50 bg-white/50 dark:bg-neutral-800/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 backdrop-blur-sm"
+                          }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <p
-                            className={`text-xs font-semibold ${
-                              styleId === s.id
-                                ? "text-blue-700 dark:text-blue-300"
-                                : "text-neutral-700 dark:text-neutral-300"
-                            }`}
+                            className={`text-xs font-semibold ${styleId === s.id
+                              ? "text-blue-700 dark:text-blue-300"
+                              : "text-neutral-700 dark:text-neutral-300"
+                              }`}
                           >
                             {s.label}
                           </p>
@@ -284,11 +281,10 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                         </div>
                         {s.description && (
                           <p
-                            className={`text-[10px] leading-snug mt-1 ${
-                              styleId === s.id
-                                ? "text-blue-600/70 dark:text-blue-400/70"
-                                : "text-neutral-500 dark:text-neutral-500"
-                            }`}
+                            className={`text-[10px] leading-snug mt-1 ${styleId === s.id
+                              ? "text-blue-600/70 dark:text-blue-400/70"
+                              : "text-neutral-500 dark:text-neutral-500"
+                              }`}
                           >
                             {s.description}
                           </p>
@@ -305,17 +301,16 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                   <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">
                     {type === "infographic" ? "Visual style" : "Theme"}
                   </p>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                     {styles.map((s) => (
                       <button
                         key={s.id}
                         type="button"
                         onClick={() => setStyleId(s.id)}
-                        className={`relative flex items-center justify-between px-3 py-2 text-xs rounded-lg border transition-colors text-left ${
-                          styleId === s.id
-                            ? "border-blue-500/60 dark:border-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 font-medium"
-                            : "border-neutral-300/50 dark:border-neutral-700/50 bg-white/50 dark:bg-neutral-800/50 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 backdrop-blur-sm"
-                        }`}
+                        className={`relative flex items-center justify-between px-3 py-2 text-xs rounded-lg border transition-colors text-left ${styleId === s.id
+                          ? "border-blue-500/60 dark:border-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 font-medium"
+                          : "border-neutral-300/50 dark:border-neutral-700/50 bg-white/50 dark:bg-neutral-800/50 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 backdrop-blur-sm"
+                          }`}
                       >
                         {s.label}
                         {styleId === s.id && <Check size={11} className="shrink-0 text-blue-500 dark:text-blue-400" />}
@@ -376,11 +371,10 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                         key={p.id}
                         type="button"
                         onClick={() => setPreset(p.id)}
-                        className={`flex-1 py-2 px-2 text-xs font-medium transition-colors truncate ${
-                          preset === p.id
-                            ? "bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100"
-                            : "bg-white/50 dark:bg-neutral-800/50 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300"
-                        }`}
+                        className={`flex-1 py-2 px-2 text-xs font-medium transition-colors truncate ${preset === p.id
+                          ? "bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100"
+                          : "bg-white/50 dark:bg-neutral-800/50 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300"
+                          }`}
                       >
                         {p.label}
                         {p.count !== null && (
@@ -451,7 +445,7 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
               </button>
             </div>
           </div>
-        </Transition.Child>
+        </TransitionChild>
       </div>
     </Transition>
   );

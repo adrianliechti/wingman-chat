@@ -220,7 +220,7 @@ export function useNotebook(notebookId?: string) {
 
   const addFileSource = useCallback(
     async (file: globalThis.File) => {
-      if (!notebook) return;
+      const nb = await ensureNotebook();
 
       let path: string;
       try {
@@ -239,7 +239,7 @@ export function useNotebook(notebookId?: string) {
           content: dataUrl,
           contentType: file.type,
         };
-        await store.addSource(notebook.id, source);
+        await store.addSource(nb.id, source);
         setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
         return;
       }
@@ -251,11 +251,11 @@ export function useNotebook(notebookId?: string) {
       }
 
       const source: File = { path, content };
-      await store.addSource(notebook.id, source);
-      store.touchNotebook(notebook.id);
+      await store.addSource(nb.id, source);
+      store.touchNotebook(nb.id);
       setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
-    [notebook],
+    [ensureNotebook],
   );
 
   const addTextSource = useCallback(
