@@ -1,5 +1,16 @@
 import { Listbox, Transition, TransitionChild } from "@headlessui/react";
-import { AudioLines, BarChart3, Check, ChevronsUpDown, Image as ImageIcon, LayoutTemplate, Presentation, Sparkles, Table2, X } from "lucide-react";
+import {
+  AudioLines,
+  BarChart3,
+  Check,
+  ChevronsUpDown,
+  Image as ImageIcon,
+  LayoutTemplate,
+  Presentation,
+  Sparkles,
+  Table2,
+  X,
+} from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { getConfig } from "@/shared/config";
 import type { BuildInstructionsOptions, Style } from "../lib/styles";
@@ -202,7 +213,9 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                 <div className="shrink-0 w-7 h-7 rounded-lg bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
                   <Icon size={14} className="text-neutral-600 dark:text-neutral-400" />
                 </div>
-                <span className="text-sm font-semibold leading-none text-neutral-900 dark:text-neutral-100">{meta.title}</span>
+                <span className="text-sm font-semibold leading-none text-neutral-900 dark:text-neutral-100">
+                  {meta.title}
+                </span>
               </div>
               <button
                 type="button"
@@ -220,29 +233,53 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                 <div>
                   <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">Mode</p>
                   <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
-                    {([
-                      { id: "html" as const, label: "Structured", desc: "Editable, PowerPoint-compatible", icon: LayoutTemplate },
-                      { id: "images" as const, label: "Creative", desc: "AI-generated visuals, non-editable", icon: ImageIcon },
-                    ]).map((m) => (
+                    {[
+                      {
+                        id: "html" as const,
+                        label: "Structured",
+                        desc: "Editable, PowerPoint-compatible",
+                        icon: LayoutTemplate,
+                      },
+                      {
+                        id: "images" as const,
+                        label: "Creative",
+                        desc: "AI-generated visuals, non-editable",
+                        icon: ImageIcon,
+                      },
+                    ].map((m) => (
                       <button
                         key={m.id}
                         type="button"
                         onClick={() => setSlideMode(m.id)}
-                        className={`relative text-left p-3 rounded-lg border transition-colors ${slideMode === m.id
-                          ? "border-blue-500/60 dark:border-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30"
-                          : "border-neutral-300/50 dark:border-neutral-700/50 bg-white/50 dark:bg-neutral-800/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 backdrop-blur-sm"
-                          }`}
+                        className={`relative text-left p-3 rounded-lg border transition-colors ${
+                          slideMode === m.id
+                            ? "border-blue-500/60 dark:border-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30"
+                            : "border-neutral-300/50 dark:border-neutral-700/50 bg-white/50 dark:bg-neutral-800/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 backdrop-blur-sm"
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <m.icon size={13} className={slideMode === m.id ? "text-blue-600 dark:text-blue-400" : "text-neutral-500 dark:text-neutral-500"} />
-                            <p className={`text-xs font-semibold ${slideMode === m.id ? "text-blue-700 dark:text-blue-300" : "text-neutral-700 dark:text-neutral-300"}`}>
+                            <m.icon
+                              size={13}
+                              className={
+                                slideMode === m.id
+                                  ? "text-blue-600 dark:text-blue-400"
+                                  : "text-neutral-500 dark:text-neutral-500"
+                              }
+                            />
+                            <p
+                              className={`text-xs font-semibold ${slideMode === m.id ? "text-blue-700 dark:text-blue-300" : "text-neutral-700 dark:text-neutral-300"}`}
+                            >
                               {m.label}
                             </p>
                           </div>
-                          {slideMode === m.id && <Check size={12} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />}
+                          {slideMode === m.id && (
+                            <Check size={12} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
+                          )}
                         </div>
-                        <p className={`text-[10px] leading-snug mt-1 ${slideMode === m.id ? "text-blue-600/70 dark:text-blue-400/70" : "text-neutral-500 dark:text-neutral-500"}`}>
+                        <p
+                          className={`text-[10px] leading-snug mt-1 ${slideMode === m.id ? "text-blue-600/70 dark:text-blue-400/70" : "text-neutral-500 dark:text-neutral-500"}`}
+                        >
                           {m.desc}
                         </p>
                       </button>
@@ -261,17 +298,19 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                         key={s.id}
                         type="button"
                         onClick={() => setStyleId(s.id)}
-                        className={`relative text-left p-3 rounded-lg border transition-colors ${styleId === s.id
-                          ? "border-blue-500/60 dark:border-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30"
-                          : "border-neutral-300/50 dark:border-neutral-700/50 bg-white/50 dark:bg-neutral-800/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 backdrop-blur-sm"
-                          }`}
+                        className={`relative text-left p-3 rounded-lg border transition-colors ${
+                          styleId === s.id
+                            ? "border-blue-500/60 dark:border-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30"
+                            : "border-neutral-300/50 dark:border-neutral-700/50 bg-white/50 dark:bg-neutral-800/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 backdrop-blur-sm"
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <p
-                            className={`text-xs font-semibold ${styleId === s.id
-                              ? "text-blue-700 dark:text-blue-300"
-                              : "text-neutral-700 dark:text-neutral-300"
-                              }`}
+                            className={`text-xs font-semibold ${
+                              styleId === s.id
+                                ? "text-blue-700 dark:text-blue-300"
+                                : "text-neutral-700 dark:text-neutral-300"
+                            }`}
                           >
                             {s.label}
                           </p>
@@ -281,10 +320,11 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                         </div>
                         {s.description && (
                           <p
-                            className={`text-[10px] leading-snug mt-1 ${styleId === s.id
-                              ? "text-blue-600/70 dark:text-blue-400/70"
-                              : "text-neutral-500 dark:text-neutral-500"
-                              }`}
+                            className={`text-[10px] leading-snug mt-1 ${
+                              styleId === s.id
+                                ? "text-blue-600/70 dark:text-blue-400/70"
+                                : "text-neutral-500 dark:text-neutral-500"
+                            }`}
                           >
                             {s.description}
                           </p>
@@ -307,10 +347,11 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                         key={s.id}
                         type="button"
                         onClick={() => setStyleId(s.id)}
-                        className={`relative flex items-center justify-between px-3 py-2 text-xs rounded-lg border transition-colors text-left ${styleId === s.id
-                          ? "border-blue-500/60 dark:border-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 font-medium"
-                          : "border-neutral-300/50 dark:border-neutral-700/50 bg-white/50 dark:bg-neutral-800/50 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 backdrop-blur-sm"
-                          }`}
+                        className={`relative flex items-center justify-between px-3 py-2 text-xs rounded-lg border transition-colors text-left ${
+                          styleId === s.id
+                            ? "border-blue-500/60 dark:border-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 font-medium"
+                            : "border-neutral-300/50 dark:border-neutral-700/50 bg-white/50 dark:bg-neutral-800/50 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 backdrop-blur-sm"
+                        }`}
                       >
                         {s.label}
                         {styleId === s.id && <Check size={11} className="shrink-0 text-blue-500 dark:text-blue-400" />}
@@ -371,10 +412,11 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                         key={p.id}
                         type="button"
                         onClick={() => setPreset(p.id)}
-                        className={`flex-1 py-2 px-2 text-xs font-medium transition-colors truncate ${preset === p.id
-                          ? "bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100"
-                          : "bg-white/50 dark:bg-neutral-800/50 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300"
-                          }`}
+                        className={`flex-1 py-2 px-2 text-xs font-medium transition-colors truncate ${
+                          preset === p.id
+                            ? "bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100"
+                            : "bg-white/50 dark:bg-neutral-800/50 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300"
+                        }`}
                       >
                         {p.label}
                         {p.count !== null && (

@@ -18,7 +18,16 @@ import {
 } from "../lib/output-generators";
 import { createSourceExecTools } from "../lib/source-exec-tools";
 import { createSourceTools } from "../lib/source-tools";
-import { type BuildInstructionsOptions, buildInstructions, chatInstructions, infographicStyles, OUTPUT_META, podcastStyles, reportStyles, slideStyles } from "../lib/styles";
+import {
+  type BuildInstructionsOptions,
+  buildInstructions,
+  chatInstructions,
+  infographicStyles,
+  OUTPUT_META,
+  podcastStyles,
+  reportStyles,
+  slideStyles,
+} from "../lib/styles";
 import type { Notebook, NotebookMessage, NotebookOutput, OutputType } from "../types/notebook";
 
 export function getSlideStyles() {

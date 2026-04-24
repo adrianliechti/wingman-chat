@@ -451,17 +451,7 @@ async function rasterizeSlideDoc(
         info.objectPosition,
       );
       ctx.globalAlpha = info.opacity;
-      ctx.drawImage(
-        overlayImg,
-        draw.sx,
-        draw.sy,
-        draw.sw,
-        draw.sh,
-        draw.dx,
-        draw.dy,
-        draw.dw,
-        draw.dh,
-      );
+      ctx.drawImage(overlayImg, draw.sx, draw.sy, draw.sw, draw.sh, draw.dx, draw.dy, draw.dw, draw.dh);
       ctx.globalAlpha = 1;
     }
     overlayImg.src = ""; // release data URL reference
