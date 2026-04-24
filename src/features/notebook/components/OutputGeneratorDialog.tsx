@@ -1,19 +1,16 @@
 import { Listbox, Transition } from "@headlessui/react";
-import { AudioLines, BarChart3, Check, ChevronsUpDown, Presentation, Sparkles, Table2, X } from "lucide-react";
+import { AudioLines, BarChart3, Check, ChevronsUpDown, Image as ImageIcon, LayoutTemplate, Presentation, Sparkles, Table2, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { getConfig } from "@/shared/config";
-import type { Style } from "../lib/styles";
+import type { BuildInstructionsOptions, Style } from "../lib/styles";
 import { infographicStyles, podcastStyles, reportStyles, slideStyles } from "../lib/styles";
 import type { OutputType } from "../types/notebook";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-export interface GeneratorOptions {
+export type GeneratorOptions = BuildInstructionsOptions & {
   styleId?: string;
-  language?: string;
-  slideCount?: number;
-  instructions?: string;
-}
+};
 
 interface OutputGeneratorDialogProps {
   open: boolean;
@@ -107,19 +104,21 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
   const languages = useMemo(resolveLanguages, []);
   const allLanguages = useMemo(() => [AUTO_LANGUAGE, ...languages], [languages]);
 
+  const [slideMode, setSlideMode] = useState<"html" | "images">("html");
   const [styleId, setStyleId] = useState<string>("");
   const [selectedLang, setSelectedLang] = useState<LanguageOption>(AUTO_LANGUAGE);
   const [preset, setPreset] = useState<SlidePreset>("standard");
   const [customCount, setCustomCount] = useState(SLIDE_COUNT_DEFAULT);
   const [instructions, setInstructions] = useState("");
 
-  const showSlideCount = type === "slides";
+  const isSlides = type === "slides";
   const showDescriptionCards = meta?.descriptionCards ?? false;
   const showStylePicker = styles.length > 0;
 
   // Reset state each time the dialog opens.
   useEffect(() => {
     if (open) {
+      setSlideMode("html");
       setStyleId(styles[0]?.id ?? "");
       setSelectedLang(AUTO_LANGUAGE);
       setPreset("standard");
@@ -149,7 +148,10 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
       language: selectedLang.code === "auto" ? undefined : selectedLang.name,
       instructions: instructions.trim() || undefined,
     };
-    if (showSlideCount) opts.slideCount = resolvedCount();
+    if (isSlides) {
+      opts.slideCount = resolvedCount();
+      opts.slideMode = slideMode;
+    }
     onGenerate(type, opts);
     onClose();
   };
@@ -213,6 +215,43 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
 
             {/* Body */}
             <div className="px-5 py-4 space-y-5 max-h-[70vh] overflow-y-auto">
+              {/* ── Slide mode toggle ── */}
+              {isSlides && (
+                <div>
+                  <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">Mode</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { id: "html" as const, label: "Structured", desc: "Editable, PowerPoint-compatible", icon: LayoutTemplate },
+                      { id: "images" as const, label: "Creative", desc: "AI-generated visuals, non-editable", icon: ImageIcon },
+                    ]).map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setSlideMode(m.id)}
+                        className={`relative text-left p-3 rounded-lg border transition-colors ${
+                          slideMode === m.id
+                            ? "border-blue-500/60 dark:border-blue-500/50 bg-blue-50/70 dark:bg-blue-950/30"
+                            : "border-neutral-300/50 dark:border-neutral-700/50 bg-white/50 dark:bg-neutral-800/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 backdrop-blur-sm"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <m.icon size={13} className={slideMode === m.id ? "text-blue-600 dark:text-blue-400" : "text-neutral-500 dark:text-neutral-500"} />
+                            <p className={`text-xs font-semibold ${slideMode === m.id ? "text-blue-700 dark:text-blue-300" : "text-neutral-700 dark:text-neutral-300"}`}>
+                              {m.label}
+                            </p>
+                          </div>
+                          {slideMode === m.id && <Check size={12} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />}
+                        </div>
+                        <p className={`text-[10px] leading-snug mt-1 ${slideMode === m.id ? "text-blue-600/70 dark:text-blue-400/70" : "text-neutral-500 dark:text-neutral-500"}`}>
+                          {m.desc}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* ── Style: description cards (podcast / report) ── */}
               {showStylePicker && showDescriptionCards && (
                 <div>
@@ -326,7 +365,7 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
               </div>
 
               {/* ── Slide count (slides only) ── */}
-              {showSlideCount && (
+              {isSlides && (
                 <div>
                   <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">
                     Number of slides

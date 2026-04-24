@@ -3,9 +3,12 @@
  *
  * Each slide gets:
  * 1. A full-resolution JPEG background (all visual design preserved)
- * 2. Editable shapes (rectangles with fills/borders)
- * 3. Editable images (movable/replaceable in PowerPoint)
- * 4. Editable text boxes (searchable, editable with formatting)
+ * 2. Editable images (movable/replaceable in PowerPoint)
+ * 3. Editable text boxes (searchable, editable with formatting)
+ *
+ * Decorative shapes are left in the background raster — re-emitting them as
+ * solid-fill PPTX rectangles drops alpha, gradients, shadows, and transforms,
+ * which visibly degrades the design.
  *
  * No LLM needed — fast, deterministic export.
  */
@@ -86,8 +89,7 @@ export async function downloadHtmlSlidesAsHybridPptx(
 
     // Build slide XML
     const textElements = parsed.elements.filter((el) => el.type === "text");
-    const shapeElements = parsed.elements.filter((el) => el.type === "shape");
-    const slideXml = buildSlideXml(textElements, shapeElements, imageElements, imageMedia);
+    const slideXml = buildSlideXml(textElements, imageElements, imageMedia);
     zip.file(`ppt/slides/slide${slideNum}.xml`, slideXml);
 
     // Build slide rels
@@ -122,7 +124,6 @@ ${rels.join("\n")}
 
 function buildSlideXml(
   textElements: ParsedElement[],
-  shapeElements: ParsedElement[],
   imageElements: ParsedElement[],
   imageMedia: { rId: string; mediaPath: string }[],
 ): string {
@@ -136,30 +137,7 @@ function buildSlideXml(
       <p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${SLIDE_CX}" cy="${SLIDE_CY}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>
     </p:pic>`);
 
-  // Layer 2: Editable shapes
-  for (const sh of shapeElements) {
-    const id = nextId++;
-    const prst = sh.borderRadius && sh.borderRadius > 5 ? "roundRect" : "rect";
-    const fillXml = sh.backgroundColor
-      ? `<a:solidFill><a:srgbClr val="${cssColorToHex(sh.backgroundColor)}"/></a:solidFill>`
-      : "<a:noFill/>";
-    const lineXml =
-      sh.borderColor && sh.borderWidth
-        ? `<a:ln w="${Math.round(sh.borderWidth * 12700)}"><a:solidFill><a:srgbClr val="${cssColorToHex(sh.borderColor)}"/></a:solidFill></a:ln>`
-        : "<a:ln><a:noFill/></a:ln>";
-
-    parts.push(`    <p:sp>
-      <p:nvSpPr><p:cNvPr id="${id}" name="Shape ${id}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
-      <p:spPr>
-        <a:xfrm><a:off x="${pxToEmu(sh.x)}" y="${pxToEmu(sh.y)}"/><a:ext cx="${pxToEmu(sh.w)}" cy="${pxToEmu(sh.h)}"/></a:xfrm>
-        <a:prstGeom prst="${prst}"><a:avLst/></a:prstGeom>
-        ${fillXml}
-        ${lineXml}
-      </p:spPr>
-    </p:sp>`);
-  }
-
-  // Layer 3: Editable images
+  // Layer 2: Editable images
   for (let imgIdx = 0; imgIdx < imageElements.length; imgIdx++) {
     const img = imageElements[imgIdx];
     const media = imageMedia[imgIdx];
@@ -179,7 +157,7 @@ function buildSlideXml(
     </p:pic>`);
   }
 
-  // Layer 4: Editable text boxes
+  // Layer 3: Editable text boxes
   for (const el of textElements) {
     if (!el.paragraphs?.length) continue;
     const id = nextId++;

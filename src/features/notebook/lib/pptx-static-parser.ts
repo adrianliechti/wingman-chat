@@ -22,7 +22,7 @@ export interface ParsedParagraph {
 }
 
 export interface ParsedElement {
-  type: "text" | "image" | "shape";
+  type: "text" | "image";
   x: number;
   y: number;
   w: number;
@@ -34,11 +34,6 @@ export interface ParsedElement {
   color?: string;
   textAlign?: string;
   paragraphs?: ParsedParagraph[];
-  backgroundColor?: string;
-  borderRadius?: number;
-  borderColor?: string;
-  borderWidth?: number;
-  opacity?: number;
   imageData?: string;
   /** Natural pixel dimensions of the source image — used to preserve aspect ratio in PPTX. */
   naturalW?: number;
@@ -155,23 +150,6 @@ export async function parseSlideHtml(html: string): Promise<ParsedSlide> {
         }
 
         const isLeaf = isLeafTextBlock(el);
-        const hasBg = style.backgroundColor !== "rgba(0, 0, 0, 0)" && style.backgroundColor !== "transparent";
-        const hasBorder = style.borderWidth !== "0px" && style.borderStyle !== "none";
-
-        if ((hasBg || hasBorder) && !isLeaf) {
-          elements.push({
-            type: "shape",
-            x: rect.left,
-            y: rect.top,
-            w: rect.width,
-            h: rect.height,
-            backgroundColor: hasBg ? style.backgroundColor : undefined,
-            borderRadius: parseFloat(style.borderRadius) || 0,
-            borderColor: hasBorder ? style.borderColor : undefined,
-            borderWidth: hasBorder ? parseFloat(style.borderWidth) || 0 : 0,
-            opacity: parseFloat(style.opacity),
-          });
-        }
 
         if (isLeaf) {
           const paragraphs = extractParagraphs(el, win);

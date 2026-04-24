@@ -118,7 +118,6 @@ type Memory struct{}
 type Notebook struct {
 	Model        string                `json:"model,omitempty" yaml:"model,omitempty"`
 	Renderer     string                `json:"renderer,omitempty" yaml:"renderer,omitempty"`
-	Mode         string                `json:"mode,omitempty" yaml:"mode,omitempty"`
 	Slides       []NotebookSlide       `json:"slides,omitempty" yaml:"slides,omitempty"`
 	Podcasts     []NotebookPodcast     `json:"podcasts,omitempty" yaml:"podcasts,omitempty"`
 	Reports      []NotebookReport      `json:"reports,omitempty" yaml:"reports,omitempty"`

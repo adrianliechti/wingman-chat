@@ -16,17 +16,14 @@ import {
 import { useRef, useState } from "react";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import type { File } from "@/shared/types/file";
+import type { BuildInstructionsOptions } from "../lib/styles";
 import type { NotebookOutput, OutputType } from "../types/notebook";
 import { type GeneratorOptions, OutputGeneratorDialog } from "./OutputGeneratorDialog";
 
 interface StudioPanelProps {
   sources: File[];
   outputs: NotebookOutput[];
-  onGenerate: (
-    type: OutputType,
-    styleId?: string,
-    options?: { language?: string; slideCount?: number; instructions?: string },
-  ) => void;
+  onGenerate: (type: OutputType, styleId?: string, options?: BuildInstructionsOptions) => void;
   onDeleteOutput: (outputId: string) => void;
   onSelectOutput: (output: NotebookOutput) => void;
 }
@@ -114,12 +111,8 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
 
   const DIALOG_TYPES = new Set<OutputType>(["slides", "podcast", "report", "infographic"]);
 
-  const handleDialogGenerate = (_type: OutputType, opts: GeneratorOptions) => {
-    onGenerate(_type, opts.styleId, {
-      language: opts.language,
-      slideCount: opts.slideCount,
-      instructions: opts.instructions,
-    });
+  const handleDialogGenerate = (_type: OutputType, { styleId, ...rest }: GeneratorOptions) => {
+    onGenerate(_type, styleId, rest);
   };
 
   return (

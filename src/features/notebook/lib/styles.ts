@@ -263,12 +263,14 @@ export interface BuildInstructionsOptions {
   slideCount?: number;
   /** Free-form user instructions appended to the prompt (e.g. audience, focus, tone). */
   instructions?: string;
+  /** Slide generation mode: "html" for editable/structured, "images" for AI-generated visuals. */
+  slideMode?: "html" | "images";
 }
 
 /**
  * Assemble the final system prompt for an output generation.
  *
- * Slide generation has two modes controlled by `config.notebook?.mode`:
+ * Slide generation has two modes controlled by `options.slideMode`:
  *   - `"images"` → uses a dedicated image-mode template (no style substitution;
  *      consistency is achieved via the per-deck style-reference image)
  *   - otherwise → HTML slides template + `{{COMMON_RULES}}` + `{{STYLE_SECTION}}`
@@ -283,8 +285,11 @@ export interface BuildInstructionsOptions {
 export function buildInstructions(type: OutputType, styleId?: string, options?: BuildInstructionsOptions): string {
   let prompt: string;
 
-  if (type === "slides" && getConfig().notebook?.mode === "images") {
+  if (type === "slides" && options?.slideMode === "images") {
     prompt = studioSlideImageInstructions;
+
+    const style = slideStyles.get(styleId ?? OUTPUT_META.slides.defaultStyleId);
+    prompt += `\n\n${style.prompt}\n`;
   } else {
     const meta = OUTPUT_META[type];
     prompt = meta.template;

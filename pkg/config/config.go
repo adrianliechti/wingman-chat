@@ -88,7 +88,6 @@ func applyEnvOverrides(cfg *Config) {
 	withFeature("MEMORY_ENABLED", &cfg.Memory, nil)
 
 	withFeature("NOTEBOOK_ENABLED", &cfg.Notebook, func(n *Notebook) {
-		envOverride("NOTEBOOK_MODE", &n.Mode)
 		envOverride("NOTEBOOK_MODEL", &n.Model)
 		envOverride("NOTEBOOK_RENDERER", &n.Renderer)
 	})

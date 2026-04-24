@@ -128,6 +128,93 @@ function utf8ToBase64(str: string): string {
 }
 
 /**
+ * Compute source and destination rects for `ctx.drawImage` that reproduce
+ * CSS `object-fit` + `object-position` when blitting an image into a box.
+ *
+ * Without this the canvas composite would stretch every image to fill the
+ * element's bounding rect, destroying the aspect ratio that `object-fit:
+ * cover` / `contain` establish in the live DOM.
+ */
+function computeObjectFitDraw(
+  naturalW: number,
+  naturalH: number,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number,
+  fit: string | undefined,
+  position: string | undefined,
+): { sx: number; sy: number; sw: number; sh: number; dx: number; dy: number; dw: number; dh: number } {
+  const full = { sx: 0, sy: 0, sw: naturalW, sh: naturalH, dx, dy, dw, dh };
+  if (!naturalW || !naturalH || dw <= 0 || dh <= 0) return full;
+
+  // `none` would render at natural size, centered. Slide layouts never use
+  // this, and `scale-down` + small images are rare, so collapse both to
+  // `contain` for simplicity (it's the visually safer default).
+  const mode = fit === "none" || fit === "scale-down" ? "contain" : fit || "fill";
+
+  // Parse `object-position` — accept percentages or keywords. Default 50% 50%.
+  const pos = parsePosition(position);
+
+  const rectAR = dw / dh;
+  const imgAR = naturalW / naturalH;
+
+  if (mode === "cover") {
+    // Scale the image to cover the rect, cropping the overflow axis.
+    let sw = naturalW;
+    let sh = naturalH;
+    if (rectAR > imgAR) {
+      sh = naturalW / rectAR;
+    } else {
+      sw = naturalH * rectAR;
+    }
+    const sx = (naturalW - sw) * pos.x;
+    const sy = (naturalH - sh) * pos.y;
+    return { sx, sy, sw, sh, dx, dy, dw, dh };
+  }
+
+  if (mode === "contain") {
+    // Fit the image inside the rect, letterboxing the overflow axis.
+    let vw = dw;
+    let vh = dh;
+    if (rectAR > imgAR) {
+      vw = dh * imgAR;
+    } else {
+      vh = dw / imgAR;
+    }
+    return {
+      sx: 0,
+      sy: 0,
+      sw: naturalW,
+      sh: naturalH,
+      dx: dx + (dw - vw) * pos.x,
+      dy: dy + (dh - vh) * pos.y,
+      dw: vw,
+      dh: vh,
+    };
+  }
+
+  // `fill` (CSS default) or unknown → stretch.
+  return full;
+}
+
+/** Parse `object-position` / `background-position` into 0–1 fractions (center default). */
+function parsePosition(value: string | undefined): { x: number; y: number } {
+  if (!value) return { x: 0.5, y: 0.5 };
+  const parts = value.trim().split(/\s+/);
+  const parse = (token: string | undefined, fallback: number): number => {
+    if (!token) return fallback;
+    if (token === "left" || token === "top") return 0;
+    if (token === "right" || token === "bottom") return 1;
+    if (token === "center") return 0.5;
+    const pct = /^(-?\d+(?:\.\d+)?)%$/.exec(token);
+    if (pct) return Math.max(0, Math.min(1, parseFloat(pct[1]) / 100));
+    return fallback;
+  };
+  return { x: parse(parts[0], 0.5), y: parse(parts[1], 0.5) };
+}
+
+/**
  * Rasterize a mounted slide into a canvas using a layered approach:
  *
  * Data-URL images inside an SVG foreignObject don't render (Chrome blocks
@@ -192,6 +279,13 @@ async function rasterizeSlideDoc(
     w: number;
     h: number;
     opacity: number;
+    /** Natural pixel dimensions of the source image — used for object-fit math. */
+    naturalW?: number;
+    naturalH?: number;
+    /** CSS `object-fit` (`cover`, `contain`, `fill`, …). Absent for background-image overlays. */
+    objectFit?: string;
+    /** CSS `object-position`, e.g. "50% 50%". Absent for background-image overlays. */
+    objectPosition?: string;
   }
   const overlays: ImageOverlay[] = [];
 
@@ -222,8 +316,19 @@ async function rasterizeSlideDoc(
     }
 
     if (dataUrl) {
-      const opacity = parseFloat(win.getComputedStyle(img).opacity) || 1;
-      overlays.push({ dataUrl, x: rect.left, y: rect.top, w: rect.width, h: rect.height, opacity });
+      const style = win.getComputedStyle(img);
+      overlays.push({
+        dataUrl,
+        x: rect.left,
+        y: rect.top,
+        w: rect.width,
+        h: rect.height,
+        opacity: parseFloat(style.opacity) || 1,
+        naturalW: img.naturalWidth || undefined,
+        naturalH: img.naturalHeight || undefined,
+        objectFit: style.objectFit || undefined,
+        objectPosition: style.objectPosition || undefined,
+      });
       savedImgVis.push({ el: img, vis: img.style.visibility });
       img.style.visibility = "hidden";
     }
@@ -242,8 +347,22 @@ async function rasterizeSlideDoc(
 
     const match = bg.match(/url\(["']?(data:[^"')]+)["']?\)/);
     if (match) {
-      const opacity = parseFloat(computed.opacity) || 1;
-      overlays.push({ dataUrl: match[1], x: rect.left, y: rect.top, w: rect.width, h: rect.height, opacity });
+      // Map `background-size` to the equivalent `object-fit` so compositing
+      // preserves aspect ratio for cover/contain backgrounds too.
+      const bgSize = computed.backgroundSize;
+      let objectFit: string | undefined;
+      if (bgSize === "cover") objectFit = "cover";
+      else if (bgSize === "contain") objectFit = "contain";
+      overlays.push({
+        dataUrl: match[1],
+        x: rect.left,
+        y: rect.top,
+        w: rect.width,
+        h: rect.height,
+        opacity: parseFloat(computed.opacity) || 1,
+        objectFit,
+        objectPosition: computed.backgroundPosition || undefined,
+      });
       savedBgEls.push({ el, orig: el.style.backgroundImage });
       el.style.backgroundImage = "none";
     }
@@ -319,13 +438,29 @@ async function rasterizeSlideDoc(
       overlayImg.src = info.dataUrl;
     });
     if (overlayImg.naturalWidth > 0) {
-      ctx.globalAlpha = info.opacity;
-      ctx.drawImage(
-        overlayImg,
+      const natW = info.naturalW ?? overlayImg.naturalWidth;
+      const natH = info.naturalH ?? overlayImg.naturalHeight;
+      const draw = computeObjectFitDraw(
+        natW,
+        natH,
         info.x * RASTER_SCALE,
         info.y * RASTER_SCALE,
         info.w * RASTER_SCALE,
         info.h * RASTER_SCALE,
+        info.objectFit,
+        info.objectPosition,
+      );
+      ctx.globalAlpha = info.opacity;
+      ctx.drawImage(
+        overlayImg,
+        draw.sx,
+        draw.sy,
+        draw.sw,
+        draw.sh,
+        draw.dx,
+        draw.dy,
+        draw.dw,
+        draw.dh,
       );
       ctx.globalAlpha = 1;
     }

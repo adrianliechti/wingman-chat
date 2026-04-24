@@ -48,7 +48,6 @@ interface STTConfig {
 interface NotebookConfig {
   model?: string;
   renderer?: string;
-  mode?: "html" | "images";
 }
 
 interface VoiceConfig {

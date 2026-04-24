@@ -393,7 +393,7 @@ export function useNotebook(notebookId?: string) {
         },
       };
 
-      const isImageMode = config.notebook?.mode === "images";
+      const isImageMode = options?.slideMode === "images";
       const task: Promise<Partial<NotebookOutput>> =
         type === "podcast"
           ? generatePodcast(ctx, styleId)
@@ -426,7 +426,7 @@ export function useNotebook(notebookId?: string) {
           );
         });
     },
-    [notebook, sources, client, config, getModel],
+    [notebook, sources, client, getModel],
   );
 
   const deleteOutput = useCallback(
