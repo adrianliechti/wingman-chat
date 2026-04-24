@@ -1,8 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { useVoiceWebSockets } from "@/features/voice/hooks/useVoiceWebSockets";
 import { getConfig } from "@/shared/config";
+import type { AudioContent, FileContent, ImageContent, TextContent } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import type { VoiceContextType } from "./VoiceContext";
@@ -14,6 +15,8 @@ interface VoiceProviderProps {
 
 export function VoiceProvider({ children }: VoiceProviderProps) {
   const [isListening, setIsListening] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const lastLevelUpdateRef = useRef(0);
   const config = getConfig();
   const [isAvailable] = useState(() => {
     try {
@@ -23,7 +26,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       return false;
     }
   });
-  const { addMessage, messages, chat, models, model: selectedModel } = useChat();
+  const { addMessage, messages, chat, models, model: selectedModel, setVoiceToolCall } = useChat();
   const model = chat?.model ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext("voice", model);
   const { inputDeviceId, outputDeviceId } = useAudioDevices();
@@ -96,12 +99,41 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     [addMessage],
   );
 
-  const { start, stop } = useVoiceWebSockets(onUserTranscript, onAssistantTranscript);
+  const onToolCall = useCallback((toolName: string) => {
+    setVoiceToolCall(toolName);
+  }, [setVoiceToolCall]);
+
+  const onToolCallDone = useCallback(() => {
+    setVoiceToolCall(null);
+  }, [setVoiceToolCall]);
+
+  const onToolResult = useCallback(
+    (toolName: string, callId: string, result: (TextContent | ImageContent | AudioContent | FileContent)[]) => {
+      // Persist the raw result (including images) as a user message with a tool_result part
+      addMessage({
+        role: Role.User,
+        content: [
+          {
+            type: "tool_result",
+            id: callId,
+            name: toolName,
+            arguments: "{}",
+            result,
+          },
+        ],
+      });
+    },
+    [addMessage],
+  );
+
+  const { start, stop, sendText } = useVoiceWebSockets(onUserTranscript, onAssistantTranscript, onToolCall, onToolCallDone, onToolResult);
 
   const stopVoice = useCallback(async () => {
     await stop();
     setIsListening(false);
-  }, [stop]);
+    setAudioLevel(0);
+    setVoiceToolCall(null);
+  }, [stop, setVoiceToolCall]);
 
   const startVoice = useCallback(async () => {
     try {
@@ -115,6 +147,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         await chatTools(),
         inputDeviceId,
         outputDeviceId,
+        (level) => {
+          const now = Date.now();
+          if (now - lastLevelUpdateRef.current > 80) {
+            lastLevelUpdateRef.current = now;
+            setAudioLevel(level);
+          }
+        },
       );
       setIsListening(true);
     } catch (error) {
@@ -139,11 +178,21 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     outputDeviceId,
   ]);
 
+  const sendVoiceText = useCallback(
+    (text: string) => {
+      addMessage({ role: Role.User, content: [{ type: "text", text }] });
+      sendText(text);
+    },
+    [addMessage, sendText],
+  );
+
   const value: VoiceContextType = {
     isAvailable,
     isListening,
+    audioLevel,
     startVoice,
     stopVoice,
+    sendText: sendVoiceText,
   };
 
   return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;

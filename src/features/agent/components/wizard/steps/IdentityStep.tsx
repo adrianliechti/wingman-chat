@@ -3,64 +3,19 @@ import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
 
 interface IdentityStepProps {
-  name: string;
-  description: string;
   instructions: string;
-  showValidation: boolean;
   dispatch: Dispatch<WizardAction>;
 }
 
-export function IdentityStep({ name, description, instructions, showValidation, dispatch }: IdentityStepProps) {
-  const nameInputId = useId();
-  const descriptionInputId = useId();
+export function IdentityStep({ instructions, dispatch }: IdentityStepProps) {
   const instructionsInputId = useId();
-  const nameError = showValidation && !name.trim() ? "Name is required" : "";
 
   return (
     <div className="space-y-4">
       <StepHeader
         title="Define your agent's identity"
-        description="An agent is a reusable AI persona with its own instructions, skills, and tools. Start by giving it a name, then shape its behavior with instructions — think of them as the agent's soul. Only the name is required; everything else can be added later."
+        description="Shape your agent's behavior with instructions — think of them as the agent's soul. This is optional and can be updated anytime."
       />
-
-      <div>
-        <label
-          htmlFor={nameInputId}
-          className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
-        >
-          Name <span className="text-red-400">*</span>
-        </label>
-        <input
-          id={nameInputId}
-          type="text"
-          value={name}
-          onChange={(e) => dispatch({ type: "SET_NAME", value: e.target.value })}
-          placeholder="My Agent"
-          className={`w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border ${
-            nameError
-              ? "border-red-400/70 dark:border-red-500/70 focus:ring-red-500/60"
-              : "border-neutral-300/60 dark:border-neutral-700/60 focus:ring-neutral-500/60"
-          } focus:ring-2 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors`}
-        />
-        {nameError && <p className="mt-1 text-xs text-red-500">{nameError}</p>}
-      </div>
-
-      <div>
-        <label
-          htmlFor={descriptionInputId}
-          className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
-        >
-          Description
-        </label>
-        <input
-          id={descriptionInputId}
-          type="text"
-          value={description}
-          onChange={(e) => dispatch({ type: "SET_DESCRIPTION", value: e.target.value })}
-          placeholder="A one-liner about what this agent does"
-          className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 backdrop-blur-sm border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
-        />
-      </div>
 
       <div>
         <label

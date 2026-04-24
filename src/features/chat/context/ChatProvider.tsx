@@ -48,7 +48,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   } = useChats();
   const { isAvailable: artifactsEnabled, setFileSystem: setArtifactsFileSystem } = useArtifacts();
   const { renderApp, closeApp } = useApp();
-  const { currentAgent } = useAgents();
+  const { currentAgent, setCurrentAgent } = useAgents();
   const { resetTools } = useToolsContext();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
@@ -125,11 +125,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
       closeApp();
 
       // When starting a new chat, reset realtime model back to default
-      if (!id && selectedModel?.id === "realtime") {
+      if (!id && (selectedModel?.id === "realtime" || chatModel?.id === "realtime")) {
         setSelectedModel(models[0] ?? null);
       }
+
+      // When starting a new chat, clear the selected agent
+      if (!id) {
+        setCurrentAgent(null);
+      }
     },
-    [resetTools, closeApp, selectedModel, models, setSelectedModel],
+    [resetTools, closeApp, selectedModel, chatModel, models, setSelectedModel, setCurrentAgent],
   );
 
   const deleteChat = useCallback(
@@ -453,6 +458,27 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [pendingElicitation],
   );
 
+  const setVoiceToolCall = useCallback(
+    (toolName: string | null) => {
+      if (toolName === null) {
+        updateStreamingMessage(null);
+        setIsResponding(false);
+      } else {
+        const id = chatId;
+        if (!id) return;
+        setIsResponding(true);
+        updateStreamingMessage({
+          chatId: id,
+          message: {
+            role: Role.Assistant,
+            content: [{ type: "tool_call", id: crypto.randomUUID(), name: toolName, arguments: "{}" }],
+          },
+        });
+      }
+    },
+    [chatId, updateStreamingMessage],
+  );
+
   const stopStreaming = useCallback(() => {
     const controller = abortControllerRef.current;
     if (!controller) return;
@@ -496,6 +522,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     addMessage,
     sendMessage,
     retryMessage,
+    setVoiceToolCall,
 
     isResponding,
     stopStreaming,

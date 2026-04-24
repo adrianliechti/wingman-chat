@@ -184,7 +184,7 @@ export function AgentDrawer() {
               {/* None Option */}
               <button
                 type="button"
-                className="group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80 flex items-center gap-2"
+                className="group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80 flex items-center gap-2 w-full"
                 onClick={() => handleAgentSelect(null)}
               >
                 <X size={16} className="text-neutral-600 dark:text-neutral-300 shrink-0" />
