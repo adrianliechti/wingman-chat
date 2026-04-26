@@ -27,7 +27,9 @@ export interface GenAIResponseInfo {
   model?: string;
   finishReasons?: string[];
   inputTokens?: number;
+  cachedInputTokens?: number;
   outputTokens?: number;
+  reasoningTokens?: number;
 }
 
 /**
@@ -75,9 +77,17 @@ export async function traceGenAI<T>(
           span.setAttribute("gen_ai.usage.input_tokens", response.inputTokens);
           genaiTokens.record(response.inputTokens, { ...metricAttrs, "gen_ai.token.type": "input" });
         }
+        if (response.cachedInputTokens != null) {
+          span.setAttribute("gen_ai.usage.cached_input_tokens", response.cachedInputTokens);
+          genaiTokens.record(response.cachedInputTokens, { ...metricAttrs, "gen_ai.token.type": "cached" });
+        }
         if (response.outputTokens != null) {
           span.setAttribute("gen_ai.usage.output_tokens", response.outputTokens);
           genaiTokens.record(response.outputTokens, { ...metricAttrs, "gen_ai.token.type": "output" });
+        }
+        if (response.reasoningTokens != null) {
+          span.setAttribute("gen_ai.usage.reasoning_tokens", response.reasoningTokens);
+          genaiTokens.record(response.reasoningTokens, { ...metricAttrs, "gen_ai.token.type": "reasoning" });
         }
 
         responseModelForDuration = responseModel;
