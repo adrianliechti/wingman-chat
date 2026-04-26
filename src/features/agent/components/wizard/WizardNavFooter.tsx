@@ -14,7 +14,6 @@ interface WizardNavFooterProps {
 export function WizardNavFooter({
   currentStep,
   totalSteps,
-  canNext,
   isLastStep,
   onBack,
   onNext,
@@ -55,7 +54,7 @@ export function WizardNavFooter({
             onClick={onNext}
             className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md text-neutral-700 dark:text-neutral-200 bg-neutral-200/70 dark:bg-neutral-700/70 hover:bg-neutral-300/70 dark:hover:bg-neutral-600/70 transition-colors"
           >
-            {canNext ? "Next" : "Skip"} <ChevronRight size={14} />
+            Next <ChevronRight size={14} />
           </button>
         )}
       </div>

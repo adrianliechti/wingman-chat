@@ -22,6 +22,7 @@ import {
   readBlob,
   writeBlob,
 } from "./opfs-core";
+import { lookupContentType } from "./utils";
 
 // ============================================================================
 // Co-located Blob Storage (blobs stored within their parent entity folder)
@@ -126,7 +127,19 @@ async function rehydrateContentBlobForChat(chatId: string, content: StoredConten
       const blob = await getChatBlob(chatId, blobId);
 
       if (blob) {
-        const dataUrl = await blobToDataUrl(blob);
+        // .bin files lose their MIME on OPFS read-back; re-infer from the content name.
+        const needsMime = !blob.type || blob.type === "application/octet-stream";
+        let effectiveBlob = blob;
+        if (needsMime) {
+          const ext = (content as { name?: string }).name?.split(".").pop() ?? "";
+          const inferredMime =
+            lookupContentType(ext) ??
+            (content.type === "image" ? "image/png" : content.type === "audio" ? "audio/wav" : undefined);
+          if (inferredMime) {
+            effectiveBlob = new Blob([blob], { type: inferredMime });
+          }
+        }
+        const dataUrl = await blobToDataUrl(effectiveBlob);
         return { ...content, data: dataUrl };
       }
       // Blob not found, return with empty data or placeholder

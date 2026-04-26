@@ -1,4 +1,4 @@
-import { artifactContentToBlob } from "./artifactFiles";
+import { contentToBlob } from "./fileContent";
 import { inferContentTypeFromPath } from "./fileTypes";
 import { decodeDataURL, readAsDataURL } from "./utils";
 
@@ -113,7 +113,7 @@ export async function writeText(
   content: string,
   contentType: string = "text/plain;charset=utf-8",
 ): Promise<void> {
-  await writeBlob(path, artifactContentToBlob(content, contentType));
+  await writeBlob(path, contentToBlob(content, contentType));
 }
 
 /**
@@ -194,7 +194,7 @@ export async function readFileMetadata(path: string): Promise<{ size: number; co
 
   return {
     size: blob.size,
-    contentType: blob.type || inferContentType(path),
+    contentType: inferContentType(path) || blob.type,
   };
 }
 

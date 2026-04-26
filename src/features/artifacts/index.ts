@@ -16,4 +16,4 @@ export { artifactKind, artifactLanguage, processUploadedFile } from "./lib/artif
 export { FileSystemManager } from "./lib/fs";
 
 // Types
-export type { File, FileSystem } from "./types/file";
+export type { File, FileSystem } from "@/shared/types/file";

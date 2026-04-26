@@ -117,7 +117,8 @@ export class Client {
                   content.push({ type: "input_text", text: part.text });
                 } else if (part.type === "image") {
                   const imgPart = part as ImageContent;
-                  // data is already a full data URL
+                  // Skip attachments with unrecognized MIME (e.g. application/octet-stream)
+                  if (imgPart.data.startsWith("data:application/octet-stream")) continue;
                   content.push({
                     type: "input_image",
                     image_url: imgPart.data,
@@ -125,7 +126,7 @@ export class Client {
                   });
                 } else if (part.type === "file") {
                   const filePart = part as FileContent;
-                  // data is already a full data URL
+                  if (filePart.data.startsWith("data:application/octet-stream")) continue;
                   content.push({
                     type: "input_file",
                     file_data: filePart.data,
@@ -268,6 +269,7 @@ export class Client {
           .stream({
             model: model,
             store: false,
+            truncation: "auto",
             tools: this.toTools(tools),
             input: items,
             instructions: instructions,
@@ -357,7 +359,9 @@ export class Client {
               id: finalResponse.id,
               model: finalResponse.model,
               inputTokens: finalResponse.usage?.input_tokens,
+              cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
               outputTokens: finalResponse.usage?.output_tokens,
+              reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
             },
           };
         } catch (error) {
@@ -730,6 +734,7 @@ export class Client {
           model,
           instructions,
           input,
+          truncation: "auto",
           text: { format: zodTextFormat(schema, name) },
         });
         return { result: response.output_parsed ?? null };

@@ -1,5 +1,5 @@
 import { Dialog, Transition } from "@headlessui/react";
-import { Bot, ClipboardCheck, Folder, Wrench, X, Zap } from "lucide-react";
+import { Bot, ClipboardCheck, Folder, LayoutGrid, Wrench, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
@@ -9,6 +9,7 @@ import { KnowledgeStep } from "./steps/KnowledgeStep";
 import { ReviewStep } from "./steps/ReviewStep";
 import { SkillsStep } from "./steps/SkillsStep";
 import { ToolsStep } from "./steps/ToolsStep";
+import { TypeStep } from "./steps/TypeStep";
 import { WizardNavFooter } from "./WizardNavFooter";
 import { type StepDef, WizardStepIndicator } from "./WizardStepIndicator";
 
@@ -18,6 +19,8 @@ interface WizardState {
   currentStep: number;
   visitedSteps: Set<number>;
   showValidation: boolean;
+
+  agentType: "model" | "realtime";
 
   name: string;
   description: string;
@@ -36,6 +39,7 @@ interface WizardState {
 export type WizardAction =
   | { type: "SET_STEP"; step: number }
   | { type: "SHOW_VALIDATION" }
+  | { type: "SET_AGENT_TYPE"; value: "model" | "realtime" }
   | { type: "SET_NAME"; value: string }
   | { type: "SET_DESCRIPTION"; value: string }
   | { type: "SET_INSTRUCTIONS"; value: string }
@@ -54,6 +58,7 @@ function initialState(): WizardState {
     currentStep: 0,
     visitedSteps: new Set([0]),
     showValidation: false,
+    agentType: "model",
     name: "",
     description: "",
     instructions: "",
@@ -75,6 +80,15 @@ function reducer(state: WizardState, action: WizardAction): WizardState {
     }
     case "SHOW_VALIDATION":
       return { ...state, showValidation: true };
+    case "SET_AGENT_TYPE":
+      return {
+        ...state,
+        agentType: action.value,
+        model: action.value === "realtime" ? "realtime" : "",
+        currentStep: 0,
+        visitedSteps: new Set([0]),
+        showValidation: false,
+      };
     case "SET_NAME":
       return { ...state, name: action.value };
     case "SET_DESCRIPTION":
@@ -116,11 +130,15 @@ function reducer(state: WizardState, action: WizardAction): WizardState {
 
 function getSteps(): StepDef[] {
   const config = getConfig();
-  const steps: StepDef[] = [
-    { id: "identity", label: "Identity", icon: Bot },
-    { id: "skills", label: "Skills", icon: Zap },
-    { id: "tools", label: "Tools", icon: Wrench },
-  ];
+  const steps: StepDef[] = [];
+
+  if (config.voice) {
+    steps.push({ id: "type", label: "Type", icon: LayoutGrid });
+  }
+
+  steps.push({ id: "identity", label: "Identity", icon: Bot });
+  steps.push({ id: "skills", label: "Skills", icon: Zap });
+  steps.push({ id: "tools", label: "Tools", icon: Wrench });
   if (config.repository) {
     steps.push({ id: "knowledge", label: "Knowledge", icon: Folder });
   }
@@ -147,20 +165,21 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
   const isLastStep = state.currentStep === steps.length - 1;
   const currentStepId = steps[state.currentStep]?.id;
 
-  // Identity step requires a name
-  const canAdvanceFromIdentity = !!state.name.trim();
+  // Type step (or identity step when no voice config) requires a name
+  const canAdvanceFromNameStep = !!state.name.trim();
+  const nameStepId = steps.find((s) => s.id === "type") ? "type" : "identity";
 
-  const canNext = currentStepId === "identity" ? canAdvanceFromIdentity : true;
+  const canNext = currentStepId === nameStepId ? canAdvanceFromNameStep : true;
 
   const handleNext = useCallback(() => {
-    if (currentStepId === "identity" && !canAdvanceFromIdentity) {
+    if (currentStepId === nameStepId && !canAdvanceFromNameStep) {
       dispatch({ type: "SHOW_VALIDATION" });
       return;
     }
     if (state.currentStep < steps.length - 1) {
       dispatch({ type: "SET_STEP", step: state.currentStep + 1 });
     }
-  }, [currentStepId, canAdvanceFromIdentity, state.currentStep, steps.length]);
+  }, [currentStepId, nameStepId, canAdvanceFromNameStep, state.currentStep, steps.length]);
 
   const handleBack = useCallback(() => {
     if (state.currentStep > 0) {
@@ -177,7 +196,6 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
     setIsCreating(true);
     try {
       const agent = await createAgent(s.name.trim(), {
-        description: s.description.trim() || undefined,
         instructions: s.instructions.trim() || undefined,
         skills: s.selectedSkills,
         tools: s.selectedTools,
@@ -256,14 +274,16 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
 
                 {/* Step content */}
                 <div className="px-5 py-4 flex-1 overflow-y-auto">
-                  {currentStepId === "identity" && (
-                    <IdentityStep
+                  {currentStepId === "type" && (
+                    <TypeStep
+                      agentType={state.agentType}
                       name={state.name}
-                      description={state.description}
-                      instructions={state.instructions}
                       showValidation={state.showValidation}
                       dispatch={dispatch}
                     />
+                  )}
+                  {currentStepId === "identity" && (
+                    <IdentityStep instructions={state.instructions} dispatch={dispatch} />
                   )}
                   {currentStepId === "skills" && (
                     <SkillsStep selectedSkills={state.selectedSkills} dispatch={dispatch} />
@@ -277,7 +297,6 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
                   {currentStepId === "review" && (
                     <ReviewStep
                       name={state.name}
-                      description={state.description}
                       instructions={state.instructions}
                       selectedSkills={state.selectedSkills}
                       selectedTools={state.selectedTools}

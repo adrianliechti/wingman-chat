@@ -7,8 +7,9 @@ import { useChats } from "@/features/chat/hooks/useChats";
 import { useModels } from "@/features/chat/hooks/useModels";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
+import { run as agentRun } from "@/shared/lib/agent";
 import { getErrorInfo } from "@/shared/lib/errors";
-import type { Content, Message, Model, ToolContext } from "@/shared/types/chat";
+import type { Content, Message, Model, ToolCallContent, ToolContext } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import type { Elicitation, ElicitationResult, PendingElicitation } from "@/shared/types/elicitation";
 import { useApp } from "@/shell/hooks/useApp";
@@ -47,7 +48,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   } = useChats();
   const { isAvailable: artifactsEnabled, setFileSystem: setArtifactsFileSystem } = useArtifacts();
   const { renderApp, closeApp } = useApp();
-  const { currentAgent } = useAgents();
+  const { currentAgent, setCurrentAgent } = useAgents();
   const { resetTools } = useToolsContext();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
@@ -124,11 +125,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
       closeApp();
 
       // When starting a new chat, reset realtime model back to default
-      if (!id && selectedModel?.id === "realtime") {
+      if (!id && (selectedModel?.id === "realtime" || chatModel?.id === "realtime")) {
         setSelectedModel(models[0] ?? null);
       }
+
+      // When starting a new chat, clear the selected agent
+      if (!id) {
+        setCurrentAgent(null);
+      }
     },
-    [resetTools, closeApp, selectedModel, models, setSelectedModel],
+    [resetTools, closeApp, selectedModel, chatModel, models, setSelectedModel, setCurrentAgent],
   );
 
   const deleteChat = useCallback(
@@ -226,72 +232,44 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const outgoingMessage = appendTextContent(message, pendingModelContext);
 
       let conversation = [...history, outgoingMessage];
-      let modelConversation = pruneAtCompaction(conversation);
 
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
 
       // Create tool context with current message content and elicitation support
-      const createToolContext = (currentToolCall: {
-        id: string;
-        name: string;
-      }): { context: ToolContext; getResultMeta: () => Record<string, unknown> | undefined } => {
-        let resultMeta: Record<string, unknown> | undefined;
+      const createToolContext = (currentToolCall: { id: string; name: string }): ToolContext => {
         return {
-          context: {
-            content: () =>
-              outgoingMessage.content.filter(
-                (p: Content) => p.type === "text" || p.type === "image" || p.type === "file",
-              ) as Content[],
-            sendMessage: async (appMessage: Message) => {
-              await run(id, appMessage, conversation, initialTitle);
-            },
-            setContext: async (text: string | null) => {
-              await updateModelContext(id, text);
-            },
-            elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
-              return new Promise((resolve) => {
-                setPendingElicitation({
-                  toolCallId: currentToolCall.id,
-                  toolName: currentToolCall.name,
-                  elicitation,
-                  resolve,
-                });
-              });
-            },
-            onElicitationComplete: (elicitationId: string) => {
-              const cb = elicitationCompleteCallbacksRef.current.get(elicitationId);
-              if (cb) {
-                elicitationCompleteCallbacksRef.current.delete(elicitationId);
-                cb();
-              }
-            },
-            render: async () => {
-              console.log("[Render] Getting iframe for tool call:", currentToolCall.id, currentToolCall.name);
-
-              return renderApp();
-            },
-            setMeta: (meta: Record<string, unknown>) => {
-              resultMeta = meta;
-            },
-            updateMeta: (meta: Record<string, unknown>) => {
-              resultMeta = { ...resultMeta, ...meta };
-              // Also update the persisted chat data since this may be called
-              // asynchronously after the tool result message has been committed
-              updateChat(id, (prev) => ({
-                messages: prev.messages.map((msg) => ({
-                  ...msg,
-                  content: msg.content.map((part) => {
-                    if (part.type === "tool_result" && part.id === currentToolCall.id) {
-                      return { ...part, meta: { ...part.meta, ...meta } };
-                    }
-                    return part;
-                  }),
-                })),
-              }));
-            },
+          content: () =>
+            outgoingMessage.content.filter(
+              (p: Content) => p.type === "text" || p.type === "image" || p.type === "file",
+            ) as Content[],
+          sendMessage: async (appMessage: Message) => {
+            await run(id, appMessage, conversation, initialTitle);
           },
-          getResultMeta: () => resultMeta,
+          setContext: async (text: string | null) => {
+            await updateModelContext(id, text);
+          },
+          elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
+            return new Promise((resolve) => {
+              setPendingElicitation({
+                toolCallId: currentToolCall.id,
+                toolName: currentToolCall.name,
+                elicitation,
+                resolve,
+              });
+            });
+          },
+          onElicitationComplete: (elicitationId: string) => {
+            const cb = elicitationCompleteCallbacksRef.current.get(elicitationId);
+            if (cb) {
+              elicitationCompleteCallbacksRef.current.delete(elicitationId);
+              cb();
+            }
+          },
+          render: async () => {
+            console.log("[Render] Getting iframe for tool call:", currentToolCall.id, currentToolCall.name);
+            return renderApp();
+          },
         };
       };
 
@@ -300,153 +278,64 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const tools = await chatTools();
         const instructions = chatInstructions();
 
-        // Main completion loop to handle tool calls
-        while (true) {
-          // Track streaming content in-memory to avoid writing the full conversation on every token
-          updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: [] } });
+        const abortController = new AbortController();
+        abortControllerRef.current = abortController;
 
-          const abortController = new AbortController();
-          abortControllerRef.current = abortController;
+        conversation = await agentRun(client, currentModel.id, instructions, conversation, tools, {
+          options: {
+            effort: model?.effort,
+            summary: model?.summary,
+            verbosity: model?.verbosity,
+            compactThreshold: model?.compactThreshold,
+            signal: abortController.signal,
+          },
+          prepareMessages: pruneAtCompaction,
+          onTurnStart: () => {
+            updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: [] } });
+          },
+          onStream: (contentParts) => {
+            updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: contentParts } });
+          },
+          onTurnEnd: (assistant) => {
+            conversation = [...conversation, assistant];
+            updateChat(id, () => ({ messages: conversation }));
+            updateStreamingMessage(null);
+          },
+          createToolContext: (toolCall: ToolCallContent) => createToolContext(toolCall),
+          onToolResult: (toolResult) => {
+            conversation = [...conversation, toolResult];
+            setPendingElicitation(null);
+            updateChat(id, () => ({ messages: conversation }));
+          },
+          onToolMeta: (toolCallId, meta) => {
+            // Late meta update — tool_result message is already committed; patch it in place.
+            updateChat(id, (prev) => ({
+              messages: prev.messages.map((msg) => ({
+                ...msg,
+                content: msg.content.map((part) => {
+                  if (part.type === "tool_result" && part.id === toolCallId) {
+                    return { ...part, meta: { ...part.meta, ...meta } };
+                  }
+                  return part;
+                }),
+              })),
+            }));
+          },
+        });
 
-          const assistantMessage = await client.complete(
-            currentModel.id,
-            instructions,
-            modelConversation,
-            tools,
-            (contentParts) => {
-              updateStreamingMessage({
-                chatId: id,
-                message: {
-                  role: Role.Assistant,
-                  content: contentParts,
-                },
-              });
-            },
-            {
-              effort: model?.effort,
-              summary: model?.summary,
-              verbosity: model?.verbosity,
-              compactThreshold: model?.compactThreshold,
-              signal: abortController.signal,
-            },
-          );
-
-          abortControllerRef.current = null;
-
-          // If the stream was stopped by the user, exit cleanly
-          if (abortController.signal.aborted) {
-            return;
-          }
-
-          // Add the assistant message to conversation
-          conversation = [...conversation, assistantMessage];
-          modelConversation = pruneAtCompaction([...modelConversation, assistantMessage]);
-
-          // Commit the completed message once per turn
-          updateChat(id, () => ({ messages: conversation }));
-
-          // Clear streaming buffer now that the message is persisted
-          updateStreamingMessage(null);
-
-          // Check if there are tool calls to handle
-          const toolCalls = assistantMessage.content.filter((p) => p.type === "tool_call");
-
-          if (toolCalls.length === 0) {
-            // No tool calls, we're done
-            break;
-          }
-
-          // Handle each tool call
-          for (const toolCall of toolCalls) {
-            if (toolCall.type !== "tool_call") continue;
-
-            const tool = tools.find((t) => t.name === toolCall.name);
-
-            if (!tool) {
-              // Tool not found - add error message as user message with tool result
-              conversation = [
-                ...conversation,
-                {
-                  role: Role.User,
-                  content: [
-                    {
-                      type: "tool_result",
-                      id: toolCall.id,
-                      name: toolCall.name,
-                      arguments: toolCall.arguments,
-                      result: [{ type: "text", text: `Error: Tool "${toolCall.name}" not found or not executable.` }],
-                    },
-                  ],
-                  error: {
-                    code: "TOOL_NOT_FOUND",
-                    message: `Tool "${toolCall.name}" is not available or not executable.`,
-                  },
-                },
-              ];
-              modelConversation = [...modelConversation, conversation[conversation.length - 1]];
-
-              continue;
-            }
-
-            try {
-              const args = JSON.parse(toolCall.arguments || "{}");
-              const { context: toolContext, getResultMeta } = createToolContext(toolCall);
-
-              const result = await tool.function(args, toolContext);
-
-              // Clear pending elicitation after tool completes
-              setPendingElicitation(null);
-
-              // Add tool result to conversation as user message
-              const toolResultMessage: Message = {
-                role: Role.User,
-                content: [
-                  {
-                    type: "tool_result",
-                    id: toolCall.id,
-                    name: toolCall.name,
-                    arguments: toolCall.arguments,
-                    result: result,
-                    ...(getResultMeta() ? { meta: getResultMeta() } : {}),
-                  },
-                ],
-              };
-              conversation = [...conversation, toolResultMessage];
-              modelConversation = [...modelConversation, toolResultMessage];
-            } catch (error) {
-              console.error("Tool failed", error);
-
-              // Add tool error to conversation as user message
-              const toolErrorMessage: Message = {
-                role: Role.User,
-                content: [
-                  {
-                    type: "tool_result",
-                    id: toolCall.id,
-                    name: toolCall.name,
-                    arguments: toolCall.arguments,
-                    result: [{ type: "text", text: "error: tool execution failed." }],
-                  },
-                ],
-                error: {
-                  code: "TOOL_EXECUTION_ERROR",
-                  message:
-                    "The tool could not complete the requested action. Please try again or use a different approach.",
-                },
-              };
-              conversation = [...conversation, toolErrorMessage];
-              modelConversation = [...modelConversation, toolErrorMessage];
-            }
-          }
-
-          // Update conversation with tool results before next iteration
-          updateChat(id, () => ({ messages: conversation }));
-        }
+        const aborted = abortController.signal.aborted;
+        abortControllerRef.current = null;
 
         setIsResponding(false);
 
         // Ensure streaming buffer is cleared after completion
         updateStreamingMessage(null);
+
+        // If the stream was stopped by the user, don't run follow-up work
+        // (title summarization etc.) on the partial conversation.
+        if (aborted) {
+          return;
+        }
 
         if (!initialTitle || conversation.length % 3 === 0) {
           client.summarizeTitle(config.chat?.summarizer || currentModel.id, conversation).then((title) => {
@@ -569,6 +458,27 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [pendingElicitation],
   );
 
+  const setVoiceToolCall = useCallback(
+    (toolName: string | null) => {
+      if (toolName === null) {
+        updateStreamingMessage(null);
+        setIsResponding(false);
+      } else {
+        const id = chatId;
+        if (!id) return;
+        setIsResponding(true);
+        updateStreamingMessage({
+          chatId: id,
+          message: {
+            role: Role.Assistant,
+            content: [{ type: "tool_call", id: crypto.randomUUID(), name: toolName, arguments: "{}" }],
+          },
+        });
+      }
+    },
+    [chatId, updateStreamingMessage],
+  );
+
   const stopStreaming = useCallback(() => {
     const controller = abortControllerRef.current;
     if (!controller) return;
@@ -612,6 +522,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     addMessage,
     sendMessage,
     retryMessage,
+    setVoiceToolCall,
 
     isResponding,
     stopStreaming,

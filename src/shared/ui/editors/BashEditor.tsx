@@ -4,7 +4,7 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import type { OverlayFile } from "@/features/artifacts/lib/fs";
 import type { BashInstance } from "@/features/tools/lib/bash";
 import { createBashInstance, getBashCwd, getBashEnv, readFilesFromFs, resolveBashCwd } from "@/features/tools/lib/bash";
-import { SANDBOX_HOME } from "@/shared/lib/artifactFiles";
+import { SANDBOX_HOME } from "@/shared/lib/sandbox";
 
 /**
  * Use `compgen -A command` and `compgen -A file` for tab-completions.

@@ -34,8 +34,6 @@ type Config struct {
 	Telemetry *Telemetry `json:"telemetry,omitempty" yaml:"telemetry,omitempty"`
 
 	Backgrounds map[string][]Background `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
-
-	Canvas *Canvas `json:"canvas,omitempty" yaml:"canvas,omitempty"`
 }
 
 type Support struct {
@@ -118,7 +116,12 @@ type Repository struct {
 type Memory struct{}
 
 type Notebook struct {
-	Model string `json:"model,omitempty" yaml:"model,omitempty"`
+	Model        string                `json:"model,omitempty" yaml:"model,omitempty"`
+	Renderer     string                `json:"renderer,omitempty" yaml:"renderer,omitempty"`
+	Slides       []NotebookSlide       `json:"slides,omitempty" yaml:"slides,omitempty"`
+	Podcasts     []NotebookPodcast     `json:"podcasts,omitempty" yaml:"podcasts,omitempty"`
+	Reports      []NotebookReport      `json:"reports,omitempty" yaml:"reports,omitempty"`
+	Infographics []NotebookInfographic `json:"infographics,omitempty" yaml:"infographics,omitempty"`
 }
 
 type Chat struct {
@@ -139,30 +142,23 @@ type Background struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
-type Canvas struct {
-	Slides       []CanvasSlide       `json:"slides,omitempty" yaml:"slides,omitempty"`
-	Podcasts     []CanvasPodcast     `json:"podcasts,omitempty" yaml:"podcasts,omitempty"`
-	Reports      []CanvasReport      `json:"reports,omitempty" yaml:"reports,omitempty"`
-	Infographics []CanvasInfographic `json:"infographics,omitempty" yaml:"infographics,omitempty"`
-}
-
-type CanvasSlide struct {
+type NotebookSlide struct {
 	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
 	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
 }
 
-type CanvasPodcast struct {
+type NotebookPodcast struct {
 	Name   string   `json:"name,omitempty" yaml:"name,omitempty"`
 	Prompt string   `json:"prompt,omitempty" yaml:"prompt,omitempty"`
 	Voices []string `json:"voices,omitempty" yaml:"voices,omitempty"`
 }
 
-type CanvasReport struct {
+type NotebookReport struct {
 	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
 	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
 }
 
-type CanvasInfographic struct {
+type NotebookInfographic struct {
 	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
 	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
 }

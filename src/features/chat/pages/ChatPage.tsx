@@ -80,10 +80,17 @@ const Disclaimer = () => {
 };
 
 export function ChatPage() {
-  const { messages, selectChat, chat, chats, chatsLoaded, isResponding } = useChat();
+  const { messages, selectChat, chat, chats, chatsLoaded, isResponding, model, models, setModel } = useChat();
 
   const navigate = useNavigate();
   const { newChat } = useChatNavigate();
+
+  const handleNewChat = useCallback(() => {
+    if (model?.id === "realtime") {
+      setModel(models[0] ?? null);
+    }
+    newChat();
+  }, [model, models, setModel, newChat]);
   const chatIdMatch = useMatch({ from: "/app/chat/$chatId", shouldThrow: false });
   const routeChatId = chatIdMatch?.params.chatId;
 
@@ -217,7 +224,7 @@ export function ChatPage() {
         <button
           type="button"
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
-          onClick={newChat}
+          onClick={handleNewChat}
         >
           <PlusIcon size={20} />
         </button>
@@ -229,7 +236,7 @@ export function ChatPage() {
     };
   }, [
     setRightActions,
-    newChat,
+    handleNewChat,
     artifactsAvailable,
     showArtifactsDrawer,
     toggleArtifactsDrawer,

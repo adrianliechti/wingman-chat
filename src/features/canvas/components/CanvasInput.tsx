@@ -105,7 +105,7 @@ export function CanvasInput({
 
   return (
     <div
-      className={`flex flex-col rounded-2xl backdrop-blur-2xl shadow-2xl shadow-black/60 dark:shadow-black/80 border border-neutral-200/50 dark:border-neutral-900 bg-white/60 dark:bg-neutral-950/70 dark:ring-1 dark:ring-white/10 w-full overflow-hidden ${className}`}
+      className={`flex flex-col rounded-2xl backdrop-blur-2xl shadow-sm border-0 md:border border-t border-solid border-neutral-200/60 dark:border-neutral-700/60 bg-white/60 dark:bg-neutral-950/70 w-full overflow-hidden ${className}`}
     >
       {/* Reference images above text (like chat attachments) */}
       {(referenceImages.length > 0 || isLoadingFiles) && (
@@ -155,18 +155,20 @@ export function CanvasInput({
 
       {/* Controls bar */}
       <div className="flex items-center justify-between gap-3 px-3 pb-3">
-        <div className="flex min-w-0 items-center gap-1.5">
+        <div className="flex min-w-0 items-center gap-3">
           {/* Model dropdown */}
           <Menu>
-            <MenuButton className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors hover:bg-neutral-100/70 dark:hover:bg-white/5">
-              <Sparkles size={13} />
-              <span>{selectedModel?.name || "Model"}</span>
+            <MenuButton className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48">
+              <span className="shrink-0 flex justify-center">
+                <Sparkles size={14} />
+              </span>
+              <span className="truncate min-w-0">{selectedModel?.name || "Model"}</span>
             </MenuButton>
             <MenuItems
               modal={false}
               transition
               anchor="bottom start"
-              className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 shadow-2xl shadow-black/40 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 z-50 overflow-y-auto"
+              className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 whitespace-nowrap dark:ring-1 dark:ring-white/10"
             >
               {models.length === 0 ? (
                 <div className="px-3 py-2 text-neutral-500 dark:text-neutral-400 text-sm">Loading models...</div>
@@ -176,9 +178,21 @@ export function CanvasInput({
                     <button
                       type="button"
                       onClick={() => onSelectModel(model)}
-                      className="group flex w-full items-center px-3 py-2 text-sm data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 text-neutral-700 dark:text-neutral-300 transition-colors"
+                      title={model.description}
+                      className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                     >
-                      {model.name}
+                      <div className="flex items-center gap-2.5 w-full">
+                        <div className="flex flex-col items-start flex-1 min-w-0">
+                          <div className="font-semibold text-sm leading-tight whitespace-nowrap">
+                            {model.name ?? model.id}
+                          </div>
+                          {model.description && (
+                            <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
+                              {model.description}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </button>
                   </MenuItem>
                 ))
@@ -189,20 +203,22 @@ export function CanvasInput({
           {/* Style dropdown */}
           <Menu>
             <MenuButton
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm transition-colors hover:bg-neutral-100/70 dark:hover:bg-white/5 ${
+              className={`flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium transition-colors max-w-48 ${
                 selectedStyle
                   ? "text-blue-600 dark:text-blue-400"
-                  : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                  : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
               }`}
             >
-              <Paintbrush size={13} />
-              <span>{selectedStyle || "Style"}</span>
+              <span className="shrink-0 flex justify-center">
+                <Paintbrush size={14} />
+              </span>
+              <span className="truncate min-w-0">{selectedStyle || "Style"}</span>
             </MenuButton>
             <MenuItems
               modal={false}
               transition
               anchor="bottom start"
-              className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 shadow-2xl shadow-black/40 dark:shadow-black/80 dark:ring-1 dark:ring-white/10 z-50 overflow-y-auto min-w-36"
+              className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 whitespace-nowrap dark:ring-1 dark:ring-white/10"
             >
               {/* Clear style option */}
               {selectedStyle && (
@@ -210,9 +226,11 @@ export function CanvasInput({
                   <button
                     type="button"
                     onClick={() => onSelectStyle(null)}
-                    className="group flex w-full items-center px-3 py-2 text-sm data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 text-neutral-500 dark:text-neutral-400 transition-colors italic"
+                    className="group flex w-full items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                   >
-                    No style
+                    <div className="flex items-center gap-2.5 w-full">
+                      <span className="text-sm italic text-neutral-500 dark:text-neutral-400">No style</span>
+                    </div>
                   </button>
                 </MenuItem>
               )}
@@ -221,13 +239,15 @@ export function CanvasInput({
                   <button
                     type="button"
                     onClick={() => onSelectStyle(selectedStyle === style ? null : style)}
-                    className={`group flex w-full items-center px-3 py-2 text-sm data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 transition-colors ${
-                      selectedStyle === style
-                        ? "text-blue-600 dark:text-blue-400"
-                        : "text-neutral-700 dark:text-neutral-300"
-                    }`}
+                    className="group flex w-full items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                   >
-                    {style}
+                    <div className="flex items-center gap-2.5 w-full">
+                      <span
+                        className={`font-semibold text-sm leading-tight whitespace-nowrap ${selectedStyle === style ? "text-blue-600 dark:text-blue-400" : ""}`}
+                      >
+                        {style}
+                      </span>
+                    </div>
                   </button>
                 </MenuItem>
               ))}

@@ -1,7 +1,7 @@
 import JSZip from "jszip";
-import type { File, FileEntry } from "@/features/artifacts/types/file";
-import { artifactContentToZipValue, normalizeArtifactPath } from "@/shared/lib/artifactFiles";
-import type { FileSystem } from "@/shared/lib/filesystem";
+import type { File, FileEntry, FileSystem } from "@/shared/types/file";
+import { contentToZipValue } from "@/shared/lib/fileContent";
+import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import * as opfs from "@/shared/lib/opfs";
 import { downloadBlob } from "@/shared/lib/utils";
 
@@ -358,7 +358,7 @@ export class FileSystemManager implements FileSystem {
     for (const file of files) {
       // Remove leading slash if present for cleaner zip structure
       const cleanPath = file.path.startsWith("/") ? file.path.substring(1) : file.path;
-      zip.file(cleanPath, artifactContentToZipValue(file));
+      zip.file(cleanPath, contentToZipValue(file));
     }
 
     try {

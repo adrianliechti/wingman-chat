@@ -1,7 +1,7 @@
 import { createRootRoute, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
+import { CanvasPage } from "./features/canvas/pages/CanvasPage";
 import { ChatPage } from "./features/chat/pages/ChatPage";
 import { NotebookPage } from "./features/notebook/pages/NotebookPage";
-import { CanvasPage } from "./features/canvas/pages/CanvasPage";
 import { OAuthCallbackPage } from "./features/settings/pages/OAuthCallbackPage";
 import { TranslatePage } from "./features/translate/pages/TranslatePage";
 import { getConfig } from "./shared/config";
@@ -90,13 +90,11 @@ const notebookRoute = createRoute({
   component: NotebookPage,
 });
 
+// Child route — provides the :notebookId param without remounting the parent.
 const notebookIdRoute = createRoute({
-  getParentRoute: () => appLayoutRoute,
-  path: "/notebook/$notebookId",
-  beforeLoad: () => {
-    if (!getConfig().notebook) throw redirect({ to: "/chat" });
-  },
-  component: NotebookPage,
+  getParentRoute: () => notebookRoute,
+  path: "$notebookId",
+  component: () => null,
 });
 
 // OAuth callback route — rendered under bare layout (no app shell)
@@ -114,8 +112,7 @@ const routeTree = rootRoute.addChildren([
     chatIdRoute,
     translateRoute,
     canvasRoute,
-    notebookRoute,
-    notebookIdRoute,
+    notebookRoute.addChildren([notebookIdRoute]),
   ]),
   oauthLayoutRoute.addChildren([oauthCallbackRoute]),
 ]);

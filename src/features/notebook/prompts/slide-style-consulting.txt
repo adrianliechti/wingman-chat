@@ -1,22 +1,17 @@
-## Visual Style (apply consistently to EVERY slide)
+## Visual Style
 
-All slides MUST share a single, cohesive visual identity. Define it once and repeat it exactly:
-
-- **Background:** pure white (#FFFFFF) — absolutely clean, no textures, no gradients, no decorative elements. White space IS the design.
-- **Primary color:** deep navy blue (#1B2A4A) for all titles, headers, section labels, and key data callouts
-- **Accent color:** muted teal (#2E8B8B) for chart fills, highlight bars, and emphasis elements — used as the primary data color
-- **Secondary accent:** warm amber (#D4862F) used very sparingly — only for a single data point you want to pop, or a "so what" callout. Maximum one amber element per slide.
-- **Tertiary:** light gray (#E8E8E8) for backgrounds of data tables, supporting chart elements, and grid lines
-- **Title font style:** bold sans-serif (Helvetica/Arial style), title-case, navy blue. Clean, authoritative, no flourishes. Positioned top-left with a thin navy horizontal rule beneath it spanning the full slide width.
-- **Body font style:** regular weight sans-serif in dark gray (#333333), highly legible, tight line-height. Small but precise.
-- **Layout:** rigid grid-based structure with mathematical precision. Every element snaps to an invisible 12-column grid. Heavy use of horizontal dividers (thin 1px navy or gray lines) to create clear information hierarchy. Content fills the slide — minimal wasted space. Structured, dense, intentional.
-- **Action title:** EVERY slide title must be an insight statement, not a topic label. E.g. "Revenue grew 23% driven by enterprise segment" not "Revenue Overview". The title IS the takeaway.
-- **Key insight box:** each slide should have a bordered rectangle (navy border, light gray fill) at the bottom or right containing 1-2 sentences summarizing the "so what" — the actionable takeaway. Label it "Key Takeaway" or "Implication" in small caps.
-- **Data presentation:** clean, precise charts — horizontal bar charts, waterfall charts, stacked bars, line charts with data labels. Thin gridlines in light gray. Always label axes. Data labels directly on bars/lines (not in legends when possible). Use Harvey balls, traffic lights, or arrow indicators for status.
-- **Frameworks:** use 2x2 matrices, pyramid diagrams, process flows with clean rectangular boxes and thin connecting arrows. All boxes have subtle gray fills with navy borders.
-- **Source citations:** small gray italic text at slide bottom-left citing data sources
-- **Page numbers:** bottom-right, small, gray
-- **Bullet points:** em-dashes (—) or small navy squares. Never circles. Tight spacing between bullets.
-- **NO decorative elements:** no icons, no illustrations, no gradients, no shadows, no rounded corners on boxes. Everything is sharp, rectangular, precise.
-
-This creates a McKinsey/BCG/Bain-style management consulting aesthetic — structured, data-driven, authoritative, and relentlessly focused on insight and action. Every slide answers "so what?" and "what should we do about it?"
+- **Background:** pure white (#FFFFFF) — clean, no textures, no gradients
+- **Primary color:** deep navy (#1B2A4A) for titles, headers, and key data
+- **Accent color:** muted teal (#2E8B8B) for chart fills, highlights, and emphasis
+- **Secondary accent:** warm amber (#D4862F) — used very sparingly, maximum one amber element per slide for a "so what" callout
+- **Tertiary:** light gray (#E8E8E8) for table backgrounds, supporting chart elements, and grid lines
+- **Title font:** bold sans-serif, navy. Positioned top-left.
+- **Body font:** regular sans-serif in dark gray (#333333), tight line-height
+- **Layout:** rigid grid-based structure with mathematical precision. Heavy use of thin horizontal dividers (1px navy or gray lines). Dense, structured, intentional.
+- **Key insight box:** each slide should have a bordered rectangle (navy border, light gray fill) summarizing the actionable takeaway, labeled "Key Takeaway" or "Implication" in small caps
+- **Data presentation:** clean charts — horizontal bars, waterfall, stacked bars, line charts with data labels. Thin gridlines in light gray. Labels directly on bars (not legends). Use traffic light indicators for status.
+- **Frameworks:** 2x2 matrices, pyramid diagrams, process flows with rectangular boxes and thin connecting arrows. Gray fills with navy borders.
+- **Source citations:** small gray italic text at bottom-left
+- **Bullet points:** em-dashes (—) or small navy squares, never circles
+- **NO:** icons, illustrations, gradients, shadows, rounded corners, decorative elements
+- **Overall feel:** McKinsey/BCG consulting style — structured, data-driven, every slide answers "so what?"

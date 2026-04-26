@@ -192,3 +192,12 @@ button[data-headlessui-state]:disabled,
     width: 100%;
   }
 }
+
+@keyframes waveBar {
+  from {
+    height: var(--wave-min);
+  }
+  to {
+    height: var(--wave-max);
+  }
+}

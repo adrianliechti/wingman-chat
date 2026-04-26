@@ -2,7 +2,8 @@
  * OPFS Artifacts — Artifact file CRUD within chat folders.
  */
 
-import { artifactContentToBlob, normalizeArtifactPath } from "./artifactFiles";
+import { contentToBlob } from "./fileContent";
+import { normalizeArtifactPath } from "./sandbox";
 import { isBinaryContentType } from "./fileTypes";
 
 import {
@@ -44,12 +45,12 @@ export async function writeArtifact(
   const fullPath = `chats/${chatId}/artifacts/${normalizedPath}`;
 
   if (content.startsWith("data:")) {
-    await writeBlob(fullPath, artifactContentToBlob(content, contentType));
+    await writeBlob(fullPath, contentToBlob(content, contentType));
     return;
   }
 
   if (isBinaryContentType(contentType)) {
-    await writeBlob(fullPath, artifactContentToBlob(content, contentType));
+    await writeBlob(fullPath, contentToBlob(content, contentType));
     return;
   }
 
@@ -74,7 +75,12 @@ export async function readArtifact(
     return undefined;
   }
 
-  const contentType = blob.type || inferContentType(path);
+  // Prefer our own inference over blob.type — OPFS doesn't preserve the
+  // MIME type we wrote; the browser re-infers it from the filename and may
+  // return legacy types (e.g. "application/x-javascript") that our
+  // isTextContentType check doesn't recognise, causing text files to be
+  // round-tripped through readAsDataURL and surfaced as data-URLs.
+  const contentType = inferContentType(path) || blob.type;
 
   if (isBinaryContentType(contentType)) {
     return { content: await readAsDataURL(blob), contentType };
