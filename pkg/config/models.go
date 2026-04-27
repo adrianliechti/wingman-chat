@@ -23,9 +23,8 @@ type Config struct {
 	Renderer   *Renderer   `json:"renderer,omitempty" yaml:"renderer,omitempty"`
 	Translator *Translator `json:"translator,omitempty" yaml:"translator,omitempty"`
 
-	Artifacts   *Artifacts   `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
-	Interpreter *Interpreter `json:"interpreter,omitempty" yaml:"interpreter,omitempty"`
-	Repository  *Repository  `json:"repository,omitempty" yaml:"repository,omitempty"`
+	Artifacts  *Artifacts  `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
+	Repository *Repository `json:"repository,omitempty" yaml:"repository,omitempty"`
 
 	Memory   *Memory   `json:"memory,omitempty" yaml:"memory,omitempty"`
 	Notebook *Notebook `json:"notebook,omitempty" yaml:"notebook,omitempty"`
@@ -108,10 +107,6 @@ type Renderer struct {
 }
 
 type Artifacts struct{}
-
-type Interpreter struct {
-	Model string `json:"model,omitempty" yaml:"model,omitempty"`
-}
 
 type Repository struct {
 	Embedder  string `json:"embedder,omitempty" yaml:"embedder,omitempty"`

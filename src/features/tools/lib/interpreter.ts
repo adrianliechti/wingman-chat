@@ -2,7 +2,7 @@ import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodid
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
 import { SANDBOX_HOME } from "@/shared/lib/sandbox";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
-import { getLlmModel, runLlm } from "./llmCommand";
+import { runLlm } from "./llmCommand";
 import { clearRenderQueue, processRenderQueue } from "./plotlyRenderer";
 import PLOTLY_IMAGE_SHIM from "./plotlyShim.py?raw";
 
@@ -198,7 +198,6 @@ async function runPythonCode(pyodide: PyodideInterface, code: string): Promise<s
 }
 
 function registerLlmGlobal(pyodide: PyodideInterface): void {
-  if (!getLlmModel()) return;
   pyodide.globals.set("llm", async (prompt: string) => runLlm(prompt));
 }
 

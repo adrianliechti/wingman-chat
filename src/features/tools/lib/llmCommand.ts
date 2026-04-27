@@ -3,14 +3,20 @@ import { defineCommand } from "just-bash/browser";
 import { getConfig } from "@/shared/config";
 import { getTextFromContent, Role } from "@/shared/types/chat";
 
-export function getLlmModel(): string | null {
-  return getConfig().interpreter?.model ?? null;
+let activeChatModel: string | null = null;
+
+export function setActiveLlmModel(model: string | null): void {
+  activeChatModel = model;
+}
+
+export function resolveLlmModel(): string | null {
+  return activeChatModel;
 }
 
 export async function runLlm(prompt: string): Promise<string> {
-  const model = getLlmModel();
+  const model = resolveLlmModel();
   if (!model) {
-    throw new Error("llm: interpreter.model is not configured");
+    throw new Error("llm: no active chat model");
   }
 
   const client = getConfig().client;
@@ -24,10 +30,6 @@ export async function runLlm(prompt: string): Promise<string> {
 }
 
 async function executeLlm(args: string[], ctx: CommandContext): Promise<ExecResult> {
-  if (!getLlmModel()) {
-    return { stdout: "", stderr: "llm: interpreter.model is not configured\n", exitCode: 127 };
-  }
-
   let prompt = args.join(" ").trim();
   if (!prompt && ctx.stdin) {
     prompt = ctx.stdin;

@@ -6,8 +6,6 @@ import interpreterInstructionsText from "@/features/artifacts/prompts/interprete
 import llmInstructionsText from "@/features/artifacts/prompts/llm.txt?raw";
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
-import { getLlmModel } from "@/features/tools/lib/llmCommand";
-import { getConfig } from "@/shared/config";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { createFileTools, type FileData, type FileEntry, type WritableFileSource } from "@/shared/lib/file-tools";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
@@ -346,8 +344,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       },
     ];
 
-    const interpreterEnabled = getConfig().interpreter !== null;
-    return [...fileTools, ...contextTools, ...(interpreterEnabled ? executionTools : [])];
+    return [...fileTools, ...contextTools, ...executionTools];
     // Refs are intentionally not dependencies — the callback needs to produce
     // a stable tool array so downstream memoization doesn't thrash. Tool
     // functions read the latest `fs`/`activeFile` via refs at execution time.
@@ -358,20 +355,12 @@ export function useArtifactsProvider(): ToolProvider | null {
       return null;
     }
 
-    const interpreterEnabled = getConfig().interpreter !== null;
-
     return {
       id: "artifacts",
       name: "Artifacts",
-      description: interpreterEnabled ? "Create and edit files, run Python and Bash code" : "Create and edit files",
+      description: "Create and edit files, run Python and Bash code",
       icon: Shapes,
-      instructions: [
-        artifactsInstructionsText,
-        interpreterEnabled ? interpreterInstructionsText : null,
-        getLlmModel() ? llmInstructionsText : null,
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
+      instructions: [artifactsInstructionsText, interpreterInstructionsText, llmInstructionsText].join("\n\n"),
       tools: artifactsTools(),
     };
   }, [isAvailable, artifactsTools]);
