@@ -441,13 +441,11 @@ export function ChatInput() {
       <form onSubmit={handleSubmit}>
         <div
           ref={containerRef}
-          className={`relative contain-[layout_style] will-change-[height] ${
-            isDragging
+          className={`relative contain-[layout_style] will-change-[height] ${isDragging
               ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl"
-              : `border-0 md:border border-t border-solid border-neutral-200/60 dark:border-neutral-700/60 ${
-                  messages.length === 0 ? "bg-white/60 dark:bg-neutral-950/70" : "bg-white/30 dark:bg-neutral-950/50"
-                } md:rounded-2xl`
-          } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-sm transition-all duration-200`}
+              : `border-0 md:border border-t border-solid border-neutral-200/60 dark:border-neutral-700/60 ${messages.length === 0 ? "bg-white/60 dark:bg-neutral-950/70" : "bg-white/30 dark:bg-neutral-950/50"
+              } md:rounded-2xl`
+            } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-sm transition-all duration-200`}
         >
           <input
             type="file"
@@ -571,9 +569,9 @@ export function ChatInput() {
                     style={
                       messages.length === 0
                         ? ({
-                            "--text-length": placeholderText.length,
-                            "--animation-duration": `${Math.max(1.5, placeholderText.length * 0.1)}s`,
-                          } as React.CSSProperties & { "--text-length": number; "--animation-duration": string })
+                          "--text-length": placeholderText.length,
+                          "--animation-duration": `${Math.max(1.5, placeholderText.length * 0.1)}s`,
+                        } as React.CSSProperties & { "--text-length": number; "--animation-duration": string })
                         : {}
                     }
                   >
@@ -666,11 +664,10 @@ export function ChatInput() {
                     role="tab"
                     aria-selected={!isRealtimeSelected}
                     aria-label="Chat mode"
-                    className={`relative z-10 flex items-center justify-start gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${
-                      !isRealtimeSelected
+                    className={`relative z-10 flex items-center justify-start gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${!isRealtimeSelected
                         ? "w-9 text-neutral-900 dark:text-neutral-50"
                         : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                    }`}
+                      }`}
                     title="Chat mode"
                     onClick={() => (isRealtimeSelected ? onModelChange(models[0]) : undefined)}
                   >
@@ -682,19 +679,18 @@ export function ChatInput() {
                     role="tab"
                     aria-selected={isRealtimeSelected}
                     aria-label="Voice mode"
-                    className={`relative z-10 flex items-center justify-end gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${
-                      isRealtimeSelected
+                    className={`relative z-10 flex items-center justify-end gap-1.5 py-1 pl-3 pr-3 text-xs font-medium rounded-full transition-colors duration-200 ${isRealtimeSelected
                         ? "w-9 text-neutral-900 dark:text-neutral-50"
                         : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                    }`}
+                      }`}
                     title="Voice mode"
                     onClick={() =>
                       !isRealtimeSelected
                         ? onModelChange({
-                            id: "realtime",
-                            name: "Voice Mode",
-                            description: "Real-time voice conversation",
-                          })
+                          id: "realtime",
+                          name: "Voice Mode",
+                          description: "Real-time voice conversation",
+                        })
                         : undefined
                     }
                   >
@@ -801,20 +797,7 @@ export function ChatInput() {
                     if (providerInitializing) return <LoaderCircle size={14} className="animate-spin" />;
                     if (providerFailed) return <TriangleAlert size={14} />;
                     if (typeof icon === "string")
-                      return (
-                        <span
-                          className="shrink-0 bg-current inline-block"
-                          style={{
-                            width: 14,
-                            height: 14,
-                            maskImage: `url(${icon})`,
-                            WebkitMaskImage: `url(${icon})`,
-                            maskSize: "contain",
-                            maskRepeat: "no-repeat",
-                            maskPosition: "center",
-                          }}
-                        />
-                      );
+                      return <img src={icon} alt="" className="shrink-0 w-3.5 h-3.5 object-contain" />;
                     const Icon = icon;
                     return <Icon size={14} />;
                   };
@@ -823,11 +806,10 @@ export function ChatInput() {
                     <button
                       key={provider.id}
                       type="button"
-                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${
-                        providerEnabled
+                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${providerEnabled
                           ? "text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg"
                           : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      }`}
+                        }`}
                       onClick={async (e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -875,20 +857,7 @@ export function ChatInput() {
 
                       const renderIcon = () => {
                         if (typeof icon === "string")
-                          return (
-                            <span
-                              className="shrink-0 bg-current inline-block"
-                              style={{
-                                width: 16,
-                                height: 16,
-                                maskImage: `url(${icon})`,
-                                WebkitMaskImage: `url(${icon})`,
-                                maskSize: "contain",
-                                maskRepeat: "no-repeat",
-                                maskPosition: "center",
-                              }}
-                            />
-                          );
+                          return <img src={icon} alt="" className="shrink-0 w-4 h-4 object-contain" />;
                         const Icon = icon;
                         return <Icon size={16} />;
                       };
@@ -951,11 +920,10 @@ export function ChatInput() {
                   {isScreenCaptureAvailable && (
                     <button
                       type="button"
-                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
-                        isContinuousCaptureActive
+                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${isContinuousCaptureActive
                           ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg"
                           : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      }`}
+                        }`}
                       onClick={handleContinuousCaptureToggle}
                       title={
                         isContinuousCaptureActive ? "Stop continuous screen capture" : "Start continuous screen capture"
@@ -1088,11 +1056,10 @@ export function ChatInput() {
                 ) : (
                   <button
                     type="button"
-                    className={`p-2.5 md:p-1.5 transition-colors ${
-                      isTranscribing
+                    className={`p-2.5 md:p-1.5 transition-colors ${isTranscribing
                         ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
                         : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                    }`}
+                      }`}
                     onClick={handleTranscriptionClick}
                     title={isTranscribing ? "Stop recording" : "Start recording"}
                     disabled={isResponding}

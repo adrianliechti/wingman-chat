@@ -65,6 +65,13 @@ type UiResourceEntry = {
 
 type McpServerCapabilities = NonNullable<ReturnType<Client["getServerCapabilities"]>>;
 
+type McpIcon = { src: string; mimeType?: string; sizes?: string[]; theme?: "light" | "dark" };
+
+function pickIcon(icons: McpIcon[] | undefined): string | undefined {
+  if (!icons || icons.length === 0) return undefined;
+  return (icons.find((i) => i.theme === "light") ?? icons.find((i) => !i.theme) ?? icons[0]).src;
+}
+
 export class MCPClient implements ToolProvider {
   readonly id: string;
   readonly url: string;
@@ -76,6 +83,7 @@ export class MCPClient implements ToolProvider {
 
   readonly headers?: Record<string, string>;
 
+  private readonly _configIcon?: string;
   private client: Client | null = null;
   private activeBridge: AppBridge | null = null;
   private authProvider: BrowserOAuthClientProvider;
@@ -112,6 +120,7 @@ export class MCPClient implements ToolProvider {
     this.description = description;
     this.headers = headers;
     this.icon = icon;
+    this._configIcon = icon;
     this.authProvider = new BrowserOAuthClientProvider(id);
   }
 
@@ -225,6 +234,12 @@ export class MCPClient implements ToolProvider {
 
     this.client = client;
 
+    // Pick up the server-published icon when no config/agent icon was provided.
+    if (!this._configIcon) {
+      const serverIcons = client.getServerVersion()?.icons as McpIcon[] | undefined;
+      this.icon = pickIcon(serverIcons);
+    }
+
     // Load and store tools and instructions after connection
     await this.loadToolsAndInstructions();
 
@@ -259,6 +274,7 @@ export class MCPClient implements ToolProvider {
       this.tools = [];
       this.uiResources.clear();
       this.instructions = undefined;
+      this.icon = this._configIcon;
     }
   }
 
@@ -271,6 +287,7 @@ export class MCPClient implements ToolProvider {
     this.uiResources.clear();
     this.toolDefinitions.clear();
     this.instructions = undefined;
+    this.icon = this._configIcon;
     this.onDisconnected?.();
   }
 
@@ -314,8 +331,7 @@ export class MCPClient implements ToolProvider {
       this.tools = tools
         .filter((tool) => !isToolVisibilityAppOnly(tool))
         .map((tool) => {
-          const icons = tool.icons ?? [];
-          const icon = (icons.find((i) => i.theme === "light") ?? icons.find((i) => !i.theme) ?? icons[0])?.src;
+          const icon = pickIcon(tool.icons as McpIcon[] | undefined);
           return {
             name: tool.name,
             icon,

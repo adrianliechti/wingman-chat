@@ -35,12 +35,12 @@ import { personaOptions } from "@/features/settings/lib/personas";
 import { rebuildAllIndexes } from "@/features/settings/lib/rebuildIndexes";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
-import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { clearAll, deleteDirectory, getStorageUsage, removeIndexEntry } from "@/shared/lib/opfs";
 import { downloadFolderAsZip } from "@/shared/lib/opfs-zip";
 import { formatBytes } from "@/shared/lib/utils";
 import { ProviderState } from "@/shared/types/chat";
 import type { BackgroundPack, EmojiMode, LayoutMode, Theme } from "@/shared/types/settings";
+import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { OpfsBrowser } from "./OpfsBrowser";
 
 interface SettingsDrawerProps {
@@ -138,11 +138,10 @@ function SegmentedControl<T extends string>({
             key={opt.value}
             type="button"
             onClick={() => onChange(opt.value)}
-            className={`flex-1 py-2 px-2 text-xs font-medium transition-colors truncate ${
-              value === opt.value
+            className={`flex-1 py-2 px-2 text-xs font-medium transition-colors truncate ${value === opt.value
                 ? "bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100"
                 : "bg-white/50 dark:bg-neutral-800/50 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300"
-            }`}
+              }`}
           >
             {opt.label}
           </button>
@@ -315,17 +314,17 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
       const result = await rebuildAllIndexes();
       alert(
         `Indexes rebuilt successfully.\n\n` +
-          `Chats: ${result.chats}\n` +
-          `Agents: ${result.agents}\n` +
-          `Images: ${result.images}\n` +
-          `Skills: ${result.skills}\n` +
-          `Repositories: ${result.repositories}\n\n` +
-          `Cleaned empty folders:\n` +
-          `- Chats: ${result.cleanedChatsFolders}\n` +
-          `- Agents: ${result.cleanedAgentsFolders}\n` +
-          `- Images: ${result.cleanedImagesFolders}\n` +
-          `- Skills: ${result.cleanedSkillsFolders}\n` +
-          `- Repositories: ${result.cleanedRepositoryFolders}`,
+        `Chats: ${result.chats}\n` +
+        `Agents: ${result.agents}\n` +
+        `Images: ${result.images}\n` +
+        `Skills: ${result.skills}\n` +
+        `Repositories: ${result.repositories}\n\n` +
+        `Cleaned empty folders:\n` +
+        `- Chats: ${result.cleanedChatsFolders}\n` +
+        `- Agents: ${result.cleanedAgentsFolders}\n` +
+        `- Images: ${result.cleanedImagesFolders}\n` +
+        `- Skills: ${result.cleanedSkillsFolders}\n` +
+        `- Repositories: ${result.cleanedRepositoryFolders}`,
       );
       await loadStorageInfo();
     } catch (error) {
@@ -708,10 +707,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         {storageInfo.isLoading
                           ? "..."
                           : formatBytes(
-                              storageInfo.entries
-                                .filter((e) => e.path.startsWith("chats/"))
-                                .reduce((sum, e) => sum + e.size, 0),
-                            )}
+                            storageInfo.entries
+                              .filter((e) => e.path.startsWith("chats/"))
+                              .reduce((sum, e) => sum + e.size, 0),
+                          )}
                       </span>
                     </div>
 
@@ -763,10 +762,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         {storageInfo.isLoading
                           ? "..."
                           : formatBytes(
-                              storageInfo.entries
-                                .filter((e) => e.path.startsWith("agents/"))
-                                .reduce((sum, e) => sum + e.size, 0),
-                            )}
+                            storageInfo.entries
+                              .filter((e) => e.path.startsWith("agents/"))
+                              .reduce((sum, e) => sum + e.size, 0),
+                          )}
                       </span>
                     </div>
 
@@ -818,16 +817,14 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                       <button
                         type="button"
                         onClick={toggleCompanion}
-                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none ${
-                          companionEnabled ? "bg-emerald-500 dark:bg-emerald-600" : "bg-neutral-300 dark:bg-neutral-600"
-                        }`}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none ${companionEnabled ? "bg-emerald-500 dark:bg-emerald-600" : "bg-neutral-300 dark:bg-neutral-600"
+                          }`}
                         role="switch"
                         aria-checked={companionEnabled}
                       >
                         <span
-                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-                            companionEnabled ? "translate-x-4.5" : "translate-x-0.5"
-                          }`}
+                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${companionEnabled ? "translate-x-4.5" : "translate-x-0.5"
+                            }`}
                         />
                       </button>
                     </div>
@@ -845,20 +842,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                   const toolIcon =
                                     tool.icon ?? (typeof companion.icon === "string" ? companion.icon : undefined);
                                   if (toolIcon) {
-                                    return (
-                                      <span
-                                        className="bg-current inline-block"
-                                        style={{
-                                          width: 16,
-                                          height: 16,
-                                          maskImage: `url(${toolIcon})`,
-                                          WebkitMaskImage: `url(${toolIcon})`,
-                                          maskSize: "contain",
-                                          maskRepeat: "no-repeat",
-                                          maskPosition: "center",
-                                        }}
-                                      />
-                                    );
+                                    return <img src={toolIcon} alt="" className="w-4 h-4 object-contain" />;
                                   }
                                   if (companion.icon && typeof companion.icon !== "string") {
                                     const CompanionIcon = companion.icon;
