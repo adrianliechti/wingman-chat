@@ -110,7 +110,10 @@ function treePositions(root: MindMapNode, flat: FlatNode[], dir: "vertical" | "h
 
     if (!node.children?.length) {
       const lp = leaf++;
-      pos.set(id, dir === "vertical" ? { x: lp * TREE_X, y: depth * TREE_Y * 1.5 } : { x: depth * TREE_X * 1.5, y: lp * TREE_Y });
+      pos.set(
+        id,
+        dir === "vertical" ? { x: lp * TREE_X, y: depth * TREE_Y * 1.5 } : { x: depth * TREE_X * 1.5, y: lp * TREE_Y },
+      );
       return next;
     }
 
@@ -185,7 +188,14 @@ function MindMapInner({ root }: MindMapViewerProps) {
     const el = flowRef.current?.querySelector(".react-flow__viewport") as HTMLElement | null;
     if (!el) return;
     const html2canvas = (await import("html2canvas")).default;
-    const canvas = await html2canvas(el, { backgroundColor: null, scale: 2, logging: false, useCORS: true, width: el.scrollWidth, height: el.scrollHeight });
+    const canvas = await html2canvas(el, {
+      backgroundColor: null,
+      scale: 2,
+      logging: false,
+      useCORS: true,
+      width: el.scrollWidth,
+      height: el.scrollHeight,
+    });
     const link = document.createElement("a");
     link.download = "mindmap.png";
     link.href = canvas.toDataURL("image/png");
@@ -197,10 +207,13 @@ function MindMapInner({ root }: MindMapViewerProps) {
     const allNodes = getNodes();
     const allEdges = getEdges();
     const pad = 60;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
     for (const n of allNodes) {
-      const w = n.computed?.width ?? 160;
-      const h = n.computed?.height ?? 40;
+      const w = n.measured?.width ?? 160;
+      const h = n.measured?.height ?? 40;
       x0 = Math.min(x0, n.position.x - w / 2);
       y0 = Math.min(y0, n.position.y - h / 2);
       x1 = Math.max(x1, n.position.x + w / 2);
@@ -217,7 +230,8 @@ function MindMapInner({ root }: MindMapViewerProps) {
     svg += `<rect width="${W}" height="${H}" fill="#fafafa"/>`;
 
     for (const e of allEdges) {
-      const s = nm.get(e.source), t = nm.get(e.target);
+      const s = nm.get(e.source),
+        t = nm.get(e.target);
       if (!s || !t) continue;
       const ci = (e.data as { colorIndex?: number })?.colorIndex ?? 0;
       svg += `<line x1="${s.position.x + ox}" y1="${s.position.y + oy}" x2="${t.position.x + ox}" y2="${t.position.y + oy}" stroke="${BRANCH_COLORS[ci % BRANCH_COLORS.length].bg}" stroke-width="2" stroke-opacity="0.5" stroke-linecap="round"/>`;
@@ -225,10 +239,12 @@ function MindMapInner({ root }: MindMapViewerProps) {
 
     for (const n of allNodes) {
       const d = n.data as MindMapNodeData;
-      const w = n.computed?.width ?? 160;
-      const h = n.computed?.height ?? 40;
-      const cx = n.position.x + ox, cy = n.position.y + oy;
-      const rx = cx - w / 2, ry = cy - h / 2;
+      const w = n.measured?.width ?? 160;
+      const h = n.measured?.height ?? 40;
+      const cx = n.position.x + ox,
+        cy = n.position.y + oy;
+      const rx = cx - w / 2,
+        ry = cy - h / 2;
       const c = BRANCH_COLORS[d.colorIndex % BRANCH_COLORS.length];
 
       if (d.depth === 0) {
@@ -278,7 +294,10 @@ function MindMapInner({ root }: MindMapViewerProps) {
       <div className="absolute top-2 left-2 z-10 flex items-center gap-1">
         <button
           type="button"
-          onClick={() => { setShowConfig((v) => !v); setShowExport(false); }}
+          onClick={() => {
+            setShowConfig((v) => !v);
+            setShowExport(false);
+          }}
           className="p-1.5 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition-colors shadow-sm"
           title="Settings"
         >
@@ -286,7 +305,10 @@ function MindMapInner({ root }: MindMapViewerProps) {
         </button>
         <button
           type="button"
-          onClick={() => { setShowExport((v) => !v); setShowConfig(false); }}
+          onClick={() => {
+            setShowExport((v) => !v);
+            setShowConfig(false);
+          }}
           className="p-1.5 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition-colors shadow-sm"
           title="Export"
         >
@@ -297,13 +319,24 @@ function MindMapInner({ root }: MindMapViewerProps) {
       {/* Config popup */}
       {showConfig && (
         <div className="absolute top-10 left-2 z-20 bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700 shadow-lg p-3 w-52">
-          <p className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2">Layout</p>
+          <p className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2">
+            Layout
+          </p>
           <div className="space-y-1">
-            {([["radial", "Radial"], ["vertical", "Top-Down"], ["horizontal", "Left-Right"]] as const).map(([v, l]) => (
+            {(
+              [
+                ["radial", "Radial"],
+                ["vertical", "Top-Down"],
+                ["horizontal", "Left-Right"],
+              ] as const
+            ).map(([v, l]) => (
               <button
                 key={v}
                 type="button"
-                onClick={() => { setDirection(v); setShowConfig(false); }}
+                onClick={() => {
+                  setDirection(v);
+                  setShowConfig(false);
+                }}
                 className={`w-full text-left text-xs px-2.5 py-1.5 rounded-lg transition-colors ${direction === v ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800/60"}`}
               >
                 {l}
@@ -312,7 +345,12 @@ function MindMapInner({ root }: MindMapViewerProps) {
           </div>
           <div className="mt-3 pt-2 border-t border-neutral-100 dark:border-neutral-800">
             <label className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400 cursor-pointer">
-              <input type="checkbox" checked={showDots} onChange={(e) => setShowDots(e.target.checked)} className="rounded border-neutral-300 dark:border-neutral-600" />
+              <input
+                type="checkbox"
+                checked={showDots}
+                onChange={(e) => setShowDots(e.target.checked)}
+                className="rounded border-neutral-300 dark:border-neutral-600"
+              />
               Show dot grid
             </label>
           </div>
@@ -322,14 +360,22 @@ function MindMapInner({ root }: MindMapViewerProps) {
       {/* Export popup */}
       {showExport && (
         <div className="absolute top-10 left-12 z-20 bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700 shadow-lg p-2 w-44">
-          <button type="button" onClick={exportPng} className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left">
+          <button
+            type="button"
+            onClick={exportPng}
+            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left"
+          >
             <ImageIcon size={14} className="text-neutral-400 shrink-0" />
             <div>
               <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PNG</p>
               <p className="text-[10px] text-neutral-400">High-res image</p>
             </div>
           </button>
-          <button type="button" onClick={exportSvg} className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left">
+          <button
+            type="button"
+            onClick={exportSvg}
+            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left"
+          >
             <FileCode size={14} className="text-neutral-400 shrink-0" />
             <div>
               <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">SVG</p>
@@ -341,7 +387,15 @@ function MindMapInner({ root }: MindMapViewerProps) {
 
       {/* Click-away */}
       {(showConfig || showExport) && (
-        <div className="fixed inset-0 z-[15]" onClick={() => { setShowConfig(false); setShowExport(false); }} />
+        <button
+          type="button"
+          aria-label="Close menu"
+          className="fixed inset-0 z-[15] cursor-default"
+          onClick={() => {
+            setShowConfig(false);
+            setShowExport(false);
+          }}
+        />
       )}
     </div>
   );

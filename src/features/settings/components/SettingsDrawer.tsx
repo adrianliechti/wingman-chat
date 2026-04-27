@@ -35,12 +35,13 @@ import { personaOptions } from "@/features/settings/lib/personas";
 import { rebuildAllIndexes } from "@/features/settings/lib/rebuildIndexes";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
-import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { clearAll, deleteDirectory, getStorageUsage, removeIndexEntry } from "@/shared/lib/opfs";
 import { downloadFolderAsZip } from "@/shared/lib/opfs-zip";
 import { formatBytes } from "@/shared/lib/utils";
 import { ProviderState } from "@/shared/types/chat";
 import type { BackgroundPack, EmojiMode, LayoutMode, Theme } from "@/shared/types/settings";
+import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
+import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { OpfsBrowser } from "./OpfsBrowser";
 
 interface SettingsDrawerProps {
@@ -845,20 +846,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                   const toolIcon =
                                     tool.icon ?? (typeof companion.icon === "string" ? companion.icon : undefined);
                                   if (toolIcon) {
-                                    return (
-                                      <span
-                                        className="bg-current inline-block"
-                                        style={{
-                                          width: 16,
-                                          height: 16,
-                                          maskImage: `url(${toolIcon})`,
-                                          WebkitMaskImage: `url(${toolIcon})`,
-                                          maskSize: "contain",
-                                          maskRepeat: "no-repeat",
-                                          maskPosition: "center",
-                                        }}
-                                      />
-                                    );
+                                    return <McpProviderIcon src={toolIcon} size={16} className="object-contain" />;
                                   }
                                   if (companion.icon && typeof companion.icon !== "string") {
                                     const CompanionIcon = companion.icon;

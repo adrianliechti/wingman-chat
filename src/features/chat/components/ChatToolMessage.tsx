@@ -1,7 +1,8 @@
-import { AlertCircle, ChevronRight } from "lucide-react";
-import { memo, useState } from "react";
+import { AlertCircle, ChevronRight, Wrench } from "lucide-react";
+import { memo, useMemo, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
+import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getToolDisplayName } from "@/shared/lib/utils";
 import type { Content, Message, ToolResultContent } from "@/shared/types/chat";
 import { CodeRenderer } from "@/shared/ui/CodeRenderer";
@@ -32,10 +33,20 @@ type ChatToolMessageProps = {
 export const ChatToolMessage = memo(function ChatToolMessage({ message, index }: ChatToolMessageProps) {
   const [toolResultExpanded, setToolResultExpanded] = useState(false);
   const { chat, messages } = useChat();
+  const { providers } = useToolsContext();
   const toolResultParts = message.content.filter((p) => p.type === "tool_result") as ToolResultContent[];
   const isLastFullscreenApp = useLastFullscreenApp(messages, index, toolResultParts);
 
   const toolResult = toolResultParts[0]; // Usually just one
+
+  const toolIcon = useMemo(() => {
+    if (!toolResult?.name) return undefined;
+    for (const provider of providers) {
+      const tool = provider.tools.find((t) => t.name === toolResult.name);
+      if (tool?.icon) return tool.icon;
+    }
+    return undefined;
+  }, [toolResult?.name, providers]);
   const isToolError = !!message.error;
   const codeData = toolResult?.arguments ? extractCodeFromArguments(toolResult.arguments) : null;
   const queryPreview =
@@ -107,7 +118,13 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
               className={`w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 transition-transform ${toolResultExpanded ? "rotate-90" : ""}`}
             />
             <div className="flex items-center gap-2 min-w-0">
-              {isToolError && <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 shrink-0" />}
+              {isToolError ? (
+                <AlertCircle className="w-3 h-3 text-red-400 dark:text-red-500 shrink-0" />
+              ) : toolIcon ? (
+                <img src={toolIcon} alt="" className="shrink-0 w-3 h-3 object-contain" />
+              ) : (
+                <Wrench className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
+              )}
               <span
                 className={`text-xs font-medium whitespace-nowrap ${isToolError ? "text-red-500 dark:text-red-400" : "text-neutral-500 dark:text-neutral-400"}`}
               >

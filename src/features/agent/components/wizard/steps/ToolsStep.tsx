@@ -44,18 +44,7 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
                 {!tool.Icon ? (
                   <Wrench size={16} />
                 ) : typeof tool.Icon === "string" ? (
-                  <span
-                    className="bg-current inline-block"
-                    style={{
-                      width: 16,
-                      height: 16,
-                      maskImage: `url(${tool.Icon})`,
-                      WebkitMaskImage: `url(${tool.Icon})`,
-                      maskSize: "contain",
-                      maskRepeat: "no-repeat",
-                      maskPosition: "center",
-                    }}
-                  />
+                  <img src={tool.Icon} alt="" className="w-4 h-4 object-contain" />
                 ) : (
                   <tool.Icon width={16} height={16} />
                 )}

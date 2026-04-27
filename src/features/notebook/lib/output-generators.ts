@@ -261,7 +261,8 @@ function buildMindMapTree(flat: { id: string; parentId: string | null; label: st
     }
     const parent = byId.get(n.parentId);
     if (!parent) continue;
-    (parent.children ??= []).push(node);
+    parent.children ??= [];
+    parent.children.push(node);
   }
   return root ?? byId.get(flat[0].id) ?? null;
 }

@@ -10,6 +10,8 @@ import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
+import { getSavedModelId } from "@/features/chat/hooks/useModels";
+import { useVoice } from "@/features/voice/hooks/useVoice";
 import { useChatScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
@@ -81,16 +83,22 @@ const Disclaimer = () => {
 
 export function ChatPage() {
   const { messages, selectChat, chat, chats, chatsLoaded, isResponding, model, models, setModel } = useChat();
+  const { isListening, stopVoice } = useVoice();
 
   const navigate = useNavigate();
   const { newChat } = useChatNavigate();
 
   const handleNewChat = useCallback(() => {
     if (model?.id === "realtime") {
-      setModel(models[0] ?? null);
+      const savedId = getSavedModelId();
+      const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
+      setModel(restored ?? null);
+    }
+    if (isListening) {
+      stopVoice();
     }
     newChat();
-  }, [model, models, setModel, newChat]);
+  }, [model, models, setModel, isListening, stopVoice, newChat]);
   const chatIdMatch = useMatch({ from: "/app/chat/$chatId", shouldThrow: false });
   const routeChatId = chatIdMatch?.params.chatId;
 
@@ -113,12 +121,14 @@ export function ChatPage() {
         navigate({ to: "/chat", replace: true });
       }
     } else if (!routeChatId && activeChatId) {
-      // Skip when a chat was just implicitly created (previousChatId was null) —
-      // resetting here would destroy user-selected tools before the first message completes.
-      if (previousChatIdRef.current !== null) {
+      // Only reset when the route previously had a chatId (explicit navigation away).
+      // If undefined, this is a transient render during implicit chat creation.
+      if (previousRouteChatIdRef.current !== undefined) {
         selectChat(null);
       }
     }
+
+    previousRouteChatIdRef.current = routeChatId;
   }, [routeChatId, chat?.id, selectChat, chats, chatsLoaded, navigate]);
 
   // Sync state → URL when a chat is implicitly created during message send.
@@ -162,6 +172,11 @@ export function ChatPage() {
   const messageKeyScopeRef = useRef<string | null>(null);
   const nextMessageKeyRef = useRef(0);
   const previousChatIdRef = useRef<string | null>(null);
+  // Tracks the previous *route* chatId (from the URL). Used to distinguish a
+  // genuine user navigation away from a chat from a transient router render
+  // that occurs while an implicit chat creation navigates to /chat/$chatId.
+  // Previous route chatId — distinguishes real navigation from implicit-creation renders
+  const previousRouteChatIdRef = useRef<string | undefined>(undefined);
 
   const messageRenderKeys = useMemo(() => {
     const scopeKey = chat?.id ?? routeChatId ?? "__draft__";

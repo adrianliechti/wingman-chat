@@ -419,12 +419,7 @@ interface Mutation {
   prev: string;
 }
 
-function recordMutation(
-  mutations: Mutation[],
-  el: HTMLElement,
-  prop: Mutation["prop"],
-  next: string,
-): void {
+function recordMutation(mutations: Mutation[], el: HTMLElement, prop: Mutation["prop"], next: string): void {
   mutations.push({ el, prop, prev: el.style[prop] });
   el.style[prop] = next;
 }

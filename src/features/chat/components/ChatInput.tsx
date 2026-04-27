@@ -35,6 +35,8 @@ import { lookupContentType, readAsDataURL, resizeImageBlob } from "@/shared/lib/
 import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
+import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 
 export function ChatInput() {
@@ -59,16 +61,18 @@ export function ChatInput() {
     stopVoice,
     sendText: sendVoiceText,
   } = useVoice();
+  const { inputDeviceId, inputDevices, setInputDevice, requestPermission: requestAudioPermission } = useAudioDevices();
 
   // Track if realtime mode model is selected (either via model picker or agent's model)
   const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
 
-  // Stop voice when realtime is deselected
+  // Request microphone permission when entering voice mode so the device
+  // selector can immediately show real device names without an extra click.
   useEffect(() => {
-    if (!isRealtimeSelected && isListening) {
-      stopVoice();
+    if (isRealtimeSelected && voiceAvailable && inputDevices.length === 0) {
+      void requestAudioPermission();
     }
-  }, [isRealtimeSelected, isListening, stopVoice]);
+  }, [isRealtimeSelected, voiceAvailable, inputDevices.length, requestAudioPermission]);
 
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
@@ -641,7 +645,7 @@ export function ChatInput() {
               </div>
             )}
             <div className="flex items-center gap-2">
-              {voiceAvailable && !currentAgent?.model && messages.length === 0 && (
+              {voiceAvailable && !currentAgent?.model && (
                 <div
                   ref={modeSliderRef}
                   role="tablist"
@@ -672,7 +676,19 @@ export function ChatInput() {
                         : "w-9 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
                     }`}
                     title="Chat mode"
-                    onClick={() => (isRealtimeSelected ? onModelChange(models[0]) : undefined)}
+                    onClick={() => {
+                      if (!isRealtimeSelected) return;
+                      void stopVoice();
+                      const savedId = (() => {
+                        try {
+                          return localStorage.getItem("app_model");
+                        } catch {
+                          return null;
+                        }
+                      })();
+                      const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
+                      onModelChange(restored);
+                    }}
                   >
                     <MessageSquare size={12} strokeWidth={2.25} className="shrink-0" />
                   </button>
@@ -784,6 +800,73 @@ export function ChatInput() {
                   )}
                 </>
               )}
+
+              {voiceAvailable && isRealtimeSelected && (
+                <Menu>
+                  <MenuButton
+                    className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
+                    title="Select microphone"
+                    aria-label="Select microphone"
+                  >
+                    <span className="shrink-0 flex justify-center">
+                      <Mic size={14} />
+                    </span>
+                    <span className="truncate min-w-0">
+                      {(() => {
+                        const selected = inputDevices.find((d) => d.deviceId === inputDeviceId);
+                        if (selected) return selected.label || "Microphone";
+                        return "Default";
+                      })()}
+                    </span>
+                  </MenuButton>
+                  <MenuItems
+                    modal={false}
+                    transition
+                    anchor="bottom start"
+                    className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10"
+                  >
+                    {inputDevices.length === 0 ? (
+                      <MenuItem>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void requestAudioPermission();
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5"
+                        >
+                          <Mic size={14} className="shrink-0" />
+                          <span>Allow microphone access</span>
+                        </button>
+                      </MenuItem>
+                    ) : (
+                      <>
+                        <MenuItem>
+                          <button
+                            type="button"
+                            onClick={() => setInputDevice(undefined)}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 border-b border-white/20 dark:border-white/10"
+                          >
+                            <span className="truncate">System Default</span>
+                          </button>
+                        </MenuItem>
+                        {inputDevices.map((device) => (
+                          <MenuItem key={device.deviceId}>
+                            <button
+                              type="button"
+                              onClick={() => setInputDevice(device.deviceId)}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 border-b border-white/20 dark:border-white/10 last:border-b-0"
+                            >
+                              <span className="truncate">
+                                {device.label || `Microphone (${device.deviceId.slice(0, 8)})`}
+                              </span>
+                            </button>
+                          </MenuItem>
+                        ))}
+                      </>
+                    )}
+                  </MenuItems>
+                </Menu>
+              )}
             </div>
 
             <div className="flex items-center gap-2 md:gap-1 min-h-7">
@@ -801,20 +884,7 @@ export function ChatInput() {
                     if (providerInitializing) return <LoaderCircle size={14} className="animate-spin" />;
                     if (providerFailed) return <TriangleAlert size={14} />;
                     if (typeof icon === "string")
-                      return (
-                        <span
-                          className="shrink-0 bg-current inline-block"
-                          style={{
-                            width: 14,
-                            height: 14,
-                            maskImage: `url(${icon})`,
-                            WebkitMaskImage: `url(${icon})`,
-                            maskSize: "contain",
-                            maskRepeat: "no-repeat",
-                            maskPosition: "center",
-                          }}
-                        />
-                      );
+                      return <McpProviderIcon src={icon} size={14} className="shrink-0 object-contain" />;
                     const Icon = icon;
                     return <Icon size={14} />;
                   };
@@ -875,20 +945,7 @@ export function ChatInput() {
 
                       const renderIcon = () => {
                         if (typeof icon === "string")
-                          return (
-                            <span
-                              className="shrink-0 bg-current inline-block"
-                              style={{
-                                width: 16,
-                                height: 16,
-                                maskImage: `url(${icon})`,
-                                WebkitMaskImage: `url(${icon})`,
-                                maskSize: "contain",
-                                maskRepeat: "no-repeat",
-                                maskPosition: "center",
-                              }}
-                            />
-                          );
+                          return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
                         const Icon = icon;
                         return <Icon size={16} />;
                       };

@@ -8,11 +8,5 @@ export function MindMapCustomEdge(props: EdgeProps) {
 
   const [edgePath] = getStraightPath({ sourceX, sourceY, targetX, targetY });
 
-  return (
-    <BaseEdge
-      path={edgePath}
-      style={{ stroke, strokeWidth: 2, strokeOpacity: 0.5 }}
-      {...props}
-    />
-  );
+  return <BaseEdge path={edgePath} style={{ stroke, strokeWidth: 2, strokeOpacity: 0.5 }} {...props} />;
 }

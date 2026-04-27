@@ -5,7 +5,7 @@ import type { Model } from "@/shared/types/chat";
 const STORAGE_KEY = "app_model";
 
 // Helper to get saved model from localStorage
-function getSavedModelId(): string | null {
+export function getSavedModelId(): string | null {
   try {
     return localStorage.getItem(STORAGE_KEY);
   } catch {
@@ -61,9 +61,9 @@ export function useModels() {
     setSelectedModelState(model);
 
     try {
-      if (model) {
+      if (model && model.id !== "realtime") {
         localStorage.setItem(STORAGE_KEY, model.id);
-      } else {
+      } else if (!model) {
         localStorage.removeItem(STORAGE_KEY);
       }
     } catch {
@@ -75,5 +75,6 @@ export function useModels() {
     models,
     selectedModel,
     setSelectedModel,
+    getSavedModelId,
   };
 }

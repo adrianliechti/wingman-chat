@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { useVoiceWebSockets } from "@/features/voice/hooks/useVoiceWebSockets";
@@ -27,7 +28,10 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     }
   });
   const { addMessage, messages, chat, models, model: selectedModel, setVoiceToolCall } = useChat();
+  const { currentAgent } = useAgents();
   const model = chat?.model ?? selectedModel ?? models[0];
+  const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
+
   const { tools: chatTools, instructions: chatInstructions } = useChatContext("voice", model);
   const { inputDeviceId, outputDeviceId } = useAudioDevices();
 
@@ -55,8 +59,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       if (typeof content === "object" && content !== null && "text" in content) {
         content = (content as { text: string }).text;
       }
-
-      console.log("User transcript:", { original: text, processed: content });
 
       if (content.trim()) {
         addMessage({ role: Role.User, content: [{ type: "text", text: content }] });
@@ -89,8 +91,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       if (typeof content === "object" && content !== null && "text" in content) {
         content = (content as { text: string }).text;
       }
-
-      console.log("Assistant transcript:", { original: text, processed: content });
 
       if (content.trim()) {
         addMessage({ role: Role.Assistant, content: [{ type: "text", text: content }] });
@@ -143,6 +143,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     setAudioLevel(0);
     setVoiceToolCall(null);
   }, [stop, setVoiceToolCall]);
+
+  // Stop voice whenever the user leaves realtime mode (mode toggle, new chat, chat switch).
+  useEffect(() => {
+    if (!isRealtimeSelected && isListening) {
+      void stopVoice();
+    }
+  }, [isRealtimeSelected, isListening, stopVoice]);
 
   const startVoice = useCallback(async () => {
     try {

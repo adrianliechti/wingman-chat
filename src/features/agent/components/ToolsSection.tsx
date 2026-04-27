@@ -5,6 +5,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { ProviderState } from "@/shared/types/chat";
+import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
 import { Section } from "./Section";
 
 interface ToolsSectionProps {
@@ -98,18 +99,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                 {!tool.Icon ? (
                   <Wrench size={16} />
                 ) : typeof tool.Icon === "string" ? (
-                  <span
-                    className="bg-current inline-block"
-                    style={{
-                      width: 16,
-                      height: 16,
-                      maskImage: `url(${tool.Icon})`,
-                      WebkitMaskImage: `url(${tool.Icon})`,
-                      maskSize: "contain",
-                      maskRepeat: "no-repeat",
-                      maskPosition: "center",
-                    }}
-                  />
+                  <McpProviderIcon src={tool.Icon} size={16} />
                 ) : (
                   <tool.Icon width={16} height={16} />
                 )}
@@ -135,6 +125,15 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
 
           {agent.servers.map((server) => {
             const state = server.enabled ? getProviderState(server.id) : ProviderState.Disconnected;
+            // Prefer the user-configured icon; fall back to the server-published icon
+            // from the live MCPClient (populated after connect via getServerVersion().icons).
+            const liveIcon = providers.find((p) => p.id === server.id)?.icon;
+            const resolvedIcon =
+              typeof server.icon === "string" && server.icon
+                ? server.icon
+                : typeof liveIcon === "string"
+                  ? liveIcon
+                  : undefined;
 
             return (
               <div key={server.id} className="flex items-center gap-2 py-1.5">
@@ -158,19 +157,8 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                 >
                   {state === ProviderState.Initializing ? (
                     <Loader2 size={14} className="shrink-0 text-neutral-400 animate-spin" aria-label="Connecting…" />
-                  ) : server.icon && state !== ProviderState.Failed ? (
-                    <span
-                      className="shrink-0 text-neutral-600 dark:text-neutral-400 bg-current inline-block"
-                      style={{
-                        width: 14,
-                        height: 14,
-                        maskImage: `url(${server.icon})`,
-                        WebkitMaskImage: `url(${server.icon})`,
-                        maskSize: "contain",
-                        maskRepeat: "no-repeat",
-                        maskPosition: "center",
-                      }}
-                    />
+                  ) : resolvedIcon && state !== ProviderState.Failed ? (
+                    <McpProviderIcon src={resolvedIcon} size={14} className="shrink-0 object-contain" />
                   ) : (
                     <Server size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
                   )}
