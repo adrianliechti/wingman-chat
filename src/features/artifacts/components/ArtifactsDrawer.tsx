@@ -548,7 +548,7 @@ export function ArtifactsDrawer() {
         {/* Action buttons */}
         <div className="flex items-center gap-1 px-2">
           {/* Run button - only show when editor has a run handler */}
-          {runHandler && config.interpreter && (
+          {runHandler && (
             <button
               type="button"
               onClick={handleRun}
@@ -593,16 +593,14 @@ export function ArtifactsDrawer() {
           )}
 
           {/* Terminal toggle */}
-          {config.interpreter && (
-            <button
-              type="button"
-              onClick={toggleTerminal}
-              className={`p-2 rounded transition-all duration-150 ease-out ${showTerminal ? "text-green-500 dark:text-green-400 bg-green-500/10" : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"}`}
-              title={showTerminal ? "Close terminal" : "Open terminal"}
-            >
-              <TerminalSquare size={16} />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={toggleTerminal}
+            className={`p-2 rounded transition-all duration-150 ease-out ${showTerminal ? "text-green-500 dark:text-green-400 bg-green-500/10" : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"}`}
+            title={showTerminal ? "Close terminal" : "Open terminal"}
+          >
+            <TerminalSquare size={16} />
+          </button>
 
           {/* Upload button — always visible */}
           {isProcessing ? (

@@ -43,7 +43,6 @@ func loadConfigFiles(cfg *Config) {
 	loadYAMLPtr("internet.yaml", &cfg.Internet)
 	loadYAMLPtr("renderer.yaml", &cfg.Renderer)
 	loadYAMLPtr("repository.yaml", &cfg.Repository)
-	loadYAMLPtr("interpreter.yaml", &cfg.Interpreter)
 }
 
 func applyEnvOverrides(cfg *Config) {
@@ -80,10 +79,6 @@ func applyEnvOverrides(cfg *Config) {
 	})
 
 	withFeature("ARTIFACTS_ENABLED", &cfg.Artifacts, nil)
-
-	withFeature("INTERPRETER_ENABLED", &cfg.Interpreter, func(i *Interpreter) {
-		envOverride("INTERPRETER_MODEL", &i.Model)
-	})
 
 	withFeature("REPOSITORY_ENABLED", &cfg.Repository, func(r *Repository) {
 		envOverride("REPOSITORY_EMBEDDER", &r.Embedder)

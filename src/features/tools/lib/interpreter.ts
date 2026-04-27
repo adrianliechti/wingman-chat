@@ -2,7 +2,7 @@ import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodid
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
 import { SANDBOX_HOME } from "@/shared/lib/sandbox";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
-import { getLlmModel, runLlm } from "./llmCommand";
+import { runLlm } from "./llmCommand";
 import { clearRenderQueue, processRenderQueue } from "./plotlyRenderer";
 import PLOTLY_IMAGE_SHIM from "./plotlyShim.py?raw";
 
@@ -197,11 +197,6 @@ async function runPythonCode(pyodide: PyodideInterface, code: string): Promise<s
   return output.trim() || NO_OUTPUT_MESSAGE;
 }
 
-function registerLlmGlobal(pyodide: PyodideInterface): void {
-  if (!getLlmModel()) return;
-  pyodide.globals.set("llm", async (prompt: string) => runLlm(prompt));
-}
-
 async function loadPyodide(): Promise<PyodideInterface> {
   if (pyodideInstance) return pyodideInstance;
   if (pyodideLoading) return pyodideLoading;
@@ -209,7 +204,7 @@ async function loadPyodide(): Promise<PyodideInterface> {
   pyodideLoading = (async () => {
     try {
       pyodideInstance = await loadPyodideRuntime({ indexURL: "/pyodide/" });
-      registerLlmGlobal(pyodideInstance);
+      pyodideInstance.globals.set("llm", runLlm);
       console.log("Pyodide loaded successfully");
       return pyodideInstance;
     } catch (error) {

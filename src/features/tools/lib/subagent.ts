@@ -4,19 +4,13 @@ import { run as agentRun } from "@/shared/lib/agent";
 import { getConfig } from "@/shared/config";
 import { getTextFromContent, Role, type Tool } from "@/shared/types/chat";
 
-const SUBAGENT_NAME = "agent";
-
-export function createSubagentTool(
-  model: string,
-  providerInstructions: string,
-  baseTools: Tool[],
-): Tool {
+export function createSubagentTool(model: string, providerInstructions: string, baseTools: Tool[]): Tool {
   const baseInstructions = subagentSystem.trim();
   const extra = providerInstructions.trim();
   const instructions = extra ? `${baseInstructions}\n\n${extra}` : baseInstructions;
 
   return {
-    name: SUBAGENT_NAME,
+    name: "agent",
     description: subagentDescription.trim(),
     parameters: {
       type: "object",
@@ -55,4 +49,3 @@ export function createSubagentTool(
   };
 }
 
-export const SUBAGENT_TOOL_NAME = SUBAGENT_NAME;
