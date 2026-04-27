@@ -4,6 +4,7 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
 import { useProfile } from "@/features/settings/hooks/useProfile";
+import { createSubagentTool } from "@/features/tools/lib/subagent";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import type { Model, Tool, ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
@@ -63,7 +64,19 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
 
         console.log("Compiled Tools from Providers:", toolsArrays);
 
-        return toolsArrays.flat();
+        const baseTools = toolsArrays.flat();
+
+        // Add subagent tool only when there are other tools to delegate to.
+        if (baseTools.length === 0 || !model?.id) {
+          return baseTools;
+        }
+
+        const providerInstructions = filteredProviders
+          .map((p: ToolProvider) => p.instructions?.trim())
+          .filter((s): s is string => !!s)
+          .join("\n\n");
+
+        return [...baseTools, createSubagentTool(model.id, providerInstructions, baseTools)];
       },
 
       instructions: () => {
