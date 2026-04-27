@@ -198,6 +198,221 @@ function computeObjectFitDraw(
   return full;
 }
 
+// ── Slide background detection ───────────────────────────────────────────────
+//
+// Backgrounds need to be painted directly onto the canvas (Layer 1) rather
+// than relying on the foreignObject. CSS gradients and CSS variables don't
+// render reliably inside an SVG-loaded-as-img on every browser, which is what
+// produced "white-only" exports for slides whose background was a gradient.
+
+interface ParsedLinearGradient {
+  angle: number;
+  stops: { color: string; offset: number }[];
+}
+
+interface SlideBackground {
+  color?: string;
+  gradient?: ParsedLinearGradient;
+}
+
+/** Split a CSS value on top-level commas (respecting parentheses). */
+function splitTopLevelCommas(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (const c of s) {
+    if (c === "(") depth++;
+    else if (c === ")") depth--;
+    if (c === "," && depth === 0) {
+      out.push(cur.trim());
+      cur = "";
+    } else {
+      cur += c;
+    }
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+const KEYWORD_ANGLES: Record<string, number> = {
+  top: 0,
+  right: 90,
+  bottom: 180,
+  left: 270,
+  "top right": 45,
+  "right top": 45,
+  "bottom right": 135,
+  "right bottom": 135,
+  "bottom left": 225,
+  "left bottom": 225,
+  "top left": 315,
+  "left top": 315,
+};
+
+function parseGradientAngle(spec: string): number | null {
+  // Strip CSS Color 4 / Tailwind v4 colorspace prefix: "in oklch", "in srgb"…
+  const cleaned = spec.toLowerCase().trim().replace(/^in\s+\S+(?:\s+\S+)?\s+/, "");
+  if (cleaned.startsWith("to ")) {
+    const dir = cleaned.slice(3).trim().replace(/\s+/g, " ");
+    return KEYWORD_ANGLES[dir] ?? null;
+  }
+  const m = /^(-?\d+(?:\.\d+)?)\s*(deg|rad|turn|grad)$/.exec(cleaned);
+  if (!m) return null;
+  const v = parseFloat(m[1]);
+  switch (m[2]) {
+    case "rad":
+      return (v * 180) / Math.PI;
+    case "turn":
+      return v * 360;
+    case "grad":
+      return v * 0.9;
+    default:
+      return v;
+  }
+}
+
+/** Pull a single color expression off the front of a stop token. */
+function parseColorStop(token: string): { color: string; offset?: number } | null {
+  const t = token.trim();
+  if (!t) return null;
+  let i = 0;
+  if (t.startsWith("#")) {
+    while (i < t.length && !/\s/.test(t[i])) i++;
+  } else if (/^[a-z]+\(/i.test(t)) {
+    let depth = 0;
+    for (; i < t.length; i++) {
+      if (t[i] === "(") depth++;
+      else if (t[i] === ")") {
+        depth--;
+        if (depth === 0) {
+          i++;
+          break;
+        }
+      }
+    }
+  } else {
+    while (i < t.length && !/\s/.test(t[i])) i++;
+  }
+  const color = t.slice(0, i).trim();
+  if (!color) return null;
+  const rest = t.slice(i).trim();
+  const m = /^(-?\d+(?:\.\d+)?)\s*%/.exec(rest);
+  if (m) return { color, offset: parseFloat(m[1]) / 100 };
+  return { color };
+}
+
+function parseLinearGradient(layer: string): ParsedLinearGradient | null {
+  const m = /^linear-gradient\(\s*([\s\S]+?)\s*\)\s*$/i.exec(layer.trim());
+  if (!m) return null;
+  const tokens = splitTopLevelCommas(m[1]);
+  if (tokens.length < 2) return null;
+
+  let angle = 180;
+  let startIdx = 0;
+  const angleFromFirst = parseGradientAngle(tokens[0]);
+  if (angleFromFirst !== null) {
+    angle = angleFromFirst;
+    startIdx = 1;
+  }
+
+  const parsed: { color: string; offset?: number }[] = [];
+  for (const tok of tokens.slice(startIdx)) {
+    const s = parseColorStop(tok);
+    if (s) parsed.push(s);
+  }
+  if (parsed.length < 2) return null;
+
+  // Distribute missing offsets per CSS spec.
+  if (parsed[0].offset === undefined) parsed[0].offset = 0;
+  if (parsed[parsed.length - 1].offset === undefined) parsed[parsed.length - 1].offset = 1;
+  let i = 1;
+  while (i < parsed.length - 1) {
+    if (parsed[i].offset !== undefined) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < parsed.length && parsed[j].offset === undefined) j++;
+    const prev = parsed[i - 1].offset as number;
+    const next = parsed[j].offset as number;
+    const span = j - (i - 1);
+    for (let k = 0; k < j - i; k++) {
+      parsed[i + k].offset = prev + ((next - prev) * (k + 1)) / span;
+    }
+    i = j;
+  }
+  // Clamp to monotonic.
+  for (let k = 1; k < parsed.length; k++) {
+    if ((parsed[k].offset as number) < (parsed[k - 1].offset as number)) {
+      parsed[k].offset = parsed[k - 1].offset;
+    }
+  }
+
+  return {
+    angle,
+    stops: parsed.map((p) => ({ color: p.color, offset: Math.max(0, Math.min(1, p.offset as number)) })),
+  };
+}
+
+function applyLinearGradient(ctx: CanvasRenderingContext2D, g: ParsedLinearGradient, w: number, h: number) {
+  const rad = (g.angle * Math.PI) / 180;
+  const sx = Math.sin(rad);
+  const sy = -Math.cos(rad);
+  const cx = w / 2;
+  const cy = h / 2;
+  const len = Math.abs(w * sx) + Math.abs(h * sy);
+  const half = len / 2;
+  const grad = ctx.createLinearGradient(cx - sx * half, cy - sy * half, cx + sx * half, cy + sy * half);
+  for (const s of g.stops) {
+    try {
+      grad.addColorStop(s.offset, s.color);
+    } catch {
+      /* invalid color string — skip this stop */
+    }
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+}
+
+/** Find every element that spans (close to) the full slide. */
+function collectFullSlideElements(doc: Document): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  const seen = new Set<Element>();
+  const minW = CANVAS_W * 0.9;
+  const minH = CANVAS_H * 0.9;
+  const visit = (el: Element, depth: number) => {
+    if (seen.has(el)) return;
+    seen.add(el);
+    const html = el as HTMLElement;
+    if (html.getBoundingClientRect) {
+      const rect = html.getBoundingClientRect();
+      if (rect.width >= minW && rect.height >= minH) out.push(html);
+    }
+    if (depth >= 4) return;
+    for (const child of Array.from(el.children)) visit(child, depth + 1);
+  };
+  visit(doc.documentElement, 0);
+  return out;
+}
+
+function detectSlideBackground(win: Window, candidates: HTMLElement[]): SlideBackground | null {
+  for (const el of candidates) {
+    const cs = win.getComputedStyle(el);
+    const bgImage = cs.backgroundImage;
+    if (bgImage && bgImage !== "none") {
+      for (const layer of splitTopLevelCommas(bgImage)) {
+        const grad = parseLinearGradient(layer);
+        if (grad) return { gradient: grad };
+      }
+    }
+    const bgColor = cs.backgroundColor;
+    if (bgColor && bgColor !== "rgba(0, 0, 0, 0)" && bgColor !== "transparent") {
+      return { color: bgColor };
+    }
+  }
+  return null;
+}
+
 /** Parse `object-position` / `background-position` into 0–1 fractions (center default). */
 function parsePosition(value: string | undefined): { x: number; y: number } {
   if (!value) return { x: 0.5, y: 0.5 };
@@ -256,20 +471,9 @@ async function rasterizeSlideDoc(
     doc.head.appendChild(hideTextStyle);
   }
 
-  // ── Collect the slide background color ────────────────────────────────
-  let bgColor = "#ffffff";
-  const bodyBg = win.getComputedStyle(doc.body).backgroundColor;
-  if (bodyBg && bodyBg !== "rgba(0, 0, 0, 0)" && bodyBg !== "transparent") {
-    bgColor = bodyBg;
-  } else {
-    const first = doc.body.firstElementChild as HTMLElement | null;
-    if (first) {
-      const firstBg = win.getComputedStyle(first).backgroundColor;
-      if (firstBg && firstBg !== "rgba(0, 0, 0, 0)" && firstBg !== "transparent") {
-        bgColor = firstBg;
-      }
-    }
-  }
+  // ── Collect the slide background (color or gradient) ─────────────────
+  const fullSlideEls = collectFullSlideElements(doc);
+  const slideBg = detectSlideBackground(win, fullSlideEls);
 
   // ── Collect images and hide them ──────────────────────────────────────
   interface ImageOverlay {
@@ -369,20 +573,19 @@ async function rasterizeSlideDoc(
   }
 
   // ── Make full-slide backgrounds transparent ───────────────────────────
-  // Only clear backgrounds on elements that span the full slide (body,
-  // html, wrapper divs) — leave smaller elements (cards, badges) alone.
-  const savedFullBgs: { el: HTMLElement; orig: string }[] = [];
-  const bgCandidates = [doc.documentElement, doc.body, ...doc.body.children];
-  for (const node of bgCandidates) {
-    const el = node as HTMLElement;
-    if (!el.getBoundingClientRect) continue;
-    const rect = el.getBoundingClientRect();
-    if (rect.width < CANVAS_W * 0.9 || rect.height < CANVAS_H * 0.9) continue;
-    const elBg = win.getComputedStyle(el).backgroundColor;
-    if (elBg && elBg !== "rgba(0, 0, 0, 0)" && elBg !== "transparent") {
-      savedFullBgs.push({ el, orig: el.style.backgroundColor });
-      el.style.backgroundColor = "transparent";
-    }
+  // The canvas paints these explicitly (Layer 1 below), so the foreignObject
+  // must not double-render them — clear both the color and the image (which
+  // is where gradients live) on every element that spans the whole slide.
+  const savedFullBgs: { el: HTMLElement; color: string; image: string }[] = [];
+  for (const el of fullSlideEls) {
+    const cs = win.getComputedStyle(el);
+    const hasColor =
+      cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)" && cs.backgroundColor !== "transparent";
+    const hasImage = cs.backgroundImage && cs.backgroundImage !== "none";
+    if (!hasColor && !hasImage) continue;
+    savedFullBgs.push({ el, color: el.style.backgroundColor, image: el.style.backgroundImage });
+    if (hasColor) el.style.backgroundColor = "transparent";
+    if (hasImage) el.style.backgroundImage = "none";
   }
 
   // ── Render layout via SVG foreignObject ───────────────────────────────
@@ -390,7 +593,10 @@ async function rasterizeSlideDoc(
   const xhtml = new XMLSerializer().serializeToString(doc.documentElement);
 
   // Restore backgrounds
-  for (const { el, orig } of savedFullBgs) el.style.backgroundColor = orig;
+  for (const { el, color, image } of savedFullBgs) {
+    el.style.backgroundColor = color;
+    el.style.backgroundImage = image;
+  }
 
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_W}" height="${CANVAS_H}" viewBox="0 0 ${CANVAS_W} ${CANVAS_H}">` +
@@ -425,9 +631,13 @@ async function rasterizeSlideDoc(
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
 
-  // Layer 1: solid background
-  ctx.fillStyle = bgColor;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Layer 1: slide background (gradient or solid color, white fallback)
+  if (slideBg?.gradient) {
+    applyLinearGradient(ctx, slideBg.gradient, canvas.width, canvas.height);
+  } else {
+    ctx.fillStyle = slideBg?.color ?? "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 
   // Layer 2: images (drawn on top of background, behind text/shapes)
   for (const info of overlays) {
