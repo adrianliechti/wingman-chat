@@ -48,7 +48,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   } = useChats();
   const { isAvailable: artifactsEnabled, setFileSystem: setArtifactsFileSystem } = useArtifacts();
   const { renderApp, closeApp } = useApp();
-  const { currentAgent, setCurrentAgent } = useAgents();
+  const { currentAgent } = useAgents();
   const { resetTools } = useToolsContext();
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
@@ -128,13 +128,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
       if (!id && (selectedModel?.id === "realtime" || chatModel?.id === "realtime")) {
         setSelectedModel(models[0] ?? null);
       }
-
-      // When starting a new chat, clear the selected agent
-      if (!id) {
-        setCurrentAgent(null);
-      }
     },
-    [resetTools, closeApp, selectedModel, chatModel, models, setSelectedModel, setCurrentAgent],
+    [resetTools, closeApp, selectedModel, chatModel, models, setSelectedModel],
   );
 
   const deleteChat = useCallback(

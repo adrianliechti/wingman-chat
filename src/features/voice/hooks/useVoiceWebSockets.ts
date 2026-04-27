@@ -135,31 +135,25 @@ export function useVoiceWebSockets(
         ws.send(JSON.stringify(sessionUpdate));
 
         if (messages && messages.length > 0) {
-          console.log(`Adding ${messages.length} messages to conversation history`);
+          // Only seed user/assistant text messages — tool_call, tool_result, and
+          const seedMessages = messages.filter((message) => {
+            if (message.role !== "user" && message.role !== "assistant") return false;
+            return getTextFromContent(message.content).trim().length > 0;
+          });
 
-          messages.forEach((message) => {
-            const content: Array<{
-              type: "input_text" | "text";
-              text: string;
-            }> = [];
-
-            // Add main message content
+          seedMessages.forEach((message) => {
             const messageText = getTextFromContent(message.content);
-            if (messageText) {
-              content.push({
-                type: message.role === "user" ? "input_text" : "text",
-                text: messageText,
-              });
-            }
-
-            // Note: Images and files in content are not sent over voice WebSocket
-
             const conversationItem = {
               type: "conversation.item.create",
               item: {
                 type: "message",
                 role: message.role,
-                content: content,
+                content: [
+                  {
+                    type: message.role === "user" ? "input_text" : "text",
+                    text: messageText,
+                  },
+                ],
               },
             };
 
