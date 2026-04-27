@@ -1,0 +1,8 @@
+### LLM helper (`llm`)
+
+Both interpreters expose an `llm` helper that calls a configured language model with a single prompt string and returns its text response.
+
+- Python: `await llm("your prompt")` — async, returns `str`
+- Bash: `llm "your prompt"` (or pipe via stdin: `cat file.txt | llm "summarize this"`) — writes the response to stdout
+
+Use it for sub-tasks where another model call is genuinely useful — summarizing intermediate results, classifying or extracting structured information from text, generating short content snippets inside a larger pipeline. Avoid using it for tasks you can answer directly without an extra round trip.

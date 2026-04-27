@@ -1,0 +1,49 @@
+import type { Command, CommandContext, ExecResult } from "just-bash/browser";
+import { defineCommand } from "just-bash/browser";
+import { getConfig } from "@/shared/config";
+import { getTextFromContent, Role } from "@/shared/types/chat";
+
+export function getLlmModel(): string | null {
+  return getConfig().interpreter?.model ?? null;
+}
+
+export async function runLlm(prompt: string): Promise<string> {
+  const model = getLlmModel();
+  if (!model) {
+    throw new Error("llm: interpreter.model is not configured");
+  }
+
+  const client = getConfig().client;
+  const result = await client.complete(
+    model,
+    "",
+    [{ role: Role.User, content: [{ type: "text", text: prompt }] }],
+    [],
+  );
+  return getTextFromContent(result.content);
+}
+
+async function executeLlm(args: string[], ctx: CommandContext): Promise<ExecResult> {
+  if (!getLlmModel()) {
+    return { stdout: "", stderr: "llm: interpreter.model is not configured\n", exitCode: 127 };
+  }
+
+  let prompt = args.join(" ").trim();
+  if (!prompt && ctx.stdin) {
+    prompt = ctx.stdin;
+  }
+
+  if (!prompt) {
+    return { stdout: "", stderr: "llm: no prompt provided (pass as args or pipe via stdin)\n", exitCode: 2 };
+  }
+
+  try {
+    const text = await runLlm(prompt);
+    return { stdout: text.endsWith("\n") ? text : `${text}\n`, stderr: "", exitCode: 0 };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { stdout: "", stderr: `${message}\n`, exitCode: 1 };
+  }
+}
+
+export const llmCommands: Command[] = [defineCommand("llm", executeLlm)];

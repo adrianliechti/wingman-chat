@@ -99,6 +99,10 @@ interface ChatConfig {
   summarizer?: string;
 }
 
+interface InterpreterConfig {
+  model?: string;
+}
+
 interface DriveConfig {
   id: string;
   name: string;
@@ -170,6 +174,7 @@ interface ConfigSchema {
   memory?: object;
 
   artifacts?: object;
+  interpreter?: InterpreterConfig;
   repository?: RepositoryConfig;
   translator?: TranslatorConfig;
 
@@ -220,6 +225,7 @@ interface Config {
   memory: object | null;
 
   artifacts: object | null;
+  interpreter: InterpreterConfig | null;
   repository: RepositoryConfig | null;
   translator: TranslatorConfig | null;
 
@@ -282,6 +288,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       memory: cfg.memory ?? null,
       repository: cfg.repository ?? null,
       artifacts: cfg.artifacts ?? null,
+      interpreter: cfg.interpreter?.model ? { model: cfg.interpreter.model } : null,
 
       translator: cfg.translator
         ? {

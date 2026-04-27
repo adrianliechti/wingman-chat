@@ -4,6 +4,7 @@ import type { OverlayFile } from "@/features/artifacts/lib/fs";
 import { bytesToDataUrl, dataUrlToBytes } from "@/shared/lib/fileContent";
 import { SANDBOX_HOME } from "@/shared/lib/sandbox";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import { getLlmModel, llmCommands } from "./llmCommand";
 import { pythonCommands } from "./pythonCommand";
 
 export interface BashExecutionRequest {
@@ -67,7 +68,7 @@ export function createBashInstance(files?: Record<string, { content: string; con
   const bash = new Bash({
     fs: memFs,
     cwd: SANDBOX_HOME,
-    customCommands: pythonCommands,
+    customCommands: [...pythonCommands, ...(getLlmModel() ? llmCommands : [])],
     executionLimits: {
       maxCallDepth: 50,
       maxCommandCount: 10000,

@@ -3,8 +3,11 @@ import { useCallback, useMemo, useRef } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
 import interpreterInstructionsText from "@/features/artifacts/prompts/interpreter.txt?raw";
+import llmInstructionsText from "@/features/artifacts/prompts/llm.txt?raw";
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
+import { getLlmModel } from "@/features/tools/lib/llmCommand";
+import { getConfig } from "@/shared/config";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { createFileTools, type FileData, type FileEntry, type WritableFileSource } from "@/shared/lib/file-tools";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
@@ -343,7 +346,8 @@ export function useArtifactsProvider(): ToolProvider | null {
       },
     ];
 
-    return [...fileTools, ...contextTools, ...executionTools];
+    const interpreterEnabled = getConfig().interpreter !== null;
+    return [...fileTools, ...contextTools, ...(interpreterEnabled ? executionTools : [])];
     // Refs are intentionally not dependencies — the callback needs to produce
     // a stable tool array so downstream memoization doesn't thrash. Tool
     // functions read the latest `fs`/`activeFile` via refs at execution time.
@@ -354,12 +358,20 @@ export function useArtifactsProvider(): ToolProvider | null {
       return null;
     }
 
+    const interpreterEnabled = getConfig().interpreter !== null;
+
     return {
       id: "artifacts",
       name: "Artifacts",
-      description: "Create and edit files, run Python and Bash code",
+      description: interpreterEnabled ? "Create and edit files, run Python and Bash code" : "Create and edit files",
       icon: Shapes,
-      instructions: `${artifactsInstructionsText}\n\n${interpreterInstructionsText}`,
+      instructions: [
+        artifactsInstructionsText,
+        interpreterEnabled ? interpreterInstructionsText : null,
+        getLlmModel() ? llmInstructionsText : null,
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
       tools: artifactsTools(),
     };
   }, [isAvailable, artifactsTools]);
