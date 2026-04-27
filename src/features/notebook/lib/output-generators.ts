@@ -18,7 +18,7 @@ import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { Tool } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
-import type { MindMapNode, NotebookOutput, QuizQuestion } from "../types/notebook";
+import type { MindMapNode, NotebookOutput } from "../types/notebook";
 import { assembleSlideHtml, getOrderedHtmlSlides } from "./html-slide-assembly";
 import { createHtmlSlideTools } from "./html-slide-tools";
 import { createImageSlideTools } from "./image-slide-tools";
@@ -41,33 +41,6 @@ const USER_MESSAGE = (label: string) => ({
   role: "user" as const,
   content: [{ type: "text" as const, text: `Generate a ${label.toLowerCase()} from the available sources.` }],
 });
-
-function stripJsonFence(raw: string): string {
-  return raw
-    .replace(/^```json?\s*/i, "")
-    .replace(/```\s*$/i, "")
-    .trim();
-}
-
-/** Extract the first top-level JSON object from a response that may contain leading/trailing prose. */
-function extractJson(raw: string): string {
-  // Try stripping code fences first
-  const stripped = stripJsonFence(raw);
-
-  // Find the first '{' and match to the closing '}'
-  const start = stripped.indexOf("{");
-  if (start === -1) return stripped;
-
-  let depth = 0;
-  for (let i = start; i < stripped.length; i++) {
-    if (stripped[i] === "{") depth++;
-    else if (stripped[i] === "}") depth--;
-    if (depth === 0) return stripped.slice(start, i + 1);
-  }
-
-  // Fallback: return from first '{' to end
-  return stripped.slice(start);
-}
 
 // ── Podcast ────────────────────────────────────────────────────────────
 
@@ -227,25 +200,71 @@ export async function generateImageSlides(ctx: GenerateContext): Promise<Result>
 
 // ── Quiz ───────────────────────────────────────────────────────────────
 
+const quizSchema = z.object({
+  questions: z.array(
+    z.object({
+      question: z.string(),
+      options: z.array(z.string()),
+      correctIndex: z.number().int(),
+      explanation: z.string(),
+    }),
+  ),
+});
+
 export async function generateQuiz(ctx: GenerateContext): Promise<Result> {
+  // Step 1: tool-calling loop reads sources and drafts the quiz as text
   const result = await run(ctx.client, ctx.model, ctx.instructions, [USER_MESSAGE("Quiz")], ctx.sourceTools);
   const raw = getTextFromContent(result[result.length - 1].content);
   if (!raw?.trim()) throw new Error("Could not generate quiz");
 
-  const parsed = JSON.parse(stripJsonFence(raw)) as { questions: QuizQuestion[] };
-  if (!parsed.questions?.length) throw new Error("No questions generated");
+  // Step 2: structured output pass to guarantee valid JSON
+  const parsed = await ctx.client.parse(
+    ctx.model,
+    "Convert the following quiz draft into the exact JSON structure requested. Preserve all questions, options, correct indices, and explanations.",
+    raw,
+    quizSchema,
+    "quiz",
+  );
 
+  if (!parsed?.questions?.length) throw new Error("No questions generated");
   return { content: raw, quiz: parsed.questions };
 }
 
 // ── Mind map ───────────────────────────────────────────────────────────
 
-const mindMapNodeSchema: z.ZodType<MindMapNode> = z.lazy(() =>
-  z.object({
-    label: z.string(),
-    children: z.array(mindMapNodeSchema).optional(),
-  }),
-);
+// OpenAI structured output forbids self-referencing schemas, so the tree is
+// expressed as a flat list with parent references and reconstructed below.
+const mindMapFlatSchema = z
+  .object({
+    nodes: z.array(
+      z
+        .object({
+          id: z.string(),
+          parentId: z.string().nullable(),
+          label: z.string(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+function buildMindMapTree(flat: { id: string; parentId: string | null; label: string }[]): MindMapNode | null {
+  if (flat.length === 0) return null;
+  const byId = new Map<string, MindMapNode>(flat.map((n) => [n.id, { label: n.label }]));
+  let root: MindMapNode | null = null;
+  for (const n of flat) {
+    const node = byId.get(n.id);
+    if (!node) continue;
+    if (n.parentId === null || n.parentId === "" || !byId.has(n.parentId)) {
+      root ??= node;
+      continue;
+    }
+    const parent = byId.get(n.parentId);
+    if (!parent) continue;
+    (parent.children ??= []).push(node);
+  }
+  return root ?? byId.get(flat[0].id) ?? null;
+}
 
 export async function generateMindMap(ctx: GenerateContext): Promise<Result> {
   // Step 1: tool-calling loop reads sources and drafts the mind map as text
@@ -253,17 +272,19 @@ export async function generateMindMap(ctx: GenerateContext): Promise<Result> {
   const raw = getTextFromContent(result[result.length - 1].content);
   if (!raw?.trim()) throw new Error("Could not generate mind map");
 
-  // Step 2: structured output pass to guarantee valid JSON
+  // Step 2: structured output pass — ask for a flat node list with parent ids.
   const parsed = await ctx.client.parse(
     ctx.model,
-    "Convert the following mind map description into the exact JSON structure requested. Preserve all labels and hierarchy.",
+    "Convert the following mind map into a flat list of nodes. Assign each node a unique `id` string, a `label`, and a `parentId` referring to its parent's id (use null for the root). Include every node from the source mind map and preserve the full hierarchy.",
     raw,
-    mindMapNodeSchema,
+    mindMapFlatSchema,
     "mindmap",
   );
 
-  if (!parsed?.label) throw new Error("Invalid mind map structure");
-  return { content: raw, mindMap: parsed };
+  if (!parsed?.nodes?.length) throw new Error("Invalid mind map structure");
+  const tree = buildMindMapTree(parsed.nodes);
+  if (!tree) throw new Error("Invalid mind map structure");
+  return { content: raw, mindMap: tree };
 }
 
 // ── Report / default text ──────────────────────────────────────────────
