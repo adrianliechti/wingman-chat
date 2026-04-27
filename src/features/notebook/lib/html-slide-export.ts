@@ -485,27 +485,34 @@ function collectPaintEvents(doc: Document, win: Window, mutations: Mutation[]): 
     const rect = el.getBoundingClientRect();
     const html = "style" in el ? (el as HTMLElement) : null;
 
-    if (html) {
+    if (html && rect.width >= 1 && rect.height >= 1) {
       const cs = win.getComputedStyle(html);
       const fullSlide = isFullSlideRect(rect);
 
-      // Background-image: gradients and data-URL layers on a full-slide element.
+      // Background-image layers. Gradients only matter on full-slide elements
+      // (smaller gradients render fine inside the foreignObject); data-URL
+      // images need extraction at any size because data URLs inside an SVG
+      // foreignObject don't render (Chrome blocks nested data URLs).
       // CSS lists layers top-to-bottom; canvas paints later events on top, so
-      // iterate in reverse to push bottom layer first.
+      // iterate in reverse to push the bottom layer first.
       let clearedBgImage = false;
-      if (fullSlide && cs.backgroundImage && cs.backgroundImage !== "none") {
+      if (cs.backgroundImage && cs.backgroundImage !== "none") {
         const layers = splitTopLevelCommas(cs.backgroundImage);
         for (let i = layers.length - 1; i >= 0; i--) {
           const layer = layers[i];
-          const grad = parseLinearGradient(layer, CANVAS_W, CANVAS_H);
-          if (grad) {
-            events.push({ kind: "gradient", index, gradient: grad });
-            if (!clearedBgImage) {
-              recordMutation(mutations, html, "backgroundImage", "none");
-              clearedBgImage = true;
+
+          if (fullSlide) {
+            const grad = parseLinearGradient(layer, CANVAS_W, CANVAS_H);
+            if (grad) {
+              events.push({ kind: "gradient", index, gradient: grad });
+              if (!clearedBgImage) {
+                recordMutation(mutations, html, "backgroundImage", "none");
+                clearedBgImage = true;
+              }
+              continue;
             }
-            continue;
           }
+
           const dataUrl = extractDataUrlFromCssLayer(layer);
           if (dataUrl) {
             const bgSize = cs.backgroundSize;
