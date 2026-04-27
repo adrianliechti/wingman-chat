@@ -269,6 +269,7 @@ export class Client {
           .stream({
             model: model,
             store: false,
+            truncation: "auto",
             tools: this.toTools(tools),
             input: items,
             instructions: instructions,
@@ -358,7 +359,9 @@ export class Client {
               id: finalResponse.id,
               model: finalResponse.model,
               inputTokens: finalResponse.usage?.input_tokens,
+              cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
               outputTokens: finalResponse.usage?.output_tokens,
+              reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
             },
           };
         } catch (error) {
@@ -731,6 +734,7 @@ export class Client {
           model,
           instructions,
           input,
+          truncation: "auto",
           text: { format: zodTextFormat(schema, name) },
         });
         return { result: response.output_parsed ?? null };

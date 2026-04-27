@@ -353,10 +353,11 @@ export function AppLayout() {
                   key={key}
                   to={to}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${currentPage === key
+                  className={`w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors ${
+                    currentPage === key
                       ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100"
                       : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                    }`}
+                  }`}
                 >
                   {icon}
                   <span className="font-medium text-sm">{label}</span>

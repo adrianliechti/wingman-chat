@@ -159,7 +159,9 @@ export function CanvasInput({
           {/* Model dropdown */}
           <Menu>
             <MenuButton className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48">
-              <span className="shrink-0 flex justify-center"><Sparkles size={14} /></span>
+              <span className="shrink-0 flex justify-center">
+                <Sparkles size={14} />
+              </span>
               <span className="truncate min-w-0">{selectedModel?.name || "Model"}</span>
             </MenuButton>
             <MenuItems
@@ -180,7 +182,6 @@ export function CanvasInput({
                       className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                     >
                       <div className="flex items-center gap-2.5 w-full">
-
                         <div className="flex flex-col items-start flex-1 min-w-0">
                           <div className="font-semibold text-sm leading-tight whitespace-nowrap">
                             {model.name ?? model.id}
@@ -202,12 +203,15 @@ export function CanvasInput({
           {/* Style dropdown */}
           <Menu>
             <MenuButton
-              className={`flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium transition-colors max-w-48 ${selectedStyle
-                ? "text-blue-600 dark:text-blue-400"
-                : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                }`}
+              className={`flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium transition-colors max-w-48 ${
+                selectedStyle
+                  ? "text-blue-600 dark:text-blue-400"
+                  : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+              }`}
             >
-              <span className="shrink-0 flex justify-center"><Paintbrush size={14} /></span>
+              <span className="shrink-0 flex justify-center">
+                <Paintbrush size={14} />
+              </span>
               <span className="truncate min-w-0">{selectedStyle || "Style"}</span>
             </MenuButton>
             <MenuItems
@@ -238,7 +242,9 @@ export function CanvasInput({
                     className="group flex w-full items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                   >
                     <div className="flex items-center gap-2.5 w-full">
-                      <span className={`font-semibold text-sm leading-tight whitespace-nowrap ${selectedStyle === style ? "text-blue-600 dark:text-blue-400" : ""}`}>
+                      <span
+                        className={`font-semibold text-sm leading-tight whitespace-nowrap ${selectedStyle === style ? "text-blue-600 dark:text-blue-400" : ""}`}
+                      >
                         {style}
                       </span>
                     </div>

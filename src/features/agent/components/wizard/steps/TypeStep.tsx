@@ -61,9 +61,7 @@ export function TypeStep({ agentType, name, showValidation, dispatch }: TypeStep
 
       {/* Type */}
       <div>
-        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-          Type
-        </p>
+        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Type</p>
         <div className="grid grid-cols-2 gap-2.5">
           {agentTypes.map(({ value, icon: Icon, label, description }) => {
             const isSelected = agentType === value;
@@ -85,17 +83,13 @@ export function TypeStep({ agentType, name, showValidation, dispatch }: TypeStep
                 )}
                 <div
                   className={`flex items-center justify-center w-9 h-9 rounded-lg ${
-                    isSelected
-                      ? "bg-neutral-900 dark:bg-neutral-100"
-                      : "bg-neutral-100 dark:bg-neutral-700/60"
+                    isSelected ? "bg-neutral-900 dark:bg-neutral-100" : "bg-neutral-100 dark:bg-neutral-700/60"
                   }`}
                 >
                   <Icon
                     size={18}
                     className={
-                      isSelected
-                        ? "text-white dark:text-neutral-900"
-                        : "text-neutral-500 dark:text-neutral-300"
+                      isSelected ? "text-white dark:text-neutral-900" : "text-neutral-500 dark:text-neutral-300"
                     }
                   />
                 </div>

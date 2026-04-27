@@ -21,7 +21,20 @@ interface NotebookChatProps {
   isGeneratingOutput?: boolean;
 }
 
-export function NotebookChat({ messages, sources, isChatting, streamingContent, onSend, showSourcesActive, showStudioActive, onShowSources, onShowStudio, isSearching, outputCount, isGeneratingOutput }: NotebookChatProps) {
+export function NotebookChat({
+  messages,
+  sources,
+  isChatting,
+  streamingContent,
+  onSend,
+  showSourcesActive,
+  showStudioActive,
+  onShowSources,
+  onShowStudio,
+  isSearching,
+  outputCount,
+  isGeneratingOutput,
+}: NotebookChatProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -155,10 +168,11 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
               <button
                 type="button"
                 onClick={onShowSources}
-                className={`group flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${showSourcesActive
-                  ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 border-transparent shadow-md"
-                  : "bg-white/70 dark:bg-neutral-900/70 backdrop-blur-sm text-neutral-600 dark:text-neutral-400 border-neutral-200/80 dark:border-neutral-700/80 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200"
-                  }`}
+                className={`group flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${
+                  showSourcesActive
+                    ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 border-transparent shadow-md"
+                    : "bg-white/70 dark:bg-neutral-900/70 backdrop-blur-sm text-neutral-600 dark:text-neutral-400 border-neutral-200/80 dark:border-neutral-700/80 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200"
+                }`}
               >
                 {isSearching ? (
                   <Loader2 size={12} className="animate-spin shrink-0" />
@@ -168,10 +182,11 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
                 <span>Sources</span>
                 {sources.length > 0 && (
                   <span
-                    className={`inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold leading-none ${showSourcesActive
-                      ? "bg-white/25 dark:bg-black/20 text-white dark:text-neutral-900"
-                      : "bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300"
-                      }`}
+                    className={`inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold leading-none ${
+                      showSourcesActive
+                        ? "bg-white/25 dark:bg-black/20 text-white dark:text-neutral-900"
+                        : "bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300"
+                    }`}
                   >
                     {sources.length}
                   </span>
@@ -182,10 +197,11 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
               <button
                 type="button"
                 onClick={onShowStudio}
-                className={`group flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${showStudioActive
-                  ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 border-transparent shadow-md"
-                  : "bg-white/70 dark:bg-neutral-900/70 backdrop-blur-sm text-neutral-600 dark:text-neutral-400 border-neutral-200/80 dark:border-neutral-700/80 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200"
-                  }`}
+                className={`group flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${
+                  showStudioActive
+                    ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 border-transparent shadow-md"
+                    : "bg-white/70 dark:bg-neutral-900/70 backdrop-blur-sm text-neutral-600 dark:text-neutral-400 border-neutral-200/80 dark:border-neutral-700/80 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200"
+                }`}
               >
                 {isGeneratingOutput ? (
                   <Loader2 size={12} className="animate-spin shrink-0" />
@@ -195,10 +211,11 @@ export function NotebookChat({ messages, sources, isChatting, streamingContent, 
                 <span>Output</span>
                 {(outputCount ?? 0) > 0 && (
                   <span
-                    className={`inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold leading-none ${showStudioActive
-                      ? "bg-white/25 dark:bg-black/20 text-white dark:text-neutral-900"
-                      : "bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300"
-                      }`}
+                    className={`inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold leading-none ${
+                      showStudioActive
+                        ? "bg-white/25 dark:bg-black/20 text-white dark:text-neutral-900"
+                        : "bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300"
+                    }`}
                   >
                     {outputCount}
                   </span>
