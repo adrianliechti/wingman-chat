@@ -10,6 +10,7 @@ import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
+import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { useChatScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
@@ -89,7 +90,9 @@ export function ChatPage() {
 
   const handleNewChat = useCallback(() => {
     if (model?.id === "realtime") {
-      setModel(models[0] ?? null);
+      const savedId = getSavedModelId();
+      const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
+      setModel(restored ?? null);
     }
     if (isListening) {
       stopVoice();
@@ -118,12 +121,14 @@ export function ChatPage() {
         navigate({ to: "/chat", replace: true });
       }
     } else if (!routeChatId && activeChatId) {
-      // Skip when a chat was just implicitly created (previousChatId was null) —
-      // resetting here would destroy user-selected tools before the first message completes.
-      if (previousChatIdRef.current !== null) {
+      // Only reset when the route previously had a chatId (explicit navigation away).
+      // If undefined, this is a transient render during implicit chat creation.
+      if (previousRouteChatIdRef.current !== undefined) {
         selectChat(null);
       }
     }
+
+    previousRouteChatIdRef.current = routeChatId;
   }, [routeChatId, chat?.id, selectChat, chats, chatsLoaded, navigate]);
 
   // Sync state → URL when a chat is implicitly created during message send.
@@ -167,6 +172,11 @@ export function ChatPage() {
   const messageKeyScopeRef = useRef<string | null>(null);
   const nextMessageKeyRef = useRef(0);
   const previousChatIdRef = useRef<string | null>(null);
+  // Tracks the previous *route* chatId (from the URL). Used to distinguish a
+  // genuine user navigation away from a chat from a transient router render
+  // that occurs while an implicit chat creation navigates to /chat/$chatId.
+  // Previous route chatId — distinguishes real navigation from implicit-creation renders
+  const previousRouteChatIdRef = useRef<string | undefined>(undefined);
 
   const messageRenderKeys = useMemo(() => {
     const scopeKey = chat?.id ?? routeChatId ?? "__draft__";
@@ -333,12 +343,12 @@ export function ChatPage() {
       {/* Main content area */}
       <div
         className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-500 ease-in-out ${showAppDrawer
-            ? "md:mr-[calc(50vw+0.75rem)]"
-            : showArtifactsDrawer
-              ? "md:mr-[calc(66vw+0.75rem)]"
-              : showAgentDrawer
-                ? "md:mr-83"
-                : ""
+          ? "md:mr-[calc(50vw+0.75rem)]"
+          : showArtifactsDrawer
+            ? "md:mr-[calc(66vw+0.75rem)]"
+            : showAgentDrawer
+              ? "md:mr-83"
+              : ""
           }`}
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -401,18 +411,18 @@ export function ChatPage() {
         {/* Chat Input */}
         <footer
           className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out ${showSidebar && chats.length > 0 && !showArtifactsDrawer && !showAgentDrawer && !showAppDrawer ? "md:left-59" : ""} ${showAppDrawer
-              ? "right-0 md:right-[calc(50vw+0.75rem)]"
-              : showArtifactsDrawer
-                ? "right-0 md:right-[calc(66vw+0.75rem)]"
-                : showAgentDrawer
-                  ? "right-0 md:right-83"
-                  : "right-0"
+            ? "right-0 md:right-[calc(50vw+0.75rem)]"
+            : showArtifactsDrawer
+              ? "right-0 md:right-[calc(66vw+0.75rem)]"
+              : showAgentDrawer
+                ? "right-0 md:right-83"
+                : "right-0"
             }`}
         >
           <div
             className={`relative pointer-events-auto md:max-w-4xl mx-auto transition-transform duration-500 ease-in-out ${messages.length === 0 && !showArtifactsDrawer && !showAppDrawer && !showAgentDrawer
-                ? "md:translate-y-[calc(50%-33.333vh)]"
-                : ""
+              ? "md:translate-y-[calc(50%-33.333vh)]"
+              : ""
               }`}
           >
             <ChatInput />

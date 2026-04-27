@@ -38,7 +38,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const config = getConfig();
   const client = config.client;
 
-  const { models, selectedModel, setSelectedModel } = useModels();
+  const { models, selectedModel, setSelectedModel, getSavedModelId } = useModels();
   const {
     chats,
     isLoaded: chatsLoaded,
@@ -124,12 +124,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
       resetTools();
       closeApp();
 
-      // When starting a new chat, reset realtime model back to default
+      // When starting a new chat, reset realtime model back to the last saved chat model
       if (!id && (selectedModel?.id === "realtime" || chatModel?.id === "realtime")) {
-        setSelectedModel(models[0] ?? null);
+        const savedId = getSavedModelId();
+        const restored = (savedId && models.find((m) => m.id === savedId)) || models[0];
+        setSelectedModel(restored ?? null);
       }
     },
-    [resetTools, closeApp, selectedModel, chatModel, models, setSelectedModel],
+    [resetTools, closeApp, selectedModel, chatModel, models, setSelectedModel, getSavedModelId],
   );
 
   const deleteChat = useCallback(
@@ -146,6 +148,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
     (model: Model | null) => {
       if (chat) {
         updateChat(chat.id, () => ({ model }));
+        // Also remember the last chat model globally so new chats / mode
+        // toggles can restore it.
+        setSelectedModel(model);
       } else {
         setSelectedModel(model);
       }

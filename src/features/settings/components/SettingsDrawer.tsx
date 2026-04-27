@@ -40,6 +40,7 @@ import { downloadFolderAsZip } from "@/shared/lib/opfs-zip";
 import { formatBytes } from "@/shared/lib/utils";
 import { ProviderState } from "@/shared/types/chat";
 import type { BackgroundPack, EmojiMode, LayoutMode, Theme } from "@/shared/types/settings";
+import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { OpfsBrowser } from "./OpfsBrowser";
 
@@ -842,7 +843,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                   const toolIcon =
                                     tool.icon ?? (typeof companion.icon === "string" ? companion.icon : undefined);
                                   if (toolIcon) {
-                                    return <img src={toolIcon} alt="" className="w-4 h-4 object-contain" />;
+                                    return <McpProviderIcon src={toolIcon} size={16} className="object-contain" />;
                                   }
                                   if (companion.icon && typeof companion.icon !== "string") {
                                     const CompanionIcon = companion.icon;

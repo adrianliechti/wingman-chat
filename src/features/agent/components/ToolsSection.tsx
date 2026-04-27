@@ -5,6 +5,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { ProviderState } from "@/shared/types/chat";
+import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
 import { Section } from "./Section";
 
 interface ToolsSectionProps {
@@ -98,7 +99,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                 {!tool.Icon ? (
                   <Wrench size={16} />
                 ) : typeof tool.Icon === "string" ? (
-                  <img src={tool.Icon} alt="" className="w-4 h-4 object-contain" />
+                  <McpProviderIcon src={tool.Icon} size={16} />
                 ) : (
                   <tool.Icon width={16} height={16} />
                 )}
@@ -152,7 +153,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                   {state === ProviderState.Initializing ? (
                     <Loader2 size={14} className="shrink-0 text-neutral-400 animate-spin" aria-label="Connecting…" />
                   ) : resolvedIcon && state !== ProviderState.Failed ? (
-                    <img src={resolvedIcon} alt="" className="shrink-0 w-3.5 h-3.5 object-contain" />
+                    <McpProviderIcon src={resolvedIcon} size={14} className="shrink-0 object-contain" />
                   ) : (
                     <Server size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
                   )}
