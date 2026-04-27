@@ -1,11 +1,16 @@
 /**
  * Export HTML slides as PDF, PNG, or image-based PPTX.
  *
- * Slides are rasterized via a layered approach:
- * 1. Mount in an isolated off-screen iframe for real CSS layout
- * 2. Extract data-URL images (which break inside SVG foreignObject)
- * 3. Render text/shapes via SVG foreignObject with transparent background
- * 4. Composite: background fill → images → foreignObject layer
+ * Slides are rasterized by walking the DOM to collect "paint events" in
+ * document order — full-slide colour fills, full-slide gradients, and
+ * image draws (from `<img>` and CSS `background-image: url(data:…)`).
+ * The events are then replayed onto the canvas in DOM order, and finally
+ * the foreignObject (text/shapes only) is drawn on top.
+ *
+ * Painting in DOM order matters for hero slides where an overlay `<div>`
+ * sits after an `<img>` to dim the photo for legibility — collapsing all
+ * full-slide bgs to a single "Layer 1" would put the overlay under the
+ * image where it has no visual effect.
  *
  * Editable PPTX export is handled by pptx-export-hybrid.ts.
  */
@@ -210,11 +215,6 @@ interface ParsedLinearGradient {
   stops: { color: string; offset: number }[];
 }
 
-interface SlideBackground {
-  color?: string;
-  gradient?: ParsedLinearGradient;
-}
-
 /** Split a CSS value on top-level commas (respecting parentheses). */
 function splitTopLevelCommas(s: string): string[] {
   const out: string[] = [];
@@ -406,45 +406,248 @@ function applyLinearGradient(ctx: CanvasRenderingContext2D, g: ParsedLinearGradi
   return true;
 }
 
-/** Find every element that spans (close to) the full slide, depth-first. */
-function collectFullSlideElements(doc: Document): HTMLElement[] {
-  const out: HTMLElement[] = [];
-  const minW = CANVAS_W * 0.9;
-  const minH = CANVAS_H * 0.9;
-  const visit = (el: Element, depth: number) => {
-    if (!(el instanceof HTMLElement)) return;
-    const rect = el.getBoundingClientRect();
-    if (rect.width >= minW && rect.height >= minH) out.push(el);
-    if (depth >= 4) return;
-    for (const child of el.children) visit(child, depth + 1);
-  };
-  visit(doc.documentElement, 0);
-  return out;
+// ── Paint events (DOM-order rasterization) ───────────────────────────────────
+
+type PaintEvent =
+  | { kind: "color"; index: number; color: string }
+  | { kind: "gradient"; index: number; gradient: ParsedLinearGradient }
+  | { kind: "image"; index: number; overlay: ImageOverlay };
+
+interface Mutation {
+  el: HTMLElement;
+  prop: "visibility" | "backgroundColor" | "backgroundImage";
+  prev: string;
+}
+
+function recordMutation(
+  mutations: Mutation[],
+  el: HTMLElement,
+  prop: Mutation["prop"],
+  next: string,
+): void {
+  mutations.push({ el, prop, prev: el.style[prop] });
+  el.style[prop] = next;
+}
+
+function unwindMutations(mutations: Mutation[]): void {
+  for (let i = mutations.length - 1; i >= 0; i--) {
+    const { el, prop, prev } = mutations[i];
+    el.style[prop] = prev;
+  }
 }
 
 /**
- * Pick the slide background. The list is depth-first DOM order; CSS paints
- * deeper elements on top, so we iterate in reverse and take the topmost
- * non-transparent fill (preferring gradients over solid colors on the same
- * element).
+ * Pull a data URL out of an `<img>`. Direct `data:` src wins; otherwise we
+ * canvas-copy so the export doesn't depend on whether the foreignObject is
+ * allowed to load nested data URLs (Chrome blocks; Safari taints). Cross-
+ * origin sources throw on `toDataURL` and are silently skipped.
  */
-function detectSlideBackground(win: Window, candidates: HTMLElement[]): SlideBackground | null {
-  for (let i = candidates.length - 1; i >= 0; i--) {
-    const el = candidates[i];
-    const cs = win.getComputedStyle(el);
-    const bgImage = cs.backgroundImage;
-    if (bgImage && bgImage !== "none") {
-      for (const layer of splitTopLevelCommas(bgImage)) {
-        const grad = parseLinearGradient(layer, CANVAS_W, CANVAS_H);
-        if (grad) return { gradient: grad };
+function extractDataUrlFromImg(img: HTMLImageElement, hostDoc: Document): string | null {
+  if (img.src.startsWith("data:")) return img.src;
+  if (!img.complete || img.naturalWidth <= 0) return null;
+  try {
+    const c = hostDoc.createElement("canvas");
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    const cx = c.getContext("2d");
+    if (!cx) return null;
+    cx.drawImage(img, 0, 0);
+    return c.toDataURL("image/png");
+  } catch {
+    return null;
+  }
+}
+
+/** Pull a `data:` URL out of a single CSS background layer string. */
+function extractDataUrlFromCssLayer(layer: string): string | null {
+  const m = layer.match(/url\(["']?(data:[^"')]+)["']?\)/);
+  return m ? m[1] : null;
+}
+
+function isFullSlideRect(rect: DOMRect): boolean {
+  return rect.width >= CANVAS_W * 0.9 && rect.height >= CANVAS_H * 0.9;
+}
+
+/**
+ * Walk the slide DOM in document order, emitting paint events and recording
+ * the minimal style mutations needed to keep the foreignObject layer free of
+ * the things we've already painted (full-slide bgs, image elements).
+ *
+ * Cross-realm safe — uses `tagName` and `"style" in el` rather than
+ * `instanceof`, which fails for elements from an iframe's contentDocument.
+ */
+function collectPaintEvents(doc: Document, win: Window, mutations: Mutation[]): PaintEvent[] {
+  const events: PaintEvent[] = [];
+  let counter = 0;
+
+  const visit = (el: Element) => {
+    const index = counter++;
+    const rect = el.getBoundingClientRect();
+    const html = "style" in el ? (el as HTMLElement) : null;
+
+    if (html) {
+      const cs = win.getComputedStyle(html);
+      const fullSlide = isFullSlideRect(rect);
+
+      // Background-image: gradients and data-URL layers on a full-slide element.
+      // CSS lists layers top-to-bottom; canvas paints later events on top, so
+      // iterate in reverse to push bottom layer first.
+      let clearedBgImage = false;
+      if (fullSlide && cs.backgroundImage && cs.backgroundImage !== "none") {
+        const layers = splitTopLevelCommas(cs.backgroundImage);
+        for (let i = layers.length - 1; i >= 0; i--) {
+          const layer = layers[i];
+          const grad = parseLinearGradient(layer, CANVAS_W, CANVAS_H);
+          if (grad) {
+            events.push({ kind: "gradient", index, gradient: grad });
+            if (!clearedBgImage) {
+              recordMutation(mutations, html, "backgroundImage", "none");
+              clearedBgImage = true;
+            }
+            continue;
+          }
+          const dataUrl = extractDataUrlFromCssLayer(layer);
+          if (dataUrl) {
+            const bgSize = cs.backgroundSize;
+            const objectFit = bgSize === "cover" ? "cover" : bgSize === "contain" ? "contain" : undefined;
+            events.push({
+              kind: "image",
+              index,
+              overlay: {
+                dataUrl,
+                x: rect.left,
+                y: rect.top,
+                w: rect.width,
+                h: rect.height,
+                opacity: parseFloat(cs.opacity) || 1,
+                objectFit,
+                objectPosition: cs.backgroundPosition || undefined,
+              },
+            });
+            if (!clearedBgImage) {
+              recordMutation(mutations, html, "backgroundImage", "none");
+              clearedBgImage = true;
+            }
+          }
+        }
+      }
+
+      // Background-color on a full-slide element. CSS paints colour below all
+      // bg-image layers, so splice it before any events already pushed from
+      // this element.
+      if (fullSlide) {
+        const bgColor = cs.backgroundColor;
+        if (bgColor && bgColor !== "rgba(0, 0, 0, 0)" && bgColor !== "transparent") {
+          const firstFromHere = events.findIndex((e) => e.index === index);
+          const colorEvent: PaintEvent = { kind: "color", index, color: bgColor };
+          if (firstFromHere === -1) events.push(colorEvent);
+          else events.splice(firstFromHere, 0, colorEvent);
+          recordMutation(mutations, html, "backgroundColor", "transparent");
+        }
       }
     }
-    const bgColor = cs.backgroundColor;
-    if (bgColor && bgColor !== "rgba(0, 0, 0, 0)" && bgColor !== "transparent") {
-      return { color: bgColor };
+
+    // <img> element — extract data URL and hide. Use tagName, not instanceof.
+    if (el.tagName === "IMG" && rect.width >= 1 && rect.height >= 1) {
+      const img = el as HTMLImageElement;
+      const dataUrl = extractDataUrlFromImg(img, document);
+      if (dataUrl) {
+        const cs = win.getComputedStyle(img);
+        events.push({
+          kind: "image",
+          index,
+          overlay: {
+            dataUrl,
+            x: rect.left,
+            y: rect.top,
+            w: rect.width,
+            h: rect.height,
+            opacity: parseFloat(cs.opacity) || 1,
+            naturalW: img.naturalWidth,
+            naturalH: img.naturalHeight,
+            objectFit: cs.objectFit || undefined,
+            objectPosition: cs.objectPosition || undefined,
+          },
+        });
+        recordMutation(mutations, img, "visibility", "hidden");
+      }
+    }
+
+    for (const child of el.children) visit(child);
+  };
+
+  visit(doc.documentElement);
+  return events;
+}
+
+async function loadImageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
+  const img = new Image();
+  await new Promise<void>((resolve) => {
+    img.onload = () => resolve();
+    img.onerror = () => resolve();
+    img.src = dataUrl;
+  });
+  return img;
+}
+
+async function replayPaintEvents(
+  ctx: CanvasRenderingContext2D,
+  events: PaintEvent[],
+  w: number,
+  h: number,
+): Promise<void> {
+  const firstIsBg = events[0]?.kind === "color" || events[0]?.kind === "gradient";
+  if (!firstIsBg) {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  for (const event of events) {
+    if (event.kind === "color") {
+      ctx.fillStyle = event.color;
+      ctx.fillRect(0, 0, w, h);
+    } else if (event.kind === "gradient") {
+      if (!applyLinearGradient(ctx, event.gradient, w, h)) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, w, h);
+      }
+    } else {
+      const info = event.overlay;
+      const overlayImg = await loadImageFromDataUrl(info.dataUrl);
+      if (overlayImg.naturalWidth <= 0) continue;
+      const natW = info.naturalW ?? overlayImg.naturalWidth;
+      const natH = info.naturalH ?? overlayImg.naturalHeight;
+      const draw = computeObjectFitDraw(
+        natW,
+        natH,
+        info.x * RASTER_SCALE,
+        info.y * RASTER_SCALE,
+        info.w * RASTER_SCALE,
+        info.h * RASTER_SCALE,
+        info.objectFit,
+        info.objectPosition,
+      );
+      ctx.globalAlpha = info.opacity;
+      ctx.drawImage(overlayImg, draw.sx, draw.sy, draw.sw, draw.sh, draw.dx, draw.dy, draw.dw, draw.dh);
+      ctx.globalAlpha = 1;
     }
   }
-  return null;
+}
+
+interface ImageOverlay {
+  dataUrl: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  opacity: number;
+  /** Natural pixel dimensions of the source image — used for object-fit math. */
+  naturalW?: number;
+  naturalH?: number;
+  /** CSS `object-fit` (`cover`, `contain`, `fill`, …). Absent for background-image overlays. */
+  objectFit?: string;
+  /** CSS `object-position`, e.g. "50% 50%". Absent for background-image overlays. */
+  objectPosition?: string;
 }
 
 /** Parse `object-position` / `background-position` into 0–1 fractions (center default). */
@@ -464,18 +667,19 @@ function parsePosition(value: string | undefined): { x: number; y: number } {
 }
 
 /**
- * Rasterize a mounted slide into a canvas using a layered approach:
+ * Rasterize a mounted slide onto a canvas.
  *
- * Data-URL images inside an SVG foreignObject don't render (Chrome blocks
- * nested data URLs; Safari taints the canvas). To work around this we
- * extract every image from the DOM, render the text/shape layout via
- * foreignObject (with a transparent background), and composite everything
- * in the correct order:
+ * 1. Walk the DOM once collecting paint events (full-slide colour/gradient bgs,
+ *    `<img>` overlays, CSS data-URL bg overlays) tagged with their DOM index.
+ *    Mutate the DOM minimally (hide images, clear extracted bgs) and record
+ *    every mutation so we can unwind on teardown.
+ * 2. Serialize the cleared DOM into an SVG `<foreignObject>` so the
+ *    text/shape layer renders without the bgs we already extracted.
+ * 3. Replay events in DOM order onto the canvas, then drawImage(svgImg) on top.
  *
- *   canvas = background fill → images → foreignObject text/shapes
- *
- * The foreignObject layer has a transparent background so images underneath
- * show through, preserving alpha/transparency from PNG sources.
+ * DOM-ordered replay reproduces CSS paint order, so an overlay `<div>`
+ * that sits after an `<img>` darkens the photo on the canvas exactly as it
+ * does in the browser preview.
  */
 async function rasterizeSlideDoc(
   iframe: HTMLIFrameElement,
@@ -486,231 +690,69 @@ async function rasterizeSlideDoc(
   const win = iframe.contentWindow;
   if (!win) throw new Error("Slide iframe has no window");
 
-  // ── Optionally hide all text (used by hybrid PPTX export so the
-  //    rasterized background doesn't double-render text that's also
-  //    drawn as an editable overlay). We inject a stylesheet rather
-  //    than mutate every element so layout stays identical.
+  const mutations: Mutation[] = [];
   let hideTextStyle: HTMLStyleElement | null = null;
-  if (options.hideText) {
-    hideTextStyle = doc.createElement("style");
-    hideTextStyle.textContent = `
-      * {
-        color: transparent !important;
-        text-shadow: none !important;
-        -webkit-text-fill-color: transparent !important;
-        text-decoration-color: transparent !important;
-        caret-color: transparent !important;
-      }
-    `;
-    doc.head.appendChild(hideTextStyle);
-  }
-
-  // ── Collect the slide background (color or gradient) ─────────────────
-  const fullSlideEls = collectFullSlideElements(doc);
-  const slideBg = detectSlideBackground(win, fullSlideEls);
-
-  // ── Collect images and hide them ──────────────────────────────────────
-  interface ImageOverlay {
-    dataUrl: string;
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    opacity: number;
-    /** Natural pixel dimensions of the source image — used for object-fit math. */
-    naturalW?: number;
-    naturalH?: number;
-    /** CSS `object-fit` (`cover`, `contain`, `fill`, …). Absent for background-image overlays. */
-    objectFit?: string;
-    /** CSS `object-position`, e.g. "50% 50%". Absent for background-image overlays. */
-    objectPosition?: string;
-  }
-  const overlays: ImageOverlay[] = [];
-
-  // Collect <img> elements
-  const imgEls = Array.from(doc.querySelectorAll("img")) as HTMLImageElement[];
-  const savedImgVis: { el: HTMLImageElement; vis: string }[] = [];
-
-  for (const img of imgEls) {
-    const rect = img.getBoundingClientRect();
-    if (rect.width < 1 || rect.height < 1) continue;
-
-    let dataUrl: string | null = null;
-    if (img.src.startsWith("data:")) {
-      dataUrl = img.src;
-    } else if (img.complete && img.naturalWidth > 0) {
-      try {
-        const c = document.createElement("canvas");
-        c.width = img.naturalWidth;
-        c.height = img.naturalHeight;
-        const cx = c.getContext("2d");
-        if (cx) {
-          cx.drawImage(img, 0, 0);
-          dataUrl = c.toDataURL("image/png");
-        }
-      } catch {
-        /* cross-origin — skip */
-      }
-    }
-
-    if (dataUrl) {
-      const style = win.getComputedStyle(img);
-      overlays.push({
-        dataUrl,
-        x: rect.left,
-        y: rect.top,
-        w: rect.width,
-        h: rect.height,
-        opacity: parseFloat(style.opacity) || 1,
-        naturalW: img.naturalWidth || undefined,
-        naturalH: img.naturalHeight || undefined,
-        objectFit: style.objectFit || undefined,
-        objectPosition: style.objectPosition || undefined,
-      });
-      savedImgVis.push({ el: img, vis: img.style.visibility });
-      img.style.visibility = "hidden";
-    }
-  }
-
-  // Collect elements with CSS background-image data URLs
-  const savedBgEls: { el: HTMLElement; orig: string }[] = [];
-  for (const node of doc.querySelectorAll("*")) {
-    const el = node as HTMLElement;
-    const computed = win.getComputedStyle(el);
-    const bg = computed.backgroundImage;
-    if (!bg?.includes("data:image")) continue;
-
-    const rect = el.getBoundingClientRect();
-    if (rect.width < 1 || rect.height < 1) continue;
-
-    const match = bg.match(/url\(["']?(data:[^"')]+)["']?\)/);
-    if (match) {
-      // Map `background-size` to the equivalent `object-fit` so compositing
-      // preserves aspect ratio for cover/contain backgrounds too.
-      const bgSize = computed.backgroundSize;
-      let objectFit: string | undefined;
-      if (bgSize === "cover") objectFit = "cover";
-      else if (bgSize === "contain") objectFit = "contain";
-      overlays.push({
-        dataUrl: match[1],
-        x: rect.left,
-        y: rect.top,
-        w: rect.width,
-        h: rect.height,
-        opacity: parseFloat(computed.opacity) || 1,
-        objectFit,
-        objectPosition: computed.backgroundPosition || undefined,
-      });
-      savedBgEls.push({ el, orig: el.style.backgroundImage });
-      el.style.backgroundImage = "none";
-    }
-  }
-
-  // ── Make full-slide backgrounds transparent ───────────────────────────
-  // The canvas paints these explicitly (Layer 1 below), so the foreignObject
-  // must not double-render them — clear both the color and the image (which
-  // is where gradients live) on every element that spans the whole slide.
-  const savedFullBgs: { el: HTMLElement; color: string; image: string }[] = [];
-  for (const el of fullSlideEls) {
-    const cs = win.getComputedStyle(el);
-    const hasColor =
-      cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)" && cs.backgroundColor !== "transparent";
-    const hasImage = cs.backgroundImage && cs.backgroundImage !== "none";
-    if (!hasColor && !hasImage) continue;
-    savedFullBgs.push({ el, color: el.style.backgroundColor, image: el.style.backgroundImage });
-    if (hasColor) el.style.backgroundColor = "transparent";
-    if (hasImage) el.style.backgroundImage = "none";
-  }
-
-  // ── Render layout via SVG foreignObject ───────────────────────────────
-  doc.documentElement.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
-  const xhtml = new XMLSerializer().serializeToString(doc.documentElement);
-
-  // Restore backgrounds
-  for (const { el, color, image } of savedFullBgs) {
-    el.style.backgroundColor = color;
-    el.style.backgroundImage = image;
-  }
-
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_W}" height="${CANVAS_H}" viewBox="0 0 ${CANVAS_W} ${CANVAS_H}">` +
-    `<foreignObject x="0" y="0" width="${CANVAS_W}" height="${CANVAS_H}">${xhtml}</foreignObject>` +
-    `</svg>`;
-
-  const svgDataUrl = `data:image/svg+xml;base64,${utf8ToBase64(svg)}`;
-
-  const svgImg = new Image();
-  svgImg.decoding = "sync";
-  await new Promise<void>((resolve, reject) => {
-    svgImg.onload = () => resolve();
-    svgImg.onerror = (event) => {
-      console.error("[slide-export] SVG image failed to load", event);
-      reject(new Error("Failed to rasterize slide (SVG img load failed)"));
-    };
-    svgImg.src = svgDataUrl;
-  });
 
   try {
-    await svgImg.decode();
-  } catch {
-    /* decode() can reject even when the image is usable — not fatal */
-  }
-
-  // ── Composite: background → images → text/shapes ─────────────────────
-  const canvas = document.createElement("canvas");
-  canvas.width = CANVAS_W * RASTER_SCALE;
-  canvas.height = CANVAS_H * RASTER_SCALE;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Could not get 2D canvas context");
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-
-  // Layer 1: slide background (gradient or solid color, white fallback)
-  if (slideBg?.gradient) {
-    applyLinearGradient(ctx, slideBg.gradient, canvas.width, canvas.height);
-  } else {
-    ctx.fillStyle = slideBg?.color ?? "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
-
-  // Layer 2: images (drawn on top of background, behind text/shapes)
-  for (const info of overlays) {
-    const overlayImg = new Image();
-    await new Promise<void>((resolve) => {
-      overlayImg.onload = () => resolve();
-      overlayImg.onerror = () => resolve();
-      overlayImg.src = info.dataUrl;
-    });
-    if (overlayImg.naturalWidth > 0) {
-      const natW = info.naturalW ?? overlayImg.naturalWidth;
-      const natH = info.naturalH ?? overlayImg.naturalHeight;
-      const draw = computeObjectFitDraw(
-        natW,
-        natH,
-        info.x * RASTER_SCALE,
-        info.y * RASTER_SCALE,
-        info.w * RASTER_SCALE,
-        info.h * RASTER_SCALE,
-        info.objectFit,
-        info.objectPosition,
-      );
-      ctx.globalAlpha = info.opacity;
-      ctx.drawImage(overlayImg, draw.sx, draw.sy, draw.sw, draw.sh, draw.dx, draw.dy, draw.dw, draw.dh);
-      ctx.globalAlpha = 1;
+    // Optionally hide all text (used by hybrid PPTX export so the rasterized
+    // background doesn't double-render text that's also drawn as an editable
+    // overlay). A stylesheet keeps layout identical.
+    if (options.hideText) {
+      hideTextStyle = doc.createElement("style");
+      hideTextStyle.textContent = `
+        * {
+          color: transparent !important;
+          text-shadow: none !important;
+          -webkit-text-fill-color: transparent !important;
+          text-decoration-color: transparent !important;
+          caret-color: transparent !important;
+        }
+      `;
+      doc.head.appendChild(hideTextStyle);
     }
-    overlayImg.src = ""; // release data URL reference
+
+    const events = collectPaintEvents(doc, win, mutations);
+
+    // Serialize the *cleared* DOM — bgs we'll paint on canvas are gone, images are hidden.
+    doc.documentElement.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+    const xhtml = new XMLSerializer().serializeToString(doc.documentElement);
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_W}" height="${CANVAS_H}" viewBox="0 0 ${CANVAS_W} ${CANVAS_H}">` +
+      `<foreignObject x="0" y="0" width="${CANVAS_W}" height="${CANVAS_H}">${xhtml}</foreignObject>` +
+      `</svg>`;
+
+    const svgImg = new Image();
+    svgImg.decoding = "sync";
+    await new Promise<void>((resolve, reject) => {
+      svgImg.onload = () => resolve();
+      svgImg.onerror = (event) => {
+        console.error("[slide-export] SVG image failed to load", event);
+        reject(new Error("Failed to rasterize slide (SVG img load failed)"));
+      };
+      svgImg.src = `data:image/svg+xml;base64,${utf8ToBase64(svg)}`;
+    });
+    try {
+      await svgImg.decode();
+    } catch {
+      /* decode() can reject even when the image is usable — not fatal */
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = CANVAS_W * RASTER_SCALE;
+    canvas.height = CANVAS_H * RASTER_SCALE;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Could not get 2D canvas context");
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    await replayPaintEvents(ctx, events, canvas.width, canvas.height);
+    ctx.drawImage(svgImg, 0, 0, canvas.width, canvas.height);
+
+    return canvas;
+  } finally {
+    unwindMutations(mutations);
+    hideTextStyle?.parentNode?.removeChild(hideTextStyle);
   }
-
-  // Layer 3: foreignObject (text, shapes — transparent background)
-  ctx.drawImage(svgImg, 0, 0, canvas.width, canvas.height);
-  svgImg.src = ""; // release SVG data URL reference
-
-  // Restore hidden elements
-  for (const { el, vis } of savedImgVis) el.style.visibility = vis;
-  for (const { el, orig } of savedBgEls) el.style.backgroundImage = orig;
-  if (hideTextStyle?.parentNode) hideTextStyle.parentNode.removeChild(hideTextStyle);
-
-  return canvas;
 }
 
 /** Render a slide to a PNG data URL at 2× the slide resolution. */
