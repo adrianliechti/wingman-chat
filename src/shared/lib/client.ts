@@ -721,7 +721,7 @@ export class Client {
   }
 
   // biome-ignore lint: zod schema type is complex
-  private async parse<T extends z.ZodType<any>>(
+  async parse<T extends z.ZodType<any>>(
     model: string,
     instructions: string,
     input: string,
