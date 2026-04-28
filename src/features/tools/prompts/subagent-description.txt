@@ -1,0 +1,14 @@
+Launch an agent to handle a task in a separate context. The agent has access to all tools and runs its own agentic loop. Only the final answer is returned, keeping your context clean.
+
+When to use:
+- Research tasks requiring many tool calls (exploring artifacts, finding all usages, multi-step lookups).
+- Independent subtasks whose intermediate results would clutter your context.
+- You can launch multiple agents in parallel by making multiple tool calls in one response.
+
+When NOT to use:
+- Simple tasks needing 1-2 tool calls — just use the tools directly.
+- When the user needs to see intermediate results — they won't be visible.
+
+Prompting tips:
+- The agent has NO access to your conversation history. Write the prompt as a self-contained briefing.
+- Be specific: include file paths, function names, and exact requirements.

@@ -12,7 +12,13 @@ import { assembleSlideHtml } from "./html-slide-assembly";
 const CANVAS_W = 1920;
 const CANVAS_H = 1080;
 const OVERFLOW_TOLERANCE = 8; // px – ignore sub-pixel rounding noise
+const OVERLAP_TOLERANCE = 4; // px – ignore sub-pixel rounding noise on text overlaps
 const MIN_VERTICAL_FILL = 0.35; // below this, the slide looks empty
+const MAX_REPORTED_OVERLAPS = 5; // cap so the feedback message stays actionable
+const MAX_ERROR_RETRIES = 2; // total error-bearing writes per slide before we let it pass
+const TITLE_CHAR_CAP = 80; // hard cap from slide-style-common.txt "Title length"
+const TITLE_LINE_CAP = 2; // titles must not wrap to 3+ lines
+const HEADER_HEIGHT_FRACTION_CAP = 0.25; // header (title + subtitle) ≤ 25% of canvas height
 
 // Leaf text elements considered for overlap detection
 const TEXT_TAGS = new Set([
@@ -35,19 +41,58 @@ const TEXT_TAGS = new Set([
   "DD",
 ]);
 
+interface OverlapPair {
+  a: string;
+  b: string;
+  width: number;
+  height: number;
+}
+
 interface SlideMeasurement {
   overflow: { top: number; right: number; bottom: number; left: number };
+  /** Selector-like description of the element responsible for each overflow edge */
+  overflowOffenders: { top?: string; right?: string; bottom?: string; left?: string };
   /** Fraction of the 1080px canvas vertically covered by content (0–1) */
   verticalFill: number;
-  /** Number of overlapping leaf text element pairs (> 4px in both axes) */
-  textOverlaps: number;
+  /** Overlapping leaf text element pairs (> OVERLAP_TOLERANCE px in both axes), sorted by area */
+  textOverlaps: OverlapPair[];
+  /** Title text length in characters (0 if no title found) */
+  titleChars: number;
+  /** Number of rendered lines the title wraps to (0 if no title found) */
+  titleLines: number;
+  /** Rendered height of the slide header (or title's nearest header container), in px */
+  headerHeight: number;
 }
 
 const NO_MEASUREMENT: SlideMeasurement = {
   overflow: { top: 0, right: 0, bottom: 0, left: 0 },
+  overflowOffenders: {},
   verticalFill: 0,
-  textOverlaps: 0,
+  textOverlaps: [],
+  titleChars: 0,
+  titleLines: 0,
+  headerHeight: 0,
 };
+
+/**
+ * Build a short, selector-like description of an element so the model can
+ * locate it in its own source. Prefers id, then first class, falls back to
+ * the tag name, and appends a short text excerpt when present.
+ */
+function describeElement(el: Element): string {
+  const tag = el.tagName.toLowerCase();
+  let key = "";
+  if (el.id) {
+    key = `#${el.id}`;
+  } else {
+    const cls = (el as HTMLElement).classList?.[0];
+    if (cls) key = `.${cls}`;
+  }
+  const raw = (el.textContent || "").trim().replace(/\s+/g, " ");
+  const text = raw.slice(0, 30);
+  const textPart = text ? ` "${text}${raw.length > 30 ? "…" : ""}"` : "";
+  return `<${tag}${key}>${textPart}`;
+}
 
 /**
  * Render assembled slide HTML in a hidden iframe and measure content overflow
@@ -90,41 +135,60 @@ async function measureSlide(html: string): Promise<SlideMeasurement> {
         slide.style.setProperty("min-width", `${CANVAS_W}px`, "important");
         slide.style.setProperty("height", "auto", "important");
 
-        // Walk all descendants to find the true content bounding box
+        // Walk all descendants to find the true content bounding box, and
+        // remember which element pushed each edge — so we can name it back
+        // to the model when it overflows.
         const origin = slide.getBoundingClientRect();
         let minTop = origin.top;
         let minLeft = origin.left;
         let maxRight = origin.left;
         let maxBottom = origin.top;
+        let topEl: Element | null = null;
+        let leftEl: Element | null = null;
+        let rightEl: Element | null = null;
+        let bottomEl: Element | null = null;
 
         for (const el of slide.querySelectorAll("*")) {
           const r = el.getBoundingClientRect();
           if (r.width === 0 && r.height === 0) continue;
-          minTop = Math.min(minTop, r.top);
-          minLeft = Math.min(minLeft, r.left);
-          maxRight = Math.max(maxRight, r.right);
-          maxBottom = Math.max(maxBottom, r.bottom);
+          if (r.top < minTop) { minTop = r.top; topEl = el; }
+          if (r.left < minLeft) { minLeft = r.left; leftEl = el; }
+          if (r.right > maxRight) { maxRight = r.right; rightEl = el; }
+          if (r.bottom > maxBottom) { maxBottom = r.bottom; bottomEl = el; }
         }
 
         // Detect overlapping leaf text elements — an objective bug signal.
+        // Capture the elements themselves so we can describe each colliding
+        // pair to the model in the feedback message.
+        const textEls: Element[] = [];
         const textRects: DOMRect[] = [];
         const leafSelector = Array.from(TEXT_TAGS).join(",");
         for (const el of slide.querySelectorAll("*")) {
           if (!TEXT_TAGS.has(el.tagName)) continue;
           if ((el as HTMLElement).offsetHeight === 0) continue;
           if (el.querySelector(leafSelector)) continue; // skip containers
+          textEls.push(el);
           textRects.push(el.getBoundingClientRect());
         }
-        let textOverlaps = 0;
+        const overlaps: OverlapPair[] = [];
         for (let i = 0; i < textRects.length; i++) {
           for (let j = i + 1; j < textRects.length; j++) {
             const a = textRects[i];
             const b = textRects[j];
             const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
             const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
-            if (overlapX > 4 && overlapY > 4) textOverlaps++;
+            if (overlapX > OVERLAP_TOLERANCE && overlapY > OVERLAP_TOLERANCE) {
+              overlaps.push({
+                a: describeElement(textEls[i]),
+                b: describeElement(textEls[j]),
+                width: Math.round(overlapX),
+                height: Math.round(overlapY),
+              });
+            }
           }
         }
+        // Largest overlaps first — those are the ones a fix should target.
+        overlaps.sort((x, y) => y.width * y.height - x.width * x.height);
 
         // Also consider scroll dimensions (catches padding/margin overflow
         // that may not produce a positioned descendant)
@@ -132,16 +196,53 @@ async function measureSlide(html: string): Promise<SlideMeasurement> {
         const contentH = Math.max(slide.scrollHeight, maxBottom - origin.top);
         const usedHeight = maxBottom - minTop;
 
+        const overflow = {
+          top: Math.max(0, Math.ceil(origin.top - minTop)),
+          right: Math.max(0, Math.ceil(contentW - CANVAS_W)),
+          bottom: Math.max(0, Math.ceil(contentH - CANVAS_H)),
+          left: Math.max(0, Math.ceil(origin.left - minLeft)),
+        };
+        const overflowOffenders: SlideMeasurement["overflowOffenders"] = {};
+        if (overflow.top > OVERFLOW_TOLERANCE && topEl) overflowOffenders.top = describeElement(topEl);
+        if (overflow.right > OVERFLOW_TOLERANCE && rightEl) overflowOffenders.right = describeElement(rightEl);
+        if (overflow.bottom > OVERFLOW_TOLERANCE && bottomEl) overflowOffenders.bottom = describeElement(bottomEl);
+        if (overflow.left > OVERFLOW_TOLERANCE && leftEl) overflowOffenders.left = describeElement(leftEl);
+
+        // Title length / line-count check. Look for the conventional title
+        // selectors first (matches the prompt's HTML structure example), and
+        // fall back to the first heading on the slide so we still catch
+        // long titles when the model didn't apply the .title class.
+        const titleEl = (slide.querySelector(
+          ".slide__header h1, .slide__header h2, h1.title, h2.title",
+        ) ?? slide.querySelector("h1, h2")) as HTMLElement | null;
+        let titleChars = 0;
+        let titleLines = 0;
+        if (titleEl && titleEl.offsetHeight > 0) {
+          titleChars = (titleEl.textContent || "").trim().length;
+          const lhRaw = parseFloat(getComputedStyle(titleEl).lineHeight);
+          if (Number.isFinite(lhRaw) && lhRaw > 0) {
+            titleLines = Math.max(1, Math.round(titleEl.offsetHeight / lhRaw));
+          }
+        }
+
+        // Header height — captures title + subtitle together so we can
+        // flag slides where the header dominates the canvas, even when the
+        // title itself fits within char/line caps.
+        const headerEl =
+          (slide.querySelector(".slide__header") as HTMLElement | null) ??
+          (titleEl?.closest("header") as HTMLElement | null) ??
+          titleEl;
+        const headerHeight = headerEl ? Math.round(headerEl.getBoundingClientRect().height) : 0;
+
         iframe.remove();
         resolve({
-          overflow: {
-            top: Math.max(0, Math.ceil(origin.top - minTop)),
-            right: Math.max(0, Math.ceil(contentW - CANVAS_W)),
-            bottom: Math.max(0, Math.ceil(contentH - CANVAS_H)),
-            left: Math.max(0, Math.ceil(origin.left - minLeft)),
-          },
+          overflow,
+          overflowOffenders,
           verticalFill: Math.max(0, Math.min(1, usedHeight / CANVAS_H)),
-          textOverlaps,
+          textOverlaps: overlaps,
+          titleChars,
+          titleLines,
+          headerHeight,
         });
       } catch {
         // don't resolve — let the timeout handle cleanup
@@ -168,6 +269,10 @@ export function createHtmlSlideTools(
     return base.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^_+|_+$/g, "") || "image";
   };
 
+  // Counts error-bearing writes per slide path. We use this to give up after
+  // MAX_ERROR_RETRIES so a model that can't fix its layout doesn't loop forever.
+  const errorAttempts = new Map<string, number>();
+
   return [
     {
       name: "write_file",
@@ -192,49 +297,113 @@ export function createHtmlSlideTools(
         const content = args.content as string;
 
         fs.set(path, content);
-        console.log(`[HTML Slides] Wrote ${path} (${content.length} bytes)`);
         onWrite();
 
+        const isSlide = /^slides\/slide\d+\.html$/i.test(path);
+        if (!isSlide) {
+          console.log(`[HTML Slides] Wrote ${path} (${content.length} bytes)`);
+        }
+
         // Validate slide bounds and give model corrective feedback
-        if (/^slides\/slide\d+\.html$/i.test(path)) {
+        if (isSlide) {
           const assembled = assembleSlideHtml(content, fs);
           const m = await measureSlide(assembled);
           const ov = m.overflow;
-          console.debug(
-            `[HTML Slides] ${path} fill:${Math.round(m.verticalFill * 100)}%` +
-              ` overlaps:${m.textOverlaps}` +
-              ` overflow T:${ov.top} R:${ov.right} B:${ov.bottom} L:${ov.left}`,
-          );
 
-          // Hard errors — content clipped beyond the canvas. Always report.
+          // Hard errors — objective layout bugs the model must fix.
+          //   1. Content clipped beyond the canvas.
+          //   2. Text elements physically overlapping each other.
+          // Both are unambiguous and have stable thresholds, so flagging
+          // them as errors won't cause rewrite loops once fixed.
           const errors: string[] = [];
-          if (ov.top > OVERFLOW_TOLERANCE) errors.push(`Top: ${ov.top}px above the slide`);
-          if (ov.bottom > OVERFLOW_TOLERANCE) errors.push(`Bottom: ${ov.bottom}px below the slide`);
-          if (ov.left > OVERFLOW_TOLERANCE) errors.push(`Left: ${ov.left}px outside left edge`);
-          if (ov.right > OVERFLOW_TOLERANCE) errors.push(`Right: ${ov.right}px outside right edge`);
-
-          // Soft hints — objective layout bugs. These use hard thresholds
-          // (not "could be better") so they disappear once fixed and don't
-          // cause rewrite loops.
-          const hints: string[] = [];
-          if (m.textOverlaps > 0) {
-            hints.push(
-              `${m.textOverlaps} pair(s) of text elements overlap — fix spacing or z-order so text does not collide.`,
-            );
+          const offenders = m.overflowOffenders;
+          if (ov.top > OVERFLOW_TOLERANCE) {
+            errors.push(`Top: ${ov.top}px above the slide${offenders.top ? ` — caused by ${offenders.top}` : ""}`);
           }
+          if (ov.bottom > OVERFLOW_TOLERANCE) {
+            errors.push(`Bottom: ${ov.bottom}px below the slide${offenders.bottom ? ` — caused by ${offenders.bottom}` : ""}`);
+          }
+          if (ov.left > OVERFLOW_TOLERANCE) {
+            errors.push(`Left: ${ov.left}px outside left edge${offenders.left ? ` — caused by ${offenders.left}` : ""}`);
+          }
+          if (ov.right > OVERFLOW_TOLERANCE) {
+            errors.push(`Right: ${ov.right}px outside right edge${offenders.right ? ` — caused by ${offenders.right}` : ""}`);
+          }
+
+          // Soft hints — taste calls, not bugs. Don't block on these.
+          const hints: string[] = [];
           if (m.verticalFill > 0 && m.verticalFill < MIN_VERTICAL_FILL) {
             hints.push(
               `Content only fills ${Math.round(m.verticalFill * 100)}% of the slide height — the slide looks empty. Add more content or grow the hero element to use the canvas.`,
             );
           }
+          if (m.titleLines > TITLE_LINE_CAP || m.titleChars > TITLE_CHAR_CAP) {
+            hints.push(
+              `Title is ${m.titleChars} chars on ${m.titleLines} line(s) — shorten to ≤ ${TITLE_CHAR_CAP} chars / ≤ ${TITLE_LINE_CAP} lines, or move qualifiers into the subtitle.`,
+            );
+          }
+          if (m.headerHeight > 0) {
+            const headerFraction = m.headerHeight / CANVAS_H;
+            if (headerFraction > HEADER_HEIGHT_FRACTION_CAP) {
+              hints.push(
+                `Header (title + subtitle) is ${m.headerHeight}px = ${Math.round(headerFraction * 100)}% of slide height — keep ≤ ${Math.round(HEADER_HEIGHT_FRACTION_CAP * 100)}% (${Math.round(HEADER_HEIGHT_FRACTION_CAP * CANVAS_H)}px). Drop the title font size to 56–72px (display-title sizes 96–140px are for cover/section slides only) or shorten the title.`,
+              );
+            }
+          }
 
-          if (errors.length > 0 || hints.length > 0) {
+          const hasErrors = errors.length > 0 || m.textOverlaps.length > 0;
+          if (hasErrors) {
+            const attempts = (errorAttempts.get(path) ?? 0) + 1;
+            errorAttempts.set(path, attempts);
+
+            // One structured log per error write so a developer watching the
+            // console can see exactly what the model was told and how the
+            // loop is progressing. Total attempts shown is MAX_ERROR_RETRIES + 1
+            // (the initial write plus the retries).
+            const totalBudget = MAX_ERROR_RETRIES + 1;
+            const issueLines: string[] = [];
+            for (const e of errors) issueLines.push(`    overflow ${e}`);
+            for (const o of m.textOverlaps.slice(0, MAX_REPORTED_OVERLAPS)) {
+              issueLines.push(`    overlap ${o.a} ↔ ${o.b} ${o.width}×${o.height}px`);
+            }
+            const moreOverlaps = m.textOverlaps.length - Math.min(MAX_REPORTED_OVERLAPS, m.textOverlaps.length);
+            if (moreOverlaps > 0) issueLines.push(`    overlap …and ${moreOverlaps} more`);
+            console.debug(
+              `[HTML Slides] ${path} attempt ${attempts}/${totalBudget} — ` +
+                `${errors.length} overflow, ${m.textOverlaps.length} overlaps ` +
+                `(${content.length} bytes)\n` +
+                issueLines.join("\n"),
+            );
+
+            // Give up after MAX_ERROR_RETRIES so we don't loop forever on a
+            // slide the model can't fix. Report the issues but tell the
+            // model to move on.
+            if (attempts > MAX_ERROR_RETRIES) {
+              console.warn(
+                `[HTML Slides] ${path} still has issues after ${attempts} attempts — accepting and moving on.`,
+              );
+              return textResult(
+                `Wrote ${path} (${content.length} bytes). Layout still has issues but accepting it after ${attempts} attempts — DO NOT rewrite this slide again, continue with the remaining slides.`,
+              );
+            }
+
             const parts = [`Wrote ${path} (${content.length} bytes)`];
             if (errors.length > 0) {
               parts.push(
                 `\n⚠️ OVERFLOW: Content extends beyond the ${CANVAS_W}×${CANVAS_H}px canvas:\n` +
                   errors.map((e) => `  - ${e}`).join("\n") +
                   `\nOverflowing content will be clipped. Rewrite this slide to fit within the canvas bounds.`,
+              );
+            }
+            if (m.textOverlaps.length > 0) {
+              const shown = m.textOverlaps.slice(0, MAX_REPORTED_OVERLAPS);
+              const more = m.textOverlaps.length - shown.length;
+              parts.push(
+                `\n⚠️ TEXT OVERLAP: ${m.textOverlaps.length} pair(s) of text elements physically overlap each other — text is unreadable where they collide. Fix layout (spacing, grid, or z-order) so they don't intersect:\n` +
+                  shown
+                    .map((o) => `  - ${o.a} overlaps ${o.b} by ${o.width}×${o.height}px`)
+                    .join("\n") +
+                  (more > 0 ? `\n  - …and ${more} more` : ""),
               );
             }
             if (hints.length > 0) {
@@ -244,6 +413,28 @@ export function createHtmlSlideTools(
               );
             }
             return textResult(parts.join(""));
+          }
+
+          // Clean write — clear the retry counter so a future edit to the
+          // same slide gets a fresh budget. Surface convergence in the log
+          // so a developer can see the loop actually fixed something.
+          const priorAttempts = errorAttempts.get(path) ?? 0;
+          errorAttempts.delete(path);
+          const fillPct = Math.round(m.verticalFill * 100);
+          if (priorAttempts > 0) {
+            console.debug(
+              `[HTML Slides] ${path} OK fill:${fillPct}% (${content.length} bytes) — ` +
+                `resolved after ${priorAttempts} ${priorAttempts === 1 ? "retry" : "retries"}`,
+            );
+          } else {
+            console.debug(`[HTML Slides] ${path} OK fill:${fillPct}% (${content.length} bytes)`);
+          }
+
+          if (hints.length > 0) {
+            return textResult(
+              `Wrote ${path} (${content.length} bytes)\n\nHints (not blocking, address only if they make the slide better):\n` +
+                hints.map((h) => `  - ${h}`).join("\n"),
+            );
           }
         }
 

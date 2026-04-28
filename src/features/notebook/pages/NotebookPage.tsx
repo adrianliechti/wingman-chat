@@ -54,23 +54,15 @@ export function NotebookPage() {
     deleteSource,
     sendMessage,
     generateOutput,
+    updateOutput,
     deleteOutput,
   } = useNotebook(notebookId);
 
-  // Derive viewingOutput from outputs array so it stays in sync during generation.
-  // refinedOutput holds local edits from the refine flow until they're persisted.
-  const [refinedOutput, setRefinedOutput] = useState<NotebookOutput | null>(null);
-  const liveOutput = viewingOutputId ? (outputs.find((o) => o.id === viewingOutputId) ?? null) : null;
-  // Use liveOutput during generation (status syncs in real-time), refinedOutput only for completed outputs
-  const viewingOutput =
-    liveOutput?.status === "generating"
-      ? liveOutput
-      : refinedOutput?.id === viewingOutputId
-        ? refinedOutput
-        : liveOutput;
+  // Derive viewingOutput from outputs array so it stays in sync during generation
+  // and after refinements (updateOutput writes back into outputs).
+  const viewingOutput = viewingOutputId ? (outputs.find((o) => o.id === viewingOutputId) ?? null) : null;
   const setViewingOutput = useCallback((o: NotebookOutput | null) => {
     setViewingOutputId(o?.id ?? null);
-    setRefinedOutput(null);
   }, []);
 
   // Load notebook list
@@ -292,7 +284,7 @@ export function NotebookPage() {
                 ) : viewingOutput.audioUrl ? (
                   <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
                 ) : viewingOutput.type === "slides" ? (
-                  <SlideViewer output={viewingOutput} onRefine={(updatedOutput) => setRefinedOutput(updatedOutput)} />
+                  <SlideViewer output={viewingOutput} onRefine={updateOutput} />
                 ) : viewingOutput.imageUrl ? (
                   <div className="h-full overflow-y-auto p-6">
                     <div className="flex flex-col items-center gap-4">

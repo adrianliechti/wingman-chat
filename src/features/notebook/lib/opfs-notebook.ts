@@ -454,6 +454,14 @@ export async function addOutput(notebookId: string, output: NotebookOutput): Pro
   await writeOutput(notebookId, output);
 }
 
+export async function updateOutput(notebookId: string, output: NotebookOutput): Promise<void> {
+  // Wipe the slides directory first so a refinement that reorders or shortens
+  // the deck doesn't leave stale slide files behind. writeOutput then re-emits
+  // the current slides and overwrites the metadata.
+  await deleteDirectory(`${outputPath(notebookId, output.id)}/slides`);
+  await writeOutput(notebookId, output);
+}
+
 export async function removeOutput(notebookId: string, outputId: string): Promise<void> {
   await deleteDirectory(outputPath(notebookId, outputId));
 }
