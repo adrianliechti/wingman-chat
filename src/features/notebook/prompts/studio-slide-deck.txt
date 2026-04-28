@@ -65,13 +65,17 @@ These are concrete minimums. Go bigger when the slide calls for it.
 |----------------|-------------|-----------|----------------------------------------------|
 | Hero stat      | 240–400     | 700–900   | One massive number dominates a slide         |
 | Display title  | 96–140      | 700–900   | Title slide, section divider                 |
-| Slide title    | 56–88       | 600–800   | Insight statement — **max ~80 characters**   |
+| Slide title    | 56–88       | 600–800   | Insight headline — **≤ 60 chars ideal, 80 hard cap, never > 2 lines** |
 | Subtitle       | 32–44       | 400–500   | Context under the title                      |
 | Body           | 26–32       | 400       | Paragraph / supporting copy                  |
 | Label / caption| 20–24       | 500–600   | Small caps, chart labels, source cites       |
 | Min readable   | **24**      | —         | **Never** put text below 24px on this canvas |
 
 Line-height: 1.1–1.2 for titles, 1.4–1.6 for body. Use `text-wrap: balance` on titles and `text-wrap: pretty` on body paragraphs.
+
+**Default to the lower end of each range.** A 56–72px slide title is the rule; 80–88px is reserved for slides where the title is *the* focal element (no chart, no big number, no dense body). Display-title sizes (96–140px) are for **cover and section-divider slides only** — never on content slides, even if the title feels important.
+
+**Title block budget.** The header (title + subtitle) should occupy **≤ 25% of slide height** (≤ 270px on the 1080px canvas). If the title doesn't fit, shorten it — do not enlarge the header area.
 
 **Spacing scale** (use these, don't improvise): `4, 8, 16, 24, 32, 48, 64, 96, 128, 160` px. Put them in CSS vars.
 
@@ -88,7 +92,7 @@ The root of every slide should be `<section class="slide">` (or `<div class="sli
 ```html
 <section class="slide slide--two-col">
   <header class="slide__header">
-    <h1 class="title">Enterprise ACV grew 38% as mid-market stalled</h1>
+    <h1 class="title">Enterprise ACV grew 38% as mid-market stalled</h1>  <!-- 47 chars, 1 line — see "Title length" rules -->
     <p class="subtitle">FY24 revenue composition — sources: 10-K §2.3, internal BI</p>
   </header>
   <div class="slide__body">
