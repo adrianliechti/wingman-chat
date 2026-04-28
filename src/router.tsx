@@ -27,9 +27,13 @@ const appLayoutRoute = createRoute({
     const hash = window.location.hash;
     if (hash?.startsWith("#")) {
       const page = hash.slice(1);
-      const to = hashToRoute[page] ?? "/chat";
-      history.replaceState(null, "", window.location.pathname + window.location.search);
-      throw redirect({ to: to as "/chat" });
+      // Only redirect for known legacy hash routes (e.g. #chat, #translate).
+      // Hashes that contain "=" are launch params (e.g. #import=...) and must
+      // be left intact for useChatLaunch to consume after the page mounts.
+      if (page in hashToRoute) {
+        history.replaceState(null, "", window.location.pathname + window.location.search);
+        throw redirect({ to: hashToRoute[page] as "/chat" });
+      }
     }
   },
 });

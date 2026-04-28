@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
 import type { StoredChat } from "@/shared/lib/opfs";
 import * as opfs from "@/shared/lib/opfs";
-import type { Chat } from "@/shared/types/chat";
+import type { Chat, Message } from "@/shared/types/chat";
 
 const COLLECTION = "chats";
 
@@ -120,6 +120,12 @@ export function useChats() {
 
   // Load all chats on mount (needed for sidebar display)
   useEffect(() => {
+    // Guard against React 18 StrictMode's double-invocation: when the effect
+    // cleanup runs, we cancel any in-flight OPFS read so it doesn't call
+    // setChats/setIsLoaded and overwrite state added by concurrent operations
+    // (e.g. importChat) that started after the first load completed.
+    let cancelled = false;
+
     async function load() {
       try {
         // Load index first
@@ -160,15 +166,22 @@ export function useChats() {
           return bTime - aTime;
         });
 
-        setChats(loadedChats);
+        if (!cancelled) {
+          setChats(loadedChats);
+        }
       } catch (error) {
         console.error("Error loading chats:", error);
       } finally {
-        setIsLoaded(true);
+        if (!cancelled) {
+          setIsLoaded(true);
+        }
       }
     }
 
     load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Debounced save function
@@ -215,6 +228,31 @@ export function useChats() {
       await storeChat(chat);
     } catch (error) {
       console.error("Error saving new chat:", error);
+    }
+
+    return chat;
+  }, []);
+
+  /**
+   * Create a new chat pre-populated with the given messages in one atomic
+   * setChats call, eliminating any timing window between createChat +
+   * updateChat that could cause the chat to briefly appear empty.
+   */
+  const importChat = useCallback(async (messages: Message[]) => {
+    const chat: Chat = {
+      id: crypto.randomUUID(),
+      created: new Date(),
+      updated: new Date(),
+      model: null,
+      messages,
+    };
+
+    setChats((prev) => [chat, ...prev]);
+
+    try {
+      await storeChat(chat);
+    } catch (error) {
+      console.error("Error saving imported chat:", error);
     }
 
     return chat;
@@ -280,5 +318,5 @@ export function useChats() {
     };
   }, []);
 
-  return { chats, isLoaded, createChat, updateChat, deleteChat };
+  return { chats, isLoaded, createChat, importChat, updateChat, deleteChat };
 }

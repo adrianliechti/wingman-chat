@@ -9,6 +9,7 @@ import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
 import { useChat } from "@/features/chat/hooks/useChat";
+import { useChatLaunch } from "@/features/chat/hooks/useChatLaunch";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { useVoice } from "@/features/voice/hooks/useVoice";
@@ -84,6 +85,10 @@ const Disclaimer = () => {
 export function ChatPage() {
   const { messages, selectChat, chat, chats, chatsLoaded, isResponding, model, models, setModel } = useChat();
   const { isListening, stopVoice } = useVoice();
+  const { initialContent, autoSubmit: autoSubmitFromLaunch } = useChatLaunch();
+  // Delay auto-submit until a model is available — prevents a race where OPFS
+  // finishes loading (triggering useChatLaunch) before the model list arrives.
+  const autoSubmit = autoSubmitFromLaunch && !!model;
 
   const navigate = useNavigate();
   const { newChat } = useChatNavigate();
@@ -342,15 +347,14 @@ export function ChatPage() {
 
       {/* Main content area */}
       <div
-        className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-500 ease-in-out ${
-          showAppDrawer
+        className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-500 ease-in-out ${showAppDrawer
             ? "md:mr-[calc(50vw+0.75rem)]"
             : showArtifactsDrawer
               ? "md:mr-[calc(66vw+0.75rem)]"
               : showAgentDrawer
                 ? "md:mr-83"
                 : ""
-        }`}
+          }`}
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
           {messages.length === 0 ? (
@@ -411,24 +415,22 @@ export function ChatPage() {
 
         {/* Chat Input */}
         <footer
-          className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out ${showSidebar && chats.length > 0 && !showArtifactsDrawer && !showAgentDrawer && !showAppDrawer ? "md:left-59" : ""} ${
-            showAppDrawer
+          className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out ${showSidebar && chats.length > 0 && !showArtifactsDrawer && !showAgentDrawer && !showAppDrawer ? "md:left-59" : ""} ${showAppDrawer
               ? "right-0 md:right-[calc(50vw+0.75rem)]"
               : showArtifactsDrawer
                 ? "right-0 md:right-[calc(66vw+0.75rem)]"
                 : showAgentDrawer
                   ? "right-0 md:right-83"
                   : "right-0"
-          }`}
+            }`}
         >
           <div
-            className={`relative pointer-events-auto md:max-w-4xl mx-auto transition-transform duration-500 ease-in-out ${
-              messages.length === 0 && !showArtifactsDrawer && !showAppDrawer && !showAgentDrawer
+            className={`relative pointer-events-auto md:max-w-4xl mx-auto transition-transform duration-500 ease-in-out ${messages.length === 0 && !showArtifactsDrawer && !showAppDrawer && !showAgentDrawer
                 ? "md:translate-y-[calc(50%-33.333vh)]"
                 : ""
-            }`}
+              }`}
           >
-            <ChatInput />
+            <ChatInput initialContent={initialContent} autoSubmit={autoSubmit} />
           </div>
         </footer>
       </div>
@@ -439,7 +441,7 @@ export function ChatPage() {
           className={`w-full transition-all duration-300 ease-out transform ${isArtifactsDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"} ${
             // On mobile: full width overlay from right edge, on desktop: positioned with right edge and 66% width
             "fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-[66vw] max-w-none"
-          } ${shouldRenderAgentDrawer ? "z-20" : "z-25"}`}
+            } ${shouldRenderAgentDrawer ? "z-20" : "z-25"}`}
           style={{
             top: isMobile ? "48px" : undefined,
             bottom: isMobile ? `${chatInputHeight - 16}px` : undefined,
@@ -457,7 +459,7 @@ export function ChatPage() {
           className={`w-full z-25 transition-all duration-150 ease-linear transform ${isAgentDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"} ${
             // On mobile: full width overlay from right edge, on desktop: 20rem width
             "fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-80"
-          }`}
+            }`}
           style={{
             top: isMobile ? "48px" : undefined,
             bottom: isMobile ? `${chatInputHeight - 16}px` : undefined,
@@ -473,7 +475,7 @@ export function ChatPage() {
         className={`w-full transition-all duration-300 ease-out transform ${shouldRenderAppDrawer && isAppDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0 pointer-events-none"} ${
           // On mobile: full width overlay from right edge, on desktop: positioned with right edge and 50% width
           "fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-[50vw] max-w-none z-30"
-        }`}
+          }`}
         style={{
           top: isMobile ? "48px" : undefined,
           bottom: isMobile ? `${chatInputHeight - 16}px` : undefined,

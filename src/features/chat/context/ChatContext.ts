@@ -19,6 +19,7 @@ export interface ChatContextType {
 
   // Chat actions
   createChat: () => Promise<Chat>;
+  importChat: (messages: Message[]) => Promise<Chat>;
   selectChat: (chatId: string | null) => void;
   deleteChat: (chatId: string) => void;
   updateChat: (chatId: string, updater: (chat: Chat) => Partial<Chat>, options?: { preserveDates?: boolean }) => void;

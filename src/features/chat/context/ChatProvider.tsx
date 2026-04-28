@@ -43,6 +43,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     chats,
     isLoaded: chatsLoaded,
     createChat: createChatHook,
+    importChat: importChatHook,
     updateChat,
     deleteChat: deleteChatHook,
   } = useChats();
@@ -112,6 +113,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
     resetTools();
     return newChat;
   }, [createChatHook, resetTools]);
+
+  const importChat = useCallback(
+    async (messages: Message[]) => {
+      const newChat = await importChatHook(messages);
+      setChatId(newChat.id);
+      resetTools();
+      return newChat;
+    },
+    [importChatHook, resetTools],
+  );
 
   const chatIdRef = useRef(chatId);
   chatIdRef.current = chatId;
@@ -513,6 +524,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     // Chat actions
     createChat,
+    importChat,
     selectChat,
     deleteChat,
     updateChat,
