@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getConfig } from "@/shared/config";
 import type { Model } from "@/shared/types/chat";
 
@@ -57,7 +57,7 @@ export function useModels() {
   }, [config.client, config.models]);
 
   // Function to update selected model and save to localStorage
-  const setSelectedModel = (model: Model | null) => {
+  const setSelectedModel = useCallback((model: Model | null) => {
     setSelectedModelState(model);
 
     try {
@@ -69,7 +69,7 @@ export function useModels() {
     } catch {
       // Silently handle localStorage errors
     }
-  };
+  }, []);
 
   return {
     models,

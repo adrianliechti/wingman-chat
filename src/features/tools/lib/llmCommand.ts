@@ -3,19 +3,19 @@ import { defineCommand } from "just-bash/browser";
 import { getConfig } from "@/shared/config";
 import { getTextFromContent, Role } from "@/shared/types/chat";
 
-let activeChatModel: string | null = null;
+let model: string | null = null;
 
-export function setActiveChatModel(model: string | null): void {
-  activeChatModel = model;
+export function setModel(newModel: string | null): void {
+  model = newModel;
 }
 
 export async function runLlm(prompt: string): Promise<string> {
-  if (!activeChatModel) {
-    throw new Error("llm: no active chat model");
+  if (!model) {
+    throw new Error("llm: no model");
   }
 
   const result = await getConfig().client.complete(
-    activeChatModel,
+    model,
     "",
     [{ role: Role.User, content: [{ type: "text", text: prompt }] }],
     [],
