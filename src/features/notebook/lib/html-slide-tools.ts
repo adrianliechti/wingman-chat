@@ -151,10 +151,22 @@ async function measureSlide(html: string): Promise<SlideMeasurement> {
         for (const el of slide.querySelectorAll("*")) {
           const r = el.getBoundingClientRect();
           if (r.width === 0 && r.height === 0) continue;
-          if (r.top < minTop) { minTop = r.top; topEl = el; }
-          if (r.left < minLeft) { minLeft = r.left; leftEl = el; }
-          if (r.right > maxRight) { maxRight = r.right; rightEl = el; }
-          if (r.bottom > maxBottom) { maxBottom = r.bottom; bottomEl = el; }
+          if (r.top < minTop) {
+            minTop = r.top;
+            topEl = el;
+          }
+          if (r.left < minLeft) {
+            minLeft = r.left;
+            leftEl = el;
+          }
+          if (r.right > maxRight) {
+            maxRight = r.right;
+            rightEl = el;
+          }
+          if (r.bottom > maxBottom) {
+            maxBottom = r.bottom;
+            bottomEl = el;
+          }
         }
 
         // Detect overlapping leaf text elements — an objective bug signal.
@@ -212,9 +224,8 @@ async function measureSlide(html: string): Promise<SlideMeasurement> {
         // selectors first (matches the prompt's HTML structure example), and
         // fall back to the first heading on the slide so we still catch
         // long titles when the model didn't apply the .title class.
-        const titleEl = (slide.querySelector(
-          ".slide__header h1, .slide__header h2, h1.title, h2.title",
-        ) ?? slide.querySelector("h1, h2")) as HTMLElement | null;
+        const titleEl = (slide.querySelector(".slide__header h1, .slide__header h2, h1.title, h2.title") ??
+          slide.querySelector("h1, h2")) as HTMLElement | null;
         let titleChars = 0;
         let titleLines = 0;
         if (titleEl && titleEl.offsetHeight > 0) {
@@ -321,13 +332,19 @@ export function createHtmlSlideTools(
             errors.push(`Top: ${ov.top}px above the slide${offenders.top ? ` — caused by ${offenders.top}` : ""}`);
           }
           if (ov.bottom > OVERFLOW_TOLERANCE) {
-            errors.push(`Bottom: ${ov.bottom}px below the slide${offenders.bottom ? ` — caused by ${offenders.bottom}` : ""}`);
+            errors.push(
+              `Bottom: ${ov.bottom}px below the slide${offenders.bottom ? ` — caused by ${offenders.bottom}` : ""}`,
+            );
           }
           if (ov.left > OVERFLOW_TOLERANCE) {
-            errors.push(`Left: ${ov.left}px outside left edge${offenders.left ? ` — caused by ${offenders.left}` : ""}`);
+            errors.push(
+              `Left: ${ov.left}px outside left edge${offenders.left ? ` — caused by ${offenders.left}` : ""}`,
+            );
           }
           if (ov.right > OVERFLOW_TOLERANCE) {
-            errors.push(`Right: ${ov.right}px outside right edge${offenders.right ? ` — caused by ${offenders.right}` : ""}`);
+            errors.push(
+              `Right: ${ov.right}px outside right edge${offenders.right ? ` — caused by ${offenders.right}` : ""}`,
+            );
           }
 
           // Soft hints — taste calls, not bugs. Don't block on these.
@@ -400,9 +417,7 @@ export function createHtmlSlideTools(
               const more = m.textOverlaps.length - shown.length;
               parts.push(
                 `\n⚠️ TEXT OVERLAP: ${m.textOverlaps.length} pair(s) of text elements physically overlap each other — text is unreadable where they collide. Fix layout (spacing, grid, or z-order) so they don't intersect:\n` +
-                  shown
-                    .map((o) => `  - ${o.a} overlaps ${o.b} by ${o.width}×${o.height}px`)
-                    .join("\n") +
+                  shown.map((o) => `  - ${o.a} overlaps ${o.b} by ${o.width}×${o.height}px`).join("\n") +
                   (more > 0 ? `\n  - …and ${more} more` : ""),
               );
             }

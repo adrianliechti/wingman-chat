@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { getConfig } from "@/shared/config";
+import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { ArtifactsContext } from "./ArtifactsContext";
 
 interface ArtifactsProviderProps {
@@ -86,7 +87,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     });
 
     const unsubscribeDeleted = fs.subscribe("fileDeleted", (path: string) => {
-      // Clear active file if it was the deleted one
+      // Clear active file if it was the deleted one.
       setActiveFile((currentActive) => (currentActive === path ? null : currentActive));
     });
 
@@ -103,7 +104,10 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   }, [fs]);
 
   const openFile = useCallback((path: string) => {
-    setActiveFile(path);
+    // Normalize so `activeFile` is always canonical and matches paths emitted
+    // by the filesystem (see FileSystemManager.createFile/deleteFile/renameFile).
+    const normalized = normalizeArtifactPath(path);
+    if (normalized) setActiveFile(normalized);
   }, []);
 
   const toggleArtifactsDrawer = useCallback(() => {

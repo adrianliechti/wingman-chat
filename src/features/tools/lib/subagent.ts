@@ -48,4 +48,3 @@ export function createSubagentTool(model: string, providerInstructions: string, 
     },
   };
 }
-
