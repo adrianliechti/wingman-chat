@@ -11,6 +11,8 @@ export type Model = {
   type?: ModelType;
   description?: string;
 
+  hidden?: boolean;
+
   effort?: "none" | "minimal" | "low" | "medium" | "high";
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";

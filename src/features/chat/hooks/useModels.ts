@@ -28,8 +28,13 @@ export function useModels() {
         let resolvedModels: Model[];
 
         if (config.models.length > 0) {
-          // Filter config models to only those that exist in the API
-          resolvedModels = config.models.filter((m) => apiModelIds.has(m.id));
+          // Configured models drive the visible list; everything else the API
+          // exposes is appended as hidden so it can still be reached via the
+          // Option-click escape hatch in the model selector.
+          const configured = config.models.filter((m) => apiModelIds.has(m.id));
+          const configuredIds = new Set(configured.map((m) => m.id));
+          const extras = apiModels.filter((m) => !configuredIds.has(m.id)).map((m) => ({ ...m, hidden: true }));
+          resolvedModels = [...configured, ...extras];
         } else {
           resolvedModels = apiModels;
         }

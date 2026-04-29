@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
@@ -32,7 +33,7 @@ import { useDropZone } from "@/shared/hooks/useDropZone";
 import { acceptTypes, canConvert, convertFileToText } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { lookupContentType, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
-import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
+import type { Content, ImageContent, Message, Model, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
@@ -73,6 +74,8 @@ export function ChatInput() {
       void requestAudioPermission();
     }
   }, [isRealtimeSelected, voiceAvailable, inputDevices.length, requestAudioPermission]);
+
+  const [showHiddenModels, setShowHiddenModels] = useState(false);
 
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
@@ -742,7 +745,15 @@ export function ChatInput() {
                 <>
                   {models.length > 0 && !isRealtimeSelected && (
                     <Menu>
-                      <MenuButton className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48">
+                      <MenuButton
+                        onPointerDownCapture={(e) => {
+                          // Commit synchronously so MenuItems mounts with the right list
+                          // on the very first render — otherwise the menu opens with the
+                          // visible-only list and then re-renders bigger, causing a jump.
+                          flushSync(() => setShowHiddenModels(e.altKey));
+                        }}
+                        className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
+                      >
                         <span className="shrink-0 flex justify-center">{toolIndicator}</span>
                         <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
                       </MenuButton>
@@ -753,30 +764,22 @@ export function ChatInput() {
                         className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 whitespace-nowrap dark:ring-1 dark:ring-white/10"
                       >
                         {models
-                          .filter((modelItem) => modelItem.id !== "realtime")
+                          .filter((m) => m.id !== "realtime" && !m.hidden)
                           .map((modelItem) => (
-                            <MenuItem key={modelItem.id}>
-                              <button
-                                type="button"
-                                onClick={() => onModelChange(modelItem)}
-                                title={modelItem.description}
-                                className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                              >
-                                <div className="flex items-center gap-2.5 w-full">
-                                  <div className="flex flex-col items-start flex-1 min-w-0">
-                                    <div className="font-semibold text-sm leading-tight whitespace-nowrap">
-                                      {modelItem.name ?? modelItem.id}
-                                    </div>
-                                    {modelItem.description && (
-                                      <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
-                                        {modelItem.description}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </button>
-                            </MenuItem>
+                            <ModelMenuItem key={modelItem.id} model={modelItem} onSelect={onModelChange} />
                           ))}
+                        {showHiddenModels &&
+                          models.some((m) => m.id !== "realtime" && m.hidden) && (
+                            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 bg-neutral-100/60 dark:bg-white/5 border-y border-white/20 dark:border-white/10">
+                              Hidden
+                            </div>
+                          )}
+                        {showHiddenModels &&
+                          models
+                            .filter((m) => m.id !== "realtime" && m.hidden)
+                            .map((modelItem) => (
+                              <ModelMenuItem key={modelItem.id} model={modelItem} onSelect={onModelChange} />
+                            ))}
                       </MenuItems>
                     </Menu>
                   )}
@@ -1182,5 +1185,29 @@ export function ChatInput() {
         />
       )}
     </>
+  );
+}
+
+function ModelMenuItem({ model, onSelect }: { model: Model; onSelect: (model: Model) => void }) {
+  return (
+    <MenuItem>
+      <button
+        type="button"
+        onClick={() => onSelect(model)}
+        title={model.description}
+        className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
+      >
+        <div className="flex items-center gap-2.5 w-full">
+          <div className="flex flex-col items-start flex-1 min-w-0">
+            <div className="font-semibold text-sm leading-tight whitespace-nowrap">{model.name ?? model.id}</div>
+            {model.description && (
+              <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
+                {model.description}
+              </div>
+            )}
+          </div>
+        </div>
+      </button>
+    </MenuItem>
   );
 }
