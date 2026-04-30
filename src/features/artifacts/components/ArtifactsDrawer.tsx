@@ -221,12 +221,18 @@ export function ArtifactsDrawer() {
     };
   }, [fs, activeFile]);
 
-  // Handle auto-opening single file (needs effect since openFile is async)
+  // Handle auto-opening single file (needs effect since openFile is async).
+  // Only re-run when the `files` list changes — not when `activeFile` toggles.
+  // Otherwise a deletion flow races: clearing `activeFile` re-runs this effect
+  // before `loadFiles()` finishes, so `files` is still stale with the deleted
+  // entry and we'd immediately reopen it.
+  const activeFileRef = useRef(activeFile);
+  activeFileRef.current = activeFile;
   useEffect(() => {
-    if (!activeFile && files.length === 1) {
+    if (!activeFileRef.current && files.length === 1) {
       openFile(files[0].path);
     }
-  }, [files, activeFile, openFile]);
+  }, [files, openFile]);
 
   // Drag and drop handlers
   const handleDrop = async (e: React.DragEvent) => {

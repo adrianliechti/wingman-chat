@@ -98,7 +98,24 @@ async function postMessage(message: unknown): Promise<void> {
   const reg = await ensureRegistration();
   const worker = reg.active;
   if (!worker) throw new Error("Service worker unavailable.");
-  worker.postMessage(message);
+  // Round-trip through a MessageChannel so we know the SW has processed the
+  // message before we resolve. Without this, a fire-and-forget postMessage
+  // can race against the iframe's first fetch — the iframe loads the preview
+  // URL before the SW's `message` handler has registered the session, and
+  // the request 404s.
+  await new Promise<void>((resolve, reject) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = (event) => {
+      channel.port1.close();
+      const data = event.data;
+      if (data && data.ok === false) {
+        reject(new Error(data.error || "Service worker rejected message"));
+      } else {
+        resolve();
+      }
+    };
+    worker.postMessage(message, [channel.port2]);
+  });
 }
 
 function generateToken(): string {

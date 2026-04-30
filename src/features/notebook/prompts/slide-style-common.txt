@@ -44,6 +44,23 @@ A 10-slide deck should include a mix of: hero cover, section divider, hero-stat,
 - Numbers: `font-variant-numeric: tabular-nums` everywhere digits align.
 - Minimum readable size on this 1920×1080 canvas: **24px**. Never smaller.
 
+### Title length
+
+A slide title is a **headline, not a paragraph**. Treat it like a newspaper kicker: one short sentence the audience can absorb in one glance.
+
+- **Target ≤ 60 characters, hard cap 80.** This is a hard cap — not "around 80".
+- **Never wrap past 2 lines.** If `text-wrap: balance` produces 3 lines, the title is too long; rewrite, don't shrink the font.
+- **Push detail into the subtitle.** The subtitle (32–44px) carries qualifiers, dates, source notes, scoping — not the title.
+
+Good (≤ 60 chars, 1 line):
+- "Enterprise ACV grew 38% as mid-market stalled"
+- "Why our EMEA retention strategy is breaking"
+- "Three reasons we're delaying the launch"
+
+Bad (over cap / wraps to 3+ lines):
+- "An Overview of How Our Enterprise Customer Acquisition Strategy Has Performed Throughout Fiscal Year 2024" — topic label dressed up as a sentence
+- "Enterprise ACV grew 38% in FY24 driven by upsell into existing logos in North America, while mid-market new-logo bookings stalled due to extended sales cycles" — qualifiers belong in the subtitle
+
 ### Every Slide Earns its Visual
 
 No text-only slides. Every slide includes at least one of: a chart, an image, a hero number, a framework diagram, a quote treated as a visual element, or a dramatic typographic composition.
@@ -70,5 +87,6 @@ These are the tells of a machine-generated deck. Every one is forbidden unless t
 - Content crammed edge-to-edge with no margin
 - Equal density across every slide (no rhythm)
 - Generic topic-label titles ("Overview," "Agenda," "Conclusion")
+- Title that wraps to 3+ lines or reads like an abstract instead of a headline
 - Made-up statistics or fabricated quotes
 - Styling one slide beautifully and leaving the rest inconsistent

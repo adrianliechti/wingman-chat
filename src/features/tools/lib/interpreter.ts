@@ -2,6 +2,7 @@ import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodid
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
 import { SANDBOX_HOME } from "@/shared/lib/sandbox";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import { runLlm } from "./llmCommand";
 import { clearRenderQueue, processRenderQueue } from "./plotlyRenderer";
 import PLOTLY_IMAGE_SHIM from "./plotlyShim.py?raw";
 
@@ -203,6 +204,7 @@ async function loadPyodide(): Promise<PyodideInterface> {
   pyodideLoading = (async () => {
     try {
       pyodideInstance = await loadPyodideRuntime({ indexURL: "/pyodide/" });
+      pyodideInstance.globals.set("llm", runLlm);
       console.log("Pyodide loaded successfully");
       return pyodideInstance;
     } catch (error) {

@@ -6,6 +6,7 @@ import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { useChats } from "@/features/chat/hooks/useChats";
 import { useModels } from "@/features/chat/hooks/useModels";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
 import { getConfig } from "@/shared/config";
 import { run as agentRun } from "@/shared/lib/agent";
 import { getErrorInfo } from "@/shared/lib/errors";
@@ -72,6 +73,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const chatModel = currentChatModel ? (models.find((m) => m.id === currentChatModel.id) ?? currentChatModel) : null;
   const model = chatModel ?? agentModel ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext("chat", model);
+
+  useEffect(() => {
+    setInterpreterModel(model?.id ?? null);
+  }, [model?.id]);
 
   const messages = useMemo(() => {
     const baseMessages = chat?.messages ?? [];

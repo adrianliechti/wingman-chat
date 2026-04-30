@@ -506,6 +506,16 @@ export function useNotebook(notebookId?: string) {
     [notebook],
   );
 
+  const updateOutput = useCallback(
+    async (output: NotebookOutput) => {
+      if (!notebook) return;
+      setOutputs((prev) => prev.map((o) => (o.id === output.id ? output : o)));
+      await store.updateOutput(notebook.id, output);
+      store.touchNotebook(notebook.id);
+    },
+    [notebook],
+  );
+
   return {
     notebook,
     loading,
@@ -532,6 +542,7 @@ export function useNotebook(notebookId?: string) {
     sendMessage,
 
     generateOutput,
+    updateOutput,
     deleteOutput,
   };
 }

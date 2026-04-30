@@ -345,7 +345,7 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                     <FileText size={16} className="text-neutral-400 shrink-0" />
                     <div>
                       <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PDF</p>
-                      <p className="text-[10px] text-neutral-400">Image-based pages, best for sharing</p>
+                      <p className="text-[10px] text-neutral-400">Best for viewing and sharing</p>
                     </div>
                   </button>
                   <button
@@ -356,7 +356,7 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                     <FileImage size={16} className="text-neutral-400 shrink-0" />
                     <div>
                       <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PNG Images</p>
-                      <p className="text-[10px] text-neutral-400">Individual slide images in a ZIP</p>
+                      <p className="text-[10px] text-neutral-400">One image per slide, in a ZIP</p>
                     </div>
                   </button>
                   <button
@@ -366,8 +366,8 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                   >
                     <Presentation size={16} className="text-neutral-400 shrink-0" />
                     <div>
-                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PowerPoint (Image)</p>
-                      <p className="text-[10px] text-neutral-400">Pixel-perfect, not editable</p>
+                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PowerPoint (Fixed)</p>
+                      <p className="text-[10px] text-neutral-400">Slides as images, not editable</p>
                     </div>
                   </button>
                   <button
@@ -380,7 +380,7 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                       <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
                         PowerPoint (Editable)
                       </p>
-                      <p className="text-[10px] text-neutral-400">Pixel-perfect design with editable text</p>
+                      <p className="text-[10px] text-neutral-400">Editable text, approximate layout</p>
                     </div>
                   </button>
                 </div>
