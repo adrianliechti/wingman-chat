@@ -2,6 +2,7 @@ import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { ChevronDown, ChevronRight, Edit2, Folder, FolderOpen, MoreVertical, Trash } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
+import { cn } from "@/shared/lib/cn";
 import type { FileEntry } from "@/shared/types/file";
 import { FileIcon } from "@/shared/ui/FileIcon";
 
@@ -155,7 +156,10 @@ function FileTreeNode({
       >
         <FileIcon name={node.path} contentType={node.file?.contentType} />
         <span
-          className={`text-sm truncate ${isTabOpen ? "font-medium text-neutral-900 dark:text-neutral-100" : "text-neutral-700 dark:text-neutral-300"}`}
+          className={cn(
+            "text-sm truncate",
+            isTabOpen ? "font-medium text-neutral-900 dark:text-neutral-100" : "text-neutral-700 dark:text-neutral-300",
+          )}
           title={node.name}
         >
           {node.name}

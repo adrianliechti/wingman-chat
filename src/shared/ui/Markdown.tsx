@@ -11,12 +11,13 @@ import remarkMath from "remark-math";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
+import { cn } from "@/shared/lib/cn";
 import "katex/dist/katex.min.css";
 import type { ReactNode } from "react";
-import type { FileSystem } from "@/shared/types/file";
 import rehypeNotoEmoji from "@/shared/lib/rehype-noto-emoji";
 import { useAssetUrlResolver } from "@/shared/lib/useAssetUrlResolver";
 import { isAudioUrl, isVideoUrl } from "@/shared/lib/utils";
+import type { FileSystem } from "@/shared/types/file";
 import { CodeRenderer } from "./CodeRenderer";
 import { MediaPlayer } from "./MediaPlayer";
 import { CsvRenderer } from "./renderers/CsvRenderer";
@@ -119,7 +120,7 @@ function createComponents(
             checked={checked}
             readOnly
             disabled
-            className={`${className ?? ""} task-checkbox${checked ? " checked" : ""}`.trim()}
+            className={cn(className, "task-checkbox", checked && "checked")}
             {...props}
           />
         );
@@ -129,7 +130,7 @@ function createComponents(
     li: ({ children, className, ...props }) => {
       const isTask = typeof className === "string" && className.includes("task-list-item");
       return (
-        <li className={`py-1 ml-0 ${isTask ? "task-list-item" : ""}`} {...props}>
+        <li className={cn("py-1 ml-0", isTask && "task-list-item")} {...props}>
           {children}
         </li>
       );
@@ -137,7 +138,7 @@ function createComponents(
     ul: ({ children, className, ...props }) => {
       const isTaskList = typeof className === "string" && className.includes("contains-task-list");
       return (
-        <ul className={isTaskList ? "task-list ml-0 pl-0" : "custom-list ml-5 pl-0"} {...props}>
+        <ul className={cn(isTaskList ? "task-list ml-0 pl-0" : "custom-list ml-5 pl-0")} {...props}>
           {children}
         </ul>
       );

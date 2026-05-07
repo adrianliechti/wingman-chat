@@ -35,6 +35,7 @@ import { personaOptions } from "@/features/settings/lib/personas";
 import { rebuildAllIndexes } from "@/features/settings/lib/rebuildIndexes";
 import { useToolsContext } from "@/features/tools";
 import { COMPANION_ID } from "@/features/tools/hooks/useCompanion";
+import { cn } from "@/shared/lib/cn";
 import { clearAll, deleteDirectory, getStorageUsage, removeIndexEntry } from "@/shared/lib/opfs";
 import { downloadFolderAsZip } from "@/shared/lib/opfs-zip";
 import { formatBytes } from "@/shared/lib/utils";
@@ -175,11 +176,14 @@ function SectionPanel({ title, icon, isOpen, onClick, children }: SectionPanelPr
         </div>
         <ChevronRight
           size={18}
-          className={`text-neutral-400 transition-transform duration-300 ease-out ${isOpen ? "rotate-90" : ""}`}
+          className={cn("text-neutral-400 transition-transform duration-300 ease-out", isOpen && "rotate-90")}
         />
       </button>
       <div
-        className={`grid transition-all duration-300 ease-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
+        className={cn(
+          "grid transition-all duration-300 ease-out",
+          isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+        )}
       >
         <div className="overflow-hidden">
           <div className="px-6 pb-6 pt-3 space-y-5 bg-neutral-100/30 dark:bg-neutral-900/30 shadow-[inset_0_4px_6px_-4px_rgba(0,0,0,0.1)] dark:shadow-[inset_0_4px_6px_-4px_rgba(0,0,0,0.3)]">
@@ -929,7 +933,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         >
                           <Upload
                             size={16}
-                            className={`text-neutral-500 dark:text-neutral-400 shrink-0 ${isExporting ? "animate-pulse" : ""}`}
+                            className={cn(
+                              "text-neutral-500 dark:text-neutral-400 shrink-0",
+                              isExporting && "animate-pulse",
+                            )}
                           />
                           <div className="min-w-0">
                             <div className="font-medium">{isExporting ? "Exporting..." : "Export All Data"}</div>
@@ -967,7 +974,10 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                           >
                             <Settings
                               size={16}
-                              className={`text-neutral-500 dark:text-neutral-400 shrink-0 ${isRebuildingIndexes ? "animate-spin" : ""}`}
+                              className={cn(
+                                "text-neutral-500 dark:text-neutral-400 shrink-0",
+                                isRebuildingIndexes && "animate-spin",
+                              )}
                             />
                             <div className="min-w-0">
                               <div className="font-medium">

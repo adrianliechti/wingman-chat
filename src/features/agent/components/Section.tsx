@@ -1,4 +1,5 @@
 import { ChevronRight } from "lucide-react";
+import { cn } from "@/shared/lib/cn";
 
 interface SectionProps {
   title: string;
@@ -10,7 +11,15 @@ interface SectionProps {
   children: React.ReactNode;
 }
 
-export function Section({ title, isOpen, onOpenToggle, collapsible = true, overflowVisible = false, headerAction, children }: SectionProps) {
+export function Section({
+  title,
+  isOpen,
+  onOpenToggle,
+  collapsible = true,
+  overflowVisible = false,
+  headerAction,
+  children,
+}: SectionProps) {
   return (
     <div className="border-b border-neutral-200/40 dark:border-neutral-700/40">
       <div className="flex items-center gap-1 px-3 py-2">
@@ -25,7 +34,7 @@ export function Section({ title, isOpen, onOpenToggle, collapsible = true, overf
             </div>
             <ChevronRight
               size={14}
-              className={`text-neutral-400 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+              className={cn("text-neutral-400 transition-transform duration-200", isOpen && "rotate-90")}
             />
           </button>
         ) : (
@@ -36,9 +45,12 @@ export function Section({ title, isOpen, onOpenToggle, collapsible = true, overf
         {headerAction && <div className="shrink-0">{headerAction}</div>}
       </div>
       <div
-        className={`grid transition-all duration-200 ease-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
+        className={cn(
+          "grid transition-all duration-200 ease-out",
+          isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+        )}
       >
-        <div className={overflowVisible ? "overflow-visible" : "overflow-hidden"}>
+        <div className={cn(overflowVisible ? "overflow-visible" : "overflow-hidden")}>
           <div className="px-3 pb-3 pt-1">{children}</div>
         </div>
       </div>

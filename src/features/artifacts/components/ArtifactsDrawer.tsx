@@ -15,12 +15,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
-import type { File, FileEntry } from "@/shared/types/file";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
+import { cn } from "@/shared/lib/cn";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { markdownToDocx } from "@/shared/lib/markdownToDocx";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
+import type { File, FileEntry } from "@/shared/types/file";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { BashEditor } from "@/shared/ui/editors/BashEditor";
 import { CodeEditor } from "@/shared/ui/editors/CodeEditor";
@@ -518,11 +519,16 @@ export function ArtifactsDrawer() {
 
         {/* Right Side Panel - File Browser (full height) */}
         <div
-          className={`transition-all duration-500 ease-in-out relative ${files.length > 0 ? "w-48 opacity-100" : "w-0 opacity-0"} shrink-0 overflow-hidden`}
+          className={cn(
+            "transition-all duration-500 ease-in-out relative shrink-0 overflow-hidden",
+            files.length > 0 ? "w-48 opacity-100" : "w-0 opacity-0",
+          )}
         >
           <div className="absolute inset-y-0 left-0 w-px bg-black/10 dark:bg-white/10"></div>
           {fs && (
-            <div className={`h-full transition-opacity duration-500 ${files.length > 0 ? "opacity-100" : "opacity-0"}`}>
+            <div
+              className={cn("h-full transition-opacity duration-500", files.length > 0 ? "opacity-100" : "opacity-0")}
+            >
               <ArtifactsBrowser
                 fs={fs}
                 files={files}
@@ -602,7 +608,12 @@ export function ArtifactsDrawer() {
           <button
             type="button"
             onClick={toggleTerminal}
-            className={`p-2 rounded transition-all duration-150 ease-out ${showTerminal ? "text-green-500 dark:text-green-400 bg-green-500/10" : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"}`}
+            className={cn(
+              "p-2 rounded transition-all duration-150 ease-out",
+              showTerminal
+                ? "text-green-500 dark:text-green-400 bg-green-500/10"
+                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+            )}
             title={showTerminal ? "Close terminal" : "Open terminal"}
           >
             <TerminalSquare size={16} />
@@ -685,7 +696,9 @@ export function ArtifactsDrawer() {
 
       {/* Terminal panel — below the controls bar, stays mounted once opened */}
       {terminalMounted && (
-        <div className={`shrink-0 border-t border-black/10 dark:border-white/10 ${showTerminal ? "h-1/3" : "hidden"}`}>
+        <div
+          className={cn("shrink-0 border-t border-black/10 dark:border-white/10", showTerminal ? "h-1/3" : "hidden")}
+        >
           <BashEditor key="terminal" visible={showTerminal} />
         </div>
       )}

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { cn } from "@/shared/lib/cn";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import type { File } from "@/shared/types/file";
 import type { BuildInstructionsOptions } from "../lib/styles";
@@ -170,7 +171,10 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
               return (
                 <div
                   key={output.id}
-                  className={`relative flex items-center gap-2 py-1.5 transition-colors ${isGenerating ? "opacity-60" : isError ? "opacity-75" : ""}`}
+                  className={cn(
+                    "relative flex items-center gap-2 py-1.5 transition-colors",
+                    isGenerating ? "opacity-60" : isError ? "opacity-75" : "",
+                  )}
                 >
                   <button
                     type="button"
@@ -179,9 +183,10 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                         onSelectOutput(output);
                       }
                     }}
-                    className={`flex flex-1 min-w-0 items-center gap-2 text-left ${
-                      output.status === "completed" ? "cursor-pointer" : "cursor-default"
-                    }`}
+                    className={cn(
+                      "flex flex-1 min-w-0 items-center gap-2 text-left",
+                      output.status === "completed" ? "cursor-pointer" : "cursor-default",
+                    )}
                   >
                     <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0">
                       {isGenerating ? (

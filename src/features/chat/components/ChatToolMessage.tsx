@@ -3,6 +3,7 @@ import { memo, useMemo, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+import { cn } from "@/shared/lib/cn";
 import { getToolDisplayName } from "@/shared/lib/utils";
 import type { Content, Message, ToolResultContent } from "@/shared/types/chat";
 import { CodeRenderer } from "@/shared/ui/CodeRenderer";
@@ -107,7 +108,7 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
 
   return (
     <div className="pb-2 max-w-full">
-      <div className={`${isToolError ? "bg-red-50/30 dark:bg-red-950/5" : ""} rounded-lg overflow-hidden max-w-full`}>
+      <div className={cn("rounded-lg overflow-hidden max-w-full", isToolError && "bg-red-50/30 dark:bg-red-950/5")}>
         <button
           onClick={() => setToolResultExpanded(!toolResultExpanded)}
           className="w-full text-left transition-colors"
@@ -115,7 +116,10 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
         >
           <div className="grid grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 min-w-0">
             <ChevronRight
-              className={`w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 transition-transform ${toolResultExpanded ? "rotate-90" : ""}`}
+              className={cn(
+                "w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0 transition-transform",
+                toolResultExpanded && "rotate-90",
+              )}
             />
             <div className="flex items-center gap-2 min-w-0">
               {isToolError ? (
@@ -126,7 +130,10 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
                 <Wrench className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
               )}
               <span
-                className={`text-xs font-medium whitespace-nowrap ${isToolError ? "text-red-500 dark:text-red-400" : "text-neutral-500 dark:text-neutral-400"}`}
+                className={cn(
+                  "text-xs font-medium whitespace-nowrap",
+                  isToolError ? "text-red-500 dark:text-red-400" : "text-neutral-500 dark:text-neutral-400",
+                )}
               >
                 {isToolError ? "Tool Error" : `${toolResult?.name ? getToolDisplayName(toolResult.name) : "Tool"}`}
               </span>

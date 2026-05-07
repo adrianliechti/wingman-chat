@@ -33,6 +33,7 @@
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.24",
     "@xyflow/react": "^12.10.2",
+    "clsx": "^2.1.1",
     "docx": "^9.6.1",
     "dompurify": "^3.4.1",
     "emoji-regex": "^10.6.0",
@@ -59,6 +60,7 @@
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
     "shiki": "^4.0.2",
+    "tailwind-merge": "^3.5.0",
     "unified": "^11.0.5",
     "unist-util-visit": "^5.1.0",
     "zod": "^4.3.6"

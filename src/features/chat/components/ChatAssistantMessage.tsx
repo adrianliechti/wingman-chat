@@ -2,6 +2,7 @@ import { AlertCircle, ChevronRight, Loader2, RotateCcw } from "lucide-react";
 import { memo, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
+import { cn } from "@/shared/lib/cn";
 import { getToolDisplayName } from "@/shared/lib/utils";
 import type { Content, Message } from "@/shared/types/chat";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
@@ -72,13 +73,13 @@ function ReasoningDisplay({ reasoning, isStreaming }: ReasoningDisplayProps) {
   if (!reasoning && !isStreaming) return null;
 
   return (
-    <div className={isExpanded ? "mb-1" : "mb-0"}>
+    <div className={cn(isExpanded ? "mb-1" : "mb-0")}>
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
         className="grid w-full grid-cols-[12px_minmax(0,1fr)] items-center gap-1.5 text-left text-xs text-neutral-500 transition-colors hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
       >
-        <ChevronRight className={`w-3 h-3 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`} />
+        <ChevronRight className={cn("w-3 h-3 transition-transform duration-200", isExpanded && "rotate-90")} />
         <span className="flex items-center gap-1.5 min-w-0">
           <span className="font-medium">{label}</span>
           {isStreaming && <Loader2 className="w-3 h-3 animate-spin shrink-0" />}
@@ -286,7 +287,10 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   // Render assistant message with content
   return (
     <div
-      className={`flex justify-start pb-2 ${isResponding && isLast ? "" : "group"} text-neutral-900 dark:text-neutral-200`}
+      className={cn(
+        "flex justify-start pb-2 text-neutral-900 dark:text-neutral-200",
+        !(isResponding && isLast) && "group",
+      )}
     >
       <div className="flex-1 py-3 wrap-break-words overflow-x-auto">
         {/* Render content parts in order */}
@@ -307,7 +311,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
               .slice(0, index)
               .some((p) => p.type === "reasoning" || p.type === "tool_call");
             return (
-              <div key={partKey} className={hasPrecedingItems ? "mt-2" : ""}>
+              <div key={partKey} className={cn(hasPrecedingItems && "mt-2")}>
                 <Markdown isStreaming={!!(isLast && isResponding)}>{part.text}</Markdown>
               </div>
             );

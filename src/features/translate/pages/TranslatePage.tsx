@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslate } from "@/features/translate/hooks/useTranslate";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
+import { cn } from "@/shared/lib/cn";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import { CopyButton } from "@/shared/ui/CopyButton";
@@ -279,7 +280,10 @@ export function TranslatePage() {
         {selectedFile || isFetchingDrive ? (
           <div
             ref={containerRef}
-            className={`flex-1 flex items-center justify-center p-4 pt-20 ${isDragging ? "bg-slate-50/80 dark:bg-slate-900/40" : ""} transition-all duration-200`}
+            className={cn(
+              "flex-1 flex items-center justify-center p-4 pt-20 transition-all duration-200",
+              isDragging && "bg-slate-50/80 dark:bg-slate-900/40",
+            )}
           >
             {/* Drop zone overlay - show placeholder file card */}
             {isDragging && supportedFiles.length > 0 ? (
@@ -461,7 +465,7 @@ export function TranslatePage() {
               </div>
             )}
 
-            <div className={`w-full h-full ${layoutMode === "wide" ? "max-w-full mx-auto" : "max-w-300 mx-auto"}`}>
+            <div className={cn("w-full h-full", layoutMode === "wide" ? "max-w-full mx-auto" : "max-w-300 mx-auto")}>
               <div className="relative h-full w-full overflow-hidden">
                 {/* Responsive layout: vertical stack on mobile/narrow screens, horizontal on wide screens */}
                 <div className="h-full flex flex-col md:flex-row min-h-0 transition-all duration-200">

@@ -4,6 +4,7 @@ import { flushSync } from "react-dom";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
 import { useChat } from "@/features/chat/hooks/useChat";
+import { cn } from "@/shared/lib/cn";
 import { Section } from "./Section";
 
 interface ModelSectionProps {
@@ -50,7 +51,10 @@ export function ModelSection({ agent }: ModelSectionProps) {
     setShowHiddenModels(false);
   };
 
-  const effectiveModel = agent.model && models.some((m) => m.id === agent.model) ? agent.model : (models.find((m) => !m.hidden)?.id ?? models[0]?.id ?? "");
+  const effectiveModel =
+    agent.model && models.some((m) => m.id === agent.model)
+      ? agent.model
+      : (models.find((m) => !m.hidden)?.id ?? models[0]?.id ?? "");
   const effectiveModelName = models.find((m) => m.id === effectiveModel)?.name ?? effectiveModel;
 
   const visibleModels = models.filter((m) => m.id !== "realtime" && !m.hidden);
@@ -85,7 +89,10 @@ export function ModelSection({ agent }: ModelSectionProps) {
           <span className="truncate">{effectiveModelName}</span>
           <ChevronDown
             size={14}
-            className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
+            className={cn(
+              "pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 transition-transform",
+              isOpen && "rotate-180",
+            )}
           />
         </button>
 
@@ -96,10 +103,11 @@ export function ModelSection({ agent }: ModelSectionProps) {
                 key={m.id}
                 type="button"
                 onClick={() => handleSelect(m.id)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-700/80 ${m.id === effectiveModel
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-700/80 ${
+                  m.id === effectiveModel
                     ? "font-semibold text-neutral-900 dark:text-neutral-100"
                     : "font-normal text-neutral-800 dark:text-neutral-200"
-                  }`}
+                }`}
               >
                 {m.name ?? m.id}
               </button>
@@ -114,10 +122,11 @@ export function ModelSection({ agent }: ModelSectionProps) {
                     key={m.id}
                     type="button"
                     onClick={() => handleSelect(m.id)}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-700/80 ${m.id === effectiveModel
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-700/80 ${
+                      m.id === effectiveModel
                         ? "font-semibold text-neutral-900 dark:text-neutral-100"
                         : "font-normal text-neutral-800 dark:text-neutral-200"
-                      }`}
+                    }`}
                   >
                     {m.name ?? m.id}
                   </button>

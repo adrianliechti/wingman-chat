@@ -14,6 +14,7 @@ import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { useChatScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
+import { cn } from "@/shared/lib/cn";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { AppDrawer } from "@/shell/components/AppDrawer";
 import { BackgroundImage } from "@/shell/components/BackgroundImage";
@@ -221,7 +222,12 @@ export function ChatPage() {
         {artifactsAvailable && (
           <button
             type="button"
-            className={`p-2 rounded transition-all duration-150 ease-out ${showArtifactsDrawer ? "text-neutral-900 dark:text-neutral-100" : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"}`}
+            className={cn(
+              "p-2 rounded transition-all duration-150 ease-out",
+              showArtifactsDrawer
+                ? "text-neutral-900 dark:text-neutral-100"
+                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+            )}
             onClick={toggleArtifactsDrawer}
             title={showArtifactsDrawer ? "Close artifacts" : "Open artifacts"}
           >
@@ -230,7 +236,12 @@ export function ChatPage() {
         )}
         <button
           type="button"
-          className={`p-2 rounded transition-all duration-150 ease-out ${showAgentDrawer ? "text-neutral-900 dark:text-neutral-100" : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"}`}
+          className={cn(
+            "p-2 rounded transition-all duration-150 ease-out",
+            showAgentDrawer
+              ? "text-neutral-900 dark:text-neutral-100"
+              : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+          )}
           onClick={toggleAgentDrawer}
           title={showAgentDrawer ? "Close agent" : "Open agent"}
         >
@@ -371,7 +382,10 @@ export function ChatPage() {
               ref={handleScrollContainerRef}
             >
               <div
-                className={`px-3 pt-18 transition-[max-width] duration-150 ease-out ${layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width"}`}
+                className={cn(
+                  "px-3 pt-18 transition-[max-width] duration-150 ease-out",
+                  layoutMode === "wide" ? "max-w-full md:max-w-[80vw] mx-auto" : "max-content-width",
+                )}
                 style={{ paddingBottom: chatInputHeight }}
               >
                 <Disclaimer />
@@ -411,22 +425,32 @@ export function ChatPage() {
 
         {/* Chat Input */}
         <footer
-          className={`fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out ${showSidebar && chats.length > 0 && !showArtifactsDrawer && !showAgentDrawer && !showAppDrawer ? "md:left-59" : ""} ${
+          className={cn(
+            "fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
+            showSidebar &&
+              chats.length > 0 &&
+              !showArtifactsDrawer &&
+              !showAgentDrawer &&
+              !showAppDrawer &&
+              "md:left-59",
             showAppDrawer
               ? "right-0 md:right-[calc(50vw+0.75rem)]"
               : showArtifactsDrawer
                 ? "right-0 md:right-[calc(66vw+0.75rem)]"
                 : showAgentDrawer
                   ? "right-0 md:right-83"
-                  : "right-0"
-          }`}
+                  : "right-0",
+          )}
         >
           <div
-            className={`relative pointer-events-auto md:max-w-4xl mx-auto transition-transform duration-500 ease-in-out ${
-              messages.length === 0 && !showArtifactsDrawer && !showAppDrawer && !showAgentDrawer
-                ? "md:translate-y-[calc(50%-33.333vh)]"
-                : ""
-            }`}
+            className={cn(
+              "relative pointer-events-auto md:max-w-4xl mx-auto transition-transform duration-500 ease-in-out",
+              messages.length === 0 &&
+                !showArtifactsDrawer &&
+                !showAppDrawer &&
+                !showAgentDrawer &&
+                "md:translate-y-[calc(50%-33.333vh)]",
+            )}
           >
             <ChatInput />
           </div>
@@ -436,10 +460,11 @@ export function ChatPage() {
       {/* Artifacts drawer - right side */}
       {shouldRenderArtifactsDrawer && (
         <div
-          className={`w-full transition-all duration-300 ease-out transform ${isArtifactsDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"} ${
-            // On mobile: full width overlay from right edge, on desktop: positioned with right edge and 66% width
-            "fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-[66vw] max-w-none"
-          } ${shouldRenderAgentDrawer ? "z-20" : "z-25"}`}
+          className={cn(
+            "w-full transition-all duration-300 ease-out transform fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-[66vw] max-w-none",
+            isArtifactsDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
+            shouldRenderAgentDrawer ? "z-20" : "z-25",
+          )}
           style={{
             top: isMobile ? "48px" : undefined,
             bottom: isMobile ? `${chatInputHeight - 16}px` : undefined,
@@ -454,10 +479,10 @@ export function ChatPage() {
       {/* Agent drawer - right side - renders over artifacts when both are visible */}
       {shouldRenderAgentDrawer && (
         <div
-          className={`w-full z-25 transition-all duration-150 ease-linear transform ${isAgentDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"} ${
-            // On mobile: full width overlay from right edge, on desktop: 20rem width
-            "fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-80"
-          }`}
+          className={cn(
+            "w-full z-25 transition-all duration-150 ease-linear transform fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-80",
+            isAgentDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
+          )}
           style={{
             top: isMobile ? "48px" : undefined,
             bottom: isMobile ? `${chatInputHeight - 16}px` : undefined,
@@ -470,10 +495,12 @@ export function ChatPage() {
       {/* App drawer - right side - for MCP tool UIs */}
       {/* Always render so iframe is available, but hide when not active */}
       <div
-        className={`w-full transition-all duration-300 ease-out transform ${shouldRenderAppDrawer && isAppDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0 pointer-events-none"} ${
-          // On mobile: full width overlay from right edge, on desktop: positioned with right edge and 50% width
-          "fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-[50vw] max-w-none z-30"
-        }`}
+        className={cn(
+          "w-full transition-all duration-300 ease-out transform fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-[50vw] max-w-none z-30",
+          shouldRenderAppDrawer && isAppDrawerAnimating
+            ? "translate-x-0 opacity-100"
+            : "translate-x-full opacity-0 pointer-events-none",
+        )}
         style={{
           top: isMobile ? "48px" : undefined,
           bottom: isMobile ? `${chatInputHeight - 16}px` : undefined,

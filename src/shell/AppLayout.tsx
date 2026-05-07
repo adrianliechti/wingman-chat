@@ -18,6 +18,7 @@ import { SettingsButton } from "@/features/settings/components/SettingsButton";
 import { SettingsDrawer } from "@/features/settings/components/SettingsDrawer";
 import { useToolsContext } from "@/features/tools";
 import { getConfig } from "@/shared/config";
+import { cn } from "@/shared/lib/cn";
 import { useApp } from "@/shell/hooks/useApp";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
@@ -217,11 +218,17 @@ export function AppLayout() {
 
       {/* Main app content */}
       <div
-        className={`flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? "md:ml-59" : "ml-0"}`}
+        className={cn(
+          "flex-1 flex flex-col overflow-hidden relative z-10 transition-all duration-500 ease-in-out",
+          showSidebar && sidebarContent && !hasPanelOpen ? "md:ml-59" : "ml-0",
+        )}
       >
         {/* Fixed navigation bar with glass effect */}
         <nav
-          className={`fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 shadow-sm transition-[padding] duration-500 ease-in-out ${showSidebar && sidebarContent && !hasPanelOpen ? "md:pl-62" : ""}`}
+          className={cn(
+            "fixed top-0 left-0 right-0 z-30 px-3 py-2 bg-neutral-50/60 dark:bg-neutral-950/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-900 shadow-sm transition-[padding] duration-500 ease-in-out",
+            showSidebar && sidebarContent && !hasPanelOpen && "md:pl-62",
+          )}
         >
           <div className="flex items-center justify-between">
             {/* Left section */}
@@ -231,7 +238,10 @@ export function AppLayout() {
                 {sidebarContent && (
                   <button
                     type="button"
-                    className={`p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-500 ease-in-out hidden md:flex ${showSidebar ? "opacity-0 pointer-events-none" : "opacity-100 delay-500"}`}
+                    className={cn(
+                      "p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-500 ease-in-out hidden md:flex",
+                      showSidebar ? "opacity-0 pointer-events-none" : "opacity-100 delay-500",
+                    )}
                     onClick={toggleSidebar}
                     aria-label="Open sidebar"
                   >
@@ -253,7 +263,7 @@ export function AppLayout() {
                       <span>{pages.find((p) => p.key === currentPage)?.label}</span>
                       <ChevronDown
                         size={14}
-                        className={`transition-transform duration-200 ${mobileMenuOpen ? "rotate-180" : ""}`}
+                        className={cn("transition-transform duration-200", mobileMenuOpen && "rotate-180")}
                       />
                     </button>
                   </div>
@@ -289,11 +299,13 @@ export function AppLayout() {
                       key={key}
                       to={to}
                       data-page={key}
-                      className={`
-                        relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out
-                        flex items-center gap-2 text-sm cursor-pointer
-                        ${currentPage === key ? "text-neutral-900 dark:text-neutral-100" : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"}
-                      `}
+                      className={cn(
+                        "relative z-10 px-3 py-1.5 rounded-full font-medium transition-all duration-200 ease-out",
+                        "flex items-center gap-2 text-sm cursor-pointer",
+                        currentPage === key
+                          ? "text-neutral-900 dark:text-neutral-100"
+                          : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                      )}
                     >
                       {icon}
                       <span className="hidden sm:inline">{label}</span>
@@ -313,7 +325,10 @@ export function AppLayout() {
                     setSettingsAdvanced(false);
                     setSettingsOpen(true);
                   }}
-                  className={`p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 ${companionEnabled ? "" : "opacity-40"}`}
+                  className={cn(
+                    "p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                    !companionEnabled && "opacity-40",
+                  )}
                   title="Companion"
                 >
                   <Coffee size={20} />
