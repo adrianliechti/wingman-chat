@@ -4,9 +4,9 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
 import { useProfile } from "@/features/settings/hooks/useProfile";
+import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
 import { createSubagentTool } from "@/features/tools/lib/subagent";
-import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import type { Model, Tool, ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 

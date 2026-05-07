@@ -39,6 +39,9 @@ export interface ChatContextType {
   // Elicitation state
   pendingElicitation: PendingElicitation | null;
   resolveElicitation: (result: ElicitationResult) => void;
+
+  /** Live meta for in-flight tool calls; cleared on commit (data persists on `tool_result.meta`). */
+  toolMeta: Record<string, Record<string, unknown>>;
 }
 
 export const ChatContext = createContext<ChatContextType | undefined>(undefined);

@@ -76,6 +76,8 @@ export interface RenderedAppHandle {
 }
 
 export interface ToolContext {
+  model?: string;
+  signal?: AbortSignal;
   content?(): Content[];
   elicit?(elicitation: Elicitation): Promise<ElicitationResult>;
   onElicitationComplete?(elicitationId: string): void;

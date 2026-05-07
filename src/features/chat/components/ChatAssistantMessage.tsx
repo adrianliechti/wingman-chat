@@ -119,7 +119,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   isLast,
   isResponding,
 }: ChatAssistantMessageProps) {
-  const { pendingElicitation, resolveElicitation, retryMessage } = useChat();
+  const { pendingElicitation, resolveElicitation, retryMessage, toolMeta } = useChat();
 
   const toolCallParts = message.content.filter((p) => p.type === "tool_call");
   const hasToolCalls = toolCallParts.length > 0;
@@ -223,6 +223,8 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
                 );
               }
 
+              const meta = toolMeta[toolCall.id];
+              const status = typeof meta?.status === "string" ? meta.status : null;
               return (
                 <div
                   key={getMessagePartKey(toolCall, index, "loading-tool-call")}
@@ -233,11 +235,15 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
                     <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
                       {getToolDisplayName(toolCall.name)}
                     </span>
-                    {preview && (
+                    {status ? (
+                      <span className="text-xs italic text-neutral-500 dark:text-neutral-400 truncate">
+                        {status}
+                      </span>
+                    ) : preview ? (
                       <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
                         {preview}
                       </span>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               );

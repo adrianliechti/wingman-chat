@@ -31,10 +31,7 @@ export interface RunHooks {
   /** Called after each tool result message is appended. */
   onToolResult?: (toolResult: Message) => void;
 
-  /**
-   * Called when a tool updates its meta *after* the tool_result has already been appended
-   * (via `setMeta`/`updateMeta` on the tool context). Callers use this to persist late meta.
-   */
+  /** Fires on every `setMeta`/`updateMeta` — both live (during execution) and late (after commit). */
   onToolMeta?: (toolCallId: string, meta: Record<string, unknown>) => void;
 
   /**
@@ -119,7 +116,6 @@ export async function run(
         const args = JSON.parse(toolCall.arguments || "{}");
 
         let resultMeta: Record<string, unknown> | undefined;
-        let committed = false;
 
         const baseContext = createToolContext?.(toolCall);
         const toolContext: ToolContext | undefined = baseContext
@@ -127,11 +123,11 @@ export async function run(
               ...baseContext,
               setMeta: (meta: Record<string, unknown>) => {
                 resultMeta = meta;
-                if (committed) onToolMeta?.(toolCall.id, { ...meta });
+                onToolMeta?.(toolCall.id, { ...meta });
               },
               updateMeta: (meta: Record<string, unknown>) => {
                 resultMeta = { ...resultMeta, ...meta };
-                if (committed) onToolMeta?.(toolCall.id, { ...resultMeta });
+                onToolMeta?.(toolCall.id, { ...resultMeta });
               },
             }
           : undefined;
@@ -151,7 +147,6 @@ export async function run(
             },
           ],
         });
-        committed = true;
       } catch (error) {
         console.error("Tool failed", error);
 

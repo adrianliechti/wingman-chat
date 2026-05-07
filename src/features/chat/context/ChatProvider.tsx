@@ -54,6 +54,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [chatId, setChatId] = useState<string | null>(null);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
+  const [toolMeta, setToolMeta] = useState<Record<string, Record<string, unknown>>>({});
   const elicitationCompleteCallbacksRef = useRef<Map<string, () => void>>(new Map());
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
   const streamingMessageRef = useRef<{ chatId: string; message: Message } | null>(null);
@@ -241,9 +242,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
       updateChat(id, () => ({ messages: conversation }));
       setIsResponding(true);
 
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
       // Create tool context with current message content and elicitation support
       const createToolContext = (currentToolCall: { id: string; name: string }): ToolContext => {
         return {
+          model: currentModel.id,
+          signal: abortController.signal,
           content: () =>
             outgoingMessage.content.filter(
               (p: Content) => p.type === "text" || p.type === "image" || p.type === "file",
@@ -283,9 +289,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const tools = await chatTools();
         const instructions = chatInstructions();
 
-        const abortController = new AbortController();
-        abortControllerRef.current = abortController;
-
         conversation = await agentRun(client, currentModel.id, instructions, conversation, tools, {
           options: {
             effort: model?.effort,
@@ -310,10 +313,32 @@ export function ChatProvider({ children }: ChatProviderProps) {
           onToolResult: (toolResult) => {
             conversation = [...conversation, toolResult];
             setPendingElicitation(null);
+            // Drop live meta entries — data now lives on tool_result.meta.
+            const completedIds = toolResult.content
+              .filter((p) => p.type === "tool_result")
+              .map((p) => p.id);
+            if (completedIds.length > 0) {
+              setToolMeta((prev) => {
+                let changed = false;
+                const next = { ...prev };
+                for (const cid of completedIds) {
+                  if (cid in next) {
+                    delete next[cid];
+                    changed = true;
+                  }
+                }
+                return changed ? next : prev;
+              });
+            }
             updateChat(id, () => ({ messages: conversation }));
           },
           onToolMeta: (toolCallId, meta) => {
-            // Late meta update — tool_result message is already committed; patch it in place.
+            setToolMeta((prev) => {
+              const existing = prev[toolCallId];
+              const merged = existing ? { ...existing, ...meta } : { ...meta };
+              return { ...prev, [toolCallId]: merged };
+            });
+            // Late update after commit: also patch the persisted tool_result in place.
             updateChat(id, (prev) => ({
               messages: prev.messages.map((msg) => ({
                 ...msg,
@@ -502,6 +527,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     updateStreamingMessage(null);
     setIsResponding(false);
     setPendingElicitation(null);
+    setToolMeta({});
   }, [updateChat, updateStreamingMessage]);
 
   const value: ChatContextType = {
@@ -534,6 +560,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Elicitation
     pendingElicitation,
     resolveElicitation,
+    toolMeta,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
