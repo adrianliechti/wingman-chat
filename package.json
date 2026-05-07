@@ -51,6 +51,7 @@
     "pyodide": "^0.29.3",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "react-resizable-panels": "^4.11.0",
     "rehype-katex": "^7.0.1",
     "rehype-react": "^8.0.0",
     "remark-breaks": "^4.0.0",

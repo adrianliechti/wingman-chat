@@ -4,6 +4,8 @@ import {
   Download,
   Eye,
   File as FileIcon2,
+  Folder,
+  FolderOpen,
   HardDrive,
   Loader2,
   Play,
@@ -33,6 +35,7 @@ import { PythonEditor } from "@/shared/ui/editors/PythonEditor";
 import { SvgEditor } from "@/shared/ui/editors/SvgEditor";
 import { TextEditor } from "@/shared/ui/editors/TextEditor";
 import { FileIcon } from "@/shared/ui/FileIcon";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
 
 export function ArtifactsDrawer() {
@@ -47,6 +50,7 @@ export function ArtifactsDrawer() {
   const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
   const [terminalMounted, setTerminalMounted] = useState(false);
+  const [showFilesBrowser, setShowFilesBrowser] = useState(true);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -514,41 +518,40 @@ export function ArtifactsDrawer() {
 
       {/* Main Content Area with Right Sidebar */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Editor area */}
-        <div className="flex-1 overflow-hidden">{renderEditor()}</div>
+        <ResizablePanelGroup orientation="horizontal" className="flex-1">
+          {/* Editor area */}
+          <ResizablePanel defaultSize="100%">
+            <div className="h-full overflow-hidden">{renderEditor()}</div>
+          </ResizablePanel>
 
-        {/* Right Side Panel - File Browser (full height) */}
-        <div
-          className={cn(
-            "transition-all duration-500 ease-in-out relative shrink-0 overflow-hidden",
-            files.length > 0 ? "w-48 opacity-100" : "w-0 opacity-0",
+          {/* Right Side Panel - File Browser (full height) */}
+          {files.length > 0 && fs && showFilesBrowser && (
+            <div className="w-px shrink-0 bg-black/10 dark:bg-white/10" />
           )}
-        >
-          <div className="absolute inset-y-0 left-0 w-px bg-black/10 dark:bg-white/10"></div>
-          {fs && (
-            <div
-              className={cn("h-full transition-opacity duration-500", files.length > 0 ? "opacity-100" : "opacity-0")}
-            >
-              <ArtifactsBrowser
-                fs={fs}
-                files={files}
-                openTabs={activeFile ? [activeFile] : []}
-                onFileClick={openFile}
-              />
-            </div>
+          {files.length > 0 && fs && showFilesBrowser && (
+            <ResizablePanel defaultSize="192px" minSize="120px" maxSize="400px">
+              <div className="h-full overflow-hidden">
+                <ArtifactsBrowser
+                  fs={fs}
+                  files={files}
+                  openTabs={activeFile ? [activeFile] : []}
+                  onFileClick={openFile}
+                />
+              </div>
+            </ResizablePanel>
           )}
-        </div>
+        </ResizablePanelGroup>
       </div>
 
       {/* Bottom Bar with File Title and Actions — full width */}
-      <div className="shrink-0 h-14 flex border-t border-black/10 dark:border-white/10">
+      <div className="shrink-0 h-10 flex items-center border-t border-black/10 dark:border-white/10 px-2 gap-1">
         {/* File title */}
-        <div className="flex-1 flex items-center min-w-0 px-3">
+        <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5">
           {activeFile && (
             <>
               <FileIcon name={activeFile} />
               <span
-                className="text-sm font-medium truncate flex-1 text-left ml-1.5 text-neutral-700 dark:text-neutral-300"
+                className="text-xs font-medium truncate text-neutral-600 dark:text-neutral-400"
                 title={getFileName(activeFile)}
               >
                 {getFileName(activeFile)}
@@ -557,50 +560,77 @@ export function ArtifactsDrawer() {
           )}
         </div>
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-1 px-2">
-          {/* Run button - only show when editor has a run handler */}
-          {runHandler && (
-            <button
-              type="button"
-              onClick={handleRun}
-              disabled={isRunning}
-              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 disabled:opacity-50"
-              title={isRunning ? "Running..." : "Run"}
-            >
-              {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-            </button>
-          )}
+        {/* File-specific action group: run, view toggle, word export */}
+        {(runHandler || supportsPreview() || (activeFileData && artifactKind(activeFileData.path, activeFileData.contentType) === "markdown")) && (
+          <>
+            <div className="flex items-center gap-0.5">
+              {/* Run button */}
+              {runHandler && (
+                <button
+                  type="button"
+                  onClick={handleRun}
+                  disabled={isRunning}
+                  className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+                  title={isRunning ? "Running..." : "Run"}
+                >
+                  {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                </button>
+              )}
 
-          {/* View mode toggle - only show for files that support preview */}
-          {supportsPreview() && (
-            <button
-              type="button"
-              onClick={() => setViewMode(viewMode === "preview" ? "code" : "preview")}
-              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-              title={viewMode === "preview" ? "Switch to code" : "Switch to preview"}
-            >
-              {viewMode === "preview" ? <Code size={16} /> : <Eye size={16} />}
-            </button>
-          )}
+              {/* View mode toggle */}
+              {supportsPreview() && (
+                <button
+                  type="button"
+                  onClick={() => setViewMode(viewMode === "preview" ? "code" : "preview")}
+                  className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                  title={viewMode === "preview" ? "Switch to code" : "Switch to preview"}
+                >
+                  {viewMode === "preview" ? <Code size={14} /> : <Eye size={14} />}
+                </button>
+              )}
 
-          {/* Word download button — only for markdown files */}
-          {activeFileData && artifactKind(activeFileData.path, activeFileData.contentType) === "markdown" && (
+              {/* Word download — only for markdown */}
+              {activeFileData && artifactKind(activeFileData.path, activeFileData.contentType) === "markdown" && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const blob = await markdownToDocx(activeFileData.content);
+                      const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, "");
+                      downloadBlob(blob, `${baseName}.docx`);
+                    } catch (error) {
+                      console.error("Failed to convert to Word:", error);
+                    }
+                  }}
+                  className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                  title="Download as Word (.docx)"
+                >
+                  <img src="/icons/file-word.svg" alt="Word" width={14} height={14} className="dark:invert" />
+                </button>
+              )}
+            </div>
+
+            {/* Separator */}
+            <div className="w-px h-4 bg-black/10 dark:bg-white/10 mx-0.5" />
+          </>
+        )}
+
+        {/* Workspace action group: files, terminal, upload, download */}
+        <div className="flex items-center gap-0.5">
+          {/* Files browser toggle — only when files exist */}
+          {files.length > 0 && (
             <button
               type="button"
-              onClick={async () => {
-                try {
-                  const blob = await markdownToDocx(activeFileData.content);
-                  const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, "");
-                  downloadBlob(blob, `${baseName}.docx`);
-                } catch (error) {
-                  console.error("Failed to convert to Word:", error);
-                }
-              }}
-              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-              title="Download as Word (.docx)"
+              onClick={() => setShowFilesBrowser((v) => !v)}
+              className={cn(
+                "p-1.5 rounded transition-all duration-150 ease-out",
+                showFilesBrowser
+                  ? "text-blue-600 dark:text-blue-400 bg-blue-500/10"
+                  : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5",
+              )}
+              title={showFilesBrowser ? "Hide files" : "Show files"}
             >
-              <img src="/icons/file-word.svg" alt="Word" width={16} height={16} className="dark:invert" />
+              {showFilesBrowser ? <FolderOpen size={14} /> : <Folder size={14} />}
             </button>
           )}
 
@@ -609,28 +639,28 @@ export function ArtifactsDrawer() {
             type="button"
             onClick={toggleTerminal}
             className={cn(
-              "p-2 rounded transition-all duration-150 ease-out",
+              "p-1.5 rounded transition-all duration-150 ease-out",
               showTerminal
-                ? "text-green-500 dark:text-green-400 bg-green-500/10"
-                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                ? "text-green-600 dark:text-green-400 bg-green-500/10"
+                : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5",
             )}
             title={showTerminal ? "Close terminal" : "Open terminal"}
           >
-            <TerminalSquare size={16} />
+            <TerminalSquare size={14} />
           </button>
 
           {/* Upload button — always visible */}
           {isProcessing ? (
-            <div className="p-2">
-              <Loader2 size={16} className="animate-spin text-neutral-400" />
+            <div className="p-1.5">
+              <Loader2 size={14} className="animate-spin text-neutral-400" />
             </div>
           ) : config.drives.length > 0 ? (
             <Menu>
               <MenuButton
-                className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
                 title="Upload files"
               >
-                <Upload size={16} />
+                <Upload size={14} />
               </MenuButton>
               <MenuItems
                 modal={false}
@@ -666,10 +696,10 @@ export function ArtifactsDrawer() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+              className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
               title="Upload files"
             >
-              <Upload size={16} />
+              <Upload size={14} />
             </button>
           )}
 
@@ -685,10 +715,10 @@ export function ArtifactsDrawer() {
                   alert("Failed to download files. Please try again.");
                 }
               }}
-              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+              className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
               title={`Download all files as zip (${files.length} file${files.length !== 1 ? "s" : ""})`}
             >
-              <Download size={16} />
+              <Download size={14} />
             </button>
           )}
         </div>
