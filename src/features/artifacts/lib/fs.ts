@@ -1,9 +1,10 @@
 import JSZip from "jszip";
-import type { File, FileEntry, FileSystem } from "@/shared/types/file";
+import { artifactKind } from "@/features/artifacts/lib/artifacts";
 import { contentToZipValue } from "@/shared/lib/fileContent";
-import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import * as opfs from "@/shared/lib/opfs";
-import { downloadBlob } from "@/shared/lib/utils";
+import { normalizeArtifactPath } from "@/shared/lib/sandbox";
+import { downloadBlob, getFileName } from "@/shared/lib/utils";
+import type { File, FileEntry, FileSystem } from "@/shared/types/file";
 
 type FileEventType = "fileCreated" | "fileDeleted" | "fileRenamed" | "fileUpdated";
 
@@ -374,6 +375,26 @@ export class FileSystemManager implements FileSystem {
       downloadBlob(zipBlob, filename);
     } catch (error) {
       throw new Error(`Failed to create zip file: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }
+
+  /**
+   * Download a single file by path.
+   */
+  async downloadFile(path: string): Promise<void> {
+    const file = await this.getFile(path);
+    if (!file) {
+      throw new Error(`File not found: ${path}`);
+    }
+
+    const kind = artifactKind(file.path, file.contentType);
+    if (kind === "image" || kind === "binary") {
+      const resp = await fetch(file.content);
+      const blob = await resp.blob();
+      downloadBlob(blob, getFileName(file.path));
+    } else {
+      const blob = new Blob([file.content], { type: file.contentType || "text/plain" });
+      downloadBlob(blob, getFileName(file.path));
     }
   }
 }

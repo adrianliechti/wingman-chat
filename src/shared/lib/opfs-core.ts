@@ -186,16 +186,26 @@ export async function readBlob(path: string): Promise<Blob | undefined> {
  * Read file metadata without hydrating file content.
  * Returns undefined if file doesn't exist.
  */
-export async function readFileMetadata(path: string): Promise<{ size: number; contentType?: string } | undefined> {
-  const blob = await readBlob(path);
-  if (!blob) {
-    return undefined;
-  }
+export async function readFileMetadata(
+  path: string,
+): Promise<{ size: number; contentType?: string; lastModified?: number } | undefined> {
+  try {
+    const { dir, name } = parsePath(path);
+    const directory = await getDirectory(dir);
+    const fileHandle = await directory.getFileHandle(name);
+    const file = await fileHandle.getFile();
 
-  return {
-    size: blob.size,
-    contentType: inferContentType(path) || blob.type,
-  };
+    return {
+      size: file.size,
+      contentType: inferContentType(path) || file.type,
+      lastModified: file.lastModified,
+    };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "NotFoundError") {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 /**

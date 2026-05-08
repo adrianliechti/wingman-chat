@@ -1,7 +1,8 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { ChevronDown, ChevronRight, Edit2, Folder, FolderOpen, MoreVertical, Trash } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Edit2, Folder, FolderOpen, HardDrive, Loader2, MoreVertical, Trash, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
+import type { DriveConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import type { FileEntry } from "@/shared/types/file";
 import { FileIcon } from "@/shared/ui/FileIcon";
@@ -86,6 +87,7 @@ interface FileTreeNodeProps {
   onToggleFolder: (path: string) => void;
   onDeleteFile: (path: string) => void;
   onRenameFile: (path: string) => void;
+  onDownloadFile: (path: string) => void;
 }
 
 function FileTreeNode({
@@ -97,6 +99,7 @@ function FileTreeNode({
   onToggleFolder,
   onDeleteFile,
   onRenameFile,
+  onDownloadFile,
 }: FileTreeNodeProps) {
   const isExpanded = expandedFolders.has(node.path);
 
@@ -135,6 +138,7 @@ function FileTreeNode({
               onToggleFolder={onToggleFolder}
               onDeleteFile={onDeleteFile}
               onRenameFile={onRenameFile}
+              onDownloadFile={onDownloadFile}
             />
           ))}
       </>
@@ -146,15 +150,15 @@ function FileTreeNode({
 
   return (
     <div
-      className="flex items-center gap-1 p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors min-w-0 group relative"
-      style={{ marginLeft: `${level * 10 + 14}px` }}
+      className="flex items-center gap-1 py-1 pl-1 pr-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors min-w-0 group relative"
+      style={{ marginLeft: `${level * 10 + 4}px` }}
     >
       <button
         type="button"
         onClick={() => onFileClick(node.path)}
-        className="flex items-center gap-1 flex-1 min-w-0 text-left"
+        className="flex items-center gap-1 flex-1 min-w-0 text-left overflow-hidden"
       >
-        <FileIcon name={node.path} contentType={node.file?.contentType} />
+        <span className="shrink-0"><FileIcon name={node.path} contentType={node.file?.contentType} /></span>
         <span
           className={cn(
             "text-sm truncate",
@@ -167,7 +171,7 @@ function FileTreeNode({
       </button>
       <Menu>
         <MenuButton
-          className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0.5 rounded hover:bg-white/30 dark:hover:bg-black/20"
+          className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-1.5 rounded hover:bg-white/30 dark:hover:bg-black/20"
           onClick={(e) => e.stopPropagation()}
         >
           <MoreVertical size={14} />
@@ -181,10 +185,20 @@ function FileTreeNode({
           <MenuItem>
             <button
               type="button"
-              onClick={() => onRenameFile(node.path)}
-              className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+              onClick={() => onDownloadFile(node.path)}
+              className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
             >
-              <Edit2 size={14} />
+              <Download size={12} />
+              Download
+            </button>
+          </MenuItem>
+          <MenuItem>
+            <button
+              type="button"
+              onClick={() => onRenameFile(node.path)}
+              className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+            >
+              <Edit2 size={12} />
               Rename
             </button>
           </MenuItem>
@@ -192,9 +206,9 @@ function FileTreeNode({
             <button
               type="button"
               onClick={() => onDeleteFile(node.path)}
-              className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+              className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
             >
-              <Trash size={14} />
+              <Trash size={12} />
               Delete
             </button>
           </MenuItem>
@@ -204,14 +218,121 @@ function FileTreeNode({
   );
 }
 
+// ── Upload Button (bottom of panel, "Add sources" style) ─────────────────────
+
+function UploadButton({
+  isProcessing,
+  drives,
+  onUploadLocal,
+  onUploadDrive,
+}: {
+  isProcessing?: boolean;
+  drives: DriveConfig[];
+  onUploadLocal?: () => void;
+  onUploadDrive?: (drive: DriveConfig) => void;
+}) {
+  const [showMenu, setShowMenu] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showMenu]);
+
+  const hasDrives = drives.length > 0 && onUploadDrive;
+
+  return (
+    <div ref={containerRef} className="@container px-3 pt-2 pb-3 relative shrink-0">
+      {isProcessing ? (
+        <div className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm border border-dashed border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-400">
+          <Loader2 size={15} className="animate-spin" />
+          <span className="@[8rem]:inline hidden">Uploading…</span>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            if (hasDrives) {
+              setShowMenu((v) => !v);
+            } else {
+              onUploadLocal?.();
+            }
+          }}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm border border-dashed border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-600 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+        >
+          <Upload size={15} className="shrink-0" />
+          <span className="@[8rem]:inline hidden">Upload files</span>
+        </button>
+      )}
+
+      {showMenu && hasDrives && (
+        <>
+          <button
+            type="button"
+            aria-label="Close upload menu"
+            className="fixed inset-0 z-40"
+            onClick={() => setShowMenu(false)}
+          />
+          <div className="absolute bottom-full left-3 right-3 mb-1 z-50 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg py-1">
+            {onUploadLocal && (
+              <button
+                type="button"
+                onClick={() => { setShowMenu(false); onUploadLocal(); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <Upload size={15} className="text-neutral-500" />
+                Upload
+              </button>
+            )}
+            {drives.map((drive) => (
+              <button
+                key={drive.id}
+                type="button"
+                onClick={() => { setShowMenu(false); onUploadDrive?.(drive); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <HardDrive size={15} className="text-neutral-500" />
+                {drive.name}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 interface ArtifactsBrowserProps {
   fs: FileSystemManager;
   files: FileEntry[];
   openTabs: string[];
   onFileClick: (path: string) => void;
+  drives?: DriveConfig[];
+  isProcessing?: boolean;
+  onUploadLocal?: () => void;
+  onUploadDrive?: (drive: DriveConfig) => void;
+  onDownloadAll?: () => void;
+  onDownloadFile?: (path: string) => void;
 }
 
-export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: ArtifactsBrowserProps) {
+export function ArtifactsBrowser({
+  fs,
+  files,
+  openTabs,
+  onFileClick,
+  drives = [],
+  isProcessing = false,
+  onUploadLocal,
+  onUploadDrive,
+  onDownloadAll,
+  onDownloadFile,
+}: ArtifactsBrowserProps) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -317,10 +438,43 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
 
   return (
     <div className="w-full h-full flex flex-col">
+      {/* Header: three-dot menu */}
+      <div className="shrink-0 h-10 flex items-center border-b border-black/10 dark:border-white/10 px-3 gap-1">
+        <div className="flex-1" />
+        {/* Three-dot menu for bulk actions */}
+        {onDownloadAll && files.length > 0 && (
+          <Menu>
+            <MenuButton
+              className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+              title="More actions"
+            >
+              <MoreVertical size={14} />
+            </MenuButton>
+            <MenuItems
+              modal={false}
+              transition
+              anchor="bottom end"
+              className="mt-1 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-40"
+            >
+              <MenuItem>
+                <button
+                  type="button"
+                  onClick={onDownloadAll}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                >
+                  <Download size={12} className="text-neutral-500" />
+                  Download all as zip
+                </button>
+              </MenuItem>
+            </MenuItems>
+          </Menu>
+        )}
+      </div>
+
       {/* File list - grows to fill space */}
       <div className="flex-1 overflow-auto min-h-0">
         {files.length > 0 && (
-          <div className="p-2 min-w-full">
+          <div className="pt-1 min-w-full">
             {/* Render file tree with folders */}
             {fileTree.map((node) => (
               <FileTreeNode
@@ -333,11 +487,22 @@ export function ArtifactsBrowser({ fs, files, openTabs, onFileClick }: Artifacts
                 onToggleFolder={handleToggleFolder}
                 onDeleteFile={handleDeleteFile}
                 onRenameFile={handleRenameFile}
+                onDownloadFile={onDownloadFile ?? (() => { })}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Bottom: Upload files button */}
+      {(onUploadLocal || onUploadDrive) && (
+        <UploadButton
+          isProcessing={isProcessing}
+          drives={drives}
+          onUploadLocal={onUploadLocal}
+          onUploadDrive={onUploadDrive}
+        />
+      )}
 
       {/* Rename Dialog */}
       {renamingPath && (

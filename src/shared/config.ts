@@ -99,7 +99,7 @@ interface ChatConfig {
   summarizer?: string;
 }
 
-interface DriveConfig {
+export interface DriveConfig {
   id: string;
   name: string;
   icon?: string;

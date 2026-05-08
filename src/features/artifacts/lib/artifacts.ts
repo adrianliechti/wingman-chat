@@ -4,7 +4,7 @@ import { readAsDataURL } from "@/shared/lib/utils";
 import { xlsxToCsv } from "@/shared/lib/xlsx";
 
 // Artifact kind type
-export type ArtifactKind = "text" | "code" | "svg" | "html" | "csv" | "markdown" | "image" | "binary";
+export type ArtifactKind = "text" | "code" | "svg" | "html" | "csv" | "markdown" | "image" | "pdf" | "binary";
 
 // Result type for processed files
 export interface ProcessedFile {
@@ -150,6 +150,11 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
 
   if (normalizedContentType?.startsWith("image/") || imageExtensions.includes(ext)) {
     return "image";
+  }
+
+  // PDF files
+  if (ext === "pdf" || normalizedContentType === "application/pdf") {
+    return "pdf";
   }
 
   // Code files

@@ -146,9 +146,35 @@ export function ChatPage() {
   }, [chat?.id, navigate, routeChatId]);
 
   const { layoutMode } = useLayout();
-  const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer } = useArtifacts();
-  const { showAgentDrawer, toggleAgentDrawer } = useAgents();
-  const { showAppDrawer, hasAppContent, toggleAppDrawer } = useApp();
+  const { isAvailable: artifactsAvailable, showArtifactsDrawer, toggleArtifactsDrawer, setShowArtifactsDrawer } = useArtifacts();
+  const { showAgentDrawer, setShowAgentDrawer, toggleAgentDrawer } = useAgents();
+  const { showAppDrawer, hasAppContent, toggleAppDrawer, setShowAppDrawer } = useApp();
+
+  // Mutual exclusivity: closing one when the other opens
+  const prevShowAppDrawer = useRef(showAppDrawer);
+  const prevShowArtifactsDrawer = useRef(showArtifactsDrawer);
+  const prevShowAgentDrawer = useRef(showAgentDrawer);
+  useEffect(() => {
+    if (showAppDrawer && !prevShowAppDrawer.current) {
+      setShowArtifactsDrawer(false);
+      if (window.innerWidth < 768) setShowAgentDrawer(false);
+    }
+    prevShowAppDrawer.current = showAppDrawer;
+  }, [showAppDrawer, setShowArtifactsDrawer, setShowAgentDrawer]);
+  useEffect(() => {
+    if (showArtifactsDrawer && !prevShowArtifactsDrawer.current) {
+      setShowAppDrawer(false);
+      if (window.innerWidth < 768) setShowAgentDrawer(false);
+    }
+    prevShowArtifactsDrawer.current = showArtifactsDrawer;
+  }, [showArtifactsDrawer, setShowAppDrawer, setShowAgentDrawer]);
+  useEffect(() => {
+    if (showAgentDrawer && !prevShowAgentDrawer.current && window.innerWidth < 768) {
+      setShowArtifactsDrawer(false);
+      setShowAppDrawer(false);
+    }
+    prevShowAgentDrawer.current = showAgentDrawer;
+  }, [showAgentDrawer, setShowArtifactsDrawer, setShowAppDrawer]);
 
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
@@ -179,11 +205,16 @@ export function ChatPage() {
     e.preventDefault();
     appResizingRef.current = true;
     setIsAppResizing(true);
+    // Capture the agent drawer state at drag start — it won't change mid-drag.
+    // 20rem (320px) agent panel + 0.75rem (12px) agent gap + 0.75rem (12px) app gap = 344px
+    const agentOffset = showAgentDrawer ? 344 : 12;
     const onMouseMove = (ev: MouseEvent) => {
       if (!appResizingRef.current) return;
       const vw = window.innerWidth;
-      const newWidthPx = vw - ev.clientX;
-      const newVw = Math.min(90, Math.max(20, (newWidthPx / vw) * 100));
+      const minChatPx = 400;
+      const panelRightEdge = vw - agentOffset;
+      const newWidthPx = Math.min(panelRightEdge - minChatPx, panelRightEdge - ev.clientX);
+      const newVw = Math.max(20, (newWidthPx / vw) * 100);
       setAppWidthVw(newVw);
     };
     const onMouseUp = () => {
@@ -194,17 +225,22 @@ export function ChatPage() {
     };
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
-  }, []);
+  }, [showAgentDrawer]);
 
   const handleArtifactsResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     artifactsResizingRef.current = true;
     setIsArtifactsResizing(true);
+    // Capture the agent drawer state at drag start — it won't change mid-drag.
+    // 20rem (320px) agent panel + 0.75rem (12px) agent gap + 0.75rem (12px) artifacts gap = 344px
+    const agentOffset = showAgentDrawer ? 344 : 12;
     const onMouseMove = (ev: MouseEvent) => {
       if (!artifactsResizingRef.current) return;
       const vw = window.innerWidth;
-      const newWidthPx = vw - ev.clientX;
-      const newVw = Math.min(90, Math.max(20, (newWidthPx / vw) * 100));
+      const minChatPx = 400;
+      const panelRightEdge = vw - agentOffset;
+      const newWidthPx = Math.min(panelRightEdge - minChatPx, panelRightEdge - ev.clientX);
+      const newVw = Math.max(20, (newWidthPx / vw) * 100);
       setArtifactsWidthVw(newVw);
     };
     const onMouseUp = () => {
@@ -215,7 +251,7 @@ export function ChatPage() {
     };
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
-  }, []);
+  }, [showAgentDrawer]);
 
   // Sidebar integration (now only controls visibility)
   const { setSidebarContent, showSidebar } = useSidebar();
@@ -277,7 +313,7 @@ export function ChatPage() {
           <button
             type="button"
             className={cn(
-              "p-2 rounded transition-all duration-150 ease-out",
+              "p-2 rounded-full transition-all duration-150 ease-out",
               showAppDrawer
                 ? "text-neutral-900 dark:text-neutral-100 bg-neutral-200 dark:bg-neutral-700/60"
                 : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
@@ -292,7 +328,7 @@ export function ChatPage() {
           <button
             type="button"
             className={cn(
-              "p-2 rounded transition-all duration-150 ease-out",
+              "p-2 rounded-full transition-all duration-150 ease-out",
               showArtifactsDrawer
                 ? "text-neutral-900 dark:text-neutral-100 bg-neutral-200 dark:bg-neutral-700/60"
                 : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
@@ -306,7 +342,7 @@ export function ChatPage() {
         <button
           type="button"
           className={cn(
-            "p-2 rounded transition-all duration-150 ease-out",
+            "p-2 rounded-full transition-all duration-150 ease-out",
             showAgentDrawer
               ? "text-neutral-900 dark:text-neutral-100 bg-neutral-200 dark:bg-neutral-700/60"
               : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
@@ -430,9 +466,9 @@ export function ChatPage() {
           }`}
         style={
           !isMobile && showAppDrawer
-            ? { marginRight: `calc(${appWidthVw}vw + 0.75rem)` }
+            ? { marginRight: `calc(${appWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})` }
             : !isMobile && !showAppDrawer && showArtifactsDrawer
-              ? { marginRight: `calc(${artifactsWidthVw}vw + 0.75rem)` }
+              ? { marginRight: `calc(${artifactsWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})` }
               : undefined
         }
       >
@@ -512,9 +548,15 @@ export function ChatPage() {
         )}
         style={
           !isMobile && showAppDrawer
-            ? { right: `calc(${appWidthVw}vw + 0.75rem)` }
-            : !isMobile && !showAppDrawer && !showAgentDrawer && showArtifactsDrawer
-              ? { right: `calc(${artifactsWidthVw}vw + 0.75rem)` }
+            ? {
+              right: `calc(${appWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})`,
+              ...(isAppResizing ? { transition: "right 50ms ease-out" } : {}),
+            }
+            : !isMobile && !showAppDrawer && showArtifactsDrawer
+              ? {
+                right: `calc(${artifactsWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})`,
+                ...(isArtifactsResizing ? { transition: "right 50ms ease-out" } : {}),
+              }
               : undefined
         }
       >
@@ -543,8 +585,9 @@ export function ChatPage() {
           )}
           style={{
             width: isMobile ? undefined : `${artifactsWidthVw}vw`,
+            right: !isMobile && showAgentDrawer ? "calc(20rem + 1.5rem)" : undefined,
             top: isMobile ? "48px" : undefined,
-            bottom: isMobile ? `${chatInputHeight - 16}px` : undefined,
+            bottom: isMobile ? `${chatInputHeight}px` : undefined,
           }}
         >
           {/* Resize handle on the left edge */}
@@ -583,7 +626,7 @@ export function ChatPage() {
           )}
           style={{
             top: isMobile ? "48px" : undefined,
-            bottom: isMobile ? `${chatInputHeight - 16}px` : undefined,
+            bottom: isMobile ? `${chatInputHeight}px` : undefined,
           }}
         >
           <AgentDrawer />
@@ -594,15 +637,17 @@ export function ChatPage() {
       {/* Always render so iframe is available, but hide when not active */}
       <div
         className={cn(
-          "w-full transition-all duration-300 ease-out transform fixed right-0 md:right-3 md:top-18 md:bottom-4 max-w-none z-30",
+          "w-full transform fixed right-0 md:right-3 md:top-18 md:bottom-4 max-w-none z-20",
+          !isAppResizing && "transition-all duration-300 ease-out",
           shouldRenderAppDrawer && isAppDrawerAnimating
             ? "translate-x-0 opacity-100"
             : "translate-x-full opacity-0 pointer-events-none",
         )}
         style={{
           width: isMobile ? undefined : `${appWidthVw}vw`,
+          right: !isMobile && showAgentDrawer ? "calc(20rem + 1.5rem)" : undefined,
           top: isMobile ? "48px" : undefined,
-          bottom: isMobile ? `${chatInputHeight - 16}px` : undefined,
+          bottom: isMobile ? `${chatInputHeight}px` : undefined,
         }}
       >
         {/* Resize handle on the left edge */}
@@ -628,7 +673,7 @@ export function ChatPage() {
         )}
         <div className="h-full md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm overflow-hidden flex flex-col">
           {/* Mobile close bar */}
-          <div className="flex md:hidden items-center h-10 px-2 border-b border-neutral-200/60 dark:border-neutral-700/60 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm">
+          <div className="flex md:hidden items-center h-10 px-2 mt-4 border-b border-neutral-200/60 dark:border-neutral-700/60 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm">
             <button
               type="button"
               onClick={toggleAppDrawer}
@@ -638,7 +683,7 @@ export function ChatPage() {
               <span>Back</span>
             </button>
           </div>
-          <div className="flex-1 overflow-hidden">
+          <div className={cn("flex-1 overflow-hidden", isAppResizing && "pointer-events-none")}>
             <AppDrawer />
           </div>
         </div>

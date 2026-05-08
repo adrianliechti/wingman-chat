@@ -5,12 +5,16 @@
  * Returns a cleanup function that disconnects the observer and removes the inline style.
  */
 export function fitIframeToContainer(iframe: HTMLIFrameElement, container: HTMLElement): () => void {
-  const applyWidth = (entry: ResizeObserverEntry) => {
-    iframe.style.width = `${entry.contentRect.width}px`;
-  };
+  let rafId: number | null = null;
 
   const observer = new ResizeObserver(([entry]) => {
-    if (entry) applyWidth(entry);
+    if (!entry) return;
+    const width = entry.contentRect.width;
+    if (rafId !== null) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      iframe.style.width = `${width}px`;
+    });
   });
 
   observer.observe(container);
@@ -19,6 +23,7 @@ export function fitIframeToContainer(iframe: HTMLIFrameElement, container: HTMLE
   iframe.style.width = `${container.getBoundingClientRect().width}px`;
 
   return () => {
+    if (rafId !== null) cancelAnimationFrame(rafId);
     observer.disconnect();
     iframe.style.width = "";
   };
