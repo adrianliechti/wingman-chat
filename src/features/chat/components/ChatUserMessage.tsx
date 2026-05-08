@@ -1,6 +1,7 @@
 import { Pencil } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
+import { cn } from "@/shared/lib/cn";
 import type { AudioContent, Content, FileContent, ImageContent, Message, TextContent } from "@/shared/types/chat";
 import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { CopyButton } from "@/shared/ui/CopyButton";
@@ -127,7 +128,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({
 
   return (
     <div className="flex justify-end pb-2 group text-neutral-900 dark:text-neutral-200">
-      <div className={`flex flex-col items-end${isEditing ? " flex-1" : ""}`}>
+      <div className={cn("flex flex-col items-end", isEditing && "flex-1")}>
         {isEditing ? (
           <ChatMessageEditor
             editContent={editContent}
@@ -161,7 +162,10 @@ export const ChatUserMessage = memo(function ChatUserMessage({
             </div>
 
             <div
-              className={`flex items-center gap-2 justify-end mt-1 pr-1 transition-opacity duration-200 ${isResponding ? "invisible" : "opacity-0 group-hover:opacity-100"}`}
+              className={cn(
+                "flex items-center gap-2 justify-end mt-1 pr-1 transition-opacity duration-200",
+                isResponding ? "invisible" : "opacity-0 group-hover:opacity-100",
+              )}
             >
               <CopyButton markdown={textContent} className="h-4 w-4" />
               <button

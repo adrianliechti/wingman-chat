@@ -3,9 +3,7 @@
  */
 
 import { contentToBlob } from "./fileContent";
-import { normalizeArtifactPath } from "./sandbox";
 import { isBinaryContentType } from "./fileTypes";
-
 import {
   deleteDirectory,
   deleteFile,
@@ -17,12 +15,14 @@ import {
   writeBlob,
   writeText,
 } from "./opfs-core";
+import { normalizeArtifactPath } from "./sandbox";
 import { readAsDataURL } from "./utils";
 
 export interface ArtifactEntry {
   path: string;
   contentType?: string;
   size: number;
+  lastModified?: number;
 }
 
 // ============================================================================
@@ -163,6 +163,7 @@ export async function listArtifactEntries(chatId: string): Promise<ArtifactEntry
           path,
           contentType: metadata?.contentType ?? inferContentType(path),
           size: metadata?.size ?? 0,
+          lastModified: metadata?.lastModified,
         });
       }
 

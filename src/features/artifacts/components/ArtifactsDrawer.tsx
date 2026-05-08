@@ -1,26 +1,28 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
+  ChevronDown,
   Code,
   Download,
   Eye,
   File as FileIcon2,
-  HardDrive,
   Loader2,
+  PanelRightClose,
+  PanelRightOpen,
   Play,
   Shapes,
   TerminalSquare,
-  Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { artifactKind, artifactLanguage, processUploadedFile } from "@/features/artifacts/lib/artifacts";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
-import type { File, FileEntry } from "@/shared/types/file";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
+import { cn } from "@/shared/lib/cn";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { markdownToDocx } from "@/shared/lib/markdownToDocx";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
+import type { File, FileEntry } from "@/shared/types/file";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { BashEditor } from "@/shared/ui/editors/BashEditor";
 import { CodeEditor } from "@/shared/ui/editors/CodeEditor";
@@ -28,16 +30,19 @@ import { CsvEditor } from "@/shared/ui/editors/CsvEditor";
 import { HtmlEditor } from "@/shared/ui/editors/HtmlEditor";
 import { JsEditor } from "@/shared/ui/editors/JsEditor";
 import { MarkdownEditor } from "@/shared/ui/editors/MarkdownEditor";
+import { PdfEditor } from "@/shared/ui/editors/PdfEditor";
 import { PythonEditor } from "@/shared/ui/editors/PythonEditor";
 import { SvgEditor } from "@/shared/ui/editors/SvgEditor";
 import { TextEditor } from "@/shared/ui/editors/TextEditor";
 import { FileIcon } from "@/shared/ui/FileIcon";
+import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
+
 
 export function ArtifactsDrawer() {
   const config = getConfig();
   const { fs, activeFile, openFile } = useArtifacts();
-  const { ensureChat } = useChat();
+  const { chat, ensureChat } = useChat();
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
@@ -45,7 +50,10 @@ export function ArtifactsDrawer() {
   const [isRunning, setIsRunning] = useState(false);
   const [runHandler, setRunHandler] = useState<(() => Promise<void>) | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
+  const [showFilePicker, setShowFilePicker] = useState(false);
+  const filePickerRef = useRef<HTMLDivElement>(null);
   const [terminalMounted, setTerminalMounted] = useState(false);
+  const [showFilesBrowser, setShowFilesBrowser] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -221,7 +229,8 @@ export function ArtifactsDrawer() {
     };
   }, [fs, activeFile]);
 
-  // Handle auto-opening single file (needs effect since openFile is async).
+  // Handle auto-opening a file when none is active but files are available.
+  // Prefers the most recently modified file; falls back to alphabetical first.
   // Only re-run when the `files` list changes — not when `activeFile` toggles.
   // Otherwise a deletion flow races: clearing `activeFile` re-runs this effect
   // before `loadFiles()` finishes, so `files` is still stale with the deleted
@@ -229,8 +238,14 @@ export function ArtifactsDrawer() {
   const activeFileRef = useRef(activeFile);
   activeFileRef.current = activeFile;
   useEffect(() => {
-    if (!activeFileRef.current && files.length === 1) {
-      openFile(files[0].path);
+    if (!activeFileRef.current && files.length > 0) {
+      const best = files.reduce((prev, curr) => {
+        const prevTime = prev.lastModified ?? 0;
+        const currTime = curr.lastModified ?? 0;
+        if (currTime !== prevTime) return currTime > prevTime ? curr : prev;
+        return curr.path < prev.path ? curr : prev;
+      });
+      openFile(best.path);
     }
   }, [files, openFile]);
 
@@ -302,6 +317,18 @@ export function ArtifactsDrawer() {
     };
   }, []);
 
+  // Close file picker when clicking outside
+  useEffect(() => {
+    if (!showFilePicker) return;
+    const handleClick = (e: MouseEvent) => {
+      if (!filePickerRef.current?.contains(e.target as Node)) {
+        setShowFilePicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showFilePicker]);
+
   // Render the appropriate editor based on file type
   const renderEditor = () => {
     return renderFileEditor();
@@ -371,6 +398,8 @@ export function ArtifactsDrawer() {
             />
           </div>
         );
+      case "pdf":
+        return <PdfEditor key={editorKey} content={activeFileData.content} />;
       case "binary":
         return (
           <div className="h-full flex items-center justify-center p-8 bg-neutral-50 dark:bg-neutral-900/60">
@@ -511,184 +540,301 @@ export function ArtifactsDrawer() {
         }}
       />
 
-      {/* Main Content Area with Right Sidebar */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Editor area */}
-        <div className="flex-1 overflow-hidden">{renderEditor()}</div>
+      {/* Outer horizontal layout: left (topbar + content) | right (file browser, full height) */}
+      <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
+        {/* Left column: top bar + editor/terminal stack */}
+        <ResizablePanel defaultSize={80} minSize={200} className="flex flex-col min-h-0">
+          {/* Top Bar with File Title and Actions */}
+          <div className={cn("shrink-0 h-10 flex items-center px-2 gap-1", chat?.id && "border-b border-black/10 dark:border-white/10")}>
+            {/* File title */}
+            <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative" ref={filePickerRef}>
+              {activeFile && (
+                <button
+                  type="button"
+                  onClick={() => files.length > 1 && setShowFilePicker((v) => !v)}
+                  className={cn(
+                    "flex items-center gap-1.5 min-w-0 rounded px-1 -mx-1 py-0.5 transition-all duration-150 ease-out",
+                    files.length > 1
+                      ? "hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                      : "cursor-default",
+                  )}
+                >
+                  <FileIcon name={activeFile} />
+                  <span
+                    className="text-xs font-medium truncate text-neutral-600 dark:text-neutral-400"
+                    title={getFileName(activeFile)}
+                  >
+                    {getFileName(activeFile)}
+                  </span>
+                  {files.length > 1 && (
+                    <ChevronDown
+                      size={12}
+                      className={cn(
+                        "shrink-0 text-neutral-400 transition-transform duration-150",
+                        showFilePicker && "rotate-180",
+                      )}
+                    />
+                  )}
+                </button>
+              )}
+              {showFilePicker && files.length > 1 && (
+                <div
+                  className="absolute top-full left-0 mt-1 z-50 min-w-48 max-w-72 bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 rounded-lg shadow-lg overflow-hidden py-1"
+                >
+                  {files.map((f) => (
+                    <button
+                      key={f.path}
+                      type="button"
+                      onClick={() => {
+                        openFile(f.path);
+                        setShowFilePicker(false);
+                      }}
+                      className={cn(
+                        "w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-100 text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5",
+                        f.path === activeFile && "font-medium",
+                      )}
+                    >
+                      <FileIcon name={f.path} />
+                      <span className="truncate" title={f.path}>{getFileName(f.path)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-        {/* Right Side Panel - File Browser (full height) */}
-        <div
-          className={`transition-all duration-500 ease-in-out relative ${files.length > 0 ? "w-48 opacity-100" : "w-0 opacity-0"} shrink-0 overflow-hidden`}
-        >
-          <div className="absolute inset-y-0 left-0 w-px bg-black/10 dark:bg-white/10"></div>
-          {fs && (
-            <div className={`h-full transition-opacity duration-500 ${files.length > 0 ? "opacity-100" : "opacity-0"}`}>
+            {/* File-specific action group: run, view toggle, word export, download */}
+            {(runHandler || supportsPreview() || activeFileData) && (
+              <>
+                <div className="flex items-center gap-0.5">
+                  {/* Run button */}
+                  {runHandler && (
+                    <button
+                      type="button"
+                      onClick={handleRun}
+                      disabled={isRunning}
+                      className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+                      title={isRunning ? "Running..." : "Run"}
+                    >
+                      {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                    </button>
+                  )}
+
+                  {/* View mode segmented control */}
+                  {supportsPreview() && (
+                    <div className="relative mr-1 flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5">
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("preview")}
+                        title="Preview"
+                        className={cn(
+                          "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
+                          viewMode === "preview"
+                            ? "bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+                            : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                        )}
+                      >
+                        <Eye size={11} strokeWidth={2.25} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("code")}
+                        title="Code"
+                        className={cn(
+                          "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
+                          viewMode === "code"
+                            ? "bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+                            : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                        )}
+                      >
+                        <Code size={11} strokeWidth={2.25} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Download dropdown */}
+                  {activeFileData && fs && (
+                    (() => {
+                      const isMarkdown = artifactKind(activeFileData.path, activeFileData.contentType) === "markdown";
+                      if (!isMarkdown) {
+                        return (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await fs.downloadFile(activeFileData.path);
+                              } catch (error) {
+                                console.error("Failed to download file:", error);
+                              }
+                            }}
+                            className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                            title={`Download ${getFileName(activeFileData.path)}`}
+                          >
+                            <Download size={14} />
+                          </button>
+                        );
+                      }
+                      return (
+                        <Menu>
+                          <MenuButton
+                            className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                            title="Download"
+                          >
+                            <Download size={14} />
+                          </MenuButton>
+                          <MenuItems
+                            modal={false}
+                            transition
+                            anchor="bottom end"
+                            className="mt-1 origin-top-right rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-44 transition duration-100 ease-out data-closed:scale-95 data-closed:opacity-0"
+                          >
+                            <MenuItem>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await fs.downloadFile(activeFileData.path);
+                                  } catch (error) {
+                                    console.error("Failed to download file:", error);
+                                  }
+                                }}
+                                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                              >
+                                <Download size={12} className="text-neutral-500" />
+                                Download
+                              </button>
+                            </MenuItem>
+                            <MenuItem>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    const blob = await markdownToDocx(activeFileData.content);
+                                    const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, "");
+                                    downloadBlob(blob, `${baseName}.docx`);
+                                  } catch (error) {
+                                    console.error("Failed to convert to Word:", error);
+                                  }
+                                }}
+                                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                              >
+                                <img src="/icons/file-word.svg" alt="Word" width={12} height={12} className="dark:invert" />
+                                Download as Word
+                              </button>
+                            </MenuItem>
+                          </MenuItems>
+                        </Menu>
+                      );
+                    })()
+                  )}
+                </div>
+
+                {chat?.id && <div className="w-px h-4 bg-black/10 dark:bg-white/10 mx-0.5" />}
+              </>
+            )}
+
+            {/* Workspace action group: terminal, files */}
+            {chat?.id && (
+              <div className="flex items-center gap-0.5">
+                {/* Terminal toggle */}
+                <button
+                  type="button"
+                  onClick={toggleTerminal}
+                  className={cn(
+                    "p-1.5 rounded transition-all duration-150 ease-out",
+                    showTerminal
+                      ? "text-neutral-700 dark:text-neutral-200 bg-black/5 dark:bg-white/5"
+                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5",
+                  )}
+                  title={showTerminal ? "Close terminal" : "Open terminal"}
+                >
+                  <TerminalSquare size={14} />
+                </button>
+
+                {/* Files browser toggle — only when files exist */}
+                {files.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowFilesBrowser((v) => !v)}
+                    className={cn(
+                      "p-1.5 rounded transition-all duration-150 ease-out",
+                      showFilesBrowser
+                        ? "text-neutral-700 dark:text-neutral-200 bg-black/5 dark:bg-white/5"
+                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5",
+                    )}
+                    title={showFilesBrowser ? "Hide files" : "Show files"}
+                  >
+                    {showFilesBrowser ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Editor + Terminal stacked vertically, terminal spans full left-column width */}
+          <div className="flex-1 overflow-hidden min-h-0">
+            <ResizablePanelGroup orientation="vertical" className="h-full">
+              {/* Editor area */}
+              <ResizablePanel defaultSize={70} minSize={20}>
+                <div
+                  className={cn(
+                    "h-full overflow-hidden relative z-0",
+                  )}
+                >
+                  {renderEditor()}
+                </div>
+              </ResizablePanel>
+
+              {/* Terminal panel — full width of left column */}
+              {terminalMounted && showTerminal && (
+                <ResizablePanel defaultSize={30} minSize={80}>
+                  <div className="h-full relative z-10 border-t border-black/10 dark:border-white/10 shadow-[0_-8px_20px_-2px_rgba(0,0,0,0.12)] dark:shadow-[0_-8px_20px_-2px_rgba(0,0,0,0.5)]">
+                    <BashEditor key="terminal" visible={showTerminal} />
+                  </div>
+                </ResizablePanel>
+              )}
+            </ResizablePanelGroup>
+            {/* Keep terminal mounted but hidden when closed */}
+            {terminalMounted && !showTerminal && (
+              <div className="hidden">
+                <BashEditor key="terminal" visible={false} />
+              </div>
+            )}
+          </div>
+        </ResizablePanel>
+
+        {/* Right column: File browser spanning full drawer height (including alongside top bar) */}
+        {files.length > 0 && fs && showFilesBrowser && (
+          <ResizablePanel defaultSize={25} minSize={120}>
+            <div className="h-full overflow-hidden border-l border-black/10 dark:border-white/10 bg-neutral-50/80 dark:bg-neutral-900/60 shadow-[-8px_0_20px_-2px_rgba(0,0,0,0.12)] dark:shadow-[-8px_0_20px_-2px_rgba(0,0,0,0.5)]">
               <ArtifactsBrowser
                 fs={fs}
                 files={files}
                 openTabs={activeFile ? [activeFile] : []}
                 onFileClick={openFile}
+                drives={config.drives}
+                isProcessing={isProcessing}
+                onUploadLocal={() => fileInputRef.current?.click()}
+                onUploadDrive={(drive) => setActiveDrive(drive)}
+                onDownloadAll={async () => {
+                  try {
+                    await fs.downloadAsZip();
+                  } catch (error) {
+                    console.error("Failed to download files:", error);
+                    alert("Failed to download files. Please try again.");
+                  }
+                }}
+                onDownloadFile={async (path) => {
+                  try {
+                    await fs.downloadFile(path);
+                  } catch (error) {
+                    console.error("Failed to download file:", error);
+                  }
+                }}
               />
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Bottom Bar with File Title and Actions — full width */}
-      <div className="shrink-0 h-14 flex border-t border-black/10 dark:border-white/10">
-        {/* File title */}
-        <div className="flex-1 flex items-center min-w-0 px-3">
-          {activeFile && (
-            <>
-              <FileIcon name={activeFile} />
-              <span
-                className="text-sm font-medium truncate flex-1 text-left ml-1.5 text-neutral-700 dark:text-neutral-300"
-                title={getFileName(activeFile)}
-              >
-                {getFileName(activeFile)}
-              </span>
-            </>
-          )}
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-1 px-2">
-          {/* Run button - only show when editor has a run handler */}
-          {runHandler && (
-            <button
-              type="button"
-              onClick={handleRun}
-              disabled={isRunning}
-              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 disabled:opacity-50"
-              title={isRunning ? "Running..." : "Run"}
-            >
-              {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-            </button>
-          )}
-
-          {/* View mode toggle - only show for files that support preview */}
-          {supportsPreview() && (
-            <button
-              type="button"
-              onClick={() => setViewMode(viewMode === "preview" ? "code" : "preview")}
-              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-              title={viewMode === "preview" ? "Switch to code" : "Switch to preview"}
-            >
-              {viewMode === "preview" ? <Code size={16} /> : <Eye size={16} />}
-            </button>
-          )}
-
-          {/* Word download button — only for markdown files */}
-          {activeFileData && artifactKind(activeFileData.path, activeFileData.contentType) === "markdown" && (
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  const blob = await markdownToDocx(activeFileData.content);
-                  const baseName = getFileName(activeFileData.path).replace(/\.(md|markdown)$/i, "");
-                  downloadBlob(blob, `${baseName}.docx`);
-                } catch (error) {
-                  console.error("Failed to convert to Word:", error);
-                }
-              }}
-              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-              title="Download as Word (.docx)"
-            >
-              <img src="/icons/file-word.svg" alt="Word" width={16} height={16} className="dark:invert" />
-            </button>
-          )}
-
-          {/* Terminal toggle */}
-          <button
-            type="button"
-            onClick={toggleTerminal}
-            className={`p-2 rounded transition-all duration-150 ease-out ${showTerminal ? "text-green-500 dark:text-green-400 bg-green-500/10" : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"}`}
-            title={showTerminal ? "Close terminal" : "Open terminal"}
-          >
-            <TerminalSquare size={16} />
-          </button>
-
-          {/* Upload button — always visible */}
-          {isProcessing ? (
-            <div className="p-2">
-              <Loader2 size={16} className="animate-spin text-neutral-400" />
-            </div>
-          ) : config.drives.length > 0 ? (
-            <Menu>
-              <MenuButton
-                className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                title="Upload files"
-              >
-                <Upload size={16} />
-              </MenuButton>
-              <MenuItems
-                modal={false}
-                transition
-                anchor="bottom end"
-                className="mt-1 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-40"
-              >
-                <MenuItem>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
-                  >
-                    <Upload size={15} className="text-neutral-500" />
-                    Upload
-                  </button>
-                </MenuItem>
-                {config.drives.map((drive) => (
-                  <MenuItem key={drive.id}>
-                    <button
-                      type="button"
-                      onClick={() => setActiveDrive(drive)}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
-                    >
-                      <HardDrive size={15} className="text-neutral-500" />
-                      {drive.name}
-                    </button>
-                  </MenuItem>
-                ))}
-              </MenuItems>
-            </Menu>
-          ) : (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-              title="Upload files"
-            >
-              <Upload size={16} />
-            </button>
-          )}
-
-          {/* Download button — only when files exist */}
-          {files.length > 0 && fs && (
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await fs.downloadAsZip();
-                } catch (error) {
-                  console.error("Failed to download files:", error);
-                  alert("Failed to download files. Please try again.");
-                }
-              }}
-              className="p-2 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-              title={`Download all files as zip (${files.length} file${files.length !== 1 ? "s" : ""})`}
-            >
-              <Download size={16} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Terminal panel — below the controls bar, stays mounted once opened */}
-      {terminalMounted && (
-        <div className={`shrink-0 border-t border-black/10 dark:border-white/10 ${showTerminal ? "h-1/3" : "hidden"}`}>
-          <BashEditor key="terminal" visible={showTerminal} />
-        </div>
-      )}
+          </ResizablePanel>
+        )}
+      </ResizablePanelGroup>
       {activeDrive && (
         <DrivePicker
           isOpen={!!activeDrive}

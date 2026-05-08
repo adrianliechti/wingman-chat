@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { executeCode } from "@/features/tools/lib/interpreter";
+import { cn } from "@/shared/lib/cn";
 import { CodeEditor } from "./CodeEditor";
 
 interface PythonEditorProps {
@@ -64,7 +65,7 @@ export function PythonEditor({ content, onRunReady, onRunningChange }: PythonEdi
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Code Editor */}
-      <div className={hasOutput ? "h-1/2 overflow-hidden" : "flex-1 overflow-hidden"}>
+      <div className={cn(hasOutput ? "h-1/2 overflow-hidden" : "flex-1 overflow-hidden")}>
         <CodeEditor content={content} language="python" />
       </div>
 

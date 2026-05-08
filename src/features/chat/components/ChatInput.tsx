@@ -30,6 +30,7 @@ import { useTranscription } from "@/features/voice/hooks/useTranscription";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
+import { cn } from "@/shared/lib/cn";
 import { acceptTypes, canConvert, convertFileToText } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { lookupContentType, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
@@ -595,7 +596,10 @@ export function ChatInput({ initialContent, autoSubmit }: ChatInputProps = {}) {
                 {/* CSS-animated placeholder */}
                 {shouldShowPlaceholder && (
                   <div
-                    className={`absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200 ${messages.length === 0 ? "typewriter-text" : ""}`}
+                    className={cn(
+                      "absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200",
+                      messages.length === 0 && "typewriter-text",
+                    )}
                     style={
                       messages.length === 0
                         ? ({
@@ -787,12 +791,11 @@ export function ChatInput({ initialContent, autoSubmit }: ChatInputProps = {}) {
                           .map((modelItem) => (
                             <ModelMenuItem key={modelItem.id} model={modelItem} onSelect={onModelChange} />
                           ))}
-                        {showHiddenModels &&
-                          models.some((m) => m.id !== "realtime" && m.hidden) && (
-                            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 bg-neutral-100/60 dark:bg-white/5 border-y border-white/20 dark:border-white/10">
-                              Hidden
-                            </div>
-                          )}
+                        {showHiddenModels && models.some((m) => m.id !== "realtime" && m.hidden) && (
+                          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 bg-neutral-100/60 dark:bg-white/5 border-y border-white/20 dark:border-white/10">
+                            Hidden
+                          </div>
+                        )}
                         {showHiddenModels &&
                           models
                             .filter((m) => m.id !== "realtime" && m.hidden)

@@ -1,6 +1,7 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { MoreVertical, PanelRightOpen, Pencil, Search, Trash, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { cn } from "@/shared/lib/cn";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 import type { Notebook } from "../types/notebook";
 
@@ -170,7 +171,7 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
         <div className="pt-2 pb-1 px-1">
           {grouped.map((group, gi) => (
-            <div key={group.category} className={gi > 0 ? "pt-2" : ""}>
+            <div key={group.category} className={cn(gi > 0 && "pt-2")}>
               {/* Category header */}
               <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
                 <span>{group.category}</span>

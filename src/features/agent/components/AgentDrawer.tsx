@@ -156,7 +156,7 @@ export function AgentDrawer() {
   };
 
   return (
-    <div className="h-full flex flex-col md:rounded-lg overflow-hidden transition-all duration-150 ease-linear bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm">
+    <div className="h-full flex flex-col md:rounded-lg overflow-hidden transition-all duration-150 ease-linear bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm pt-4 md:pt-0">
       {/* Header with Agent Selector */}
       <div className="px-3 py-3 border-b border-neutral-200/60 dark:border-neutral-700/60">
         <div className="relative w-full" ref={dropdownRef}>
@@ -221,9 +221,9 @@ export function AgentDrawer() {
                       className="group relative cursor-pointer select-none py-2 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 hover:bg-neutral-200 dark:hover:bg-neutral-700/80 flex items-center justify-between"
                     >
                       <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Bot size={16} className="text-neutral-600 dark:text-neutral-400 shrink-0" />
                         {isEditing ? (
                           <div className="flex items-center gap-1 flex-1">
+                            <Bot size={16} className="text-neutral-600 dark:text-neutral-400 shrink-0" />
                             <input
                               ref={inlineEditInputRef}
                               type="text"
@@ -262,6 +262,7 @@ export function AgentDrawer() {
                             onClick={() => handleAgentSelect(agent)}
                             className="flex items-center gap-2 flex-1 text-left min-w-0"
                           >
+                            <Bot size={16} className="text-neutral-600 dark:text-neutral-400 shrink-0" />
                             <span className={`block truncate text-sm ${isCurrent ? "font-semibold" : "font-normal"}`}>
                               {agent.name}
                             </span>
@@ -320,7 +321,7 @@ export function AgentDrawer() {
       {currentAgent ? (
         <AgentDetails key={currentAgent.id} agent={currentAgent} />
       ) : (
-        <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+        <div className="flex flex-col flex-1 items-center justify-center p-6 text-center overflow-auto">
           <Bot size={48} className="text-neutral-300 dark:text-neutral-600 mb-4" />
           <h3 className="text-lg font-medium text-neutral-900 dark:text-neutral-100 mb-2">
             {agents.length === 0 ? "Create an Agent" : "No Agent Selected"}
