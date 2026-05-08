@@ -587,7 +587,7 @@ export function ChatPage() {
             width: isMobile ? undefined : `${artifactsWidthVw}vw`,
             right: !isMobile && showAgentDrawer ? "calc(20rem + 1.5rem)" : undefined,
             top: isMobile ? "48px" : undefined,
-            bottom: isMobile ? `${chatInputHeight}px` : undefined,
+            bottom: isMobile ? 0 : undefined,
           }}
         >
           {/* Resize handle on the left edge */}
@@ -626,7 +626,7 @@ export function ChatPage() {
           )}
           style={{
             top: isMobile ? "48px" : undefined,
-            bottom: isMobile ? `${chatInputHeight}px` : undefined,
+            bottom: isMobile ? 0 : undefined,
           }}
         >
           <AgentDrawer />
@@ -647,7 +647,7 @@ export function ChatPage() {
           width: isMobile ? undefined : `${appWidthVw}vw`,
           right: !isMobile && showAgentDrawer ? "calc(20rem + 1.5rem)" : undefined,
           top: isMobile ? "48px" : undefined,
-          bottom: isMobile ? `${chatInputHeight}px` : undefined,
+          bottom: isMobile ? 0 : undefined,
         }}
       >
         {/* Resize handle on the left edge */}
