@@ -532,6 +532,7 @@ export function ChatPage() {
             </button>
           )}
         </main>
+        <ChatConsentOverlay />
       </div>
 
       <footer
@@ -571,7 +572,6 @@ export function ChatPage() {
             "md:translate-y-[calc(50%-33.333vh)]",
           )}
         >
-          <ChatConsentOverlay />
           <ChatInput />
         </div>
       </footer>
