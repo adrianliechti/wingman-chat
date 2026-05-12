@@ -54,7 +54,7 @@ export function ArtifactsDrawer() {
   const filePickerRef = useRef<HTMLDivElement>(null);
   const [terminalMounted, setTerminalMounted] = useState(false);
   const [showFilesBrowser, setShowFilesBrowser] = useState(false);
-  const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dragCounterRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // State for files list (loaded from async fs.listFiles)
@@ -252,12 +252,8 @@ export function ArtifactsDrawer() {
   // Drag and drop handlers
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
+    dragCounterRef.current = 0;
     setIsDragOver(false);
-
-    if (dragTimeoutRef.current) {
-      clearTimeout(dragTimeoutRef.current);
-      dragTimeoutRef.current = null;
-    }
 
     // IMPORTANT: Capture files immediately before any async work!
     // The browser clears e.dataTransfer after the sync part of the handler completes
@@ -289,33 +285,26 @@ export function ArtifactsDrawer() {
     }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
-
-    if (!isDragOver) {
+    dragCounterRef.current += 1;
+    if (dragCounterRef.current === 1) {
       setIsDragOver(true);
     }
-
-    // Clear any existing timeout and set a new one
-    if (dragTimeoutRef.current) {
-      clearTimeout(dragTimeoutRef.current);
-    }
-
-    // Reset drag state after a short delay if no more drag events
-    dragTimeoutRef.current = setTimeout(() => {
-      setIsDragOver(false);
-      dragTimeoutRef.current = null;
-    }, 100);
   };
 
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (dragTimeoutRef.current) {
-        clearTimeout(dragTimeoutRef.current);
-      }
-    };
-  }, []);
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setIsDragOver(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
 
   // Close file picker when clicking outside
   useEffect(() => {
@@ -512,6 +501,8 @@ export function ArtifactsDrawer() {
     // biome-ignore lint/a11y/noStaticElementInteractions: File drag-and-drop requires drag events on the drawer surface.
     <div
       className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md pt-2 md:pt-0"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
