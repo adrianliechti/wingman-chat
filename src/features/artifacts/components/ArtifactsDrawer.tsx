@@ -10,7 +10,7 @@ import {
   PanelRightOpen,
   Play,
   Shapes,
-  TerminalSquare,
+  Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
@@ -326,39 +326,44 @@ export function ArtifactsDrawer() {
   // Render the file-specific editor
   const renderFileEditor = () => {
     if (!activeFile) {
+      if (files.length > 0) {
+        return (
+          <div className="h-full flex items-center justify-center p-8">
+            <p className="text-sm text-neutral-400 dark:text-neutral-500">Select a file from the sidebar</p>
+          </div>
+        );
+      }
       return (
-        <div className="h-full flex flex-col items-center justify-center p-8">
-          <div className="w-full max-w-xl">
-            <Shapes size={32} className="text-neutral-300 dark:text-neutral-600 mb-4" />
-            <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
-              {files.length === 0 ? "No artifacts yet" : "Select a file"}
-            </h3>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed mb-5">
-              {files.length === 0
-                ? "Artifacts are files, code, and documents created during the conversation. Upload your own files, run Python or shell commands, and download the results when ready."
-                : "Click a filename in the sidebar to open and edit it."}
+        <div className="h-full flex items-center justify-center p-8">
+          <div className="w-full max-w-sm text-center">
+            <Shapes size={28} className="text-neutral-300 dark:text-neutral-600 mb-3 mx-auto" />
+            <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">No artifacts yet</h3>
+            <p className="text-xs text-neutral-400 dark:text-neutral-500 leading-relaxed mb-4">
+              Files, code, and documents created in the conversation will appear here. You can also run Python or shell commands directly.
             </p>
-            {files.length === 0 && (
-              <>
-                <p className="text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide mb-2">
-                  Try asking
-                </p>
-                <ul className="space-y-2">
-                  {[
-                    "Analyze this CSV and create a chart showing the top trends.",
-                    "Write a Python script that cleans up and merges these two spreadsheets.",
-                    "Turn these rough notes into a polished, client-ready document.",
-                  ].map((example) => (
-                    <li
-                      key={example}
-                      className="text-xs text-neutral-500 dark:text-neutral-400 italic bg-black/5 dark:bg-white/5 rounded-md px-3 py-2 leading-relaxed"
-                    >
-                      &ldquo;{example}&rdquo;
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
+            <ul className="space-y-1.5 text-left mb-5">
+              {[
+                "Analyze this CSV and create a chart.",
+                "Write a Python script to clean up this spreadsheet.",
+                "Turn these notes into a polished document.",
+              ].map((example) => (
+                <li
+                  key={example}
+                  className="text-xs text-neutral-400 dark:text-neutral-500 italic bg-black/5 dark:bg-white/5 rounded-md px-3 py-2 leading-relaxed"
+                >
+                  &ldquo;{example}&rdquo;
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
+            >
+              <Upload size={13} className="shrink-0" />
+              Upload files
+            </button>
+            <p className="mt-3 text-xs text-neutral-300 dark:text-neutral-600">or drag &amp; drop anywhere</p>
           </div>
         </div>
       );
@@ -536,7 +541,7 @@ export function ArtifactsDrawer() {
         {/* Left column: top bar + editor/terminal stack */}
         <ResizablePanel defaultSize={80} minSize={200} className="flex flex-col min-h-0">
           {/* Top Bar with File Title and Actions */}
-          <div className={cn("shrink-0 h-10 flex items-center px-2 gap-1", chat?.id && "border-b border-black/10 dark:border-white/10")}>
+          <div className={cn("shrink-0 h-10 flex items-center px-2 gap-1", chat?.id && files.length > 0 && "border-b border-black/10 dark:border-white/10")}>
             {/* File title */}
             <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative" ref={filePickerRef}>
               {activeFile && (
@@ -547,7 +552,7 @@ export function ArtifactsDrawer() {
                     "flex items-center gap-1.5 min-w-0 rounded px-1 -mx-1 py-0.5 transition-all duration-150 ease-out",
                     files.length > 1
                       ? "hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-                      : "cursor-default",
+                      : "cursor-default pointer-events-none",
                   )}
                 >
                   <FileIcon name={activeFile} />
@@ -567,6 +572,37 @@ export function ArtifactsDrawer() {
                     />
                   )}
                 </button>
+              )}
+              {/* View mode segmented control — inline after filename */}
+              {supportsPreview() && (
+                <div className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0 ml-2">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("preview")}
+                    title="Preview"
+                    className={cn(
+                      "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
+                      viewMode === "preview"
+                        ? "bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                    )}
+                  >
+                    <Eye size={11} strokeWidth={2.25} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("code")}
+                    title="Code"
+                    className={cn(
+                      "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
+                      viewMode === "code"
+                        ? "bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                    )}
+                  >
+                    <Code size={11} strokeWidth={2.25} />
+                  </button>
+                </div>
               )}
               {showFilePicker && files.length > 1 && (
                 <div
@@ -594,7 +630,7 @@ export function ArtifactsDrawer() {
             </div>
 
             {/* File-specific action group: run, view toggle, word export, download */}
-            {(runHandler || supportsPreview() || activeFileData) && (
+            {(runHandler || activeFileData) && (
               <>
                 <div className="flex items-center gap-0.5">
                   {/* Run button */}
@@ -608,38 +644,6 @@ export function ArtifactsDrawer() {
                     >
                       {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                     </button>
-                  )}
-
-                  {/* View mode segmented control */}
-                  {supportsPreview() && (
-                    <div className="relative mr-1 flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5">
-                      <button
-                        type="button"
-                        onClick={() => setViewMode("preview")}
-                        title="Preview"
-                        className={cn(
-                          "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
-                          viewMode === "preview"
-                            ? "bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
-                            : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                        )}
-                      >
-                        <Eye size={11} strokeWidth={2.25} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setViewMode("code")}
-                        title="Code"
-                        className={cn(
-                          "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
-                          viewMode === "code"
-                            ? "bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
-                            : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                        )}
-                      >
-                        <Code size={11} strokeWidth={2.25} />
-                      </button>
-                    </div>
                   )}
 
                   {/* Download dropdown */}
@@ -657,20 +661,22 @@ export function ArtifactsDrawer() {
                                 console.error("Failed to download file:", error);
                               }
                             }}
-                            className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                            className="flex items-center gap-1 px-1.5 py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-xs"
                             title={`Download ${getFileName(activeFileData.path)}`}
                           >
-                            <Download size={14} />
+                            <Download size={13} />
+                            Download
                           </button>
                         );
                       }
                       return (
                         <Menu>
                           <MenuButton
-                            className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                            className="flex items-center gap-1 px-1.5 py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-xs"
                             title="Download"
                           >
-                            <Download size={14} />
+                            <Download size={13} />
+                            Download
                           </MenuButton>
                           <MenuItems
                             modal={false}
@@ -723,24 +729,9 @@ export function ArtifactsDrawer() {
               </>
             )}
 
-            {/* Workspace action group: terminal, files */}
+            {/* Workspace action group: files */}
             {chat?.id && (
               <div className="flex items-center gap-0.5">
-                {/* Terminal toggle */}
-                <button
-                  type="button"
-                  onClick={toggleTerminal}
-                  className={cn(
-                    "p-1.5 rounded transition-all duration-150 ease-out",
-                    showTerminal
-                      ? "text-neutral-700 dark:text-neutral-200 bg-black/5 dark:bg-white/5"
-                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5",
-                  )}
-                  title={showTerminal ? "Close terminal" : "Open terminal"}
-                >
-                  <TerminalSquare size={14} />
-                </button>
-
                 {/* Files browser toggle — only when files exist */}
                 {files.length > 0 && (
                   <button
@@ -821,6 +812,8 @@ export function ArtifactsDrawer() {
                     console.error("Failed to download file:", error);
                   }
                 }}
+                showTerminal={showTerminal}
+                onToggleTerminal={toggleTerminal}
               />
             </div>
           </ResizablePanel>

@@ -206,6 +206,7 @@ export function ChatPage() {
     e.preventDefault();
     appResizingRef.current = true;
     setIsAppResizing(true);
+    document.body.classList.add("resizing");
     // Capture the agent drawer state at drag start — it won't change mid-drag.
     // 20rem (320px) agent panel + 0.75rem (12px) agent gap + 0.75rem (12px) app gap = 344px
     const agentOffset = showAgentDrawer ? 344 : 12;
@@ -221,6 +222,7 @@ export function ChatPage() {
     const onMouseUp = () => {
       appResizingRef.current = false;
       setIsAppResizing(false);
+      document.body.classList.remove("resizing");
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
@@ -232,6 +234,7 @@ export function ChatPage() {
     e.preventDefault();
     artifactsResizingRef.current = true;
     setIsArtifactsResizing(true);
+    document.body.classList.add("resizing");
     // Capture the agent drawer state at drag start — it won't change mid-drag.
     // 20rem (320px) agent panel + 0.75rem (12px) agent gap + 0.75rem (12px) artifacts gap = 344px
     const agentOffset = showAgentDrawer ? 344 : 12;
@@ -247,6 +250,7 @@ export function ChatPage() {
     const onMouseUp = () => {
       artifactsResizingRef.current = false;
       setIsArtifactsResizing(false);
+      document.body.classList.remove("resizing");
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };

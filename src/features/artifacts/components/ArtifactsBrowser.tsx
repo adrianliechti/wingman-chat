@@ -1,5 +1,5 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { ChevronDown, ChevronRight, Download, Edit2, Folder, FolderOpen, HardDrive, Loader2, MoreVertical, Trash, Upload } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Edit2, Folder, FolderOpen, HardDrive, Loader2, MoreVertical, Terminal, Trash, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { DriveConfig } from "@/shared/config";
@@ -319,6 +319,8 @@ interface ArtifactsBrowserProps {
   onUploadDrive?: (drive: DriveConfig) => void;
   onDownloadAll?: () => void;
   onDownloadFile?: (path: string) => void;
+  showTerminal?: boolean;
+  onToggleTerminal?: () => void;
 }
 
 export function ArtifactsBrowser({
@@ -332,6 +334,8 @@ export function ArtifactsBrowser({
   onUploadDrive,
   onDownloadAll,
   onDownloadFile,
+  showTerminal,
+  onToggleTerminal,
 }: ArtifactsBrowserProps) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -442,7 +446,7 @@ export function ArtifactsBrowser({
       <div className="shrink-0 h-10 flex items-center border-b border-black/10 dark:border-white/10 px-3 gap-1">
         <div className="flex-1" />
         {/* Three-dot menu for bulk actions */}
-        {onDownloadAll && files.length > 0 && (
+        {(onDownloadAll && files.length > 0 || onToggleTerminal) && (
           <Menu>
             <MenuButton
               className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
@@ -454,18 +458,32 @@ export function ArtifactsBrowser({
               modal={false}
               transition
               anchor="bottom end"
-              className="mt-1 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-40"
+              className="mt-1 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-44"
             >
-              <MenuItem>
-                <button
-                  type="button"
-                  onClick={onDownloadAll}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
-                >
-                  <Download size={12} className="text-neutral-500" />
-                  Download all as zip
-                </button>
-              </MenuItem>
+              {onToggleTerminal && (
+                <MenuItem>
+                  <button
+                    type="button"
+                    onClick={onToggleTerminal}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                  >
+                    <Terminal size={12} className="text-neutral-500" />
+                    {showTerminal ? "Close terminal" : "Open terminal"}
+                  </button>
+                </MenuItem>
+              )}
+              {onDownloadAll && files.length > 0 && (
+                <MenuItem>
+                  <button
+                    type="button"
+                    onClick={onDownloadAll}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
+                  >
+                    <Download size={12} className="text-neutral-500" />
+                    Download all as zip
+                  </button>
+                </MenuItem>
+              )}
             </MenuItems>
           </Menu>
         )}

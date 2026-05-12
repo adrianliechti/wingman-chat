@@ -18,6 +18,17 @@ function ResizablePanel({ ...props }: ResizablePrimitive.PanelProps) {
   return <ResizablePrimitive.Panel data-slot="resizable-panel" {...props} />;
 }
 
+function handleResizeDragStart() {
+  document.body.classList.add("resizing");
+  const onUp = () => {
+    document.body.classList.remove("resizing");
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
+  };
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onUp);
+}
+
 function ResizableHandle({
   withHandle = true,
   className,
@@ -32,6 +43,7 @@ function ResizableHandle({
         "relative flex w-0 shrink-0 items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neutral-400 aria-[orientation=horizontal]:h-0 aria-[orientation=horizontal]:w-full",
         className,
       )}
+      onPointerDown={handleResizeDragStart}
       {...props}
     >
       {withHandle && (

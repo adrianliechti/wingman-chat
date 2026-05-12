@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Prevent iframes from swallowing mouse events while a resizable panel is being dragged */
+body.resizing iframe {
+  pointer-events: none;
+}
+
 .noto-emoji {
   font-family: "Noto Emoji", sans-serif;
   font-size: 0.9em;
