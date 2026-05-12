@@ -1,7 +1,7 @@
 import { createContext } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { Chat, Message, Model } from "@/shared/types/chat";
-import type { ElicitationResult, PendingElicitation } from "@/shared/types/elicitation";
+import type { ConsentResult, ElicitationResult, PendingConsent, PendingElicitation } from "@/shared/types/elicitation";
 
 export interface ChatContextType {
   // Models
@@ -39,6 +39,10 @@ export interface ChatContextType {
   // Elicitation state
   pendingElicitation: PendingElicitation | null;
   resolveElicitation: (result: ElicitationResult) => void;
+
+  // Category consent state (post-turn advisory overlay)
+  pendingConsent: PendingConsent | null;
+  resolveConsent: (result: ConsentResult) => void;
 }
 
 export const ChatContext = createContext<ChatContextType | undefined>(undefined);

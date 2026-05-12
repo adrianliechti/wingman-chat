@@ -5,6 +5,7 @@ import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { ChatConsentOverlay } from "@/features/chat/components/ChatConsentOverlay";
 import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
@@ -570,6 +571,7 @@ export function ChatPage() {
             "md:translate-y-[calc(50%-33.333vh)]",
           )}
         >
+          <ChatConsentOverlay />
           <ChatInput />
         </div>
       </footer>
