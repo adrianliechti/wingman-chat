@@ -1,5 +1,4 @@
-import type { InitialFiles } from "just-bash/browser";
-import { Bash, InMemoryFs } from "just-bash/browser";
+import { Bash, InMemoryFs, type InitialFiles } from "just-bash/browser";
 import type { OverlayFile } from "@/features/artifacts/lib/fs";
 import { bytesToDataUrl, dataUrlToBytes } from "@/shared/lib/fileContent";
 import { SANDBOX_HOME } from "@/shared/lib/sandbox";

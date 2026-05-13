@@ -1,9 +1,14 @@
-import type { Command, CommandContext, ExecResult } from "just-bash/browser";
-import { defineCommand } from "just-bash/browser";
+import {
+  type Command,
+  type CommandContext,
+  defineCommand,
+  type ExecResult,
+} from "just-bash/browser";
 import { bytesToDataUrl, dataUrlToBytes } from "@/shared/lib/fileContent";
 import { SANDBOX_HOME } from "@/shared/lib/sandbox";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { executeCode } from "./interpreter";
+import { decodeStdin } from "./stdin";
 
 const PYODIDE_VERSION = "3.13 (Pyodide)";
 
@@ -107,8 +112,11 @@ async function executePython(args: string[], ctx: CommandContext): Promise<ExecR
   }
 
   // stdin
-  if (code === undefined && ctx.stdin) {
-    code = ctx.stdin;
+  if (code === undefined) {
+    const stdinText = decodeStdin(ctx.stdin);
+    if (stdinText) {
+      code = stdinText;
+    }
   }
 
   // no input at all

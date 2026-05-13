@@ -1,7 +1,12 @@
-import type { Command, CommandContext, ExecResult } from "just-bash/browser";
-import { defineCommand } from "just-bash/browser";
+import {
+  type Command,
+  type CommandContext,
+  defineCommand,
+  type ExecResult,
+} from "just-bash/browser";
 import { getConfig } from "@/shared/config";
 import { getTextFromContent, Role } from "@/shared/types/chat";
+import { decodeStdin } from "./stdin";
 
 let model: string | null = null;
 
@@ -25,8 +30,8 @@ export async function runLlm(prompt: string): Promise<string> {
 
 async function executeLlm(args: string[], ctx: CommandContext): Promise<ExecResult> {
   let prompt = args.join(" ").trim();
-  if (!prompt && ctx.stdin) {
-    prompt = ctx.stdin;
+  if (!prompt) {
+    prompt = decodeStdin(ctx.stdin);
   }
 
   if (!prompt) {
