@@ -1,6 +1,7 @@
 import { Dialog, Transition } from "@headlessui/react";
 import { ChevronRight, File, Folder, FolderOpen, Loader2, Square, SquareCheckBig, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { cn } from "@/shared/lib/cn";
 import { type DriveEntry, listDriveEntries } from "@/shared/lib/drives";
 import { formatBytes, lookupContentType } from "@/shared/lib/utils";
 
@@ -119,7 +120,7 @@ function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilte
             e.stopPropagation();
             if (isDir) handleExpand();
           }}
-          className={`p-0.5 rounded transition-transform ${isDir ? "cursor-pointer" : "invisible"}`}
+          className={cn("p-0.5 rounded transition-transform", isDir ? "cursor-pointer" : "invisible")}
           aria-label={expanded ? `Collapse ${entry.name}` : `Expand ${entry.name}`}
         >
           {loading ? (
@@ -127,18 +128,19 @@ function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilte
           ) : (
             <ChevronRight
               size={14}
-              className={`text-neutral-400 transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
+              className={cn("text-neutral-400 transition-transform duration-150", expanded && "rotate-90")}
             />
           )}
         </button>
 
         <button
           type="button"
-          className={`group flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pr-2 rounded-md text-left transition-colors ${
+          className={cn(
+            "group flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pr-2 rounded-md text-left transition-colors",
             isDisabled
               ? "opacity-40 cursor-default"
-              : "hover:bg-neutral-100/60 dark:hover:bg-neutral-800/40 cursor-pointer"
-          }`}
+              : "hover:bg-neutral-100/60 dark:hover:bg-neutral-800/40 cursor-pointer",
+          )}
           disabled={isDisabled}
           onClick={() => {
             if (isDisabled) return;

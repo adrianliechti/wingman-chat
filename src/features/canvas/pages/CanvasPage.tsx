@@ -4,6 +4,7 @@ import { CanvasInput } from "@/features/canvas/components/CanvasInput";
 import { useImages } from "@/features/canvas/hooks/useImages";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
+import { cn } from "@/shared/lib/cn";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { decodeDataURL, downloadFromUrl, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
@@ -409,7 +410,10 @@ export function CanvasPage() {
 
         {/* Main content — centered on full page width */}
         <div
-          className={`flex-1 flex flex-col items-center min-h-0 p-4 pt-16 relative ${images.length > 0 ? "md:px-24" : ""}`}
+          className={cn(
+            "flex-1 flex flex-col items-center min-h-0 p-4 pt-16 relative",
+            images.length > 0 && "md:px-24",
+          )}
         >
           {selectedImage ? (
             /* Image viewer — centered in space above the refine input */

@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { cn } from "@/shared/lib/cn";
 import { CodeEditor } from "./CodeEditor";
 
 interface JsEditorProps {
@@ -239,7 +240,7 @@ export function JsEditor({ content, onRunReady, onRunningChange }: JsEditorProps
     <div className="h-full flex flex-col overflow-hidden">
       <iframe ref={iframeRef} sandbox="allow-scripts" className="hidden" title="JavaScript Sandbox" />
 
-      <div className={hasOutput ? "h-1/2 overflow-hidden" : "flex-1 overflow-hidden"}>
+      <div className={cn(hasOutput ? "h-1/2 overflow-hidden" : "flex-1 overflow-hidden")}>
         <CodeEditor content={content} language="javascript" />
       </div>
 

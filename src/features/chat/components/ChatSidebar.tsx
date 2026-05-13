@@ -4,6 +4,7 @@ import { GitBranch, MoreVertical, PanelRightOpen, Pencil, Pin, PinOff, Search, T
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
+import { cn } from "@/shared/lib/cn";
 import { type Chat, getTextFromContent } from "@/shared/types/chat";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 
@@ -533,7 +534,7 @@ export function ChatSidebar() {
                     key={virtualRow.key}
                     data-index={virtualRow.index}
                     ref={sidebarVirtualizer.measureElement}
-                    className={item.groupIndex > 0 ? "pt-2" : ""}
+                    className={cn(item.groupIndex > 0 && "pt-2")}
                   >
                     <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
                       <span>{group.category}</span>

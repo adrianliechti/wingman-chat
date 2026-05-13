@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useMemo, useRef, useState } from "react";
+import { cn } from "@/shared/lib/cn";
 
 interface CsvEditorProps {
   content: string;
@@ -165,7 +166,7 @@ export function CsvEditor({ content, viewMode = "table" }: CsvEditorProps) {
                     >
                       <button
                         type="button"
-                        className={`w-full text-left ${header.column.getCanSort() ? "cursor-pointer" : ""}`}
+                        className={cn("w-full text-left", header.column.getCanSort() && "cursor-pointer")}
                         onClick={header.column.getToggleSortingHandler()}
                         disabled={!header.column.getCanSort()}
                       >

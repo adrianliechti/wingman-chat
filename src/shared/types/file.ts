@@ -18,6 +18,7 @@ export interface FileEntry {
   path: string;
   contentType?: string;
   size?: number;
+  lastModified?: number;
 }
 
 /**

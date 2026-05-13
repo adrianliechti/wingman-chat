@@ -1,9 +1,9 @@
 import JSZip from "jszip";
-import type { File, FileEntry, FileSystem } from "@/shared/types/file";
-import { contentToZipValue } from "@/shared/lib/fileContent";
-import { normalizeArtifactPath } from "@/shared/lib/sandbox";
+import { contentToBlob, contentToZipValue } from "@/shared/lib/fileContent";
 import * as opfs from "@/shared/lib/opfs";
-import { downloadBlob } from "@/shared/lib/utils";
+import { normalizeArtifactPath } from "@/shared/lib/sandbox";
+import { downloadBlob, getFileName } from "@/shared/lib/utils";
+import type { File, FileEntry, FileSystem } from "@/shared/types/file";
 
 type FileEventType = "fileCreated" | "fileDeleted" | "fileRenamed" | "fileUpdated";
 
@@ -375,5 +375,18 @@ export class FileSystemManager implements FileSystem {
     } catch (error) {
       throw new Error(`Failed to create zip file: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
+  }
+
+  /**
+   * Download a single file by path.
+   */
+  async downloadFile(path: string): Promise<void> {
+    const file = await this.getFile(path);
+    if (!file) {
+      throw new Error(`File not found: ${path}`);
+    }
+
+    const blob = contentToBlob(file.content, file.contentType);
+    downloadBlob(blob, getFileName(file.path));
   }
 }

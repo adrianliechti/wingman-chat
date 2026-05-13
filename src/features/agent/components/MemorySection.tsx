@@ -3,6 +3,7 @@ import { Edit, Pencil, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
+import { cn } from "@/shared/lib/cn";
 import * as opfs from "@/shared/lib/opfs";
 import { Markdown } from "@/shared/ui/Markdown";
 import { Section } from "./Section";
@@ -243,7 +244,10 @@ export function MemorySection({ agent }: MemorySectionProps) {
           <button
             type="button"
             onClick={toggleMemory}
-            className={`shrink-0 ${agent.memory ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
+            className={cn(
+              "shrink-0",
+              agent.memory ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500",
+            )}
             title={agent.memory ? "Memory enabled (click to disable)" : "Memory disabled (click to enable)"}
           >
             {agent.memory ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}

@@ -115,12 +115,12 @@ export class MCPClient implements ToolProvider {
     icon?: string,
   ) {
     this.id = id;
-    this.url = url;
+    this.url = url.endsWith("/") ? url : `${url}/`;
     this.name = name;
     this.description = description;
     this.headers = headers;
     this._configIcon = icon;
-    this.icon = icon ?? new URL("/favicon.ico", url).href;
+    this.icon = icon ?? new URL("favicon.ico", this.url).href;
     this.authProvider = new BrowserOAuthClientProvider(id);
   }
 
@@ -237,7 +237,7 @@ export class MCPClient implements ToolProvider {
     // Pick up the server-published icon when no config/agent icon was provided.
     if (!this._configIcon) {
       const serverIcons = client.getServerVersion()?.icons as McpIcon[] | undefined;
-      this.icon = pickIcon(serverIcons) ?? new URL("/favicon.ico", this.url).href;
+      this.icon = pickIcon(serverIcons) ?? new URL("favicon.ico", this.url).href;
     }
 
     // Load and store tools and instructions after connection
@@ -274,7 +274,6 @@ export class MCPClient implements ToolProvider {
       this.tools = [];
       this.uiResources.clear();
       this.instructions = undefined;
-      this.icon = this._configIcon ?? new URL("/favicon.ico", this.url).href;
     }
   }
 
@@ -287,7 +286,6 @@ export class MCPClient implements ToolProvider {
     this.uiResources.clear();
     this.toolDefinitions.clear();
     this.instructions = undefined;
-    this.icon = this._configIcon ?? new URL("/favicon.ico", this.url).href;
     this.onDisconnected?.();
   }
 
@@ -331,7 +329,7 @@ export class MCPClient implements ToolProvider {
       this.tools = tools
         .filter((tool) => !isToolVisibilityAppOnly(tool))
         .map((tool) => {
-          const icon = pickIcon(tool.icons as McpIcon[] | undefined);
+          const icon = pickIcon(tool.icons as McpIcon[] | undefined) ?? this.icon;
           return {
             name: tool.name,
             icon,

@@ -239,6 +239,13 @@ function blockTokensToDocx(tokens: Token[]): DocxElement[] {
 export async function markdownToDocx(markdown: string): Promise<Blob> {
   const tokens = marked.lexer(markdown);
   const doc = new Document({
+    styles: {
+      default: {
+        document: {
+          run: { font: "Arial" },
+        },
+      },
+    },
     sections: [{ children: blockTokensToDocx(tokens) }],
   });
   return Packer.toBlob(doc);

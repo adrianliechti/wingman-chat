@@ -156,7 +156,7 @@ export function AgentDrawer() {
   };
 
   return (
-    <div className="h-full flex flex-col md:rounded-lg overflow-hidden transition-all duration-150 ease-linear bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm">
+    <div className="h-full flex flex-col md:rounded-lg overflow-hidden transition-all duration-150 ease-linear bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm pt-4 md:pt-0">
       {/* Header with Agent Selector */}
       <div className="px-3 py-3 border-b border-neutral-200/60 dark:border-neutral-700/60">
         <div className="relative w-full" ref={dropdownRef}>
@@ -321,7 +321,7 @@ export function AgentDrawer() {
       {currentAgent ? (
         <AgentDetails key={currentAgent.id} agent={currentAgent} />
       ) : (
-        <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+        <div className="flex flex-col flex-1 items-center justify-center p-6 text-center overflow-auto">
           <Bot size={48} className="text-neutral-300 dark:text-neutral-600 mb-4" />
           <h3 className="text-lg font-medium text-neutral-900 dark:text-neutral-100 mb-2">
             {agents.length === 0 ? "Create an Agent" : "No Agent Selected"}
