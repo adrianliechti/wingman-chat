@@ -100,3 +100,18 @@ export type PendingElicitation = {
   /** True briefly after notifications/elicitation/complete is received, before the UI is dismissed */
   completed?: boolean;
 };
+
+export type Consent = {
+  message: string;
+};
+
+export type ConsentResult = {
+  action: "accept" | "decline";
+};
+
+export type PendingConsent = {
+  categoryId: string;
+  categoryName: string;
+  consent: Consent;
+  resolve: (result: ConsentResult) => void;
+};

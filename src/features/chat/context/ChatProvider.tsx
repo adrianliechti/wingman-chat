@@ -7,12 +7,18 @@ import { useChats } from "@/features/chat/hooks/useChats";
 import { useModels } from "@/features/chat/hooks/useModels";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
-import { getConfig } from "@/shared/config";
+import { categorySlug, getConfig, type CategoryConfig } from "@/shared/config";
 import { run as agentRun } from "@/shared/lib/agent";
 import { getErrorInfo } from "@/shared/lib/errors";
 import type { Content, Message, Model, ToolCallContent, ToolContext } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
-import type { Elicitation, ElicitationResult, PendingElicitation } from "@/shared/types/elicitation";
+import type {
+  ConsentResult,
+  Elicitation,
+  ElicitationResult,
+  PendingConsent,
+  PendingElicitation,
+} from "@/shared/types/elicitation";
 import { useApp } from "@/shell/hooks/useApp";
 import type { ChatContextType } from "./ChatContext";
 import { ChatContext } from "./ChatContext";
@@ -56,6 +62,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
   const [toolMeta, setToolMeta] = useState<Record<string, Record<string, unknown>>>({});
   const elicitationCompleteCallbacksRef = useRef<Map<string, () => void>>(new Map());
+  const [pendingConsent, setPendingConsent] = useState<PendingConsent | null>(null);
+  // chatId -> set of category ids the user has accepted in this session. Intentionally not persisted.
+  const consentedCategoriesRef = useRef<Map<string, Set<string>>>(new Map());
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
   const streamingMessageRef = useRef<{ chatId: string; message: Message } | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -245,6 +254,51 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
 
+      // Kick off the combined title + category-detection call in parallel with the model turn so
+      // the consent overlay can appear as soon as the user hits send, without waiting for the stream.
+      // When categories are configured we run every turn for detection (and refresh the title every
+      // turn for free). Without categories we keep the original initial + every-3-user-turns cadence.
+      const categoryConfigs = config.chat?.categories ?? [];
+      const hasCategories = categoryConfigs.length > 0;
+      const needsTitle = !initialTitle || conversation.length % 6 === 1;
+      if (needsTitle || hasCategories) {
+        const summarizerModel = config.chat?.summarizer || currentModel.id;
+        client
+          .summarizeChat(
+            summarizerModel,
+            conversation,
+            categoryConfigs.map((c) => ({ id: categorySlug(c.name), description: c.description })),
+          )
+          .then(({ title, categories: detected }) => {
+            if (title) {
+              updateChat(id, () => ({ title }));
+            }
+            if (!detected.length) return;
+            const consented = consentedCategoriesRef.current.get(id) ?? new Set<string>();
+            const toAsk = detected
+              .map((slug) => categoryConfigs.find((c) => categorySlug(c.name) === slug))
+              .find((c): c is CategoryConfig => !!c && !!c.consent && !consented.has(categorySlug(c.name)));
+            if (toAsk) {
+              const customText = typeof toAsk.consent === "string" ? toAsk.consent : null;
+              setPendingConsent((prev) =>
+                prev
+                  ? prev
+                  : {
+                      categoryId: categorySlug(toAsk.name),
+                      categoryName: toAsk.name,
+                      consent: {
+                        message:
+                          customText ??
+                          `This conversation appears to be about "${toAsk.name}". Please acknowledge.`,
+                      },
+                      resolve: () => {},
+                    },
+              );
+            }
+          })
+          .catch((err) => console.error("summarizeChat failed", err));
+      }
+
       // Create tool context with current message content and elicitation support
       const createToolContext = (currentToolCall: { id: string; name: string }): ToolContext => {
         return {
@@ -367,13 +421,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
           return;
         }
 
-        if (!initialTitle || conversation.length % 3 === 0) {
-          client.summarizeTitle(config.chat?.summarizer || currentModel.id, conversation).then((title) => {
-            if (title) {
-              updateChat(id, () => ({ title }));
-            }
-          });
-        }
       } catch (error) {
         console.error(error);
         setIsResponding(false);
@@ -488,6 +535,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [pendingElicitation],
   );
 
+  const resolveConsent = useCallback(
+    (result: ConsentResult) => {
+      setPendingConsent((prev) => {
+        if (!prev) return prev;
+        if (result.action === "accept" && chatId) {
+          const set = consentedCategoriesRef.current.get(chatId) ?? new Set<string>();
+          set.add(prev.categoryId);
+          consentedCategoriesRef.current.set(chatId, set);
+        }
+        return null;
+      });
+    },
+    [chatId],
+  );
+
   const setVoiceToolCall = useCallback(
     (toolName: string | null) => {
       if (toolName === null) {
@@ -561,6 +623,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
     pendingElicitation,
     resolveElicitation,
     toolMeta,
+
+    // Category consent
+    pendingConsent,
+    resolveConsent,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

@@ -2,7 +2,7 @@ import mime from "mime";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod/v3";
-import instructionsSummarizeTitle from "@/features/chat/prompts/chat-title.txt?raw";
+import instructionsSummarizeChat from "@/features/chat/prompts/chat-title.txt?raw";
 import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw";
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
 import instructionsRewriteSelection from "@/features/chat/prompts/rewrite-selection.txt?raw";
@@ -381,16 +381,35 @@ export class Client {
     ); // end traceGenAI
   }
 
-  async summarizeTitle(model: string, input: Message[]): Promise<string | null> {
+  async summarizeChat(
+    model: string,
+    input: Message[],
+    categories: Array<{ id: string; description: string }> = [],
+  ): Promise<{ title: string | null; categories: string[] }> {
     const history = input.slice(-6).map((m) => ({ role: m.role, content: m.content }));
+    const ids = categories.map((c) => c.id);
+    const schema =
+      ids.length > 0
+        ? z
+            .object({
+              title: z.string(),
+              categories: z.array(z.enum(ids as [string, ...string[]])),
+            })
+            .strict()
+        : z
+            .object({
+              title: z.string(),
+              categories: z.array(z.string()),
+            })
+            .strict();
     const result = await this.parse(
       model,
-      instructionsSummarizeTitle,
-      JSON.stringify(history),
-      z.object({ title: z.string() }).strict(),
-      "summarize_title",
+      instructionsSummarizeChat,
+      JSON.stringify({ categories, history }),
+      schema,
+      "summarize_chat",
     );
-    return result?.title ?? null;
+    return { title: result?.title ?? null, categories: result?.categories ?? [] };
   }
 
   async convertCSV(model: string, text: string): Promise<string> {

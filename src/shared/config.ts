@@ -93,10 +93,21 @@ interface TranslatorConfig {
   languages: string[];
 }
 
+export interface CategoryConfig {
+  name: string;
+  description: string;
+  consent?: boolean | string;
+}
+
+export function categorySlug(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, "_");
+}
+
 interface ChatConfig {
   retentionDays?: number;
   optimizer?: string;
   summarizer?: string;
+  categories?: CategoryConfig[];
 }
 
 export interface DriveConfig {

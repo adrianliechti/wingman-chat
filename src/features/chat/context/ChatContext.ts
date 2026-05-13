@@ -1,7 +1,7 @@
 import { createContext } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { Chat, Message, Model } from "@/shared/types/chat";
-import type { ElicitationResult, PendingElicitation } from "@/shared/types/elicitation";
+import type { ConsentResult, ElicitationResult, PendingConsent, PendingElicitation } from "@/shared/types/elicitation";
 
 export interface ChatContextType {
   // Models
@@ -42,6 +42,10 @@ export interface ChatContextType {
 
   /** Live meta for in-flight tool calls; cleared on commit (data persists on `tool_result.meta`). */
   toolMeta: Record<string, Record<string, unknown>>;
+
+  // Category consent state (post-turn advisory overlay)
+  pendingConsent: PendingConsent | null;
+  resolveConsent: (result: ConsentResult) => void;
 }
 
 export const ChatContext = createContext<ChatContextType | undefined>(undefined);

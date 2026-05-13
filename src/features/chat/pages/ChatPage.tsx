@@ -5,6 +5,7 @@ import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { ChatConsentBackdrop, ChatConsentBanner } from "@/features/chat/components/ChatConsentOverlay";
 import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
@@ -535,6 +536,7 @@ export function ChatPage() {
             </button>
           )}
         </main>
+        <ChatConsentBackdrop />
       </div>
 
       <footer
@@ -566,7 +568,7 @@ export function ChatPage() {
       >
         <div
           className={cn(
-            "relative pointer-events-auto md:max-w-4xl mx-auto transition-transform duration-500 ease-in-out",
+            "relative md:max-w-4xl mx-auto transition-transform duration-500 ease-in-out",
             messages.length === 0 &&
             !showAppDrawer &&
             !showAgentDrawer &&
@@ -574,8 +576,11 @@ export function ChatPage() {
             "md:translate-y-[calc(50%-33.333vh)]",
           )}
         >
-          <ChatInput />
+          <div className="pointer-events-auto">
+            <ChatInput />
+          </div>
         </div>
+        <ChatConsentBanner />
       </footer>
 
       {/* Artifacts drawer - right side */}

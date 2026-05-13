@@ -1,6 +1,12 @@
-Summarize the conversation into a short, descriptive title.
+Summarize the conversation and classify it.
 
-Requirements:
+Title:
 - Less than 10 words
 - Capture the main topic or theme
 - No introductory phrases or quotation marks
+
+Categories:
+- You will be given a list of available categories (id + description) along with the conversation.
+- Return every id that clearly applies to the latest user message.
+- Return an empty array if none apply.
+- Do not invent ids that are not in the provided list.
