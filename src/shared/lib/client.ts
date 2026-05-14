@@ -163,27 +163,9 @@ export class Client {
             }
 
             case Role.Assistant: {
-              // TODO: Re-enable reasoning items once encrypted_content verification is fixed server-side
-              // Temporarily skip sending reasoning items back to API to avoid invalid_encrypted_content errors
-              // const reasoningParts = m.content.filter((p): p is ReasoningContent => p.type === 'reasoning' && !!p.signature);
-              // for (const rp of reasoningParts) {
-              //   const reasoningItem: Record<string, unknown> = {
-              //     id: rp.id,
-              //     type: "reasoning",
-              //
-              //     encrypted_content: rp.signature,
-              //   };
-              //
-              //   if (rp.summary) {
-              //     reasoningItem.summary = [{ type: "summary_text", text: rp.summary }];
-              //   }
-              //
-              //   if (rp.text) {
-              //     reasoningItem.content = [{ type: "reasoning_text", text: rp.text }];
-              //   }
-              //
-              //   items.push(reasoningItem as unknown as OpenAI.Responses.ResponseInputItem);
-              // }
+              // Reasoning items are intentionally not replayed back to the API.
+              // encrypted_content is provider+key-specific and breaks on model
+              // swaps and across Azure deployments/subscriptions.
 
               let bufferedText = "";
 
@@ -281,7 +263,6 @@ export class Client {
               instructions: instructions,
               ...(options?.effort
                 ? {
-                    include: ["reasoning.encrypted_content"],
                     reasoning: {
                       effort: options.effort,
                       summary: options.summary ?? "auto",
@@ -318,15 +299,6 @@ export class Client {
                 });
                 currentType = null;
                 handler?.([...contentParts]);
-              } else if (event.item.type === "reasoning") {
-                // Capture encrypted_content signature for multi-turn conversations
-                if (event.item.encrypted_content) {
-                  const reasoningPart = contentParts.find((p) => p.type === "reasoning");
-                  if (reasoningPart && reasoningPart.type === "reasoning") {
-                    reasoningPart.signature = event.item.encrypted_content;
-                    handler?.([...contentParts]);
-                  }
-                }
               } else if (event.item.type === "compaction") {
                 console.log("[Compaction] Context compacted", {
                   id: event.item.id,
@@ -387,20 +359,11 @@ export class Client {
           }
         };
 
-        // Recovery strategies: tried in order, each at most once. Triggered
-        // when the Responses API rejects encrypted_content the current model
-        // can't replay (model swap, ZDR/store:false, expired tokens). The
-        // stripped item type loses cross-turn context but lets the call
-        // succeed instead of surfacing as a hard error to the user.
         const strategies = [
           { name: "reasoning", predicate: isReasoningHistoryError, transform: stripReasoningItems },
           { name: "compaction", predicate: isCompactionHistoryError, transform: stripCompactionItems },
         ] as const;
 
-        // Drop tool_call/tool_call_output items missing their pair (interrupted
-        // turns, partial histories), plus any reasoning items left dangling as a
-        // result. The Responses API rejects orphans with `provided without its
-        // required following item`.
         let currentItems = dropOrphanFunctionCalls(items);
         const tried = new Set<string>();
 
@@ -408,9 +371,6 @@ export class Client {
           try {
             return await attemptStream(currentItems);
           } catch (error) {
-            // Predicates overlap on the generic encrypted_content error, so
-            // walk the strategies in order until one actually strips items.
-            // Each strategy is tried at most once across all retries.
             let stripped = false;
             for (const strategy of strategies) {
               if (tried.has(strategy.name)) continue;
@@ -425,7 +385,7 @@ export class Client {
               });
 
               currentItems = transformed;
-              handler?.([]); // reset accumulated UI content for the retry
+              handler?.([]);
               stripped = true;
               break;
             }
