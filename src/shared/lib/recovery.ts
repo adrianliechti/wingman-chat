@@ -2,14 +2,10 @@
  * Recovery helpers for Responses API history errors.
  *
  * The Responses API can reject inputs whose encrypted_content the current
- * model can't replay — reasoning items from a different model, stale
- * compaction tokens after a model swap, or items whose paired follow-up
- * lives only in server state. These errors can't be detected upfront, so
- * the caller catches them and retries once with the offending items
- * stripped from the input batch.
- *
- * Mirrors wingman-vscode/src/recovery.ts and openai-agents-python's
- * `drop_orphan_function_calls`.
+ * model can't replay (reasoning items from a different model, ZDR /
+ * store:false, expired tokens) or whose paired follow-up is missing
+ * (interrupted tool execution). These errors can't be detected upfront, so
+ * the caller catches them and retries with the offending items stripped.
  */
 
 import { APIError } from "openai/error";
@@ -23,11 +19,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * Match the shared "encrypted_content rejected" failure. The same error is
- * emitted for reasoning and compaction items, so the type-specific predicates
- * below both include this — the caller's retry order disambiguates.
- */
 const ENCRYPTED_CONTENT_REJECTED =
   /encrypted[_ ]content.*(?:could not be|cannot be|failed to be)\s*(?:verified|decrypted|parsed|read|decoded)/i;
 
@@ -44,28 +35,9 @@ export function isReasoningHistoryError(error: unknown): boolean {
   );
 }
 
-/**
- * Detect Responses API errors caused by a stale compaction item — compaction
- * encrypted_content the current model can't verify (model swap, key rotation,
- * or compaction tied to a since-expired conversation).
- */
-export function isCompactionHistoryError(error: unknown): boolean {
-  const msg = errorMessage(error);
-  return ENCRYPTED_CONTENT_REJECTED.test(msg) || /type ['"]compaction['"].*provided without/i.test(msg);
-}
-
 /** Strip reasoning items from a prepared Responses input batch. */
 export function stripReasoningItems(items: ResponseInputItem[]): ResponseInputItem[] {
   return items.filter((item) => item.type !== "reasoning");
-}
-
-/**
- * Strip compaction items from a prepared Responses input batch.
- * Compaction items are pushed with a structural cast (the SDK union doesn't
- * model them yet), so we read `type` defensively.
- */
-export function stripCompactionItems(items: ResponseInputItem[]): ResponseInputItem[] {
-  return items.filter((item) => (item as { type?: string }).type !== "compaction");
 }
 
 /**

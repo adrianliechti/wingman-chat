@@ -36,7 +36,7 @@ export interface RunHooks {
 
   /**
    * Transform messages before they're sent to the LLM.
-   * Used by chat to prune at compaction boundaries.
+   * Used by chat to prune at summary boundaries.
    */
   prepareMessages?: (messages: Message[]) => Message[];
 

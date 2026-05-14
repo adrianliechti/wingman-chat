@@ -7,8 +7,9 @@ import { useChats } from "@/features/chat/hooks/useChats";
 import { useModels } from "@/features/chat/hooks/useModels";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
-import { categorySlug, getConfig, type CategoryConfig } from "@/shared/config";
+import { type CategoryConfig, categorySlug, getConfig } from "@/shared/config";
 import { run as agentRun } from "@/shared/lib/agent";
+import type { Client } from "@/shared/lib/client";
 import { getErrorInfo } from "@/shared/lib/errors";
 import type { Content, Message, Model, ToolCallContent, ToolContext } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
@@ -23,18 +24,70 @@ import { useApp } from "@/shell/hooks/useApp";
 import type { ChatContextType } from "./ChatContext";
 import { ChatContext } from "./ChatContext";
 
-/** Drop all messages before the last compaction item to keep API requests small. */
-function pruneAtCompaction(messages: Message[]): Message[] {
-  let lastCompactionIndex = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].content.some((p) => p.type === "compaction")) {
-      lastCompactionIndex = i;
-      break;
+/** Drop all messages before the last summary marker so API requests stay small. */
+function pruneAtSummary(messages: Message[]): Message[] {
+  const idx = messages.findLastIndex((m) => m.content.some((p) => p.type === "summary"));
+  if (idx <= 0) return [...messages];
+  console.log(`[Summary] Pruning ${idx} messages before summary marker`);
+  return messages.slice(idx);
+}
+
+/** Rough token estimate (chars / 4). Skips binary content (images/files). */
+function estimateTokens(messages: Message[]): number {
+  let chars = 0;
+  for (const msg of messages) {
+    for (const part of msg.content) {
+      if (part.type === "text" || part.type === "summary") {
+        chars += part.text.length;
+      } else if (part.type === "reasoning") {
+        chars += part.text.length + (part.summary?.length ?? 0);
+      } else if (part.type === "tool_call") {
+        chars += part.name.length + part.arguments.length;
+      } else if (part.type === "tool_result") {
+        for (const r of part.result) {
+          if (r.type === "text") chars += r.text.length;
+        }
+      }
     }
   }
-  if (lastCompactionIndex <= 0) return [...messages];
-  console.log(`[Compaction] Pruning ${lastCompactionIndex} messages before compaction item`);
-  return messages.slice(lastCompactionIndex);
+  return Math.ceil(chars / 4);
+}
+
+/**
+ * Insert a summary marker before the current turn if the conversation exceeds
+ * `threshold` estimated tokens. Original user/assistant messages stay in
+ * storage (the UI still shows them); only the API request gets pruned at the
+ * marker by `pruneAtSummary`. Any prior summary marker is dropped so they
+ * don't stack — its content is preserved by feeding it to the new summary.
+ */
+async function compactIfNeeded(
+  conversation: Message[],
+  threshold: number,
+  client: Client,
+  summarizerModel: string,
+): Promise<Message[]> {
+  if (!threshold || conversation.length < 2) return conversation;
+  if (estimateTokens(conversation) < threshold) return conversation;
+
+  // Last message is the user's just-sent turn — don't summarize it.
+  const currentTurnIdx = conversation.length - 1;
+  const toSummarize = conversation.slice(0, currentTurnIdx);
+
+  console.log(
+    `[Summary] Compacting ${toSummarize.length} messages (~${estimateTokens(toSummarize)} est. tokens, threshold ${threshold})`,
+  );
+
+  const summary = await client.summarizeHistory(summarizerModel, toSummarize);
+  if (!summary) return conversation;
+
+  const summaryMsg: Message = {
+    role: Role.Assistant,
+    content: [{ type: "summary", text: summary }],
+  };
+  // Keep all original messages in storage; strip prior summary markers so
+  // multiple don't accumulate. pruneAtSummary slices at the latest one.
+  const preserved = toSummarize.filter((m) => !m.content.some((p) => p.type === "summary"));
+  return [...preserved, summaryMsg, conversation[currentTurnIdx]];
 }
 
 interface ChatProviderProps {
@@ -288,8 +341,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                       categoryName: toAsk.name,
                       consent: {
                         message:
-                          customText ??
-                          `This conversation appears to be about "${toAsk.name}". Please acknowledge.`,
+                          customText ?? `This conversation appears to be about "${toAsk.name}". Please acknowledge.`,
                       },
                       resolve: () => {},
                     },
@@ -343,15 +395,27 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const tools = await chatTools();
         const instructions = chatInstructions();
 
+        // Proactive compaction: condense older messages into a summary marker
+        // before the LLM call when the estimated token count exceeds the
+        // model's threshold. The summary then survives provider/model swaps
+        // because it's plain text, unlike the prior server-side compaction blob.
+        if (currentModel.compactThreshold) {
+          const summarizerModel = config.chat?.summarizer || currentModel.id;
+          const compacted = await compactIfNeeded(conversation, currentModel.compactThreshold, client, summarizerModel);
+          if (compacted !== conversation) {
+            conversation = compacted;
+            updateChat(id, () => ({ messages: conversation }));
+          }
+        }
+
         conversation = await agentRun(client, currentModel.id, instructions, conversation, tools, {
           options: {
             effort: model?.effort,
             summary: model?.summary,
             verbosity: model?.verbosity,
-            compactThreshold: model?.compactThreshold,
             signal: abortController.signal,
           },
-          prepareMessages: pruneAtCompaction,
+          prepareMessages: pruneAtSummary,
           onTurnStart: () => {
             updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: [] } });
           },
@@ -368,9 +432,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             conversation = [...conversation, toolResult];
             setPendingElicitation(null);
             // Drop live meta entries — data now lives on tool_result.meta.
-            const completedIds = toolResult.content
-              .filter((p) => p.type === "tool_result")
-              .map((p) => p.id);
+            const completedIds = toolResult.content.filter((p) => p.type === "tool_result").map((p) => p.id);
             if (completedIds.length > 0) {
               setToolMeta((prev) => {
                 let changed = false;
@@ -420,7 +482,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
         if (aborted) {
           return;
         }
-
       } catch (error) {
         console.error(error);
         setIsResponding(false);

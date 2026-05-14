@@ -7,6 +7,7 @@ import instructionsConvertCsv from "@/features/chat/prompts/convert-csv.txt?raw"
 import instructionsConvertMd from "@/features/chat/prompts/convert-md.txt?raw";
 import instructionsRewriteSelection from "@/features/chat/prompts/rewrite-selection.txt?raw";
 import instructionsRewriteText from "@/features/chat/prompts/rewrite-text.txt?raw";
+import instructionsSummarizeHistory from "@/features/chat/prompts/summarize-history.txt?raw";
 import type { SearchResult } from "@/features/research/types/search";
 import instructionsOptimizeSkill from "@/prompts/skill-optimizer.txt?raw";
 import type {
@@ -24,13 +25,7 @@ import { Role } from "@/shared/types/chat";
 import { isAbortError } from "./errors";
 import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
-import {
-  dropOrphanFunctionCalls,
-  isCompactionHistoryError,
-  isReasoningHistoryError,
-  stripCompactionItems,
-  stripReasoningItems,
-} from "./recovery";
+import { dropOrphanFunctionCalls, isReasoningHistoryError, stripReasoningItems } from "./recovery";
 import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
 
 function expandToSentences(text: string, start: number, end: number): string {
@@ -100,7 +95,6 @@ export class Client {
       effort?: "none" | "minimal" | "low" | "medium" | "high";
       summary?: "auto" | "concise" | "detailed";
       verbosity?: "low" | "medium" | "high";
-      compactThreshold?: number;
       signal?: AbortSignal;
     },
   ): Promise<Message> {
@@ -199,12 +193,15 @@ export class Client {
                   });
                 }
 
-                if (part.type === "compaction") {
+                if (part.type === "summary") {
+                  // Replay client-side summary as assistant text. The wrapper
+                  // tells the model the prior context was condensed and to
+                  // continue naturally without referencing the summary itself.
                   flushAssistantText();
                   items.push({
-                    type: "compaction",
-                    id: part.id,
-                    encrypted_content: part.encrypted_content,
+                    type: "message",
+                    role: "assistant",
+                    content: `[Earlier conversation condensed to save context. Continue naturally without referencing this summary.]\n\n${part.text}`,
                   });
                 }
               }
@@ -274,11 +271,6 @@ export class Client {
                     text: { verbosity: options.verbosity },
                   }
                 : {}),
-              ...(options?.compactThreshold
-                ? {
-                    context_management: [{ type: "compaction" as const, compact_threshold: options.compactThreshold }],
-                  }
-                : {}),
             })
             .on("response.reasoning_summary_text.delta", (event) => {
               appendReasoning(event.item_id, "", event.delta);
@@ -298,17 +290,6 @@ export class Client {
                   arguments: event.item.arguments,
                 });
                 currentType = null;
-                handler?.([...contentParts]);
-              } else if (event.item.type === "compaction") {
-                console.log("[Compaction] Context compacted", {
-                  id: event.item.id,
-                  bytes: event.item.encrypted_content.length,
-                });
-                contentParts.push({
-                  type: "compaction",
-                  id: event.item.id,
-                  encrypted_content: event.item.encrypted_content,
-                });
                 handler?.([...contentParts]);
               }
             });
@@ -359,38 +340,18 @@ export class Client {
           }
         };
 
-        const strategies = [
-          { name: "reasoning", predicate: isReasoningHistoryError, transform: stripReasoningItems },
-          { name: "compaction", predicate: isCompactionHistoryError, transform: stripCompactionItems },
-        ] as const;
-
-        let currentItems = dropOrphanFunctionCalls(items);
-        const tried = new Set<string>();
-
-        while (true) {
-          try {
-            return await attemptStream(currentItems);
-          } catch (error) {
-            let stripped = false;
-            for (const strategy of strategies) {
-              if (tried.has(strategy.name)) continue;
-              if (!strategy.predicate(error)) continue;
-              tried.add(strategy.name);
-
-              const transformed = strategy.transform(currentItems);
-              if (transformed.length === currentItems.length) continue;
-
-              console.warn(`[Recovery] Retrying after ${strategy.name} history error`, {
-                removedItems: currentItems.length - transformed.length,
-              });
-
-              currentItems = transformed;
-              handler?.([]);
-              stripped = true;
-              break;
-            }
-            if (!stripped) throw error;
-          }
+        const inputItems = dropOrphanFunctionCalls(items);
+        try {
+          return await attemptStream(inputItems);
+        } catch (error) {
+          if (!isReasoningHistoryError(error)) throw error;
+          const stripped = stripReasoningItems(inputItems);
+          if (stripped.length === inputItems.length) throw error;
+          console.warn("[Recovery] Retrying after reasoning history error", {
+            removedItems: inputItems.length - stripped.length,
+          });
+          handler?.([]);
+          return await attemptStream(stripped);
         }
       },
       { effort: options?.effort, verbosity: options?.verbosity, toolCount: tools?.length },
@@ -426,6 +387,23 @@ export class Client {
       "summarize_chat",
     );
     return { title: result?.title ?? null, categories: result?.categories ?? [] };
+  }
+
+  /**
+   * Summarize a conversation history into a single dense text block.
+   * Used to condense older messages when the context window fills up.
+   * Returns plain text — caller wraps it into a SummaryContent part.
+   */
+  async summarizeHistory(model: string, input: Message[]): Promise<string> {
+    const history = input.map((m) => ({ role: m.role, content: m.content }));
+    const result = await this.parse(
+      model,
+      instructionsSummarizeHistory,
+      JSON.stringify({ history }),
+      z.object({ summary: z.string() }).strict(),
+      "summarize_history",
+    );
+    return result?.summary ?? "";
   }
 
   async convertCSV(model: string, text: string): Promise<string> {

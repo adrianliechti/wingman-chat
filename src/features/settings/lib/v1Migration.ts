@@ -103,21 +103,26 @@ function migrateMessageError(error: LegacyMessage["error"]): MessageError | null
 function migrateToolResultPart(part: LegacyContentPart): ToolResultItem {
   const migrated = migrateContentPart(part);
 
-  if (migrated.type === "text" || migrated.type === "image" || migrated.type === "audio" || migrated.type === "file") {
+  if (
+    migrated &&
+    (migrated.type === "text" || migrated.type === "image" || migrated.type === "audio" || migrated.type === "file")
+  ) {
     return migrated;
   }
 
   return {
     type: "text",
-    text: "text" in migrated ? migrated.text : "",
+    text: migrated && "text" in migrated ? migrated.text : "",
   };
 }
 
 /**
  * Migrate content part from old format to new format.
  * Handles mimeType+data → data URL conversion for media types.
+ * Returns null for parts that should be dropped (e.g. legacy compaction
+ * blobs whose encrypted content can't be replayed).
  */
-function migrateContentPart(part: LegacyContentPart): Content {
+function migrateContentPart(part: LegacyContentPart): Content | null {
   if (part.type === "image" && part.mimeType && part.data) {
     return { type: "image", name: part.name, data: toDataUrl(part.mimeType, part.data) };
   }
@@ -163,11 +168,10 @@ function migrateContentPart(part: LegacyContentPart): Content {
   }
 
   if (part.type === "compaction") {
-    return {
-      type: "compaction",
-      id: part.id ?? crypto.randomUUID(),
-      encrypted_content: part.encrypted_content ?? "",
-    };
+    // Legacy server-side compaction blob — encrypted with provider keys we
+    // can no longer verify. Drop on import; the surrounding messages still
+    // carry the user-visible context.
+    return null;
   }
 
   if (part.type === "image" && part.data) {
@@ -205,7 +209,7 @@ function migrateMessage(msg: LegacyMessage): Message {
   // Check if already in new format (content is array with no attachments and no separate mimeType fields)
   if (Array.isArray(msg.content) && !msg.attachments?.length) {
     // Migrate existing content parts to use data URLs (handle old mimeType+data format)
-    const migratedContent: Content[] = msg.content.map(migrateContentPart);
+    const migratedContent: Content[] = msg.content.map(migrateContentPart).filter((p): p is Content => p !== null);
     return { role, content: migratedContent, error };
   }
 
@@ -218,7 +222,8 @@ function migrateMessage(msg: LegacyMessage): Message {
   } else if (Array.isArray(msg.content)) {
     // Already array, copy existing content (with migration)
     for (const part of msg.content) {
-      content.push(migrateContentPart(part));
+      const migrated = migrateContentPart(part);
+      if (migrated) content.push(migrated);
     }
   }
 
