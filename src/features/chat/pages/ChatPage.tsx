@@ -582,7 +582,7 @@ export function ChatPage() {
       {shouldRenderArtifactsDrawer && (
         <div
           className={cn(
-            "transform fixed right-0 md:right-3 md:top-18 md:bottom-4 max-w-none z-20",
+            "transform fixed right-0 md:top-18 md:bottom-0 max-w-none z-20",
             !isArtifactsResizing && "transition-all duration-300 ease-out",
             isMobile ? "w-full" : "",
             isArtifactsDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
@@ -615,7 +615,7 @@ export function ChatPage() {
               </div>
             </button>
           )}
-          <div className="h-full md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm overflow-hidden">
+          <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden">
             <ArtifactsDrawer />
           </div>
         </div>

@@ -1,15 +1,17 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
+  Check,
   ChevronDown,
   Code,
   Download,
   Eye,
   File as FileIcon2,
+  Files,
   Loader2,
-  PanelRightClose,
   PanelRightOpen,
   Play,
   Shapes,
+  Terminal,
   Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -505,7 +507,7 @@ export function ArtifactsDrawer() {
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: File drag-and-drop requires drag events on the drawer surface.
     <div
-      className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md pt-2 md:pt-0"
+      className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative pt-2 md:pt-0"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -536,12 +538,13 @@ export function ArtifactsDrawer() {
         }}
       />
 
-      {/* Outer horizontal layout: left (topbar + content) | right (file browser, full height) */}
+      {/* Outer horizontal split: left = top bar + editor + terminal; right = files browser (full height) */}
       <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
-        {/* Left column: top bar + editor/terminal stack */}
-        <ResizablePanel defaultSize={80} minSize={200} className="flex flex-col min-h-0">
-          {/* Top Bar with File Title and Actions */}
-          <div className={cn("shrink-0 h-10 flex items-center px-2 gap-1", chat?.id && files.length > 0 && "border-b border-black/10 dark:border-white/10")}>
+        {/* Left column: top bar + vertical editor/terminal split */}
+        <ResizablePanel defaultSize={75} minSize={200} className="h-full flex flex-col overflow-hidden">
+
+          {/* Top bar — lives inside the left column so the files browser spans full drawer height */}
+          <div className="shrink-0 h-10 flex items-center px-2 gap-1">
             {/* File title */}
             <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative" ref={filePickerRef}>
               {activeFile && (
@@ -729,65 +732,79 @@ export function ArtifactsDrawer() {
               </>
             )}
 
-            {/* Workspace action group: files */}
+            {/* Workspace action group: panels dropdown */}
             {chat?.id && (
-              <div className="flex items-center gap-0.5">
-                {/* Files browser toggle — only when files exist */}
-                {files.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowFilesBrowser((v) => !v)}
-                    className={cn(
-                      "p-1.5 rounded transition-all duration-150 ease-out",
-                      showFilesBrowser
-                        ? "text-neutral-700 dark:text-neutral-200 bg-black/5 dark:bg-white/5"
-                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5",
-                    )}
-                    title={showFilesBrowser ? "Hide files" : "Show files"}
-                  >
-                    {showFilesBrowser ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
-                  </button>
-                )}
-              </div>
+              <Menu as="div" className="relative">
+                <MenuButton
+                  className="flex items-center gap-0.5 p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                  title="Toggle panels"
+                >
+                  <PanelRightOpen size={14} />
+                  <ChevronDown size={10} className="opacity-60" />
+                </MenuButton>
+                <MenuItems
+                  modal={false}
+                  transition
+                  anchor="bottom end"
+                  className="mt-1 origin-top-right rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-40 transition duration-100 ease-out data-closed:scale-95 data-closed:opacity-0"
+                >
+                  {files.length > 0 && (
+                    <MenuItem>
+                      <button
+                        type="button"
+                        onClick={() => setShowFilesBrowser((v) => !v)}
+                        className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                      >
+                        <Files size={12} className="shrink-0 text-neutral-400" />
+                        <span className="flex-1 text-left">Files</span>
+                        {showFilesBrowser && <Check size={11} className="shrink-0 text-neutral-500 dark:text-neutral-400" />}
+                      </button>
+                    </MenuItem>
+                  )}
+                  <MenuItem>
+                    <button
+                      type="button"
+                      onClick={toggleTerminal}
+                      className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                    >
+                      <Terminal size={12} className="shrink-0 text-neutral-400" />
+                      <span className="flex-1 text-left">Terminal</span>
+                      {showTerminal && <Check size={11} className="shrink-0 text-neutral-500 dark:text-neutral-400" />}
+                    </button>
+                  </MenuItem>
+                </MenuItems>
+              </Menu>
             )}
           </div>
 
-          {/* Editor + Terminal stacked vertically, terminal spans full left-column width */}
-          <div className="flex-1 overflow-hidden min-h-0">
-            <ResizablePanelGroup orientation="vertical" className="h-full">
-              {/* Editor area */}
-              <ResizablePanel defaultSize={70} minSize={20}>
-                <div
-                  className={cn(
-                    "h-full overflow-hidden relative z-0",
-                  )}
-                >
-                  {renderEditor()}
+          {/* Vertical split: editor on top, terminal on bottom */}
+          <ResizablePanelGroup orientation="vertical" className="flex-1 min-h-0">
+            <ResizablePanel defaultSize={70} minSize={20} className="h-full overflow-hidden relative z-0">
+              {renderEditor()}
+            </ResizablePanel>
+
+            {/* Terminal — spans only the left column, below the editor */}
+            {terminalMounted && showTerminal && (
+              <ResizablePanel defaultSize={30} minSize={80}>
+                <div className="h-full relative z-10 border-t border-black/10 dark:border-white/10 shadow-[0_-8px_20px_-2px_rgba(0,0,0,0.12)] dark:shadow-[0_-8px_20px_-2px_rgba(0,0,0,0.5)]">
+                  <BashEditor key="terminal" visible={showTerminal} />
                 </div>
               </ResizablePanel>
-
-              {/* Terminal panel — full width of left column */}
-              {terminalMounted && showTerminal && (
-                <ResizablePanel defaultSize={30} minSize={80}>
-                  <div className="h-full relative z-10 border-t border-black/10 dark:border-white/10 shadow-[0_-8px_20px_-2px_rgba(0,0,0,0.12)] dark:shadow-[0_-8px_20px_-2px_rgba(0,0,0,0.5)]">
-                    <BashEditor key="terminal" visible={showTerminal} />
-                  </div>
-                </ResizablePanel>
-              )}
-            </ResizablePanelGroup>
-            {/* Keep terminal mounted but hidden when closed */}
-            {terminalMounted && !showTerminal && (
-              <div className="hidden">
-                <BashEditor key="terminal" visible={false} />
-              </div>
             )}
-          </div>
+          </ResizablePanelGroup>
+
+          {/* Keep terminal mounted but hidden when closed */}
+          {terminalMounted && !showTerminal && (
+            <div className="hidden">
+              <BashEditor key="terminal" visible={false} />
+            </div>
+          )}
         </ResizablePanel>
 
-        {/* Right column: File browser spanning full drawer height (including alongside top bar) */}
+        {/* Files browser — right panel spanning full drawer height (including header and over terminal) */}
         {files.length > 0 && fs && showFilesBrowser && (
           <ResizablePanel defaultSize={25} minSize={120}>
-            <div className="h-full overflow-hidden border-l border-black/10 dark:border-white/10 bg-neutral-50/80 dark:bg-neutral-900/60 shadow-[-8px_0_20px_-2px_rgba(0,0,0,0.12)] dark:shadow-[-8px_0_20px_-2px_rgba(0,0,0,0.5)]">
+            <div className="h-full overflow-hidden border-l border-black/10 dark:border-white/10 bg-neutral-50/80 dark:bg-neutral-900/60">
               <ArtifactsBrowser
                 fs={fs}
                 files={files}
@@ -812,13 +829,12 @@ export function ArtifactsDrawer() {
                     console.error("Failed to download file:", error);
                   }
                 }}
-                showTerminal={showTerminal}
-                onToggleTerminal={toggleTerminal}
               />
             </div>
           </ResizablePanel>
         )}
       </ResizablePanelGroup>
+
       {activeDrive && (
         <DrivePicker
           isOpen={!!activeDrive}
