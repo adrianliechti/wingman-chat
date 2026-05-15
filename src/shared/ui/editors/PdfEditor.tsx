@@ -35,7 +35,7 @@ export const PdfEditor = memo(function PdfEditor({ content }: PdfEditorProps) {
                     if (cancelled) break;
 
                     const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({ scale: window.devicePixelRatio >= 2 ? 2 : 1.5 });
+                    const viewport = page.getViewport({ scale: window.devicePixelRatio >= 2 ? 1.5 : 1.2 });
 
                     const canvas = document.createElement("canvas");
                     canvas.width = viewport.width;
@@ -44,7 +44,7 @@ export const PdfEditor = memo(function PdfEditor({ content }: PdfEditorProps) {
                     canvas.style.display = "block";
                     canvas.style.marginBottom = "8px";
                     canvas.style.borderRadius = "4px";
-                    canvas.style.boxShadow = "0 1px 4px rgba(0,0,0,0.15)";
+                    canvas.style.boxShadow = "0 -1px 4px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.12)";
 
                     container.appendChild(canvas);
 
@@ -73,7 +73,7 @@ export const PdfEditor = memo(function PdfEditor({ content }: PdfEditorProps) {
 
     return (
         <div className="h-full overflow-auto">
-            <div ref={containerRef} className="max-w-4xl mx-auto" />
+            <div ref={containerRef} className="max-w-3xl mx-auto px-4 pt-1 pb-4" />
         </div>
     );
 });

@@ -25,7 +25,7 @@ import { Role } from "@/shared/types/chat";
 import { isAbortError } from "./errors";
 import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
-import { dropOrphanFunctionCalls, isReasoningHistoryError, stripReasoningItems } from "./recovery";
+import { dropOrphanFunctionCalls } from "./recovery";
 import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
 
 function expandToSentences(text: string, start: number, end: number): string {
@@ -340,19 +340,7 @@ export class Client {
           }
         };
 
-        const inputItems = dropOrphanFunctionCalls(items);
-        try {
-          return await attemptStream(inputItems);
-        } catch (error) {
-          if (!isReasoningHistoryError(error)) throw error;
-          const stripped = stripReasoningItems(inputItems);
-          if (stripped.length === inputItems.length) throw error;
-          console.warn("[Recovery] Retrying after reasoning history error", {
-            removedItems: inputItems.length - stripped.length,
-          });
-          handler?.([]);
-          return await attemptStream(stripped);
-        }
+        return await attemptStream(dropOrphanFunctionCalls(items));
       },
       { effort: options?.effort, verbosity: options?.verbosity, toolCount: tools?.length },
     ); // end traceGenAI

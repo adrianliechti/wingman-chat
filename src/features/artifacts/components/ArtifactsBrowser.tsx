@@ -1,5 +1,5 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { ChevronDown, ChevronRight, Download, Edit2, Folder, FolderOpen, HardDrive, Loader2, MoreVertical, Terminal, Trash, Upload } from "lucide-react";
+import { Download, Edit2, Folder, FolderOpen, MoreVertical, Trash, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { DriveConfig } from "@/shared/config";
@@ -108,39 +108,35 @@ function FileTreeNode({
       <>
         <button
           type="button"
-          className="flex w-full items-center gap-2 p-1 text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0"
-          style={{ marginLeft: `${level * 10}px` }}
+          className="flex w-full items-center gap-1.5 h-7 text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer min-w-0"
+          style={{ paddingLeft: `${level * 12 + 12}px` }}
           onClick={() => onToggleFolder(node.path)}
         >
-          <div className="flex items-center gap-1 min-w-0">
-            {isExpanded ? (
-              <ChevronDown size={14} className="text-neutral-500 shrink-0" />
-            ) : (
-              <ChevronRight size={14} className="text-neutral-500 shrink-0" />
-            )}
-            {isExpanded ? (
-              <FolderOpen size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-            ) : (
-              <Folder size={16} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-            )}
-            <span className="text-sm text-neutral-700 dark:text-neutral-300 truncate">{node.name}</span>
-          </div>
+          {isExpanded ? (
+            <FolderOpen size={13} className="text-neutral-400 dark:text-neutral-500 shrink-0" />
+          ) : (
+            <Folder size={13} className="text-neutral-400 dark:text-neutral-500 shrink-0" />
+          )}
+          <span className="text-xs text-neutral-600 dark:text-neutral-400 truncate">{node.name}</span>
         </button>
-        {isExpanded &&
-          node.children?.map((child) => (
-            <FileTreeNode
-              key={child.path}
-              node={child}
-              level={level + 1}
-              openTabs={openTabs}
-              onFileClick={onFileClick}
-              expandedFolders={expandedFolders}
-              onToggleFolder={onToggleFolder}
-              onDeleteFile={onDeleteFile}
-              onRenameFile={onRenameFile}
-              onDownloadFile={onDownloadFile}
-            />
-          ))}
+        {isExpanded && node.children && node.children.length > 0 && (
+          <div>
+            {node.children.map((child) => (
+              <FileTreeNode
+                key={child.path}
+                node={child}
+                level={level + 1}
+                openTabs={openTabs}
+                onFileClick={onFileClick}
+                expandedFolders={expandedFolders}
+                onToggleFolder={onToggleFolder}
+                onDeleteFile={onDeleteFile}
+                onRenameFile={onRenameFile}
+                onDownloadFile={onDownloadFile}
+              />
+            ))}
+          </div>
+        )}
       </>
     );
   }
@@ -150,18 +146,18 @@ function FileTreeNode({
 
   return (
     <div
-      className="flex items-center gap-1 py-1 pl-1 pr-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors min-w-0 group relative"
-      style={{ marginLeft: `${level * 10 + 4}px` }}
+      className="flex items-center gap-1 h-7 pr-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors min-w-0 group relative"
+      style={{ paddingLeft: `${level * 12 + 12}px` }}
     >
       <button
         type="button"
         onClick={() => onFileClick(node.path)}
         className="flex items-center gap-1 flex-1 min-w-0 text-left overflow-hidden"
       >
-        <span className="shrink-0"><FileIcon name={node.path} contentType={node.file?.contentType} /></span>
+        <span className="shrink-0"><FileIcon name={node.path} contentType={node.file?.contentType} size={14} /></span>
         <span
           className={cn(
-            "text-sm truncate",
+            "text-xs truncate",
             isTabOpen ? "font-medium text-neutral-900 dark:text-neutral-100" : "text-neutral-700 dark:text-neutral-300",
           )}
           title={node.name}
@@ -218,95 +214,7 @@ function FileTreeNode({
   );
 }
 
-// ── Upload Button (bottom of panel, "Add sources" style) ─────────────────────
 
-function UploadButton({
-  isProcessing,
-  drives,
-  onUploadLocal,
-  onUploadDrive,
-}: {
-  isProcessing?: boolean;
-  drives: DriveConfig[];
-  onUploadLocal?: () => void;
-  onUploadDrive?: (drive: DriveConfig) => void;
-}) {
-  const [showMenu, setShowMenu] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!showMenu) return;
-    const handleClick = (e: MouseEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) {
-        setShowMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [showMenu]);
-
-  const hasDrives = drives.length > 0 && onUploadDrive;
-
-  return (
-    <div ref={containerRef} className="@container px-3 pt-2 pb-3 relative shrink-0">
-      {isProcessing ? (
-        <div className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm border border-dashed border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-400">
-          <Loader2 size={15} className="animate-spin" />
-          <span className="@[8rem]:inline hidden">Uploading…</span>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => {
-            if (hasDrives) {
-              setShowMenu((v) => !v);
-            } else {
-              onUploadLocal?.();
-            }
-          }}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm border border-dashed border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-600 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
-        >
-          <Upload size={15} className="shrink-0" />
-          <span className="@[8rem]:inline hidden">Upload files</span>
-        </button>
-      )}
-
-      {showMenu && hasDrives && (
-        <>
-          <button
-            type="button"
-            aria-label="Close upload menu"
-            className="fixed inset-0 z-40"
-            onClick={() => setShowMenu(false)}
-          />
-          <div className="absolute bottom-full left-3 right-3 mb-1 z-50 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg py-1">
-            {onUploadLocal && (
-              <button
-                type="button"
-                onClick={() => { setShowMenu(false); onUploadLocal(); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <Upload size={15} className="text-neutral-500" />
-                Upload
-              </button>
-            )}
-            {drives.map((drive) => (
-              <button
-                key={drive.id}
-                type="button"
-                onClick={() => { setShowMenu(false); onUploadDrive?.(drive); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <HardDrive size={15} className="text-neutral-500" />
-                {drive.name}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
 
 interface ArtifactsBrowserProps {
   fs: FileSystemManager;
@@ -319,8 +227,6 @@ interface ArtifactsBrowserProps {
   onUploadDrive?: (drive: DriveConfig) => void;
   onDownloadAll?: () => void;
   onDownloadFile?: (path: string) => void;
-  showTerminal?: boolean;
-  onToggleTerminal?: () => void;
 }
 
 export function ArtifactsBrowser({
@@ -328,14 +234,11 @@ export function ArtifactsBrowser({
   files,
   openTabs,
   onFileClick,
-  drives = [],
   isProcessing = false,
   onUploadLocal,
   onUploadDrive,
   onDownloadAll,
   onDownloadFile,
-  showTerminal,
-  onToggleTerminal,
 }: ArtifactsBrowserProps) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -442,85 +345,77 @@ export function ArtifactsBrowser({
 
   return (
     <div className="w-full h-full flex flex-col">
-      {/* Header: three-dot menu */}
-      <div className="shrink-0 h-10 flex items-center border-b border-black/10 dark:border-white/10 px-3 gap-1">
-        <div className="flex-1" />
-        {/* Three-dot menu for bulk actions */}
-        {(onDownloadAll && files.length > 0 || onToggleTerminal) && (
-          <Menu>
-            <MenuButton
-              className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
-              title="More actions"
-            >
-              <MoreVertical size={14} />
-            </MenuButton>
-            <MenuItems
-              modal={false}
-              transition
-              anchor="bottom end"
-              className="mt-1 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-44"
-            >
-              {onToggleTerminal && (
-                <MenuItem>
-                  <button
-                    type="button"
-                    onClick={onToggleTerminal}
-                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
-                  >
-                    <Terminal size={12} className="text-neutral-500" />
-                    {showTerminal ? "Close terminal" : "Open terminal"}
-                  </button>
-                </MenuItem>
-              )}
-              {onDownloadAll && files.length > 0 && (
-                <MenuItem>
-                  <button
-                    type="button"
-                    onClick={onDownloadAll}
-                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
-                  >
-                    <Download size={12} className="text-neutral-500" />
-                    Download all as zip
-                  </button>
-                </MenuItem>
-              )}
-            </MenuItems>
-          </Menu>
-        )}
-      </div>
-
       {/* File list - grows to fill space */}
       <div className="flex-1 overflow-auto min-h-0">
-        {files.length > 0 && (
-          <div className="pt-1 min-w-full">
-            {/* Render file tree with folders */}
-            {fileTree.map((node) => (
-              <FileTreeNode
-                key={node.path}
-                node={node}
-                level={0}
-                openTabs={openTabs}
-                onFileClick={onFileClick}
-                expandedFolders={expandedFolders}
-                onToggleFolder={handleToggleFolder}
-                onDeleteFile={handleDeleteFile}
-                onRenameFile={handleRenameFile}
-                onDownloadFile={onDownloadFile ?? (() => { })}
-              />
-            ))}
+        <div className="pt-1 min-w-full">
+          {/* Root folder row */}
+          <div className="flex items-center gap-1 px-3 py-2 min-w-0 group">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 truncate flex-1">Files</span>
+            {(onUploadLocal || onUploadDrive || onDownloadAll) && (
+              <Menu>
+                <MenuButton className="shrink-0 text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 mr-1">
+                  <MoreVertical size={14} />
+                </MenuButton>
+                <MenuItems
+                  modal={false}
+                  transition
+                  anchor="bottom start"
+                  className="w-40 origin-top-left rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
+                >
+                  {(onUploadLocal || onUploadDrive) && (
+                    <MenuItem>
+                      <button
+                        type="button"
+                        disabled={isProcessing}
+                        onClick={onUploadLocal}
+                        className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 disabled:opacity-50"
+                      >
+                        <Upload size={12} />
+                        Upload files
+                      </button>
+                    </MenuItem>
+                  )}
+                  {onDownloadAll && files.length > 0 && (
+                    <MenuItem>
+                      <button
+                        type="button"
+                        onClick={onDownloadAll}
+                        className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      >
+                        <Download size={12} />
+                        Download all
+                      </button>
+                    </MenuItem>
+                  )}
+                </MenuItems>
+              </Menu>
+            )}
           </div>
-        )}
+
+          {/* Render file tree indented under root */}
+          {fileTree.length > 0 && (
+            <div className="py-1">
+              {fileTree.map((node) => (
+                <FileTreeNode
+                  key={node.path}
+                  node={node}
+                  level={0}
+                  openTabs={openTabs}
+                  onFileClick={onFileClick}
+                  expandedFolders={expandedFolders}
+                  onToggleFolder={handleToggleFolder}
+                  onDeleteFile={handleDeleteFile}
+                  onRenameFile={handleRenameFile}
+                  onDownloadFile={onDownloadFile ?? (() => { })}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Bottom: Upload files button */}
-      {(onUploadLocal || onUploadDrive) && (
-        <UploadButton
-          isProcessing={isProcessing}
-          drives={drives}
-          onUploadLocal={onUploadLocal}
-          onUploadDrive={onUploadDrive}
-        />
-      )}
+      {/* Bottom: Upload + Download all */}
+
 
       {/* Rename Dialog */}
       {renamingPath && (
