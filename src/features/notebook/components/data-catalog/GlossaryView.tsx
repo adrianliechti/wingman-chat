@@ -14,7 +14,7 @@ export function GlossaryView({ catalog }: GlossaryViewProps) {
   const grouped = useMemo(() => groupByLetter(sorted), [sorted]);
 
   return (
-    <div className="h-full w-full overflow-auto px-6 pt-6 pb-24 bg-white dark:bg-neutral-950">
+    <div className="h-full w-full overflow-auto px-3 pt-6 pb-24">
       {grouped.map(({ letter, terms }) => (
         <section key={letter} className="mb-8">
           <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">

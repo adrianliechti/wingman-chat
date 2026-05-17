@@ -1,4 +1,4 @@
-import { Loader2, SparklesIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, SparklesIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { refineSlide } from "../lib/slide-refine";
 import type { NotebookOutput } from "../types/notebook";
@@ -37,7 +37,7 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
     prevSlideCount.current = slideCount;
   }, [slideCount, isGenerating]);
 
-  // Auto-scroll thumbnail bar to keep latest visible
+  // Auto-scroll thumbnail bar to keep latest visible during generation.
   const thumbBarRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (isGenerating && slideCount > 0 && thumbBarRef.current) {
@@ -45,21 +45,30 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
     }
   }, [slideCount, isGenerating]);
 
-  // Scale iframe to fit container
-  const slideContainerRef = useRef<HTMLDivElement>(null);
+  // Keep the active thumbnail in view as the user navigates.
+  const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  useEffect(() => {
+    const el = thumbRefs.current[activeIndex - 1];
+    if (el) el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  }, [activeIndex]);
+
+  // Scale iframe to fit container. Use a state-tracked element (callback ref
+  // semantics) so the observer re-attaches whenever the slide wrapper mounts
+  // — important because the wrapper is conditionally rendered and may not
+  // exist when SlideViewer first mounts during generation.
+  const [slideContainer, setSlideContainer] = useState<HTMLDivElement | null>(null);
   const [slideScale, setSlideScale] = useState(1);
 
   useEffect(() => {
-    const el = slideContainerRef.current;
-    if (!el) return;
+    if (!slideContainer) return;
     const observer = new ResizeObserver(([entry]) => {
       const cw = entry.contentRect.width;
       const ch = entry.contentRect.height;
       setSlideScale(Math.min(cw / 1920, ch / 1080));
     });
-    observer.observe(el);
+    observer.observe(slideContainer);
     return () => observer.disconnect();
-  }, []);
+  }, [slideContainer]);
 
   const handleRefineSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -89,10 +98,56 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
 
   return (
     <div className="h-full flex flex-col">
+      {/* Top thumbnail navigation — matches the tab-bar position used by the
+          other diagram viewers (Architecture, Data Catalog). */}
+      <div className="shrink-0 overflow-x-auto px-3 py-2" ref={thumbBarRef}>
+        <div className="flex items-center gap-2">
+          {slides.map((slide, i) => {
+            const thumb = isHtml ? thumbnails[i] : slide;
+            // Slides are fixed-position and append-only during generation, so
+            // the slide content itself is a stable, unique key.
+            return (
+              <button
+                key={slide}
+                ref={(el) => {
+                  thumbRefs.current[i] = el;
+                }}
+                type="button"
+                onClick={() => setActiveIndex(i + 1)}
+                className={`shrink-0 w-32 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors bg-neutral-100 dark:bg-neutral-800 ${
+                  activeIndex === i + 1
+                    ? "border-blue-500"
+                    : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
+                }`}
+              >
+                {thumb ? (
+                  <img src={thumb} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-xs font-medium text-neutral-400 flex items-center justify-center h-full">
+                    {i + 1}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          {isGenerating && (
+            <div
+              style={{ width: 128, height: 72, flexShrink: 0 }}
+              className="rounded-lg border-2 border-dashed border-neutral-300 dark:border-neutral-600 flex items-center justify-center bg-neutral-100 dark:bg-neutral-800"
+            >
+              <Loader2 size={16} className="animate-spin text-neutral-400" />
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Main view */}
       <div className="flex-1 overflow-y-auto min-h-0 relative">
         {currentSlideHtml ? (
-          <div className="h-full flex items-center justify-center p-6" ref={slideContainerRef}>
+          // Horizontal padding matches the thumbnail strip (px-3) so the slide
+          // edges line up. pb-20 reserves space for the floating refine input
+          // so the slide visually centres between the thumbnails and the pill.
+          <div className="h-full flex items-center justify-center px-3 pt-6 pb-20" ref={setSlideContainer}>
             <div
               className="rounded-lg shadow-lg overflow-hidden bg-white"
               style={{ width: 1920 * slideScale, height: 1080 * slideScale }}
@@ -112,7 +167,7 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
             </div>
           </div>
         ) : currentSlideImg ? (
-          <div className="h-full flex items-center justify-center p-6">
+          <div className="h-full flex items-center justify-center px-3 pt-6 pb-20">
             <img
               src={currentSlideImg}
               alt={`Slide ${activeIndex}`}
@@ -130,9 +185,43 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
           </div>
         )}
 
+        {/* Subtle prev / next nav buttons — hidden at the boundaries. Wrapped
+            in a container that mirrors the slide's `p-6 pb-20` so the
+            buttons share the slide's vertical centre (not the page's). */}
+        {slideCount > 1 && (
+          <div className="absolute inset-0 px-2 pt-6 pb-20 flex items-center justify-between pointer-events-none z-10">
+            <div>
+              {activeIndex > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setActiveIndex((i) => Math.max(1, i - 1))}
+                  className="pointer-events-auto p-1.5 rounded-full text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60 transition-colors"
+                  title="Previous slide"
+                  aria-label="Previous slide"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+              )}
+            </div>
+            <div>
+              {activeIndex < slideCount && (
+                <button
+                  type="button"
+                  onClick={() => setActiveIndex((i) => Math.min(slideCount, i + 1))}
+                  className="pointer-events-auto p-1.5 rounded-full text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60 transition-colors"
+                  title="Next slide"
+                  aria-label="Next slide"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Floating refine prompt */}
         {slideCount > 0 && (
-          <div className="absolute bottom-4 left-4 right-4 z-20">
+          <div className="absolute bottom-4 left-3 right-3 z-20">
             <form onSubmit={handleRefineSubmit}>
               <div className="flex items-center gap-2 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-neutral-700/40 shadow-lg shadow-black/5 dark:shadow-black/20 p-3">
                 <input
@@ -155,45 +244,6 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
             </form>
           </div>
         )}
-      </div>
-
-      {/* Bottom thumbnail navigation */}
-      <div className="shrink-0 overflow-x-auto px-3 py-2" ref={thumbBarRef}>
-        <div className="flex items-center gap-2">
-          {slides.map((slide, i) => {
-            const thumb = isHtml ? thumbnails[i] : slide;
-            // Slides are fixed-position and append-only during generation, so
-            // the slide content itself is a stable, unique key.
-            return (
-              <button
-                key={slide}
-                type="button"
-                onClick={() => setActiveIndex(i + 1)}
-                className={`shrink-0 w-20 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors bg-neutral-100 dark:bg-neutral-800 ${
-                  activeIndex === i + 1
-                    ? "border-blue-500"
-                    : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
-                }`}
-              >
-                {thumb ? (
-                  <img src={thumb} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-[9px] font-medium text-neutral-400 flex items-center justify-center h-full">
-                    {i + 1}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-          {isGenerating && (
-            <div
-              style={{ width: 80, height: 45, flexShrink: 0 }}
-              className="rounded-lg border-2 border-dashed border-neutral-300 dark:border-neutral-600 flex items-center justify-center bg-neutral-100 dark:bg-neutral-800"
-            >
-              <Loader2 size={12} className="animate-spin text-neutral-400" />
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );

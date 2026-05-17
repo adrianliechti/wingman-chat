@@ -17,7 +17,7 @@ export function ContractCards({ catalog }: ContractCardsProps) {
   }
 
   return (
-    <div className="h-full w-full overflow-auto px-6 pt-6 pb-24 bg-white dark:bg-neutral-950">
+    <div className="h-full w-full overflow-auto px-3 pt-6 pb-24">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {catalog.contracts.map((c) => {
           const ds = datasetById.get(c.datasetId);

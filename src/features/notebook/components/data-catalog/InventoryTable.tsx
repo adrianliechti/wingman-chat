@@ -25,7 +25,7 @@ export function InventoryTable({ catalog }: InventoryTableProps) {
   const glossaryById = useMemo(() => new Map(catalog.glossary.map((t) => [t.id, t])), [catalog.glossary]);
 
   return (
-    <div className="h-full w-full overflow-auto px-6 pt-6 pb-24 bg-white dark:bg-neutral-950">
+    <div className="h-full w-full overflow-auto px-3 pt-6 pb-24">
       {grouped.map(({ domain, datasets }) => (
         <section key={domain} className="mb-8">
           <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">

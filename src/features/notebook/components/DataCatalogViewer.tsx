@@ -100,7 +100,7 @@ export function DataCatalogViewer({ output, onRefine }: DataCatalogViewerProps) 
         {viewKind === "contracts" && <ContractCards catalog={catalog} />}
 
         {/* Refine — floats above content */}
-        <div className="absolute bottom-4 left-4 right-4 z-20">
+        <div className="absolute bottom-4 left-3 right-3 z-20">
           <form onSubmit={handleRefine}>
             <div className="flex items-center gap-2 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-neutral-700/40 shadow-lg shadow-black/5 dark:shadow-black/20 p-3">
               <input
