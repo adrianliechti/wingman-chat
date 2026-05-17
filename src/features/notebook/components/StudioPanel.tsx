@@ -6,11 +6,6 @@ import {
   Boxes,
   CircleHelp,
   Download,
-  FileCode,
-  FileImage,
-  FileJson,
-  FileText,
-  ImageIcon,
   Loader2,
   MoreHorizontal,
   Network,
@@ -19,17 +14,13 @@ import {
   Table2,
   Trash2,
   Workflow,
-  X,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/shared/lib/cn";
-import { downloadFromUrl } from "@/shared/lib/utils";
 import type { File } from "@/shared/types/file";
-import { downloadFormat, type ExportFormat as OutputExportFormat, getExportFormats } from "../lib/output-export";
 import type { BuildInstructionsOptions } from "../lib/styles";
 import type { NotebookOutput, OutputType } from "../types/notebook";
-import { ExportModal, type ExportModalOption } from "./ExportModal";
 import { type GeneratorOptions, OutputGeneratorDialog } from "./OutputGeneratorDialog";
 
 interface StudioPanelProps {
@@ -38,6 +29,12 @@ interface StudioPanelProps {
   onGenerate: (type: OutputType, styleId?: string, options?: BuildInstructionsOptions) => void;
   onDeleteOutput: (outputId: string) => void;
   onSelectOutput: (output: NotebookOutput) => void;
+  /** Called when the user picks Download from the row action menu — delegates
+   *  the actual save/modal flow to a hook owned by the page so the same
+   *  modals are reused by the preview's Download icon. */
+  onDownloadOutput: (output: NotebookOutput) => void;
+  /** Whether the output is downloadable in the current state. */
+  canDownload: (output: NotebookOutput) => boolean;
 }
 
 const OUTPUT_TYPES: {
@@ -56,100 +53,23 @@ const OUTPUT_TYPES: {
   { type: "data-catalog", label: "Data Catalog", icon: BookMarked },
 ];
 
-type ExportFormat = "pdf" | "pptx-image" | "pptx-hybrid" | "pptx-editable" | "png";
-
-export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSelectOutput }: StudioPanelProps) {
+export function StudioPanel({
+  sources,
+  outputs,
+  onGenerate,
+  onDeleteOutput,
+  onSelectOutput,
+  onDownloadOutput,
+  canDownload,
+}: StudioPanelProps) {
   const hasSources = sources.length > 0;
   const [dialogType, setDialogType] = useState<OutputType | null>(null);
-  const [exportOverlay, setExportOverlay] = useState<NotebookOutput | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
-  const [exportProgress, setExportProgress] = useState<string | null>(null);
   // Keep the type stable during the exit animation.
   const stableDialogType = useRef<OutputType>("slides");
   if (dialogType) stableDialogType.current = dialogType;
 
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
   const [actionMenuPos, setActionMenuPos] = useState<{ top: number; right: number } | null>(null);
-
-  // Centralised export modal for diagram + data-catalog outputs. Slides have
-  // their own multi-step export overlay (`exportOverlay`) further down.
-  const [exportTarget, setExportTarget] = useState<NotebookOutput | null>(null);
-  const [exportBusy, setExportBusy] = useState(false);
-
-  const downloadOutput = async (output: NotebookOutput) => {
-    // For HTML slides, show the existing multi-step export overlay.
-    if (output.type === "slides" && output.slideContentType === "text/html" && output.slides?.length) {
-      setExportOverlay(output);
-      setExportError(null);
-      return;
-    }
-
-    // Diagram + data-catalog outputs: open the unified format-picker modal.
-    if (getExportFormats(output).length > 0) {
-      setExportTarget(output);
-      return;
-    }
-
-    // Single-format outputs: direct download.
-    const slug = output.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
-    if (output.type === "podcast" && output.audioUrl) {
-      downloadDataUrl(output.audioUrl, `${slug}.wav`);
-    } else if (output.type === "infographic" && output.imageUrl) {
-      downloadDataUrl(output.imageUrl, `${slug}.png`);
-    } else if (output.type === "slides" && output.slides?.length) {
-      await downloadSlidesAsPdf(output.slides, slug);
-    } else if (output.type === "report" && output.content) {
-      await downloadReportAsPdf(output.content, slug);
-    }
-  };
-
-  const runUnifiedExport = async (format: OutputExportFormat) => {
-    if (!exportTarget) return;
-    setExportBusy(true);
-    try {
-      await downloadFormat(exportTarget, format);
-      setExportTarget(null);
-    } catch (err) {
-      console.error("Export failed:", err);
-    } finally {
-      setExportBusy(false);
-    }
-  };
-
-  const handleExport = async (format: ExportFormat) => {
-    if (!exportOverlay?.slides?.length) return;
-    const slides = exportOverlay.slides;
-    const slug = exportOverlay.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
-    setIsExporting(true);
-    setExportError(null);
-    setExportProgress(null);
-
-    try {
-      if (format === "pdf") {
-        const { downloadHtmlSlidesAsPdf } = await import("../lib/html-slide-export");
-        await downloadHtmlSlidesAsPdf(slides, slug);
-      } else if (format === "pptx-image") {
-        const { downloadHtmlSlidesAsPptx } = await import("../lib/html-slide-export");
-        await downloadHtmlSlidesAsPptx(slides, slug);
-      } else if (format === "pptx-hybrid") {
-        setExportProgress("Exporting slides...");
-        const { downloadHtmlSlidesAsHybridPptx } = await import("../lib/pptx-export-hybrid");
-        await downloadHtmlSlidesAsHybridPptx(slides, slug, (current, total) => {
-          setExportProgress(`Exporting slide ${current} of ${total}...`);
-        });
-      } else if (format === "png") {
-        const { downloadHtmlSlidesAsPng } = await import("../lib/html-slide-export");
-        await downloadHtmlSlidesAsPng(slides, slug);
-      }
-      setExportOverlay(null);
-    } catch (err) {
-      setExportError(err instanceof Error ? err.message : "Export failed");
-    } finally {
-      setIsExporting(false);
-      setExportProgress(null);
-    }
-  };
 
   const DIALOG_TYPES = new Set<OutputType>([
     "slides",
@@ -317,7 +237,7 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
                       e.stopPropagation();
                       setOpenActionMenu(null);
                       setActionMenuPos(null);
-                      downloadOutput(output);
+                      onDownloadOutput(output);
                     }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
                   >
@@ -344,112 +264,6 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
           );
         })()}
 
-      {/* Export format overlay */}
-      {exportOverlay && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-neutral-200 dark:border-neutral-700 w-80 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
-              <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Export Slides</h3>
-              {!isExporting && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExportOverlay(null);
-                    setExportError(null);
-                  }}
-                  className="p-1 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                >
-                  <X size={14} className="text-neutral-400" />
-                </button>
-              )}
-            </div>
-            <div className="p-3">
-              {isExporting ? (
-                <div className="flex flex-col items-center justify-center gap-3 py-8">
-                  <Loader2 size={24} className="animate-spin text-neutral-400" />
-                  <span className="text-xs text-neutral-500">{exportProgress || "Exporting..."}</span>
-                </div>
-              ) : exportError ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-3 py-2.5 rounded-lg">
-                    <AlertCircle size={14} className="shrink-0" />
-                    <span>{exportError}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setExportError(null)}
-                    className="w-full text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 py-1.5"
-                  >
-                    Try again
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <button
-                    type="button"
-                    onClick={() => handleExport("pdf")}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left"
-                  >
-                    <FileText size={16} className="text-neutral-400 shrink-0" />
-                    <div>
-                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PDF</p>
-                      <p className="text-[10px] text-neutral-400">Best for viewing and sharing</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleExport("png")}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left"
-                  >
-                    <FileImage size={16} className="text-neutral-400 shrink-0" />
-                    <div>
-                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PNG Images</p>
-                      <p className="text-[10px] text-neutral-400">One image per slide, in a ZIP</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleExport("pptx-image")}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left"
-                  >
-                    <Presentation size={16} className="text-neutral-400 shrink-0" />
-                    <div>
-                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PowerPoint (Fixed)</p>
-                      <p className="text-[10px] text-neutral-400">Slides as images, not editable</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleExport("pptx-hybrid")}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors text-left"
-                  >
-                    <Presentation size={16} className="text-neutral-400 shrink-0" />
-                    <div>
-                      <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                        PowerPoint (Editable)
-                      </p>
-                      <p className="text-[10px] text-neutral-400">Editable text, approximate layout</p>
-                    </div>
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Unified export modal for diagram + data-catalog outputs. */}
-      {exportTarget && (
-        <ExportModal
-          title={`Export ${exportTarget.title}`}
-          busy={exportBusy}
-          onClose={() => {
-            if (!exportBusy) setExportTarget(null);
-          }}
-          options={exportFormatsToOptions(getExportFormats(exportTarget), runUnifiedExport)}
-        />
-      )}
-
       {/* Output generator dialog */}
       <OutputGeneratorDialog
         open={dialogType !== null}
@@ -461,124 +275,3 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
   );
 }
 
-function canDownload(output: NotebookOutput): boolean {
-  return (
-    (output.type === "podcast" && !!output.audioUrl) ||
-    (output.type === "infographic" && !!output.imageUrl) ||
-    (output.type === "slides" && !!output.slides?.length) ||
-    (output.type === "report" && !!output.content) ||
-    !!output.architecture ||
-    !!output.process ||
-    !!output.dataCatalog
-  );
-}
-
-const EXPORT_ICONS: Record<string, typeof FileText> = {
-  png: ImageIcon,
-  svg: FileCode,
-  pdf: FileText,
-  dcat: FileJson,
-  odcs: FileText,
-  openlineage: FileCode,
-};
-
-function exportFormatsToOptions(
-  formats: OutputExportFormat[],
-  onPick: (format: OutputExportFormat) => void,
-): ExportModalOption[] {
-  return formats.map((f) => ({
-    icon: EXPORT_ICONS[f.id] ?? FileText,
-    title: f.label,
-    subtitle: f.description,
-    disabled: f.disabled,
-    disabledReason: f.disabledReason,
-    onClick: () => onPick(f),
-  }));
-}
-
-function downloadDataUrl(dataUrl: string, filename: string) {
-  downloadFromUrl(dataUrl, filename);
-}
-
-async function downloadReportAsPdf(html: string, slug: string) {
-  const iframe = document.createElement("iframe");
-  iframe.style.position = "fixed";
-  iframe.style.left = "-9999px";
-  iframe.style.width = "800px";
-  iframe.srcdoc = html;
-
-  document.body.appendChild(iframe);
-
-  await new Promise<void>((resolve) => {
-    iframe.onload = () => resolve();
-  });
-
-  const { jsPDF } = await import("jspdf");
-  const html2canvas = (await import("html2canvas")).default;
-
-  const body = iframe.contentDocument?.body;
-  if (!body) {
-    document.body.removeChild(iframe);
-    return;
-  }
-
-  const canvas = await html2canvas(body, {
-    scale: 2,
-    useCORS: true,
-    logging: false,
-    windowWidth: 800,
-  });
-
-  const imgData = canvas.toDataURL("image/jpeg", 0.85);
-  const pxW = canvas.width;
-  const pxH = canvas.height;
-
-  // A4-width in pt, scale height proportionally
-  const pdfW = 595;
-  const pdfH = (pxH / pxW) * pdfW;
-
-  const doc = new jsPDF({
-    orientation: "portrait",
-    unit: "pt",
-    format: [pdfW, pdfH],
-  });
-
-  doc.addImage(imgData, "JPEG", 0, 0, pdfW, pdfH);
-  doc.save(`${slug}.pdf`);
-
-  document.body.removeChild(iframe);
-}
-
-async function downloadSlidesAsPdf(slides: string[], slug: string) {
-  const { jsPDF } = await import("jspdf");
-
-  // Load first image to get natural dimensions
-  const firstImg = await loadImage(slides[0]);
-  const w = firstImg.naturalWidth;
-  const h = firstImg.naturalHeight;
-  const landscape = w > h;
-
-  const doc = new jsPDF({
-    orientation: landscape ? "landscape" : "portrait",
-    unit: "px",
-    format: [w, h],
-  });
-
-  doc.addImage(slides[0], "PNG", 0, 0, w, h);
-
-  for (let i = 1; i < slides.length; i++) {
-    doc.addPage([w, h], landscape ? "landscape" : "portrait");
-    doc.addImage(slides[i], "PNG", 0, 0, w, h);
-  }
-
-  doc.save(`${slug}.pdf`);
-}
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
-  });
-}

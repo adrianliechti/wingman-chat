@@ -107,7 +107,7 @@ export function SequenceCanvas({ diagram }: SequenceCanvasProps) {
               fontWeight={600}
               fill="#0f172a"
             >
-              {p.label}
+              {trim(p.label, 22)}
             </text>
             {p.technology && (
               <text
@@ -119,7 +119,7 @@ export function SequenceCanvas({ diagram }: SequenceCanvasProps) {
                 fontWeight={500}
                 fill="#64748b"
               >
-                [{p.technology}]
+                [{trim(p.technology, 24)}]
               </text>
             )}
             {isInferred && (

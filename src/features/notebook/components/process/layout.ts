@@ -37,6 +37,28 @@ const SHAPE_SIZE: Record<ProcessNodeKind, { width: number; height: number }> = {
   data: { width: 140, height: 60 },
 };
 
+// Per-style lane palettes. The renderer uses lane-index → palette[i % len].
+// Palettes are intentionally distinct so the five styles read differently at
+// a glance, even when the underlying graph structure is similar.
+//   - bpmn        — monochrome (BPMN convention)
+//   - swimlane    — soft pastel rainbow (clear role separation)
+//   - itil        — ITSM blue / orange / mint / amber tones
+//   - sdlc        — cool-to-warm phase ramp
+//   - three-lines — risk traffic light: blue / amber / red (1L / 2L / 3L)
+const LANE_PALETTES: Record<string, string[]> = {
+  bpmn: ["#f8fafc", "#f1f5f9"],
+  swimlane: ["#dbeafe", "#fce7f3", "#d1fae5", "#fef3c7", "#e0e7ff", "#fae8ff"],
+  itil: ["#dbeafe", "#fed7aa", "#d1fae5", "#fef9c3", "#e0e7ff"],
+  sdlc: ["#dbeafe", "#d1fae5", "#fef9c3", "#fed7aa", "#fecaca", "#e0e7ff"],
+  "three-lines": ["#bfdbfe", "#fde68a", "#fecaca", "#e9d5ff"],
+};
+const DEFAULT_PALETTE = LANE_PALETTES.bpmn;
+
+function laneBg(style: string | undefined, laneIndex: number): string {
+  const palette = (style && LANE_PALETTES[style]) || DEFAULT_PALETTE;
+  return palette[laneIndex % palette.length];
+}
+
 // ── Layout helpers ────────────────────────────────────────────────────
 
 interface LayoutInput {
@@ -271,7 +293,7 @@ export function buildProcessFlow({ diagram }: LayoutInput): FlowResult {
         label: lane.label,
         width: totalWidth - LEFT_PADDING - RIGHT_PADDING,
         height: LANE_HEIGHT,
-        tint: (i % 2) as 0 | 1,
+        bg: laneBg(diagram.style, i),
       },
       draggable: false,
       selectable: false,

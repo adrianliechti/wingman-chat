@@ -1,7 +1,6 @@
 import { Outlet, useMatch, useNavigate } from "@tanstack/react-router";
-import { PlusIcon, X } from "lucide-react";
+import { Download, PlusIcon, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CopyButton } from "@/shared/ui/CopyButton";
 import { Markdown } from "@/shared/ui/Markdown";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
@@ -18,6 +17,7 @@ import { SlideViewer } from "../components/SlideViewer";
 import { SourcesPanel } from "../components/SourcesPanel";
 import { StudioPanel } from "../components/StudioPanel";
 import { useNotebook } from "../hooks/useNotebook";
+import { useOutputDownload } from "../hooks/useOutputDownload";
 import * as store from "../lib/opfs-notebook";
 import type { Notebook, NotebookOutput } from "../types/notebook";
 
@@ -38,6 +38,12 @@ export function NotebookPage() {
 
   const [showSourcesDrawer, setShowSourcesDrawer] = useState(false);
   const [showStudioDrawer, setShowStudioDrawer] = useState(false);
+
+  // Shared download dispatcher — owns the slide-export overlay + the unified
+  // PNG/SVG/PDF/JSON-LD/YAML modal. The same `trigger` powers both the
+  // sidebar action menu (via StudioPanel's `onDownloadOutput` prop) and the
+  // preview's Download icon.
+  const download = useOutputDownload();
 
   const {
     notebook,
@@ -265,8 +271,15 @@ export function NotebookPage() {
             <div className="h-full flex flex-col relative">
               {/* Output buttons */}
               <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-                {!viewingOutput.imageUrl && !viewingOutput.audioUrl && viewingOutput.type !== "report" && (
-                  <CopyButton text={viewingOutput.content} />
+                {download.canDownload(viewingOutput) && (
+                  <button
+                    type="button"
+                    onClick={() => download.trigger(viewingOutput)}
+                    className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                    title="Download…"
+                  >
+                    <Download size={16} className="text-neutral-500" />
+                  </button>
                 )}
                 <button
                   type="button"
@@ -355,6 +368,8 @@ export function NotebookPage() {
               onGenerate={generateOutput}
               onDeleteOutput={deleteOutput}
               onSelectOutput={handleSelectOutput}
+              onDownloadOutput={download.trigger}
+              canDownload={download.canDownload}
             />
           )}
         </div>
@@ -412,10 +427,14 @@ export function NotebookPage() {
               onGenerate={generateOutput}
               onDeleteOutput={deleteOutput}
               onSelectOutput={handleSelectOutput}
+              onDownloadOutput={download.trigger}
+              canDownload={download.canDownload}
             />
           )}
         </div>
       </main>
+
+      {download.modals}
     </div>
   );
 }

@@ -33,5 +33,8 @@ export async function refineProcess(output: NotebookOutput, refinement: string):
   const parsed = await client.parse(model, REFINE_INSTRUCTIONS, input, processSchema, "process_refine");
   if (!parsed?.nodes?.length) return output;
 
-  return { ...output, process: normaliseProcess(parsed) };
+  const refined = normaliseProcess(parsed);
+  // Carry the originally-picked style through so the lane palette stays consistent across refinements.
+  if (current.style) refined.style = current.style;
+  return { ...output, process: refined };
 }

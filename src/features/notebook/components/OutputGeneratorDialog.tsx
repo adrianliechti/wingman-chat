@@ -19,7 +19,6 @@ import { getConfig } from "@/shared/config";
 import type { BuildInstructionsOptions, Style } from "../lib/styles";
 import {
   architectureStyles,
-  dataCatalogStyles,
   infographicStyles,
   podcastStyles,
   processStyles,
@@ -84,7 +83,8 @@ const TYPE_META: Record<
     icon: typeof Presentation;
     title: string;
     placeholder: string;
-    styles: { getAll(): Style[] };
+    /** Style registry, if this output type has user-pickable styles. */
+    styles?: { getAll(): Style[] };
     /** Show large description cards instead of compact tiles. */
     descriptionCards?: boolean;
   }
@@ -134,8 +134,7 @@ const TYPE_META: Record<
     icon: BookMarked,
     title: "Generate Data Catalog",
     placeholder: "Scope + audience (e.g. trading book; BCBS 239 review; classify PII; align to FIBO)…",
-    styles: dataCatalogStyles,
-    descriptionCards: true,
+    // No style picker — the catalog generation populates all four sections.
   },
 };
 
@@ -143,7 +142,7 @@ const TYPE_META: Record<
 
 export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: OutputGeneratorDialogProps) {
   const meta = TYPE_META[type];
-  const styles = useMemo(() => meta?.styles.getAll() ?? [], [meta]);
+  const styles = useMemo(() => meta?.styles?.getAll() ?? [], [meta]);
   const languages = useMemo(resolveLanguages, []);
   const allLanguages = useMemo(() => [AUTO_LANGUAGE, ...languages], [languages]);
 

@@ -345,11 +345,11 @@ export function renderSequenceSvg(diagram: ArchitectureDiagram): string {
     );
     const ty = SEQ_HEADER_Y + SEQ_HEADER_H / 2 - (p.technology ? 6 : 0);
     parts.push(
-      `<text x="${cx}" y="${ty}" text-anchor="middle" dominant-baseline="central" fill="#0f172a" font-size="13" font-weight="600">${escapeXml(p.label)}</text>`,
+      `<text x="${cx}" y="${ty}" text-anchor="middle" dominant-baseline="central" fill="#0f172a" font-size="13" font-weight="600">${escapeXml(trim(p.label, 22))}</text>`,
     );
     if (p.technology) {
       parts.push(
-        `<text x="${cx}" y="${SEQ_HEADER_Y + SEQ_HEADER_H / 2 + 11}" text-anchor="middle" dominant-baseline="central" fill="#64748b" font-size="10" font-weight="500">[${escapeXml(p.technology)}]</text>`,
+        `<text x="${cx}" y="${SEQ_HEADER_Y + SEQ_HEADER_H / 2 + 11}" text-anchor="middle" dominant-baseline="central" fill="#64748b" font-size="10" font-weight="500">[${escapeXml(trim(p.technology, 24))}]</text>`,
       );
     }
     if (p.inferred) {

@@ -14,6 +14,14 @@ function dashFor(kind: ArchitectureRelationEdgeData["kind"], inferred: boolean):
   return undefined;
 }
 
+/** Tiny hash → small vertical jitter so two near-parallel edge labels don't
+ *  land at the exact same midpoint. Range: roughly ±24 px. */
+function labelYStagger(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return ((Math.abs(h) % 5) - 2) * 12;
+}
+
 export function ArchitectureRelationEdge(props: EdgeProps) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd } = props;
   const d = data as ArchitectureRelationEdgeData | undefined;
@@ -31,6 +39,7 @@ export function ArchitectureRelationEdge(props: EdgeProps) {
     targetPosition,
     borderRadius: 8,
   });
+  const labelYAdj = labelY + labelYStagger(id);
 
   const stroke = inferred ? "#94a3b8" : "#1e293b";
 
@@ -47,7 +56,7 @@ export function ArchitectureRelationEdge(props: EdgeProps) {
           <div
             style={{
               position: "absolute",
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelYAdj}px)`,
               background: "white",
               padding: "2px 8px",
               borderRadius: 4,
@@ -56,7 +65,7 @@ export function ArchitectureRelationEdge(props: EdgeProps) {
               color: inferred ? "#475569" : "#0f172a",
               pointerEvents: "all",
               whiteSpace: "nowrap",
-              maxWidth: 220,
+              maxWidth: 150,
               overflow: "hidden",
               textOverflow: "ellipsis",
               boxShadow: "0 1px 2px rgba(0,0,0,0.04)",

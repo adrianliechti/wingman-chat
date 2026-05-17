@@ -404,7 +404,7 @@ export function normaliseProcess(raw: z.infer<typeof processSchema>): ProcessDia
   };
 }
 
-export async function generateProcess(ctx: GenerateContext): Promise<Result> {
+export async function generateProcess(ctx: GenerateContext, styleId?: string): Promise<Result> {
   // Step 1: tool-calling loop reads sources and drafts the process in
   // the structured-English template required by the studio prompt.
   const result = await run(ctx.client, ctx.model, ctx.instructions, [USER_MESSAGE("Process")], ctx.sourceTools);
@@ -418,6 +418,11 @@ export async function generateProcess(ctx: GenerateContext): Promise<Result> {
 
   const process = normaliseProcess(parsed);
   if (process.nodes.length === 0) throw new Error("Invalid process structure");
+
+  // Stamp the style id so the renderer / exporters can pick a matching lane
+  // palette. The style isn't part of the LLM contract — it's set by the
+  // dispatching hook based on which style the user picked.
+  if (styleId) process.style = styleId;
 
   return { content: raw, process };
 }

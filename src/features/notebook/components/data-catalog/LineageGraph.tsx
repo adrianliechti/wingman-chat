@@ -7,8 +7,6 @@
  */
 
 import {
-  Background,
-  BackgroundVariant,
   Controls,
   type Edge,
   type EdgeProps,
@@ -31,7 +29,6 @@ import type { DataCatalog, LineageEdge, LineageNode } from "../../types/notebook
 
 interface LineageGraphProps {
   catalog: DataCatalog;
-  showDots: boolean;
 }
 
 // ── Visual constants ──────────────────────────────────────────────────
@@ -145,6 +142,12 @@ const EDGE_STROKE: Record<NonNullable<LineageEdge["kind"]>, string> = {
   replicate: "#0891b2",
 };
 
+function labelYStagger(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return ((Math.abs(h) % 5) - 2) * 12;
+}
+
 function LineageEdgeRenderer(props: EdgeProps) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd } = props;
   const d = data as LineageEdgeData | undefined;
@@ -158,6 +161,7 @@ function LineageEdgeRenderer(props: EdgeProps) {
     targetPosition,
     borderRadius: 8,
   });
+  const labelYAdj = labelY + labelYStagger(id);
   return (
     <>
       <BaseEdge
@@ -175,7 +179,7 @@ function LineageEdgeRenderer(props: EdgeProps) {
           <div
             style={{
               position: "absolute",
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelYAdj}px)`,
               background: "white",
               padding: "1px 6px",
               borderRadius: 4,
@@ -184,7 +188,7 @@ function LineageEdgeRenderer(props: EdgeProps) {
               color: "#334155",
               pointerEvents: "all",
               whiteSpace: "nowrap",
-              maxWidth: 160,
+              maxWidth: 150,
               overflow: "hidden",
               textOverflow: "ellipsis",
             }}
@@ -300,7 +304,7 @@ function buildFlow(catalog: DataCatalog): { nodes: Node<LineageNodeData>[]; edge
 
 // ── Public ────────────────────────────────────────────────────────────
 
-export function LineageGraph({ catalog, showDots }: LineageGraphProps) {
+export function LineageGraph({ catalog }: LineageGraphProps) {
   const flow = useMemo(() => buildFlow(catalog), [catalog]);
 
   if (flow.nodes.length === 0) {
@@ -327,8 +331,8 @@ export function LineageGraph({ catalog, showDots }: LineageGraphProps) {
         minZoom={0.2}
         maxZoom={2}
       >
-        {showDots && <Background variant={BackgroundVariant.Dots} gap={18} size={1.4} color="#94a3b8" />}
-        <Controls showInteractive={false} position="bottom-left" />
+        {/* Lift controls above the floating refine input. */}
+        <Controls showInteractive={false} position="bottom-left" style={{ bottom: 80 }} />
       </ReactFlow>
     </ReactFlowProvider>
   );

@@ -24,10 +24,6 @@ import infographicStyleSketchNote from "../prompts/infographic-style-sketch-note
 import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
 import architectureStyleC4 from "../prompts/architecture-style-c4.txt?raw";
 import architectureStyleSequence from "../prompts/architecture-style-sequence.txt?raw";
-import dataCatalogStyleContracts from "../prompts/data-catalog-style-contracts.txt?raw";
-import dataCatalogStyleGlossary from "../prompts/data-catalog-style-glossary.txt?raw";
-import dataCatalogStyleInventory from "../prompts/data-catalog-style-inventory.txt?raw";
-import dataCatalogStyleLineage from "../prompts/data-catalog-style-lineage.txt?raw";
 import processStyleBpmn from "../prompts/process-style-bpmn.txt?raw";
 import processStyleItil from "../prompts/process-style-itil.txt?raw";
 import processStyleSdlc from "../prompts/process-style-sdlc.txt?raw";
@@ -265,36 +261,6 @@ export const architectureStyles: StyleRegistry = makeRegistry(
   () => getConfig().canvas?.architectures?.map((a) => ({ id: toId(a.name), label: a.name, prompt: a.prompt })),
 );
 
-export const dataCatalogStyles: StyleRegistry = makeRegistry(
-  [
-    {
-      id: "inventory",
-      label: "Inventory",
-      description: "DCAT-style dataset list with owner, sensitivity, refresh, and system",
-      prompt: dataCatalogStyleInventory,
-    },
-    {
-      id: "glossary",
-      label: "Glossary",
-      description: "SKOS / FIBO business glossary — terms with definitions and cross-refs",
-      prompt: dataCatalogStyleGlossary,
-    },
-    {
-      id: "lineage",
-      label: "Lineage",
-      description: "OpenLineage DAG — datasets, jobs, and external endpoints",
-      prompt: dataCatalogStyleLineage,
-    },
-    {
-      id: "contracts",
-      label: "Data Contracts",
-      description: "ODCS per-dataset contracts — purpose, quality rules, SLA terms",
-      prompt: dataCatalogStyleContracts,
-    },
-  ],
-  () => getConfig().canvas?.dataCatalogs?.map((d) => ({ id: toId(d.name), label: d.name, prompt: d.prompt })),
-);
-
 export const infographicStyles: StyleRegistry = makeRegistry(
   [
     { id: "auto", label: "Auto-select", prompt: infographicStyleAuto },
@@ -365,8 +331,8 @@ export const OUTPUT_META: Record<OutputType, OutputMeta> = {
   "data-catalog": {
     title: "Data Catalog",
     template: studioDataCatalogInstructions,
-    styles: dataCatalogStyles,
-    defaultStyleId: "inventory",
+    // No style picker — the catalog generation populates all four sections
+    // (inventory / glossary / lineage / contracts) in a single pass.
   },
 };
 

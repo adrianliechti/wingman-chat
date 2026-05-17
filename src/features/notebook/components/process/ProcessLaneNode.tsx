@@ -4,21 +4,19 @@ export interface ProcessLaneNodeData {
   label: string;
   width: number;
   height: number;
-  /** Alternating background tint index. */
-  tint: 0 | 1;
+  /** Lane band background colour. Picked by the layout per process-style palette. */
+  bg: string;
   [key: string]: unknown;
 }
 
-const TINTS = ["#fafafa", "#f4f4f5"] as const;
-
 export function ProcessLaneNode({ data }: NodeProps) {
-  const { label, width, height, tint } = data as unknown as ProcessLaneNodeData;
+  const { label, width, height, bg } = data as unknown as ProcessLaneNodeData;
   return (
     <div
       style={{
         width,
         height,
-        background: TINTS[tint],
+        background: bg,
         borderTop: "1px solid #e5e7eb",
         borderBottom: "1px solid #e5e7eb",
         display: "flex",

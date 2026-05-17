@@ -1,4 +1,4 @@
-import { BookMarked, Loader2, SparklesIcon } from "lucide-react";
+import { Loader2, SparklesIcon } from "lucide-react";
 import { useState } from "react";
 import { refineDataCatalog } from "../lib/data-catalog-refine";
 import type { DataCatalogKind, NotebookOutput } from "../types/notebook";
@@ -23,7 +23,6 @@ export function DataCatalogViewer({ output, onRefine }: DataCatalogViewerProps) 
   const [refinePrompt, setRefinePrompt] = useState("");
   const [isRefining, setIsRefining] = useState(false);
   const [refineError, setRefineError] = useState<string | null>(null);
-  const [showDots, setShowDots] = useState(true);
 
   // Active in-app view. Defaults to the catalog's generated `kind` but the
   // user can switch — all four views read from the same underlying catalog
@@ -48,8 +47,6 @@ export function DataCatalogViewer({ output, onRefine }: DataCatalogViewerProps) 
     { kind: "contracts", label: "Contracts", count: catalog.contracts.length },
   ];
 
-  const isLineage = viewKind === "lineage";
-
   const handleRefine = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!refinePrompt.trim() || isRefining) return;
@@ -67,72 +64,39 @@ export function DataCatalogViewer({ output, onRefine }: DataCatalogViewerProps) 
   };
 
   return (
-    <div className="h-full w-full flex flex-col bg-white dark:bg-neutral-950">
-      {/* Header — in document flow so the content doesn't slide under it. */}
-      <header className="shrink-0 flex items-start gap-3 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <BookMarked size={13} className="text-neutral-500 shrink-0" />
-            <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200 truncate">{catalog.title}</p>
-          </div>
-          {catalog.summary && (
-            <p className="text-[11px] leading-snug text-neutral-500 dark:text-neutral-400 mt-1 line-clamp-2">
-              {catalog.summary}
-            </p>
-          )}
-
-          {/* View tabs — each tab doubles as the section count. */}
-          <div className="mt-1.5 flex items-center gap-1" role="tablist">
-            {tabs.map((tab) => {
-              const active = tab.kind === viewKind;
-              const empty = tab.count === 0;
-              return (
-                <button
-                  key={tab.kind}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setViewKind(tab.kind)}
-                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] transition-colors ${
-                    active
-                      ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 font-semibold"
-                      : empty
-                        ? "text-neutral-400 dark:text-neutral-600 hover:text-neutral-500 dark:hover:text-neutral-400"
-                        : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                  }`}
-                  title={empty ? `No ${tab.label.toLowerCase()} yet — refine to add` : `Switch to ${tab.label}`}
-                >
-                  <span className={active ? "" : "font-semibold"}>{tab.count}</span>
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        {isLineage && (
-          <div className="shrink-0 flex items-center gap-1 pt-0.5">
+    <div className="h-full w-full flex flex-col">
+      {/* Tabs only — title/summary live in the StudioPanel row + preview chrome. */}
+      <header className="shrink-0 flex items-center gap-3 px-3 py-2" role="tablist">
+        {tabs.map((tab) => {
+          const active = tab.kind === viewKind;
+          const empty = tab.count === 0;
+          return (
             <button
+              key={tab.kind}
               type="button"
-              onClick={() => setShowDots((v) => !v)}
-              className={`px-2 py-1 rounded-lg border transition-colors text-[10px] font-semibold tracking-wide ${
-                showDots
-                  ? "bg-neutral-800 dark:bg-neutral-200 border-neutral-800 dark:border-neutral-200 text-white dark:text-neutral-900"
-                  : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-700 text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setViewKind(tab.kind)}
+              className={`py-0.5 text-[11px] transition-colors border-b ${
+                active
+                  ? "border-neutral-900 dark:border-neutral-100 text-neutral-900 dark:text-neutral-100 font-semibold"
+                  : empty
+                    ? "border-transparent text-neutral-400 dark:text-neutral-600 hover:text-neutral-500 dark:hover:text-neutral-400"
+                    : "border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
               }`}
-              title={showDots ? "Hide dot grid" : "Show dot grid"}
-              aria-pressed={showDots}
+              title={empty ? `No ${tab.label.toLowerCase()} yet — refine to add` : `Switch to ${tab.label}`}
             >
-              Grid
+              {tab.label}
             </button>
-          </div>
-        )}
+          );
+        })}
       </header>
 
       {/* Content area */}
       <div className="flex-1 min-h-0 relative">
         {viewKind === "inventory" && <InventoryTable catalog={catalog} />}
         {viewKind === "glossary" && <GlossaryView catalog={catalog} />}
-        {viewKind === "lineage" && <LineageGraph catalog={catalog} showDots={showDots} />}
+        {viewKind === "lineage" && <LineageGraph catalog={catalog} />}
         {viewKind === "contracts" && <ContractCards catalog={catalog} />}
 
         {/* Refine — floats above content */}

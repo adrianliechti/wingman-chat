@@ -6,6 +6,14 @@ export interface ProcessEdgeData {
   [key: string]: unknown;
 }
 
+/** Tiny hash → small vertical jitter so two near-parallel edge labels don't
+ *  land at the exact same midpoint. Range: roughly ±24 px. */
+function labelYStagger(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return ((Math.abs(h) % 5) - 2) * 12;
+}
+
 export function ProcessCustomEdge(props: EdgeProps) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd } = props;
   const flow = (data as ProcessEdgeData | undefined)?.flow ?? "sequence";
@@ -20,6 +28,7 @@ export function ProcessCustomEdge(props: EdgeProps) {
     targetPosition,
     borderRadius: 8,
   });
+  const labelYAdj = labelY + labelYStagger(id);
 
   const isMessage = flow === "message";
   const style: React.CSSProperties = {
@@ -37,7 +46,7 @@ export function ProcessCustomEdge(props: EdgeProps) {
           <div
             style={{
               position: "absolute",
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelYAdj}px)`,
               background: "white",
               padding: "1px 6px",
               borderRadius: 4,
@@ -47,7 +56,7 @@ export function ProcessCustomEdge(props: EdgeProps) {
               color: "#334155",
               pointerEvents: "all",
               whiteSpace: "nowrap",
-              maxWidth: 160,
+              maxWidth: 150,
               overflow: "hidden",
               textOverflow: "ellipsis",
             }}

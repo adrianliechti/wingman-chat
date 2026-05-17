@@ -1,4 +1,5 @@
-import { X } from "lucide-react";
+import { FileCode, FileJson, FileText, ImageIcon, X } from "lucide-react";
+import type { ExportFormat } from "../lib/output-export";
 
 export interface ExportModalOption {
   /** Icon component (a Lucide icon). */
@@ -52,6 +53,33 @@ export function ExportModal({ title, options, onClose, busy = false, width = 320
       </div>
     </div>
   );
+}
+
+// ── Helpers shared across export-modal callers ─────────────────────────
+
+const EXPORT_ICONS: Record<string, typeof FileText> = {
+  png: ImageIcon,
+  svg: FileCode,
+  pdf: FileText,
+  dcat: FileJson,
+  odcs: FileText,
+  openlineage: FileCode,
+};
+
+/** Map `getExportFormats(output)` output into `ExportModalOption[]` ready
+ *  for the modal — picks the right icon per format id and wires the click. */
+export function exportFormatsToOptions(
+  formats: ExportFormat[],
+  onPick: (format: ExportFormat) => void,
+): ExportModalOption[] {
+  return formats.map((f) => ({
+    icon: EXPORT_ICONS[f.id] ?? FileText,
+    title: f.label,
+    subtitle: f.description,
+    disabled: f.disabled,
+    disabledReason: f.disabledReason,
+    onClick: () => onPick(f),
+  }));
 }
 
 function ExportRow({ option, busy }: { option: ExportModalOption; busy: boolean }) {

@@ -1,14 +1,6 @@
-import {
-  Background,
-  BackgroundVariant,
-  Controls,
-  type EdgeTypes,
-  type NodeTypes,
-  ReactFlow,
-  ReactFlowProvider,
-} from "@xyflow/react";
+import { Controls, type EdgeTypes, type NodeTypes, ReactFlow, ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Loader2, ShieldCheck, SparklesIcon } from "lucide-react";
+import { Loader2, SparklesIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { refineProcess } from "../lib/process-refine";
 import type { NotebookOutput } from "../types/notebook";
@@ -39,7 +31,6 @@ function ProcessInner({ output, onRefine }: ProcessViewerProps) {
   const [refinePrompt, setRefinePrompt] = useState("");
   const [isRefining, setIsRefining] = useState(false);
   const [refineError, setRefineError] = useState<string | null>(null);
-  const [showDots, setShowDots] = useState(true);
 
   const flow = useMemo(() => (diagram ? buildProcessFlow({ diagram }) : null), [diagram]);
 
@@ -68,38 +59,8 @@ function ProcessInner({ output, onRefine }: ProcessViewerProps) {
   }
 
   return (
-    <div className="h-full w-full flex flex-col bg-white dark:bg-neutral-950">
-      {/* Header — in document flow so content never slides under it. */}
-      <header className="shrink-0 flex items-start gap-3 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <ShieldCheck size={13} className="text-neutral-500 shrink-0" />
-            <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200 truncate">{diagram.title}</p>
-          </div>
-          {diagram.summary && (
-            <p className="text-[11px] leading-snug text-neutral-500 dark:text-neutral-400 mt-1 line-clamp-2">
-              {diagram.summary}
-            </p>
-          )}
-        </div>
-        <div className="shrink-0 flex items-center gap-1 pt-0.5">
-          <button
-            type="button"
-            onClick={() => setShowDots((v) => !v)}
-            className={`px-2 py-1 rounded-lg border transition-colors text-[10px] font-semibold tracking-wide ${
-              showDots
-                ? "bg-neutral-800 dark:bg-neutral-200 border-neutral-800 dark:border-neutral-200 text-white dark:text-neutral-900"
-                : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-700 text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-            }`}
-            title={showDots ? "Hide dot grid" : "Show dot grid"}
-            aria-pressed={showDots}
-          >
-            Grid
-          </button>
-        </div>
-      </header>
-
-      {/* Content */}
+    <div className="h-full w-full flex flex-col">
+      {/* No header — title lives in the StudioPanel row + preview chrome. */}
       <div className="flex-1 min-h-0 relative">
         <ReactFlow
           nodes={flow.nodes}
@@ -115,8 +76,8 @@ function ProcessInner({ output, onRefine }: ProcessViewerProps) {
           minZoom={0.2}
           maxZoom={2}
         >
-          {showDots && <Background variant={BackgroundVariant.Dots} gap={18} size={1.4} color="#94a3b8" />}
-          <Controls showInteractive={false} position="bottom-left" />
+          {/* Lift controls above the floating refine input. */}
+          <Controls showInteractive={false} position="bottom-left" style={{ bottom: 80 }} />
         </ReactFlow>
 
         {/* Refine */}

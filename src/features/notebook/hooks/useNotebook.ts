@@ -26,7 +26,6 @@ import {
   type BuildInstructionsOptions,
   buildInstructions,
   chatInstructions,
-  dataCatalogStyles,
   infographicStyles,
   OUTPUT_META,
   podcastStyles,
@@ -58,10 +57,6 @@ export function getProcessStyles() {
 
 export function getArchitectureStyles() {
   return architectureStyles.getAll();
-}
-
-export function getDataCatalogStyles() {
-  return dataCatalogStyles.getAll();
 }
 
 function generateId(): string {
@@ -492,7 +487,7 @@ export function useNotebook(notebookId?: string) {
           case "mindmap":
             return generateMindMap(ctx);
           case "process":
-            return generateProcess(ctx);
+            return generateProcess(ctx, styleId ?? OUTPUT_META.process.defaultStyleId);
           case "architecture":
             return generateArchitecture(ctx);
           case "data-catalog":

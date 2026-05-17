@@ -99,6 +99,8 @@ export interface ProcessDiagram {
   title: string;
   /** Optional process goal / summary — shown above the diagram. */
   summary?: string;
+  /** Style id (`bpmn` / `swimlane` / `itil` / `sdlc` / `three-lines`). Drives the lane palette. */
+  style?: string;
   /** Swimlanes (roles or systems). Order is rendered top→bottom (horizontal layout). */
   lanes: ProcessLane[];
   /** Activities and events that make up the process. */

@@ -20,8 +20,8 @@ export function renderProcessSvg(diagram: ProcessDiagram): string {
   // Lane bands first (low z).
   for (const n of nodes) {
     if (n.type !== "processLane") continue;
-    const d = n.data as { label: string; width: number; height: number; tint: number };
-    svg += `<rect x="${n.position.x}" y="${n.position.y}" width="${d.width}" height="${d.height}" fill="${d.tint === 0 ? "#fafafa" : "#f4f4f5"}" stroke="#e5e7eb"/>`;
+    const d = n.data as { label: string; width: number; height: number; bg: string };
+    svg += `<rect x="${n.position.x}" y="${n.position.y}" width="${d.width}" height="${d.height}" fill="${d.bg}" stroke="#e5e7eb"/>`;
     svg += `<rect x="${n.position.x}" y="${n.position.y}" width="140" height="${d.height}" fill="#ffffff" stroke="#e5e7eb"/>`;
     svg += `<text x="${n.position.x + 70}" y="${n.position.y + d.height / 2}" text-anchor="middle" dominant-baseline="central" fill="#475569" font-size="11" font-weight="600" letter-spacing="0.5">${escapeXml(d.label.toUpperCase())}</text>`;
   }
