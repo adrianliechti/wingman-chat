@@ -476,6 +476,7 @@ function canDownload(output: NotebookOutput): boolean {
 const EXPORT_ICONS: Record<string, typeof FileText> = {
   png: ImageIcon,
   svg: FileCode,
+  pdf: FileText,
   dcat: FileJson,
   odcs: FileText,
   openlineage: FileCode,

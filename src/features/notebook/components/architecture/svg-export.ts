@@ -30,7 +30,6 @@ const SHAPE_STYLES: Record<ArchitectureElementKind, ShapeStyle> = {
   container: { bg: "#ecfeff", border: "#0891b2", borderWidth: 1.5, ink: "#0f172a", rx: 8, shape: "rect" },
   component: { bg: "#f0f9ff", border: "#0284c7", borderWidth: 1.5, ink: "#0f172a", rx: 6, shape: "rect" },
   "deployment-node": { bg: "#f5f3ff", border: "#7c3aed", borderWidth: 1.5, ink: "#0f172a", rx: 4, shape: "rect" },
-  entity: { bg: "#ffffff", border: "#0f172a", borderWidth: 1.5, ink: "#0f172a", rx: 6, shape: "rect" },
 };
 
 const ARROW_MARKER = `<marker id="ar-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1e293b"/></marker>`;
@@ -92,7 +91,6 @@ function renderShape(node: { position: { x: number; y: number }; data: unknown }
     technology?: string;
     description?: string;
     stereotype?: string;
-    fields?: { name: string; type?: string; notation?: string }[];
     inferred: boolean;
     width: number;
     height: number;
@@ -103,10 +101,6 @@ function renderShape(node: { position: { x: number; y: number }; data: unknown }
   const w = d.width;
   const h = d.height;
   const dash = d.inferred ? `stroke-dasharray="6 4"` : "";
-
-  if (d.elementKind === "entity") {
-    return renderEntity(x, y, w, h, d, dash);
-  }
 
   const cx = x + w / 2;
   const cy = y + h / 2;
@@ -137,54 +131,6 @@ function renderShape(node: { position: { x: number; y: number }; data: unknown }
     lines.push(
       `<text x="${x + w - 6}" y="${y + 10}" fill="#475569" font-size="8" font-weight="700" text-anchor="end" letter-spacing="0.4">INFERRED</text>`,
     );
-  }
-  return lines.join("");
-}
-
-function renderEntity(
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  d: { label: string; fields?: { name: string; type?: string; notation?: string }[]; inferred: boolean },
-  dash: string,
-): string {
-  const headerH = 28;
-  const lines: string[] = [];
-  lines.push(
-    `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="#ffffff" stroke="#0f172a" stroke-width="1.5" ${dash}/>`,
-  );
-  lines.push(
-    `<rect x="${x}" y="${y}" width="${w}" height="${headerH}" fill="${d.inferred ? "#fafaf9" : "#0f172a"}" rx="6"/>`,
-  );
-  // Overlay non-rounded bottom of header
-  lines.push(
-    `<rect x="${x}" y="${y + headerH - 6}" width="${w}" height="6" fill="${d.inferred ? "#fafaf9" : "#0f172a"}"/>`,
-  );
-  lines.push(
-    `<text x="${x + 10}" y="${y + headerH / 2}" fill="${d.inferred ? "#1e293b" : "#ffffff"}" font-size="13" font-weight="700" dominant-baseline="central">${escapeXml(d.label)}</text>`,
-  );
-  if (d.inferred) {
-    lines.push(
-      `<text x="${x + w - 6}" y="${y + 9}" fill="#475569" font-size="8" font-weight="700" text-anchor="end" letter-spacing="0.4">INFERRED</text>`,
-    );
-  }
-  let fy = y + headerH + 4;
-  for (const f of d.fields ?? []) {
-    if (fy + 16 > y + h) break;
-    lines.push(
-      `<text x="${x + 10}" y="${fy + 8}" fill="#0f172a" font-size="10" font-family="ui-monospace, monospace" dominant-baseline="central">${escapeXml(f.name)}</text>`,
-    );
-    if (f.type) {
-      lines.push(
-        `<text x="${x + w - 10}" y="${fy + 8}" fill="#64748b" font-size="10" font-family="ui-monospace, monospace" text-anchor="end" dominant-baseline="central">${escapeXml(f.type)}${f.notation ? `  ${f.notation}` : ""}</text>`,
-      );
-    } else if (f.notation) {
-      lines.push(
-        `<text x="${x + w - 10}" y="${fy + 8}" fill="#64748b" font-size="10" font-family="ui-monospace, monospace" text-anchor="end" dominant-baseline="central">${escapeXml(f.notation)}</text>`,
-      );
-    }
-    fy += 18;
   }
   return lines.join("");
 }
@@ -471,11 +417,64 @@ function labelWithTech(label?: string, technology?: string): string {
 
 // ── Unified entry point ────────────────────────────────────────────────
 
+const C4_VIEWS = ["c4-context", "c4-container", "c4-component", "deployment"] as const;
+const C4_VIEW_LABEL: Record<(typeof C4_VIEWS)[number], string> = {
+  "c4-context": "Context",
+  "c4-container": "Container",
+  "c4-component": "Component",
+  deployment: "Deployment",
+};
+
 /**
- * Render any architecture diagram (C4 / Deployment / Sequence / ERD) as a
- * self-contained SVG string. No DOM/viewer required — pure data → SVG.
+ * Render an architecture diagram as a self-contained SVG string. No
+ * DOM/viewer required — pure data → SVG. For `kind: "c4"` outputs the four
+ * views are stacked vertically with section titles so a single export
+ * carries everything the on-screen tabs show.
  */
 export function renderArchitectureDiagramSvg(diagram: ArchitectureDiagram): string {
   if (diagram.kind === "sequence") return renderSequenceSvg(diagram);
-  return renderArchitectureSvg(diagram, buildArchitectureFlow(diagram));
+
+  // c4 — stack all four views.
+  const SECTION_GAP = 60;
+  const TITLE_H = 36;
+  const sections: { title: string; svg: string; width: number; height: number }[] = [];
+  for (const view of C4_VIEWS) {
+    const flow = buildArchitectureFlow(diagram, view);
+    if (flow.nodes.length === 0) continue;
+    sections.push({
+      title: C4_VIEW_LABEL[view],
+      svg: renderArchitectureSvg(diagram, flow),
+      width: flow.width,
+      height: flow.height,
+    });
+  }
+  if (sections.length === 0) {
+    // Fallback: render container view so an empty/incomplete diagram still produces something.
+    const flow = buildArchitectureFlow(diagram, "c4-container");
+    return renderArchitectureSvg(diagram, flow);
+  }
+
+  const totalWidth = Math.max(...sections.map((s) => s.width));
+  const totalHeight =
+    sections.reduce((sum, s) => sum + s.height + TITLE_H, 0) + (sections.length - 1) * SECTION_GAP + 20;
+
+  const parts: string[] = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}" font-family="system-ui, -apple-system, sans-serif">`,
+    `<rect width="${totalWidth}" height="${totalHeight}" fill="#ffffff"/>`,
+  ];
+  let y = 0;
+  for (let i = 0; i < sections.length; i++) {
+    const s = sections[i];
+    // Section title bar
+    parts.push(
+      `<text x="20" y="${y + 24}" fill="#475569" font-size="13" font-weight="700" letter-spacing="0.06em">${escapeXml(s.title.toUpperCase())}</text>`,
+    );
+    parts.push(`<line x1="20" y1="${y + 32}" x2="${totalWidth - 20}" y2="${y + 32}" stroke="#cbd5e1"/>`);
+    // Embed the per-view SVG via nested <svg> at offset y + TITLE_H.
+    parts.push(`<g transform="translate(0, ${y + TITLE_H})">${s.svg}</g>`);
+    y += TITLE_H + s.height;
+    if (i < sections.length - 1) y += SECTION_GAP;
+  }
+  parts.push(`</svg>`);
+  return parts.join("");
 }

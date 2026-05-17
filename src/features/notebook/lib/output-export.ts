@@ -21,6 +21,7 @@ import {
 } from "../components/architecture/svg-export";
 import { renderProcessSvg } from "../components/process/svg-export";
 import { toDCATJSONLD, toODCSYAML, toOpenLineageJSON } from "./data-catalog-export";
+import { renderDataCatalogPdf } from "./data-catalog-pdf";
 import type { NotebookOutput } from "../types/notebook";
 
 export interface ExportFormat {
@@ -84,6 +85,14 @@ function dataCatalogFormats(output: NotebookOutput): ExportFormat[] {
   const hasContracts = catalog.contracts.length > 0;
   const hasLineageJobs = catalog.lineageNodes.some((n) => n.kind === "job");
   return [
+    {
+      id: "pdf",
+      label: "PDF (audit pack)",
+      description: "Human-readable document — cover, inventory, lineage, glossary, contracts",
+      mime: "application/pdf",
+      extension: "pdf",
+      run: async () => renderDataCatalogPdf(catalog),
+    },
     {
       id: "dcat",
       label: "DCAT 3 (JSON-LD)",

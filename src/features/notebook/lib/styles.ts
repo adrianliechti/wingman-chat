@@ -22,16 +22,12 @@ import infographicStyleProfessional from "../prompts/infographic-style-professio
 import infographicStyleScientific from "../prompts/infographic-style-scientific.txt?raw";
 import infographicStyleSketchNote from "../prompts/infographic-style-sketch-note.txt?raw";
 import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
-import architectureStyleC4Component from "../prompts/architecture-style-c4-component.txt?raw";
+import architectureStyleC4 from "../prompts/architecture-style-c4.txt?raw";
+import architectureStyleSequence from "../prompts/architecture-style-sequence.txt?raw";
 import dataCatalogStyleContracts from "../prompts/data-catalog-style-contracts.txt?raw";
 import dataCatalogStyleGlossary from "../prompts/data-catalog-style-glossary.txt?raw";
 import dataCatalogStyleInventory from "../prompts/data-catalog-style-inventory.txt?raw";
 import dataCatalogStyleLineage from "../prompts/data-catalog-style-lineage.txt?raw";
-import architectureStyleC4Container from "../prompts/architecture-style-c4-container.txt?raw";
-import architectureStyleC4Context from "../prompts/architecture-style-c4-context.txt?raw";
-import architectureStyleDeployment from "../prompts/architecture-style-deployment.txt?raw";
-import architectureStyleErd from "../prompts/architecture-style-erd.txt?raw";
-import architectureStyleSequence from "../prompts/architecture-style-sequence.txt?raw";
 import processStyleBpmn from "../prompts/process-style-bpmn.txt?raw";
 import processStyleItil from "../prompts/process-style-itil.txt?raw";
 import processStyleSdlc from "../prompts/process-style-sdlc.txt?raw";
@@ -254,40 +250,16 @@ export const processStyles: StyleRegistry = makeRegistry(
 export const architectureStyles: StyleRegistry = makeRegistry(
   [
     {
-      id: "c4-container",
-      label: "C4 Container",
-      description: "Apps, services, databases, and queues inside the system boundary",
-      prompt: architectureStyleC4Container,
-    },
-    {
-      id: "c4-context",
-      label: "C4 Context",
-      description: "Personas + the system + external systems — zoomed-out view",
-      prompt: architectureStyleC4Context,
-    },
-    {
-      id: "c4-component",
-      label: "C4 Component",
-      description: "Modules / packages inside a single container",
-      prompt: architectureStyleC4Component,
-    },
-    {
-      id: "deployment",
-      label: "Deployment",
-      description: "Infrastructure topology — Cloud → Region → Cluster → Container",
-      prompt: architectureStyleDeployment,
+      id: "c4",
+      label: "C4 Model",
+      description: "Context · Container · Component · Deployment — all four views, switchable as tabs",
+      prompt: architectureStyleC4,
     },
     {
       id: "sequence",
       label: "Sequence",
       description: "UML sequence — actors and ordered messages for one flow",
       prompt: architectureStyleSequence,
-    },
-    {
-      id: "erd",
-      label: "ERD",
-      description: "Entity-relationship — target data model with PK/FK and cardinality",
-      prompt: architectureStyleErd,
     },
   ],
   () => getConfig().canvas?.architectures?.map((a) => ({ id: toId(a.name), label: a.name, prompt: a.prompt })),
@@ -388,7 +360,7 @@ export const OUTPUT_META: Record<OutputType, OutputMeta> = {
     title: "Architecture",
     template: studioArchitectureInstructions,
     styles: architectureStyles,
-    defaultStyleId: "c4-container",
+    defaultStyleId: "c4",
   },
   "data-catalog": {
     title: "Data Catalog",

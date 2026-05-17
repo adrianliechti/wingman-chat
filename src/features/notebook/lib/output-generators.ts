@@ -422,16 +422,10 @@ export async function generateProcess(ctx: GenerateContext): Promise<Result> {
   return { content: raw, process };
 }
 
-// ── Architecture diagram (C4 / Deployment / Sequence / ERD) ────────────
+// ── Architecture diagram (C4 + Deployment as tabs, or Sequence) ────────
 
-export const architectureKinds = [
-  "c4-context",
-  "c4-container",
-  "c4-component",
-  "deployment",
-  "sequence",
-  "erd",
-] as const;
+export const architectureKinds = ["c4", "sequence"] as const;
+export const architectureViews = ["c4-context", "c4-container", "c4-component", "deployment"] as const;
 
 export const architectureElementKinds = [
   "person",
@@ -441,27 +435,9 @@ export const architectureElementKinds = [
   "component",
   "deployment-node",
   "actor",
-  "entity",
 ] as const;
 
-export const architectureRelationKinds = [
-  "uses",
-  "includes",
-  "depends-on",
-  "message",
-  "response",
-  "fk-1-1",
-  "fk-1-n",
-  "fk-m-n",
-] as const;
-
-const architectureFieldSchema = z
-  .object({
-    name: z.string(),
-    type: z.string().nullable(),
-    notation: z.string().nullable(),
-  })
-  .strict();
+export const architectureRelationKinds = ["uses", "includes", "depends-on", "message", "response"] as const;
 
 const architectureElementSchema = z
   .object({
@@ -471,9 +447,10 @@ const architectureElementSchema = z
     technology: z.string().nullable(),
     description: z.string().nullable(),
     parent: z.string().nullable(),
-    fields: z.array(architectureFieldSchema).nullable(),
     stereotype: z.string().nullable(),
     inferred: z.boolean().nullable(),
+    /** Which views the element appears in. Required for `kind: "c4"`, ignored for sequence. */
+    views: z.array(z.enum(architectureViews)).nullable(),
   })
   .strict();
 
@@ -487,6 +464,7 @@ const architectureRelationSchema = z
     kind: z.enum(architectureRelationKinds).nullable(),
     order: z.number().int().nullable(),
     inferred: z.boolean().nullable(),
+    views: z.array(z.enum(architectureViews)).nullable(),
   })
   .strict();
 
@@ -495,6 +473,7 @@ const architectureGroupSchema = z
     id: z.string(),
     label: z.string(),
     kind: z.enum(["system-boundary", "deployment-group"]).nullable(),
+    views: z.array(z.enum(architectureViews)).nullable(),
   })
   .strict();
 
@@ -512,8 +491,8 @@ export const architectureSchema = z
 const ARCH_PARSE_INSTRUCTIONS =
   "Convert the following architecture draft into the exact JSON structure requested. " +
   "Preserve every element, relation, and group. Use the exact ids from the draft so relations still connect. " +
-  "Normalise `kind` and `elementKind` to the enums in the schema. " +
-  "Set `inferred: true` on every element/relation the draft marked (inferred) or with `inferred: true`; otherwise leave it as null or false. " +
+  "For `kind: \"c4\"` outputs, every element / relation / group MUST have a non-empty `views` array — one or more of: c4-context, c4-container, c4-component, deployment. For `kind: \"sequence\"`, leave `views` null. " +
+  "Set `inferred: true` on every element / relation marked `(inferred)` in the draft; leave others null or false. " +
   "If the draft is silent on a field, return null — do not invent.";
 
 /** Strip nulls and apply minimal repairs so the diagram renders cleanly. */
@@ -532,17 +511,9 @@ export function normaliseArchitecture(raw: z.infer<typeof architectureSchema>): 
       ...(e.technology ? { technology: e.technology } : {}),
       ...(e.description ? { description: e.description } : {}),
       ...(e.parent ? { parent: e.parent } : {}),
-      ...(e.fields && e.fields.length > 0
-        ? {
-            fields: e.fields.map((f) => ({
-              name: f.name,
-              ...(f.type ? { type: f.type } : {}),
-              ...(f.notation ? { notation: f.notation } : {}),
-            })),
-          }
-        : {}),
       ...(e.stereotype ? { stereotype: e.stereotype } : {}),
       ...(e.inferred ? { inferred: true } : {}),
+      ...(e.views && e.views.length > 0 ? { views: e.views } : {}),
     }));
 
   // Drop `parent` references that don't resolve to a known id (elements OR groups).
@@ -572,12 +543,14 @@ export function normaliseArchitecture(raw: z.infer<typeof architectureSchema>): 
       ...(r.kind ? { kind: r.kind } : {}),
       ...(r.order !== null && r.order !== undefined ? { order: r.order } : {}),
       ...(r.inferred ? { inferred: true } : {}),
+      ...(r.views && r.views.length > 0 ? { views: r.views } : {}),
     }));
 
   const groups = raw.groups.map((g) => ({
     id: g.id,
     label: g.label,
     ...(g.kind ? { kind: g.kind } : {}),
+    ...(g.views && g.views.length > 0 ? { views: g.views } : {}),
   }));
 
   return {
@@ -591,9 +564,8 @@ export function normaliseArchitecture(raw: z.infer<typeof architectureSchema>): 
 }
 
 export async function generateArchitecture(ctx: GenerateContext): Promise<Result> {
-  // The chosen style (c4-container, deployment, …) is in the system prompt; the
-  // schema enforces `kind` to one of the architectureKinds enum values, so the
-  // model is constrained to stamp it correctly.
+  // The chosen style ("c4" or "sequence") is in the system prompt; the
+  // schema enforces `kind` to one of the architectureKinds enum values.
   const result = await run(
     ctx.client,
     ctx.model,

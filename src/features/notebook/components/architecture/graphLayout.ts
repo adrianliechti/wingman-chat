@@ -1,21 +1,26 @@
 /**
- * Layout for C4 / Deployment / ERD diagrams.
+ * Layout for the four C4 views.
  *
- * - C4 Context / Container: simple layered placement. Persons on the left,
- *   the SUT in the middle (with a dashed system-boundary group), external
- *   systems on the right.
- * - C4 Component: components inside one focal container — fixed grid inside
- *   the container box.
- * - Deployment: a tree of nested rectangles (Cloud → Region → Cluster → …).
- * - ERD: entities laid out on a coarse grid; relations are arrows with
- *   cardinality labels.
+ * - `c4-context`, `c4-container`, `c4-component` use a layered placement
+ *   (persons left / focal centre / externals right) — the same algorithm
+ *   per view, only the element set differs.
+ * - `deployment` uses a nested-rectangle pack (Cloud → Region → Cluster → …).
+ *
+ * The caller passes a `view` to filter elements / relations / groups whose
+ * `views[]` tag includes that view. (Elements whose `views` is missing fall
+ * through into every view — keeps the layout tolerant.)
  *
  * Output is a flat list of React Flow nodes (groups first for z-order) plus
  * edges with handles picked based on relative position.
  */
 
 import { type Edge, type Node, MarkerType, Position } from "@xyflow/react";
-import type { ArchitectureDiagram, ArchitectureElement, ArchitectureElementKind } from "../../types/notebook";
+import type {
+  ArchitectureDiagram,
+  ArchitectureElement,
+  ArchitectureElementKind,
+  ArchitectureView,
+} from "../../types/notebook";
 import type { ArchitectureRelationEdgeData } from "./ArchitectureRelationEdge";
 import type { ArchitectureGroupNodeData } from "./ArchitectureGroupNode";
 import type { ArchitectureShapeNodeData } from "./ArchitectureShapeNode";
@@ -24,7 +29,6 @@ import type { ArchitectureShapeNodeData } from "./ArchitectureShapeNode";
 
 const COL_WIDTH = 280;
 const ROW_HEIGHT = 150;
-const ENTITY_ROW_HEIGHT = 220;
 const TOP_PADDING = 60;
 const LEFT_PADDING = 40;
 const GROUP_PADDING = 32;
@@ -37,7 +41,6 @@ const ELEMENT_SIZE: Record<ArchitectureElementKind, { width: number; height: num
   component: { width: 180, height: 90 },
   "deployment-node": { width: 240, height: 140 },
   actor: { width: 160, height: 60 },
-  entity: { width: 220, height: 160 },
 };
 
 // ── Public types ──────────────────────────────────────────────────────
@@ -55,12 +58,7 @@ export interface GraphFlowResult {
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-function elementSize(kind: ArchitectureElementKind, fieldsCount = 0): { width: number; height: number } {
-  if (kind === "entity") {
-    // Grow entity height with the number of fields (header + per-field row).
-    const rowH = 22;
-    return { width: 240, height: Math.max(80, 48 + fieldsCount * rowH) };
-  }
+function elementSize(kind: ArchitectureElementKind): { width: number; height: number } {
   return ELEMENT_SIZE[kind] ?? ELEMENT_SIZE.container;
 }
 
@@ -106,35 +104,45 @@ function pickHandles(
       };
 }
 
-// ── Public entry ──────────────────────────────────────────────────────
-
-export function buildArchitectureFlow(diagram: ArchitectureDiagram): GraphFlowResult {
-  if (diagram.kind === "deployment") return layoutDeployment(diagram);
-  return layoutC4OrErd(diagram);
+/** Filter a diagram to just the items belonging to one view. Items with no
+ *  `views` array fall through into every view (lenient default). */
+function diagramForView(diagram: ArchitectureDiagram, view: ArchitectureView): ArchitectureDiagram {
+  const inView = <T extends { views?: ArchitectureView[] }>(x: T): boolean =>
+    !x.views || x.views.length === 0 || x.views.includes(view);
+  return {
+    ...diagram,
+    elements: diagram.elements.filter(inView),
+    relations: diagram.relations.filter(inView),
+    groups: diagram.groups.filter(inView),
+  };
 }
 
-// ── C4 / ERD layout ────────────────────────────────────────────────────
+// ── Public entry ──────────────────────────────────────────────────────
 
-/** Bucket an element into a column. ERDs use a flat 3-wide grid; C4
- *  diagrams use persons-left / focal-centre / externals-right. */
-function columnFor(diagram: ArchitectureDiagram, element: ArchitectureElement, indexInGrid: number): number {
-  if (diagram.kind === "erd") return indexInGrid % 3;
+/**
+ * Build the React Flow layout for one C4 view. For multi-view diagrams
+ * (`kind: "c4"`), call this once per view (the viewer does that as the
+ * user clicks each tab; the SVG export does it for all four).
+ */
+export function buildArchitectureFlow(diagram: ArchitectureDiagram, view: ArchitectureView): GraphFlowResult {
+  const filtered = diagramForView(diagram, view);
+  if (view === "deployment") return layoutDeployment(filtered, view);
+  return layoutC4(filtered, view);
+}
+
+// ── C4 layered layout ─────────────────────────────────────────────────
+
+/** Column bucket for layered C4: persons on the left, focal centre, externals right. */
+function columnFor(element: ArchitectureElement): number {
   if (element.kind === "person") return 0;
   if (element.kind === "external-system") return 2;
   return 1; // system / container / component
 }
 
-function layoutC4OrErd(diagram: ArchitectureDiagram): GraphFlowResult {
-  const isErd = diagram.kind === "erd";
-
-  // Column assignment.
+function layoutC4(diagram: ArchitectureDiagram, view: ArchitectureView): GraphFlowResult {
   const colOf = new Map<string, number>();
-  diagram.elements.forEach((e, i) => {
-    colOf.set(e.id, columnFor(diagram, e, i));
-  });
+  for (const e of diagram.elements) colOf.set(e.id, columnFor(e));
 
-  // Row assignment within each column.
-  const rowOf = new Map<string, number>();
   const perCol = new Map<number, string[]>();
   for (const e of diagram.elements) {
     const c = colOf.get(e.id) ?? 1;
@@ -142,28 +150,27 @@ function layoutC4OrErd(diagram: ArchitectureDiagram): GraphFlowResult {
     arr.push(e.id);
     perCol.set(c, arr);
   }
+
+  const rowOf = new Map<string, number>();
   for (const [, ids] of perCol) {
     ids.forEach((id, idx) => {
       rowOf.set(id, idx);
     });
   }
 
-  // Compute positions.
-  const rowH = isErd ? ENTITY_ROW_HEIGHT : ROW_HEIGHT;
   const pos = new Map<string, { x: number; y: number; w: number; h: number }>();
   for (const e of diagram.elements) {
     const c = colOf.get(e.id) ?? 1;
     const r = rowOf.get(e.id) ?? 0;
-    const size = elementSize(e.kind, e.fields?.length ?? 0);
+    const size = elementSize(e.kind);
     pos.set(e.id, {
       x: LEFT_PADDING + c * COL_WIDTH,
-      y: TOP_PADDING + r * rowH,
+      y: TOP_PADDING + r * ROW_HEIGHT,
       w: size.width,
       h: size.height,
     });
   }
 
-  // Compute bounds.
   let maxX = 0;
   let maxY = 0;
   for (const p of pos.values()) {
@@ -173,7 +180,6 @@ function layoutC4OrErd(diagram: ArchitectureDiagram): GraphFlowResult {
   const totalWidth = maxX + LEFT_PADDING;
   const totalHeight = maxY + TOP_PADDING;
 
-  // Build group bounding boxes from element positions.
   const nodes: ArchitectureFlowNode[] = [];
 
   for (const g of diagram.groups) {
@@ -220,12 +226,11 @@ function layoutC4OrErd(diagram: ArchitectureDiagram): GraphFlowResult {
       position: { x: p.x, y: p.y },
       data: {
         elementKind: e.kind,
-        diagramKind: diagram.kind,
+        view,
         label: e.label,
         technology: e.technology,
         description: e.description,
         stereotype: e.stereotype,
-        fields: e.fields,
         inferred: e.inferred ?? false,
         width: p.w,
         height: p.h,
@@ -272,7 +277,7 @@ interface NestedNode {
   h: number;
 }
 
-function layoutDeployment(diagram: ArchitectureDiagram): GraphFlowResult {
+function layoutDeployment(diagram: ArchitectureDiagram, view: ArchitectureView): GraphFlowResult {
   // Build a tree from `parent` references. Roots are elements with no parent
   // or whose parent doesn't resolve to another element.
   const elementIds = new Set(diagram.elements.map((e) => e.id));
@@ -317,8 +322,6 @@ function layoutDeployment(diagram: ArchitectureDiagram): GraphFlowResult {
       h += c.h + GAP;
     }
     h += PAD - GAP;
-    // Now widen every child to match the parent's content width so they
-    // form a tidy column.
     const childW = w - PAD * 2;
     for (const c of n.children) {
       c.w = childW;
@@ -327,7 +330,6 @@ function layoutDeployment(diagram: ArchitectureDiagram): GraphFlowResult {
     n.h = h;
   }
 
-  // Recursive absolute positioning.
   function place(n: NestedNode, ox: number, oy: number): void {
     n.x = ox;
     n.y = oy;
@@ -345,9 +347,7 @@ function layoutDeployment(diagram: ArchitectureDiagram): GraphFlowResult {
     maxY = Math.max(maxY, TOP_PADDING + root.h);
   }
 
-  // Emit React Flow nodes. Each non-leaf is a group; each leaf is a shape.
-  // For simplicity we treat deployment-nodes that have children as groups,
-  // and everything else (containers, external systems) as shapes.
+  // Emit React Flow nodes. Non-leaves are groups; leaves are shapes.
   const nodes: ArchitectureFlowNode[] = [];
   const pos = new Map<string, { x: number; y: number; w: number; h: number }>();
 
@@ -374,23 +374,20 @@ function layoutDeployment(diagram: ArchitectureDiagram): GraphFlowResult {
       });
       for (const c of n.children) emit(c);
     } else {
-      const elementWidth = n.w;
-      const elementHeight = n.h;
       nodes.push({
         id: n.element.id,
         type: "architectureShape",
         position: { x: n.x, y: n.y },
         data: {
           elementKind: n.element.kind,
-          diagramKind: "deployment",
+          view,
           label: n.element.label,
           technology: n.element.technology,
           description: n.element.description,
           stereotype: n.element.stereotype,
-          fields: n.element.fields,
           inferred: n.element.inferred ?? false,
-          width: elementWidth,
-          height: elementHeight,
+          width: n.w,
+          height: n.h,
         },
         draggable: true,
         zIndex: 10,
@@ -399,8 +396,7 @@ function layoutDeployment(diagram: ArchitectureDiagram): GraphFlowResult {
   }
   for (const root of roots) emit(root);
 
-  // Relations: position by leaf positions (we only emit edges between
-  // shape leaves; relations involving group containers are dropped).
+  // Relations between leaves only (group containers can't be source/target).
   const edges: Edge<ArchitectureRelationEdgeData>[] = [];
   for (const r of diagram.relations) {
     const s = pos.get(r.source);

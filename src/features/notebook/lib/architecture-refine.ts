@@ -14,10 +14,10 @@ import { architectureSchema, normaliseArchitecture } from "./output-generators";
 const REFINE_INSTRUCTIONS =
   "You are refining an existing software-architecture diagram for a regulated, finance-sector audience. " +
   "Apply the user's refinement request and return the **complete updated diagram** in the exact JSON schema requested. " +
-  "Design freely: when the user asks for something the current diagram doesn't have, propose a sensible, technically credible addition (e.g. a Redis cache, an audit log, a DR site) and set `inferred: true` on the new elements/relations so the user can see what you proposed. " +
+  "Design freely: when the user asks for something the current diagram doesn't have, propose a sensible, technically credible addition (e.g. a Redis cache, an audit log, a DR site) and set `inferred: true` on the new elements/relations. " +
   "Preserve stable ids when possible so the user can recognise the diagram; only introduce new ids for genuinely new elements. " +
   "Every element id must be unique. Every relation must reference an existing element id. Every relation needs a verb-phrase `label`. " +
-  "Keep the diagram's `kind` (c4-context, c4-container, c4-component, deployment, sequence, erd) unless the user explicitly asks you to switch to a different view.";
+  "Keep the diagram's `kind` (`c4` or `sequence`). For `kind: \"c4\"` outputs, every element / relation / group MUST keep (or gain) a non-empty `views` array drawn from: c4-context, c4-container, c4-component, deployment. For `sequence`, leave `views` null.";
 
 export async function refineArchitecture(output: NotebookOutput, refinement: string): Promise<NotebookOutput> {
   const current = output.architecture;

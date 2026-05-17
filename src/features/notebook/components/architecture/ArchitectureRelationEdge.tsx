@@ -3,22 +3,9 @@ import { BaseEdge, EdgeLabelRenderer, type EdgeProps, getSmoothStepPath } from "
 export interface ArchitectureRelationEdgeData {
   label?: string;
   technology?: string;
-  kind?: "uses" | "includes" | "depends-on" | "message" | "response" | "fk-1-1" | "fk-1-n" | "fk-m-n";
+  kind?: "uses" | "includes" | "depends-on" | "message" | "response";
   inferred: boolean;
   [key: string]: unknown;
-}
-
-function cardinality(kind: ArchitectureRelationEdgeData["kind"]): { source: string; target: string } | null {
-  switch (kind) {
-    case "fk-1-1":
-      return { source: "1", target: "1" };
-    case "fk-1-n":
-      return { source: "1", target: "1..*" };
-    case "fk-m-n":
-      return { source: "*", target: "*" };
-    default:
-      return null;
-  }
 }
 
 function dashFor(kind: ArchitectureRelationEdgeData["kind"], inferred: boolean): string | undefined {
@@ -34,7 +21,6 @@ export function ArchitectureRelationEdge(props: EdgeProps) {
   const technology = d?.technology;
   const inferred = d?.inferred ?? false;
   const kind = d?.kind;
-  const card = cardinality(kind);
 
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
@@ -81,44 +67,6 @@ export function ArchitectureRelationEdge(props: EdgeProps) {
             {technology && (
               <span style={{ marginLeft: 6, color: "#64748b", fontWeight: 500, fontSize: 9 }}>[{technology}]</span>
             )}
-          </div>
-        </EdgeLabelRenderer>
-      )}
-      {card && (
-        <EdgeLabelRenderer>
-          <div
-            style={{
-              position: "absolute",
-              transform: `translate(-50%, -50%) translate(${sourceX + (labelX - sourceX) * 0.2}px,${sourceY + (labelY - sourceY) * 0.2}px)`,
-              background: "white",
-              padding: "0 4px",
-              fontSize: 10,
-              fontWeight: 700,
-              color: "#0f172a",
-              border: "1px solid #e2e8f0",
-              borderRadius: 3,
-              pointerEvents: "none",
-            }}
-            className="nodrag nopan"
-          >
-            {card.source}
-          </div>
-          <div
-            style={{
-              position: "absolute",
-              transform: `translate(-50%, -50%) translate(${targetX + (labelX - targetX) * 0.2}px,${targetY + (labelY - targetY) * 0.2}px)`,
-              background: "white",
-              padding: "0 4px",
-              fontSize: 10,
-              fontWeight: 700,
-              color: "#0f172a",
-              border: "1px solid #e2e8f0",
-              borderRadius: 3,
-              pointerEvents: "none",
-            }}
-            className="nodrag nopan"
-          >
-            {card.target}
           </div>
         </EdgeLabelRenderer>
       )}

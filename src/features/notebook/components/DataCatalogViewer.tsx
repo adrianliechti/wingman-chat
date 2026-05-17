@@ -1,7 +1,7 @@
 import { BookMarked, Loader2, SparklesIcon } from "lucide-react";
 import { useState } from "react";
 import { refineDataCatalog } from "../lib/data-catalog-refine";
-import type { NotebookOutput } from "../types/notebook";
+import type { DataCatalogKind, NotebookOutput } from "../types/notebook";
 import { ContractCards } from "./data-catalog/ContractCards";
 import { GlossaryView } from "./data-catalog/GlossaryView";
 import { InventoryTable } from "./data-catalog/InventoryTable";
@@ -12,12 +12,11 @@ interface DataCatalogViewerProps {
   onRefine?: (updatedOutput: NotebookOutput) => void;
 }
 
-const KIND_LABEL: Record<string, string> = {
-  inventory: "Inventory · DCAT",
-  glossary: "Glossary · SKOS/FIBO",
-  lineage: "Lineage · OpenLineage",
-  contracts: "Contracts · ODCS",
-};
+interface ViewTab {
+  kind: DataCatalogKind;
+  label: string;
+  count: number;
+}
 
 export function DataCatalogViewer({ output, onRefine }: DataCatalogViewerProps) {
   const catalog = output.dataCatalog;
@@ -26,13 +25,30 @@ export function DataCatalogViewer({ output, onRefine }: DataCatalogViewerProps) 
   const [refineError, setRefineError] = useState<string | null>(null);
   const [showDots, setShowDots] = useState(true);
 
+  // Active in-app view. Defaults to the catalog's generated `kind` but the
+  // user can switch — all four views read from the same underlying catalog
+  // JSON, so switching doesn't require regeneration.
+  const [viewKind, setViewKind] = useState<DataCatalogKind>(catalog?.kind ?? "inventory");
+  const [prevOutputId, setPrevOutputId] = useState(output.id);
+  if (prevOutputId !== output.id) {
+    setPrevOutputId(output.id);
+    setViewKind(catalog?.kind ?? "inventory");
+  }
+
   if (!catalog) {
     return (
       <div className="h-full w-full flex items-center justify-center text-sm text-neutral-400">No data catalog</div>
     );
   }
 
-  const isLineage = catalog.kind === "lineage";
+  const tabs: ViewTab[] = [
+    { kind: "inventory", label: "Inventory", count: catalog.datasets.length },
+    { kind: "glossary", label: "Glossary", count: catalog.glossary.length },
+    { kind: "lineage", label: "Lineage", count: catalog.lineageNodes.length },
+    { kind: "contracts", label: "Contracts", count: catalog.contracts.length },
+  ];
+
+  const isLineage = viewKind === "lineage";
 
   const handleRefine = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -58,20 +74,39 @@ export function DataCatalogViewer({ output, onRefine }: DataCatalogViewerProps) 
           <div className="flex items-center gap-2">
             <BookMarked size={13} className="text-neutral-500 shrink-0" />
             <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200 truncate">{catalog.title}</p>
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 uppercase tracking-wider shrink-0">
-              {KIND_LABEL[catalog.kind] ?? catalog.kind}
-            </span>
           </div>
           {catalog.summary && (
             <p className="text-[11px] leading-snug text-neutral-500 dark:text-neutral-400 mt-1 line-clamp-2">
               {catalog.summary}
             </p>
           )}
-          <div className="mt-1 flex items-center gap-3 text-[10px] text-neutral-400">
-            <span>{catalog.datasets.length} datasets</span>
-            <span>{catalog.glossary.length} terms</span>
-            <span>{catalog.lineageNodes.length} lineage nodes</span>
-            <span>{catalog.contracts.length} contracts</span>
+
+          {/* View tabs — each tab doubles as the section count. */}
+          <div className="mt-1.5 flex items-center gap-1" role="tablist">
+            {tabs.map((tab) => {
+              const active = tab.kind === viewKind;
+              const empty = tab.count === 0;
+              return (
+                <button
+                  key={tab.kind}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setViewKind(tab.kind)}
+                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] transition-colors ${
+                    active
+                      ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 font-semibold"
+                      : empty
+                        ? "text-neutral-400 dark:text-neutral-600 hover:text-neutral-500 dark:hover:text-neutral-400"
+                        : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  }`}
+                  title={empty ? `No ${tab.label.toLowerCase()} yet — refine to add` : `Switch to ${tab.label}`}
+                >
+                  <span className={active ? "" : "font-semibold"}>{tab.count}</span>
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
         {isLineage && (
@@ -95,10 +130,10 @@ export function DataCatalogViewer({ output, onRefine }: DataCatalogViewerProps) 
 
       {/* Content area */}
       <div className="flex-1 min-h-0 relative">
-        {catalog.kind === "inventory" && <InventoryTable catalog={catalog} />}
-        {catalog.kind === "glossary" && <GlossaryView catalog={catalog} />}
-        {catalog.kind === "lineage" && <LineageGraph catalog={catalog} showDots={showDots} />}
-        {catalog.kind === "contracts" && <ContractCards catalog={catalog} />}
+        {viewKind === "inventory" && <InventoryTable catalog={catalog} />}
+        {viewKind === "glossary" && <GlossaryView catalog={catalog} />}
+        {viewKind === "lineage" && <LineageGraph catalog={catalog} showDots={showDots} />}
+        {viewKind === "contracts" && <ContractCards catalog={catalog} />}
 
         {/* Refine — floats above content */}
         <div className="absolute bottom-4 left-4 right-4 z-20">
@@ -108,7 +143,7 @@ export function DataCatalogViewer({ output, onRefine }: DataCatalogViewerProps) 
                 type="text"
                 value={refinePrompt}
                 onChange={(e) => setRefinePrompt(e.target.value)}
-                placeholder={placeholderFor(catalog.kind)}
+                placeholder={placeholderFor(viewKind)}
                 disabled={isRefining || output.status === "generating"}
                 className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder-neutral-400 dark:placeholder-neutral-500 outline-none"
               />
@@ -124,12 +159,11 @@ export function DataCatalogViewer({ output, onRefine }: DataCatalogViewerProps) 
           </form>
         </div>
       </div>
-
     </div>
   );
 }
 
-function placeholderFor(kind: string): string {
+function placeholderFor(kind: DataCatalogKind): string {
   switch (kind) {
     case "inventory":
       return "Refine… e.g. add a Kafka topic `trades.events.v1` with PII tagging";
@@ -139,7 +173,5 @@ function placeholderFor(kind: string): string {
       return "Refine… e.g. add a dbt model that produces the EOD exposure table";
     case "contracts":
       return "Refine… e.g. add a freshness term of T+1 06:00 UTC on the trade dataset";
-    default:
-      return "Refine this catalog…";
   }
 }

@@ -11,7 +11,7 @@ import "@xyflow/react/dist/style.css";
 import { Boxes, Loader2, SparklesIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { refineArchitecture } from "../lib/architecture-refine";
-import type { NotebookOutput } from "../types/notebook";
+import type { ArchitectureView, NotebookOutput } from "../types/notebook";
 import { ArchitectureGroupNode } from "./architecture/ArchitectureGroupNode";
 import { ArchitectureRelationEdge } from "./architecture/ArchitectureRelationEdge";
 import { ArchitectureShapeNode } from "./architecture/ArchitectureShapeNode";
@@ -23,6 +23,12 @@ interface ArchitectureViewerProps {
   onRefine?: (updatedOutput: NotebookOutput) => void;
 }
 
+interface ViewTab {
+  view: ArchitectureView;
+  label: string;
+  count: number;
+}
+
 const nodeTypes: NodeTypes = {
   architectureShape: ArchitectureShapeNode,
   architectureGroup: ArchitectureGroupNode,
@@ -32,13 +38,11 @@ const edgeTypes: EdgeTypes = {
 };
 const proOptions = { hideAttribution: true };
 
-const KIND_LABEL: Record<string, string> = {
-  "c4-context": "C4 Context",
-  "c4-container": "C4 Container",
-  "c4-component": "C4 Component",
-  deployment: "Deployment",
-  sequence: "Sequence",
-  erd: "ERD",
+const VIEW_PLACEHOLDER: Record<ArchitectureView, string> = {
+  "c4-context": "Refine… e.g. add the regulator reporting feed as an external system",
+  "c4-container": "Refine… e.g. add a Redis cache between API and core banking",
+  "c4-component": "Refine… e.g. extract validation into a dedicated component",
+  deployment: "Refine… e.g. add a DR region in eu-west-1 with async replication",
 };
 
 function ArchitectureInner({ output, onRefine }: ArchitectureViewerProps) {
@@ -49,9 +53,28 @@ function ArchitectureInner({ output, onRefine }: ArchitectureViewerProps) {
   const [refineError, setRefineError] = useState<string | null>(null);
   const [showDots, setShowDots] = useState(true);
 
+  // Active C4 view (one of four tabs). Resets when switching outputs.
+  const [viewKind, setViewKind] = useState<ArchitectureView>("c4-container");
+  const [prevOutputId, setPrevOutputId] = useState(output.id);
+  if (prevOutputId !== output.id) {
+    setPrevOutputId(output.id);
+    setViewKind("c4-container");
+  }
+
+  // Per-view element counts, used both for tab labels and to bias the
+  // default active tab toward whichever view has the most elements.
+  const counts = useMemo(() => {
+    const c: Record<ArchitectureView, number> = { "c4-context": 0, "c4-container": 0, "c4-component": 0, deployment: 0 };
+    if (!diagram) return c;
+    for (const e of diagram.elements) {
+      for (const v of e.views ?? []) c[v] = (c[v] ?? 0) + 1;
+    }
+    return c;
+  }, [diagram]);
+
   const flow = useMemo(
-    () => (diagram && !isSequenceDiagram(diagram) ? buildArchitectureFlow(diagram) : null),
-    [diagram],
+    () => (diagram && !isSequenceDiagram(diagram) ? buildArchitectureFlow(diagram, viewKind) : null),
+    [diagram, viewKind],
   );
 
   const handleRefineSubmit = async (e?: React.FormEvent) => {
@@ -79,6 +102,12 @@ function ArchitectureInner({ output, onRefine }: ArchitectureViewerProps) {
   }
 
   const isSeq = isSequenceDiagram(diagram);
+  const tabs: ViewTab[] = [
+    { view: "c4-context", label: "Context", count: counts["c4-context"] },
+    { view: "c4-container", label: "Container", count: counts["c4-container"] },
+    { view: "c4-component", label: "Component", count: counts["c4-component"] },
+    { view: "deployment", label: "Deployment", count: counts.deployment },
+  ];
 
   return (
     <div className="h-full w-full flex flex-col bg-white dark:bg-neutral-950">
@@ -88,14 +117,44 @@ function ArchitectureInner({ output, onRefine }: ArchitectureViewerProps) {
           <div className="flex items-center gap-2">
             <Boxes size={13} className="text-neutral-500 shrink-0" />
             <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200 truncate">{diagram.title}</p>
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 uppercase tracking-wider shrink-0">
-              {KIND_LABEL[diagram.kind] ?? diagram.kind}
-            </span>
+            {isSeq && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 uppercase tracking-wider shrink-0">
+                Sequence
+              </span>
+            )}
           </div>
           {diagram.summary && (
             <p className="text-[11px] leading-snug text-neutral-500 dark:text-neutral-400 mt-1 line-clamp-2">
               {diagram.summary}
             </p>
+          )}
+          {!isSeq && (
+            <div className="mt-1.5 flex items-center gap-1" role="tablist">
+              {tabs.map((tab) => {
+                const active = tab.view === viewKind;
+                const empty = tab.count === 0;
+                return (
+                  <button
+                    key={tab.view}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setViewKind(tab.view)}
+                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] transition-colors ${
+                      active
+                        ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 font-semibold"
+                        : empty
+                          ? "text-neutral-400 dark:text-neutral-600 hover:text-neutral-500 dark:hover:text-neutral-400"
+                          : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    }`}
+                    title={empty ? `No ${tab.label.toLowerCase()} yet — refine to add` : `Switch to ${tab.label}`}
+                  >
+                    <span className={active ? "" : "font-semibold"}>{tab.count}</span>
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
         {!isSeq && (
@@ -125,6 +184,7 @@ function ArchitectureInner({ output, onRefine }: ArchitectureViewerProps) {
           </div>
         ) : flow ? (
           <ReactFlow
+            key={viewKind /* force fitView on tab switch */}
             nodes={flow.nodes}
             edges={flow.edges}
             nodeTypes={nodeTypes}
@@ -151,7 +211,9 @@ function ArchitectureInner({ output, onRefine }: ArchitectureViewerProps) {
                 type="text"
                 value={refinePrompt}
                 onChange={(e) => setRefinePrompt(e.target.value)}
-                placeholder={placeholderFor(diagram.kind)}
+                placeholder={
+                  isSeq ? "Refine… e.g. show the SCA challenge step on payment > €100" : VIEW_PLACEHOLDER[viewKind]
+                }
                 disabled={isRefining || output.status === "generating"}
                 className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder-neutral-400 dark:placeholder-neutral-500 outline-none"
               />
@@ -167,7 +229,6 @@ function ArchitectureInner({ output, onRefine }: ArchitectureViewerProps) {
           </form>
         </div>
       </div>
-
     </div>
   );
 }
@@ -179,23 +240,3 @@ export function ArchitectureViewer({ output, onRefine }: ArchitectureViewerProps
     </ReactFlowProvider>
   );
 }
-
-function placeholderFor(kind: string): string {
-  switch (kind) {
-    case "c4-context":
-      return "Refine… e.g. add the regulator reporting feed as an external system";
-    case "c4-container":
-      return "Refine… e.g. add a Redis cache between API and core banking";
-    case "c4-component":
-      return "Refine… e.g. extract validation into a dedicated component";
-    case "deployment":
-      return "Refine… e.g. add a DR region in eu-west-1 with async replication";
-    case "sequence":
-      return "Refine… e.g. show the SCA challenge step on payment > €100";
-    case "erd":
-      return "Refine… e.g. split address into a separate entity";
-    default:
-      return "Refine this diagram…";
-  }
-}
-

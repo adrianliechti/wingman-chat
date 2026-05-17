@@ -1,14 +1,14 @@
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import type { ArchitectureElementKind, ArchitectureField, ArchitectureKind } from "../../types/notebook";
+import type { ArchitectureElementKind, ArchitectureView } from "../../types/notebook";
 
 export interface ArchitectureShapeNodeData {
   elementKind: ArchitectureElementKind;
-  diagramKind: ArchitectureKind;
+  /** Which view the node is currently being rendered in (drives any view-specific tweaks). */
+  view: ArchitectureView;
   label: string;
   technology?: string;
   description?: string;
   stereotype?: string;
-  fields?: ArchitectureField[];
   inferred: boolean;
   width: number;
   height: number;
@@ -74,12 +74,6 @@ function skin(kind: ArchitectureElementKind, inferred: boolean): SkinStyle {
       base.border = "#7c3aed";
       base.borderRadius = 4;
       break;
-    case "entity":
-      base.background = "#ffffff";
-      base.border = "#0f172a";
-      base.borderWidth = 1.5;
-      base.borderRadius = 6;
-      break;
   }
   if (inferred) {
     base.borderStyle = "dashed";
@@ -88,7 +82,7 @@ function skin(kind: ArchitectureElementKind, inferred: boolean): SkinStyle {
 }
 
 export function ArchitectureShapeNode({ data }: NodeProps) {
-  const { elementKind, label, technology, description, stereotype, fields, inferred, width, height } =
+  const { elementKind, label, technology, description, stereotype, inferred, width, height } =
     data as unknown as ArchitectureShapeNodeData;
   const style = skin(elementKind, inferred);
 
@@ -118,142 +112,41 @@ export function ArchitectureShapeNode({ data }: NodeProps) {
       <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />
       <Handle type="target" position={Position.Bottom} id="bottom-tgt" style={HANDLE_STYLE} />
 
-      {elementKind === "entity" ? (
-        <EntityBody label={label} fields={fields} inferred={inferred} />
-      ) : (
-        <BoxBody
-          label={label}
-          technology={technology}
-          stereotype={stereotype}
-          ink={style.ink}
-          techInk={style.techInk}
-          inferred={inferred}
-        />
-      )}
-    </div>
-  );
-}
-
-function BoxBody({
-  label,
-  technology,
-  stereotype,
-  ink,
-  techInk,
-  inferred,
-}: {
-  label: string;
-  technology?: string;
-  stereotype?: string;
-  ink: string;
-  techInk: string;
-  inferred: boolean;
-}) {
-  return (
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 3,
-        padding: "8px 12px",
-        textAlign: "center",
-      }}
-    >
-      {stereotype && (
-        <div style={{ fontSize: 9, fontWeight: 600, color: techInk, letterSpacing: 0.3 }}>{stereotype}</div>
-      )}
-      <div style={{ fontSize: 13, fontWeight: 600, color: ink, lineHeight: 1.2 }}>{label}</div>
-      {technology && (
-        <div style={{ fontSize: 10, fontWeight: 500, color: techInk, lineHeight: 1.2 }}>[{technology}]</div>
-      )}
-      {inferred && (
-        <span
-          style={{
-            position: "absolute",
-            top: 4,
-            right: 6,
-            fontSize: 8,
-            fontWeight: 700,
-            color: "#475569",
-            letterSpacing: 0.4,
-          }}
-        >
-          INFERRED
-        </span>
-      )}
-    </div>
-  );
-}
-
-function EntityBody({ label, fields, inferred }: { label: string; fields?: ArchitectureField[]; inferred: boolean }) {
-  return (
-    <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column" }}>
       <div
         style={{
-          padding: "8px 10px",
-          background: inferred ? "#fafaf9" : "#0f172a",
-          color: inferred ? "#1e293b" : "white",
-          fontWeight: 700,
-          fontSize: 13,
-          letterSpacing: 0.2,
-          borderBottom: "1px solid #cbd5e1",
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 3,
+          padding: "8px 12px",
+          textAlign: "center",
         }}
       >
-        {label}
+        {stereotype && (
+          <div style={{ fontSize: 9, fontWeight: 600, color: style.techInk, letterSpacing: 0.3 }}>{stereotype}</div>
+        )}
+        <div style={{ fontSize: 13, fontWeight: 600, color: style.ink, lineHeight: 1.2 }}>{label}</div>
+        {technology && (
+          <div style={{ fontSize: 10, fontWeight: 500, color: style.techInk, lineHeight: 1.2 }}>[{technology}]</div>
+        )}
         {inferred && (
           <span
             style={{
-              float: "right",
+              position: "absolute",
+              top: 4,
+              right: 6,
               fontSize: 8,
               fontWeight: 700,
               color: "#475569",
               letterSpacing: 0.4,
-              marginTop: 2,
             }}
           >
             INFERRED
           </span>
         )}
-      </div>
-      <div style={{ flex: 1, overflow: "hidden" }}>
-        {fields?.map((f) => (
-          <div
-            key={`${f.name}:${f.type ?? ""}`}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              padding: "3px 10px",
-              fontSize: 10.5,
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-              borderBottom: "1px solid #f1f5f9",
-              gap: 6,
-            }}
-          >
-            <span style={{ flex: 1, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {f.name}
-            </span>
-            {f.type && <span style={{ color: "#64748b" }}>{f.type}</span>}
-            {f.notation && (
-              <span
-                style={{
-                  background: f.notation.includes("PK") ? "#fde68a" : f.notation.includes("FK") ? "#bae6fd" : "#e2e8f0",
-                  color: "#0f172a",
-                  fontSize: 8,
-                  fontWeight: 700,
-                  padding: "0 4px",
-                  borderRadius: 3,
-                  letterSpacing: 0.3,
-                }}
-              >
-                {f.notation}
-              </span>
-            )}
-          </div>
-        ))}
       </div>
     </div>
   );

@@ -14,8 +14,7 @@ Start by surveying the sources with `source_list_files`. Read small sources full
 - Integration patterns (sync HTTP, async messaging, file transfer, batch).
 - Non-functional drivers (regulatory, throughput, latency, multi-region).
 - Technology hints (preferred stack, existing platform, vendor-locked services).
-- For ERD: domain language, entities, identifiers, important relationships.
-- For Sequence: which end-to-end flow matters most for the audience.
+- For sequence diagrams: which end-to-end flow matters most for the audience.
 
 {{STYLE_SECTION}}
 
@@ -31,67 +30,16 @@ Start by surveying the sources with `source_list_files`. Read small sources full
    - Server-side rendered + thin BFF when the audience is enterprise users on a single device class.
    Justify the choice implicitly through the structure of the diagram — don't write meta-commentary.
 
-2. **Fill gaps with engineering judgment.** If the sources don't enumerate the containers/components/entities, propose the smallest plausible set that delivers the stated functionality. A senior architect would never draw an "empty" diagram waiting for someone to fill it in.
+2. **Fill gaps with engineering judgment.** If the sources don't enumerate the containers/components, propose the smallest plausible set that delivers the stated functionality. A senior architect would never draw an "empty" diagram waiting for someone to fill it in.
 
 3. **Mark inferred elements.** Set `inferred: true` on every element or relation that the sources do not explicitly name. The user will then see what is documented vs. what is your design proposal, and can refine accordingly. **Do not hide inference — it's the contract that makes the design refinable.**
 
-4. **Be credible about technology.** When sources don't pin a stack, choose conventional, current technologies (PostgreSQL, Redis, Kafka, S3, Cloudflare, NGINX, Java 21 + Spring Boot, Python 3.12 + FastAPI, TypeScript + Node, …). Avoid trendy-but-unprovenchoices unless the source justifies them. Annotate with the technology field.
+4. **Be credible about technology.** When sources don't pin a stack, choose conventional, current technologies (PostgreSQL, Redis, Kafka, S3, Cloudflare, NGINX, Java 21 + Spring Boot, Python 3.12 + FastAPI, TypeScript + Node, …). Avoid trendy-but-unproven choices unless the source justifies them. Annotate with the technology field.
 
 5. **One focal SUT.** Every architecture diagram has exactly one in-focus system. Put it at the centre / inside the system boundary. External systems and persons sit outside.
 
-6. **Compactness over completeness.** Aim for **6–18 elements** per diagram. If a domain is bigger, drop down a level (a Container diagram can refer to a separate Component diagram for one of its containers) rather than cramming everything onto one canvas.
+6. **Relations carry semantic weight.** Every arrow has a verb-phrase label ("publishes events to", "writes audit log to", "queries customer master from") and, where it crosses a transport boundary, a `technology` tag ("HTTPS/JSON", "AMQP/Avro", "JDBC", "gRPC + mTLS"). Unlabelled arrows are a bug.
 
-7. **Relations carry semantic weight.** Every arrow has a verb-phrase label ("publishes events to", "writes audit log to", "queries customer master from") and, where it crosses a transport boundary, a `technology` tag ("HTTPS/JSON", "AMQP/Avro", "JDBC", "gRPC + mTLS"). Unlabelled arrows are a bug.
+7. **Stable, descriptive ids.** Short snake_case ids — `customer`, `api_gateway`, `core_banking`, `msg_validate`. Edges reference these.
 
-8. **Stable, descriptive ids.** Short snake_case ids — `customer`, `api_gateway`, `core_banking`, `entity_account`, `msg_validate`. Edges reference these.
-
----
-
-## Output Format (this pass)
-
-Your final response is the **structured English draft** of the diagram. The next pass will normalise this into strict JSON, so spelling of ids matters.
-
-```
-# Title
-<concise diagram title>
-
-## Summary
-<2–4 sentences: the SUT, who uses it, the architectural pattern you chose, key constraints>
-
-## Kind
-<one of: c4-context | c4-container | c4-component | deployment | sequence | erd>
-
-## Groups
-- <group-id> [<kind>] — <label>
-- ...
-
-## Elements
-- <element-id> [<element-kind>] — <label>
-  technology: <optional — Spring Boot, PostgreSQL 15, …>
-  parent: <optional — id of containing element or group>
-  description: <optional one-liner>
-  stereotype: <optional — <<datastore>>, <<queue>>, …>
-  fields: <ERD entities only — comma-separated "name:type [PK|FK|NN]">
-  inferred: <true if you synthesised this, omit otherwise>
-- ...
-
-## Relations
-- <source-id> → <target-id> [<relation-kind>] — <label>
-  technology: <optional — HTTPS/JSON, AMQP, JDBC>
-  order: <sequence diagrams only — integer ordinal>
-  inferred: <true if you synthesised this, omit otherwise>
-- ...
-```
-
----
-
-## Quality checklist before returning
-
-- [ ] Exactly one SUT, identified clearly.
-- [ ] Every element id is unique. Every relation references an id that exists.
-- [ ] Every relation has a verb-phrase label.
-- [ ] Cross-transport relations carry a `technology` tag.
-- [ ] At least one inferred element OR a clear note that the source is comprehensive — auditors of *your design* (the user) need to see what you proposed.
-- [ ] Technology names are concrete and current (no "some database", no "messaging system").
-
-Do not output JSON in this pass — output the structured English draft above. **Design freely; mark what you designed.**
+The style-specific section above gives the detailed output format for the chosen `kind`. Follow it exactly.

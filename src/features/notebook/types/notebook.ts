@@ -109,17 +109,19 @@ export interface ProcessDiagram {
 
 // ── Architecture diagram (C4 / Deployment / Sequence / ERD) ──────────
 //
-// Single schema, tagged by `kind`. The viewer dispatches on `kind` to one
-// of two layouts (network-graph or sequence). Soft fields are nullable for
-// OpenAI structured-output compatibility.
+// Single schema, tagged by `kind`. Two diagram families:
+//   - `c4`       — populates four C4 views (Context / Container / Component
+//                  / Deployment) in one generation. Each element/relation/group
+//                  carries `views[]` telling the viewer (and exporters) which
+//                  tabs it belongs to.
+//   - `sequence` — UML sequence diagram (ordered messages between actors).
+//
+// Soft fields are nullable for OpenAI structured-output compatibility.
 
-export type ArchitectureKind =
-  | "c4-context"
-  | "c4-container"
-  | "c4-component"
-  | "deployment"
-  | "sequence"
-  | "erd";
+/** Sub-views inside a combined C4 architecture output. */
+export type ArchitectureView = "c4-context" | "c4-container" | "c4-component" | "deployment";
+
+export type ArchitectureKind = "c4" | "sequence";
 
 export type ArchitectureElementKind =
   // C4
@@ -128,21 +130,10 @@ export type ArchitectureElementKind =
   | "external-system"
   | "container"
   | "component"
-  // Deployment
+  // Deployment (part of c4)
   | "deployment-node"
   // Sequence
-  | "actor"
-  // ERD
-  | "entity";
-
-/** ERD column / entity attribute. */
-export interface ArchitectureField {
-  name: string;
-  /** Datatype hint (e.g. "uuid", "varchar(64)", "timestamptz"). */
-  type?: string;
-  /** Notation tag — "PK", "FK", "NN", "UQ", … */
-  notation?: string;
-}
+  | "actor";
 
 export interface ArchitectureElement {
   id: string;
@@ -154,12 +145,12 @@ export interface ArchitectureElement {
   description?: string;
   /** Parent element id — used by nested deployment groups and components-within-containers. */
   parent?: string;
-  /** Attribute list — ERD entities only. */
-  fields?: ArchitectureField[];
   /** UML stereotype tag (e.g. "<<datastore>>", "<<queue>>", "<<microservice>>"). */
   stereotype?: string;
   /** True when the model synthesized this element to fill a gap. */
   inferred?: boolean;
+  /** For `kind: "c4"` only — which views this element appears in. Omitted for sequence. */
+  views?: ArchitectureView[];
 }
 
 export interface ArchitectureRelation {
@@ -171,11 +162,13 @@ export interface ArchitectureRelation {
   /** Transport / protocol annotation ("HTTPS/JSON", "AMQP", "JDBC"). */
   technology?: string;
   /** Relation flavour — drives arrow style. */
-  kind?: "uses" | "includes" | "depends-on" | "message" | "response" | "fk-1-1" | "fk-1-n" | "fk-m-n";
+  kind?: "uses" | "includes" | "depends-on" | "message" | "response";
   /** Ordinal for sequence diagrams (1, 2, 3, …). Ignored by other kinds. */
   order?: number;
   /** True when the model synthesized this relation to fill a gap. */
   inferred?: boolean;
+  /** For `kind: "c4"` outputs only — which views this relation appears in. */
+  views?: ArchitectureView[];
 }
 
 export interface ArchitectureGroup {
@@ -183,6 +176,8 @@ export interface ArchitectureGroup {
   label: string;
   /** "system-boundary" = C4 SUT dashed outline. "deployment-group" = nested infra box. */
   kind?: "system-boundary" | "deployment-group";
+  /** For `kind: "c4"` outputs only — which views this group appears in. */
+  views?: ArchitectureView[];
 }
 
 export interface ArchitectureDiagram {
