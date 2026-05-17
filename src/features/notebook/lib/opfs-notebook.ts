@@ -18,7 +18,14 @@ import {
   writeText,
 } from "@/shared/lib/opfs-core";
 import type { File } from "@/shared/types/file";
-import type { MindMapNode, Notebook, NotebookMessage, NotebookOutput, QuizQuestion } from "../types/notebook";
+import type {
+  MindMapNode,
+  Notebook,
+  NotebookMessage,
+  NotebookOutput,
+  ProcessDiagram,
+  QuizQuestion,
+} from "../types/notebook";
 
 const COLLECTION = "notebooks";
 
@@ -340,6 +347,9 @@ async function writeOutput(notebookId: string, output: NotebookOutput): Promise<
   if (output.mindMap) {
     await writeJson(`${base}/mindmap.json`, output.mindMap);
   }
+  if (output.process) {
+    await writeJson(`${base}/process.json`, output.process);
+  }
 
   // Metadata (source of truth for listing)
   const meta: OutputMeta = {
@@ -426,6 +436,9 @@ async function readOutput(notebookId: string, outputId: string): Promise<Noteboo
   } else if (meta.type === "mindmap") {
     const mindMap = await readJson<MindMapNode>(`${base}/mindmap.json`);
     if (mindMap) output.mindMap = mindMap;
+  } else if (meta.type === "process") {
+    const process = await readJson<ProcessDiagram>(`${base}/process.json`);
+    if (process) output.process = process;
   }
 
   return output;

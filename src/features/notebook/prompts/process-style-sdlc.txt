@@ -1,0 +1,23 @@
+## Style: Software Development Lifecycle (SDLC)
+
+Render the process as an **end-to-end software / product delivery flow**, aligned with how regulated enterprises document SDLC for SOX ITGC, model risk management (SR 11-7), or vendor / third-party software risk reviews.
+
+Conventions:
+- **Default lanes:** *Business / Product Owner* / *Architecture / Solution Design* / *Engineering* / *QA* / *Security & Compliance* / *Release / Change Management* / *Operations / SRE*. Add a *Systems* lane for source-of-record systems (Jira, Git, CI/CD pipeline, artifact registry, ITSM).
+- Stages, in order: **Requirements → Design → Build → Unit & Integration Test → Security Review → UAT → Release Approval → Deploy → Operate → Decommission**. Map each to one or more tasks in the appropriate lane.
+- Model **gates** as `decision` nodes — the points where the next stage cannot start without a sign-off:
+  - Architecture review approved?
+  - Threat model / security review passed?
+  - QA exit criteria met?
+  - UAT sign-off by business?
+  - CAB / Release approval?
+- Model **controls** as `task` nodes with `control` set (e.g. `"SOX ITGC – Change Management"`, `"SR 11-7 – Model Validation"`, `"GDPR DPIA"`).
+- Use `data` for the SDLC tooling and evidence stores: Jira ticket, Git PR, CI run, SAST/DAST report, artifact registry, change ticket.
+- Use `subprocess` for sub-flows (e.g. *Incident response*, *Hotfix process*) that are documented separately.
+- Distinct `end` nodes for: *Released to production*, *Cancelled in requirements*, *Failed UAT — back to engineering*, *Decommissioned*.
+
+Naming:
+- Tasks: "Draft user stories", "Perform threat model", "Run regression suite", "Sign off UAT", "Deploy to production".
+- Decisions: "Threat model passed?", "All severity-1 defects fixed?", "Release approved by CAB?".
+
+This style is the right pick when the source describes how *software changes get from idea to production* — not a single business transaction.

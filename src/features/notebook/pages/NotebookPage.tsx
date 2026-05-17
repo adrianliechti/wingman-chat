@@ -9,6 +9,7 @@ import { AudioViewer } from "../components/AudioViewer";
 import { MindMapViewer } from "../components/MindMapViewer";
 import { NotebookChat } from "../components/NotebookChat";
 import { NotebookSidebar } from "../components/NotebookSidebar";
+import { ProcessViewer } from "../components/ProcessViewer";
 import { QuizViewer } from "../components/QuizViewer";
 import { ReportViewer } from "../components/ReportViewer";
 import { SlideViewer } from "../components/SlideViewer";
@@ -281,6 +282,8 @@ export function NotebookPage() {
                   <QuizViewer questions={viewingOutput.quiz} />
                 ) : viewingOutput.mindMap ? (
                   <MindMapViewer root={viewingOutput.mindMap} />
+                ) : viewingOutput.process ? (
+                  <ProcessViewer output={viewingOutput} onRefine={updateOutput} />
                 ) : viewingOutput.audioUrl ? (
                   <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
                 ) : viewingOutput.type === "slides" ? (

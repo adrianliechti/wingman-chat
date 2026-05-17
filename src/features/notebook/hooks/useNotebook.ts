@@ -13,6 +13,7 @@ import {
   generateInfographic,
   generateMindMap,
   generatePodcast,
+  generateProcess,
   generateQuiz,
   generateText,
 } from "../lib/output-generators";
@@ -25,6 +26,7 @@ import {
   infographicStyles,
   OUTPUT_META,
   podcastStyles,
+  processStyles,
   reportStyles,
   slideStyles,
 } from "../lib/styles";
@@ -44,6 +46,10 @@ export function getReportStyles() {
 
 export function getInfographicStyles() {
   return infographicStyles.getAll();
+}
+
+export function getProcessStyles() {
+  return processStyles.getAll();
 }
 
 function generateId(): string {
@@ -475,7 +481,9 @@ export function useNotebook(notebookId?: string) {
                 ? generateQuiz(ctx)
                 : type === "mindmap"
                   ? generateMindMap(ctx)
-                  : generateText(ctx, OUTPUT_META[type].title);
+                  : type === "process"
+                    ? generateProcess(ctx)
+                    : generateText(ctx, OUTPUT_META[type].title);
 
       task
         .then(async (partial) => {

@@ -13,6 +13,7 @@ import {
   StickyNote,
   Table2,
   Trash2,
+  Workflow,
   X,
 } from "lucide-react";
 import { useRef, useState } from "react";
@@ -43,6 +44,7 @@ const OUTPUT_TYPES: {
   { type: "infographic", label: "Infographic", icon: BarChart3 },
   { type: "quiz", label: "Quiz", icon: CircleHelp },
   { type: "mindmap", label: "Mind Map", icon: Network },
+  { type: "process", label: "Process", icon: Workflow },
 ];
 
 type ExportFormat = "pdf" | "pptx-image" | "pptx-hybrid" | "pptx-editable" | "png";
@@ -116,7 +118,7 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
     }
   };
 
-  const DIALOG_TYPES = new Set<OutputType>(["slides", "podcast", "report", "infographic"]);
+  const DIALOG_TYPES = new Set<OutputType>(["slides", "podcast", "report", "infographic", "process"]);
 
   const handleDialogGenerate = (_type: OutputType, { styleId, ...rest }: GeneratorOptions) => {
     onGenerate(_type, styleId, rest);

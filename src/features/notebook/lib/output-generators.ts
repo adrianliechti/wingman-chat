@@ -18,7 +18,7 @@ import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { Tool } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
-import type { MindMapNode, NotebookOutput } from "../types/notebook";
+import type { MindMapNode, NotebookOutput, ProcessDiagram } from "../types/notebook";
 import { assembleSlideHtml, getOrderedHtmlSlides } from "./html-slide-assembly";
 import { createHtmlSlideTools } from "./html-slide-tools";
 import { createImageSlideTools } from "./image-slide-tools";
@@ -286,6 +286,134 @@ export async function generateMindMap(ctx: GenerateContext): Promise<Result> {
   const tree = buildMindMapTree(parsed.nodes);
   if (!tree) throw new Error("Invalid mind map structure");
   return { content: raw, mindMap: tree };
+}
+
+// ── Process diagram ────────────────────────────────────────────────────
+
+// Process nodes are constrained to a fixed BPMN-style vocabulary so the
+// React Flow renderer can map each `kind` to a concrete shape. Edges may
+// be `sequence` (within a pool/lane) or `message` (across pools).
+export const processNodeKinds = [
+  "start",
+  "end",
+  "task",
+  "subprocess",
+  "decision",
+  "parallel",
+  "event",
+  "data",
+] as const;
+
+// OpenAI structured outputs require every property to be present and either
+// required or `.nullable()` — `.optional()` is rejected. Keep all "soft"
+// fields as `nullable()` and treat `null` as absence in the normaliser.
+const processSchema = z
+  .object({
+    title: z.string(),
+    summary: z.string().nullable(),
+    lanes: z.array(
+      z
+        .object({
+          id: z.string(),
+          label: z.string(),
+        })
+        .strict(),
+    ),
+    nodes: z.array(
+      z
+        .object({
+          id: z.string(),
+          label: z.string(),
+          kind: z.enum(processNodeKinds),
+          lane: z.string().nullable(),
+          description: z.string().nullable(),
+          control: z.string().nullable(),
+        })
+        .strict(),
+    ),
+    edges: z.array(
+      z
+        .object({
+          id: z.string(),
+          source: z.string(),
+          target: z.string(),
+          label: z.string().nullable(),
+          flow: z.enum(["sequence", "message"]).nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+const PROCESS_PARSE_INSTRUCTIONS =
+  "Convert the following process draft into the exact JSON structure requested. " +
+  "Preserve every lane, node, and edge. " +
+  "Use the exact node ids from the draft so edges still connect. " +
+  "Normalise `kind` to one of: start, end, task, subprocess, decision, parallel, event, data. " +
+  "If the draft is ambiguous, prefer faithfulness to the source over invention. " +
+  "Omit (do not invent) `description` and `control` when the draft did not include them.";
+
+/** Strip nulls and apply minimal repairs so the diagram renders cleanly. */
+function normaliseProcess(raw: z.infer<typeof processSchema>): ProcessDiagram {
+  const laneIds = new Set(raw.lanes.map((l) => l.id));
+  const seenNodeIds = new Set<string>();
+  const nodes = raw.nodes
+    .filter((n) => {
+      if (seenNodeIds.has(n.id)) return false;
+      seenNodeIds.add(n.id);
+      return true;
+    })
+    .map((n) => ({
+      id: n.id,
+      label: n.label,
+      kind: n.kind,
+      ...(n.lane && laneIds.has(n.lane) ? { lane: n.lane } : {}),
+      ...(n.description ? { description: n.description } : {}),
+      ...(n.control ? { control: n.control } : {}),
+    }));
+
+  const validIds = new Set(nodes.map((n) => n.id));
+  const seenEdgeIds = new Set<string>();
+  const edges = raw.edges
+    .filter((e) => validIds.has(e.source) && validIds.has(e.target))
+    .filter((e) => {
+      if (seenEdgeIds.has(e.id)) return false;
+      seenEdgeIds.add(e.id);
+      return true;
+    })
+    .map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      ...(e.label ? { label: e.label } : {}),
+      ...(e.flow === "message" ? { flow: "message" as const } : {}),
+    }));
+
+  return {
+    title: raw.title,
+    ...(raw.summary ? { summary: raw.summary } : {}),
+    lanes: raw.lanes,
+    nodes,
+    edges,
+  };
+}
+
+export async function generateProcess(ctx: GenerateContext): Promise<Result> {
+  // Step 1: tool-calling loop reads sources and drafts the process in
+  // the structured-English template required by the studio prompt.
+  const result = await run(ctx.client, ctx.model, ctx.instructions, [USER_MESSAGE("Process")], ctx.sourceTools);
+  const raw = getTextFromContent(result[result.length - 1].content);
+  if (!raw?.trim()) throw new Error("Could not generate process draft");
+
+  // Step 2: structured-output pass — convert the draft into strict JSON
+  // matching the React Flow renderer's contract.
+  const parsed = await ctx.client.parse(ctx.model, PROCESS_PARSE_INSTRUCTIONS, raw, processSchema, "process");
+  if (!parsed?.nodes?.length) throw new Error("Invalid process structure");
+
+  const process = normaliseProcess(parsed);
+  if (process.nodes.length === 0) throw new Error("Invalid process structure");
+
+  return { content: raw, process };
 }
 
 // ── Report / default text ──────────────────────────────────────────────

@@ -22,6 +22,11 @@ import infographicStyleProfessional from "../prompts/infographic-style-professio
 import infographicStyleScientific from "../prompts/infographic-style-scientific.txt?raw";
 import infographicStyleSketchNote from "../prompts/infographic-style-sketch-note.txt?raw";
 import podcastStyleBriefing from "../prompts/podcast-style-briefing.txt?raw";
+import processStyleBpmn from "../prompts/process-style-bpmn.txt?raw";
+import processStyleItil from "../prompts/process-style-itil.txt?raw";
+import processStyleSdlc from "../prompts/process-style-sdlc.txt?raw";
+import processStyleSwimlane from "../prompts/process-style-swimlane.txt?raw";
+import processStyleThreeLines from "../prompts/process-style-three-lines.txt?raw";
 import podcastStyleDebate from "../prompts/podcast-style-debate.txt?raw";
 import podcastStyleDeepDive from "../prompts/podcast-style-deep-dive.txt?raw";
 import podcastStyleOverview from "../prompts/podcast-style-overview.txt?raw";
@@ -39,6 +44,7 @@ import slideStyleWhiteboard from "../prompts/slide-style-whiteboard.txt?raw";
 import studioAudioInstructions from "../prompts/studio-audio-overview.txt?raw";
 import studioInfographicInstructions from "../prompts/studio-infographic.txt?raw";
 import studioMindMapInstructions from "../prompts/studio-mind-map.txt?raw";
+import studioProcessInstructions from "../prompts/studio-process.txt?raw";
 import studioQuizInstructions from "../prompts/studio-quiz.txt?raw";
 import studioReportInstructions from "../prompts/studio-report.txt?raw";
 import studioSlideInstructions from "../prompts/studio-slide-deck.txt?raw";
@@ -197,6 +203,42 @@ export const reportStyles: StyleRegistry = makeRegistry(
   () => getConfig().canvas?.reports?.map((r) => ({ id: toId(r.name), label: r.name, prompt: r.prompt })),
 );
 
+export const processStyles: StyleRegistry = makeRegistry(
+  [
+    {
+      id: "bpmn",
+      label: "BPMN 2.0",
+      description: "Standard banking / insurance notation — pools, lanes, gateways, events",
+      prompt: processStyleBpmn,
+    },
+    {
+      id: "swimlane",
+      label: "Swimlane",
+      description: "Role-based flowchart that makes cross-team hand-offs explicit",
+      prompt: processStyleSwimlane,
+    },
+    {
+      id: "itil",
+      label: "ITIL / ITSM",
+      description: "Change, incident, problem, or request flows aligned with ITIL",
+      prompt: processStyleItil,
+    },
+    {
+      id: "sdlc",
+      label: "SDLC",
+      description: "Requirements → design → build → release → operate, with SOX gates",
+      prompt: processStyleSdlc,
+    },
+    {
+      id: "three-lines",
+      label: "3 Lines of Defence",
+      description: "Governance view — business / risk & compliance / internal audit",
+      prompt: processStyleThreeLines,
+    },
+  ],
+  () => getConfig().canvas?.processes?.map((p) => ({ id: toId(p.name), label: p.name, prompt: p.prompt })),
+);
+
 export const infographicStyles: StyleRegistry = makeRegistry(
   [
     { id: "auto", label: "Auto-select", prompt: infographicStyleAuto },
@@ -252,6 +294,12 @@ export const OUTPUT_META: Record<OutputType, OutputMeta> = {
   },
   quiz: { title: "Quiz", template: studioQuizInstructions },
   mindmap: { title: "Mind Map", template: studioMindMapInstructions },
+  process: {
+    title: "Process",
+    template: studioProcessInstructions,
+    styles: processStyles,
+    defaultStyleId: "bpmn",
+  },
 };
 
 // ── Instruction assembly ───────────────────────────────────────────────

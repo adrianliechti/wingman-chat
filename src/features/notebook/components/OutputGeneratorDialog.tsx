@@ -9,12 +9,13 @@ import {
   Presentation,
   Sparkles,
   Table2,
+  Workflow,
   X,
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { getConfig } from "@/shared/config";
 import type { BuildInstructionsOptions, Style } from "../lib/styles";
-import { infographicStyles, podcastStyles, reportStyles, slideStyles } from "../lib/styles";
+import { infographicStyles, podcastStyles, processStyles, reportStyles, slideStyles } from "../lib/styles";
 import type { OutputType } from "../types/notebook";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -104,6 +105,13 @@ const TYPE_META: Record<
     title: "Generate Infographic",
     placeholder: "Describe the infographic you want to create…",
     styles: infographicStyles,
+  },
+  process: {
+    icon: Workflow,
+    title: "Generate Process Diagram",
+    placeholder: "Audience, scope, controls to highlight (e.g. SOX, KYC, ITGC change-management gates)…",
+    styles: processStyles,
+    descriptionCards: true,
   },
 };
 

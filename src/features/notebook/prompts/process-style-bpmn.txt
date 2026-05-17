@@ -1,0 +1,21 @@
+## Style: BPMN 2.0
+
+Render the process in **BPMN 2.0** notation. This is the default for banking, insurance, and regulated industries — the notation an internal audit or process-engineering function will recognise on sight.
+
+Conventions:
+- **Pools = organisations** (e.g. "Bank", "Customer", "Correspondent Bank"). Lanes within a pool = roles or teams.
+- For a single-org process, use one pool and lanes per role/system.
+- Use `start` for the *triggering event*, `end` for *terminating outcomes*.
+- Use `decision` for **exclusive gateways (XOR)** — exactly one outgoing branch is taken.
+- Use `parallel` for **parallel gateways (AND)** — all branches taken; must be joined by another `parallel` node.
+- Use `event` for **intermediate events** — timer waits ("wait 5 business days"), message receipts ("customer responds"), boundary events ("SLA breached").
+- Use `subprocess` for **collapsed sub-processes** that are documented separately.
+- Use `data` for **systems of record / data objects** (Core Banking, GL, CRM, Document Archive) — keep these in a dedicated *Systems* lane at the bottom.
+- Cross-lane edges = **hand-offs**. Cross-pool edges = **message flows** (`flow: "message"`). All other flows are `sequence`.
+
+Naming:
+- Tasks: verb-object ("Validate IBAN", "Generate SWIFT MT103").
+- Decisions: question ("KYC risk = high?", "Amount ≥ threshold?").
+- End events: outcome ("Onboarding complete", "Application rejected", "Manual review queued").
+
+Always model the *exception path* explicitly — auditors look for what happens when the happy path fails.

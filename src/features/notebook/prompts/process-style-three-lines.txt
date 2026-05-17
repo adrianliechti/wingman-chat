@@ -1,0 +1,24 @@
+## Style: Three Lines of Defence
+
+Render the process through the lens of the **Three Lines of Defence (3LoD)** model — the governance framework used by banks, insurers, and asset managers (IIA position paper, BCBS guidance) to demonstrate independent risk oversight.
+
+Conventions:
+- **Exactly three primary lanes**, in this order top→bottom:
+  1. **1st Line — Business / Operations** (the risk owner: front office, operations, IT delivery).
+  2. **2nd Line — Risk & Compliance** (independent risk management, compliance, model risk, security).
+  3. **3rd Line — Internal Audit** (independent assurance).
+- Optionally include a *Customer / External* lane on top and an *Executive / Board* lane at the very bottom for escalation paths.
+- Place each task in the lane of the function that performs it. **Reviews and approvals belong in the lane of the reviewing function, not the requester** — that is the whole point of the model.
+- Use `decision` for **control gates**: 1L self-check, 2L challenge, 3L audit finding. Each must have at least 2 labelled outgoing edges ("pass" / "fail", "approve" / "reject", "open finding" / "no finding").
+- Use `task` with `control` set for every independent control activity (e.g. `"2LoD challenge — pricing model"`, `"3LoD audit — KYC sampling"`).
+- Use `event` for periodic / scheduled triggers ("quarterly attestation due", "annual audit cycle").
+- Use `data` for shared records (risk register, control library, audit findings tracker) — sits in a *Systems* lane at the bottom.
+
+Edges:
+- Sequence flow within a line.
+- Edges crossing the line boundaries = **escalations or independent reviews** — make them explicit.
+
+Outcomes (`end` nodes):
+- *Risk accepted / closed*, *Finding raised*, *Escalated to Board / Risk Committee*, *Issue remediated*, etc.
+
+Use this style when the source emphasises **governance, segregation, regulatory oversight, or audit findings** rather than transaction processing.

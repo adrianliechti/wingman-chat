@@ -141,11 +141,17 @@ interface CanvasInfographicConfig {
   prompt: string;
 }
 
+interface CanvasProcessConfig {
+  name: string;
+  prompt: string;
+}
+
 interface CanvasConfig {
   slides?: CanvasSlideConfig[];
   podcasts?: CanvasPodcastConfig[];
   reports?: CanvasReportConfig[];
   infographics?: CanvasInfographicConfig[];
+  processes?: CanvasProcessConfig[];
 }
 
 interface ConfigSchema {

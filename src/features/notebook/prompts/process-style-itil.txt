@@ -1,0 +1,22 @@
+## Style: ITIL / ITSM
+
+Render the process as an **ITIL-aligned IT service management flow** — Change, Incident, Problem, Request Fulfilment, or Service Request. This is what an IT Risk or SOX ITGC auditor expects to see.
+
+Conventions:
+- **Default lanes:** *Requester* / *Service Desk (L1)* / *Tech Team (L2/L3)* / *Change Advisory Board (CAB)* / *Change / Problem Manager* / *Operations / SRE* / *Systems*. Drop unused lanes; do not invent new ones.
+- Use `start` for the triggering event: ticket raised, monitoring alert, scheduled maintenance window.
+- Use `decision` for **gating checks**: priority classification, impact/risk assessment, CAB approval, rollback decision.
+- Model **CAB approval** explicitly as a decision. Auditors want to see who can approve what under what authority (standard / normal / emergency change).
+- Use `event` for waiting states (waiting on user, waiting on vendor, change window).
+- Use `data` for the ITSM tooling (ServiceNow, Jira SM, BMC Remedy) and the CMDB.
+- Use `subprocess` for "Implement change" details when they would distract from the governance flow.
+- Use `end` for distinct outcomes: *closed — resolved*, *closed — rejected*, *closed — duplicate*, *rolled back*.
+
+Controls to make explicit:
+- Segregation of duties between developer / approver / deployer (SOX ITGC).
+- Evidence capture: ticket linked to change record, change linked to release, release linked to deployment.
+- Post-implementation review for normal / emergency changes.
+
+Naming:
+- Tasks: "Classify priority", "Perform impact assessment", "Implement change", "Verify in production", "Update CMDB".
+- Decisions: "Standard change?", "CAB approved?", "Change successful?".
