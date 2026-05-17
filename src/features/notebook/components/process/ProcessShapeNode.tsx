@@ -243,11 +243,17 @@ export function ProcessShapeNode({ data }: NodeProps) {
 
   return (
     <div style={{ position: "relative", width, height }} title={title}>
-      {/* Hidden handles on all 4 sides so the layout can pick the best one. */}
+      {/* Hidden source + target handles on every side. The layout can connect
+          edges from any side to any side; React Flow requires the chosen
+          handle to exist as the right type (source vs target). */}
       <Handle type="target" position={Position.Left} id="left" style={HANDLE_STYLE} />
+      <Handle type="source" position={Position.Left} id="left-src" style={HANDLE_STYLE} />
       <Handle type="target" position={Position.Top} id="top" style={HANDLE_STYLE} />
+      <Handle type="source" position={Position.Top} id="top-src" style={HANDLE_STYLE} />
       <Handle type="source" position={Position.Right} id="right" style={HANDLE_STYLE} />
+      <Handle type="target" position={Position.Right} id="right-tgt" style={HANDLE_STYLE} />
       <Handle type="source" position={Position.Bottom} id="bottom" style={HANDLE_STYLE} />
+      <Handle type="target" position={Position.Bottom} id="bottom-tgt" style={HANDLE_STYLE} />
       {content}
       {control && !style.diamond && !style.circle && (
         <span

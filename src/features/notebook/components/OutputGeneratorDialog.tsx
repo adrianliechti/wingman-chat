@@ -2,6 +2,8 @@ import { Listbox, Transition, TransitionChild } from "@headlessui/react";
 import {
   AudioLines,
   BarChart3,
+  BookMarked,
+  Boxes,
   Check,
   ChevronsUpDown,
   Image as ImageIcon,
@@ -15,7 +17,15 @@ import {
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { getConfig } from "@/shared/config";
 import type { BuildInstructionsOptions, Style } from "../lib/styles";
-import { infographicStyles, podcastStyles, processStyles, reportStyles, slideStyles } from "../lib/styles";
+import {
+  architectureStyles,
+  dataCatalogStyles,
+  infographicStyles,
+  podcastStyles,
+  processStyles,
+  reportStyles,
+  slideStyles,
+} from "../lib/styles";
 import type { OutputType } from "../types/notebook";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -111,6 +121,20 @@ const TYPE_META: Record<
     title: "Generate Process Diagram",
     placeholder: "Audience, scope, controls to highlight (e.g. SOX, KYC, ITGC change-management gates)…",
     styles: processStyles,
+    descriptionCards: true,
+  },
+  architecture: {
+    icon: Boxes,
+    title: "Generate Architecture Diagram",
+    placeholder: "Target audience + constraints (e.g. cloud provider, regulatory scope, scale, pattern preference)…",
+    styles: architectureStyles,
+    descriptionCards: true,
+  },
+  "data-catalog": {
+    icon: BookMarked,
+    title: "Generate Data Catalog",
+    placeholder: "Scope + audience (e.g. trading book; BCBS 239 review; classify PII; align to FIBO)…",
+    styles: dataCatalogStyles,
     descriptionCards: true,
   },
 };

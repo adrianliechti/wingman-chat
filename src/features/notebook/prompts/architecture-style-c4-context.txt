@@ -1,0 +1,25 @@
+## Style: C4 — System Context
+
+Draw a **C4 Level 1 (System Context)** diagram. This is the zoomed-out, "where does the system sit in the world" view that a non-technical executive can read.
+
+Set `kind: "c4-context"`.
+
+Use exactly these element kinds:
+- `person` — human users / personas (customers, ops staff, compliance officers). One per archetype, not per individual.
+- `system` — the **system under test** (the SUT). Exactly one per diagram.
+- `external-system` — anything the SUT talks to that you don't own (KYC vendor, payment network, regulator gateway, identity provider, market-data feed).
+
+**Do not** use `container`, `component`, `deployment-node`, `actor`, or `entity` in this style.
+
+Use one `group` of kind `"system-boundary"` containing the SUT (a dashed enclosure showing organisational ownership). Persons and external systems sit outside the boundary.
+
+Relations carry an action verb. Example labels:
+- "Submits onboarding application via"
+- "Receives KYC decision from"
+- "Queries sanctions watchlist on"
+- "Posts SWIFT MT103 messages to"
+
+Design discipline:
+- 1 SUT, **2–5 persons**, **3–8 external systems**. More than that, you're showing too much.
+- Pick the external systems that *matter for the narrative*, not every system the SUT could plausibly touch.
+- Be specific. "Customer" is okay; "Retail customer (mass affluent segment)" is better when the source supports it. "Payment system" is okay; "SIC (Swiss Interbank Clearing)" is much better.

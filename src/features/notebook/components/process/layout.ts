@@ -158,7 +158,14 @@ function topologicalOrder(
   return order;
 }
 
-/** Choose source/target handles for an edge based on node positions. */
+/**
+ * Choose source/target handles for an edge based on node positions.
+ *
+ * `ProcessShapeNode` exposes 8 handles — a source AND a target on each side —
+ * with distinct ids: the "natural" side keeps the bare id (`left`, `top`,
+ * `right`, `bottom`) for backwards compatibility, the opposite-role handle
+ * on the same side uses a `-src` / `-tgt` suffix.
+ */
 function pickHandles(
   sx: number,
   sy: number,
@@ -178,11 +185,26 @@ function pickHandles(
   if (Math.abs(dx) >= Math.abs(dy)) {
     return dx >= 0
       ? { sourceHandle: "right", targetHandle: "left", sourcePosition: Position.Right, targetPosition: Position.Left }
-      : { sourceHandle: "left", targetHandle: "right", sourcePosition: Position.Left, targetPosition: Position.Right };
+      : {
+          sourceHandle: "left-src",
+          targetHandle: "right-tgt",
+          sourcePosition: Position.Left,
+          targetPosition: Position.Right,
+        };
   }
   return dy >= 0
-    ? { sourceHandle: "bottom", targetHandle: "top", sourcePosition: Position.Bottom, targetPosition: Position.Top }
-    : { sourceHandle: "top", targetHandle: "bottom", sourcePosition: Position.Top, targetPosition: Position.Bottom };
+    ? {
+        sourceHandle: "bottom",
+        targetHandle: "top",
+        sourcePosition: Position.Bottom,
+        targetPosition: Position.Top,
+      }
+    : {
+        sourceHandle: "top-src",
+        targetHandle: "bottom-tgt",
+        sourcePosition: Position.Top,
+        targetPosition: Position.Bottom,
+      };
 }
 
 // ── Public entry ──────────────────────────────────────────────────────

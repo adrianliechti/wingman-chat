@@ -8,6 +8,8 @@ import type { File } from "@/shared/types/file";
 import * as store from "../lib/opfs-notebook";
 import {
   type GenerateContext,
+  generateArchitecture,
+  generateDataCatalog,
   generateHtmlSlides,
   generateImageSlides,
   generateInfographic,
@@ -20,9 +22,11 @@ import {
 import { createSourceExecTools } from "../lib/source-exec-tools";
 import { createSourceTools } from "../lib/source-tools";
 import {
+  architectureStyles,
   type BuildInstructionsOptions,
   buildInstructions,
   chatInstructions,
+  dataCatalogStyles,
   infographicStyles,
   OUTPUT_META,
   podcastStyles,
@@ -50,6 +54,14 @@ export function getInfographicStyles() {
 
 export function getProcessStyles() {
   return processStyles.getAll();
+}
+
+export function getArchitectureStyles() {
+  return architectureStyles.getAll();
+}
+
+export function getDataCatalogStyles() {
+  return dataCatalogStyles.getAll();
 }
 
 function generateId(): string {
@@ -467,23 +479,28 @@ export function useNotebook(notebookId?: string) {
         },
       };
 
-      const isImageMode = options?.slideMode === "images";
-      const task: Promise<Partial<NotebookOutput>> =
-        type === "podcast"
-          ? generatePodcast(ctx, styleId)
-          : type === "infographic"
-            ? generateInfographic(ctx)
-            : type === "slides"
-              ? isImageMode
-                ? generateImageSlides(ctx)
-                : generateHtmlSlides(ctx)
-              : type === "quiz"
-                ? generateQuiz(ctx)
-                : type === "mindmap"
-                  ? generateMindMap(ctx)
-                  : type === "process"
-                    ? generateProcess(ctx)
-                    : generateText(ctx, OUTPUT_META[type].title);
+      const task: Promise<Partial<NotebookOutput>> = (() => {
+        switch (type) {
+          case "podcast":
+            return generatePodcast(ctx, styleId);
+          case "infographic":
+            return generateInfographic(ctx);
+          case "slides":
+            return options?.slideMode === "images" ? generateImageSlides(ctx) : generateHtmlSlides(ctx);
+          case "quiz":
+            return generateQuiz(ctx);
+          case "mindmap":
+            return generateMindMap(ctx);
+          case "process":
+            return generateProcess(ctx);
+          case "architecture":
+            return generateArchitecture(ctx);
+          case "data-catalog":
+            return generateDataCatalog(ctx);
+          default:
+            return generateText(ctx, OUTPUT_META[type].title);
+        }
+      })();
 
       task
         .then(async (partial) => {

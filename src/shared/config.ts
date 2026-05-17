@@ -146,12 +146,24 @@ interface CanvasProcessConfig {
   prompt: string;
 }
 
+interface CanvasArchitectureConfig {
+  name: string;
+  prompt: string;
+}
+
+interface CanvasDataCatalogConfig {
+  name: string;
+  prompt: string;
+}
+
 interface CanvasConfig {
   slides?: CanvasSlideConfig[];
   podcasts?: CanvasPodcastConfig[];
   reports?: CanvasReportConfig[];
   infographics?: CanvasInfographicConfig[];
   processes?: CanvasProcessConfig[];
+  architectures?: CanvasArchitectureConfig[];
+  dataCatalogs?: CanvasDataCatalogConfig[];
 }
 
 interface ConfigSchema {

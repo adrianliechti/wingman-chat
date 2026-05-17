@@ -5,7 +5,9 @@ import { CopyButton } from "@/shared/ui/CopyButton";
 import { Markdown } from "@/shared/ui/Markdown";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
+import { ArchitectureViewer } from "../components/ArchitectureViewer";
 import { AudioViewer } from "../components/AudioViewer";
+import { DataCatalogViewer } from "../components/DataCatalogViewer";
 import { MindMapViewer } from "../components/MindMapViewer";
 import { NotebookChat } from "../components/NotebookChat";
 import { NotebookSidebar } from "../components/NotebookSidebar";
@@ -284,6 +286,10 @@ export function NotebookPage() {
                   <MindMapViewer root={viewingOutput.mindMap} />
                 ) : viewingOutput.process ? (
                   <ProcessViewer output={viewingOutput} onRefine={updateOutput} />
+                ) : viewingOutput.architecture ? (
+                  <ArchitectureViewer output={viewingOutput} onRefine={updateOutput} />
+                ) : viewingOutput.dataCatalog ? (
+                  <DataCatalogViewer output={viewingOutput} onRefine={updateOutput} />
                 ) : viewingOutput.audioUrl ? (
                   <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
                 ) : viewingOutput.type === "slides" ? (

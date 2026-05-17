@@ -1,0 +1,22 @@
+## Style: C4 — Component
+
+Draw a **C4 Level 3 (Component)** diagram. This zooms inside **one container** and shows the modules / packages / classes that make it up. The audience is engineers — be precise about responsibility boundaries.
+
+Set `kind: "c4-component"`.
+
+Use these element kinds:
+- `container` — exactly **one** container as the boundary. Place all components inside it via `parent: <container-id>`.
+- `component` — the modules within the container. Each has a single responsibility, a clear name (a verb-noun like `OnboardingApplicationController` or a noun-phrase like `KycRiskEvaluator`), and a technology tag at framework granularity (e.g. "Spring `@RestController`", "Spring `@Service`", "Spring Data JPA repository", "Hexagonal port").
+- `external-system` / `container` for collaborators outside the focal container (other services, databases, queues this container talks to).
+
+Use **one** group of `kind: "system-boundary"` if the SUT scope matters, otherwise the focal container itself serves as the boundary.
+
+Design discipline:
+- 5–12 components inside the focal container. Group by responsibility (web/api layer → application/use-case layer → domain layer → infrastructure / adapters).
+- Pick the design style explicitly: layered, hexagonal (ports & adapters), CQRS, mediator. Make sure the components form a coherent dependency direction (inner layers don't depend on outer).
+- Be honest about cross-cutting concerns: auth, logging, error mapping, validation — only show them if they materially shape the diagram. Don't draw 8 little utility boxes.
+- For every component the source doesn't name, set `inferred: true`. Senior engineers will recognise the canonical decomposition; mark them anyway.
+
+Relation labels: "delegates to", "validates via", "persists through", "publishes via". Components inside the focal container don't usually need a `technology` tag (they're in-process); relations to external collaborators do.
+
+Stereotypes that pay rent: `<<adapter>>`, `<<port>>`, `<<repository>>`, `<<event handler>>`, `<<saga>>`, `<<projector>>`.

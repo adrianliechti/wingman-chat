@@ -1,0 +1,30 @@
+## Style: Business Glossary (SKOS + FIBO)
+
+Render the catalog as a **business glossary** — the controlled vocabulary that bridges business stakeholders and the technical data estate. Aligned with W3C SKOS (Simple Knowledge Organization System) and, for finance concepts, FIBO (Financial Industry Business Ontology, EDM Council).
+
+Set `kind: "glossary"`.
+
+**Populate heavily**: `glossary` array. **Populate lightly**: `datasets` (enough to give each term a place to live — typically 1 dataset per 2–3 terms), `lineageNodes` / `lineageEdges` (skip), `contracts` (skip).
+
+SKOS / FIBO mapping cheat-sheet:
+- `GlossaryTerm.term` → `skos:prefLabel`.
+- `GlossaryTerm.definition` → `skos:definition`.
+- `GlossaryTerm.synonyms` → `skos:altLabel`.
+- `GlossaryTerm.parent` → `skos:broader` (a more general concept).
+- `GlossaryTerm.ontologyReference` → `skos:exactMatch` or `skos:closeMatch` URI — use FIBO IRIs when the term has a canonical FIBO concept.
+
+Design discipline for glossary:
+- **Aim for 15–30 terms.** A bank's glossary spans hundreds, but the catalog is a sampler — pick the terms that show up most often in the source material AND in cross-team conversations.
+- **Define in business English**, not implementation detail. "Counterparty: a legal entity with whom the firm has a financial contract" — not "the counterparty_id column in fact_trades".
+- **FIBO IRIs when applicable.** For canonical finance concepts, reference the FIBO IRI. Examples:
+  - Counterparty → `https://spec.edmcouncil.org/fibo/ontology/FBC/FunctionalEntities/FinancialServicesEntities/Counterparty`
+  - Financial Instrument → `https://spec.edmcouncil.org/fibo/ontology/FBC/FinancialInstruments/FinancialInstruments/FinancialInstrument`
+  - Legal Entity Identifier → `https://spec.edmcouncil.org/fibo/ontology/FND/AgentsAndPeople/People/Person` (close-match)
+  - Trade → `https://spec.edmcouncil.org/fibo/ontology/SEC/Securities/SecuritiesIssuance/SecuritiesTrade`
+
+  Only emit an `ontologyReference` if you're confident it's a real FIBO concept — never fabricate an IRI. If unsure, omit it.
+- **Hierarchy via `parent`.** Build at least one 2-level hierarchy: e.g. `Financial Instrument` → `Equity`, `Bond`, `Derivative`. The renderer uses `parent` to group terms.
+- **Cross-reference datasets.** Every term should reference at least one dataset that realises it. Terms with zero realising datasets are abstract and add little value.
+- **Synonyms matter.** "Customer" / "Client" / "Party" are often the same thing — fold them via `synonyms`.
+
+Do **not** stuff `regulatoryTags` into glossary terms (those belong on datasets). The glossary is about *meaning*, not *governance*.

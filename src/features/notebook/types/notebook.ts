@@ -8,7 +8,16 @@ export interface Notebook {
   updatedAt: string;
 }
 
-export type OutputType = "podcast" | "slides" | "infographic" | "report" | "quiz" | "mindmap" | "process";
+export type OutputType =
+  | "podcast"
+  | "slides"
+  | "infographic"
+  | "report"
+  | "quiz"
+  | "mindmap"
+  | "process"
+  | "architecture"
+  | "data-catalog";
 
 export interface QuizQuestion {
   question: string;
@@ -61,6 +70,8 @@ export interface ProcessNode {
   description?: string;
   /** Optional reference to a control, policy, regulation, or KPI (e.g. "SOX 404", "ISO 27001 A.9"). */
   control?: string;
+  /** True when the model synthesized this node to fill a gap not present in the sources. */
+  inferred?: boolean;
 }
 
 export interface ProcessEdge {
@@ -96,6 +107,94 @@ export interface ProcessDiagram {
   edges: ProcessEdge[];
 }
 
+// ── Architecture diagram (C4 / Deployment / Sequence / ERD) ──────────
+//
+// Single schema, tagged by `kind`. The viewer dispatches on `kind` to one
+// of two layouts (network-graph or sequence). Soft fields are nullable for
+// OpenAI structured-output compatibility.
+
+export type ArchitectureKind =
+  | "c4-context"
+  | "c4-container"
+  | "c4-component"
+  | "deployment"
+  | "sequence"
+  | "erd";
+
+export type ArchitectureElementKind =
+  // C4
+  | "person"
+  | "system"
+  | "external-system"
+  | "container"
+  | "component"
+  // Deployment
+  | "deployment-node"
+  // Sequence
+  | "actor"
+  // ERD
+  | "entity";
+
+/** ERD column / entity attribute. */
+export interface ArchitectureField {
+  name: string;
+  /** Datatype hint (e.g. "uuid", "varchar(64)", "timestamptz"). */
+  type?: string;
+  /** Notation tag — "PK", "FK", "NN", "UQ", … */
+  notation?: string;
+}
+
+export interface ArchitectureElement {
+  id: string;
+  kind: ArchitectureElementKind;
+  label: string;
+  /** Tech stack tag for containers/components/deployment nodes ("Spring Boot", "PostgreSQL 15"). */
+  technology?: string;
+  /** One-liner shown beneath the label and surfaced in tooltips. */
+  description?: string;
+  /** Parent element id — used by nested deployment groups and components-within-containers. */
+  parent?: string;
+  /** Attribute list — ERD entities only. */
+  fields?: ArchitectureField[];
+  /** UML stereotype tag (e.g. "<<datastore>>", "<<queue>>", "<<microservice>>"). */
+  stereotype?: string;
+  /** True when the model synthesized this element to fill a gap. */
+  inferred?: boolean;
+}
+
+export interface ArchitectureRelation {
+  id: string;
+  source: string;
+  target: string;
+  /** Short verb phrase: "writes to", "publishes events to", "reads from". */
+  label?: string;
+  /** Transport / protocol annotation ("HTTPS/JSON", "AMQP", "JDBC"). */
+  technology?: string;
+  /** Relation flavour — drives arrow style. */
+  kind?: "uses" | "includes" | "depends-on" | "message" | "response" | "fk-1-1" | "fk-1-n" | "fk-m-n";
+  /** Ordinal for sequence diagrams (1, 2, 3, …). Ignored by other kinds. */
+  order?: number;
+  /** True when the model synthesized this relation to fill a gap. */
+  inferred?: boolean;
+}
+
+export interface ArchitectureGroup {
+  id: string;
+  label: string;
+  /** "system-boundary" = C4 SUT dashed outline. "deployment-group" = nested infra box. */
+  kind?: "system-boundary" | "deployment-group";
+}
+
+export interface ArchitectureDiagram {
+  title: string;
+  summary?: string;
+  /** Diagram family — drives layout and visual vocabulary. */
+  kind: ArchitectureKind;
+  elements: ArchitectureElement[];
+  relations: ArchitectureRelation[];
+  groups: ArchitectureGroup[];
+}
+
 export interface NotebookOutput {
   id: string;
   type: OutputType;
@@ -112,9 +211,137 @@ export interface NotebookOutput {
   quiz?: QuizQuestion[];
   mindMap?: MindMapNode;
   process?: ProcessDiagram;
+  architecture?: ArchitectureDiagram;
+  dataCatalog?: DataCatalog;
   status: "generating" | "completed" | "error";
   error?: string;
   createdAt: string;
+}
+
+// ── Data catalog (DCAT / ODCS / OpenLineage / SKOS+FIBO) ──────────────
+//
+// One canonical model populated by the LLM; the viewer dispatches on `kind`
+// to one of four renderers (inventory / glossary / lineage / contracts).
+// Exporters project the model into DCAT JSON-LD, ODCS YAML, or OpenLineage
+// JSON — pure transformations, no extra LLM calls.
+
+export type DataCatalogKind = "inventory" | "glossary" | "lineage" | "contracts";
+
+export interface DatasetField {
+  name: string;
+  /** Datatype hint — SQL / proto / JSON-Schema-style ("uuid", "varchar(64)", "string", "timestamptz"). */
+  type?: string;
+  description?: string;
+  /** Per-field classification — "PII", "sensitive", "public", "PCI", "PHI". */
+  classification?: string;
+  nullable?: boolean;
+  primaryKey?: boolean;
+}
+
+export interface Dataset {
+  id: string;
+  /** Fully-qualified name: "core_banking.public.accounts", topic name, S3 URI. */
+  name: string;
+  /** Short human title. */
+  title: string;
+  description?: string;
+  /** Data domain / product / bounded context. */
+  domain?: string;
+  /** Storage system: "Snowflake", "BigQuery", "Kafka", "S3", "PostgreSQL". */
+  system?: string;
+  /** Physical location: URI, FQN, topic name, bucket+prefix. */
+  location?: string;
+  /** Refresh cadence: "real-time" / "hourly" / "daily" / "weekly" / "on-demand". */
+  refreshCadence?: string;
+  /** SLA in plain English: "Available 24×7, RPO 1h, RTO 4h". */
+  sla?: string;
+  fields?: DatasetField[];
+  /** Business owner — accountable. */
+  owner?: string;
+  /** Technical steward — responsible. */
+  steward?: string;
+  /** Distribution list / Slack channel for questions. */
+  contact?: string;
+  /** Sensitivity: "public" | "internal" | "confidential" | "restricted". */
+  sensitivity?: string;
+  /** Regulatory tags: "GDPR-PII", "BCBS-239-CDE", "PCI-scope", "MiFID-trade-data". */
+  regulatoryTags?: string[];
+  /** Glossary term ids realised in this dataset. */
+  glossaryTerms?: string[];
+  /** True when the model synthesised this dataset (not explicitly named in sources). */
+  inferred?: boolean;
+}
+
+export interface GlossaryTerm {
+  id: string;
+  /** Term name — PascalCase or natural language ("Counterparty", "Trade Date"). */
+  term: string;
+  /** Business-English definition. */
+  definition: string;
+  /** External ontology / vocabulary link — FIBO IRI, SKOS URI. */
+  ontologyReference?: string;
+  synonyms?: string[];
+  /** Parent term id — broader concept. */
+  parent?: string;
+  /** Dataset ids where this term is realised. */
+  datasets?: string[];
+  inferred?: boolean;
+}
+
+export interface LineageNode {
+  id: string;
+  /** Lineage node kind: a dataset, a job / transformation, or an external system. */
+  kind: "dataset" | "job" | "external";
+  label: string;
+  /** Reference to a `Dataset.id` when `kind === "dataset"`. */
+  datasetId?: string;
+  /** Job tooling: "dbt", "Airflow", "Spark", "Glue", "Fivetran". */
+  technology?: string;
+  description?: string;
+  inferred?: boolean;
+}
+
+export interface LineageEdge {
+  id: string;
+  source: string;
+  target: string;
+  /** Transformation type: "ingest" | "transform" | "publish" | "replicate". */
+  kind?: "ingest" | "transform" | "publish" | "replicate";
+  label?: string;
+  inferred?: boolean;
+}
+
+export interface DataContractTerm {
+  /** Term name: "Availability", "Freshness", "Quality", "Retention", "Security". */
+  term: string;
+  /** SLA / commitment text in plain English. */
+  commitment: string;
+}
+
+export interface DataContract {
+  /** Dataset id this contract is for. */
+  datasetId: string;
+  /** Semver: "v1.0.0". */
+  version?: string;
+  /** Purpose / use cases. */
+  purpose?: string;
+  /** Quality rules in plain language. */
+  qualityRules?: string[];
+  /** Service-level terms. */
+  terms?: DataContractTerm[];
+  inferred?: boolean;
+}
+
+export interface DataCatalog {
+  title: string;
+  summary?: string;
+  /** Selected view — drives which renderer is primary. */
+  kind: DataCatalogKind;
+  datasets: Dataset[];
+  glossary: GlossaryTerm[];
+  lineageNodes: LineageNode[];
+  lineageEdges: LineageEdge[];
+  contracts: DataContract[];
 }
 
 export type NotebookMessage = Message & { timestamp: string };

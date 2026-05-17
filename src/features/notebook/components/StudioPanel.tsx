@@ -2,10 +2,15 @@ import {
   AlertCircle,
   AudioLines,
   BarChart3,
+  BookMarked,
+  Boxes,
   CircleHelp,
   Download,
+  FileCode,
   FileImage,
+  FileJson,
   FileText,
+  ImageIcon,
   Loader2,
   MoreHorizontal,
   Network,
@@ -21,8 +26,10 @@ import { createPortal } from "react-dom";
 import { cn } from "@/shared/lib/cn";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import type { File } from "@/shared/types/file";
+import { downloadFormat, type ExportFormat as OutputExportFormat, getExportFormats } from "../lib/output-export";
 import type { BuildInstructionsOptions } from "../lib/styles";
 import type { NotebookOutput, OutputType } from "../types/notebook";
+import { ExportModal, type ExportModalOption } from "./ExportModal";
 import { type GeneratorOptions, OutputGeneratorDialog } from "./OutputGeneratorDialog";
 
 interface StudioPanelProps {
@@ -45,6 +52,8 @@ const OUTPUT_TYPES: {
   { type: "quiz", label: "Quiz", icon: CircleHelp },
   { type: "mindmap", label: "Mind Map", icon: Network },
   { type: "process", label: "Process", icon: Workflow },
+  { type: "architecture", label: "Architecture", icon: Boxes },
+  { type: "data-catalog", label: "Data Catalog", icon: BookMarked },
 ];
 
 type ExportFormat = "pdf" | "pptx-image" | "pptx-hybrid" | "pptx-editable" | "png";
@@ -63,16 +72,27 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
   const [actionMenuPos, setActionMenuPos] = useState<{ top: number; right: number } | null>(null);
 
+  // Centralised export modal for diagram + data-catalog outputs. Slides have
+  // their own multi-step export overlay (`exportOverlay`) further down.
+  const [exportTarget, setExportTarget] = useState<NotebookOutput | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+
   const downloadOutput = async (output: NotebookOutput) => {
-    // For HTML slides, show export overlay instead of direct download
+    // For HTML slides, show the existing multi-step export overlay.
     if (output.type === "slides" && output.slideContentType === "text/html" && output.slides?.length) {
       setExportOverlay(output);
       setExportError(null);
       return;
     }
 
-    const slug = output.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    // Diagram + data-catalog outputs: open the unified format-picker modal.
+    if (getExportFormats(output).length > 0) {
+      setExportTarget(output);
+      return;
+    }
 
+    // Single-format outputs: direct download.
+    const slug = output.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
     if (output.type === "podcast" && output.audioUrl) {
       downloadDataUrl(output.audioUrl, `${slug}.wav`);
     } else if (output.type === "infographic" && output.imageUrl) {
@@ -81,6 +101,19 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
       await downloadSlidesAsPdf(output.slides, slug);
     } else if (output.type === "report" && output.content) {
       await downloadReportAsPdf(output.content, slug);
+    }
+  };
+
+  const runUnifiedExport = async (format: OutputExportFormat) => {
+    if (!exportTarget) return;
+    setExportBusy(true);
+    try {
+      await downloadFormat(exportTarget, format);
+      setExportTarget(null);
+    } catch (err) {
+      console.error("Export failed:", err);
+    } finally {
+      setExportBusy(false);
     }
   };
 
@@ -118,7 +151,15 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
     }
   };
 
-  const DIALOG_TYPES = new Set<OutputType>(["slides", "podcast", "report", "infographic", "process"]);
+  const DIALOG_TYPES = new Set<OutputType>([
+    "slides",
+    "podcast",
+    "report",
+    "infographic",
+    "process",
+    "architecture",
+    "data-catalog",
+  ]);
 
   const handleDialogGenerate = (_type: OutputType, { styleId, ...rest }: GeneratorOptions) => {
     onGenerate(_type, styleId, rest);
@@ -397,6 +438,18 @@ export function StudioPanel({ sources, outputs, onGenerate, onDeleteOutput, onSe
         </div>
       )}
 
+      {/* Unified export modal for diagram + data-catalog outputs. */}
+      {exportTarget && (
+        <ExportModal
+          title={`Export ${exportTarget.title}`}
+          busy={exportBusy}
+          onClose={() => {
+            if (!exportBusy) setExportTarget(null);
+          }}
+          options={exportFormatsToOptions(getExportFormats(exportTarget), runUnifiedExport)}
+        />
+      )}
+
       {/* Output generator dialog */}
       <OutputGeneratorDialog
         open={dialogType !== null}
@@ -413,8 +466,33 @@ function canDownload(output: NotebookOutput): boolean {
     (output.type === "podcast" && !!output.audioUrl) ||
     (output.type === "infographic" && !!output.imageUrl) ||
     (output.type === "slides" && !!output.slides?.length) ||
-    (output.type === "report" && !!output.content)
+    (output.type === "report" && !!output.content) ||
+    !!output.architecture ||
+    !!output.process ||
+    !!output.dataCatalog
   );
+}
+
+const EXPORT_ICONS: Record<string, typeof FileText> = {
+  png: ImageIcon,
+  svg: FileCode,
+  dcat: FileJson,
+  odcs: FileText,
+  openlineage: FileCode,
+};
+
+function exportFormatsToOptions(
+  formats: OutputExportFormat[],
+  onPick: (format: OutputExportFormat) => void,
+): ExportModalOption[] {
+  return formats.map((f) => ({
+    icon: EXPORT_ICONS[f.id] ?? FileText,
+    title: f.label,
+    subtitle: f.description,
+    disabled: f.disabled,
+    disabledReason: f.disabledReason,
+    onClick: () => onPick(f),
+  }));
 }
 
 function downloadDataUrl(dataUrl: string, filename: string) {
