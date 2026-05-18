@@ -125,7 +125,7 @@ export function SourcesPanel({
   const isDragging = useDropZone(containerRef, handleFiles);
 
   return (
-    <div ref={containerRef} className="h-full flex flex-col relative">
+    <div ref={containerRef} className="h-full flex flex-col relative @container/sources">
       {/* Error */}
       {error && (
         <div className="px-3 pt-2">
@@ -139,7 +139,7 @@ export function SourcesPanel({
       )}
 
       {/* Sources list */}
-      <div className="flex-1 overflow-y-auto px-3 pt-3 pb-3 min-h-0">
+      <div className="flex-1 overflow-y-auto px-1.5 pt-3 pb-3 min-h-0">
         {(sources.length > 0 || extracting.size > 0 || isSearching) && (
           <div className="space-y-1">
             {/* Extracting indicators */}
@@ -159,14 +159,15 @@ export function SourcesPanel({
       </div>
 
       {/* Bottom: Add sources dropdown */}
-      <div className="px-3 pt-3 pb-4 relative">
+      <div className="@container px-3 pt-3 pb-4 relative">
         <button
           type="button"
           onClick={() => setShowAddMenu(!showAddMenu)}
+          title="Add sources"
           className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm border border-dashed border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-600 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
         >
-          <Plus size={16} />
-          Add sources
+          <Plus size={16} className="shrink-0" />
+          <span className="hidden @[10rem]:inline">Add sources</span>
         </button>
 
         {showAddMenu && (
@@ -782,13 +783,13 @@ function SourceItem({ source, onDelete }: { source: File; onDelete: () => void }
 
   return (
     <div>
-      <div className="flex items-center gap-2.5 rounded-lg px-1 py-1.5 transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
+      <div className="flex items-center gap-1.5 rounded-lg pl-1 py-1.5 transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
           className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
         >
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-neutral-100 dark:bg-neutral-800">
+          <div className="hidden @[10rem]/sources:flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-neutral-100 dark:bg-neutral-800">
             <Icon size={12} className="text-neutral-500" />
           </div>
           <span className="flex-1 truncate text-xs text-neutral-700 dark:text-neutral-300" title={source.path}>

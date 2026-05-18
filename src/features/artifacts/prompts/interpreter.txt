@@ -25,7 +25,7 @@ Use Python for:
 - Math, statistics, algorithms, and data analysis
 - Pandas/numpy-style table and array work
 - Plot or chart generation that writes files
-- Office document processing such as Excel, Word, and PowerPoint
+- Office document processing such as Excel, Word, PowerPoint, and PDF (see the Office Documents section for library-specific guidance)
 - Complex parsing or multi-step logic that benefits from real execution
 
 How to use it:

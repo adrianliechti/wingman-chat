@@ -2,6 +2,7 @@ import { Outlet, useMatch, useNavigate } from "@tanstack/react-router";
 import { Download, PlusIcon, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Markdown } from "@/shared/ui/Markdown";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 import { ArchitectureViewer } from "../components/ArchitectureViewer";
@@ -239,37 +240,135 @@ export function NotebookPage() {
       <Outlet />
       {/* Main layout */}
       <main className="w-full grow overflow-hidden flex pt-14 relative">
-        {/* ── Desktop: Left Sources panel ── */}
-        <div className="hidden md:block w-72 shrink-0 h-full overflow-hidden">
-          {loading ? (
-            <div className="h-full" />
-          ) : (
-            <SourcesPanel
-              sources={sources}
-              isSearching={isSearching}
-              searchWeb={searchWeb}
-              addSearchResult={addSearchResult}
-              scrapeWeb={scrapeWeb}
-              addScrapeResult={addScrapeResult}
-              onFileAdd={addFileSource}
-              onTextAdd={addTextSource}
-              onDeleteSource={deleteSource}
-            />
-          )}
-        </div>
+        {/* ── Desktop: Resizable 3-column layout ── */}
+        <ResizablePanelGroup orientation="horizontal" className="hidden md:flex h-full">
+          <ResizablePanel defaultSize={300} minSize={160} className="h-full overflow-hidden">
+            {loading ? (
+              <div className="h-full" />
+            ) : (
+              <SourcesPanel
+                sources={sources}
+                isSearching={isSearching}
+                searchWeb={searchWeb}
+                addSearchResult={addSearchResult}
+                scrapeWeb={scrapeWeb}
+                addScrapeResult={addScrapeResult}
+                onFileAdd={addFileSource}
+                onTextAdd={addTextSource}
+                onDeleteSource={deleteSource}
+              />
+            )}
+          </ResizablePanel>
 
-        {/* Desktop divider */}
-        <div className="hidden md:flex relative shrink-0 w-4 items-center justify-center">
-          <div className="absolute inset-y-4 w-px left-1/2 -translate-x-px bg-black/10 dark:bg-white/10" />
-        </div>
+          <ResizableHandle />
 
-        {/* Center: Chat or Output Viewer */}
-        <div className="flex-1 min-w-0 h-full overflow-hidden">
+          <ResizablePanel minSize={200} className="h-full overflow-hidden">
+            {loading ? (
+              <div className="h-full" />
+            ) : viewingOutput ? (
+              <div className="h-full flex flex-col relative">
+                {/* Output buttons */}
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+                  {download.canDownload(viewingOutput) && (
+                    <button
+                      type="button"
+                      onClick={() => download.trigger(viewingOutput)}
+                      className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                      title="Download…"
+                    >
+                      <Download size={16} className="text-neutral-500" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setViewingOutputId(null)}
+                    className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                    title="Back to chat"
+                  >
+                    <X size={16} className="text-neutral-500" />
+                  </button>
+                </div>
+
+                {/* Output content */}
+                <div className="flex-1 overflow-hidden min-h-0 pt-8 pb-4">
+                  {viewingOutput.quiz && viewingOutput.quiz.length > 0 ? (
+                    <QuizViewer questions={viewingOutput.quiz} />
+                  ) : viewingOutput.mindMap ? (
+                    <MindMapViewer root={viewingOutput.mindMap} />
+                  ) : viewingOutput.audioUrl ? (
+                    <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
+                  ) : viewingOutput.type === "slides" ? (
+                    <SlideViewer output={viewingOutput} onRefine={updateOutput} />
+                  ) : viewingOutput.imageUrl ? (
+                    <div className="h-full overflow-y-auto p-6">
+                      <div className="flex flex-col items-center gap-4">
+                        <img
+                          src={viewingOutput.imageUrl}
+                          alt={viewingOutput.title}
+                          className="max-w-full rounded-lg shadow-md"
+                        />
+                      </div>
+                    </div>
+                  ) : viewingOutput.type === "report" ? (
+                    <ReportViewer content={viewingOutput.content} />
+                  ) : (
+                    <div className="h-full overflow-y-auto p-6">
+                      <div className="prose prose-neutral dark:prose-invert max-w-none">
+                        <Markdown>{viewingOutput.content}</Markdown>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <NotebookChat
+                messages={messages}
+                sources={sources}
+                isChatting={isChatting}
+                streamingContent={streamingContent}
+                onSend={sendMessage}
+                showSourcesActive={showSourcesDrawer}
+                showStudioActive={showStudioDrawer}
+                isSearching={isSearching}
+                outputCount={outputs.filter((o) => o.status === "completed").length}
+                isGeneratingOutput={outputs.some((o) => o.status === "generating")}
+                onShowSources={() => {
+                  setShowStudioDrawer(false);
+                  setShowSourcesDrawer((v) => !v);
+                }}
+                onShowStudio={() => {
+                  setShowSourcesDrawer(false);
+                  setShowStudioDrawer((v) => !v);
+                }}
+              />
+            )}
+          </ResizablePanel>
+
+          <ResizableHandle />
+
+          <ResizablePanel defaultSize={300} minSize={160} className="h-full overflow-hidden">
+            {loading ? (
+              <div className="h-full" />
+            ) : (
+              <StudioPanel
+                sources={sources}
+                outputs={outputs}
+                onGenerate={generateOutput}
+                onDeleteOutput={deleteOutput}
+                onSelectOutput={handleSelectOutput}
+                onDownloadOutput={download.trigger}
+                canDownload={download.canDownload}
+              />
+            )}
+          </ResizablePanel>
+        </ResizablePanelGroup>
+
+        {/* ── Mobile: Center content (full width) ── */}
+        <div className="md:hidden flex-1 min-w-0 h-full overflow-hidden">
           {loading ? (
             <div className="h-full" />
           ) : viewingOutput ? (
             <div className="h-full flex flex-col relative">
-              {/* Output buttons */}
               <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
                 {download.canDownload(viewingOutput) && (
                   <button
@@ -290,8 +389,6 @@ export function NotebookPage() {
                   <X size={16} className="text-neutral-500" />
                 </button>
               </div>
-
-              {/* Output content */}
               <div className="flex-1 overflow-hidden min-h-0 pt-8 pb-4">
                 {viewingOutput.quiz && viewingOutput.quiz.length > 0 ? (
                   <QuizViewer questions={viewingOutput.quiz} />
@@ -348,28 +445,6 @@ export function NotebookPage() {
                 setShowSourcesDrawer(false);
                 setShowStudioDrawer((v) => !v);
               }}
-            />
-          )}
-        </div>
-
-        {/* Desktop divider */}
-        <div className="hidden md:flex relative shrink-0 w-4 items-center justify-center">
-          <div className="absolute inset-y-4 w-px left-1/2 -translate-x-px bg-black/10 dark:bg-white/10" />
-        </div>
-
-        {/* ── Desktop: Right Studio panel ── */}
-        <div className="hidden md:block w-72 shrink-0 h-full overflow-hidden">
-          {loading ? (
-            <div className="h-full" />
-          ) : (
-            <StudioPanel
-              sources={sources}
-              outputs={outputs}
-              onGenerate={generateOutput}
-              onDeleteOutput={deleteOutput}
-              onSelectOutput={handleSelectOutput}
-              onDownloadOutput={download.trigger}
-              canDownload={download.canDownload}
             />
           )}
         </div>

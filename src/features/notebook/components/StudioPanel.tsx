@@ -86,10 +86,10 @@ export function StudioPanel({
   };
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col @container/studio">
       {/* Output type buttons */}
       <div className="px-3 py-3 border-b border-neutral-200 dark:border-neutral-800">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 @[13rem]/studio:grid-cols-2 gap-1.5 @[13rem]/studio:gap-2">
           {OUTPUT_TYPES.map(({ type, label, icon: Icon }) => {
             if (DIALOG_TYPES.has(type)) {
               return (
@@ -98,10 +98,11 @@ export function StudioPanel({
                   type="button"
                   onClick={() => setDialogType(type)}
                   disabled={!hasSources}
-                  className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
+                  title={label}
+                  className="flex items-center justify-center gap-2 p-2 @[13rem]/studio:justify-start @[13rem]/studio:px-3 @[13rem]/studio:py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-w-0 overflow-hidden"
                 >
                   <Icon size={16} className="shrink-0" />
-                  <span className="text-xs font-medium">{label}</span>
+                  <span className="hidden @[13rem]/studio:inline text-xs font-medium truncate">{label}</span>
                 </button>
               );
             }
@@ -111,10 +112,11 @@ export function StudioPanel({
                 type="button"
                 onClick={() => onGenerate(type)}
                 disabled={!hasSources}
-                className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-left"
+                title={label}
+                className="flex items-center justify-center gap-2 p-2 @[13rem]/studio:justify-start @[13rem]/studio:px-3 @[13rem]/studio:py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-w-0 overflow-hidden"
               >
                 <Icon size={16} className="shrink-0" />
-                <span className="text-xs font-medium">{label}</span>
+                <span className="hidden @[13rem]/studio:inline text-xs font-medium truncate">{label}</span>
               </button>
             );
           })}
@@ -169,7 +171,14 @@ export function StudioPanel({
                           ? "Generating..."
                           : isError
                             ? output.error || "Failed"
-                            : new Date(output.createdAt).toLocaleString()}
+                            : <>
+                                <span className="@[14rem]/studio:hidden">
+                                  {new Date(output.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                                </span>
+                                <span className="hidden @[14rem]/studio:inline">
+                                  {new Date(output.createdAt).toLocaleString()}
+                                </span>
+                              </>}
                       </p>
                     </div>
                   </button>

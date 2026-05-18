@@ -1,29 +1,35 @@
-import { Code, File, Image as ImageIcon } from "lucide-react";
-import { artifactKind } from "@/features/artifacts/lib/artifacts";
+import { File, FileCode, FileImage, FileSpreadsheet, FileText, Presentation, type LucideIcon } from "lucide-react";
+import { artifactKind, type ArtifactKind } from "@/features/artifacts/lib/artifacts";
+import { cn } from "../lib/cn";
 
-// FileIcon component props
 export type FileIconProps = {
   name: string;
   contentType?: string;
   size?: number;
+  className?: string;
 };
 
-// FileIcon component
-export const FileIcon = ({ name, contentType, size = 16 }: FileIconProps) => {
-  const kind = artifactKind(name, contentType);
+const ICON_BY_KIND: Record<ArtifactKind, LucideIcon> = {
+  code: FileCode,
+  html: FileCode,
+  svg: FileImage,
+  image: FileImage,
+  csv: FileSpreadsheet,
+  xlsx: FileSpreadsheet,
+  docx: FileText,
+  pptx: Presentation,
+  pdf: FileText,
+  markdown: FileText,
+  binary: File,
+  text: FileText,
+};
 
-  switch (kind) {
-    case "code":
-      return <Code size={size} className="text-blue-600 dark:text-blue-400" />;
-    case "html":
-      return <Code size={size} className="text-orange-600 dark:text-orange-400" />;
-    case "svg":
-      return <File size={size} className="text-purple-600 dark:text-purple-400" />;
-    case "image":
-      return <ImageIcon size={size} className="text-emerald-600 dark:text-emerald-400" />;
-    case "binary":
-      return <File size={size} className="text-amber-600 dark:text-amber-400" />;
-    default:
-      return <File size={size} className="text-neutral-600 dark:text-neutral-400" />;
-  }
+/**
+ * Monochrome file icon — shape conveys the kind, color stays neutral so it
+ * blends with surrounding UI text.
+ */
+export const FileIcon = ({ name, contentType, size = 16, className }: FileIconProps) => {
+  const kind = artifactKind(name, contentType);
+  const Icon = ICON_BY_KIND[kind] ?? FileText;
+  return <Icon size={size} className={cn("text-neutral-500 dark:text-neutral-400", className)} />;
 };
