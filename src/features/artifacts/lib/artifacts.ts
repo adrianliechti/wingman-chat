@@ -4,7 +4,19 @@ import { readAsDataURL } from "@/shared/lib/utils";
 import { xlsxToCsv } from "@/shared/lib/xlsx";
 
 // Artifact kind type
-export type ArtifactKind = "text" | "code" | "svg" | "html" | "csv" | "markdown" | "image" | "pdf" | "binary";
+export type ArtifactKind =
+  | "text"
+  | "code"
+  | "svg"
+  | "html"
+  | "csv"
+  | "markdown"
+  | "image"
+  | "pdf"
+  | "docx"
+  | "xlsx"
+  | "pptx"
+  | "binary";
 
 // Result type for processed files
 export interface ProcessedFile {
@@ -155,6 +167,30 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
   // PDF files
   if (ext === "pdf" || normalizedContentType === "application/pdf") {
     return "pdf";
+  }
+
+  // Word documents (.docx) — rendered via docx-preview
+  if (
+    ext === "docx" ||
+    normalizedContentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    return "docx";
+  }
+
+  // Excel workbooks (.xlsx) — rendered per-sheet as CSV tables
+  if (
+    ext === "xlsx" ||
+    normalizedContentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  ) {
+    return "xlsx";
+  }
+
+  // PowerPoint decks (.pptx) — extracted to markdown via convertFileToText
+  if (
+    ext === "pptx" ||
+    normalizedContentType === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ) {
+    return "pptx";
   }
 
   // Code files

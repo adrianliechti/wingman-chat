@@ -4,6 +4,7 @@ import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
 import interpreterInstructionsText from "@/features/artifacts/prompts/interpreter.txt?raw";
 import llmInstructionsText from "@/features/artifacts/prompts/llm.txt?raw";
+import officeInstructionsText from "@/features/artifacts/prompts/office.txt?raw";
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
@@ -360,7 +361,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       name: "Artifacts",
       description: "Create and edit files, run Python and Bash code",
       icon: Shapes,
-      instructions: [artifactsInstructionsText, interpreterInstructionsText, llmInstructionsText].join("\n\n"),
+      instructions: [artifactsInstructionsText, interpreterInstructionsText, officeInstructionsText, llmInstructionsText].join("\n\n"),
       tools: artifactsTools(),
     };
   }, [isAvailable, artifactsTools]);

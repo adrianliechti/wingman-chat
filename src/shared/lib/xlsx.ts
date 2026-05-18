@@ -12,9 +12,9 @@ interface SharedStrings {
 }
 
 /**
- * Converts an XLSX file to multiple CSV strings (one per sheet)
+ * Converts an XLSX file (File, Blob, or ArrayBuffer) to multiple CSV strings (one per sheet)
  */
-export async function xlsxToCsv(file: File): Promise<ConversionResult[]> {
+export async function xlsxToCsv(file: Blob | ArrayBuffer | Uint8Array): Promise<ConversionResult[]> {
   const zip = await JSZip.loadAsync(file);
 
   // Parse shared strings (XLSX stores repeated strings in a lookup table)
@@ -31,9 +31,11 @@ export async function xlsxToCsv(file: File): Promise<ConversionResult[]> {
 
   for (let i = 0; i < sheetEntries.length; i++) {
     const entry = sheetEntries[i];
-    // Resolve path: use relationship map first, fall back to sequential naming
+    // Resolve path: use relationship map first, fall back to sequential naming.
+    // Some tools write absolute (`/xl/...`) or already-prefixed targets, so
+    // normalise before concatenating.
     const relPath = sheetPathMap.get(entry.rId);
-    const sheetPath = relPath ? `xl/${relPath}` : `xl/worksheets/sheet${i + 1}.xml`;
+    const sheetPath = relPath ? resolveSheetPath(relPath) : `xl/worksheets/sheet${i + 1}.xml`;
 
     const sheetXml = await zip.file(sheetPath)?.async("string");
     if (!sheetXml) continue;
@@ -48,7 +50,40 @@ export async function xlsxToCsv(file: File): Promise<ConversionResult[]> {
     });
   }
 
+  // Fallback: workbook.xml / rels parsing missed everything but the zip may
+  // still contain readable sheet XMLs. Scan for them directly so unusual but
+  // valid xlsx files still render. Sheet names are taken from the workbook
+  // entries when possible, otherwise derived from the filename.
+  if (results.length === 0) {
+    const worksheetPaths = Object.keys(zip.files)
+      .filter((p) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(p))
+      .sort();
+    for (let i = 0; i < worksheetPaths.length; i++) {
+      const xml = await zip.file(worksheetPaths[i])?.async("string");
+      if (!xml) continue;
+      const csv = parseSheet(xml, sharedStrings);
+      results.push({
+        sheetName: sheetEntries[i]?.name ?? `Sheet${i + 1}`,
+        csv,
+        rowCount: csv.split(/\r?\n/).filter((row) => row.trim()).length,
+      });
+    }
+  }
+
   return results;
+}
+
+/**
+ * Normalise a workbook-rels Target into a zip-internal path.
+ * Targets are relative to `xl/_rels/workbook.xml.rels`, so they're normally
+ * "worksheets/sheet1.xml". Some writers emit absolute ("/xl/...") or
+ * already-prefixed ("xl/...") forms — handle both.
+ */
+function resolveSheetPath(relPath: string): string {
+  let p = relPath.replace(/^\.\//, "");
+  if (p.startsWith("/")) p = p.slice(1);
+  if (p.startsWith("xl/")) return p;
+  return `xl/${p}`;
 }
 
 /**
@@ -56,35 +91,21 @@ export async function xlsxToCsv(file: File): Promise<ConversionResult[]> {
  */
 async function parseSharedStrings(zip: JSZip): Promise<SharedStrings> {
   const content = await zip.file("xl/sharedStrings.xml")?.async("string");
+  if (!content) return { strings: [] };
 
-  if (!content) {
-    return { strings: [] };
-  }
-
-  const strings: string[] = [];
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(content, "application/xml");
-
-  // Shared strings are stored in <si> elements - try namespace-aware query with wildcard
-  let siElements: HTMLCollectionOf<Element> = doc.getElementsByTagName("si");
-  if (siElements.length === 0) {
-    siElements = doc.getElementsByTagNameNS("*", "si");
-  }
-
-  for (const si of siElements) {
-    // Text can be in <t> directly or in <r><t> (rich text)
-    let tElements: HTMLCollectionOf<Element> = si.getElementsByTagName("t");
-    if (tElements.length === 0) {
-      tElements = si.getElementsByTagNameNS("*", "t");
-    }
-    let text = "";
-    for (const t of tElements) {
-      text += t.textContent ?? "";
-    }
-    strings.push(text);
-  }
-
+  const doc = new DOMParser().parseFromString(content, "application/xml");
+  // Each <si> may contain a single <t> or rich text (<r><t>…</t></r>).
+  const strings = Array.from(doc.getElementsByTagNameNS("*", "si")).map(joinTextNodes);
   return { strings };
+}
+
+/** Concatenate every `<t>` element's text content within an OOXML container. */
+function joinTextNodes(container: Element): string {
+  let text = "";
+  for (const t of container.getElementsByTagNameNS("*", "t")) {
+    text += t.textContent ?? "";
+  }
+  return text;
 }
 
 interface SheetEntry {
@@ -104,10 +125,7 @@ async function parseWorkbook(zip: JSZip): Promise<SheetEntry[]> {
 
   const parser = new DOMParser();
   const doc = parser.parseFromString(content, "application/xml");
-  let sheets: HTMLCollectionOf<Element> = doc.getElementsByTagName("sheet");
-  if (sheets.length === 0) {
-    sheets = doc.getElementsByTagNameNS("*", "sheet");
-  }
+  const sheets = doc.getElementsByTagNameNS("*", "sheet");
 
   const entries: SheetEntry[] = [];
   for (const sheet of sheets) {
@@ -136,7 +154,7 @@ async function parseWorkbookRels(zip: JSZip): Promise<Map<string, string>> {
 
   const parser = new DOMParser();
   const doc = parser.parseFromString(content, "application/xml");
-  const rels = doc.getElementsByTagName("Relationship");
+  const rels = doc.getElementsByTagNameNS("*", "Relationship");
 
   for (const rel of rels) {
     const id = rel.getAttribute("Id") ?? "";
@@ -153,50 +171,54 @@ async function parseWorkbookRels(zip: JSZip): Promise<Map<string, string>> {
 }
 
 /**
- * Parses a sheet XML and converts it to CSV
+ * Parses a sheet XML and converts it to CSV.
+ *
+ * Always uses namespace-aware queries (`getElementsByTagNameNS("*", local)`).
+ * The plain `getElementsByTagName(local)` path was buggy in XML mode for
+ * some browsers/documents — it would occasionally match only the first cell
+ * of a row in default-namespace worksheets.
  */
 function parseSheet(xml: string, sharedStrings: SharedStrings): string {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, "application/xml");
+  const rows = doc.getElementsByTagNameNS("*", "row");
 
-  // Try standard getElementsByTagName first, fall back to namespace-aware query
-  let rows: HTMLCollectionOf<Element> = doc.getElementsByTagName("row");
-  if (rows.length === 0) {
-    rows = doc.getElementsByTagNameNS("*", "row");
-  }
-
-  const csvRows: string[] = [];
+  // First pass: parse each row into a sparse map and track the global max
+  // column index. We need a second pass to pad every row to the same width
+  // because merged cells (e.g. a centered title in A1:C1) only emit a single
+  // <c> for the top-left, which would otherwise leave the row shorter than
+  // the rest of the sheet and break consumers that expect rectangular data.
+  const parsedRows: Array<Map<number, string>> = [];
+  let globalMaxCol = -1;
 
   for (const row of rows) {
-    let cells: HTMLCollectionOf<Element> = row.getElementsByTagName("c");
-    if (cells.length === 0) {
-      cells = row.getElementsByTagNameNS("*", "c");
-    }
-
+    const cells = row.getElementsByTagNameNS("*", "c");
     const rowData: Map<number, string> = new Map();
-    let maxCol = 0;
     let positionalCol = 0; // fallback for cells without an "r" attribute
 
     for (const cell of cells) {
       const ref = cell.getAttribute("r");
       const colIndex = ref ? cellRefToColIndex(ref) : positionalCol;
       positionalCol = colIndex + 1;
-      maxCol = Math.max(maxCol, colIndex);
+      globalMaxCol = Math.max(globalMaxCol, colIndex);
 
       const value = getCellValue(cell, sharedStrings);
       rowData.set(colIndex, value);
     }
 
-    // Build CSV row with proper column positioning
-    const csvCells: string[] = [];
-    for (let i = 0; i <= maxCol; i++) {
-      csvCells.push(rowData.get(i) ?? "");
-    }
-
-    csvRows.push(csvCells.map(escapeCsvValue).join(","));
+    parsedRows.push(rowData);
   }
 
-  // Use CRLF per RFC 4180 for best compatibility with CSV readers
+  // Second pass: emit rectangular CSV padded to the global max column count.
+  const csvRows: string[] = parsedRows.map((rowData) => {
+    const csvCells: string[] = [];
+    for (let i = 0; i <= globalMaxCol; i++) {
+      csvCells.push(rowData.get(i) ?? "");
+    }
+    return csvCells.map(escapeCsvValue).join(",");
+  });
+
+  // CRLF per RFC 4180 for best compatibility with CSV readers
   return csvRows.join("\r\n");
 }
 
@@ -218,70 +240,33 @@ function cellRefToColIndex(ref: string): number {
 }
 
 /**
- * Gets child elements by local name, trying both namespaced and non-namespaced lookups.
- */
-function getElementsByLocalName(parent: Element, localName: string): HTMLCollectionOf<Element> | Element[] {
-  let elements: HTMLCollectionOf<Element> | Element[] = parent.getElementsByTagName(localName);
-  if (elements.length === 0) {
-    elements = parent.getElementsByTagNameNS("*", localName);
-  }
-  return elements;
-}
-
-/**
- * Extracts the value from a cell element
+ * Extracts the value from a cell element. Cell-type quick reference:
+ *   t="s"          — shared string; <v> holds an index into sharedStrings
+ *   t="b"          — boolean; <v> holds "0" or "1"
+ *   t="e"          — error code (returned as-is from <v>)
+ *   t="str"        — formula string result; <v> holds the string
+ *   t="inlineStr"  — inline string; an <is><t>…</t></is> sibling holds the text
+ *   (no t / "n")   — number; <v> holds the digits
+ * For untyped cells that lack a <v> we still probe for an inline `<is>` as a
+ * last resort, since some writers emit inline strings without setting `t`.
  */
 function getCellValue(cell: Element, sharedStrings: SharedStrings): string {
   const type = cell.getAttribute("t");
-  const valueEl = getElementsByLocalName(cell, "v")[0];
+  const valueEl = cell.getElementsByTagNameNS("*", "v")[0];
   const value = valueEl?.textContent ?? "";
 
-  // Type 's' means shared string
-  if (type === "s") {
-    const index = parseInt(value, 10);
-    return sharedStrings.strings[index] ?? "";
-  }
+  if (type === "s") return sharedStrings.strings[parseInt(value, 10)] ?? "";
+  if (type === "b") return value === "1" ? "TRUE" : "FALSE";
+  if (type === "e" || type === "str") return value;
 
-  // Type 'inlineStr' means inline string (can also appear without an explicit type)
-  if (type === "inlineStr" || type === "str") {
-    // First check for <is> inline string element
-    const isEl = getElementsByLocalName(cell, "is")[0];
+  if (type === "inlineStr" || !valueEl) {
+    const isEl = cell.getElementsByTagNameNS("*", "is")[0];
     if (isEl) {
-      const tElements = getElementsByLocalName(isEl, "t");
-      let text = "";
-      for (const t of tElements) {
-        text += t.textContent ?? "";
-      }
-      if (text) return text;
-    }
-    // Fall back to <v> value (used for formula string results)
-    return value;
-  }
-
-  // Type 'b' means boolean
-  if (type === "b") {
-    return value === "1" ? "TRUE" : "FALSE";
-  }
-
-  // Type 'e' means error
-  if (type === "e") {
-    return value; // Return error code as-is
-  }
-
-  // Cell may have an inline string without explicit type attribute
-  if (!valueEl) {
-    const isEl = getElementsByLocalName(cell, "is")[0];
-    if (isEl) {
-      const tElements = getElementsByLocalName(isEl, "t");
-      let text = "";
-      for (const t of tElements) {
-        text += t.textContent ?? "";
-      }
+      const text = joinTextNodes(isEl);
       if (text) return text;
     }
   }
 
-  // Default: number or formula result
   return value;
 }
 
@@ -293,6 +278,111 @@ function escapeCsvValue(value: string): string {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;
+}
+
+/**
+ * Parse a CSV string into a 2D array. Handles quoted fields, escaped quotes,
+ * and embedded newlines (an embedded newline is allowed inside a quoted field).
+ */
+function parseCsvRows(csv: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < csv.length; i++) {
+    const ch = csv[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        if (csv[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inQuotes = true;
+      continue;
+    }
+    if (ch === ",") {
+      row.push(field);
+      field = "";
+      continue;
+    }
+    if (ch === "\r") continue;
+    if (ch === "\n") {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      continue;
+    }
+    field += ch;
+  }
+
+  // Trailing field / row
+  if (field !== "" || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
+}
+
+/**
+ * Convert a CSV string to a GitHub-flavored markdown table. Pads ragged rows
+ * to the widest row so cells line up. Applies a small heuristic: if the first
+ * non-empty row has content only in column 0 and at least one later row has
+ * multiple populated columns, treat the first row as a merged-cell title and
+ * emit it as an `## H2` heading above the table.
+ */
+export function csvToMarkdownTable(csv: string): string {
+  if (!csv.trim()) return "";
+
+  const isBlank = (r: string[]) => r.every((c) => !c.trim());
+  const stripLeadingBlanks = (rs: string[][]) => {
+    let i = 0;
+    while (i < rs.length && isBlank(rs[i])) i++;
+    return rs.slice(i);
+  };
+
+  let rows = stripLeadingBlanks(parseCsvRows(csv));
+  if (rows.length === 0) return "";
+
+  // Title heuristic: a merged-cell title (e.g. centered across A1:C1) appears
+  // in the XML as a single populated cell in column 0 with subsequent rows
+  // using multiple columns. Pull it out as an H2 above the table.
+  let title: string | null = null;
+  if (rows.length > 1) {
+    const first = rows[0];
+    const isMergedTitle =
+      first[0]?.trim() &&
+      first.slice(1).every((c) => !c.trim()) &&
+      rows.slice(1).some((r) => r.filter((c) => c.trim()).length > 1);
+    if (isMergedTitle) {
+      title = first[0].trim();
+      rows = stripLeadingBlanks(rows.slice(1));
+    }
+  }
+
+  if (rows.length === 0) return title ? `## ${title}` : "";
+
+  const maxCols = rows.reduce((m, r) => Math.max(m, r.length), 0);
+  const escapeCell = (s: string | undefined) =>
+    (s ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
+  const formatRow = (r: string[]) =>
+    `| ${Array.from({ length: maxCols }, (_, i) => escapeCell(r[i])).join(" | ")} |`;
+
+  const separator = `| ${Array.from({ length: maxCols }, () => "---").join(" | ")} |`;
+  const table = [formatRow(rows[0]), separator, ...rows.slice(1).map(formatRow)].join("\n");
+
+  return title ? `## ${title}\n\n${table}` : table;
 }
 
 /**

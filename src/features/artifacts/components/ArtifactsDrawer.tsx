@@ -32,6 +32,7 @@ import { CsvEditor } from "@/shared/ui/editors/CsvEditor";
 import { HtmlEditor } from "@/shared/ui/editors/HtmlEditor";
 import { JsEditor } from "@/shared/ui/editors/JsEditor";
 import { MarkdownEditor } from "@/shared/ui/editors/MarkdownEditor";
+import { OfficeMarkdownEditor } from "@/shared/ui/editors/OfficeMarkdownEditor";
 import { PdfEditor } from "@/shared/ui/editors/PdfEditor";
 import { PythonEditor } from "@/shared/ui/editors/PythonEditor";
 import { SvgEditor } from "@/shared/ui/editors/SvgEditor";
@@ -396,6 +397,19 @@ export function ArtifactsDrawer() {
         );
       case "pdf":
         return <PdfEditor key={editorKey} content={activeFileData.content} />;
+      case "docx":
+      case "pptx":
+      case "xlsx":
+        return (
+          <OfficeMarkdownEditor
+            key={editorKey}
+            path={activeFileData.path}
+            content={activeFileData.content}
+            contentType={activeFileData.contentType}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+          />
+        );
       case "binary":
         return (
           <div className="h-full flex items-center justify-center p-8 bg-neutral-50 dark:bg-neutral-900/60">
@@ -488,13 +502,24 @@ export function ArtifactsDrawer() {
     }
   };
 
-  // Check if current file supports preview mode
+  // Check if current file supports preview mode.
+  // Office binaries are deliberately excluded — their "code" view is the
+  // derived markdown, which isn't useful to inspect or edit.
   const supportsPreview = () => {
     if (!activeFile) return false;
     const kind = activeFileData
       ? artifactKind(activeFileData.path, activeFileData.contentType)
       : artifactKind(activeFile);
     return ["html", "svg", "csv", "markdown"].includes(kind);
+  };
+
+  // Office binaries (docx/pptx/xlsx) are previewed via extracted markdown —
+  // not a fidelity-preserving render. Surface that to the user so they don't
+  // think the formatting is gone; downloading still gives the real file.
+  const isTextOnlyPreview = () => {
+    if (!activeFileData) return false;
+    const kind = artifactKind(activeFileData.path, activeFileData.contentType);
+    return kind === "docx" || kind === "pptx" || kind === "xlsx";
   };
 
   // Handle run button click
@@ -575,6 +600,15 @@ export function ArtifactsDrawer() {
                     />
                   )}
                 </button>
+              )}
+              {/* Hint: office binaries are previewed as extracted text */}
+              {isTextOnlyPreview() && (
+                <span
+                  className="shrink-0 text-[10px] uppercase tracking-wide font-medium text-neutral-500 dark:text-neutral-400 bg-neutral-200/60 dark:bg-neutral-800/60 rounded px-1.5 py-0.5"
+                  title="Office documents are previewed as extracted text. Download the file for the original formatting."
+                >
+                  Text preview
+                </span>
               )}
               {/* View mode segmented control — inline after filename */}
               {supportsPreview() && (

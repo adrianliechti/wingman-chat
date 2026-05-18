@@ -3,7 +3,7 @@ import { docxToMarkdown } from "./docx";
 import { inferContentTypeFromPath, isTextContentType } from "./fileTypes";
 import { pdfToMarkdown } from "./pdf";
 import { pptxToMarkdown } from "./pptx";
-import { xlsxToCsv } from "./xlsx";
+import { csvToMarkdownTable, xlsxToCsv } from "./xlsx";
 
 // MIME constants
 const MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -151,8 +151,11 @@ export async function convertFileToText(file: File): Promise<string> {
 
   if (name.endsWith(".xlsx") || file.type === MIME_XLSX) {
     const results = await xlsxToCsv(file);
-    if (results.length === 1) return results[0].csv;
-    return results.map((r) => `## ${r.sheetName}\n\n${r.csv}`).join("\n\n");
+    if (results.length === 0) return "";
+    if (results.length === 1) return csvToMarkdownTable(results[0].csv);
+    return results
+      .map((r) => `# ${r.sheetName}\n\n${csvToMarkdownTable(r.csv)}`)
+      .join("\n\n");
   }
 
   if (name.endsWith(".docx") || file.type === MIME_DOCX) {

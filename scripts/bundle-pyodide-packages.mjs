@@ -9,6 +9,7 @@
  *    → placed in public/pyodide-packages/ for micropip to install at runtime
  */
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -27,6 +28,7 @@ const PYPI_PACKAGES = [
   "python-pptx",
   "docx2txt",
   "pypdf",
+  "reportlab",
   "markdown",
 ];
 const PYPI_OUTPUT_DIR = "public/pyodide";
@@ -114,52 +116,89 @@ function parseCoreRequires(requiresDist) {
 
 /**
  * Resolve transitive dependencies for all PyPI packages.
- * Returns { extraPyodideBuiltins: string[], extraPypiPackages: string[] }
- * — packages that need to be bundled but aren't already listed.
+ * Returns:
+ *   extraPyodideBuiltins: Pyodide built-ins that need to be bundled (union).
+ *   extraPypiPackages: PyPI packages that need to be bundled (union).
+ *   builtinDepsByPkg: per-PyPI-package map of transitive Pyodide-builtin deps,
+ *     used at runtime to preload them via `pyodide.loadPackage()` before
+ *     `micropip.install("/pyodide/<wheel>.whl")` — micropip won't auto-resolve
+ *     these for a local-file wheel and the install will fail at import time.
  */
 async function resolveTransitiveDeps(pypiPackages, pyodideLock, alreadyBundled) {
   const pyodidePkgNames = new Set(Object.keys(pyodideLock.packages).map(normalizePkgName));
+  const findOriginalName = (dep) =>
+    Object.keys(pyodideLock.packages).find((k) => normalizePkgName(k) === dep);
 
-  const visited = new Set(pypiPackages.map(normalizePkgName));
-  for (const name of alreadyBundled) visited.add(normalizePkgName(name));
+  const depsCache = new Map();
+  async function fetchDeps(pkg) {
+    if (depsCache.has(pkg)) return depsCache.get(pkg);
+    let deps = [];
+    try {
+      const res = await fetch(`https://pypi.org/pypi/${pkg}/json`);
+      if (res.ok) {
+        const data = await res.json();
+        deps = parseCoreRequires(data.info.requires_dist);
+      }
+    } catch {
+      // network failure → treat as no deps
+    }
+    depsCache.set(pkg, deps);
+    return deps;
+  }
 
+  // Phase 1: BFS the PyPI dep graph to find all packages to bundle (the union).
+  const pypiSeen = new Set(pypiPackages.map(normalizePkgName));
+  const builtinSeen = new Set(alreadyBundled.map(normalizePkgName));
   const extraPyodideBuiltins = [];
   const extraPypiPackages = [];
-  const queue = [...pypiPackages];
+  const queue = pypiPackages.map(normalizePkgName);
 
   while (queue.length > 0) {
     const pkg = queue.shift();
-    let coreDeps;
-    try {
-      const res = await fetch(`https://pypi.org/pypi/${pkg}/json`);
-      if (!res.ok) continue;
-      const data = await res.json();
-      coreDeps = parseCoreRequires(data.info.requires_dist);
-    } catch {
-      continue;
-    }
-
-    for (const dep of coreDeps) {
-      if (visited.has(dep)) continue;
-      visited.add(dep);
-
+    for (const dep of await fetchDeps(pkg)) {
       if (pyodidePkgNames.has(dep)) {
-        // Available as a Pyodide built-in — make sure it gets bundled
-        const originalName = Object.keys(pyodideLock.packages).find((k) => normalizePkgName(k) === dep);
-        if (originalName) {
-          extraPyodideBuiltins.push(originalName);
-          console.log(`  + ${originalName} (Pyodide built-in, needed by ${pkg})`);
+        if (builtinSeen.has(dep)) continue;
+        builtinSeen.add(dep);
+        const orig = findOriginalName(dep);
+        if (orig) {
+          extraPyodideBuiltins.push(orig);
+          console.log(`  + ${orig} (Pyodide built-in, needed by ${pkg})`);
         }
       } else {
-        // Not in Pyodide — need to bundle from PyPI
+        if (pypiSeen.has(dep)) continue;
+        pypiSeen.add(dep);
         extraPypiPackages.push(dep);
-        queue.push(dep); // recurse into this dep's own deps
+        queue.push(dep);
         console.log(`  + ${dep} (PyPI, needed by ${pkg})`);
       }
     }
   }
 
-  return { extraPyodideBuiltins, extraPypiPackages };
+  // Phase 2: for each PyPI package, compute its transitive Pyodide-builtin
+  // deps by walking the PyPI sub-graph rooted at the package and collecting
+  // every built-in dep encountered along the way (direct or via another PyPI dep).
+  const builtinDepsByPkg = {};
+  for (const root of pypiSeen) {
+    const visitedPypi = new Set();
+    const stack = [root];
+    const builtins = new Set();
+    while (stack.length > 0) {
+      const p = stack.pop();
+      if (visitedPypi.has(p)) continue;
+      visitedPypi.add(p);
+      for (const dep of depsCache.get(p) || []) {
+        if (pyodidePkgNames.has(dep)) {
+          const orig = findOriginalName(dep);
+          if (orig) builtins.add(orig);
+        } else {
+          stack.push(dep);
+        }
+      }
+    }
+    if (builtins.size > 0) builtinDepsByPkg[root] = [...builtins];
+  }
+
+  return { extraPyodideBuiltins, extraPypiPackages, builtinDepsByPkg };
 }
 
 // ---------------------------------------------------------------------------
@@ -195,14 +234,25 @@ async function bundlePyodideBuiltins() {
 
   let downloaded = 0;
   let cached = 0;
+  let redownloaded = 0;
   for (const name of [...allPkgs].sort()) {
     const pkg = lock.packages[name];
     expectedWheelFiles.add(pkg.file_name);
     const dest = path.join(PYODIDE_OUTPUT_DIR, pkg.file_name);
 
-    if (fs.existsSync(dest)) {
-      cached++;
-      continue;
+    // Pyodide and PyPI both ship same-named wheels for many packages with
+    // different content (Pyodide patches some). Verify the cached file's
+    // sha256 matches pyodide-lock.json — otherwise `pyodide.loadPackage()`
+    // fails the integrity check silently and the package never installs.
+    if (fs.existsSync(dest) && pkg.sha256) {
+      const actual = crypto.createHash("sha256").update(fs.readFileSync(dest)).digest("hex");
+      if (actual === pkg.sha256) {
+        cached++;
+        continue;
+      }
+      console.log(`  ! ${name} sha256 mismatch (${actual.slice(0, 8)}… ≠ ${pkg.sha256.slice(0, 8)}…), re-downloading`);
+      fs.unlinkSync(dest);
+      redownloaded++;
     }
 
     const url = cdnBase + pkg.file_name;
@@ -212,7 +262,11 @@ async function bundlePyodideBuiltins() {
     downloaded++;
   }
 
-  console.log(`  ${allPkgs.size} packages resolved (${downloaded} downloaded, ${cached} cached)`);
+  console.log(
+    `  ${allPkgs.size} packages resolved (${downloaded} downloaded${
+      redownloaded > 0 ? `, ${redownloaded} re-downloaded after sha mismatch` : ""
+    }, ${cached} cached)`,
+  );
   return expectedWheelFiles;
 }
 
@@ -220,7 +274,7 @@ async function bundlePyodideBuiltins() {
 // 2. Bundle extra PyPI wheels
 // ---------------------------------------------------------------------------
 
-async function bundlePypiPackages() {
+async function bundlePypiPackages(builtinDepsByPkg) {
   console.log("Bundling extra PyPI packages...");
 
   fs.mkdirSync(PYPI_OUTPUT_DIR, { recursive: true });
@@ -240,7 +294,8 @@ async function bundlePypiPackages() {
       console.log(" done");
     }
 
-    manifest[pkg] = filename;
+    const builtinDeps = builtinDepsByPkg[normalizePkgName(pkg)] || [];
+    manifest[pkg] = builtinDeps.length > 0 ? { filename, pyodideBuiltinDeps: builtinDeps } : { filename };
   }
 
   fs.writeFileSync(path.join(PYPI_OUTPUT_DIR, "pypi-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -287,7 +342,7 @@ async function main() {
   const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
 
   console.log("Resolving transitive dependencies of PyPI packages...");
-  const { extraPyodideBuiltins, extraPypiPackages } = await resolveTransitiveDeps(
+  const { extraPyodideBuiltins, extraPypiPackages, builtinDepsByPkg } = await resolveTransitiveDeps(
     PYPI_PACKAGES,
     lock,
     PYODIDE_BUILTIN_TARGETS,
@@ -306,7 +361,7 @@ async function main() {
   }
 
   const builtinWheelFiles = await bundlePyodideBuiltins();
-  const pypiWheelFiles = await bundlePypiPackages();
+  const pypiWheelFiles = await bundlePypiPackages(builtinDepsByPkg);
   pruneUnexpectedWheelFiles(new Set([...builtinWheelFiles, ...pypiWheelFiles]));
   console.log("Done.");
 }
