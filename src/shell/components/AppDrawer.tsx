@@ -21,7 +21,7 @@ export function AppDrawer() {
   }, []);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md pt-4 md:pt-0">
+    <div className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative pt-2 md:pt-0">
       <div ref={containerRef} className="flex-1 overflow-y-auto">
         <iframe
           ref={iframeRef}

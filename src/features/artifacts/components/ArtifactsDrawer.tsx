@@ -41,7 +41,6 @@ import { FileIcon } from "@/shared/ui/FileIcon";
 import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
 
-
 export function ArtifactsDrawer() {
   const config = getConfig();
   const { fs, activeFile, openFile } = useArtifacts();
@@ -57,6 +56,8 @@ export function ArtifactsDrawer() {
   const filePickerRef = useRef<HTMLDivElement>(null);
   const [terminalMounted, setTerminalMounted] = useState(false);
   const [showFilesBrowser, setShowFilesBrowser] = useState(false);
+  const viewSliderRef = useRef<HTMLDivElement>(null);
+  const [viewSliderStyle, setViewSliderStyle] = useState({ left: 0, width: 0 });
   const dragCounterRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -342,7 +343,8 @@ export function ArtifactsDrawer() {
             <Shapes size={28} className="text-neutral-300 dark:text-neutral-600 mb-3 mx-auto" />
             <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">No artifacts yet</h3>
             <p className="text-xs text-neutral-400 dark:text-neutral-500 leading-relaxed mb-4">
-              Files, code, and documents created in the conversation will appear here. You can also run Python or shell commands directly.
+              Files, code, and documents created in the conversation will appear here. You can also run Python or shell
+              commands directly.
             </p>
             <ul className="space-y-1.5 text-left mb-5">
               {[
@@ -412,7 +414,7 @@ export function ArtifactsDrawer() {
         );
       case "binary":
         return (
-          <div className="h-full flex items-center justify-center p-8 bg-neutral-50 dark:bg-neutral-900/60">
+          <div className="h-full flex items-center justify-center p-8">
             <div className="max-w-md text-center">
               <FileIcon2 size={32} className="mx-auto mb-4 text-neutral-300 dark:text-neutral-600" />
               <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">Binary File</h3>
@@ -502,6 +504,24 @@ export function ArtifactsDrawer() {
     }
   };
 
+  // Update slider position whenever viewMode changes or the switcher mounts (activeFile change)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeFile triggers remeasurement when preview/code buttons appear or disappear
+  useEffect(() => {
+    const measure = () => {
+      const container = viewSliderRef.current;
+      if (!container) return;
+      const active = container.querySelector<HTMLElement>(`[data-view="${viewMode}"]`);
+      if (!active) return;
+      const cr = container.getBoundingClientRect();
+      const br = active.getBoundingClientRect();
+      setViewSliderStyle({ left: br.left - cr.left, width: br.width });
+    };
+    // Run immediately, then also after a paint in case the container just mounted
+    measure();
+    const id = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(id);
+  }, [viewMode, activeFile]);
+
   // Check if current file supports preview mode.
   // Office binaries are deliberately excluded — their "code" view is the
   // derived markdown, which isn't useful to inspect or edit.
@@ -567,9 +587,8 @@ export function ArtifactsDrawer() {
       <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
         {/* Left column: top bar + vertical editor/terminal split */}
         <ResizablePanel defaultSize={75} minSize={200} className="h-full flex flex-col overflow-hidden">
-
           {/* Top bar — lives inside the left column so the files browser spans full drawer height */}
-          <div className="shrink-0 h-10 flex items-center px-2 gap-1">
+          <div className="@container shrink-0 h-10 flex items-center px-2 gap-1">
             {/* File title */}
             <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative" ref={filePickerRef}>
               {activeFile && (
@@ -583,7 +602,7 @@ export function ArtifactsDrawer() {
                       : "cursor-default pointer-events-none",
                   )}
                 >
-                  <FileIcon name={activeFile} />
+                  <FileIcon name={activeFile} className="shrink-0 @[18rem]:inline hidden" />
                   <span
                     className="text-xs font-medium truncate text-neutral-600 dark:text-neutral-400"
                     title={getFileName(activeFile)}
@@ -612,15 +631,31 @@ export function ArtifactsDrawer() {
               )}
               {/* View mode segmented control — inline after filename */}
               {supportsPreview() && (
-                <div className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0 ml-2">
+                <div
+                  ref={viewSliderRef}
+                  className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0 ml-2"
+                >
+                  {/* Animated slider background */}
+                  {viewSliderStyle.width > 0 && (
+                    <div
+                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
+                      style={{
+                        left: `${viewSliderStyle.left}px`,
+                        width: `${viewSliderStyle.width}px`,
+                        height: "calc(100% - 4px)",
+                        top: "2px",
+                      }}
+                    />
+                  )}
                   <button
                     type="button"
+                    data-view="preview"
                     onClick={() => setViewMode("preview")}
                     title="Preview"
                     className={cn(
                       "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
                       viewMode === "preview"
-                        ? "bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+                        ? "text-neutral-900 dark:text-neutral-50"
                         : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
                     )}
                   >
@@ -628,12 +663,13 @@ export function ArtifactsDrawer() {
                   </button>
                   <button
                     type="button"
+                    data-view="code"
                     onClick={() => setViewMode("code")}
                     title="Code"
                     className={cn(
                       "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
                       viewMode === "code"
-                        ? "bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+                        ? "text-neutral-900 dark:text-neutral-50"
                         : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
                     )}
                   >
@@ -642,9 +678,7 @@ export function ArtifactsDrawer() {
                 </div>
               )}
               {showFilePicker && files.length > 1 && (
-                <div
-                  className="absolute top-full left-0 mt-1 z-50 min-w-48 max-w-72 bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 rounded-lg shadow-lg overflow-hidden py-1"
-                >
+                <div className="absolute top-full left-0 mt-1 z-50 min-w-48 max-w-72 bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 rounded-lg shadow-lg overflow-hidden py-1">
                   {files.map((f) => (
                     <button
                       key={f.path}
@@ -658,8 +692,10 @@ export function ArtifactsDrawer() {
                         f.path === activeFile && "font-medium",
                       )}
                     >
-                      <FileIcon name={f.path} />
-                      <span className="truncate" title={f.path}>{getFileName(f.path)}</span>
+                      <FileIcon name={f.path} className="shrink-0" />
+                      <span className="truncate" title={f.path}>
+                        {getFileName(f.path)}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -684,7 +720,8 @@ export function ArtifactsDrawer() {
                   )}
 
                   {/* Download dropdown */}
-                  {activeFileData && fs && (
+                  {activeFileData &&
+                    fs &&
                     (() => {
                       const isMarkdown = artifactKind(activeFileData.path, activeFileData.contentType) === "markdown";
                       if (!isMarkdown) {
@@ -702,7 +739,7 @@ export function ArtifactsDrawer() {
                             title={`Download ${getFileName(activeFileData.path)}`}
                           >
                             <Download size={13} />
-                            Download
+                            <span className="@[18rem]:inline hidden">Download</span>
                           </button>
                         );
                       }
@@ -713,7 +750,7 @@ export function ArtifactsDrawer() {
                             title="Download"
                           >
                             <Download size={13} />
-                            Download
+                            <span className="@[18rem]:inline hidden">Download</span>
                           </MenuButton>
                           <MenuItems
                             modal={false}
@@ -751,15 +788,20 @@ export function ArtifactsDrawer() {
                                 }}
                                 className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
                               >
-                                <img src="/icons/file-word.svg" alt="Word" width={12} height={12} className="dark:invert" />
+                                <img
+                                  src="/icons/file-word.svg"
+                                  alt="Word"
+                                  width={12}
+                                  height={12}
+                                  className="dark:invert"
+                                />
                                 Download as Word
                               </button>
                             </MenuItem>
                           </MenuItems>
                         </Menu>
                       );
-                    })()
-                  )}
+                    })()}
                 </div>
 
                 {chat?.id && <div className="w-px h-4 bg-black/10 dark:bg-white/10 mx-0.5" />}
@@ -791,7 +833,9 @@ export function ArtifactsDrawer() {
                       >
                         <Files size={12} className="shrink-0 text-neutral-400" />
                         <span className="flex-1 text-left">Files</span>
-                        {showFilesBrowser && <Check size={11} className="shrink-0 text-neutral-500 dark:text-neutral-400" />}
+                        {showFilesBrowser && (
+                          <Check size={11} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
+                        )}
                       </button>
                     </MenuItem>
                   )}
@@ -838,7 +882,7 @@ export function ArtifactsDrawer() {
         {/* Files browser — right panel spanning full drawer height (including header and over terminal) */}
         {files.length > 0 && fs && showFilesBrowser && (
           <ResizablePanel defaultSize={25} minSize={120}>
-            <div className="h-full overflow-hidden border-l border-black/10 dark:border-white/10 bg-neutral-50/80 dark:bg-neutral-900/60">
+            <div className="h-full overflow-hidden border-l border-black/10 dark:border-white/10">
               <ArtifactsBrowser
                 fs={fs}
                 files={files}

@@ -5,6 +5,17 @@ body.resizing iframe {
   pointer-events: none;
 }
 
+/* Keep the resize cursor visible across the whole page while dragging a panel handle,
+   even when the pointer drifts off the handle element. !important is required to win
+   over per-element cursor styles (buttons, links, iframes, etc.). */
+body.resizing,
+body.resizing * {
+  /* biome-ignore lint: required to override per-element cursors during drag */
+  cursor: ew-resize !important;
+  /* biome-ignore lint: required to override per-element user-select during drag */
+  user-select: none !important;
+}
+
 .noto-emoji {
   font-family: "Noto Emoji", sans-serif;
   font-size: 0.9em;
@@ -78,6 +89,7 @@ html.emoji-native .noto-emoji {
 }
 
 /* Global scrollbar: thin and only visible while interacting (iOS-like) */
+/* biome-ignore lint: lower-specificity universal selector intentionally follows scoped rules above */
 * {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
