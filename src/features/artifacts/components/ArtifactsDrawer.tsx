@@ -398,7 +398,7 @@ export function ArtifactsDrawer() {
         return <PdfEditor key={editorKey} content={activeFileData.content} />;
       case "binary":
         return (
-          <div className="h-full flex items-center justify-center p-8 bg-neutral-50 dark:bg-neutral-900/60">
+          <div className="h-full flex items-center justify-center p-8">
             <div className="max-w-md text-center">
               <FileIcon2 size={32} className="mx-auto mb-4 text-neutral-300 dark:text-neutral-600" />
               <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-2">Binary File</h3>
@@ -544,7 +544,7 @@ export function ArtifactsDrawer() {
         <ResizablePanel defaultSize={75} minSize={200} className="h-full flex flex-col overflow-hidden">
 
           {/* Top bar — lives inside the left column so the files browser spans full drawer height */}
-          <div className="shrink-0 h-10 flex items-center px-2 gap-1">
+          <div className="@container shrink-0 h-10 flex items-center px-2 gap-1">
             {/* File title */}
             <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative" ref={filePickerRef}>
               {activeFile && (
@@ -558,7 +558,7 @@ export function ArtifactsDrawer() {
                       : "cursor-default pointer-events-none",
                   )}
                 >
-                  <FileIcon name={activeFile} />
+                  <FileIcon name={activeFile} className="shrink-0 @[18rem]:inline hidden" />
                   <span
                     className="text-xs font-medium truncate text-neutral-600 dark:text-neutral-400"
                     title={getFileName(activeFile)}
@@ -624,7 +624,7 @@ export function ArtifactsDrawer() {
                         f.path === activeFile && "font-medium",
                       )}
                     >
-                      <FileIcon name={f.path} />
+                      <FileIcon name={f.path} className="shrink-0" />
                       <span className="truncate" title={f.path}>{getFileName(f.path)}</span>
                     </button>
                   ))}
@@ -668,7 +668,7 @@ export function ArtifactsDrawer() {
                             title={`Download ${getFileName(activeFileData.path)}`}
                           >
                             <Download size={13} />
-                            Download
+                            <span className="@[18rem]:inline hidden">Download</span>
                           </button>
                         );
                       }
@@ -679,7 +679,7 @@ export function ArtifactsDrawer() {
                             title="Download"
                           >
                             <Download size={13} />
-                            Download
+                            <span className="@[18rem]:inline hidden">Download</span>
                           </MenuButton>
                           <MenuItems
                             modal={false}
@@ -804,7 +804,7 @@ export function ArtifactsDrawer() {
         {/* Files browser — right panel spanning full drawer height (including header and over terminal) */}
         {files.length > 0 && fs && showFilesBrowser && (
           <ResizablePanel defaultSize={25} minSize={120}>
-            <div className="h-full overflow-hidden border-l border-black/10 dark:border-white/10 bg-neutral-50/80 dark:bg-neutral-900/60">
+            <div className="h-full overflow-hidden border-l border-black/10 dark:border-white/10">
               <ArtifactsBrowser
                 fs={fs}
                 files={files}

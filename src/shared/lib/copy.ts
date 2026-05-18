@@ -25,6 +25,12 @@ export async function copyToClipboard(options: CopyOptions): Promise<void> {
     return;
   }
 
-  const clipboardItem = new ClipboardItem(clipboardData);
-  await navigator.clipboard.write([clipboardItem]);
+  try {
+    const clipboardItem = new ClipboardItem(clipboardData);
+    await navigator.clipboard.write([clipboardItem]);
+  } catch {
+    // Fallback for environments where ClipboardItem write fails (e.g. document not focused)
+    const fallback = text || markdown || html || "";
+    await navigator.clipboard.writeText(fallback);
+  }
 }

@@ -288,8 +288,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   return (
     <div
       className={cn(
-        "flex justify-start pb-2 text-neutral-900 dark:text-neutral-200",
-        !(isResponding && isLast) && "group",
+        "flex justify-start pb-2 text-neutral-900 dark:text-neutral-200 group",
       )}
     >
       <div className="flex-1 py-3 wrap-break-words overflow-x-auto">

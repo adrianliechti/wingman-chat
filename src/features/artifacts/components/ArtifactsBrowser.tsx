@@ -349,11 +349,11 @@ export function ArtifactsBrowser({
       <div className="flex-1 overflow-auto min-h-0">
         <div className="pt-1 min-w-full">
           {/* Root folder row */}
-          <div className="flex items-center gap-1 px-3 py-2 min-w-0 group">
+          <div className="flex items-center gap-1 pl-3 pr-2 py-2 min-w-0 group">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 truncate flex-1">Files</span>
             {(onUploadLocal || onUploadDrive || onDownloadAll) && (
               <Menu>
-                <MenuButton className="shrink-0 text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 mr-1">
+                <MenuButton className="shrink-0 text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5">
                   <MoreVertical size={14} />
                 </MenuButton>
                 <MenuItems
@@ -415,7 +415,19 @@ export function ArtifactsBrowser({
       </div>
 
       {/* Bottom: Upload + Download all */}
-
+      {onUploadLocal && (
+        <div className="@container shrink-0 px-3 py-2">
+          <button
+            type="button"
+            disabled={isProcessing}
+            onClick={onUploadLocal}
+            className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors disabled:opacity-50"
+          >
+            <Upload size={12} className="shrink-0" />
+            <span className="@max-[160px]:hidden">Upload files</span>
+          </button>
+        </div>
+      )}
 
       {/* Rename Dialog */}
       {renamingPath && (

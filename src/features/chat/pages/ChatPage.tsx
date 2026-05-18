@@ -1,5 +1,5 @@
 import { useMatch, useNavigate } from "@tanstack/react-router";
-import { AppWindow, ArrowDown, BotMessageSquare, ChevronLeft, ChevronRight, Info, Plus as PlusIcon, Shapes } from "lucide-react";
+import { AppWindow, ArrowDown, BotMessageSquare, ChevronLeft, Info, Plus as PlusIcon, Shapes } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { useAgents } from "@/features/agent/hooks/useAgents";
@@ -207,15 +207,20 @@ export function ChatPage() {
     setIsAppResizing(true);
     document.body.classList.add("resizing");
     // Capture the agent drawer state at drag start — it won't change mid-drag.
-    // 20rem (320px) agent panel + 0.75rem (12px) agent gap + 0.75rem (12px) app gap = 344px
-    const agentOffset = showAgentDrawer ? 344 : 12;
+    // 20rem (320px) agent panel + 0.75rem (12px) agent gap + 0.75rem (12px) app gap = 344px.
+    // When the agent drawer is hidden the app drawer is flush to the right (right: 0),
+    // so there is no offset to account for.
+    const agentOffset = showAgentDrawer ? 344 : 0;
+    const CLOSE_THRESHOLD_PX = 120;
+    let currentWidthVw = appWidthVw;
     const onMouseMove = (ev: MouseEvent) => {
       if (!appResizingRef.current) return;
       const vw = window.innerWidth;
       const minChatPx = 400;
       const panelRightEdge = vw - agentOffset;
       const newWidthPx = Math.min(panelRightEdge - minChatPx, panelRightEdge - ev.clientX);
-      const newVw = Math.max(20, (newWidthPx / vw) * 100);
+      const newVw = Math.max(0, (newWidthPx / vw) * 100);
+      currentWidthVw = newVw;
       setAppWidthVw(newVw);
     };
     const onMouseUp = () => {
@@ -224,10 +229,14 @@ export function ChatPage() {
       document.body.classList.remove("resizing");
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      if ((currentWidthVw / 100) * window.innerWidth < CLOSE_THRESHOLD_PX) {
+        setShowAppDrawer(false);
+        setTimeout(() => setAppWidthVw(DEFAULT_APP_WIDTH_VW), 300);
+      }
     };
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
-  }, [showAgentDrawer]);
+  }, [showAgentDrawer, appWidthVw, setShowAppDrawer]);
 
   const handleArtifactsResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -235,15 +244,20 @@ export function ChatPage() {
     setIsArtifactsResizing(true);
     document.body.classList.add("resizing");
     // Capture the agent drawer state at drag start — it won't change mid-drag.
-    // 20rem (320px) agent panel + 0.75rem (12px) agent gap + 0.75rem (12px) artifacts gap = 344px
-    const agentOffset = showAgentDrawer ? 344 : 12;
+    // 20rem (320px) agent panel + 0.75rem (12px) agent gap + 0.75rem (12px) artifacts gap = 344px.
+    // When the agent drawer is hidden the artifacts drawer is flush to the right (right: 0),
+    // so there is no offset to account for.
+    const agentOffset = showAgentDrawer ? 344 : 0;
+    const CLOSE_THRESHOLD_PX = 220;
+    let currentWidthVw = artifactsWidthVw;
     const onMouseMove = (ev: MouseEvent) => {
       if (!artifactsResizingRef.current) return;
       const vw = window.innerWidth;
       const minChatPx = 400;
       const panelRightEdge = vw - agentOffset;
       const newWidthPx = Math.min(panelRightEdge - minChatPx, panelRightEdge - ev.clientX);
-      const newVw = Math.max(20, (newWidthPx / vw) * 100);
+      const newVw = Math.max(0, (newWidthPx / vw) * 100);
+      currentWidthVw = newVw;
       setArtifactsWidthVw(newVw);
     };
     const onMouseUp = () => {
@@ -252,10 +266,14 @@ export function ChatPage() {
       document.body.classList.remove("resizing");
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      if ((currentWidthVw / 100) * window.innerWidth < CLOSE_THRESHOLD_PX) {
+        setShowArtifactsDrawer(false);
+        setTimeout(() => setArtifactsWidthVw(DEFAULT_ARTIFACTS_WIDTH_VW), 300);
+      }
     };
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
-  }, [showAgentDrawer]);
+  }, [showAgentDrawer, artifactsWidthVw, setShowArtifactsDrawer]);
 
   // Sidebar integration (now only controls visibility)
   const { setSidebarContent, showSidebar } = useSidebar();
@@ -675,7 +693,7 @@ export function ChatPage() {
             </div>
           </button>
         )}
-        <div className="h-full md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm overflow-hidden flex flex-col">
+        <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden flex flex-col">
           {/* Mobile close bar */}
           <div className="flex md:hidden items-center h-10 px-2 mt-4 border-b border-neutral-200/60 dark:border-neutral-700/60 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm">
             <button
@@ -691,15 +709,6 @@ export function ChatPage() {
             <AppDrawer />
           </div>
         </div>
-        {/* Flag tab on the left edge to close the drawer */}
-        <button
-          type="button"
-          onClick={toggleAppDrawer}
-          className="hidden md:flex absolute left-0 top-6 -translate-x-full items-center justify-center w-5 h-12 rounded-l-md bg-white/90 dark:bg-neutral-800/90 border border-r-0 border-neutral-200/60 dark:border-neutral-700/60 shadow-sm text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
-          title="Close panel"
-        >
-          <ChevronRight size={14} />
-        </button>
       </div>
     </div>
   );
