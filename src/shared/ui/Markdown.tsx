@@ -107,7 +107,6 @@ function createComponents(
   resolveAsset: (url: string) => string | undefined,
   blockCounterRef: { current: number },
 ): Partial<Components> {
-
   return {
     pre: ({ children }) => {
       return <>{children}</>;

@@ -40,7 +40,6 @@ import { FileIcon } from "@/shared/ui/FileIcon";
 import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
 
-
 export function ArtifactsDrawer() {
   const config = getConfig();
   const { fs, activeFile, openFile } = useArtifacts();
@@ -343,7 +342,8 @@ export function ArtifactsDrawer() {
             <Shapes size={28} className="text-neutral-300 dark:text-neutral-600 mb-3 mx-auto" />
             <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">No artifacts yet</h3>
             <p className="text-xs text-neutral-400 dark:text-neutral-500 leading-relaxed mb-4">
-              Files, code, and documents created in the conversation will appear here. You can also run Python or shell commands directly.
+              Files, code, and documents created in the conversation will appear here. You can also run Python or shell
+              commands directly.
             </p>
             <ul className="space-y-1.5 text-left mb-5">
               {[
@@ -490,7 +490,8 @@ export function ArtifactsDrawer() {
     }
   };
 
-  // Update slider position whenever viewMode changes or the switcher mounts (activeFileData change)
+  // Update slider position whenever viewMode changes or the switcher mounts (activeFile change)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeFile triggers remeasurement when preview/code buttons appear or disappear
   useEffect(() => {
     const measure = () => {
       const container = viewSliderRef.current;
@@ -505,7 +506,7 @@ export function ArtifactsDrawer() {
     measure();
     const id = requestAnimationFrame(measure);
     return () => cancelAnimationFrame(id);
-  }, [viewMode, activeFileData]);
+  }, [viewMode, activeFile]);
 
   // Check if current file supports preview mode
   const supportsPreview = () => {
@@ -561,7 +562,6 @@ export function ArtifactsDrawer() {
       <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
         {/* Left column: top bar + vertical editor/terminal split */}
         <ResizablePanel defaultSize={75} minSize={200} className="h-full flex flex-col overflow-hidden">
-
           {/* Top bar — lives inside the left column so the files browser spans full drawer height */}
           <div className="@container shrink-0 h-10 flex items-center px-2 gap-1">
             {/* File title */}
@@ -644,9 +644,7 @@ export function ArtifactsDrawer() {
                 </div>
               )}
               {showFilePicker && files.length > 1 && (
-                <div
-                  className="absolute top-full left-0 mt-1 z-50 min-w-48 max-w-72 bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 rounded-lg shadow-lg overflow-hidden py-1"
-                >
+                <div className="absolute top-full left-0 mt-1 z-50 min-w-48 max-w-72 bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 rounded-lg shadow-lg overflow-hidden py-1">
                   {files.map((f) => (
                     <button
                       key={f.path}
@@ -661,7 +659,9 @@ export function ArtifactsDrawer() {
                       )}
                     >
                       <FileIcon name={f.path} className="shrink-0" />
-                      <span className="truncate" title={f.path}>{getFileName(f.path)}</span>
+                      <span className="truncate" title={f.path}>
+                        {getFileName(f.path)}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -686,7 +686,8 @@ export function ArtifactsDrawer() {
                   )}
 
                   {/* Download dropdown */}
-                  {activeFileData && fs && (
+                  {activeFileData &&
+                    fs &&
                     (() => {
                       const isMarkdown = artifactKind(activeFileData.path, activeFileData.contentType) === "markdown";
                       if (!isMarkdown) {
@@ -753,15 +754,20 @@ export function ArtifactsDrawer() {
                                 }}
                                 className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
                               >
-                                <img src="/icons/file-word.svg" alt="Word" width={12} height={12} className="dark:invert" />
+                                <img
+                                  src="/icons/file-word.svg"
+                                  alt="Word"
+                                  width={12}
+                                  height={12}
+                                  className="dark:invert"
+                                />
                                 Download as Word
                               </button>
                             </MenuItem>
                           </MenuItems>
                         </Menu>
                       );
-                    })()
-                  )}
+                    })()}
                 </div>
 
                 {chat?.id && <div className="w-px h-4 bg-black/10 dark:bg-white/10 mx-0.5" />}
@@ -793,7 +799,9 @@ export function ArtifactsDrawer() {
                       >
                         <Files size={12} className="shrink-0 text-neutral-400" />
                         <span className="flex-1 text-left">Files</span>
-                        {showFilesBrowser && <Check size={11} className="shrink-0 text-neutral-500 dark:text-neutral-400" />}
+                        {showFilesBrowser && (
+                          <Check size={11} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
+                        )}
                       </button>
                     </MenuItem>
                   )}

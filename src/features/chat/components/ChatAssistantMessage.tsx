@@ -286,11 +286,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
   // Render assistant message with content
   return (
-    <div
-      className={cn(
-        "flex justify-start pb-2 text-neutral-900 dark:text-neutral-200 group",
-      )}
-    >
+    <div className={cn("flex justify-start pb-2 text-neutral-900 dark:text-neutral-200 group")}>
       <div className="flex-1 py-3 wrap-break-words overflow-x-auto">
         {/* Render content parts in order */}
         {message.content.map((part, index) => {

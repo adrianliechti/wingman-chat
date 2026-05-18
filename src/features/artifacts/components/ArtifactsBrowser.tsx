@@ -154,7 +154,9 @@ function FileTreeNode({
         onClick={() => onFileClick(node.path)}
         className="flex items-center gap-1 flex-1 min-w-0 text-left overflow-hidden"
       >
-        <span className="shrink-0"><FileIcon name={node.path} contentType={node.file?.contentType} size={14} /></span>
+        <span className="shrink-0">
+          <FileIcon name={node.path} contentType={node.file?.contentType} size={14} />
+        </span>
         <span
           className={cn(
             "text-xs truncate",
@@ -213,8 +215,6 @@ function FileTreeNode({
     </div>
   );
 }
-
-
 
 interface ArtifactsBrowserProps {
   fs: FileSystemManager;
@@ -350,7 +350,9 @@ export function ArtifactsBrowser({
         <div className="pt-1 min-w-full">
           {/* Root folder row */}
           <div className="flex items-center gap-1 pl-3 pr-2 py-2 min-w-0 group">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 truncate flex-1">Files</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 truncate flex-1">
+              Files
+            </span>
             {(onUploadLocal || onUploadDrive || onDownloadAll) && (
               <Menu>
                 <MenuButton className="shrink-0 text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5">
@@ -406,7 +408,7 @@ export function ArtifactsBrowser({
                   onToggleFolder={handleToggleFolder}
                   onDeleteFile={handleDeleteFile}
                   onRenameFile={handleRenameFile}
-                  onDownloadFile={onDownloadFile ?? (() => { })}
+                  onDownloadFile={onDownloadFile ?? (() => {})}
                 />
               ))}
             </div>

@@ -252,9 +252,15 @@ export function JsEditor({ content, onRunReady, onRunningChange }: JsEditorProps
           </ResizablePanel>
 
           {/* Console Panel */}
-          <ResizablePanel defaultSize={25} minSize={10} className="flex flex-col border-t border-black/5 dark:border-white/5">
+          <ResizablePanel
+            defaultSize={25}
+            minSize={10}
+            className="flex flex-col border-t border-black/5 dark:border-white/5"
+          >
             <div className="flex items-center justify-between px-3 py-1 shrink-0">
-              <span className="text-[10px] uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Console</span>
+              <span className="text-[10px] uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                Console
+              </span>
               <button
                 type="button"
                 onClick={handleClear}
