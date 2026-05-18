@@ -56,6 +56,8 @@ export function ArtifactsDrawer() {
   const filePickerRef = useRef<HTMLDivElement>(null);
   const [terminalMounted, setTerminalMounted] = useState(false);
   const [showFilesBrowser, setShowFilesBrowser] = useState(false);
+  const viewSliderRef = useRef<HTMLDivElement>(null);
+  const [viewSliderStyle, setViewSliderStyle] = useState({ left: 0, width: 0 });
   const dragCounterRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -488,6 +490,23 @@ export function ArtifactsDrawer() {
     }
   };
 
+  // Update slider position whenever viewMode changes or the switcher mounts (activeFileData change)
+  useEffect(() => {
+    const measure = () => {
+      const container = viewSliderRef.current;
+      if (!container) return;
+      const active = container.querySelector<HTMLElement>(`[data-view="${viewMode}"]`);
+      if (!active) return;
+      const cr = container.getBoundingClientRect();
+      const br = active.getBoundingClientRect();
+      setViewSliderStyle({ left: br.left - cr.left, width: br.width });
+    };
+    // Run immediately, then also after a paint in case the container just mounted
+    measure();
+    const id = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(id);
+  }, [viewMode, activeFileData]);
+
   // Check if current file supports preview mode
   const supportsPreview = () => {
     if (!activeFile) return false;
@@ -578,15 +597,31 @@ export function ArtifactsDrawer() {
               )}
               {/* View mode segmented control — inline after filename */}
               {supportsPreview() && (
-                <div className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0 ml-2">
+                <div
+                  ref={viewSliderRef}
+                  className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0 ml-2"
+                >
+                  {/* Animated slider background */}
+                  {viewSliderStyle.width > 0 && (
+                    <div
+                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
+                      style={{
+                        left: `${viewSliderStyle.left}px`,
+                        width: `${viewSliderStyle.width}px`,
+                        height: "calc(100% - 4px)",
+                        top: "2px",
+                      }}
+                    />
+                  )}
                   <button
                     type="button"
+                    data-view="preview"
                     onClick={() => setViewMode("preview")}
                     title="Preview"
                     className={cn(
                       "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
                       viewMode === "preview"
-                        ? "bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+                        ? "text-neutral-900 dark:text-neutral-50"
                         : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
                     )}
                   >
@@ -594,12 +629,13 @@ export function ArtifactsDrawer() {
                   </button>
                   <button
                     type="button"
+                    data-view="code"
                     onClick={() => setViewMode("code")}
                     title="Code"
                     className={cn(
                       "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
                       viewMode === "code"
-                        ? "bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+                        ? "text-neutral-900 dark:text-neutral-50"
                         : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
                     )}
                   >
