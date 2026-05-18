@@ -39,6 +39,7 @@ export function NotebookPage() {
 
   const [showSourcesDrawer, setShowSourcesDrawer] = useState(false);
   const [showStudioDrawer, setShowStudioDrawer] = useState(false);
+  const [panelSizes, setPanelSizes] = useState([0, 0]); // [panel1%, panel2%]
 
   // Shared download dispatcher — owns the slide-export overlay + the unified
   // PNG/SVG/PDF/JSON-LD/YAML modal. The same `trigger` powers both the
@@ -240,9 +241,30 @@ export function NotebookPage() {
       <Outlet />
       {/* Main layout */}
       <main className="w-full grow overflow-hidden flex pt-14 relative">
+        {/* Separator lines rendered outside the panel group so they span from y=0 (top of main),
+            unaffected by the panel group's own overflow:hidden which would clip them at pt-14. */}
+        {panelSizes[0] > 0 && (
+          <>
+            <div
+              aria-hidden="true"
+              className="absolute top-0 bottom-0 w-px bg-black/10 dark:bg-white/10 hidden md:block pointer-events-none"
+              style={{ left: `${panelSizes[0]}%` }}
+            />
+            <div
+              aria-hidden="true"
+              className="absolute top-0 bottom-0 w-px bg-black/10 dark:bg-white/10 hidden md:block pointer-events-none"
+              style={{ left: `${panelSizes[0] + panelSizes[1]}%` }}
+            />
+          </>
+        )}
         {/* ── Desktop: Resizable 3-column layout ── */}
         <ResizablePanelGroup orientation="horizontal" className="hidden md:flex h-full">
-          <ResizablePanel defaultSize={300} minSize={160} className="h-full overflow-hidden">
+          <ResizablePanel
+            defaultSize={300}
+            minSize={160}
+            className="h-full overflow-hidden"
+            onResize={(size) => setPanelSizes((prev) => [size.asPercentage, prev[1]])}
+          >
             {loading ? (
               <div className="h-full" />
             ) : (
@@ -262,7 +284,11 @@ export function NotebookPage() {
 
           <ResizableHandle />
 
-          <ResizablePanel minSize={200} className="h-full overflow-hidden">
+          <ResizablePanel
+            minSize={200}
+            className="h-full overflow-hidden"
+            onResize={(size) => setPanelSizes((prev) => [prev[0], size.asPercentage])}
+          >
             {loading ? (
               <div className="h-full" />
             ) : viewingOutput ? (
@@ -295,6 +321,12 @@ export function NotebookPage() {
                     <QuizViewer questions={viewingOutput.quiz} />
                   ) : viewingOutput.mindMap ? (
                     <MindMapViewer root={viewingOutput.mindMap} />
+                  ) : viewingOutput.process ? (
+                    <ProcessViewer output={viewingOutput} onRefine={updateOutput} />
+                  ) : viewingOutput.architecture ? (
+                    <ArchitectureViewer output={viewingOutput} onRefine={updateOutput} />
+                  ) : viewingOutput.dataCatalog ? (
+                    <DataCatalogViewer output={viewingOutput} onRefine={updateOutput} />
                   ) : viewingOutput.audioUrl ? (
                     <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
                   ) : viewingOutput.type === "slides" ? (
@@ -453,9 +485,8 @@ export function NotebookPage() {
         <button
           type="button"
           aria-label="Close panel"
-          className={`md:hidden absolute inset-0 z-20 bg-black/40 transition-opacity duration-300 cursor-default ${
-            showSourcesDrawer || showStudioDrawer ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-          }`}
+          className={`md:hidden absolute inset-0 z-20 bg-black/40 transition-opacity duration-300 cursor-default ${showSourcesDrawer || showStudioDrawer ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+            }`}
           onClick={() => {
             setShowSourcesDrawer(false);
             setShowStudioDrawer(false);
@@ -464,9 +495,8 @@ export function NotebookPage() {
 
         {/* ── Mobile: Sources bottom sheet ── */}
         <div
-          className={`md:hidden absolute inset-x-0 bottom-0 z-30 h-[75vh] rounded-t-2xl bg-white dark:bg-neutral-950 shadow-2xl overflow-hidden flex flex-col transition-transform duration-300 ease-in-out ${
-            showSourcesDrawer ? "translate-y-0" : "translate-y-full"
-          }`}
+          className={`md:hidden absolute inset-x-0 bottom-0 z-30 h-[75vh] rounded-t-2xl bg-white dark:bg-neutral-950 shadow-2xl overflow-hidden flex flex-col transition-transform duration-300 ease-in-out ${showSourcesDrawer ? "translate-y-0" : "translate-y-full"
+            }`}
         >
           <div className="flex justify-center pt-3 pb-1 shrink-0">
             <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />
@@ -488,9 +518,8 @@ export function NotebookPage() {
 
         {/* ── Mobile: Studio bottom sheet ── */}
         <div
-          className={`md:hidden absolute inset-x-0 bottom-0 z-30 h-[75vh] rounded-t-2xl bg-white dark:bg-neutral-950 shadow-2xl overflow-hidden flex flex-col transition-transform duration-300 ease-in-out ${
-            showStudioDrawer ? "translate-y-0" : "translate-y-full"
-          }`}
+          className={`md:hidden absolute inset-x-0 bottom-0 z-30 h-[75vh] rounded-t-2xl bg-white dark:bg-neutral-950 shadow-2xl overflow-hidden flex flex-col transition-transform duration-300 ease-in-out ${showStudioDrawer ? "translate-y-0" : "translate-y-full"
+            }`}
         >
           <div className="flex justify-center pt-3 pb-1 shrink-0">
             <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />

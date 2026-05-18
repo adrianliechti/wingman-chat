@@ -494,9 +494,8 @@ export function ChatPage() {
       <BackgroundImage opacity={messages.length === 0 ? 80 : 0} />
 
       <div
-        className={`flex-1 flex flex-col overflow-hidden relative ${isArtifactsResizing || isAppResizing ? "" : "transition-all duration-500 ease-in-out"} ${
-          showAgentDrawer && !showAppDrawer && !showArtifactsDrawer ? "md:mr-83" : ""
-        }`}
+        className={`flex-1 flex flex-col overflow-hidden relative ${isArtifactsResizing || isAppResizing ? "" : "transition-all duration-500 ease-in-out"} ${showAgentDrawer && !showAppDrawer && !showArtifactsDrawer ? "md:mr-83" : ""
+          }`}
         style={
           !isMobile && showAppDrawer
             ? { marginRight: `calc(${appWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})` }
@@ -576,14 +575,14 @@ export function ChatPage() {
         style={
           !isMobile && showAppDrawer
             ? {
-                right: `calc(${appWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})`,
-                ...(isAppResizing ? { transition: "right 50ms ease-out" } : {}),
-              }
+              right: `calc(${appWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})`,
+              ...(isAppResizing ? { transition: "right 50ms ease-out" } : {}),
+            }
             : !isMobile && !showAppDrawer && showArtifactsDrawer
               ? {
-                  right: `calc(${artifactsWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})`,
-                  ...(isArtifactsResizing ? { transition: "right 50ms ease-out" } : {}),
-                }
+                right: `calc(${artifactsWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})`,
+                ...(isArtifactsResizing ? { transition: "right 50ms ease-out" } : {}),
+              }
               : undefined
         }
       >
@@ -591,10 +590,10 @@ export function ChatPage() {
           className={cn(
             "relative md:max-w-4xl mx-auto transition-transform duration-500 ease-in-out",
             messages.length === 0 &&
-              !showAppDrawer &&
-              !showAgentDrawer &&
-              !showArtifactsDrawer &&
-              "md:translate-y-[calc(50%-33.333vh)]",
+            !showAppDrawer &&
+            !showAgentDrawer &&
+            !showArtifactsDrawer &&
+            "md:translate-y-[calc(50%-33.333vh)]",
           )}
         >
           <div className="pointer-events-auto">
@@ -608,7 +607,7 @@ export function ChatPage() {
       {shouldRenderArtifactsDrawer && (
         <div
           className={cn(
-            "transform fixed right-0 md:top-18 md:bottom-0 max-w-none z-20",
+            "transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-20",
             !isArtifactsResizing && "transition-all duration-300 ease-out",
             isMobile ? "w-full" : "",
             isArtifactsDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
@@ -667,7 +666,7 @@ export function ChatPage() {
       {/* Always render so iframe is available, but hide when not active */}
       <div
         className={cn(
-          "w-full transform fixed right-0 md:right-3 md:top-18 md:bottom-4 max-w-none z-20",
+          "w-full transform fixed right-0 md:right-3 md:top-14 md:bottom-4 max-w-none z-20",
           !isAppResizing && "transition-all duration-300 ease-out",
           shouldRenderAppDrawer && isAppDrawerAnimating
             ? "translate-x-0 opacity-100"
