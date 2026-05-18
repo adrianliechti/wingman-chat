@@ -120,7 +120,7 @@ export class MCPClient implements ToolProvider {
     this.description = description;
     this.headers = headers;
     this._configIcon = icon;
-    this.icon = icon ?? new URL("favicon.ico", this.url).href;
+    this.icon = icon ?? new URL("icon", this.url).href;
     this.authProvider = new BrowserOAuthClientProvider(id);
   }
 
@@ -237,7 +237,7 @@ export class MCPClient implements ToolProvider {
     // Pick up the server-published icon when no config/agent icon was provided.
     if (!this._configIcon) {
       const serverIcons = client.getServerVersion()?.icons as McpIcon[] | undefined;
-      this.icon = pickIcon(serverIcons) ?? new URL("favicon.ico", this.url).href;
+      this.icon = pickIcon(serverIcons) ?? new URL("icon", this.url).href;
     }
 
     // Load and store tools and instructions after connection

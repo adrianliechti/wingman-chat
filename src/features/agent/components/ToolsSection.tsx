@@ -126,14 +126,17 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
           {agent.servers.map((server) => {
             const state = server.enabled ? getProviderState(server.id) : ProviderState.Disconnected;
             // Prefer the user-configured icon; fall back to the server-published icon
-            // from the live MCPClient (populated after connect via getServerVersion().icons).
+            // from the live MCPClient (populated after connect via getServerVersion().icons),
+            // then fall back to the server's favicon.
             const liveIcon = providers.find((p) => p.id === server.id)?.icon;
             const resolvedIcon =
               typeof server.icon === "string" && server.icon
                 ? server.icon
                 : typeof liveIcon === "string"
                   ? liveIcon
-                  : undefined;
+                  : server.url
+                    ? new URL("icon", server.url.endsWith("/") ? server.url : `${server.url}/`).href
+                    : undefined;
 
             return (
               <div key={server.id} className="flex items-center gap-2 py-1.5">
