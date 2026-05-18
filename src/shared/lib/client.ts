@@ -25,7 +25,7 @@ import { Role } from "@/shared/types/chat";
 import { isAbortError } from "./errors";
 import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
-import { dropOrphanFunctionCalls, isReasoningHistoryError, stripReasoningItems } from "./recovery";
+import { dropOrphanFunctionCalls } from "./recovery";
 import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
 
 function expandToSentences(text: string, start: number, end: number): string {
@@ -213,145 +213,109 @@ export class Client {
           }
         }
 
-        const attemptStream = async (inputItems: OpenAI.Responses.ResponseInputItem[]) => {
-          // Track streaming content parts (fresh per attempt so retries don't
-          // mix partial content from a rejected stream into the final result).
-          const contentParts: Content[] = [];
-          let currentType: "reasoning" | "text" | null = null;
+        const contentParts: Content[] = [];
 
-          // Helper to append text content
-          const appendText = (delta: string) => {
-            if (currentType === "text" && contentParts.length > 0) {
-              const lastPart = contentParts[contentParts.length - 1];
-              if (lastPart.type === "text") {
-                lastPart.text += delta;
-              }
-            } else {
-              contentParts.push({ type: "text", text: delta });
-              currentType = "text";
-            }
-            handler?.([...contentParts]);
-          };
-
-          // Helper to append reasoning content (text or summary)
-          const appendReasoning = (id: string, delta: string, summary?: string) => {
-            let reasoningPart = contentParts.find((p): p is ReasoningContent => p.type === "reasoning");
-            if (!reasoningPart) {
-              reasoningPart = { type: "reasoning", id, text: "" };
-              contentParts.unshift(reasoningPart); // Reasoning goes first
-            }
-            if (summary) {
-              reasoningPart.summary = (reasoningPart.summary || "") + summary;
-            }
-            if (delta) {
-              reasoningPart.text += delta;
-            }
-            currentType = "reasoning";
-            handler?.([...contentParts]);
-          };
-
-          const runner = this.oai.responses
-            .stream({
-              model: model,
-              store: false,
-              truncation: "auto",
-              tools: this.toTools(tools),
-              input: inputItems,
-              instructions: instructions,
-              ...(options?.effort
-                ? {
-                    reasoning: {
-                      effort: options.effort,
-                      summary: options.summary ?? "auto",
-                    },
-                  }
-                : {}),
-              ...(options?.verbosity
-                ? {
-                    text: { verbosity: options.verbosity },
-                  }
-                : {}),
-            })
-            .on("response.reasoning_summary_text.delta", (event) => {
-              appendReasoning(event.item_id, "", event.delta);
-            })
-            .on("response.reasoning_text.delta", (event) => {
-              appendReasoning(event.item_id, event.delta);
-            })
-            .on("response.output_text.delta", (event) => {
-              appendText(event.delta);
-            })
-            .on("response.output_item.done", (event) => {
-              if (event.item.type === "function_call") {
-                contentParts.push({
-                  type: "tool_call",
-                  id: event.item.call_id,
-                  name: event.item.name,
-                  arguments: event.item.arguments,
-                });
-                currentType = null;
-                handler?.([...contentParts]);
-              }
-            });
-
-          // If a signal was provided, wire it up to abort the runner. Handle
-          // the already-aborted case explicitly — addEventListener on a
-          // signal that has already fired never invokes the listener.
-          if (options?.signal) {
-            if (options.signal.aborted) {
-              runner.abort();
-            } else {
-              options.signal.addEventListener("abort", () => runner.abort(), { once: true });
-            }
+        // Get-or-create the single reasoning part (always at index 0).
+        const ensureReasoning = (id: string): ReasoningContent => {
+          let part = contentParts.find((p): p is ReasoningContent => p.type === "reasoning");
+          if (!part) {
+            part = { type: "reasoning", id, text: "" };
+            contentParts.unshift(part);
           }
-
-          // Attach an error listener so mid-stream errors don't surface as
-          // unhandled EventEmitter errors. The same error will also reject
-          // `finalResponse()` below, which is where we actually handle it.
-          runner.on("error", () => {
-            /* handled via finalResponse() rejection */
-          });
-
-          try {
-            const finalResponse = await runner.finalResponse();
-
-            return {
-              result: { role: Role.Assistant, content: contentParts } as Message,
-              response: {
-                id: finalResponse.id,
-                model: finalResponse.model,
-                inputTokens: finalResponse.usage?.input_tokens,
-                cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
-                outputTokens: finalResponse.usage?.output_tokens,
-                reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
-              },
-            };
-          } catch (error) {
-            // On abort (either via our signal or runner.abort()), return the
-            // partial content accumulated so far as a successful result.
-            if (options?.signal?.aborted || isAbortError(error)) {
-              return {
-                result: { role: Role.Assistant, content: contentParts } as Message,
-                response: { id: "", model },
-              };
-            }
-
-            throw error;
-          }
+          return part;
         };
 
-        const inputItems = dropOrphanFunctionCalls(items);
-        try {
-          return await attemptStream(inputItems);
-        } catch (error) {
-          if (!isReasoningHistoryError(error)) throw error;
-          const stripped = stripReasoningItems(inputItems);
-          if (stripped.length === inputItems.length) throw error;
-          console.warn("[Recovery] Retrying after reasoning history error", {
-            removedItems: inputItems.length - stripped.length,
+        const emit = () => handler?.([...contentParts]);
+
+        const runner = this.oai.responses
+          .stream({
+            model: model,
+            store: false,
+            truncation: "auto",
+            tools: this.toTools(tools),
+            input: dropOrphanFunctionCalls(items),
+            instructions: instructions,
+            ...(options?.effort
+              ? {
+                  reasoning: {
+                    effort: options.effort,
+                    summary: options.summary ?? "auto",
+                  },
+                }
+              : {}),
+            ...(options?.verbosity
+              ? {
+                  text: { verbosity: options.verbosity },
+                }
+              : {}),
+          })
+          .on("response.reasoning_summary_text.delta", (event) => {
+            const r = ensureReasoning(event.item_id);
+            r.summary = (r.summary ?? "") + event.delta;
+            emit();
+          })
+          .on("response.reasoning_text.delta", (event) => {
+            ensureReasoning(event.item_id).text += event.delta;
+            emit();
+          })
+          .on("response.output_text.delta", (event) => {
+            const last = contentParts[contentParts.length - 1];
+            if (last?.type === "text") {
+              last.text += event.delta;
+            } else {
+              contentParts.push({ type: "text", text: event.delta });
+            }
+            emit();
+          })
+          .on("response.output_item.done", (event) => {
+            if (event.item.type === "function_call") {
+              contentParts.push({
+                type: "tool_call",
+                id: event.item.call_id,
+                name: event.item.name,
+                arguments: event.item.arguments,
+              });
+              emit();
+            }
           });
-          handler?.([]);
-          return await attemptStream(stripped);
+
+        // Wire abort. Handle the already-aborted case explicitly —
+        // addEventListener on a signal that has already fired never invokes.
+        if (options?.signal) {
+          if (options.signal.aborted) {
+            runner.abort();
+          } else {
+            options.signal.addEventListener("abort", () => runner.abort(), { once: true });
+          }
+        }
+
+        // Attach an error listener so mid-stream errors don't surface as
+        // unhandled EventEmitter errors. The same error rejects
+        // `finalResponse()` below, where we actually handle it.
+        runner.on("error", () => {});
+
+        const assistant: Message = { role: Role.Assistant, content: contentParts };
+
+        try {
+          const finalResponse = await runner.finalResponse();
+          return {
+            result: assistant,
+            response: {
+              id: finalResponse.id,
+              model: finalResponse.model,
+              inputTokens: finalResponse.usage?.input_tokens,
+              cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
+              outputTokens: finalResponse.usage?.output_tokens,
+              reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
+            },
+          };
+        } catch (error) {
+          // On abort (our signal or runner.abort()), return partial content
+          // as a successful result.
+          if (options?.signal?.aborted || isAbortError(error)) {
+            return { result: assistant, response: { id: "", model } };
+          }
+          throw error;
         }
       },
       { effort: options?.effort, verbosity: options?.verbosity, toolCount: tools?.length },
