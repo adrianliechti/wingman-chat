@@ -576,7 +576,7 @@ export function TranslatePage() {
                     <div className="flex-1 relative min-h-0 overflow-hidden">
                       {/* Interactive text area */}
                       <InteractiveText
-                        text={currentText + "hello world"}
+                        text={currentText}
                         placeholder=""
                         className="absolute inset-0 w-full h-full pl-4 pr-4 pt-4 pb-2 bg-transparent overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
                         onTextSelect={handleTextSelect}
