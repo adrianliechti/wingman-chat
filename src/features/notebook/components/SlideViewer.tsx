@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Loader2, SparklesIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { refineSlide } from "../lib/slide-refine";
 import type { NotebookOutput } from "../types/notebook";
 
@@ -116,10 +116,11 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
                 }}
                 type="button"
                 onClick={() => setActiveIndex(i + 1)}
-                className={`shrink-0 w-32 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors bg-neutral-100 dark:bg-neutral-800 ${activeIndex === i + 1
+                className={`shrink-0 w-32 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors bg-neutral-100 dark:bg-neutral-800 ${
+                  activeIndex === i + 1
                     ? "border-blue-500"
                     : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
-                  }`}
+                }`}
               >
                 {thumb ? (
                   <img src={thumb} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />

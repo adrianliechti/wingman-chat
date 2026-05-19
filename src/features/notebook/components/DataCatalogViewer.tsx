@@ -27,9 +27,12 @@ export function DataCatalogViewer({ output, onRefine }: DataCatalogViewerProps) 
   // Active in-app view. Defaults to the catalog's generated `kind` but the
   // user can switch — all four views read from the same underlying catalog
   // JSON, so switching doesn't require regeneration.
-  const [viewState, setViewState] = useState<{ outputId: string; kind: DataCatalogKind }>({ outputId: output.id, kind: catalog?.kind ?? "inventory" });
-  const viewKind = viewState.outputId === output.id ? viewState.kind : (catalog?.kind ?? "inventory");
-  const setViewKind = (kind: DataCatalogKind) => setViewState({ outputId: output.id, kind });
+  const [viewKind, setViewKind] = useState<DataCatalogKind>(catalog?.kind ?? "inventory");
+  const [prevOutputId, setPrevOutputId] = useState(output.id);
+  if (prevOutputId !== output.id) {
+    setPrevOutputId(output.id);
+    setViewKind(catalog?.kind ?? "inventory");
+  }
 
   if (!catalog) {
     return (
@@ -74,12 +77,13 @@ export function DataCatalogViewer({ output, onRefine }: DataCatalogViewerProps) 
               role="tab"
               aria-selected={active}
               onClick={() => setViewKind(tab.kind)}
-              className={`py-0.5 text-[11px] transition-colors border-b ${active
+              className={`py-0.5 text-[11px] transition-colors border-b ${
+                active
                   ? "border-neutral-900 dark:border-neutral-100 text-neutral-900 dark:text-neutral-100 font-semibold"
                   : empty
                     ? "border-transparent text-neutral-400 dark:text-neutral-600 hover:text-neutral-500 dark:hover:text-neutral-400"
                     : "border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
-                }`}
+              }`}
               title={empty ? `No ${tab.label.toLowerCase()} yet — refine to add` : `Switch to ${tab.label}`}
             >
               {tab.label}

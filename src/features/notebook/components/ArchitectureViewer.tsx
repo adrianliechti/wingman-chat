@@ -7,8 +7,8 @@ import type { ArchitectureView, NotebookOutput } from "../types/notebook";
 import { ArchitectureGroupNode } from "./architecture/ArchitectureGroupNode";
 import { ArchitectureRelationEdge } from "./architecture/ArchitectureRelationEdge";
 import { ArchitectureShapeNode } from "./architecture/ArchitectureShapeNode";
-import { buildArchitectureFlow, isSequenceDiagram } from "./architecture/graphLayout";
 import { SequenceCanvas } from "./architecture/SequenceCanvas";
+import { buildArchitectureFlow, isSequenceDiagram } from "./architecture/graphLayout";
 
 interface ArchitectureViewerProps {
   output: NotebookOutput;
@@ -45,9 +45,12 @@ function ArchitectureInner({ output, onRefine }: ArchitectureViewerProps) {
   const [refineError, setRefineError] = useState<string | null>(null);
 
   // Active C4 view (one of four tabs). Resets when switching outputs.
-  const [viewState, setViewState] = useState<{ outputId: string; view: ArchitectureView }>({ outputId: output.id, view: "c4-container" });
-  const viewKind = viewState.outputId === output.id ? viewState.view : "c4-container";
-  const setViewKind = (view: ArchitectureView) => setViewState({ outputId: output.id, view });
+  const [viewKind, setViewKind] = useState<ArchitectureView>("c4-container");
+  const [prevOutputId, setPrevOutputId] = useState(output.id);
+  if (prevOutputId !== output.id) {
+    setPrevOutputId(output.id);
+    setViewKind("c4-container");
+  }
 
   // Per-view element counts, used both for tab labels and to bias the
   // default active tab toward whichever view has the most elements.
@@ -113,12 +116,13 @@ function ArchitectureInner({ output, onRefine }: ArchitectureViewerProps) {
                 role="tab"
                 aria-selected={active}
                 onClick={() => setViewKind(tab.view)}
-                className={`py-0.5 text-[11px] transition-colors border-b ${active
+                className={`py-0.5 text-[11px] transition-colors border-b ${
+                  active
                     ? "border-neutral-900 dark:border-neutral-100 text-neutral-900 dark:text-neutral-100 font-semibold"
                     : empty
                       ? "border-transparent text-neutral-400 dark:text-neutral-600 hover:text-neutral-500 dark:hover:text-neutral-400"
                       : "border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
-                  }`}
+                }`}
                 title={empty ? `No ${tab.label.toLowerCase()} yet — refine to add` : `Switch to ${tab.label}`}
               >
                 {tab.label}

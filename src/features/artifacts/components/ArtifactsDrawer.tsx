@@ -552,7 +552,7 @@ export function ArtifactsDrawer() {
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: File drag-and-drop requires drag events on the drawer surface.
     <div
-      className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative pt-2"
+      className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative pt-2 md:pt-0"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
