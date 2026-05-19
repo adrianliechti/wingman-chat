@@ -1,3 +1,4 @@
+import { Coffee } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useAgents } from "@/features/agent/hooks/useAgents";
@@ -52,7 +53,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const toggleCompanion = useCallback(() => setCompanionEnabled((v) => !v), []);
   const [companionClient] = useState<MCPClient | null>(() =>
     bridgeHost
-      ? new MCPClient(COMPANION_ID, companionMcpUrl(bridgeHost), "Companion", "Locally running companion application")
+      ? new MCPClient(COMPANION_ID, companionMcpUrl(bridgeHost), "Companion", "Locally running companion application", undefined, Coffee)
       : null,
   );
 

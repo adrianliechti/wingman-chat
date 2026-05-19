@@ -79,11 +79,11 @@ export class MCPClient implements ToolProvider {
   readonly name: string;
   readonly description?: string;
 
-  icon?: string;
+  icon?: ToolIcon;
 
   readonly headers?: Record<string, string>;
 
-  private readonly _configIcon?: string;
+  private readonly _configIcon?: ToolIcon;
   private client: Client | null = null;
   private activeBridge: AppBridge | null = null;
   private authProvider: BrowserOAuthClientProvider;
@@ -112,7 +112,7 @@ export class MCPClient implements ToolProvider {
     name: string,
     description: string,
     headers?: Record<string, string>,
-    icon?: string,
+    icon?: ToolIcon,
   ) {
     this.id = id;
     this.url = url.endsWith("/") ? url : `${url}/`;
