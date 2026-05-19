@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Loader2, SparklesIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { refineSlide } from "../lib/slide-refine";
 import type { NotebookOutput } from "../types/notebook";
 
@@ -14,17 +14,19 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
   const isGenerating = output.status === "generating";
   const slideCount = slides.length;
 
-  const [activeIndex, setActiveIndex] = useState(1);
+  const [slideState, setSlideState] = useState<{ outputId: string; index: number }>({ outputId: output.id, index: 1 });
+  const activeIndex = slideState.outputId === output.id ? slideState.index : 1;
+  const setActiveIndex = useCallback(
+    (value: number | ((i: number) => number)) =>
+      setSlideState((s) => ({
+        outputId: output.id,
+        index: typeof value === "function" ? value(s.outputId === output.id ? s.index : 1) : value,
+      })),
+    [output.id],
+  );
   const [refinePrompt, setRefinePrompt] = useState("");
   const [isRefining, setIsRefining] = useState(false);
   const [refineError, setRefineError] = useState<string | null>(null);
-
-  // Derived-state pattern: reset to slide 1 when the viewed output changes.
-  const [prevOutputId, setPrevOutputId] = useState(output.id);
-  if (prevOutputId !== output.id) {
-    setPrevOutputId(output.id);
-    setActiveIndex(1);
-  }
 
   const thumbnails = useSlideThumbnails(isHtml ? slides : undefined);
 
@@ -35,7 +37,7 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
       setActiveIndex(slideCount);
     }
     prevSlideCount.current = slideCount;
-  }, [slideCount, isGenerating]);
+  }, [slideCount, isGenerating, setActiveIndex]);
 
   // Auto-scroll thumbnail bar to keep latest visible during generation.
   const thumbBarRef = useRef<HTMLDivElement>(null);
@@ -114,11 +116,10 @@ export function SlideViewer({ output, onRefine }: SlideViewerProps) {
                 }}
                 type="button"
                 onClick={() => setActiveIndex(i + 1)}
-                className={`shrink-0 w-32 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors bg-neutral-100 dark:bg-neutral-800 ${
-                  activeIndex === i + 1
+                className={`shrink-0 w-32 aspect-[16/9] rounded-lg border-2 overflow-hidden transition-colors bg-neutral-100 dark:bg-neutral-800 ${activeIndex === i + 1
                     ? "border-blue-500"
                     : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
-                }`}
+                  }`}
               >
                 {thumb ? (
                   <img src={thumb} alt={`Slide ${i + 1}`} className="w-full h-full object-cover" />

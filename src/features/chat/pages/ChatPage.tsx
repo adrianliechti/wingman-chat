@@ -666,7 +666,7 @@ export function ChatPage() {
       {/* Always render so iframe is available, but hide when not active */}
       <div
         className={cn(
-          "w-full transform fixed right-0 md:right-3 md:top-14 md:bottom-4 max-w-none z-20",
+          "w-full transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-20",
           !isAppResizing && "transition-all duration-300 ease-out",
           shouldRenderAppDrawer && isAppDrawerAnimating
             ? "translate-x-0 opacity-100"
