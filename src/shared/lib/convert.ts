@@ -153,9 +153,7 @@ export async function convertFileToText(file: File): Promise<string> {
     const results = await xlsxToCsv(file);
     if (results.length === 0) return "";
     if (results.length === 1) return csvToMarkdownTable(results[0].csv);
-    return results
-      .map((r) => `# ${r.sheetName}\n\n${csvToMarkdownTable(r.csv)}`)
-      .join("\n\n");
+    return results.map((r) => `# ${r.sheetName}\n\n${csvToMarkdownTable(r.csv)}`).join("\n\n");
   }
 
   if (name.endsWith(".docx") || file.type === MIME_DOCX) {

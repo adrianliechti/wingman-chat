@@ -6,10 +6,7 @@ interface GlossaryViewProps {
 }
 
 export function GlossaryView({ catalog }: GlossaryViewProps) {
-  const datasetTitleById = useMemo(
-    () => new Map(catalog.datasets.map((d) => [d.id, d.title])),
-    [catalog.datasets],
-  );
+  const datasetTitleById = useMemo(() => new Map(catalog.datasets.map((d) => [d.id, d.title])), [catalog.datasets]);
   const sorted = useMemo(() => [...catalog.glossary].sort((a, b) => a.term.localeCompare(b.term)), [catalog.glossary]);
   const grouped = useMemo(() => groupByLetter(sorted), [sorted]);
 
@@ -22,11 +19,7 @@ export function GlossaryView({ catalog }: GlossaryViewProps) {
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {terms.map((t) => (
-              <TermCard
-                key={t.id}
-                term={t}
-                datasetTitleFor={(id) => datasetTitleById.get(id) ?? id}
-              />
+              <TermCard key={t.id} term={t} datasetTitleFor={(id) => datasetTitleById.get(id) ?? id} />
             ))}
           </div>
         </section>

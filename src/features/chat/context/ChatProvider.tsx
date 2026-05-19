@@ -516,6 +516,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       client,
       model,
       config.chat?.summarizer,
+      config.chat?.categories,
       chatTools,
       chatInstructions,
       renderApp,

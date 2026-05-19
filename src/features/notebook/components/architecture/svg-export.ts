@@ -71,7 +71,14 @@ export function renderArchitectureSvg(_diagram: ArchitectureDiagram, flow: Graph
 }
 
 function renderGroup(node: { position: { x: number; y: number }; data: unknown }): string {
-  const d = node.data as { label: string; kind: string; technology?: string; width: number; height: number; inferred?: boolean };
+  const d = node.data as {
+    label: string;
+    kind: string;
+    technology?: string;
+    width: number;
+    height: number;
+    inferred?: boolean;
+  };
   const stroke = d.kind === "deployment-group" ? "#7c3aed" : "#3b82f6";
   const fill = d.kind === "deployment-group" ? "#f5f3ff66" : "#dbeafe33";
   const dash = d.inferred ? "2 3" : "5 3";
@@ -366,7 +373,7 @@ export function renderSequenceSvg(diagram: ArchitectureDiagram): string {
     const y = SEQ_FIRST_MSG_Y + i * SEQ_ROW_H;
     const marker = m.kind === "response" ? "seq-arrow-open" : m.inferred ? "seq-arrow-inferred" : "seq-arrow";
     const stroke = m.inferred ? "#94a3b8" : "#1e293b";
-    const dash = m.inferred ? '6 4' : m.kind === "response" ? '3 3' : "";
+    const dash = m.inferred ? "6 4" : m.kind === "response" ? "3 3" : "";
     const dashAttr = dash ? `stroke-dasharray="${dash}"` : "";
 
     if (sx === tx) {
@@ -376,9 +383,7 @@ export function renderSequenceSvg(diagram: ArchitectureDiagram): string {
       );
       const labelText = labelWithTech(m.label, m.technology);
       if (labelText) {
-        parts.push(
-          `<text x="${sx + r + 8}" y="${y + 6}" fill="#0f172a" font-size="11">${escapeXml(labelText)}</text>`,
-        );
+        parts.push(`<text x="${sx + r + 8}" y="${y + 6}" fill="#0f172a" font-size="11">${escapeXml(labelText)}</text>`);
       }
       return;
     }

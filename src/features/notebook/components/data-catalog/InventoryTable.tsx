@@ -141,7 +141,12 @@ function DatasetDrawer({
 }) {
   return (
     <div className="fixed inset-0 z-40 flex items-stretch justify-end">
-      <button type="button" aria-label="Close" className="absolute inset-0 bg-black/30 cursor-default" onClick={onClose} />
+      <button
+        type="button"
+        aria-label="Close"
+        className="absolute inset-0 bg-black/30 cursor-default"
+        onClick={onClose}
+      />
       <aside className="relative w-full max-w-md h-full bg-white dark:bg-neutral-950 shadow-2xl overflow-y-auto p-6">
         <header className="flex items-start justify-between gap-3 mb-4">
           <div className="min-w-0">

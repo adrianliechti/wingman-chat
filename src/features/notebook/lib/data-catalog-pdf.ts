@@ -186,25 +186,31 @@ function renderInventorySection(datasets: Dataset[]): string {
     byDomain.set(key, arr);
   }
 
-  const blocks: string[] = ['<section><h2>Inventory</h2>'];
+  const blocks: string[] = ["<section><h2>Inventory</h2>"];
   for (const [domain, dsList] of byDomain) {
     blocks.push(`<div class="domain">`);
-    blocks.push(`<div class="domain-name">${escapeHtml(domain)} <span style="font-weight:400;opacity:0.6">· ${dsList.length}</span></div>`);
-    blocks.push('<table><thead><tr>');
+    blocks.push(
+      `<div class="domain-name">${escapeHtml(domain)} <span style="font-weight:400;opacity:0.6">· ${dsList.length}</span></div>`,
+    );
+    blocks.push("<table><thead><tr>");
     blocks.push(
       '<th style="width:30%">Dataset</th><th style="width:14%">System</th><th style="width:18%">Owner</th><th style="width:10%">Refresh</th><th style="width:12%">Sensitivity</th><th>Tags</th>',
     );
-    blocks.push('</tr></thead><tbody>');
+    blocks.push("</tr></thead><tbody>");
     for (const d of dsList) {
       blocks.push("<tr>");
       blocks.push(
         `<td><div class="ds-name">${escapeHtml(d.title)}${d.inferred ? ' <span class="pill pill-inferred">Inferred</span>' : ""}</div><div class="ds-fqn">${escapeHtml(d.name)}</div></td>`,
       );
       blocks.push(`<td>${escapeHtml(d.system ?? "—")}</td>`);
-      blocks.push(`<td>${escapeHtml(d.owner ?? "—")}${d.steward ? `<br/><span style="font-size:8px;color:#94a3b8">${escapeHtml(d.steward)}</span>` : ""}</td>`);
+      blocks.push(
+        `<td>${escapeHtml(d.owner ?? "—")}${d.steward ? `<br/><span style="font-size:8px;color:#94a3b8">${escapeHtml(d.steward)}</span>` : ""}</td>`,
+      );
       blocks.push(`<td>${escapeHtml(d.refreshCadence ?? "—")}</td>`);
       blocks.push(`<td>${renderSensitivityPill(d.sensitivity)}</td>`);
-      blocks.push(`<td>${(d.regulatoryTags ?? []).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</td>`);
+      blocks.push(
+        `<td>${(d.regulatoryTags ?? []).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</td>`,
+      );
       blocks.push("</tr>");
     }
     blocks.push("</tbody></table></div>");

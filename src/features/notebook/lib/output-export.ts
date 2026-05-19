@@ -15,10 +15,7 @@
  * single-button pattern.
  */
 
-import {
-  renderArchitectureDiagramSvg,
-  svgToPngDataUrl,
-} from "../components/architecture/svg-export";
+import { renderArchitectureDiagramSvg, svgToPngDataUrl } from "../components/architecture/svg-export";
 import { renderProcessSvg } from "../components/process/svg-export";
 import { toDCATJSONLD, toODCSYAML, toOpenLineageJSON } from "./data-catalog-export";
 import { renderDataCatalogPdf } from "./data-catalog-pdf";

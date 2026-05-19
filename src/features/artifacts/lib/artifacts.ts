@@ -178,10 +178,7 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
   }
 
   // Excel workbooks (.xlsx) — rendered per-sheet as CSV tables
-  if (
-    ext === "xlsx" ||
-    normalizedContentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  ) {
+  if (ext === "xlsx" || normalizedContentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
     return "xlsx";
   }
 

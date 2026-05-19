@@ -18,13 +18,7 @@ import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { Tool } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
-import type {
-  ArchitectureDiagram,
-  DataCatalog,
-  MindMapNode,
-  NotebookOutput,
-  ProcessDiagram,
-} from "../types/notebook";
+import type { ArchitectureDiagram, DataCatalog, MindMapNode, NotebookOutput, ProcessDiagram } from "../types/notebook";
 import { assembleSlideHtml, getOrderedHtmlSlides } from "./html-slide-assembly";
 import { createHtmlSlideTools } from "./html-slide-tools";
 import { createImageSlideTools } from "./image-slide-tools";
@@ -496,7 +490,7 @@ export const architectureSchema = z
 const ARCH_PARSE_INSTRUCTIONS =
   "Convert the following architecture draft into the exact JSON structure requested. " +
   "Preserve every element, relation, and group. Use the exact ids from the draft so relations still connect. " +
-  "For `kind: \"c4\"` outputs, every element / relation / group MUST have a non-empty `views` array — one or more of: c4-context, c4-container, c4-component, deployment. For `kind: \"sequence\"`, leave `views` null. " +
+  'For `kind: "c4"` outputs, every element / relation / group MUST have a non-empty `views` array — one or more of: c4-context, c4-container, c4-component, deployment. For `kind: "sequence"`, leave `views` null. ' +
   "Set `inferred: true` on every element / relation marked `(inferred)` in the draft; leave others null or false. " +
   "If the draft is silent on a field, return null — do not invent.";
 
@@ -758,9 +752,7 @@ export function normaliseDataCatalog(raw: z.infer<typeof dataCatalogSchema>): Da
       ...(t.ontologyReference ? { ontologyReference: t.ontologyReference } : {}),
       ...(t.synonyms && t.synonyms.length > 0 ? { synonyms: t.synonyms } : {}),
       ...(t.parent ? { parent: t.parent } : {}),
-      ...(t.datasets && t.datasets.length > 0
-        ? { datasets: t.datasets.filter((id) => validDatasetIds.has(id)) }
-        : {}),
+      ...(t.datasets && t.datasets.length > 0 ? { datasets: t.datasets.filter((id) => validDatasetIds.has(id)) } : {}),
       ...(t.inferred ? { inferred: true } : {}),
     }));
   const validTermIds = new Set(glossary.map((t) => t.id));
@@ -846,13 +838,7 @@ export function normaliseDataCatalog(raw: z.infer<typeof dataCatalogSchema>): Da
 }
 
 export async function generateDataCatalog(ctx: GenerateContext): Promise<Result> {
-  const result = await run(
-    ctx.client,
-    ctx.model,
-    ctx.instructions,
-    [USER_MESSAGE("Data catalog")],
-    ctx.sourceTools,
-  );
+  const result = await run(ctx.client, ctx.model, ctx.instructions, [USER_MESSAGE("Data catalog")], ctx.sourceTools);
   const raw = getTextFromContent(result[result.length - 1].content);
   if (!raw?.trim()) throw new Error("Could not generate data-catalog draft");
 
@@ -867,11 +853,7 @@ export async function generateDataCatalog(ctx: GenerateContext): Promise<Result>
 
   const dataCatalog = normaliseDataCatalog(parsed);
   // A catalog with no datasets AND no glossary AND no lineage is empty.
-  if (
-    dataCatalog.datasets.length === 0 &&
-    dataCatalog.glossary.length === 0 &&
-    dataCatalog.lineageNodes.length === 0
-  ) {
+  if (dataCatalog.datasets.length === 0 && dataCatalog.glossary.length === 0 && dataCatalog.lineageNodes.length === 0) {
     throw new Error("Invalid data-catalog structure");
   }
 

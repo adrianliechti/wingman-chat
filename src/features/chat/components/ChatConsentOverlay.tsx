@@ -6,9 +6,7 @@ import { useLayout } from "@/shell/hooks/useLayout";
 export function ChatConsentBackdrop() {
   const { pendingConsent } = useChat();
   if (!pendingConsent) return null;
-  return (
-    <div className="absolute inset-0 z-10 bg-white/60 dark:bg-black/60 backdrop-blur-[2px] pointer-events-auto" />
-  );
+  return <div className="absolute inset-0 z-10 bg-white/60 dark:bg-black/60 backdrop-blur-[2px] pointer-events-auto" />;
 }
 
 /**

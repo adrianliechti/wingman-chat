@@ -74,7 +74,11 @@ export function toDCATJSONLD(catalog: DataCatalog): string {
     ...(t.parent ? { "skos:broader": { "@id": `urn:concept:${t.parent}` } } : {}),
     ...(t.ontologyReference ? { "skos:exactMatch": { "@id": t.ontologyReference } } : {}),
     ...(t.datasets && t.datasets.length > 0
-      ? { "dcat:relatedResource": t.datasets.filter((id) => datasetById.has(id)).map((id) => ({ "@id": `urn:dataset:${id}` })) }
+      ? {
+          "dcat:relatedResource": t.datasets
+            .filter((id) => datasetById.has(id))
+            .map((id) => ({ "@id": `urn:dataset:${id}` })),
+        }
       : {}),
     ...(t.inferred ? { "wingman:inferred": true } : {}),
   }));
@@ -146,7 +150,15 @@ export function toOpenLineageJSON(catalog: DataCatalog): string {
         namespace: job.technology ?? "wingman",
         name: job.label,
         ...(job.description
-          ? { facets: { documentation: { _producer: "wingman-chat", _schemaURL: OPENLINEAGE_SCHEMA_URL, description: job.description } } }
+          ? {
+              facets: {
+                documentation: {
+                  _producer: "wingman-chat",
+                  _schemaURL: OPENLINEAGE_SCHEMA_URL,
+                  description: job.description,
+                },
+              },
+            }
           : {}),
       },
       inputs,
@@ -267,4 +279,3 @@ function escapeYamlKey(s: string): string {
   if (/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(s)) return s;
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
-

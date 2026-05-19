@@ -494,8 +494,9 @@ export function ChatPage() {
       <BackgroundImage opacity={messages.length === 0 ? 80 : 0} />
 
       <div
-        className={`flex-1 flex flex-col overflow-hidden relative ${isArtifactsResizing || isAppResizing ? "" : "transition-all duration-500 ease-in-out"} ${showAgentDrawer && !showAppDrawer && !showArtifactsDrawer ? "md:mr-83" : ""
-          }`}
+        className={`flex-1 flex flex-col overflow-hidden relative ${isArtifactsResizing || isAppResizing ? "" : "transition-all duration-500 ease-in-out"} ${
+          showAgentDrawer && !showAppDrawer && !showArtifactsDrawer ? "md:mr-83" : ""
+        }`}
         style={
           !isMobile && showAppDrawer
             ? { marginRight: `calc(${appWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})` }
@@ -575,14 +576,14 @@ export function ChatPage() {
         style={
           !isMobile && showAppDrawer
             ? {
-              right: `calc(${appWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})`,
-              ...(isAppResizing ? { transition: "right 50ms ease-out" } : {}),
-            }
+                right: `calc(${appWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})`,
+                ...(isAppResizing ? { transition: "right 50ms ease-out" } : {}),
+              }
             : !isMobile && !showAppDrawer && showArtifactsDrawer
               ? {
-                right: `calc(${artifactsWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})`,
-                ...(isArtifactsResizing ? { transition: "right 50ms ease-out" } : {}),
-              }
+                  right: `calc(${artifactsWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})`,
+                  ...(isArtifactsResizing ? { transition: "right 50ms ease-out" } : {}),
+                }
               : undefined
         }
       >
@@ -590,10 +591,10 @@ export function ChatPage() {
           className={cn(
             "relative md:max-w-4xl mx-auto transition-transform duration-500 ease-in-out",
             messages.length === 0 &&
-            !showAppDrawer &&
-            !showAgentDrawer &&
-            !showArtifactsDrawer &&
-            "md:translate-y-[calc(50%-33.333vh)]",
+              !showAppDrawer &&
+              !showAgentDrawer &&
+              !showArtifactsDrawer &&
+              "md:translate-y-[calc(50%-33.333vh)]",
           )}
         >
           <div className="pointer-events-auto">

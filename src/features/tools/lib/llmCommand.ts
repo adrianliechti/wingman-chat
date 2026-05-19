@@ -1,9 +1,4 @@
-import {
-  type Command,
-  type CommandContext,
-  defineCommand,
-  type ExecResult,
-} from "just-bash/browser";
+import { type Command, type CommandContext, defineCommand, type ExecResult } from "just-bash/browser";
 import { getConfig } from "@/shared/config";
 import { getTextFromContent, Role } from "@/shared/types/chat";
 import { decodeStdin } from "./stdin";

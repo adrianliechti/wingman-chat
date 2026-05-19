@@ -112,7 +112,9 @@ function LineageNodeRenderer({ data }: NodeProps) {
       </div>
       <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.2 }}>{node.label}</div>
       {(node.technology ?? systemHint) && (
-        <div style={{ fontSize: 10, fontWeight: 500, opacity: 0.75, marginTop: 2 }}>[{node.technology ?? systemHint}]</div>
+        <div style={{ fontSize: 10, fontWeight: 500, opacity: 0.75, marginTop: 2 }}>
+          [{node.technology ?? systemHint}]
+        </div>
       )}
       {node.inferred && (
         <span

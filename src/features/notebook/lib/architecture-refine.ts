@@ -17,7 +17,7 @@ const REFINE_INSTRUCTIONS =
   "Design freely: when the user asks for something the current diagram doesn't have, propose a sensible, technically credible addition (e.g. a Redis cache, an audit log, a DR site) and set `inferred: true` on the new elements/relations. " +
   "Preserve stable ids when possible so the user can recognise the diagram; only introduce new ids for genuinely new elements. " +
   "Every element id must be unique. Every relation must reference an existing element id. Every relation needs a verb-phrase `label`. " +
-  "Keep the diagram's `kind` (`c4` or `sequence`). For `kind: \"c4\"` outputs, every element / relation / group MUST keep (or gain) a non-empty `views` array drawn from: c4-context, c4-container, c4-component, deployment. For `sequence`, leave `views` null.";
+  'Keep the diagram\'s `kind` (`c4` or `sequence`). For `kind: "c4"` outputs, every element / relation / group MUST keep (or gain) a non-empty `views` array drawn from: c4-context, c4-container, c4-component, deployment. For `sequence`, leave `views` null.';
 
 export async function refineArchitecture(output: NotebookOutput, refinement: string): Promise<NotebookOutput> {
   const current = output.architecture;

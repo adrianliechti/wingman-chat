@@ -7,8 +7,8 @@ import type { ArchitectureView, NotebookOutput } from "../types/notebook";
 import { ArchitectureGroupNode } from "./architecture/ArchitectureGroupNode";
 import { ArchitectureRelationEdge } from "./architecture/ArchitectureRelationEdge";
 import { ArchitectureShapeNode } from "./architecture/ArchitectureShapeNode";
-import { SequenceCanvas } from "./architecture/SequenceCanvas";
 import { buildArchitectureFlow, isSequenceDiagram } from "./architecture/graphLayout";
+import { SequenceCanvas } from "./architecture/SequenceCanvas";
 
 interface ArchitectureViewerProps {
   output: NotebookOutput;
@@ -55,7 +55,12 @@ function ArchitectureInner({ output, onRefine }: ArchitectureViewerProps) {
   // Per-view element counts, used both for tab labels and to bias the
   // default active tab toward whichever view has the most elements.
   const counts = useMemo(() => {
-    const c: Record<ArchitectureView, number> = { "c4-context": 0, "c4-container": 0, "c4-component": 0, deployment: 0 };
+    const c: Record<ArchitectureView, number> = {
+      "c4-context": 0,
+      "c4-container": 0,
+      "c4-component": 0,
+      deployment: 0,
+    };
     if (!diagram) return c;
     for (const e of diagram.elements) {
       for (const v of e.views ?? []) c[v] = (c[v] ?? 0) + 1;

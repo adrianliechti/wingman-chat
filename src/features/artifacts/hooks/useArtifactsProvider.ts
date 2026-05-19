@@ -361,7 +361,12 @@ export function useArtifactsProvider(): ToolProvider | null {
       name: "Artifacts",
       description: "Create and edit files, run Python and Bash code",
       icon: Shapes,
-      instructions: [artifactsInstructionsText, interpreterInstructionsText, officeInstructionsText, llmInstructionsText].join("\n\n"),
+      instructions: [
+        artifactsInstructionsText,
+        interpreterInstructionsText,
+        officeInstructionsText,
+        llmInstructionsText,
+      ].join("\n\n"),
       tools: artifactsTools(),
     };
   }, [isAvailable, artifactsTools]);

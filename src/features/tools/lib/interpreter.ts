@@ -1,7 +1,7 @@
 import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodide";
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
-import { SANDBOX_HOME } from "@/shared/lib/sandbox";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
+import { SANDBOX_HOME } from "@/shared/lib/sandbox";
 import { runLlm } from "./llmCommand";
 import { clearRenderQueue, processRenderQueue } from "./plotlyRenderer";
 import PLOTLY_IMAGE_SHIM from "./plotlyShim.py?raw";
@@ -195,7 +195,7 @@ async function ensurePackagesLoaded(pyodide: PyodideInterface, packages: string[
   }
 
   await loadPyodidePackages(pyodide, [...builtins]);
-  builtins.forEach((pkg) => loadedPackages.add(pkg));
+  for (const pkg of builtins) loadedPackages.add(pkg);
 
   if (wheels.length === 0) return;
 
@@ -211,7 +211,7 @@ async function ensurePackagesLoaded(pyodide: PyodideInterface, packages: string[
   // Single batched install — micropip accepts a list of wheel URLs.
   const urls = wheels.map((pkg) => `/pyodide/${manifest[pkg].filename}`);
   await pyodide.runPythonAsync(`import micropip; await micropip.install(${JSON.stringify(urls)})`);
-  wheels.forEach((pkg) => loadedPackages.add(pkg));
+  for (const pkg of wheels) loadedPackages.add(pkg);
 }
 
 async function runPythonCode(pyodide: PyodideInterface, code: string): Promise<string> {

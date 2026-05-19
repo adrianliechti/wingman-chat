@@ -316,10 +316,11 @@ export function TranslatePage() {
               <div className="flex flex-col items-center gap-6">
                 {/* Main file card */}
                 <div
-                  className={`relative bg-neutral-50/60 dark:bg-neutral-900/50 backdrop-blur-lg p-10 rounded-2xl shadow-xl border border-neutral-200/60 dark:border-neutral-700/50 flex flex-col items-center gap-5 transition-all ${translatedFileUrl
-                    ? "hover:bg-neutral-50/80 dark:hover:bg-neutral-900/70 hover:scale-[1.02] hover:shadow-2xl"
-                    : ""
-                    }`}
+                  className={`relative bg-neutral-50/60 dark:bg-neutral-900/50 backdrop-blur-lg p-10 rounded-2xl shadow-xl border border-neutral-200/60 dark:border-neutral-700/50 flex flex-col items-center gap-5 transition-all ${
+                    translatedFileUrl
+                      ? "hover:bg-neutral-50/80 dark:hover:bg-neutral-900/70 hover:scale-[1.02] hover:shadow-2xl"
+                      : ""
+                  }`}
                 >
                   {translatedFileUrl && translatedFileName && (
                     <button
@@ -444,6 +445,24 @@ export function TranslatePage() {
           <div ref={containerRef} className="w-full grow overflow-hidden flex px-4 pt-20 relative">
             {/* Vertical divider line - desktop only, spans full height from top of container */}
             <div className="absolute inset-y-0 left-1/2 w-px bg-black/10 dark:bg-white/10 hidden md:block" />
+            {/* Empty state - anchored to the right half of the full-width container, same as the divider */}
+            {!currentText && !isLoading && !error && (
+              <div className="absolute inset-y-0 left-1/2 right-0 hidden md:flex items-center justify-center pointer-events-none select-none z-10">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-14 h-14 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
+                    <GlobeIcon size={26} className="text-neutral-400 dark:text-neutral-500" />
+                  </div>
+                  <div className="flex flex-col items-center gap-1 text-center">
+                    <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
+                      Translation will appear here
+                    </p>
+                    <p className="text-xs text-neutral-400 dark:text-neutral-500">
+                      Select a language and enter text to get started
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Full-screen drop zone overlay with centered file placeholder */}
             {isDragging && supportedFiles.length > 0 && (
               <div className="absolute inset-0 flex items-center justify-center z-30 bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm">
@@ -531,12 +550,19 @@ export function TranslatePage() {
                       />
                     </div>
 
-                    <textarea
-                      value={sourceText}
-                      onChange={(e) => setSourceText(e.target.value)}
-                      placeholder="Enter text to translate..."
-                      className="flex-1 w-full pl-2 pr-4 pt-4 pb-2 min-h-0 bg-transparent border-none resize-none overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
-                    />
+                    <div className="flex-1 relative min-h-0">
+                      <textarea
+                        value={sourceText}
+                        onChange={(e) => setSourceText(e.target.value)}
+                        placeholder="Enter text to translate..."
+                        className="absolute inset-0 w-full h-full pl-2 pr-4 pt-4 pb-2 bg-transparent border-none resize-none overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
+                      />
+                      {!sourceText && supportedFiles.length > 0 && (
+                        <p className="absolute top-10 left-2 right-4 text-xs text-neutral-400 dark:text-neutral-500 pointer-events-none select-none leading-relaxed">
+                          {`Drag and drop to translate ${supportedFiles.map((sf) => sf.ext.toLowerCase()).join(", ")} files.`}
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Divider - mobile only (horizontal line between stacked panels) */}
@@ -544,7 +570,7 @@ export function TranslatePage() {
 
                   {/* Target section */}
                   <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-                    <div className="h-7 flex items-center px-4 gap-1 shrink-0">
+                    <div className="h-7 flex items-center md:px-6 md:pt-0 pt-6 pl-2 gap-1 shrink-0">
                       <SelectorMenu
                         icon={<GlobeIcon size={14} className="-ml-0.5" />}
                         label={selectedLanguage?.name || "Select Language"}
@@ -577,8 +603,8 @@ export function TranslatePage() {
                       {/* Interactive text area */}
                       <InteractiveText
                         text={currentText}
-                        placeholder=""
-                        className="absolute inset-0 w-full h-full pl-4 pr-4 pt-4 pb-2 bg-transparent overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
+                        // placeholder="Translation will appear here"
+                        className="absolute inset-0 w-full h-full pl-6 pr-6 pt-4 pb-2 bg-transparent overflow-y-auto text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
                         onTextSelect={handleTextSelect}
                         previewText={previewText}
                       />
@@ -657,22 +683,6 @@ export function TranslatePage() {
                           </div>
                         </div>
                       )}
-
-                      {/* Empty State */}
-                      {!currentText && !isLoading && !error && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="text-center">
-                            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
-                              <GlobeIcon size={28} className="text-neutral-400 dark:text-neutral-500" />
-                            </div>
-                            <p className="text-neutral-500 dark:text-neutral-400">Enter text to translate</p>
-                            <p className="text-sm text-neutral-400 dark:text-neutral-500 mt-1">
-                              Translation will appear here
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
                     </div>
                   </div>
                 </div>

@@ -59,11 +59,7 @@ function formatSearchResults(results: SearchResult[]): string {
     .join("\n\n");
 }
 
-function buildWebTools(
-  client: Client,
-  internet: { searcher?: string; scraper?: string },
-  outer?: ToolContext,
-): Tool[] {
+function buildWebTools(client: Client, internet: { searcher?: string; scraper?: string }, outer?: ToolContext): Tool[] {
   const tools: Tool[] = [];
 
   if (internet.searcher) {

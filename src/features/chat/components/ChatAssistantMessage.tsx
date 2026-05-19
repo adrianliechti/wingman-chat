@@ -237,9 +237,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
                       {getToolDisplayName(toolCall.name)}
                     </span>
                     {status ? (
-                      <span className="text-xs italic text-neutral-500 dark:text-neutral-400 truncate">
-                        {status}
-                      </span>
+                      <span className="text-xs italic text-neutral-500 dark:text-neutral-400 truncate">{status}</span>
                     ) : preview ? (
                       <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
                         {preview}

@@ -167,18 +167,23 @@ export function StudioPanel({
                         {output.title}
                       </p>
                       <p className="text-[10px] text-neutral-400">
-                        {isGenerating
-                          ? "Generating..."
-                          : isError
-                            ? output.error || "Failed"
-                            : <>
-                                <span className="@[14rem]/studio:hidden">
-                                  {new Date(output.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                                </span>
-                                <span className="hidden @[14rem]/studio:inline">
-                                  {new Date(output.createdAt).toLocaleString()}
-                                </span>
-                              </>}
+                        {isGenerating ? (
+                          "Generating..."
+                        ) : isError ? (
+                          output.error || "Failed"
+                        ) : (
+                          <>
+                            <span className="@[14rem]/studio:hidden">
+                              {new Date(output.createdAt).toLocaleDateString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </span>
+                            <span className="hidden @[14rem]/studio:inline">
+                              {new Date(output.createdAt).toLocaleString()}
+                            </span>
+                          </>
+                        )}
                       </p>
                     </div>
                   </button>
@@ -283,4 +288,3 @@ export function StudioPanel({
     </div>
   );
 }
-

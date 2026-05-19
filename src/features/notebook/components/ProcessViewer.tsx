@@ -117,4 +117,3 @@ export function ProcessViewer({ output, onRefine }: ProcessViewerProps) {
     </ReactFlowProvider>
   );
 }
-

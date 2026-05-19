@@ -126,8 +126,7 @@ function parseCoreRequires(requiresDist) {
  */
 async function resolveTransitiveDeps(pypiPackages, pyodideLock, alreadyBundled) {
   const pyodidePkgNames = new Set(Object.keys(pyodideLock.packages).map(normalizePkgName));
-  const findOriginalName = (dep) =>
-    Object.keys(pyodideLock.packages).find((k) => normalizePkgName(k) === dep);
+  const findOriginalName = (dep) => Object.keys(pyodideLock.packages).find((k) => normalizePkgName(k) === dep);
 
   const depsCache = new Map();
   async function fetchDeps(pkg) {

@@ -374,10 +374,8 @@ export function csvToMarkdownTable(csv: string): string {
   if (rows.length === 0) return title ? `## ${title}` : "";
 
   const maxCols = rows.reduce((m, r) => Math.max(m, r.length), 0);
-  const escapeCell = (s: string | undefined) =>
-    (s ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
-  const formatRow = (r: string[]) =>
-    `| ${Array.from({ length: maxCols }, (_, i) => escapeCell(r[i])).join(" | ")} |`;
+  const escapeCell = (s: string | undefined) => (s ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
+  const formatRow = (r: string[]) => `| ${Array.from({ length: maxCols }, (_, i) => escapeCell(r[i])).join(" | ")} |`;
 
   const separator = `| ${Array.from({ length: maxCols }, () => "---").join(" | ")} |`;
   const table = [formatRow(rows[0]), separator, ...rows.slice(1).map(formatRow)].join("\n");
