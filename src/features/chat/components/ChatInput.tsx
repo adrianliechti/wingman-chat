@@ -606,9 +606,8 @@ export function ChatInput() {
                 <div className="flex items-center justify-center w-8 h-8 shrink-0 rounded-full bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 group-hover:bg-neutral-300 dark:group-hover:bg-neutral-600 group-hover:text-neutral-800 dark:group-hover:text-neutral-100 transition-all duration-200">
                   <Mic size={15} />
                 </div>
-                <span className="text-xs text-neutral-500 dark:text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200 transition-colors whitespace-nowrap">
-                  <span className="hidden sm:inline">Click to start voice conversation</span>
-                  <span className="sm:hidden">Click to start conversation</span>
+                <span className="hidden sm:inline text-xs text-neutral-500 dark:text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200 transition-colors whitespace-nowrap">
+                  Click to start voice conversation
                 </span>
               </button>
             )}

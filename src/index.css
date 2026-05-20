@@ -115,6 +115,13 @@ html.emoji-native .noto-emoji {
   img[width="12"][height="12"] { width: 15px; height: 15px; }
   img[width="14"][height="14"] { width: 17px; height: 17px; }
   img[width="16"][height="16"] { width: 20px; height: 20px; }
+
+  /* Data-catalog micro-badges: kept tiny on desktop for dense tables,
+     but bumped on mobile so they remain legible. */
+  /* biome-ignore lint: Tailwind arbitrary-value class names need to be escaped in CSS */
+  .text-\[8px\] { font-size: 0.625rem; }
+  /* biome-ignore lint: Tailwind arbitrary-value class names need to be escaped in CSS */
+  .text-\[9px\] { font-size: 0.667rem; }
 }
 
 /* Global scrollbar: thin and only visible while interacting (iOS-like) */

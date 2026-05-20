@@ -196,9 +196,9 @@ export function InlineMcpApp({ toolResult, isLastFullscreenApp }: InlineMcpAppPr
   }
 
   return (
-    <div className="mt-2 ml-5 mb-2 relative rounded-lg overflow-hidden border border-neutral-200/60 dark:border-neutral-700/60 min-h-[60px]">
+    <div className="mt-2 ml-5 mb-2 relative rounded-lg overflow-hidden border border-neutral-200/60 dark:border-neutral-700/60 min-h-[3.75rem]">
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-neutral-950/80 z-10 min-h-[60px]">
+        <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-neutral-950/80 z-10 min-h-[3.75rem]">
           <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
         </div>
       )}
