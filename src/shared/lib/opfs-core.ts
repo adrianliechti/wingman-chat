@@ -134,6 +134,31 @@ export async function writeBlob(path: string, blob: Blob): Promise<void> {
 }
 
 /**
+ * Append binary data to a file (creates the file if missing).
+ *
+ * Uses `createWritable({ keepExistingData: true })` and seeks to the
+ * file's current size — supported by every modern browser. This keeps
+ * append-only logs (e.g. JSONL chat logs) from being rewritten in full
+ * on every save.
+ */
+export async function appendBlob(path: string, blob: Blob): Promise<void> {
+  const { dir, name } = parsePath(path);
+  const directory = await getDirectory(dir, { create: true });
+  const fileHandle = await directory.getFileHandle(name, { create: true });
+
+  const file = await fileHandle.getFile();
+  const offset = file.size;
+
+  const writable = await fileHandle.createWritable({ keepExistingData: true });
+  try {
+    await writable.seek(offset);
+    await writable.write(blob);
+  } finally {
+    await writable.close();
+  }
+}
+
+/**
  * Read JSON data from a file.
  * Returns undefined if file doesn't exist.
  */

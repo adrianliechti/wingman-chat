@@ -115,6 +115,17 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Chat.Optimizer = v
 	}
 
+	withFeature("CHATSTORE_ENABLED", &cfg.ChatStore, func(s *ChatStore) {
+		envOverride("CHATSTORE_TYPE", &s.Type)
+		envOverride("CHATSTORE_PATH", &s.Path)
+		if s.Type == "" {
+			s.Type = "file"
+		}
+		if s.Path == "" {
+			s.Path = "./data/chats"
+		}
+	})
+
 	withFeature("TELEMETRY_ENABLED", &cfg.Telemetry, nil)
 }
 

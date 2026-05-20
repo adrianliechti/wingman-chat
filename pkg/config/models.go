@@ -31,6 +31,8 @@ type Config struct {
 
 	Chat *Chat `json:"chat,omitempty" yaml:"chat,omitempty"`
 
+	ChatStore *ChatStore `json:"chatstore,omitempty" yaml:"chatstore,omitempty"`
+
 	Telemetry *Telemetry `json:"telemetry,omitempty" yaml:"telemetry,omitempty"`
 
 	Backgrounds map[string][]Background `json:"backgrounds,omitempty" yaml:"backgrounds,omitempty"`
@@ -128,6 +130,15 @@ type Chat struct {
 	RetentionDays *int   `json:"retentionDays,omitempty" yaml:"retentionDays,omitempty"`
 	Summarizer    string `json:"summarizer,omitempty" yaml:"summarizer,omitempty"`
 	Optimizer     string `json:"optimizer,omitempty" yaml:"optimizer,omitempty"`
+}
+
+// ChatStore configures the server-side chat store. Its presence in the
+// JSON-serialized config is the frontend's signal to switch from
+// OPFS-only mode to server-synced mode. Sensitive fields (Path) stay
+// server-private via the json:"-" tag.
+type ChatStore struct {
+	Type string `json:"-" yaml:"type,omitempty"`
+	Path string `json:"-" yaml:"path,omitempty"`
 }
 
 type Translator struct {

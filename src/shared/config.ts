@@ -197,6 +197,7 @@ interface ConfigSchema {
   translator?: TranslatorConfig;
 
   chat?: ChatConfig;
+  chatstore?: object;
   telemetry?: object;
 }
 
@@ -247,6 +248,8 @@ interface Config {
   translator: TranslatorConfig | null;
 
   chat: ChatConfig | null;
+
+  chatstore: boolean;
 
   telemetry: boolean;
 
@@ -315,6 +318,8 @@ export const loadConfig = async (): Promise<Config | undefined> => {
         : null,
 
       chat: cfg.chat ?? null,
+
+      chatstore: cfg.chatstore != null,
 
       telemetry: cfg.telemetry != null,
 

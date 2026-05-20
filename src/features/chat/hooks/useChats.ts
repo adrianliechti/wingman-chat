@@ -1,107 +1,111 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getConfig } from "@/shared/config";
+import * as chatSession from "@/shared/lib/chatSession";
 import type { StoredChat } from "@/shared/lib/opfs";
 import * as opfs from "@/shared/lib/opfs";
 import type { Chat } from "@/shared/types/chat";
 
 const COLLECTION = "chats";
 
-// Chat-specific OPFS operations using new folder structure
+// OPFS-only path (used when the server chatstore is not enabled in config).
 // Each chat is stored as: /chats/{id}/chat.json with blobs in /chats/{id}/blobs/
 
-async function storeChat(chat: Chat): Promise<void> {
-  try {
-    // Extract blobs and store in chat's folder (blobs go to /chats/{id}/blobs/)
-    const stored = await opfs.extractChatBlobs(chat);
-
-    // Write chat.json to /chats/{id}/chat.json
-    await opfs.writeJson(`${COLLECTION}/${chat.id}/chat.json`, stored);
-
-    // Update index
-    await opfs.upsertIndexEntry(COLLECTION, {
-      id: chat.id,
-      title: chat.title,
-      customTitle: chat.customTitle,
-      customIndex: chat.customIndex,
-      updated: stored.updated || new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error("Error saving chat to OPFS:", error);
-    throw error;
-  }
+async function storeChatLocal(chat: Chat): Promise<void> {
+  const stored = await opfs.extractChatBlobs(chat);
+  await opfs.writeJson(`${COLLECTION}/${chat.id}/chat.json`, stored);
+  await opfs.upsertIndexEntry(COLLECTION, {
+    id: chat.id,
+    title: chat.title,
+    customTitle: chat.customTitle,
+    customIndex: chat.customIndex,
+    updated: stored.updated || new Date().toISOString(),
+  });
 }
 
-async function loadChat(id: string): Promise<Chat | undefined> {
-  try {
-    // Try new folder structure first: /chats/{id}/chat.json
-    let stored = await opfs.readJson<StoredChat>(`${COLLECTION}/${id}/chat.json`);
-
-    // Fall back to legacy file: /chats/{id}.json
-    if (!stored) {
-      stored = await opfs.readJson<StoredChat>(`${COLLECTION}/${id}.json`);
-      if (stored) {
-        // Migrate to new structure on next save
-        console.log(`Migrating chat ${id} to folder structure`);
-      }
-    }
-
-    if (!stored) {
-      return undefined;
-    }
-
-    // Rehydrate blobs (handles both chat-scoped and legacy central blobs)
-    const chat = await opfs.rehydrateChatBlobs(stored);
-
-    return chat;
-  } catch (error) {
-    console.error(`Error loading chat ${id} from OPFS:`, error);
-    return undefined;
+async function loadChatLocal(id: string): Promise<Chat | undefined> {
+  let stored = await opfs.readJson<StoredChat>(`${COLLECTION}/${id}/chat.json`);
+  if (!stored) {
+    stored = await opfs.readJson<StoredChat>(`${COLLECTION}/${id}.json`);
+    if (stored) console.log(`Migrating chat ${id} to folder structure`);
   }
+  if (!stored) return undefined;
+  return opfs.rehydrateChatBlobs(stored);
 }
 
-async function removeChat(id: string): Promise<void> {
-  try {
-    // With folder structure, just delete the entire folder
-    // This removes chat.json, all blobs, and all artifacts in one operation
-    await opfs.deleteDirectory(`${COLLECTION}/${id}`);
-
-    // Also try to delete legacy file if it exists
-    await opfs.deleteFile(`${COLLECTION}/${id}.json`);
-
-    // Update index
-    await opfs.removeIndexEntry(COLLECTION, id);
-  } catch (error) {
-    console.error(`Error deleting chat ${id} from OPFS:`, error);
-    throw error;
-  }
+async function removeChatLocal(id: string): Promise<void> {
+  await opfs.deleteDirectory(`${COLLECTION}/${id}`);
+  await opfs.deleteFile(`${COLLECTION}/${id}.json`);
+  await opfs.removeIndexEntry(COLLECTION, id);
 }
 
 async function loadChatIndex(): Promise<opfs.IndexEntry[]> {
-  try {
-    return await opfs.readIndex(COLLECTION);
-  } catch (error) {
-    console.error("Error loading chat index from OPFS:", error);
-    return [];
-  }
+  return opfs.readIndex(COLLECTION);
 }
 
-// Apply retention policy to index entries, returning IDs to delete
+async function loadAllLocal(): Promise<Chat[]> {
+  const index = await loadChatIndex();
+  const config = getConfig();
+  const retentionDays = config.chat?.retentionDays;
+  if (retentionDays && retentionDays > 0) {
+    const expired = getExpiredChatIds(index, retentionDays);
+    if (expired.length > 0) {
+      console.log(`Chat retention: deleting ${expired.length} chat(s) older than ${retentionDays} days`);
+      for (const id of expired) await removeChatLocal(id);
+    }
+  }
+  const updatedIndex = await loadChatIndex();
+  const loaded: Chat[] = [];
+  for (const entry of updatedIndex) {
+    const chat = await loadChatLocal(entry.id);
+    if (chat) loaded.push(chat);
+  }
+  return loaded;
+}
+
 function getExpiredChatIds(entries: opfs.IndexEntry[], retentionDays: number): string[] {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - retentionDays);
-
-  const expiredIds: string[] = [];
-
+  const out: string[] = [];
   for (const entry of entries) {
     if (!entry.updated) continue;
-
-    const updatedDate = new Date(entry.updated);
-    if (updatedDate < cutoff) {
-      expiredIds.push(entry.id);
-    }
+    if (new Date(entry.updated) < cutoff) out.push(entry.id);
   }
+  return out;
+}
 
-  return expiredIds;
+// Server-synced path -----------------------------------------------------
+
+async function storeChatRemote(chat: Chat): Promise<void> {
+  const session = await chatSession.whenReady();
+  await session.sync.saveChat(chat);
+}
+
+async function removeChatRemote(id: string): Promise<void> {
+  const session = await chatSession.whenReady();
+  await session.sync.deleteChat(id);
+}
+
+async function loadAllRemote(): Promise<Chat[]> {
+  const session = await chatSession.whenReady();
+  return session.sync.pull();
+}
+
+// Dispatch ---------------------------------------------------------------
+
+function isServerMode(): boolean {
+  return chatSession.isEnabled();
+}
+
+async function storeChat(chat: Chat): Promise<void> {
+  return isServerMode() ? storeChatRemote(chat) : storeChatLocal(chat);
+}
+
+async function removeChat(id: string): Promise<void> {
+  return isServerMode() ? removeChatRemote(id) : removeChatLocal(id);
+}
+
+async function loadAll(): Promise<Chat[]> {
+  return isServerMode() ? loadAllRemote() : loadAllLocal();
 }
 
 export function useChats() {
@@ -120,73 +124,53 @@ export function useChats() {
 
   // Load all chats on mount (needed for sidebar display)
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
       try {
-        // Load index first
-        const index = await loadChatIndex();
-
-        // Apply retention policy if configured
-        const config = getConfig();
-        const retentionDays = config.chat?.retentionDays;
-
-        if (retentionDays && retentionDays > 0) {
-          const expiredIds = getExpiredChatIds(index, retentionDays);
-
-          if (expiredIds.length > 0) {
-            console.log(`Chat retention: deleting ${expiredIds.length} chat(s) older than ${retentionDays} days`);
-
-            // Delete expired chats
-            for (const id of expiredIds) {
-              await removeChat(id);
-            }
-          }
-        }
-
-        // Load remaining chats from updated index
-        const updatedIndex = await loadChatIndex();
-        const loadedChats: Chat[] = [];
-
-        for (const entry of updatedIndex) {
-          const chat = await loadChat(entry.id);
-          if (chat) {
-            loadedChats.push(chat);
-          }
-        }
-
-        // Sort by updated date (newest first)
+        const loadedChats = await loadAll();
         loadedChats.sort((a, b) => {
           const aTime = a.updated?.getTime() || 0;
           const bTime = b.updated?.getTime() || 0;
           return bTime - aTime;
         });
-
-        setChats(loadedChats);
+        if (!cancelled) setChats(loadedChats);
       } catch (error) {
         console.error("Error loading chats:", error);
       } finally {
-        setIsLoaded(true);
+        if (!cancelled) setIsLoaded(true);
       }
     }
 
+    // Kick off session bootstrapping in parallel; load() awaits readiness
+    // internally via whenReady() if we're in server mode.
+    void chatSession.initSession();
     load();
+
+    // Re-load when the session transitions to "ready" after a PIN unlock.
+    const unsub = chatSession.subscribeSession((s) => {
+      if (s.status === "ready") load();
+    });
+
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
 
   // Debounced save function
   const scheduleSave = useCallback((chatId: string) => {
     pendingSaves.current.add(chatId);
 
-    // Clear existing timeout
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
 
-    // Schedule save after short delay (debounce rapid updates)
     saveTimeoutRef.current = setTimeout(async () => {
       const idsToSave = Array.from(pendingSaves.current);
       pendingSaves.current.clear();
 
       for (const id of idsToSave) {
-        // Use chatsRef.current to get the latest chats state
         const chat = chatsRef.current.find((c) => c.id === id);
         if (chat) {
           try {
@@ -210,7 +194,6 @@ export function useChats() {
 
     setChats((prev) => [chat, ...prev]);
 
-    // Await save to ensure persistence before returning
     try {
       await storeChat(chat);
     } catch (error) {
@@ -234,10 +217,8 @@ export function useChats() {
           return chat;
         });
 
-        // Schedule save for this chat
         const updatedChat = updated.find((c) => c.id === chatId);
         if (updatedChat) {
-          // Use setTimeout to avoid calling during render
           setTimeout(() => scheduleSave(chatId), 0);
         }
 
@@ -250,7 +231,6 @@ export function useChats() {
   const deleteChat = useCallback((chatId: string) => {
     setChats((prev) => prev.filter((chat) => chat.id !== chatId));
 
-    // Remove from storage
     removeChat(chatId).catch((error) => {
       console.error(`Error deleting chat ${chatId}:`, error);
     });
@@ -267,7 +247,6 @@ export function useChats() {
         clearTimeout(timeout.current);
       }
 
-      // Flush any pending saves
       const idsToSave = Array.from(pending.current);
       pending.current.clear();
 
