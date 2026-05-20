@@ -7,6 +7,10 @@ import { defineConfig } from "vite";
 const src = path.resolve(import.meta.dirname, "src");
 const shim = (file: string) => path.resolve(src, "shared/lib", file);
 
+const wingmanUrl = process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:8080";
+const wingmanToken = process.env.WINGMAN_TOKEN || "none";
+const wingmanHeaders = { Authorization: `Bearer ${wingmanToken}` };
+
 // https://vite.dev/config/
 export default defineConfig({
   resolve: {
@@ -30,14 +34,16 @@ export default defineConfig({
         rewrite: (p) => p.replace(/^\/telemetry\/v1/, "/v1"),
       },
       "/api/v1/realtime": {
-        target: "http://localhost:8080",
+        target: wingmanUrl,
         ws: true,
         changeOrigin: true,
+        headers: wingmanHeaders,
         rewrite: (p) => p.replace(/^\/api/, ""),
       },
       "/api": {
-        target: "http://localhost:8080",
+        target: wingmanUrl,
         changeOrigin: true,
+        headers: wingmanHeaders,
         rewrite: (p) => p.replace(/^\/api/, ""),
       },
     },

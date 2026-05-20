@@ -88,6 +88,16 @@ html.emoji-native .noto-emoji {
   --viewport-height: 100dvh;
 }
 
+/* Scale the whole UI up on mobile by enlarging the root font size.
+   All Tailwind spacing, sizing, and text utilities are rem-based,
+   so this proportionally enlarges text, buttons, paddings, gaps and
+   icons sized with w-/h- utilities — no per-component changes needed. */
+@media (max-width: 639.98px) {
+  html {
+    font-size: 18px;
+  }
+}
+
 /* Global scrollbar: thin and only visible while interacting (iOS-like) */
 /* biome-ignore lint: lower-specificity universal selector intentionally follows scoped rules above */
 * {
