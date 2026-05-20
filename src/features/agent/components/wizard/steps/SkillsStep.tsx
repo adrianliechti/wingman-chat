@@ -52,7 +52,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
         <button
           type="button"
           onClick={() => setCatalogOpen(true)}
-          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
         >
           <Plus size={11} /> New
         </button>
@@ -79,7 +79,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
           >
             <Search size={11} /> Filter
           </button>
@@ -121,7 +121,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
                   <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
                     {skill.name}
                   </div>
-                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
                     {skill.description}
                   </div>
                 </div>

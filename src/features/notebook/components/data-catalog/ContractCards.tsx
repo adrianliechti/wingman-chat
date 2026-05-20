@@ -41,12 +41,12 @@ function ContractCard({ contract, dataset }: { contract: DataContract; dataset: 
       <header className="mb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-[10px] font-mono text-neutral-500">{dataset.name}</p>
+            <p className="text-xs font-mono text-neutral-500">{dataset.name}</p>
             <h4 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">{dataset.title}</h4>
           </div>
           <div className="flex items-center gap-1 shrink-0">
             {contract.version && (
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400">
+              <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400">
                 {contract.version}
               </span>
             )}
@@ -58,7 +58,7 @@ function ContractCard({ contract, dataset }: { contract: DataContract; dataset: 
           </div>
         </div>
         {dataset.owner && (
-          <p className="mt-1 text-[10px] text-neutral-500 dark:text-neutral-400">
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
             <span className="font-semibold">Owner:</span> {dataset.owner}
             {dataset.steward && (
               <>
@@ -94,7 +94,7 @@ function ContractCard({ contract, dataset }: { contract: DataContract; dataset: 
           <dl className="space-y-1.5">
             {contract.terms.map((t) => (
               <div key={t.term}>
-                <dt className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                <dt className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                   {t.term}
                 </dt>
                 <dd className="text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed">{t.commitment}</dd>
@@ -110,7 +110,7 @@ function ContractCard({ contract, dataset }: { contract: DataContract; dataset: 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <section className="mb-3 last:mb-0">
-      <h5 className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-1">
+      <h5 className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-1">
         {label}
       </h5>
       {children}

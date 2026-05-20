@@ -166,7 +166,7 @@ export function StudioPanel({
                       <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300 truncate">
                         {output.title}
                       </p>
-                      <p className="text-[10px] text-neutral-400">
+                      <p className="text-xs text-neutral-400">
                         {isGenerating ? (
                           "Generating..."
                         ) : isError ? (

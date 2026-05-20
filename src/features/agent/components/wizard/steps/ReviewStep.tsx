@@ -46,7 +46,7 @@ export function ReviewStep({
           <Mic size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
           <div>
             <div className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Real-time Voice Mode</div>
-            <div className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+            <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
               This agent uses low-latency real-time voice conversation.
             </div>
           </div>
@@ -86,21 +86,21 @@ export function ReviewStep({
         <div className="px-3 py-2.5">
           <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{name}</div>
           {instructions && (
-            <div className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-1 line-clamp-2">{instructions}</div>
+            <div className="text-xs text-neutral-400 dark:text-neutral-500 mt-1 line-clamp-2">{instructions}</div>
           )}
         </div>
 
         {/* Skills */}
         {selectedSkills.length > 0 && (
           <div className="px-3 py-2.5">
-            <div className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">
+            <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">
               Skills
             </div>
             <div className="flex flex-wrap gap-1">
               {selectedSkills.map((s) => (
                 <span
                   key={s}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-neutral-100 dark:bg-neutral-800/40 text-neutral-700 dark:text-neutral-300"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded bg-neutral-100 dark:bg-neutral-800/40 text-neutral-700 dark:text-neutral-300"
                 >
                   <Zap size={8} /> {s}
                 </span>
@@ -112,14 +112,14 @@ export function ReviewStep({
         {/* Tools */}
         {(selectedTools.length > 0 || servers.length > 0) && (
           <div className="px-3 py-2.5">
-            <div className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">
+            <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">
               Tools
             </div>
             <div className="flex flex-wrap gap-1">
               {selectedTools.map((t) => (
                 <span
                   key={t}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
                 >
                   <Wrench size={8} /> {t}
                 </span>
@@ -127,7 +127,7 @@ export function ReviewStep({
               {servers.map((s) => (
                 <span
                   key={s.url}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
                 >
                   <Server size={8} /> {s.name}
                 </span>
@@ -139,14 +139,14 @@ export function ReviewStep({
         {/* Files */}
         {pendingFiles.length > 0 && (
           <div className="px-3 py-2.5">
-            <div className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">
+            <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">
               Files
             </div>
             <div className="flex flex-wrap gap-1">
               {pendingFiles.map((f) => (
                 <span
                   key={`${f.name}-${f.size}-${f.lastModified}`}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
                 >
                   <FileText size={8} /> {f.name}
                 </span>
@@ -161,7 +161,7 @@ export function ReviewStep({
         <div className="flex items-center justify-between py-1">
           <div>
             <div className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Memory</div>
-            <div className="text-[10px] text-neutral-400 dark:text-neutral-500">
+            <div className="text-xs text-neutral-400 dark:text-neutral-500">
               Remember context across conversations
             </div>
           </div>

@@ -350,7 +350,7 @@ export function ArtifactsBrowser({
         <div className="pt-1 min-w-full">
           {/* Root folder row */}
           <div className="flex items-center gap-1 pl-3 pr-2 py-2 min-w-0 group">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 truncate flex-1">
+            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 truncate flex-1">
               Files
             </span>
             {(onUploadLocal || onUploadDrive || onDownloadAll) && (

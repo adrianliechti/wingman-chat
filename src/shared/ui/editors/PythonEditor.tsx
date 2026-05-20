@@ -82,7 +82,7 @@ export function PythonEditor({ content, onRunReady, onRunningChange }: PythonEdi
             className="flex flex-col border-t border-black/5 dark:border-white/5"
           >
             <div className="flex items-center justify-between px-3 py-1 shrink-0">
-              <span className="text-[10px] uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+              <span className="text-xs uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
                 Output
               </span>
               <button

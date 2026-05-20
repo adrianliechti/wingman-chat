@@ -182,7 +182,7 @@ export function NotebookChat({
                 <span>Sources</span>
                 {sources.length > 0 && (
                   <span
-                    className={`inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold leading-none ${
+                    className={`inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-xs font-semibold leading-none ${
                       showSourcesActive
                         ? "bg-white/25 dark:bg-black/20 text-white dark:text-neutral-900"
                         : "bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300"
@@ -211,7 +211,7 @@ export function NotebookChat({
                 <span>Output</span>
                 {(outputCount ?? 0) > 0 && (
                   <span
-                    className={`inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold leading-none ${
+                    className={`inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-xs font-semibold leading-none ${
                       showStudioActive
                         ? "bg-white/25 dark:bg-black/20 text-white dark:text-neutral-900"
                         : "bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300"

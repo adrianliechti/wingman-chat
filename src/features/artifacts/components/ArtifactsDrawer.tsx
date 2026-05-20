@@ -623,7 +623,7 @@ export function ArtifactsDrawer() {
               {/* Hint: office binaries are previewed as extracted text */}
               {isTextOnlyPreview() && (
                 <span
-                  className="shrink-0 text-[10px] uppercase tracking-wide font-medium text-neutral-500 dark:text-neutral-400 bg-neutral-200/60 dark:bg-neutral-800/60 rounded px-1.5 py-0.5"
+                  className="shrink-0 text-xs uppercase tracking-wide font-medium text-neutral-500 dark:text-neutral-400 bg-neutral-200/60 dark:bg-neutral-800/60 rounded px-1.5 py-0.5"
                   title="Office documents are previewed as extracted text. Download the file for the original formatting."
                 >
                   Text preview

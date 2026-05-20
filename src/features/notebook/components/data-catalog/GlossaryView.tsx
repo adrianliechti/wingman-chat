@@ -14,7 +14,7 @@ export function GlossaryView({ catalog }: GlossaryViewProps) {
     <div className="h-full w-full overflow-auto px-3 pt-6 pb-24">
       {grouped.map(({ letter, terms }) => (
         <section key={letter} className="mb-8">
-          <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
             {letter}
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -49,13 +49,13 @@ function TermCard({ term, datasetTitleFor }: { term: GlossaryTerm; datasetTitleF
       <p className="text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed mb-2">{term.definition}</p>
 
       {term.synonyms && term.synonyms.length > 0 && (
-        <p className="text-[10px] text-neutral-500 dark:text-neutral-400 mb-2">
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
           <span className="font-semibold">Also known as:</span> {term.synonyms.join(", ")}
         </p>
       )}
 
       {term.ontologyReference && (
-        <p className="text-[10px] mb-2 break-all">
+        <p className="text-xs mb-2 break-all">
           <span className="font-semibold text-neutral-500 dark:text-neutral-400">Ontology:</span>{" "}
           <a
             href={term.ontologyReference}

@@ -157,7 +157,7 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
                   <div className="font-medium text-xs text-neutral-900 dark:text-neutral-100 truncate">
                     {skill.name}
                   </div>
-                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
                     {skill.description}
                   </div>
                 </div>
@@ -193,7 +193,7 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
                     <div className="font-medium text-xs text-neutral-600 dark:text-neutral-400 truncate">
                       {skill.name}
                     </div>
-                    <div className="text-[10px] text-neutral-400 dark:text-neutral-500 line-clamp-1">
+                    <div className="text-xs text-neutral-400 dark:text-neutral-500 line-clamp-1">
                       {skill.description}
                     </div>
                   </div>
@@ -206,7 +206,7 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
 
         {/* Empty state */}
         {searchOpen && filteredEnabled.length === 0 && availableSkills.length === 0 && (
-          <p className="text-[10px] text-neutral-400 dark:text-neutral-500 text-center py-2">
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 text-center py-2">
             {search ? "No skills match your search." : "No skills available."}
           </p>
         )}

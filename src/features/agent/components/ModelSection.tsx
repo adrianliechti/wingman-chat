@@ -114,7 +114,7 @@ export function ModelSection({ agent }: ModelSectionProps) {
             ))}
             {showHiddenModels && hiddenModels.length > 0 && (
               <>
-                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 bg-neutral-100/60 dark:bg-white/5 border-y border-neutral-200/60 dark:border-white/10">
+                <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 bg-neutral-100/60 dark:bg-white/5 border-y border-neutral-200/60 dark:border-white/10">
                   Hidden
                 </div>
                 {hiddenModels.map((m) => (

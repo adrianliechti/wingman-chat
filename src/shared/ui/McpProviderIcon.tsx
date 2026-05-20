@@ -26,7 +26,6 @@ export function McpProviderIcon({ src, size = 14, className }: McpProviderIconPr
       width={size}
       height={size}
       className={className ?? "shrink-0 object-contain"}
-      style={{ width: size, height: size }}
       onError={() => setErroredSrc(src)}
     />
   );

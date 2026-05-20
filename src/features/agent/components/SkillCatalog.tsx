@@ -358,7 +358,7 @@ export function SkillCatalog({
                         type="button"
                         onClick={handleOptimize}
                         disabled={!canOptimize}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300/60 px-2.5 py-1.5 text-[11px] font-medium text-neutral-500 transition-colors hover:border-amber-300/60 hover:bg-amber-50/40 hover:text-amber-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700/60 dark:text-neutral-400 dark:hover:border-amber-700/60 dark:hover:bg-amber-950/20 dark:hover:text-amber-400"
+                        className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300/60 px-2.5 py-1.5 text-xs font-medium text-neutral-500 transition-colors hover:border-amber-300/60 hover:bg-amber-50/40 hover:text-amber-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700/60 dark:text-neutral-400 dark:hover:border-amber-700/60 dark:hover:bg-amber-950/20 dark:hover:text-amber-400"
                       >
                         {isOptimizing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                         {isOptimizing ? "Optimizing…" : "Optimize"}
@@ -407,7 +407,7 @@ export function SkillCatalog({
                       <button
                         type="button"
                         onClick={() => openEditor("new")}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-neutral-300/50 px-2.5 py-1.5 text-[11px] font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-neutral-300/50 px-2.5 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
                         title="Create new skill"
                       >
                         <Plus size={11} />
@@ -416,7 +416,7 @@ export function SkillCatalog({
                       <button
                         type="button"
                         onClick={handleImport}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-neutral-300/50 px-2.5 py-1.5 text-[11px] font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-neutral-300/50 px-2.5 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
                         title="Import skill files"
                       >
                         <Download size={11} />
@@ -448,7 +448,7 @@ export function SkillCatalog({
                                   <span className="block truncate text-xs font-medium text-neutral-900 dark:text-neutral-100">
                                     {skill.name}
                                   </span>
-                                  <span className="block line-clamp-1 text-[10px] text-neutral-500 dark:text-neutral-400">
+                                  <span className="block line-clamp-1 text-xs text-neutral-500 dark:text-neutral-400">
                                     {skill.description}
                                   </span>
                                 </span>

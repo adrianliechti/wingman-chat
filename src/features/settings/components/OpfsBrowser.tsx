@@ -101,7 +101,7 @@ function TreeItem({ node, depth, onDelete }: { node: TreeNode; depth: number; on
         </span>
 
         {/* Meta */}
-        <span className="text-[11px] text-neutral-400 dark:text-neutral-500 whitespace-nowrap tabular-nums mr-1">
+        <span className="text-xs text-neutral-400 dark:text-neutral-500 whitespace-nowrap tabular-nums mr-1">
           {isDir
             ? `${stats?.files ?? 0} file${stats?.files === 1 ? "" : "s"} · ${formatBytes(stats?.size ?? 0)}`
             : formatBytes(node.size ?? 0)}

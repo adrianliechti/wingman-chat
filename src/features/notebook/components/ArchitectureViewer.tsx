@@ -121,7 +121,7 @@ function ArchitectureInner({ output, onRefine }: ArchitectureViewerProps) {
                 role="tab"
                 aria-selected={active}
                 onClick={() => setViewKind(tab.view)}
-                className={`py-0.5 text-[11px] transition-colors border-b ${
+                className={`py-0.5 text-xs transition-colors border-b ${
                   active
                     ? "border-neutral-900 dark:border-neutral-100 text-neutral-900 dark:text-neutral-100 font-semibold"
                     : empty
@@ -186,7 +186,7 @@ function ArchitectureInner({ output, onRefine }: ArchitectureViewerProps) {
                 {isRefining ? <Loader2 size={14} className="animate-spin" /> : <SparklesIcon size={14} />}
               </button>
             </div>
-            {refineError && <p className="text-[10px] text-red-500 mt-1 px-3">{refineError}</p>}
+            {refineError && <p className="text-xs text-red-500 mt-1 px-3">{refineError}</p>}
           </form>
         </div>
       </div>

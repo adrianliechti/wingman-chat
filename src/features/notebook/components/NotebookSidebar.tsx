@@ -173,7 +173,7 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
           {grouped.map((group, gi) => (
             <div key={group.category} className={cn(gi > 0 && "pt-2")}>
               {/* Category header */}
-              <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
+              <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
                 <span>{group.category}</span>
                 <Menu>
                   <MenuButton

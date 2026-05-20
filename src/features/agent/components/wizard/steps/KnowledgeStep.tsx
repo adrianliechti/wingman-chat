@@ -55,7 +55,7 @@ export function KnowledgeStep({ pendingFiles, dispatch }: KnowledgeStepProps) {
           <span className="block text-xs font-medium text-neutral-600 dark:text-neutral-400">
             Drop files here or click to browse
           </span>
-          <span className="mt-0.5 block text-[10px] text-neutral-400 dark:text-neutral-500">
+          <span className="mt-0.5 block text-xs text-neutral-400 dark:text-neutral-500">
             PDF, text, markdown, and more
           </span>
         </span>
@@ -69,7 +69,7 @@ export function KnowledgeStep({ pendingFiles, dispatch }: KnowledgeStepProps) {
               <FileText size={14} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{file.name}</div>
-                <div className="text-[10px] text-neutral-500 dark:text-neutral-400">{formatBytes(file.size)}</div>
+                <div className="text-xs text-neutral-500 dark:text-neutral-400">{formatBytes(file.size)}</div>
               </div>
               <button
                 type="button"
@@ -80,7 +80,7 @@ export function KnowledgeStep({ pendingFiles, dispatch }: KnowledgeStepProps) {
               </button>
             </div>
           ))}
-          <p className="text-[10px] text-neutral-400 dark:text-neutral-500 pt-1">
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 pt-1">
             Files will be processed after agent creation.
           </p>
         </div>

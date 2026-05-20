@@ -473,7 +473,7 @@ export function ChatSidebar() {
         {/* Pinned chats section (non-virtualized, drag-and-drop) */}
         {pinnedChats.length > 0 && (
           <div className="pl-1 pr-2 pt-2">
-            <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
+            <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
               <span>Pinned</span>
               <Menu>
                 <MenuButton
@@ -536,7 +536,7 @@ export function ChatSidebar() {
                     ref={sidebarVirtualizer.measureElement}
                     className={cn(item.groupIndex > 0 && "pt-2")}
                   >
-                    <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
+                    <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
                       <span>{group.category}</span>
                       <Menu>
                         <MenuButton
