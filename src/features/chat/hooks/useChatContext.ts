@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
+import { useModels } from "@/features/chat/hooks/useModels";
 import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
 import { useProfile } from "@/features/settings/hooks/useProfile";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
@@ -25,6 +26,7 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
 
   // Get current agent for its instructions
   const { currentAgent } = useAgents();
+  const { models } = useModels();
 
   const context = useMemo<ChatContext>(() => {
     const getFilteredProviders = () => {
@@ -38,10 +40,17 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
         filteredProviders = [...filteredProviders, artifactsProvider];
       }
 
-      // Further filter based on model configuration
-      if (model?.tools) {
-        const enabledTools = new Set(model.tools.enabled || []);
-        const disabledTools = new Set(model.tools.disabled || []);
+      // Further filter based on model configuration.
+      // Issue 8: in voice mode the active model may be the synthetic "realtime" model
+      // which has no tools config. Use the agent's underlying chat model for filtering.
+      const filterModel: Pick<Model, "tools"> | null | undefined =
+        mode === "voice" && (model?.id === "realtime" || !model?.tools) && currentAgent?.model
+          ? (models.find((m) => m.id === currentAgent.model) ?? model)
+          : model;
+
+      if (filterModel?.tools) {
+        const enabledTools = new Set(filterModel.tools.enabled || []);
+        const disabledTools = new Set(filterModel.tools.disabled || []);
 
         filteredProviders = filteredProviders.filter((provider: ToolProvider) => {
           const matchId = provider.id;
@@ -71,8 +80,15 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
 
         const baseTools = toolsArrays.flat();
 
-        // Add subagent tool only when there are other tools to delegate to.
-        if (baseTools.length === 0 || !model?.id) {
+        // In voice mode the active model is the synthetic "realtime" WebSocket model
+        // which cannot be used for sub-calls. Fall back to the first available
+        // chat-completion model (type "completer" or unset) that isn't realtime.
+        const subagentModel =
+          mode === "voice"
+            ? (models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id ?? null)
+            : (model?.id ?? null);
+
+        if (baseTools.length === 0 || !subagentModel) {
           return baseTools;
         }
 
@@ -81,7 +97,7 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
           .filter((s): s is string => !!s)
           .join("\n\n");
 
-        return [...baseTools, createSubagentTool(model.id, providerInstructions, baseTools)];
+        return [...baseTools, createSubagentTool(subagentModel, providerInstructions, baseTools)];
       },
 
       instructions: () => {
@@ -104,7 +120,21 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
         }
 
         if (mode === "voice") {
-          instructionsList.push("Respond concisely and naturally for voice interaction.");
+          const hasTools = filteredProviders.some((p: ToolProvider) => p.tools.length > 0);
+          const voiceInstructions = [
+            "You are operating in voice mode. Respond concisely and naturally for spoken conversation.",
+            "Never use markdown, bullet lists, numbered lists, headings, or code blocks in your responses — these do not translate to speech.",
+            "Pronounce numbers, abbreviations, and symbols naturally (e.g. say 'three and a half' not '3.5', 'degrees Celsius' not '°C').",
+            ...(hasTools
+              ? [
+                  "You have access to tools. Use them proactively when they can help answer the user's request.",
+                  "Before calling a tool, briefly announce what you are about to do in one short sentence.",
+                  "After a tool returns results, summarise the outcome in plain spoken language — do not recite raw data verbatim.",
+                  "When a tool asks for confirmation, read the question aloud clearly and wait for the user to say yes or no.",
+                ]
+              : []),
+          ].join(" ");
+          instructionsList.push(voiceInstructions);
         }
 
         // Add instructions from filtered providers
@@ -122,6 +152,7 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
   }, [
     mode,
     model,
+    models,
     generateInstructions,
     providers,
     getProviderState,

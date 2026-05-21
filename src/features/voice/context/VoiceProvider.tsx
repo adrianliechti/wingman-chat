@@ -2,16 +2,34 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
+import type { ToolContextFactory } from "@/features/voice/hooks/useVoiceWebSockets";
 import { useVoiceWebSockets } from "@/features/voice/hooks/useVoiceWebSockets";
 import { getConfig } from "@/shared/config";
-import type { AudioContent, FileContent, ImageContent, TextContent } from "@/shared/types/chat";
+import type { AudioContent, FileContent, ImageContent, TextContent, ToolContext } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
+import type { Elicitation } from "@/shared/types/elicitation";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import type { VoiceContextType } from "./VoiceContext";
 import { VoiceContext } from "./VoiceContext";
 
 interface VoiceProviderProps {
   children: React.ReactNode;
+}
+
+/** Unwrap a transcript string that may arrive as plain text or a JSON-wrapped `{ text: string }` object. */
+function parseTranscriptText(text: string): string {
+  try {
+    if (text.trim().startsWith("{")) {
+      const parsed = JSON.parse(text) as unknown;
+      if (parsed && typeof parsed === "object" && "text" in parsed) {
+        return (parsed as { text: string }).text;
+      }
+      if (typeof parsed === "string") return parsed;
+    }
+  } catch {
+    // not JSON — use as-is
+  }
+  return text;
 }
 
 export function VoiceProvider({ children }: VoiceProviderProps) {
@@ -27,7 +45,16 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       return false;
     }
   });
-  const { addMessage, messages, chat, models, model: selectedModel, setVoiceToolCall } = useChat();
+  const {
+    addMessage,
+    messages,
+    chat,
+    models,
+    model: selectedModel,
+    setVoiceToolCall,
+    requestElicitation,
+    updateToolMeta,
+  } = useChat();
   const { currentAgent } = useAgents();
   const model = chat?.model ?? selectedModel ?? models[0];
   const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
@@ -35,107 +62,116 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const { tools: chatTools, instructions: chatInstructions } = useChatContext("voice", model);
   const { inputDeviceId, outputDeviceId } = useAudioDevices();
 
-  const onUserTranscript = useCallback(
-    (text: string) => {
-      let content = text;
-
-      // Handle case where text might be a JSON string or object
-      try {
-        // First, check if it's already a string that looks like JSON
-        if (typeof text === "string" && text.trim().startsWith("{")) {
-          const parsed = JSON.parse(text);
-          if (parsed.text) {
-            content = parsed.text;
-          } else if (typeof parsed === "string") {
-            content = parsed;
-          }
-        }
-      } catch {
-        // If parsing fails, use the original text
-        content = text;
-      }
-
-      // Additional check: if content is still an object, try to extract text
-      if (typeof content === "object" && content !== null && "text" in content) {
-        content = (content as { text: string }).text;
-      }
-
-      if (content.trim()) {
-        addMessage({ role: Role.User, content: [{ type: "text", text: content }] });
-      }
-    },
-    [addMessage],
+  const { start, stop, sendText, updateSession } = useVoiceWebSockets(
+    onUserTranscriptCallback,
+    onAssistantTranscriptCallback,
+    onToolCallCallback,
+    onToolCallDoneCallback,
+    onToolResultCallback,
   );
 
-  const onAssistantTranscript = useCallback(
-    (text: string) => {
-      let content = text;
+  // ── Stable callback refs (avoid recreating useVoiceWebSockets on each render) ─
 
-      // Handle case where text might be a JSON string or object
-      try {
-        // First, check if it's already a string that looks like JSON
-        if (typeof text === "string" && text.trim().startsWith("{")) {
-          const parsed = JSON.parse(text);
-          if (parsed.text) {
-            content = parsed.text;
-          } else if (typeof parsed === "string") {
-            content = parsed;
-          }
-        }
-      } catch {
-        // If parsing fails, use the original text
-        content = text;
-      }
+  const addMessageRef = useRef(addMessage);
+  addMessageRef.current = addMessage;
+  const setVoiceToolCallRef = useRef(setVoiceToolCall);
+  setVoiceToolCallRef.current = setVoiceToolCall;
+  const requestElicitationRef = useRef(requestElicitation);
+  requestElicitationRef.current = requestElicitation;
+  const updateToolMetaRef = useRef(updateToolMeta);
+  updateToolMetaRef.current = updateToolMeta;
 
-      // Additional check: if content is still an object, try to extract text
-      if (typeof content === "object" && content !== null && "text" in content) {
-        content = (content as { text: string }).text;
-      }
+  function onUserTranscriptCallback(text: string) {
+    const content = parseTranscriptText(text);
+    if (content.trim()) {
+      addMessageRef.current({ role: Role.User, content: [{ type: "text", text: content }] });
+    }
+  }
 
-      if (content.trim()) {
-        addMessage({ role: Role.Assistant, content: [{ type: "text", text: content }] });
-      }
-    },
-    [addMessage],
-  );
+  function onAssistantTranscriptCallback(text: string) {
+    const content = parseTranscriptText(text);
+    if (content.trim()) {
+      addMessageRef.current({ role: Role.Assistant, content: [{ type: "text", text: content }] });
+    }
+  }
 
-  const onToolCall = useCallback(
-    (toolName: string) => {
-      setVoiceToolCall(toolName);
-    },
-    [setVoiceToolCall],
-  );
+  function onToolCallCallback(toolName: string, callId: string) {
+    setVoiceToolCallRef.current(toolName, callId);
+  }
 
-  const onToolCallDone = useCallback(() => {
-    setVoiceToolCall(null);
-  }, [setVoiceToolCall]);
+  function onToolCallDoneCallback(callId: string) {
+    void callId; // call_id not needed here; clear the streaming indicator
+    setVoiceToolCallRef.current(null);
+  }
 
-  const onToolResult = useCallback(
-    (toolName: string, callId: string, result: (TextContent | ImageContent | AudioContent | FileContent)[]) => {
-      // Persist the raw result (including images) as a user message with a tool_result part
-      addMessage({
-        role: Role.User,
-        content: [
-          {
-            type: "tool_result",
-            id: callId,
-            name: toolName,
-            arguments: "{}",
-            result,
+  function onToolResultCallback(
+    toolName: string,
+    callId: string,
+    result: (TextContent | ImageContent | AudioContent | FileContent)[],
+  ) {
+    addMessageRef.current({
+      role: Role.User,
+      content: [
+        {
+          type: "tool_result",
+          id: callId,
+          name: toolName,
+          arguments: "{}",
+          result,
+        },
+      ],
+    });
+  }
+
+  // ── ToolContext factory (Phase 1-3 + Phase 5) ────────────────────────────
+
+  const buildToolContextFactory = useCallback(
+    (currentModel: string | undefined): ToolContextFactory =>
+      (toolCall: { id: string; name: string }): ToolContext => {
+        let resultMeta: Record<string, unknown> = {};
+        return {
+          model: currentModel,
+          setMeta: (meta: Record<string, unknown>) => {
+            resultMeta = meta;
+            updateToolMetaRef.current(toolCall.id, { ...meta });
           },
-        ],
-      });
-    },
-    [addMessage],
+          updateMeta: (meta: Record<string, unknown>) => {
+            resultMeta = { ...resultMeta, ...meta };
+            updateToolMetaRef.current(toolCall.id, { ...resultMeta });
+          },
+          elicit: async (elicitation: Elicitation) => {
+            // Ensure the streaming indicator is visible while the form is open.
+            // Do NOT clear it here — onToolCallDoneCallback clears it once the tool actually finishes.
+            setVoiceToolCallRef.current(toolCall.name, toolCall.id);
+            return requestElicitationRef.current(toolCall.id, toolCall.name, elicitation);
+          },
+        };
+      },
+    [],
   );
 
-  const { start, stop, sendText } = useVoiceWebSockets(
-    onUserTranscript,
-    onAssistantTranscript,
-    onToolCall,
-    onToolCallDone,
-    onToolResult,
-  );
+  // ── Issue 3: update session when tools/instructions change mid-session ───
+
+  const lastSessionSignatureRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!isListening) return;
+    const instructions = chatInstructions();
+    // Compute a coarse signature to avoid spamming session.update on every render
+    chatTools()
+      .then((tools) => {
+        const signature = `${instructions.length}|${tools.map((t) => t.name).join(",")}`;
+        if (signature === lastSessionSignatureRef.current) return;
+        lastSessionSignatureRef.current = signature;
+        const factory = buildToolContextFactory(
+          models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id,
+        );
+        updateSession(tools, instructions, factory);
+      })
+      .catch((err) => console.error("updateSession failed:", err));
+  }, [isListening, chatTools, chatInstructions, updateSession, buildToolContextFactory, models]);
+
+  // ── Voice lifecycle ──────────────────────────────────────────────────────
 
   const stopVoice = useCallback(async () => {
     await stop();
@@ -155,12 +191,21 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     try {
       const realtimeModel = config.voice?.model;
       const transcribeModel = config.voice?.transcriber ?? config.stt?.model;
+      const tools = await chatTools();
+      const instructions = chatInstructions();
+      // In voice mode the selected model is the synthetic "realtime" WebSocket model.
+      // Use the first available chat-completion model for tools that need agentRun.
+      const underlyingModelId = models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id;
+      const toolContextFactory = buildToolContextFactory(underlyingModelId);
+
+      lastSessionSignatureRef.current = `${instructions.length}|${tools.map((t) => t.name).join(",")}`;
+
       await start(
         realtimeModel,
         transcribeModel,
-        chatInstructions(),
+        instructions,
         messages,
-        await chatTools(),
+        tools,
         inputDeviceId,
         outputDeviceId,
         (level) => {
@@ -170,11 +215,11 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
             setAudioLevel(level);
           }
         },
+        toolContextFactory,
       );
       setIsListening(true);
     } catch (error) {
       console.error("Failed to start voice mode:", error);
-      // Show user-friendly error if API key is missing
       const errorMessage = error?.toString() || "";
       if (errorMessage.includes("API key") || errorMessage.includes("401")) {
         alert("Voice mode requires an OpenAI API key to be configured. Please add your API key to the configuration.");
@@ -183,8 +228,10 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       }
     }
   }, [
+    buildToolContextFactory,
     chatInstructions,
     chatTools,
+    models,
     start,
     messages,
     config.voice?.model,
