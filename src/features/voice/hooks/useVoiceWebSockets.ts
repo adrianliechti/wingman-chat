@@ -335,13 +335,6 @@ export function useVoiceWebSockets(
             const item = msg.item as Record<string, unknown>;
             const responseId = (msg as Record<string, unknown>).response_id as string | undefined;
 
-            if (item?.type === "message") {
-              const textParts = (item.content as Record<string, unknown>[] | undefined)
-                ?.map((c) => c.transcript ?? c.text)
-                .filter(Boolean)
-                .join(" ");
-            }
-
             if (item?.type === "function_call") {
               const callId = item.call_id as string;
               const itemId = item.id as string;
