@@ -4,6 +4,8 @@ import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import { useModels } from "@/features/chat/hooks/useModels";
 import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
+import voiceInstructions from "@/features/chat/prompts/voice.txt?raw";
+import voiceToolsInstructions from "@/features/chat/prompts/voice-tools.txt?raw";
 import { useProfile } from "@/features/settings/hooks/useProfile";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
@@ -115,21 +117,9 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
         }
 
         if (mode === "voice") {
-          const hasTools = filteredProviders.some((p: ToolProvider) => p.tools.length > 0);
-          const voiceInstructions = [
-            "You are operating in voice mode. Respond concisely and naturally for spoken conversation.",
-            "Never use markdown, bullet lists, numbered lists, headings, or code blocks in your responses — these do not translate to speech.",
-            "Pronounce numbers, abbreviations, and symbols naturally (e.g. say 'three and a half' not '3.5', 'degrees Celsius' not '°C').",
-            ...(hasTools
-              ? [
-                  "You have access to tools. Use them proactively when they can help answer the user's request.",
-                  "Before calling a tool, briefly announce what you are about to do in one short sentence.",
-                  "After a tool returns results, summarise the outcome in plain spoken language — do not recite raw data verbatim.",
-                  "When a tool asks for confirmation, read the question aloud clearly and wait for the user to say yes or no.",
-                ]
-              : []),
-          ].join(" ");
           instructionsList.push(voiceInstructions);
+          const hasTools = filteredProviders.some((p: ToolProvider) => p.tools.length > 0);
+          if (hasTools) instructionsList.push(voiceToolsInstructions);
         }
 
         // Add instructions from filtered providers
