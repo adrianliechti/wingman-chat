@@ -145,7 +145,6 @@ export function useVoiceWebSockets(
       if (pendingPostToolFiresRef.current === 0) return;
       if (hasOtherActiveResponse()) return;
       if (ws.readyState !== WebSocket.OPEN) return;
-      const drained = pendingPostToolFiresRef.current;
       pendingPostToolFiresRef.current = 0;
       // Only one response.create is needed regardless of how many tool calls finished while we were
       // waiting — the model will see all queued function_call_outputs in a single response.
