@@ -193,13 +193,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const chatIdRef = useRef(chatId);
   chatIdRef.current = chatId;
 
-  const pendingChatCreationRef = useRef<Promise<{ id: string; chat: Chat }> | null>(null);
-
   const selectChat = useCallback(
     (id: string | null) => {
       if (id === chatIdRef.current) return;
 
-      pendingChatCreationRef.current = null;
       setChatId(id);
       // Clear any stale post-turn notice so prompts from one thread don't leak into another.
       setPendingConsent(null);
@@ -245,29 +242,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
       throw new Error("no model selected");
     }
 
-    // Check ref first — it's updated synchronously, unlike state
     const existingId = chatIdRef.current;
     if (existingId) {
       const existingChat = chats.find((c) => c.id === existingId);
       if (existingChat) return { id: existingId, chat: existingChat };
     }
 
-    // Deduplicate concurrent creation calls: reuse the in-flight promise
-    if (pendingChatCreationRef.current) {
-      return pendingChatCreationRef.current;
-    }
-
-    const promise = createChatHook().then((chatItem) => {
-      chatItem.model = model;
-      chatIdRef.current = chatItem.id;
-      setChatId(chatItem.id);
-      updateChat(chatItem.id, () => ({ model }));
-      pendingChatCreationRef.current = null;
-      return { id: chatItem.id, chat: chatItem };
-    });
-
-    pendingChatCreationRef.current = promise;
-    return promise;
+    const chatItem = await createChatHook();
+    chatItem.model = model;
+    chatIdRef.current = chatItem.id;
+    setChatId(chatItem.id);
+    updateChat(chatItem.id, () => ({ model }));
+    return { id: chatItem.id, chat: chatItem };
   }, [model, createChatHook, updateChat, chats]);
 
   // Public helper for features (drawer, uploads, terminal) that need a
@@ -688,26 +674,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setIsResponding(false);
       } else {
         const id = chatIdRef.current;
-        const showIndicator = (chatId: string) => {
-          setIsResponding(true);
-          updateStreamingMessage({
-            chatId,
-            message: {
-              role: Role.Assistant,
-              content: [{ type: "tool_call", id: callId ?? crypto.randomUUID(), name: toolName, arguments: "{}" }],
-            },
-          });
-        };
-        if (!id) {
-          // Tool call arrived before any user transcript (transcription lags behind model response).
-          // Create the chat eagerly so the indicator has somewhere to render.
-          void getOrCreateChat().then(({ id: newId }) => showIndicator(newId));
-          return;
-        }
-        showIndicator(id);
+        if (!id) return;
+        setIsResponding(true);
+        updateStreamingMessage({
+          chatId: id,
+          message: {
+            role: Role.Assistant,
+            content: [{ type: "tool_call", id: callId ?? crypto.randomUUID(), name: toolName, arguments: "{}" }],
+          },
+        });
       }
     },
-    [getOrCreateChat, updateStreamingMessage],
+    [updateStreamingMessage],
   );
 
   const requestElicitation = useCallback(

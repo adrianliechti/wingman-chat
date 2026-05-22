@@ -40,9 +40,7 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
         filteredProviders = [...filteredProviders, artifactsProvider];
       }
 
-      // Further filter based on model configuration.
-      // Issue 8: in voice mode the active model may be the synthetic "realtime" model
-      // which has no tools config. Use the agent's underlying chat model for filtering.
+      // Further filter based on model configuration
       const filterModel: Pick<Model, "tools"> | null | undefined =
         mode === "voice" && (model?.id === "realtime" || !model?.tools) && currentAgent?.model
           ? (models.find((m) => m.id === currentAgent.model) ?? model)
@@ -80,9 +78,6 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
 
         const baseTools = toolsArrays.flat();
 
-        // In voice mode the active model is the synthetic "realtime" WebSocket model
-        // which cannot be used for sub-calls. Fall back to the first available
-        // chat-completion model (type "completer" or unset) that isn't realtime.
         const subagentModel =
           mode === "voice"
             ? (models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id ?? null)

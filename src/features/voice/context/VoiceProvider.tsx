@@ -16,7 +16,6 @@ interface VoiceProviderProps {
   children: React.ReactNode;
 }
 
-/** Unwrap a transcript string that may arrive as plain text or a JSON-wrapped `{ text: string }` object. */
 function parseTranscriptText(text: string): string {
   try {
     if (text.trim().startsWith("{")) {
@@ -27,7 +26,7 @@ function parseTranscriptText(text: string): string {
       if (typeof parsed === "string") return parsed;
     }
   } catch {
-    // not JSON — use as-is
+    /* not JSON */
   }
   return text;
 }
@@ -70,8 +69,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     onToolResultCallback,
   );
 
-  // ── Stable callback refs (avoid recreating useVoiceWebSockets on each render) ─
-
   const addMessageRef = useRef(addMessage);
   addMessageRef.current = addMessage;
   const setVoiceToolCallRef = useRef(setVoiceToolCall);
@@ -99,8 +96,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     setVoiceToolCallRef.current(toolName, callId);
   }
 
-  function onToolCallDoneCallback(callId: string) {
-    void callId; // call_id not needed here; clear the streaming indicator
+  function onToolCallDoneCallback() {
     setVoiceToolCallRef.current(null);
   }
 
@@ -123,8 +119,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     });
   }
 
-  // ── ToolContext factory (Phase 1-3 + Phase 5) ────────────────────────────
-
   const buildToolContextFactory = useCallback(
     (currentModel: string | undefined): ToolContextFactory =>
       (toolCall: { id: string; name: string }): ToolContext => {
@@ -140,8 +134,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
             updateToolMetaRef.current(toolCall.id, { ...resultMeta });
           },
           elicit: async (elicitation: Elicitation) => {
-            // Ensure the streaming indicator is visible while the form is open.
-            // Do NOT clear it here — onToolCallDoneCallback clears it once the tool actually finishes.
             setVoiceToolCallRef.current(toolCall.name, toolCall.id);
             return requestElicitationRef.current(toolCall.id, toolCall.name, elicitation);
           },
@@ -150,14 +142,11 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     [],
   );
 
-  // ── Issue 3: update session when tools/instructions change mid-session ───
-
   const lastSessionSignatureRef = useRef<string>("");
 
   useEffect(() => {
     if (!isListening) return;
     const instructions = chatInstructions();
-    // Compute a coarse signature to avoid spamming session.update on every render
     chatTools()
       .then((tools) => {
         const signature = `${instructions.length}|${tools.map((t) => t.name).join(",")}`;
@@ -170,8 +159,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       })
       .catch((err) => console.error("updateSession failed:", err));
   }, [isListening, chatTools, chatInstructions, updateSession, buildToolContextFactory, models]);
-
-  // ── Voice lifecycle ──────────────────────────────────────────────────────
 
   const stopVoice = useCallback(async () => {
     await stop();
@@ -193,8 +180,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       const transcribeModel = config.voice?.transcriber ?? config.stt?.model;
       const tools = await chatTools();
       const instructions = chatInstructions();
-      // In voice mode the selected model is the synthetic "realtime" WebSocket model.
-      // Use the first available chat-completion model for tools that need agentRun.
       const underlyingModelId = models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id;
       const toolContextFactory = buildToolContextFactory(underlyingModelId);
 

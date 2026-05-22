@@ -45,12 +45,10 @@ export interface ChatContextType {
   // Elicitation state
   pendingElicitation: PendingElicitation | null;
   resolveElicitation: (result: ElicitationResult) => void;
-  /** Imperatively request an elicitation; used by voice tool context. */
   requestElicitation: (toolCallId: string, toolName: string, elicitation: Elicitation) => Promise<ElicitationResult>;
 
   /** Live meta for in-flight tool calls; cleared on commit (data persists on `tool_result.meta`). */
   toolMeta: Record<string, Record<string, unknown>>;
-  /** Merge meta into the live toolMeta entry for the given tool call id. */
   updateToolMeta: (toolCallId: string, meta: Record<string, unknown>) => void;
 
   // Post-turn advisory overlay — covers both category consent and risk warnings.
