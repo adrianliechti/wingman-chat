@@ -7,6 +7,7 @@ import llmInstructionsText from "@/features/artifacts/prompts/llm.txt?raw";
 import officeInstructionsText from "@/features/artifacts/prompts/office.txt?raw";
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
+import { isDataUrl } from "@/shared/lib/fileContent";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
 import { createFileTools, type FileData, type FileEntry, type WritableFileSource } from "@/shared/lib/file-tools";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
@@ -159,12 +160,22 @@ export function useArtifactsProvider(): ToolProvider | null {
               ];
             }
 
-            const fileInfo = {
-              path: file.path,
-              size: file.content.length,
-              content: file.content,
-              contentType: file.contentType,
-            };
+            // Don't emit the base64 payload for binary files — it blows up
+            // context and corrupts subsequent tool-call JSON.
+            const isBinary = isDataUrl(file.content);
+            const fileInfo = isBinary
+              ? {
+                  path: file.path,
+                  contentType: file.contentType,
+                  binary: true,
+                  note: "Binary file. Use Python/bash tools to process it at /home/user/.",
+                }
+              : {
+                  path: file.path,
+                  size: file.content.length,
+                  content: file.content,
+                  contentType: file.contentType,
+                };
 
             return [
               {
@@ -186,19 +197,18 @@ export function useArtifactsProvider(): ToolProvider | null {
       {
         name: "execute_python_code",
         description:
-          "Execute Python code or an existing Python artifact file with optional package dependencies. Provide exactly one of `code` or `path`. All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back.",
+          "Execute Python code with optional package dependencies. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back.",
         parameters: {
           type: "object",
           properties: {
             code: {
               type: "string",
-              description:
-                "Inline Python code to execute. Prefer this for short snippets; use `path` for existing scripts in artifacts.",
+              description: "Inline Python code to execute. This is the standard way to run code.",
             },
             path: {
               type: "string",
               description:
-                "Path to a Python script in the artifacts filesystem to execute, such as `/analysis.py`. Prefer this for existing or longer scripts.",
+                "Optional: path to an existing Python script in the artifacts filesystem to execute (e.g., `/analysis.py`). Ignored when `code` is also provided.",
             },
             packages: {
               type: "array",
@@ -227,18 +237,15 @@ export function useArtifactsProvider(): ToolProvider | null {
             const hasCode = typeof code === "string" && code.trim().length > 0;
             const hasPath = typeof path === "string" && path.length > 0;
 
-            if (hasCode === hasPath) {
-              return [
-                {
-                  type: "text" as const,
-                  text: "Error executing code: provide exactly one of `code` or `path`.",
-                },
-              ];
+            if (!hasCode && !hasPath) {
+              return [{ type: "text" as const, text: "Error executing code: provide `code` to run." }];
             }
 
+            // Prefer `code` when both are provided — some models tack on `path`
+            // thinking it's a working-directory hint.
             let script = code as string;
 
-            if (hasPath) {
+            if (!hasCode && hasPath) {
               if (!fs) {
                 return [{ type: "text" as const, text: "Error executing code: file system not available." }];
               }
@@ -296,6 +303,15 @@ export function useArtifactsProvider(): ToolProvider | null {
           const fs = fsRef.current;
           const { command } = args;
 
+          if (typeof command !== "string" || !command.trim()) {
+            return [
+              {
+                type: "text" as const,
+                text: "Error: `command` is required (a non-empty bash command or script).",
+              },
+            ];
+          }
+
           try {
             // Load artifact files into bash's InMemoryFs before execution
             if (fs) {
@@ -310,7 +326,7 @@ export function useArtifactsProvider(): ToolProvider | null {
             }
 
             const result = await executeBash({
-              command: command as string,
+              command,
             });
 
             // Save changed files back to artifacts after execution

@@ -1,12 +1,15 @@
-## Office Documents (DOCX, PPTX, XLSX, PDF)
+## Office Documents (DOCX, PPTX, XLSX, PDF, Email)
 
 Use `execute_python_code` to generate real `.docx`, `.pptx`, `.xlsx`, and `.pdf` artifacts when the user asks for a Word doc, slide deck, spreadsheet, or PDF. Write the output file under `/home/user/` so it syncs back as an artifact.
+
+Uploaded `.docx`, `.xlsx`, `.pptx`, `.pdf`, `.msg`, and `.eml` files are preserved verbatim under `/home/user/`. Use the Python libraries below to inspect or extract their contents — don't ask the user to re-upload as Markdown.
 
 Available libraries (all preloaded, no network install needed):
 - DOCX: `python-docx` (import `docx`), `docx2txt` (extract text)
 - PPTX: `python-pptx` (import `pptx`)
 - XLSX: `openpyxl`, `xlsxwriter`, `pandas` (`pd.read_excel` / `df.to_excel`)
 - PDF: `reportlab` (create), `pypdf` (read, merge, split, watermark, rotate)
+- Email: `extract-msg` (import `extract_msg`) for `.msg`; stdlib `email`/`email.parser` for `.eml`
 - Charts: `matplotlib`, `seaborn`, `plotly` (write PNG/SVG and embed)
 
 General rules:
@@ -248,6 +251,28 @@ with open("/home/user/merged.pdf", "wb") as f:
 
 # Extract text
 text = "\n".join(p.extract_text() or "" for p in PdfReader("/home/user/in.pdf").pages)
+```
+
+### Email (.msg / .eml)
+
+Use `extract_msg` for Outlook `.msg`; the stdlib `email` package for `.eml`.
+
+```python
+# .msg
+import extract_msg
+m = extract_msg.openMsg("/home/user/email.msg")
+print(m.sender, m.to, m.subject, m.body)
+for att in m.attachments:
+    att.save(customPath="/home/user/")
+```
+
+```python
+# .eml
+from email import policy
+from email.parser import BytesParser
+m = BytesParser(policy=policy.default).parse(open("/home/user/message.eml", "rb"))
+body = m.get_body(preferencelist=("plain", "html"))
+print(m["from"], m["subject"], body.get_content() if body else "")
 ```
 
 ### Chart → Office embed

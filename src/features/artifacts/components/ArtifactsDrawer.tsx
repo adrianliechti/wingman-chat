@@ -402,6 +402,7 @@ export function ArtifactsDrawer() {
       case "docx":
       case "pptx":
       case "xlsx":
+      case "email":
         return (
           <OfficeMarkdownEditor
             key={editorKey}
@@ -539,7 +540,7 @@ export function ArtifactsDrawer() {
   const isTextOnlyPreview = () => {
     if (!activeFileData) return false;
     const kind = artifactKind(activeFileData.path, activeFileData.contentType);
-    return kind === "docx" || kind === "pptx" || kind === "xlsx";
+    return kind === "docx" || kind === "pptx" || kind === "xlsx" || kind === "email";
   };
 
   // Handle run button click

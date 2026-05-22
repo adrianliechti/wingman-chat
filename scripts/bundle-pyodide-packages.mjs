@@ -54,6 +54,9 @@ const PYPI_PACKAGES = [
   "pypdf",
   "reportlab",
   "markdown",
+  // Pin to last release before red-black-tree-mod was added — that dep only
+  // ships as an sdist and our bundler only handles pure-Python wheels.
+  "extract-msg==0.36.5",
 ];
 
 // --- Helpers ----------------------------------------------------------------
@@ -91,11 +94,27 @@ function checkCache(dest, expectedSha256, label) {
   return "mismatch";
 }
 
+/** Parse "pkg" or "pkg==X.Y.Z" into { name, version }. Only `==` is supported. */
+function parsePackageSpec(spec) {
+  const idx = spec.indexOf("==");
+  if (idx === -1) return { name: spec.trim(), version: undefined };
+  return { name: spec.slice(0, idx).trim(), version: spec.slice(idx + 2).trim() };
+}
+
+// Override map: normalized-name → pinned version. Populated as user-supplied
+// "pkg==X.Y.Z" entries are parsed, so transitive lookups for the same package
+// honour the pin too.
+const versionPins = new Map();
+
 const pypiMetadataCache = new Map();
 async function fetchPypiMetadata(packageName) {
   if (pypiMetadataCache.has(packageName)) return pypiMetadataCache.get(packageName);
-  const res = await fetch(`https://pypi.org/pypi/${packageName}/json`);
-  if (!res.ok) throw new Error(`PyPI lookup failed for ${packageName}: ${res.status}`);
+  const pinned = versionPins.get(normalizePkgName(packageName));
+  const url = pinned
+    ? `https://pypi.org/pypi/${packageName}/${pinned}/json`
+    : `https://pypi.org/pypi/${packageName}/json`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`PyPI lookup failed for ${packageName}${pinned ? `==${pinned}` : ""}: ${res.status}`);
   const data = await res.json();
   pypiMetadataCache.set(packageName, data);
   return data;
@@ -355,9 +374,16 @@ async function main() {
   ).version;
   const cdnBase = `https://cdn.jsdelivr.net/pyodide/v${pyodideNpmVersion}/full/`;
 
+  const pypiNames = [];
+  for (const spec of PYPI_PACKAGES) {
+    const { name, version } = parsePackageSpec(spec);
+    if (version) versionPins.set(normalizePkgName(name), version);
+    pypiNames.push(name);
+  }
+
   console.log("Resolving transitive dependencies of PyPI packages...");
   const { builtins, pypi, builtinDepsByPkg, pypiDepsByPkg } = await resolveTransitiveDeps(
-    PYPI_PACKAGES,
+    pypiNames,
     pyodideLock,
     PYODIDE_BUILTIN_TARGETS,
   );

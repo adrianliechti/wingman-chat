@@ -7,6 +7,7 @@
  */
 
 import type { TextContent, Tool } from "../types/chat";
+import { isDataUrl } from "./fileContent";
 import { formatLineOutput, getLineRange, grepText, matchGlob, splitLines, truncateLine } from "./text-utils";
 
 // ---------------------------------------------------------------------------
@@ -147,6 +148,13 @@ function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOpti
 
       const content = file.content;
       if (!content) return text(`# ${path} (0 lines)\n[empty file]`);
+
+      if (isDataUrl(content)) {
+        const ct = file.contentType ?? "application/octet-stream";
+        return text(
+          `# ${path} (binary, ${ct})\n[Binary file — not shown as text. Use Python/bash tools to process it (the file is available in the sandbox).]`,
+        );
+      }
 
       const allLines = splitLines(content);
       const totalLines = allLines.length;
@@ -324,6 +332,7 @@ function createGrepTool(source: ReadableFileSource, opts: Required<FileToolsOpti
 
         const file = await source.read(entry.path);
         if (!file?.content) continue;
+        if (isDataUrl(file.content)) continue;
 
         const { matches } = grepText(file.content, pattern, {
           ignoreCase,
