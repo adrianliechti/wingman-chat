@@ -6,7 +6,7 @@
  * Used by the hybrid PPTX export to create editable overlays.
  */
 
-import { CANVAS_H, CANVAS_W } from "./pptx-utils";
+import { CANVAS_H, CANVAS_W, imgToDataUrl } from "./pptx-utils";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -43,7 +43,6 @@ export interface ParsedElement {
 }
 
 export interface ParsedSlide {
-  background: string;
   elements: ParsedElement[];
 }
 
@@ -76,17 +75,6 @@ export async function parseSlideHtml(html: string): Promise<ParsedSlide> {
     const win = iframe.contentWindow;
     if (!doc || !win) throw new Error("iframe content unavailable");
     const body = doc.body;
-
-    const bodyStyle = win.getComputedStyle(body);
-    let background = bodyStyle.backgroundColor || "rgb(255, 255, 255)";
-
-    if (background === "rgba(0, 0, 0, 0)" || background === "transparent") {
-      const firstChild = body.firstElementChild;
-      if (firstChild) {
-        const childStyle = win.getComputedStyle(firstChild);
-        background = childStyle.backgroundColor || "rgb(255, 255, 255)";
-      }
-    }
 
     const elements: ParsedElement[] = [];
     const walker = doc.createTreeWalker(body, NodeFilter.SHOW_ELEMENT);
@@ -131,7 +119,7 @@ export async function parseSlideHtml(html: string): Promise<ParsedSlide> {
         // IMG
         if (el.tagName === "IMG") {
           const imgEl = el as HTMLImageElement;
-          const dataUrl = await getImageDataUrl(imgEl);
+          const dataUrl = imgToDataUrl(imgEl);
           if (dataUrl) {
             elements.push({
               type: "image",
@@ -175,7 +163,7 @@ export async function parseSlideHtml(html: string): Promise<ParsedSlide> {
       node = walker.nextNode() as Element | null;
     }
 
-    return { background, elements };
+    return { elements };
   } finally {
     if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
   }
@@ -320,20 +308,5 @@ async function rasterizeSvg(svg: SVGSVGElement, width: number, height: number): 
     return null;
   } finally {
     if (url) URL.revokeObjectURL(url);
-  }
-}
-
-async function getImageDataUrl(img: HTMLImageElement): Promise<string | null> {
-  if (img.src.startsWith("data:")) return img.src;
-  try {
-    const canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth || img.width;
-    canvas.height = img.naturalHeight || img.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.drawImage(img, 0, 0);
-    return canvas.toDataURL("image/png");
-  } catch {
-    return null;
   }
 }

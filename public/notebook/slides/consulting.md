@@ -15,3 +15,21 @@
 - **Bullet points:** em-dashes (—) or small navy squares, never circles
 - **NO:** icons, illustrations, gradients, shadows, rounded corners, decorative elements
 - **Overall feel:** McKinsey/BCG consulting style — structured, data-driven, every slide answers "so what?"
+
+## CSS tokens — use these exact values in `styles/theme.css`
+
+```css
+:root {
+  --bg: #FFFFFF;
+  --ink: #1B2A4A;
+  --ink-muted: #4B5563;
+  --accent: #2E8B8B;
+  --accent-2: #D4862F;   /* amber — max ONE per slide */
+  --muted: #E8E8E8;
+  --line: #1B2A4A;       /* thin dividers, 1px */
+  --font-display: "Inter", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+  --font-body: "Inter", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+}
+```
+
+Best fit: management briefings, board reports, regulatory submissions, audit walkthroughs. Avoid for: marketing decks, sales pitches with brand storytelling, internal town-halls.

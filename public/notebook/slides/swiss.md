@@ -13,3 +13,20 @@
 - **Alignment:** everything aligns to the grid. Text blocks share baselines. Nothing is arbitrary.
 - **NO:** gradients, shadows, rounded corners, icons, illustrations, textures, decorative borders, centered text
 - **Overall feel:** Swiss International Typographic Style — Müller-Brockmann, Max Bill. Absolute clarity through restriction.
+
+## CSS tokens — use these exact values in `styles/theme.css`
+
+```css
+:root {
+  --bg: #FFFFFF;
+  --ink: #000000;
+  --ink-muted: #4D4D4D;
+  --accent: #E20000;     /* signal red — max ONE element per slide, often zero */
+  --muted: #000000;      /* same ink — rules and color blocks only */
+  --line: #000000;       /* 1px rules — horizontal or vertical only */
+  --font-display: "Helvetica Neue", Helvetica, "Inter", "Arial Black", Arial, sans-serif;
+  --font-body: "Helvetica Neue", Helvetica, "Inter", Arial, sans-serif;
+}
+```
+
+Best fit: editorial / brand identity decks, design-led case studies, monograph-style storytelling. Avoid for: data-heavy management decks, decks that need many supporting elements per slide (the style demands restraint).

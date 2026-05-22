@@ -116,12 +116,14 @@ type Repository struct {
 type Memory struct{}
 
 type Notebook struct {
-	Model        string                `json:"model,omitempty" yaml:"model,omitempty"`
-	Renderer     string                `json:"renderer,omitempty" yaml:"renderer,omitempty"`
-	Slides       []NotebookSlide       `json:"slides,omitempty" yaml:"slides,omitempty"`
-	Podcasts     []NotebookPodcast     `json:"podcasts,omitempty" yaml:"podcasts,omitempty"`
-	Reports      []NotebookReport      `json:"reports,omitempty" yaml:"reports,omitempty"`
-	Infographics []NotebookInfographic `json:"infographics,omitempty" yaml:"infographics,omitempty"`
+	Model         string                 `json:"model,omitempty" yaml:"model,omitempty"`
+	Renderer      string                 `json:"renderer,omitempty" yaml:"renderer,omitempty"`
+	Slides        []NotebookSlide        `json:"slides,omitempty" yaml:"slides,omitempty"`
+	Podcasts      []NotebookPodcast      `json:"podcasts,omitempty" yaml:"podcasts,omitempty"`
+	Reports       []NotebookReport       `json:"reports,omitempty" yaml:"reports,omitempty"`
+	Infographics  []NotebookInfographic  `json:"infographics,omitempty" yaml:"infographics,omitempty"`
+	Processes     []NotebookProcess      `json:"processes,omitempty" yaml:"processes,omitempty"`
+	Architectures []NotebookArchitecture `json:"architectures,omitempty" yaml:"architectures,omitempty"`
 }
 
 type Chat struct {
@@ -183,6 +185,16 @@ type NotebookReport struct {
 }
 
 type NotebookInfographic struct {
+	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
+	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+}
+
+type NotebookProcess struct {
+	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
+	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+}
+
+type NotebookArchitecture struct {
 	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
 	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
 }

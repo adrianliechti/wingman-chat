@@ -15,3 +15,23 @@
 - **Hero numbers:** key statistics displayed very large in white or blue
 - **NO:** harsh borders, pure black (#000), text-heavy slides without hierarchy
 - **Overall feel:** premium tech keynote — Apple WWDC, Stripe Sessions. Bold, cinematic, contemporary.
+
+## CSS tokens — use these exact values in `styles/theme.css`
+
+```css
+:root {
+  --bg: #111118;
+  --bg-elevated: #1E1E30;
+  --bg-chart: #1A1A2E;
+  --ink: #FFFFFF;
+  --ink-muted: #A0A0B8;
+  --accent: #0A84FF;     /* electric blue */
+  --accent-2: #8B5CF6;   /* violet — pair with blue for gradients */
+  --accent-warn: #FF6B6B; /* coral — alerts / critical only */
+  --muted: #2A2A44;      /* card borders, grid lines */
+  --font-display: "SF Pro Display", "Inter", system-ui, -apple-system, sans-serif;
+  --font-body: "SF Pro Text", "Inter", system-ui, -apple-system, sans-serif;
+}
+```
+
+Best fit: product launches, tech keynotes, investor pitches, "future-of" decks. Avoid for: dense data briefings, regulated-context reports (controls/SOX/audit), print-first material.

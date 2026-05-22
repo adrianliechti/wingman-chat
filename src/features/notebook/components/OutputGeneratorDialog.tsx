@@ -66,11 +66,12 @@ function resolveLanguages(): LanguageOption[] {
   }));
 }
 
-const SLIDE_COUNT_MIN = 3;
+const SLIDE_COUNT_MIN = 1;
 const SLIDE_COUNT_MAX = 30;
 const SLIDE_COUNT_DEFAULT = 10;
-type SlidePreset = "short" | "standard" | "long" | "custom";
+type SlidePreset = "one-pager" | "short" | "standard" | "long" | "custom";
 const SLIDE_PRESETS: { id: SlidePreset; label: string; count: number | null }[] = [
+  { id: "one-pager", label: "One Pager", count: 1 },
   { id: "short", label: "Short", count: 6 },
   { id: "standard", label: "Standard", count: 10 },
   { id: "long", label: "Long", count: 16 },

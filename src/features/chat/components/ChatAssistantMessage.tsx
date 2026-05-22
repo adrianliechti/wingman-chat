@@ -358,7 +358,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
           </div>
         )}
 
-        <div className="flex justify-between items-center mt-1 transition-opacity duration-200 opacity-0 group-hover:opacity-100">
+        <div className="flex justify-between items-center mt-1 transition-opacity duration-200 opacity-100 md:opacity-0 md:group-hover:opacity-100">
           <div className="flex items-center gap-2">
             <CopyButton markdown={textContent} className="h-4 w-4" />
             <ConvertButton markdown={textContent} className="h-4 w-4" />

@@ -10,3 +10,22 @@
 - **Bullet points:** small colored dots or dashes — vary the style
 - **Borders/frames:** none. Content floats freely.
 - **Overall feel:** vibrant "sketch-notes" aesthetic — colorful, energetic, educational. Think RSA Animate or a creative teacher's whiteboard.
+
+## CSS tokens — use these exact values in `styles/theme.css`
+
+```css
+:root {
+  --bg: #F8F8F8;
+  --ink: #2D2D2D;
+  --ink-muted: #5C5C5C;
+  --accent: #E87D3E;     /* warm orange */
+  --accent-2: #3EB5A5;   /* teal */
+  --accent-3: #4A9FD9;   /* sky blue */
+  --accent-4: #5DB861;   /* leaf green */
+  --accent-5: #E8635A;   /* coral red */
+  --font-display: "Inter", "Söhne", system-ui, -apple-system, "Helvetica Neue", Helvetica, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Helvetica Neue", Helvetica, sans-serif;
+}
+```
+
+Best fit: education and training material, internal explainers, kick-off / workshop decks, audience-friendly summaries. Avoid for: formal board / regulatory material, executive-only briefings, anything that needs to convey gravitas.
