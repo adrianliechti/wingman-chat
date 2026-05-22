@@ -64,6 +64,26 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
+/**
+ * Hold a screen wake lock for the duration of a long-running task so the
+ * device doesn't sleep / dim mid-generation (a deck or podcast can run for
+ * minutes with the user idle). Wake-lock acquisition is best-effort: if the
+ * API is unavailable, denied, or auto-released on visibility change, the
+ * promise still runs to completion. Mirrors the pattern in
+ * `useFieldRecorder.ts` so behaviour stays consistent across the notebook.
+ */
+async function withScreenWakeLock<T>(task: Promise<T>): Promise<T> {
+  let lock: WakeLockSentinel | null = null;
+  if (typeof navigator !== "undefined" && navigator.wakeLock) {
+    lock = await navigator.wakeLock.request("screen").catch(() => null);
+  }
+  try {
+    return await task;
+  } finally {
+    if (lock) await lock.release().catch(() => {});
+  }
+}
+
 const filenameSchema = z.object({ filename: z.string() }).strict();
 
 /** Placeholders the UI passes when the user didn't provide a real name. */
@@ -573,39 +593,43 @@ export function useNotebook(notebookId?: string) {
       setOutputs((prev) => [output, ...prev]);
 
       const notebookId = notebook.id;
-      const ctx: GenerateContext = {
-        client,
-        model: getModel(),
-        instructions: buildInstructions(type, styleId, options),
-        sourceTools: createSourceTools(() => sourcesRef.current),
-        getSources: () => sourcesRef.current,
-        onProgress: (partial) => {
-          setOutputs((prev) => prev.map((o) => (o.id === output.id ? { ...o, ...partial } : o)));
-        },
-      };
 
-      const task: Promise<Partial<NotebookOutput>> = (() => {
-        switch (type) {
-          case "podcast":
-            return generatePodcast(ctx, styleId);
-          case "infographic":
-            return generateInfographic(ctx);
-          case "slides":
-            return options?.slideMode === "images" ? generateImageSlides(ctx) : generateHtmlSlides(ctx);
-          case "quiz":
-            return generateQuiz(ctx);
-          case "mindmap":
-            return generateMindMap(ctx);
-          case "process":
-            return generateProcess(ctx, styleId ?? OUTPUT_META.process.defaultStyleId);
-          case "architecture":
-            return generateArchitecture(ctx);
-          case "data-catalog":
-            return generateDataCatalog(ctx);
-          default:
-            return generateText(ctx, OUTPUT_META[type].title);
-        }
-      })();
+      const task: Promise<Partial<NotebookOutput>> = withScreenWakeLock(
+        (async () => {
+          const instructions = await buildInstructions(type, styleId, options);
+          const ctx: GenerateContext = {
+            client,
+            model: getModel(),
+            instructions,
+            sourceTools: createSourceTools(() => sourcesRef.current),
+            getSources: () => sourcesRef.current,
+            onProgress: (partial) => {
+              setOutputs((prev) => prev.map((o) => (o.id === output.id ? { ...o, ...partial } : o)));
+            },
+          };
+
+          switch (type) {
+            case "podcast":
+              return generatePodcast(ctx, styleId);
+            case "infographic":
+              return generateInfographic(ctx);
+            case "slides":
+              return options?.slideMode === "images" ? generateImageSlides(ctx) : generateHtmlSlides(ctx);
+            case "quiz":
+              return generateQuiz(ctx);
+            case "mindmap":
+              return generateMindMap(ctx);
+            case "process":
+              return generateProcess(ctx, styleId ?? OUTPUT_META.process.defaultStyleId);
+            case "architecture":
+              return generateArchitecture(ctx);
+            case "data-catalog":
+              return generateDataCatalog(ctx);
+            default:
+              return generateText(ctx, OUTPUT_META[type].title);
+          }
+        })(),
+      );
 
       task
         .then(async (partial) => {

@@ -13,3 +13,24 @@
 - **Emphasis:** key words highlighted with a golden ochre background or underlined with a thin terracotta line
 - **NO:** harsh lines, neon colors, geometric patterns, sharp corners
 - **Overall feel:** organic, nature-inspired — warm, sophisticated, calming. Think premium wellness brand or botanical garden exhibition.
+
+## CSS tokens — use these exact values in `styles/theme.css`
+
+```css
+:root {
+  --bg: #FAF6F0;         /* warm cream */
+  --ink: #3D3025;        /* deep brown — body text */
+  --ink-display: #2D5016; /* forest green — titles */
+  --ink-muted: #6B5E4F;
+  --accent: #7A9B6D;     /* sage */
+  --accent-2: #C4704B;   /* terracotta */
+  --accent-warm: #D4A54A; /* golden ochre — highlights */
+  --accent-rose: #C17B7B; /* dusty rose */
+  --accent-lavender: #8B7FA8;
+  --muted: #E8DFD0;      /* faint wash */
+  --font-display: "Playfair Display", "Cormorant Garamond", "Source Serif Pro", Georgia, "Times New Roman", serif;
+  --font-body: "Source Serif Pro", "Lora", Georgia, "Times New Roman", serif;
+}
+```
+
+Best fit: sustainability / ESG decks, wellness and lifestyle brands, narrative-driven storytelling, foundation / nonprofit reports. Avoid for: hard-edged quantitative briefings, technology roadmaps, formal compliance/audit material.

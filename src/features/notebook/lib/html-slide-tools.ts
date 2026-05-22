@@ -8,11 +8,14 @@ import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { TextContent, Tool } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
 import { assembleSlideHtml } from "./html-slide-assembly";
+import { CANVAS_H, CANVAS_W } from "./pptx-utils";
 
-const CANVAS_W = 1920;
-const CANVAS_H = 1080;
 const OVERFLOW_TOLERANCE = 8; // px – ignore sub-pixel rounding noise
-const OVERLAP_TOLERANCE = 4; // px – ignore sub-pixel rounding noise on text overlaps
+// Tolerance for text-text overlap detection. Set high enough to ignore
+// decorative typography where letterforms touch (large drop-cap-style markers
+// next to a heading, ligatures, etc.) but low enough to catch real layout
+// collisions, which are almost always tens of pixels in both axes.
+const OVERLAP_TOLERANCE = 12;
 const MIN_VERTICAL_FILL = 0.35; // below this, the slide looks empty
 const MAX_REPORTED_OVERLAPS = 5; // cap so the feedback message stays actionable
 const MAX_ERROR_RETRIES = 2; // total error-bearing writes per slide before we let it pass
@@ -75,6 +78,28 @@ const NO_MEASUREMENT: SlideMeasurement = {
 };
 
 /**
+ * Extract just the `<tag.class>` / `<tag#id>` / `<tag>` prefix from a
+ * `describeElement` descriptor, dropping the appended text excerpt. Used
+ * to compare element identity across retries — the model's edits change
+ * the text inside the same element, so we compare on the selector only.
+ */
+function selectorKey(descriptor: string): string {
+  const i = descriptor.indexOf(' "');
+  return i >= 0 ? descriptor.slice(0, i) : descriptor;
+}
+
+/**
+ * True if a selector key carries an id or class — i.e. it identifies a
+ * specific element, not just any tag of that name. We only treat the
+ * same-offender condition as fired when the key is specific enough to
+ * be meaningful; matching on bare `<p>` or `<div>` would produce false
+ * positives across structurally-different elements.
+ */
+function isSpecificSelector(key: string): boolean {
+  return key.includes(".") || key.includes("#");
+}
+
+/**
  * Build a short, selector-like description of an element so the model can
  * locate it in its own source. Prefers id, then first class, falls back to
  * the tag name, and appends a short text excerpt when present.
@@ -117,7 +142,26 @@ async function measureSlide(html: string): Promise<SlideMeasurement> {
         const doc = iframe.contentDocument;
         if (!doc) return; // not ready yet
         const slide = doc.querySelector(".slide") as HTMLElement | null;
-        if (!slide) return; // about:blank or missing .slide — wait for next onload
+        if (!slide) {
+          // Two cases:
+          //   1. about:blank before srcdoc parses (body empty) — wait for next onload.
+          //   2. Document parsed but the model omitted `class="slide"` on the root —
+          //      this is a silent-failure bug, surface it loudly and short-circuit.
+          if (doc.body?.children.length) {
+            const root = doc.body.children[0] as HTMLElement;
+            const rootTag = root.tagName.toLowerCase();
+            const rootClass = root.className || "(no class)";
+            console.warn(
+              `[HTML Slides] measureSlide: slide root missing class="slide" — found <${rootTag} class="${rootClass}">. ` +
+                "Overflow and overlap detection skipped for this write. " +
+                'Add the `slide` class to the root element (multiple classes are fine, e.g. class="slide onepager").',
+            );
+            clearTimeout(timeout);
+            iframe.remove();
+            resolve(NO_MEASUREMENT);
+          }
+          return;
+        }
 
         clearTimeout(timeout);
 
@@ -151,6 +195,16 @@ async function measureSlide(html: string): Promise<SlideMeasurement> {
         for (const el of slide.querySelectorAll("*")) {
           const r = el.getBoundingClientRect();
           if (r.width === 0 && r.height === 0) continue;
+          // Skip <img> when picking the worst overflow offender per edge.
+          // Decorative image bleeds (botanical corners, full-bleed photos,
+          // hero textures positioned to extend past the canvas) are a
+          // common, intentional design move. If we let them win the
+          // per-edge offender pick, they mask real layout bugs — a text
+          // block runaway under the same edge stays invisible to the
+          // model. Track only text/layout containers here; the canvas
+          // already clips the visual output via overflow: hidden on
+          // `.slide`, so visually nothing leaks regardless.
+          if (el.tagName === "IMG") continue;
           if (r.top < minTop) {
             minTop = r.top;
             topEl = el;
@@ -280,9 +334,21 @@ export function createHtmlSlideTools(
     return base.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^_+|_+$/g, "") || "image";
   };
 
-  // Counts error-bearing writes per slide path. We use this to give up after
-  // MAX_ERROR_RETRIES so a model that can't fix its layout doesn't loop forever.
-  const errorAttempts = new Map<string, number>();
+  // Per-slide retry state. `attempts` counts error-bearing writes so we can
+  // give up after MAX_ERROR_RETRIES instead of looping forever. `edges`
+  // remembers which canvas edges overflowed on the previous attempt — if any
+  // still overflow now, the model moved content between regions rather than
+  // cutting it, and we escalate the feedback. `offendersByEdge` remembers the
+  // specific offending element selector per edge — if the SAME element still
+  // overflows the same edge on retry, the fix is to shorten THAT element's
+  // content rather than cut elsewhere.
+  type Edge = "top" | "right" | "bottom" | "left";
+  interface RetryState {
+    attempts: number;
+    edges: Set<Edge>;
+    offendersByEdge: Partial<Record<Edge, string>>;
+  }
+  const retryState = new Map<string, RetryState>();
 
   return [
     {
@@ -328,23 +394,55 @@ export function createHtmlSlideTools(
           // them as errors won't cause rewrite loops once fixed.
           const errors: string[] = [];
           const offenders = m.overflowOffenders;
+          const currentEdges = new Set<Edge>();
           if (ov.top > OVERFLOW_TOLERANCE) {
+            currentEdges.add("top");
             errors.push(`Top: ${ov.top}px above the slide${offenders.top ? ` — caused by ${offenders.top}` : ""}`);
           }
           if (ov.bottom > OVERFLOW_TOLERANCE) {
+            currentEdges.add("bottom");
             errors.push(
               `Bottom: ${ov.bottom}px below the slide${offenders.bottom ? ` — caused by ${offenders.bottom}` : ""}`,
             );
           }
           if (ov.left > OVERFLOW_TOLERANCE) {
+            currentEdges.add("left");
             errors.push(
               `Left: ${ov.left}px outside left edge${offenders.left ? ` — caused by ${offenders.left}` : ""}`,
             );
           }
           if (ov.right > OVERFLOW_TOLERANCE) {
+            currentEdges.add("right");
             errors.push(
               `Right: ${ov.right}px outside right edge${offenders.right ? ` — caused by ${offenders.right}` : ""}`,
             );
+          }
+
+          // Walk the current edges once to find:
+          //   - `recurringEdges`: edges that also overflowed last attempt
+          //     (model moved content rather than cutting it → ⛔ message)
+          //   - `recurringSameOffender`: subset where the same element is
+          //     also at fault (cut must target THAT element → ⛔⛔ message).
+          // Element identity is compared on the selector prefix
+          // (`<tag.class>` / `<tag#id>`) — the text excerpt changes between
+          // attempts as the model edits. Bare-tag selectors (no id/class)
+          // are skipped to avoid false positives across different elements
+          // of the same tag.
+          const prior = retryState.get(path);
+          const recurringEdges: Edge[] = [];
+          const recurringSameOffender: { edge: Edge; descriptor: string }[] = [];
+          if (prior) {
+            for (const edge of currentEdges) {
+              if (!prior.edges.has(edge)) continue;
+              recurringEdges.push(edge);
+              const now = offenders[edge];
+              const before = prior.offendersByEdge[edge];
+              if (!now || !before) continue;
+              const key = selectorKey(now);
+              if (isSpecificSelector(key) && key === selectorKey(before)) {
+                recurringSameOffender.push({ edge, descriptor: now });
+              }
+            }
           }
 
           // Soft hints — taste calls, not bugs. Don't block on these.
@@ -370,8 +468,8 @@ export function createHtmlSlideTools(
 
           const hasErrors = errors.length > 0 || m.textOverlaps.length > 0;
           if (hasErrors) {
-            const attempts = (errorAttempts.get(path) ?? 0) + 1;
-            errorAttempts.set(path, attempts);
+            const attempts = (prior?.attempts ?? 0) + 1;
+            retryState.set(path, { attempts, edges: currentEdges, offendersByEdge: offenders });
 
             // One structured log per error write so a developer watching the
             // console can see exactly what the model was told and how the
@@ -406,11 +504,31 @@ export function createHtmlSlideTools(
 
             const parts = [`Wrote ${path} (${content.length} bytes)`];
             if (errors.length > 0) {
-              parts.push(
+              let overflowMsg =
                 `\n⚠️ OVERFLOW: Content extends beyond the ${CANVAS_W}×${CANVAS_H}px canvas:\n` +
-                  errors.map((e) => `  - ${e}`).join("\n") +
-                  `\nOverflowing content will be clipped. Rewrite this slide to fit within the canvas bounds.`,
-              );
+                errors.map((e) => `  - ${e}`).join("\n") +
+                `\nOverflowing content will be clipped. Rewrite this slide to fit within the canvas bounds.`;
+              if (recurringEdges.length > 0) {
+                const edgeList = recurringEdges.join(", ");
+                overflowMsg +=
+                  `\n\n⛔ The ${edgeList} edge${recurringEdges.length > 1 ? "s are" : " is"} still overflowing after your last fix. ` +
+                  "You moved content but didn't reduce it — the total content weight hasn't changed. " +
+                  "STOP shuffling content between regions. **Cut content this time**: shorter copy, fewer bullets, drop a region, " +
+                  "or apply `line-clamp` to truncate verbose lines. The canvas is a fixed " +
+                  `${CANVAS_W}×${CANVAS_H} box and your content has to shrink, not relocate.`;
+              }
+              if (recurringSameOffender.length > 0) {
+                const lines = recurringSameOffender
+                  .map(({ edge, descriptor }) => `  - ${descriptor} is still overflowing the ${edge} edge`)
+                  .join("\n");
+                overflowMsg +=
+                  `\n\n⛔⛔ The SAME element is causing overflow on the same edge across attempts:\n${lines}\n` +
+                  "The fix is not elsewhere on the slide — **shorten the content of this specific element**. " +
+                  "If it's a footer with a source citation, abbreviate the source (e.g. 'Smithsonian, 2024' not the full URL or page-range). " +
+                  "If it's a header subtitle, drop scope qualifiers and keep only audience + date. " +
+                  "Cutting body content won't help if the offender is in the chrome.";
+              }
+              parts.push(overflowMsg);
             }
             if (m.textOverlaps.length > 0) {
               const shown = m.textOverlaps.slice(0, MAX_REPORTED_OVERLAPS);
@@ -430,11 +548,11 @@ export function createHtmlSlideTools(
             return textResult(parts.join(""));
           }
 
-          // Clean write — clear the retry counter so a future edit to the
-          // same slide gets a fresh budget. Surface convergence in the log
-          // so a developer can see the loop actually fixed something.
-          const priorAttempts = errorAttempts.get(path) ?? 0;
-          errorAttempts.delete(path);
+          // Clean write — clear the retry state so a future edit to the same
+          // slide gets a fresh budget. Surface convergence in the log so a
+          // developer can see the loop actually fixed something.
+          const priorAttempts = prior?.attempts ?? 0;
+          retryState.delete(path);
           const fillPct = Math.round(m.verticalFill * 100);
           if (priorAttempts > 0) {
             console.debug(

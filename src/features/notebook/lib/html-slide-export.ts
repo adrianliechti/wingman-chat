@@ -17,7 +17,7 @@
 
 import JSZip from "jszip";
 import { downloadFromUrl } from "@/shared/lib/utils";
-import { addPptxBoilerplate, CANVAS_H, CANVAS_W, SLIDE_CX, SLIDE_CY } from "./pptx-utils";
+import { addPptxBoilerplate, CANVAS_H, CANVAS_W, imgToDataUrl, SLIDE_CX, SLIDE_CY } from "./pptx-utils";
 
 /** Export rasterization scale — 2× gives ~3840×2160 output, crisp on 4K */
 const RASTER_SCALE = 2;
@@ -432,28 +432,6 @@ function unwindMutations(mutations: Mutation[]): void {
   }
 }
 
-/**
- * Pull a data URL out of an `<img>`. Direct `data:` src wins; otherwise we
- * canvas-copy so the export doesn't depend on whether the foreignObject is
- * allowed to load nested data URLs (Chrome blocks; Safari taints). Cross-
- * origin sources throw on `toDataURL` and are silently skipped.
- */
-function extractDataUrlFromImg(img: HTMLImageElement, hostDoc: Document): string | null {
-  if (img.src.startsWith("data:")) return img.src;
-  if (!img.complete || img.naturalWidth <= 0) return null;
-  try {
-    const c = hostDoc.createElement("canvas");
-    c.width = img.naturalWidth;
-    c.height = img.naturalHeight;
-    const cx = c.getContext("2d");
-    if (!cx) return null;
-    cx.drawImage(img, 0, 0);
-    return c.toDataURL("image/png");
-  } catch {
-    return null;
-  }
-}
-
 /** Pull a `data:` URL out of a single CSS background layer string. */
 function extractDataUrlFromCssLayer(layer: string): string | null {
   const m = layer.match(/url\(["']?(data:[^"')]+)["']?\)/);
@@ -553,7 +531,7 @@ function collectPaintEvents(doc: Document, win: Window, mutations: Mutation[]): 
     // <img> element — extract data URL and hide. Use tagName, not instanceof.
     if (el.tagName === "IMG" && rect.width >= 1 && rect.height >= 1) {
       const img = el as HTMLImageElement;
-      const dataUrl = extractDataUrlFromImg(img, document);
+      const dataUrl = imgToDataUrl(img, document);
       if (dataUrl) {
         const cs = win.getComputedStyle(img);
         events.push({

@@ -45,9 +45,34 @@ interface STTConfig {
   model?: string;
 }
 
+interface NotebookStyleBase {
+  name: string;
+  /**
+   * Either inline prompt text, or a URL (absolute `https://…` or
+   * page-relative `/notebook/…`) fetched on demand and cached.
+   * Use a URL for long templates so they don't bloat `config.json`.
+   */
+  prompt: string;
+}
+
+interface NotebookSlide extends NotebookStyleBase {}
+interface NotebookPodcast extends NotebookStyleBase {
+  voices?: string[];
+}
+interface NotebookReport extends NotebookStyleBase {}
+interface NotebookInfographic extends NotebookStyleBase {}
+interface NotebookProcess extends NotebookStyleBase {}
+interface NotebookArchitecture extends NotebookStyleBase {}
+
 interface NotebookConfig {
   model?: string;
   renderer?: string;
+  slides?: NotebookSlide[];
+  podcasts?: NotebookPodcast[];
+  reports?: NotebookReport[];
+  infographics?: NotebookInfographic[];
+  processes?: NotebookProcess[];
+  architectures?: NotebookArchitecture[];
 }
 
 interface VoiceConfig {
@@ -146,46 +171,6 @@ interface BridgeConfig {
   url?: string;
 }
 
-interface CanvasSlideConfig {
-  name: string;
-  prompt: string;
-}
-
-interface CanvasPodcastConfig {
-  name: string;
-  prompt: string;
-  voices?: string[];
-}
-
-interface CanvasReportConfig {
-  name: string;
-  prompt: string;
-}
-
-interface CanvasInfographicConfig {
-  name: string;
-  prompt: string;
-}
-
-interface CanvasProcessConfig {
-  name: string;
-  prompt: string;
-}
-
-interface CanvasArchitectureConfig {
-  name: string;
-  prompt: string;
-}
-
-interface CanvasConfig {
-  slides?: CanvasSlideConfig[];
-  podcasts?: CanvasPodcastConfig[];
-  reports?: CanvasReportConfig[];
-  infographics?: CanvasInfographicConfig[];
-  processes?: CanvasProcessConfig[];
-  architectures?: CanvasArchitectureConfig[];
-}
-
 interface ConfigSchema {
   title: string;
   disclaimer: string;
@@ -198,8 +183,6 @@ interface ConfigSchema {
   drives?: DriveConfig[];
 
   backgrounds?: BackgroundPackConfig;
-
-  canvas?: CanvasConfig;
 
   tts?: TTSConfig;
   stt?: STTConfig;
@@ -277,8 +260,6 @@ interface Config {
   telemetry: boolean;
 
   backgrounds: BackgroundPackConfig;
-
-  canvas: CanvasConfig;
 }
 
 let config: Config;
@@ -345,8 +326,6 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       telemetry: cfg.telemetry != null,
 
       backgrounds: cfg.backgrounds ?? {},
-
-      canvas: cfg.canvas ?? {},
     };
 
     return config;

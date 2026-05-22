@@ -36,6 +36,23 @@ Each `generate_slide` prompt must be a detailed visual description. Think of you
 ### Bad prompt example
 > "A slide about market growth with some numbers" — too vague, no visual direction.
 
+### Style consistency across slides
+
+The framework passes the previously-generated slide image as a **style reference** when you generate the next slide. To preserve consistency: in every prompt, repeat the same palette (hex codes), type families, compositional anchors, and overall mood verbatim from slide 1. Drift between slides = failure. Treat the deck as one continuous visual system.
+
+### What image generation cannot do reliably
+
+Image generation has hard limits — design around them:
+
+- **Numbers and chart values.** Models will hallucinate or distort digits. If a slide needs trustworthy data, use the HTML / Structured slide mode instead. If you must put numbers in an image, render them as part of the prompt (`"the bars show: Q1 $2.3M, Q2 $3.1M, Q3 $4.7M, Q4 $5.2M"`) and accept that 1–2 digits may render wrong.
+- **Long body text.** Paragraphs come out misspelled or unreadable. Cap each slide to: 1 title (≤ 80 chars), 1 subtitle (≤ 100 chars), 1 short caption. Anything longer belongs in HTML mode.
+- **Real logos, brand marks, named faces.** Will hallucinate or distort. Avoid asking for them by name; use generic descriptors instead.
+- **Precise dataviz** (pie shares that sum to 100%, accurate sparkline slopes). Suggestive only.
+
+### Negative tail
+
+Append a short avoid-list to every prompt: `avoid: watermarks, signature marks, cropped or clipped text, illegible fonts, misspellings, fake brand logos, distorted faces, AI-art tropes (cosmic glow, generic abstract swirls)`.
+
 ---
 
 ## Deck structure
