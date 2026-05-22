@@ -491,7 +491,7 @@ export function ChatPage() {
 
   return (
     <div className="h-full w-full flex overflow-hidden relative">
-      <BackgroundImage opacity={messages.length === 0 ? 80 : 0} />
+      <BackgroundImage opacity={messages.length === 0 && !showArtifactsDrawer ? 80 : 0} />
 
       <div
         className={`flex-1 flex flex-col overflow-hidden relative ${isArtifactsResizing || isAppResizing ? "" : "transition-all duration-500 ease-in-out"} ${
@@ -508,7 +508,7 @@ export function ChatPage() {
         <main className="flex-1 flex flex-col overflow-hidden relative">
           {messages.length === 0 ? (
             <div className="flex-1 flex items-center justify-center pt-16 relative">
-              <div className="flex flex-col items-center text-center relative z-10 w-full max-w-4xl px-4 mb-32">
+              <div className="flex flex-col items-center text-center relative z-10 w-full max-w-4xl px-4 mb-16 md:mb-32">
                 {/* Logo - only show if no background image is available */}
                 {!backgroundImage && (
                   <div className="mb-8">
@@ -522,6 +522,11 @@ export function ChatPage() {
             <div
               className="flex-1 overflow-auto transition-opacity duration-300 relative"
               ref={handleScrollContainerRef}
+              onTouchStart={() => {
+                if (document.activeElement instanceof HTMLElement) {
+                  document.activeElement.blur();
+                }
+              }}
             >
               <div
                 className={cn(
@@ -569,7 +574,7 @@ export function ChatPage() {
 
       <footer
         className={cn(
-          "fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
+          "fixed bottom-0 left-0 px-2 md:px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
           showSidebar && chats.length > 0 && !showAgentDrawer && !showAppDrawer && !showArtifactsDrawer && "md:left-59",
           showAgentDrawer && !showAppDrawer && !showArtifactsDrawer ? "right-0 md:right-83" : "right-0",
         )}

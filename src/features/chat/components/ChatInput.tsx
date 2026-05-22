@@ -1,4 +1,13 @@
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import {
+  Dialog,
+  DialogBackdrop,
+  DialogPanel,
+  DialogTitle,
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuItems,
+} from "@headlessui/react";
 import {
   AudioLines,
   Bot,
@@ -9,6 +18,7 @@ import {
   MessageSquare,
   Mic,
   Paperclip,
+  Plus,
   Rocket,
   ScreenShare,
   Send,
@@ -39,6 +49,7 @@ import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
+import { useBackground } from "@/shell/hooks/useBackground";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 
 export function ChatInput() {
@@ -64,6 +75,7 @@ export function ChatInput() {
     sendText: sendVoiceText,
   } = useVoice();
   const { inputDeviceId, inputDevices, setInputDevice, requestPermission: requestAudioPermission } = useAudioDevices();
+  const { backgroundSetting } = useBackground();
 
   // Track if realtime mode model is selected (either via model picker or agent's model)
   const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
@@ -86,6 +98,7 @@ export function ChatInput() {
   const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
 
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
+  const [showMobileSheet, setShowMobileSheet] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const contentInputRef = useRef<HTMLTextAreaElement>(null);
@@ -449,12 +462,10 @@ export function ChatInput() {
       <form onSubmit={handleSubmit}>
         <div
           ref={containerRef}
-          className={`relative contain-[layout_style] will-change-[height] ${
+          className={`relative @container contain-[layout_style] will-change-[height] ${
             isDragging
               ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl"
-              : `border-0 md:border border-t border-solid border-neutral-200/60 dark:border-neutral-700/60 ${
-                  messages.length === 0 ? "bg-white/60 dark:bg-neutral-950/70" : "bg-white/30 dark:bg-neutral-950/50"
-                } md:rounded-2xl`
+              : `border-0 md:border border-t border-solid border-neutral-200/60 dark:border-neutral-700/60 bg-white/60 dark:bg-neutral-950/70 rounded-2xl md:rounded-2xl`
           } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-sm transition-all duration-200`}
         >
           <input
@@ -500,6 +511,8 @@ export function ChatInput() {
                   value={voiceTextInput}
                   rows={1}
                   aria-label="Voice text input"
+                  inputMode="text"
+                  enterKeyHint="send"
                   readOnly={!isListening}
                   onChange={(e) => isListening && setVoiceTextInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -539,6 +552,8 @@ export function ChatInput() {
                   }}
                   value={content}
                   rows={1}
+                  inputMode="text"
+                  enterKeyHint="send"
                   onChange={handleContentChange}
                   onKeyDown={handleKeyDown}
                   onPaste={async (e) => {
@@ -576,7 +591,7 @@ export function ChatInput() {
                 {shouldShowPlaceholder && (
                   <div
                     className={cn(
-                      "absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200",
+                      "absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-600 dark:text-neutral-300 transition-all duration-200",
                       messages.length === 0 && "typewriter-text",
                     )}
                     style={
@@ -607,8 +622,8 @@ export function ChatInput() {
                   <Mic size={15} />
                 </div>
                 <span className="text-xs text-neutral-500 dark:text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200 transition-colors whitespace-nowrap">
-                  <span className="hidden sm:inline">Click to start voice conversation</span>
-                  <span className="sm:hidden">Click to start conversation</span>
+                  <span className="hidden @md:inline">Click to start voice conversation</span>
+                  <span className="@md:hidden">Click to start</span>
                 </span>
               </button>
             )}
@@ -657,7 +672,12 @@ export function ChatInput() {
                   ref={modeSliderRef}
                   role="tablist"
                   aria-label="Input mode"
-                  className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5"
+                  className={cn(
+                    "relative flex items-center gap-0.5 rounded-full p-0.5",
+                    backgroundSetting
+                      ? "bg-black/15 dark:bg-white/15 ring-1 ring-black/15 dark:ring-white/15 backdrop-blur-sm shadow-sm"
+                      : "bg-neutral-200/50 dark:bg-neutral-800/50",
+                  )}
                 >
                   {/* Animated slider background */}
                   {modeSliderStyle.width > 0 && (
@@ -817,7 +837,7 @@ export function ChatInput() {
                     <span className="shrink-0 flex justify-center">
                       <Mic size={14} />
                     </span>
-                    <span className="truncate min-w-0">
+                    <span className="hidden md:inline truncate min-w-0">
                       {(() => {
                         const selected = inputDevices.find((d) => d.deviceId === inputDeviceId);
                         if (selected) return selected.label || "Microphone";
@@ -875,142 +895,161 @@ export function ChatInput() {
               )}
             </div>
 
-            <div className="flex items-center gap-2 md:gap-1 min-h-7">
-              {/* Features - Show inline buttons for 2 or fewer providers, otherwise show menu */}
-              {visibleProviders.length > 0 && visibleProviders.length <= 2 ? (
-                // Inline toggle buttons for 2 or fewer providers
-                visibleProviders.map((provider: ToolProvider) => {
-                  const icon = provider.icon || Sparkles;
-                  const state = getProviderState(provider.id);
-                  const providerEnabled = state === ProviderState.Connected;
-                  const providerInitializing = state === ProviderState.Initializing;
-                  const providerFailed = state === ProviderState.Failed;
+            <div className="flex items-center gap-2 md:gap-1 min-h-9 md:min-h-7">
+              {/* Features - Show inline buttons for 2 or fewer providers, otherwise show menu (hidden on mobile) */}
+              <div className="hidden md:contents">
+                {visibleProviders.length > 0 && visibleProviders.length <= 2 ? (
+                  // Inline toggle buttons for 2 or fewer providers
+                  visibleProviders.map((provider: ToolProvider) => {
+                    const icon = provider.icon || Sparkles;
+                    const state = getProviderState(provider.id);
+                    const providerEnabled = state === ProviderState.Connected;
+                    const providerInitializing = state === ProviderState.Initializing;
+                    const providerFailed = state === ProviderState.Failed;
 
-                  const renderIcon = () => {
-                    if (providerInitializing) return <LoaderCircle size={14} className="animate-spin" />;
-                    if (providerFailed) return <TriangleAlert size={14} />;
-                    if (typeof icon === "string")
-                      return <McpProviderIcon src={icon} size={14} className="shrink-0 object-contain" />;
-                    const Icon = icon;
-                    return <Icon size={14} />;
-                  };
+                    const renderIcon = () => {
+                      if (providerInitializing) return <LoaderCircle size={14} className="animate-spin" />;
+                      if (providerFailed) return <TriangleAlert size={14} />;
+                      if (typeof icon === "string")
+                        return <McpProviderIcon src={icon} size={14} className="shrink-0 object-contain" />;
+                      const Icon = icon;
+                      return <Icon size={14} />;
+                    };
 
-                  return (
-                    <button
-                      key={provider.id}
-                      type="button"
-                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${
-                        providerEnabled
-                          ? "text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg"
-                          : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      }`}
-                      onClick={async (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (providerInitializing) return;
-                        try {
-                          await setProviderEnabled(provider.id, !providerEnabled);
-                        } catch (error) {
-                          console.error(`Failed to toggle provider ${provider.name}:`, error);
+                    return (
+                      <button
+                        key={provider.id}
+                        type="button"
+                        className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${
+                          providerEnabled
+                            ? "text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg"
+                            : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        }`}
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (providerInitializing) return;
+                          try {
+                            await setProviderEnabled(provider.id, !providerEnabled);
+                          } catch (error) {
+                            console.error(`Failed to toggle provider ${provider.name}:`, error);
+                          }
+                        }}
+                        disabled={providerInitializing}
+                        title={
+                          providerFailed
+                            ? `${provider.name} - Failed to connect (click to retry)`
+                            : providerEnabled
+                              ? `${provider.name} - Click to disable`
+                              : `${provider.name} - Click to enable`
                         }
-                      }}
-                      disabled={providerInitializing}
-                      title={
-                        providerFailed
-                          ? `${provider.name} - Failed to connect (click to retry)`
-                          : providerEnabled
-                            ? `${provider.name} - Click to disable`
-                            : `${provider.name} - Click to enable`
-                      }
+                      >
+                        {renderIcon()}
+                      </button>
+                    );
+                  })
+                ) : visibleProviders.length > 2 ? (
+                  // Menu for more than 2 providers
+                  <Menu>
+                    <MenuButton
+                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      title="Features"
                     >
-                      {renderIcon()}
-                    </button>
-                  );
-                })
-              ) : visibleProviders.length > 2 ? (
-                // Menu for more than 2 providers
-                <Menu>
-                  <MenuButton
-                    className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                    title="Features"
-                  >
-                    <Sliders size={16} />
-                  </MenuButton>
-                  <MenuItems
-                    modal={false}
-                    transition
-                    anchor="bottom end"
-                    className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto"
-                  >
-                    {visibleProviders.map((provider: ToolProvider) => {
-                      const icon = provider.icon || Sparkles;
-                      const state = getProviderState(provider.id);
-                      const providerEnabled = state === ProviderState.Connected;
-                      const providerInitializing = state === ProviderState.Initializing;
-                      const providerFailed = state === ProviderState.Failed;
+                      <Sliders size={16} />
+                    </MenuButton>
+                    <MenuItems
+                      modal={false}
+                      transition
+                      anchor="bottom end"
+                      className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto"
+                    >
+                      {visibleProviders.map((provider: ToolProvider) => {
+                        const icon = provider.icon || Sparkles;
+                        const state = getProviderState(provider.id);
+                        const providerEnabled = state === ProviderState.Connected;
+                        const providerInitializing = state === ProviderState.Initializing;
+                        const providerFailed = state === ProviderState.Failed;
 
-                      const renderIcon = () => {
-                        if (typeof icon === "string")
-                          return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
-                        const Icon = icon;
-                        return <Icon size={16} />;
-                      };
+                        const renderIcon = () => {
+                          if (typeof icon === "string")
+                            return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
+                          const Icon = icon;
+                          return <Icon size={16} />;
+                        };
 
-                      return (
-                        <MenuItem key={provider.id}>
-                          <button
-                            type="button"
-                            onClick={async (e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              try {
-                                await setProviderEnabled(provider.id, !providerEnabled);
-                              } catch (error) {
-                                console.error(`Failed to toggle provider ${provider.name}:`, error);
-                              }
-                            }}
-                            disabled={providerInitializing}
-                            className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50`}
-                          >
-                            <div className="flex items-center gap-3">
-                              {renderIcon()}
-                              <div className="flex flex-col items-start">
-                                <span className="font-medium text-sm">{provider.name}</span>
-                                {provider.description && (
-                                  <span className="text-xs text-neutral-600 dark:text-neutral-400">
-                                    {provider.description}
-                                  </span>
+                        return (
+                          <MenuItem key={provider.id}>
+                            <button
+                              type="button"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                try {
+                                  await setProviderEnabled(provider.id, !providerEnabled);
+                                } catch (error) {
+                                  console.error(`Failed to toggle provider ${provider.name}:`, error);
+                                }
+                              }}
+                              disabled={providerInitializing}
+                              className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50`}
+                            >
+                              <div className="flex items-center gap-3">
+                                {renderIcon()}
+                                <div className="flex flex-col items-start">
+                                  <span className="font-medium text-sm">{provider.name}</span>
+                                  {provider.description && (
+                                    <span className="text-xs text-neutral-600 dark:text-neutral-400">
+                                      {provider.description}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 pl-2">
+                                {providerInitializing ? (
+                                  <LoaderCircle
+                                    size={16}
+                                    className="animate-spin text-neutral-600 dark:text-neutral-400"
+                                  />
+                                ) : providerFailed ? (
+                                  <TriangleAlert
+                                    size={16}
+                                    className="text-neutral-600 dark:text-neutral-400"
+                                    strokeWidth={2.5}
+                                  />
+                                ) : providerEnabled ? (
+                                  <Check
+                                    size={16}
+                                    className="text-neutral-800 dark:text-neutral-200"
+                                    strokeWidth={2.5}
+                                  />
+                                ) : (
+                                  <div className="w-4 h-4" />
                                 )}
                               </div>
-                            </div>
-                            <div className="flex items-center gap-2 pl-2">
-                              {providerInitializing ? (
-                                <LoaderCircle
-                                  size={16}
-                                  className="animate-spin text-neutral-600 dark:text-neutral-400"
-                                />
-                              ) : providerFailed ? (
-                                <TriangleAlert
-                                  size={16}
-                                  className="text-neutral-600 dark:text-neutral-400"
-                                  strokeWidth={2.5}
-                                />
-                              ) : providerEnabled ? (
-                                <Check size={16} className="text-neutral-800 dark:text-neutral-200" strokeWidth={2.5} />
-                              ) : (
-                                <div className="w-4 h-4" />
-                              )}
-                            </div>
-                          </button>
-                        </MenuItem>
-                      );
-                    })}
-                  </MenuItems>
-                </Menu>
-              ) : null}
+                            </button>
+                          </MenuItem>
+                        );
+                      })}
+                    </MenuItems>
+                  </Menu>
+                ) : null}
+              </div>
 
+              {/* Mobile: Plus button opens bottom sheet */}
               {!isRealtimeSelected && (
-                <>
+                <button
+                  type="button"
+                  className="md:hidden p-2.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                  title="More options"
+                  onClick={() => setShowMobileSheet(true)}
+                >
+                  <Plus size={16} />
+                </button>
+              )}
+
+              {/* Desktop: Screen capture and attach buttons (hidden on mobile) */}
+              {!isRealtimeSelected && (
+                <div className="hidden md:contents">
                   {isScreenCaptureAvailable && (
                     <button
                       type="button"
@@ -1088,7 +1127,7 @@ export function ChatInput() {
                       <Paperclip size={16} />
                     </button>
                   )}
-                </>
+                </div>
               )}
 
               {/* Dynamic Send/Mic/Voice/Loading Button */}
@@ -1148,20 +1187,37 @@ export function ChatInput() {
                   >
                     <Loader2 size={16} className="animate-spin" />
                   </button>
-                ) : (
+                ) : isTranscribing ? (
+                  // Recording in progress — show stop button on all devices
                   <button
                     type="button"
-                    className={`p-2.5 md:p-1.5 transition-colors ${
-                      isTranscribing
-                        ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
-                        : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                    }`}
+                    className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
                     onClick={handleTranscriptionClick}
-                    title={isTranscribing ? "Stop recording" : "Start recording"}
+                    title="Stop recording"
                     disabled={isResponding}
                   >
-                    {isTranscribing ? <Square size={16} /> : <Mic size={16} />}
+                    <Square size={16} />
                   </button>
+                ) : (
+                  // Not yet recording — desktop shows mic button; mobile uses the + menu
+                  <>
+                    <button
+                      type="button"
+                      className="hidden md:block p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                      onClick={handleTranscriptionClick}
+                      title="Start recording"
+                      disabled={isResponding}
+                    >
+                      <Mic size={16} />
+                    </button>
+                    <button
+                      className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      type="submit"
+                      disabled={isResponding}
+                    >
+                      <Send size={16} />
+                    </button>
+                  </>
                 )
               ) : (
                 <button
@@ -1187,6 +1243,190 @@ export function ChatInput() {
           accept={[...(config.vision?.files ?? []), ...acceptTypes()].join(",")}
         />
       )}
+
+      {/* Mobile bottom sheet — attach, screen capture, recording, and features */}
+      <Dialog open={showMobileSheet} onClose={setShowMobileSheet} className="relative z-50 md:hidden">
+        <DialogBackdrop
+          transition
+          className="fixed inset-0 bg-black/40 dark:bg-black/60 duration-200 ease-out data-closed:opacity-0"
+        />
+        <div className="fixed inset-x-0 bottom-0">
+          <DialogPanel
+            transition
+            className="w-full max-h-[75dvh] flex flex-col rounded-t-2xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-2xl border-t border-x border-neutral-200/50 dark:border-neutral-700/50 pb-[env(safe-area-inset-bottom)] duration-300 ease-out data-closed:translate-y-full"
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-1 shrink-0">
+              <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-600" />
+            </div>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200/60 dark:border-neutral-800/60 shrink-0">
+              <DialogTitle className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                More Options
+              </DialogTitle>
+              <button
+                type="button"
+                onClick={() => setShowMobileSheet(false)}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Scrollable content */}
+            <div className="overflow-y-auto flex-1">
+              {/* Action cards */}
+              <div className="px-3 pt-2 pb-3 grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleAttachmentClick();
+                    setShowMobileSheet(false);
+                  }}
+                  className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95"
+                >
+                  <Paperclip size={20} />
+                  <span className="text-xs font-medium leading-tight text-center">Upload File</span>
+                </button>
+
+                {config.drives.map((fp) => (
+                  <button
+                    key={fp.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveDrive(fp);
+                      setShowMobileSheet(false);
+                    }}
+                    className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95"
+                  >
+                    {fp.icon ? (
+                      <span
+                        className="bg-current inline-block"
+                        style={{
+                          width: 20,
+                          height: 20,
+                          maskImage: `url(${fp.icon})`,
+                          WebkitMaskImage: `url(${fp.icon})`,
+                          maskSize: "contain",
+                          maskRepeat: "no-repeat",
+                          maskPosition: "center",
+                        }}
+                      />
+                    ) : (
+                      <HardDrive size={20} />
+                    )}
+                    <span className="text-xs font-medium leading-tight text-center">{fp.name}</span>
+                  </button>
+                ))}
+
+                {isScreenCaptureAvailable && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleContinuousCaptureToggle();
+                      setShowMobileSheet(false);
+                    }}
+                    className={`flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl transition-colors active:scale-95 ${
+                      isContinuousCaptureActive
+                        ? "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400"
+                        : "bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200"
+                    }`}
+                  >
+                    <ScreenShare size={20} />
+                    <span className="text-xs font-medium leading-tight text-center">
+                      {isContinuousCaptureActive ? "Stop Capture" : "Screen Capture"}
+                    </span>
+                  </button>
+                )}
+
+                {canTranscribe && !isTranscribing && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleTranscriptionClick();
+                      setShowMobileSheet(false);
+                    }}
+                    disabled={isResponding}
+                    className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95 disabled:opacity-50"
+                  >
+                    <Mic size={20} />
+                    <span className="text-xs font-medium leading-tight text-center">Start Recording</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Features section */}
+              {visibleProviders.length > 0 && (
+                <>
+                  <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
+                  <div className="px-4 pb-1">
+                    <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                      Features
+                    </p>
+                  </div>
+                  <div className="px-2">
+                    {visibleProviders.map((provider: ToolProvider) => {
+                      const icon = provider.icon || Sparkles;
+                      const state = getProviderState(provider.id);
+                      const providerEnabled = state === ProviderState.Connected;
+                      const providerInitializing = state === ProviderState.Initializing;
+                      const providerFailed = state === ProviderState.Failed;
+
+                      const renderIcon = () => {
+                        if (providerInitializing) return <LoaderCircle size={16} className="animate-spin" />;
+                        if (providerFailed) return <TriangleAlert size={16} />;
+                        if (typeof icon === "string")
+                          return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
+                        const Icon = icon;
+                        return <Icon size={16} />;
+                      };
+
+                      return (
+                        <button
+                          key={provider.id}
+                          type="button"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (providerInitializing) return;
+                            try {
+                              await setProviderEnabled(provider.id, !providerEnabled);
+                            } catch (error) {
+                              console.error(`Failed to toggle provider ${provider.name}:`, error);
+                            }
+                          }}
+                          disabled={providerInitializing}
+                          className={`flex w-full items-center gap-3 px-3 py-2.5 rounded-xl transition-colors disabled:opacity-50 ${
+                            providerEnabled
+                              ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
+                              : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
+                          }`}
+                        >
+                          {renderIcon()}
+                          <div className="flex flex-col items-start flex-1 min-w-0 text-left">
+                            <span className="font-medium text-sm">{provider.name}</span>
+                            {provider.description && (
+                              <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate w-full">
+                                {provider.description}
+                              </span>
+                            )}
+                          </div>
+                          {providerEnabled && !providerInitializing && !providerFailed && (
+                            <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
+                          )}
+                          {providerFailed && <TriangleAlert size={16} className="shrink-0 text-neutral-400" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mx-4 my-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
+                </>
+              )}
+            </div>
+          </DialogPanel>
+        </div>
+      </Dialog>
     </>
   );
 }

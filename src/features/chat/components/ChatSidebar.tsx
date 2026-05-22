@@ -344,7 +344,7 @@ export function ChatSidebar() {
         {renamingChatId !== chatItem.id && (
           <Menu>
             <MenuButton
-              className="absolute right-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-0.5 rounded hover:bg-white/30 dark:hover:bg-black/20"
+              className="absolute right-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-2 -m-1 rounded hover:bg-white/30 dark:hover:bg-black/20"
               onClick={(e) => e.stopPropagation()}
             >
               <MoreVertical size={16} />

@@ -128,7 +128,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({
 
   return (
     <div className="flex justify-end pb-2 group text-neutral-900 dark:text-neutral-200">
-      <div className={cn("flex flex-col items-end", isEditing && "flex-1")}>
+      <div className={cn("flex flex-col items-end", isEditing ? "flex-1" : "max-w-[85%]")}>
         {isEditing ? (
           <ChatMessageEditor
             editContent={editContent}
@@ -164,13 +164,13 @@ export const ChatUserMessage = memo(function ChatUserMessage({
             <div
               className={cn(
                 "flex items-center gap-2 justify-end mt-1 pr-1 transition-opacity duration-200",
-                isResponding ? "invisible" : "opacity-0 group-hover:opacity-100",
+                isResponding ? "invisible" : "opacity-100 md:opacity-0 md:group-hover:opacity-100",
               )}
             >
               <CopyButton markdown={textContent} className="h-4 w-4" />
               <button
                 onClick={handleStartEdit}
-                className="text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors"
+                className="p-2 -m-1 text-neutral-400 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300 transition-colors"
                 title="Edit message"
                 type="button"
               >

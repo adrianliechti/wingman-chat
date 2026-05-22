@@ -203,6 +203,14 @@ export function AppLayout() {
             md:rounded-lg md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm
             overflow-hidden
           `}
+          onTouchStart={(e) => {
+            (e.currentTarget as HTMLElement).dataset.swipeStartX = String(e.touches[0].clientX);
+          }}
+          onTouchEnd={(e) => {
+            const startX = Number((e.currentTarget as HTMLElement).dataset.swipeStartX ?? 0);
+            const deltaX = startX - e.changedTouches[0].clientX;
+            if (deltaX > 50) setShowSidebar(false);
+          }}
         >
           {sidebarContent}
         </aside>

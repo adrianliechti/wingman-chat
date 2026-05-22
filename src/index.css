@@ -196,6 +196,13 @@ button[data-headlessui-state]:disabled,
   animation: typing var(--animation-duration, 2.5s) steps(var(--text-length, 20), end) 0.5s 1 normal both;
 }
 
+@media (max-width: 640px) {
+  .typewriter-text {
+    white-space: normal;
+    animation: none;
+  }
+}
+
 .typewriter-text::after {
   content: "";
 }

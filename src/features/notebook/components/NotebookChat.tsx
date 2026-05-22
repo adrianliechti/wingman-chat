@@ -2,9 +2,9 @@ import { ArrowRight, BookOpen, FileText, FlaskConical, Globe, Loader2, MessageSq
 import { useEffect, useRef, useState } from "react";
 import type { Content } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
+import type { File } from "@/shared/types/file";
 import { Markdown } from "@/shared/ui/Markdown";
 import type { NotebookMessage } from "../types/notebook";
-import type { File } from "@/shared/types/file";
 
 interface NotebookChatProps {
   messages: NotebookMessage[];
