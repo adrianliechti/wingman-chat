@@ -11,7 +11,7 @@ import { type CategoryConfig, categorySlug, getConfig, type RiskConfig, riskSlug
 import { run as agentRun } from "@/shared/lib/agent";
 import type { Client } from "@/shared/lib/client";
 import { getErrorInfo } from "@/shared/lib/errors";
-import type { Content, Message, Model, ToolCallContent, ToolContext } from "@/shared/types/chat";
+import type { Chat, Content, Message, Model, ToolCallContent, ToolContext } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import type {
   ConsentResult,
@@ -193,10 +193,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const chatIdRef = useRef(chatId);
   chatIdRef.current = chatId;
 
+  const pendingChatCreationRef = useRef<Promise<{ id: string; chat: Chat }> | null>(null);
+
   const selectChat = useCallback(
     (id: string | null) => {
       if (id === chatIdRef.current) return;
 
+      pendingChatCreationRef.current = null;
       setChatId(id);
       // Clear any stale post-turn notice so prompts from one thread don't leak into another.
       setPendingConsent(null);
@@ -242,26 +245,30 @@ export function ChatProvider({ children }: ChatProviderProps) {
       throw new Error("no model selected");
     }
 
-    let id = chatId;
-    let chatItem = id ? chats.find((c) => c.id === id) || null : null;
+    // Check ref first — it's updated synchronously, unlike state
+    const existingId = chatIdRef.current;
+    if (existingId) {
+      const existingChat = chats.find((c) => c.id === existingId);
+      if (existingChat) return { id: existingId, chat: existingChat };
+    }
 
-    if (!chatItem) {
-      chatItem = await createChatHook();
+    // Deduplicate concurrent creation calls: reuse the in-flight promise
+    if (pendingChatCreationRef.current) {
+      return pendingChatCreationRef.current;
+    }
+
+    const promise = createChatHook().then((chatItem) => {
       chatItem.model = model;
-
+      chatIdRef.current = chatItem.id;
       setChatId(chatItem.id);
-      chatIdRef.current = chatItem.id; // update ref immediately so setVoiceToolCall sees it before re-render
       updateChat(chatItem.id, () => ({ model }));
+      pendingChatCreationRef.current = null;
+      return { id: chatItem.id, chat: chatItem };
+    });
 
-      id = chatItem.id;
-    }
-
-    if (!id || !chatItem) {
-      throw new Error("failed to create or resolve chat");
-    }
-
-    return { id, chat: chatItem };
-  }, [model, createChatHook, updateChat, chatId, chats]);
+    pendingChatCreationRef.current = promise;
+    return promise;
+  }, [model, createChatHook, updateChat, chats]);
 
   // Public helper for features (drawer, uploads, terminal) that need a
   // filesystem before the user sends their first message. Creates a chat if
