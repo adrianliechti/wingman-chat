@@ -26,11 +26,11 @@ export function initTelemetry() {
     resource,
     spanProcessors: [new BatchSpanProcessor(traceExporter)],
   });
-  // StackContextManager only tracks context synchronously — no zone.js magic.
-  // We propagate the parent context explicitly via `AgentContext` (see otel.ts)
-  // and `context.with(...)` rebinds at every async boundary in agent.ts. This
-  // is the pattern recommended by OTel maintainers for browser apps until the
-  // TC39 AsyncContext proposal lands. See:
+  // StackContextManager only tracks context synchronously — every parent
+  // relationship is established by passing `AgentContext` explicitly via
+  // `parentContext` (see `otel.ts` and `agent.ts`). This is the pattern OTel
+  // maintainers recommend for browser apps until the TC39 AsyncContext
+  // proposal lands:
   // https://github.com/open-telemetry/opentelemetry-js/discussions/2060
   tracerProvider.register({
     contextManager: new StackContextManager(),

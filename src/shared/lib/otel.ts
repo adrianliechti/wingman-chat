@@ -1,23 +1,11 @@
-import { type Attributes, context, type Context, metrics, type Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import { type Attributes, context, metrics, type Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import type { AgentContext } from "../types/telemetry";
 
-/**
- * Opaque trace context that flows through agent runs and tool invocations.
- *
- * We use OTel's `StackContextManager` (no zone.js), which only tracks context
- * synchronously. To preserve parent-child span relationships across `await`,
- * we capture an `AgentContext` when each span is created and thread it
- * explicitly through the call chain — typically via `RunHooks.parentContext`
- * for nested agent runs and `ToolContext.agentContext` for nested operations
- * inside tools.
- */
-export type AgentContext = Context;
+const PROVIDER_NAME = "wingman";
 
 const tracer = trace.getTracer("wingman");
 const meter = metrics.getMeter("wingman");
 
-const PROVIDER_NAME = "wingman";
-
-// https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-metrics/
 const operationDuration = meter.createHistogram("gen_ai.client.operation.duration", {
   description: "GenAI operation duration",
   unit: "s",
@@ -28,12 +16,6 @@ const tokenUsage = meter.createHistogram("gen_ai.client.token.usage", {
   unit: "{token}",
 });
 
-/**
- * Common lifecycle for GenAI spans: start, run body, record ERROR status +
- * `error.type` on failure, emit duration metric (with conditional `error.type`),
- * end the span. `metricAttrs` is a thunk so callers can fill in late-binding
- * attrs (e.g. response.model) discovered inside the body.
- */
 async function traceSpan<T>(
   setup: {
     name: string;
@@ -42,14 +24,18 @@ async function traceSpan<T>(
     metricAttrs: () => Attributes;
     parentContext?: AgentContext;
   },
-  body: (span: Span) => Promise<T>,
+  body: (span: Span, ctx: AgentContext) => Promise<T>,
 ): Promise<T> {
+  if (import.meta.env.DEV && !setup.parentContext && trace.getSpan(context.active())) {
+    console.warn(`[otel] ${setup.name}: no parentContext but an active span exists; nesting may be wrong`);
+  }
   const parent = setup.parentContext ?? context.active();
   return tracer.startActiveSpan(setup.name, { kind: setup.kind, attributes: setup.attrs }, parent, async (span) => {
+    const childContext = trace.setSpan(parent, span);
     const start = performance.now();
     let errorType: string | undefined;
     try {
-      return await body(span);
+      return await body(span, childContext);
     } catch (error) {
       errorType = error instanceof Error ? error.constructor.name : "Error";
       span.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
@@ -66,9 +52,6 @@ async function traceSpan<T>(
   });
 }
 
-// --- Chat / inference spans ---
-// https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/
-
 export interface GenAIResponseInfo {
   id?: string;
   model?: string;
@@ -79,16 +62,11 @@ export interface GenAIResponseInfo {
   reasoningTokens?: number;
 }
 
-/**
- * Wraps a chat-style GenAI call in a span. Span name uses `operation` as a
- * descriptive label (e.g. "classify_chat gpt-4o") while `gen_ai.operation.name`
- * stays fixed to "chat" — every caller today is a chat completion, including
- * structured-output variants.
- */
 export async function traceGenAI<T>(
   operation: string,
   model: string,
   fn: () => Promise<{ result: T; response?: GenAIResponseInfo }>,
+  parentContext?: AgentContext,
 ): Promise<T> {
   const base: Attributes = {
     "gen_ai.operation.name": "chat",
@@ -96,13 +74,15 @@ export async function traceGenAI<T>(
     "gen_ai.request.model": model,
   };
   let responseModel: string | undefined;
+  const metricAttrs = (): Attributes => (responseModel ? { ...base, "gen_ai.response.model": responseModel } : base);
 
   return traceSpan(
     {
       name: `${operation} ${model}`,
       kind: SpanKind.CLIENT,
       attrs: base,
-      metricAttrs: () => (responseModel ? { ...base, "gen_ai.response.model": responseModel } : base),
+      metricAttrs,
+      parentContext,
     },
     async (span) => {
       const { result, response } = await fn();
@@ -113,17 +93,16 @@ export async function traceGenAI<T>(
       if (response.model) span.setAttribute("gen_ai.response.model", response.model);
       if (response.finishReasons) span.setAttribute("gen_ai.response.finish_reasons", response.finishReasons);
 
-      const tokenAttrs: Attributes = responseModel ? { ...base, "gen_ai.response.model": responseModel } : base;
+      const dims = metricAttrs();
 
       if (response.inputTokens != null) {
         span.setAttribute("gen_ai.usage.input_tokens", response.inputTokens);
-        tokenUsage.record(response.inputTokens, { ...tokenAttrs, "gen_ai.token.type": "input" });
+        tokenUsage.record(response.inputTokens, { ...dims, "gen_ai.token.type": "input" });
       }
       if (response.outputTokens != null) {
         span.setAttribute("gen_ai.usage.output_tokens", response.outputTokens);
-        tokenUsage.record(response.outputTokens, { ...tokenAttrs, "gen_ai.token.type": "output" });
+        tokenUsage.record(response.outputTokens, { ...dims, "gen_ai.token.type": "output" });
       }
-      // Subsets of input/output tokens — span-only, not split out on the metric.
       if (response.cachedInputTokens != null) {
         span.setAttribute("gen_ai.usage.cache_read.input_tokens", response.cachedInputTokens);
       }
@@ -136,19 +115,6 @@ export async function traceGenAI<T>(
   );
 }
 
-// --- Agent invocation ---
-// https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-agent-spans/#invoke-agent-span
-
-/**
- * Wraps an agent run (LLM ↔ tool loop) in an `invoke_agent` span. The callback
- * receives the span's `AgentContext` so child operations can rebind it via
- * `context.with(ctx, …)` across awaits — required because `StackContextManager`
- * only tracks context synchronously.
- *
- * `parentContext` makes the parent span explicit: pass the `AgentContext`
- * captured from an enclosing `execute_tool` (via `ToolContext.agentContext`)
- * to nest this agent under its caller, even after intervening awaits.
- */
 export async function traceInvokeAgent<T>(
   agentName: string | undefined,
   fn: (ctx: AgentContext) => Promise<T>,
@@ -168,48 +134,43 @@ export async function traceInvokeAgent<T>(
       metricAttrs: () => attrs,
       parentContext,
     },
-    (span) => fn(trace.setSpan(context.active(), span)),
+    (_span, ctx) => fn(ctx),
   );
 }
-
-// --- Tool execution ---
-// https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-agent-spans/#execute-tool-span
 
 export interface ExecuteToolOptions {
   toolCallId?: string;
   toolDescription?: string;
   toolType?: string;
+  parentContext?: AgentContext;
 }
 
-/**
- * Wraps a tool invocation in an `execute_tool` span. Use this around every
- * tool dispatch (MCP, local, anything else) so the trace tree shows the
- * agent → tool relationship uniformly. The callback receives the span's
- * `Context` so any nested agent runs inside the tool can rebind it across
- * awaits.
- */
 export async function traceExecuteTool<T>(
   toolName: string,
   opts: ExecuteToolOptions,
   fn: (ctx: AgentContext) => Promise<T>,
 ): Promise<T> {
-  const attrs: Attributes = {
-    "gen_ai.operation.name": "execute_tool",
-    "gen_ai.provider.name": PROVIDER_NAME,
-    "gen_ai.tool.name": toolName,
-    "gen_ai.tool.type": opts.toolType ?? "function",
-    ...(opts.toolCallId ? { "gen_ai.tool.call.id": opts.toolCallId } : {}),
-    ...(opts.toolDescription ? { "gen_ai.tool.description": opts.toolDescription } : {}),
-  };
-  // Drop high-cardinality fields (call.id, description) from the metric.
+  // Keep metrics bounded: tool.call.id and description stay span-only.
   const metricAttrs: Attributes = {
     "gen_ai.operation.name": "execute_tool",
     "gen_ai.provider.name": PROVIDER_NAME,
     "gen_ai.tool.name": toolName,
   };
+  const attrs: Attributes = {
+    ...metricAttrs,
+    "gen_ai.tool.type": opts.toolType ?? "function",
+    ...(opts.toolCallId ? { "gen_ai.tool.call.id": opts.toolCallId } : {}),
+    ...(opts.toolDescription ? { "gen_ai.tool.description": opts.toolDescription } : {}),
+  };
 
   return traceSpan(
-    { name: `execute_tool ${toolName}`, kind: SpanKind.INTERNAL, attrs, metricAttrs: () => metricAttrs },
-    (span) => fn(trace.setSpan(context.active(), span)),
+    {
+      name: `execute_tool ${toolName}`,
+      kind: SpanKind.INTERNAL,
+      attrs,
+      metricAttrs: () => metricAttrs,
+      parentContext: opts.parentContext,
+    },
+    (_span, ctx) => fn(ctx),
   );
 }

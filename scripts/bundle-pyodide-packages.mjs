@@ -171,9 +171,7 @@ function parseCoreRequires(requiresDist) {
  *                     micropip falls back to fetching them from pypi.org.
  */
 async function resolveTransitiveDeps(pypiPackages, pyodideLock, builtinTargets) {
-  const lockNameByNormalized = new Map(
-    Object.keys(pyodideLock.packages).map((n) => [normalizePkgName(n), n]),
-  );
+  const lockNameByNormalized = new Map(Object.keys(pyodideLock.packages).map((n) => [normalizePkgName(n), n]));
   const isBuiltin = (dep) => lockNameByNormalized.has(dep);
   const builtinOriginal = (dep) => lockNameByNormalized.get(dep);
 
@@ -278,7 +276,9 @@ async function bundlePyodideBuiltins(builtinTargets, pyodideLock, cdnBase) {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
   const expectedWheelFiles = new Set();
-  let downloaded = 0, cached = 0, redownloaded = 0;
+  let downloaded = 0,
+    cached = 0,
+    redownloaded = 0;
 
   for (const name of [...allPkgs].sort()) {
     const pkg = pyodideLock.packages[name];
@@ -290,7 +290,10 @@ async function bundlePyodideBuiltins(builtinTargets, pyodideLock, cdnBase) {
     // matches pyodide-lock.json is what stops `pyodide.loadPackage()` from
     // failing its own integrity check later (silently — it logs and returns).
     const state = checkCache(dest, pkg.sha256, name);
-    if (state === "cached") { cached++; continue; }
+    if (state === "cached") {
+      cached++;
+      continue;
+    }
     if (state === "mismatch") redownloaded++;
 
     const url = cdnBase + pkg.file_name;
@@ -366,9 +369,7 @@ function pruneUnexpectedWheelFiles(expectedWheelFiles) {
 async function main() {
   copyPyodideRuntime();
 
-  const pyodideLock = JSON.parse(
-    fs.readFileSync(path.resolve("node_modules/pyodide/pyodide-lock.json"), "utf8"),
-  );
+  const pyodideLock = JSON.parse(fs.readFileSync(path.resolve("node_modules/pyodide/pyodide-lock.json"), "utf8"));
   const pyodideNpmVersion = JSON.parse(
     fs.readFileSync(path.resolve("node_modules/pyodide/package.json"), "utf8"),
   ).version;

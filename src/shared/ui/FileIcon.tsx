@@ -1,4 +1,13 @@
-import { File, FileCode, FileImage, FileSpreadsheet, FileText, Mail, Presentation, type LucideIcon } from "lucide-react";
+import {
+  File,
+  FileCode,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  Mail,
+  Presentation,
+  type LucideIcon,
+} from "lucide-react";
 import { artifactKind, type ArtifactKind } from "@/features/artifacts/lib/artifacts";
 import { cn } from "../lib/cn";
 

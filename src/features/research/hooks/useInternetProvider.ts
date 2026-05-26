@@ -40,7 +40,12 @@ function coerceStringArray(value: unknown): string[] {
         // Malformed array-like string (model garbled the JSON). Best-effort:
         // strip the brackets and split on top-level commas.
         const inner = trimmed.replace(/^\[+/, "").replace(/\]+$/, "");
-        const parts = inner.split(",").map((p) => p.trim().replace(/^["']|["']$/g, "").trim());
+        const parts = inner.split(",").map((p) =>
+          p
+            .trim()
+            .replace(/^["']|["']$/g, "")
+            .trim(),
+        );
         const cleaned = parts.filter((p) => p.length > 0);
         if (cleaned.length > 0) return cleaned;
       }

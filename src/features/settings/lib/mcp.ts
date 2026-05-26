@@ -349,7 +349,7 @@ export class MCPClient implements ToolProvider {
               this.activeToolContext = context ?? null;
 
               try {
-                annotateMcpSpan(this.url);
+                annotateMcpSpan(this.url, context);
 
                 const result = await activeClient.callTool({
                   name: tool.name,
@@ -373,12 +373,8 @@ export class MCPClient implements ToolProvider {
                   context.setMeta?.({
                     toolProvider: this.id,
                     toolResource: resource.uri,
-                    ...(toolUiMeta?.defaultDisplayMode
-                      ? { defaultDisplayMode: toolUiMeta.defaultDisplayMode }
-                      : {}),
-                    ...(toolUiMeta?.availableDisplayModes
-                      ? { appDisplayModes: toolUiMeta.availableDisplayModes }
-                      : {}),
+                    ...(toolUiMeta?.defaultDisplayMode ? { defaultDisplayMode: toolUiMeta.defaultDisplayMode } : {}),
+                    ...(toolUiMeta?.availableDisplayModes ? { appDisplayModes: toolUiMeta.availableDisplayModes } : {}),
                   });
                 }
 
@@ -897,18 +893,11 @@ function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?
   };
 }
 
-/**
- * Annotate the currently-active `execute_tool` span with MCP semantic-convention
- * attributes describing the transport. Falls back silently if there is no
- * active span (e.g. telemetry disabled).
- * https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/
- */
-function annotateMcpSpan(serverUrl: string): void {
-  const span = trace.getActiveSpan();
+function annotateMcpSpan(serverUrl: string, toolContext?: ToolContext): void {
+  const span = toolContext?.agentContext ? trace.getSpan(toolContext.agentContext) : trace.getActiveSpan();
   if (!span) return;
 
   span.setAttribute("mcp.method.name", "tools/call");
-  // url.full disambiguates servers sharing the same host.
   span.setAttribute("url.full", serverUrl);
 
   try {

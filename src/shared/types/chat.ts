@@ -1,4 +1,5 @@
 import type { Elicitation, ElicitationResult } from "./elicitation.ts";
+import type { AgentContext } from "./telemetry";
 
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
@@ -86,13 +87,8 @@ export interface ToolContext {
   setMeta?(meta: Record<string, unknown>): void;
   updateMeta?(meta: Record<string, unknown>): void;
   setContext?(text: string | null): Promise<void>;
-  /**
-   * The OTel `AgentContext` of this tool's `execute_tool` span. Tools that
-   * spawn nested agents (via `agentRun(..., { parentContext: ctx.agentContext })`)
-   * or other child spans pass this through so the nested work nests correctly
-   * under the parent — context tracking does not survive `await` automatically.
-   */
-  agentContext?: import("../lib/otel").AgentContext;
+  /** Trace context for nested agents spawned from this tool. */
+  agentContext?: AgentContext;
 }
 
 // Content parts for messages - order matters
