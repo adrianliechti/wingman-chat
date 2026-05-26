@@ -538,6 +538,7 @@ export function useNotebook(notebookId?: string) {
         const conversation = newMessages.map(({ timestamp, ...msg }) => msg);
 
         const result = await run(client, getModel(), chatInstructions, conversation, tools, {
+          agentName: "notebook",
           onStream: (content) => setStreamingContent(content),
         });
         const response = result[result.length - 1];

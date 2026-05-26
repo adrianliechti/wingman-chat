@@ -11,6 +11,7 @@ import {
   PostMessageTransport,
   RESOURCE_MIME_TYPE,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
+import { trace } from "@opentelemetry/api";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport as ClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -348,6 +349,8 @@ export class MCPClient implements ToolProvider {
               this.activeToolContext = context ?? null;
 
               try {
+                annotateMcpSpan(this.url);
+
                 const result = await activeClient.callTool({
                   name: tool.name,
                   arguments: args,
@@ -892,6 +895,30 @@ function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?
       hover: window.matchMedia("(hover: hover)").matches,
     },
   };
+}
+
+/**
+ * Annotate the currently-active `execute_tool` span with MCP semantic-convention
+ * attributes describing the transport. Falls back silently if there is no
+ * active span (e.g. telemetry disabled).
+ * https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/
+ */
+function annotateMcpSpan(serverUrl: string): void {
+  const span = trace.getActiveSpan();
+  if (!span) return;
+
+  span.setAttribute("mcp.method.name", "tools/call");
+  // url.full disambiguates servers sharing the same host.
+  span.setAttribute("url.full", serverUrl);
+
+  try {
+    const url = new URL(serverUrl);
+    if (url.hostname) span.setAttribute("server.address", url.hostname);
+    if (url.port) span.setAttribute("server.port", Number(url.port));
+    if (url.protocol) span.setAttribute("network.protocol.name", url.protocol.replace(":", ""));
+  } catch {
+    // Malformed URL — skip the standard server.* attributes.
+  }
 }
 
 function isSafeExternalUrl(value: string): boolean {

@@ -460,6 +460,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         }
 
         conversation = await agentRun(client, currentModel.id, instructions, conversation, tools, {
+          agentName: "chat",
           options: {
             effort: model?.effort,
             summary: model?.summary,

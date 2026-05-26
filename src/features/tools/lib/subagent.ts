@@ -36,6 +36,7 @@ export function createSubagentTool(model: string, providerInstructions: string, 
           instructions,
           [{ role: Role.User, content: [{ type: "text", text: prompt }] }],
           baseTools,
+          { agentName: "subagent" },
         );
 
         const last = conversation[conversation.length - 1];

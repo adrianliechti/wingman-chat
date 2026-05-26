@@ -86,6 +86,14 @@ export interface ToolContext {
   setMeta?(meta: Record<string, unknown>): void;
   updateMeta?(meta: Record<string, unknown>): void;
   setContext?(text: string | null): Promise<void>;
+  /**
+   * Run `fn` synchronously bound to this tool's OTel trace context. Tools that
+   * spawn nested agents/spans after an `await` (which can lose zone-based
+   * context tracking) should wrap that work in this call so the nested spans
+   * still nest under the parent `execute_tool` span. No-op if telemetry is
+   * disabled.
+   */
+  runInTrace?<T>(fn: () => T): T;
 }
 
 // Content parts for messages - order matters

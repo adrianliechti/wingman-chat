@@ -5,15 +5,23 @@
  * duplicating the call → tool_call → tool_result cycle.
  */
 
+import { context, type Context } from "@opentelemetry/api";
 import type { Content, Message, Tool, ToolCallContent, ToolContext } from "../types/chat";
 import type { Client } from "./client";
-import { traceExecuteTool } from "./otel";
+import { traceExecuteTool, traceInvokeAgent } from "./otel";
 
 /** Options forwarded verbatim to `client.complete`. */
 export type CompleteOptions = Parameters<Client["complete"]>[5];
 
 /** Per-turn hooks the caller can supply. All optional. */
 export interface RunHooks {
+  /**
+   * Identifier for this agent (e.g. "chat", "notebook", "research"). Used as
+   * the suffix on the `invoke_agent` span name and the `gen_ai.agent.name`
+   * attribute. Omitted → span is just `invoke_agent`.
+   */
+  agentName?: string;
+
   /** Called with partial content as the model streams. */
   onStream?: (content: Content[]) => void;
 
@@ -59,6 +67,20 @@ export async function run(
   tools: Tool[],
   hooks: RunHooks = {},
 ): Promise<Message[]> {
+  return traceInvokeAgent(hooks.agentName, (invokeCtx) =>
+    runInner(client, model, instructions, messages, tools, hooks, invokeCtx),
+  );
+}
+
+async function runInner(
+  client: Client,
+  model: string,
+  instructions: string,
+  messages: Message[],
+  tools: Tool[],
+  hooks: RunHooks,
+  invokeCtx: Context,
+): Promise<Message[]> {
   let conversation = [...messages];
 
   const { onStream, onTurnStart, onTurnEnd, createToolContext, onToolResult, onToolMeta, prepareMessages, options } =
@@ -75,7 +97,11 @@ export async function run(
 
     const modelMessages = prepareMessages ? prepareMessages(conversation) : conversation;
 
-    const assistantMessage = await client.complete(model, instructions, modelMessages, tools, onStream, options);
+    // Rebind invoke_agent's context synchronously so the chat span nests under
+    // it even when zone-based async tracking has been lost across awaits.
+    const assistantMessage = await context.with(invokeCtx, () =>
+      client.complete(model, instructions, modelMessages, tools, onStream, options),
+    );
 
     if (signal?.aborted) {
       return conversation;
@@ -117,26 +143,33 @@ export async function run(
         const args = JSON.parse(toolCall.arguments || "{}");
 
         let resultMeta: Record<string, unknown> | undefined;
-
         const baseContext = createToolContext?.(toolCall);
-        const toolContext: ToolContext | undefined = baseContext
-          ? {
-              ...baseContext,
-              setMeta: (meta: Record<string, unknown>) => {
-                resultMeta = meta;
-                onToolMeta?.(toolCall.id, { ...meta });
-              },
-              updateMeta: (meta: Record<string, unknown>) => {
-                resultMeta = { ...resultMeta, ...meta };
-                onToolMeta?.(toolCall.id, { ...resultMeta });
-              },
-            }
-          : undefined;
 
-        const result = await traceExecuteTool(
-          toolCall.name,
-          { toolCallId: toolCall.id, toolDescription: tool.description },
-          () => tool.function(args, toolContext),
+        const result = await context.with(invokeCtx, () =>
+          traceExecuteTool(
+            toolCall.name,
+            { toolCallId: toolCall.id, toolDescription: tool.description },
+            // The execute_tool span's context is captured here synchronously
+            // and exposed to the tool via `runInTrace`, so the tool can rebind
+            // it across its own awaits before spawning nested spans.
+            (executeCtx) => {
+              const toolContext: ToolContext | undefined = baseContext
+                ? {
+                    ...baseContext,
+                    setMeta: (meta: Record<string, unknown>) => {
+                      resultMeta = meta;
+                      onToolMeta?.(toolCall.id, { ...meta });
+                    },
+                    updateMeta: (meta: Record<string, unknown>) => {
+                      resultMeta = { ...resultMeta, ...meta };
+                      onToolMeta?.(toolCall.id, { ...resultMeta });
+                    },
+                    runInTrace: <T>(fn: () => T) => context.with(executeCtx, fn),
+                  }
+                : undefined;
+              return tool.function(args, toolContext);
+            },
+          ),
         );
 
         appendToolResult({

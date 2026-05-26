@@ -1,4 +1,4 @@
-import { metrics, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import { type Attributes, context, type Context, metrics, type Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
 
 const tracer = trace.getTracer("wingman");
 const meter = metrics.getMeter("wingman");
@@ -16,6 +16,37 @@ const tokenUsage = meter.createHistogram("gen_ai.client.token.usage", {
   unit: "{token}",
 });
 
+/**
+ * Common lifecycle for GenAI spans: start, run body, record ERROR status +
+ * `error.type` on failure, emit duration metric (with conditional `error.type`),
+ * end the span. `metricAttrs` is a thunk so callers can fill in late-binding
+ * attrs (e.g. response.model) discovered inside the body.
+ */
+async function traceSpan<T>(
+  setup: { name: string; kind: SpanKind; attrs: Attributes; metricAttrs: () => Attributes },
+  body: (span: Span) => Promise<T>,
+): Promise<T> {
+  return tracer.startActiveSpan(setup.name, { kind: setup.kind, attributes: setup.attrs }, async (span) => {
+    const start = performance.now();
+    let errorType: string | undefined;
+    try {
+      return await body(span);
+    } catch (error) {
+      errorType = error instanceof Error ? error.constructor.name : "Error";
+      span.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
+      span.setAttribute("error.type", errorType);
+      throw error;
+    } finally {
+      const durationS = (performance.now() - start) / 1000;
+      operationDuration.record(durationS, {
+        ...setup.metricAttrs(),
+        ...(errorType ? { "error.type": errorType } : {}),
+      });
+      span.end();
+    }
+  });
+}
+
 // --- Chat / inference spans ---
 // https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/
 
@@ -30,79 +61,90 @@ export interface GenAIResponseInfo {
 }
 
 /**
- * Wraps a chat-style GenAI call in a span per the GenAI spans spec.
- * Span name: `{operation} {model}` (e.g. "chat gpt-4o"). The `operation`
- * argument is only used as a label for the span name — the spec-defined
- * `gen_ai.operation.name` attribute is fixed to "chat" since every caller
- * today is a chat completion (including structured-output variants).
+ * Wraps a chat-style GenAI call in a span. Span name uses `operation` as a
+ * descriptive label (e.g. "classify_chat gpt-4o") while `gen_ai.operation.name`
+ * stays fixed to "chat" — every caller today is a chat completion, including
+ * structured-output variants.
  */
 export async function traceGenAI<T>(
   operation: string,
   model: string,
   fn: () => Promise<{ result: T; response?: GenAIResponseInfo }>,
 ): Promise<T> {
-  return tracer.startActiveSpan(`${operation} ${model}`, { kind: SpanKind.CLIENT }, async (span) => {
-    span.setAttribute("gen_ai.operation.name", "chat");
-    span.setAttribute("gen_ai.provider.name", PROVIDER_NAME);
-    span.setAttribute("gen_ai.request.model", model);
+  const base: Attributes = {
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": PROVIDER_NAME,
+    "gen_ai.request.model": model,
+  };
+  let responseModel: string | undefined;
 
-    const start = performance.now();
-    let responseModel: string | undefined;
-    let errorType: string | undefined;
-
-    try {
+  return traceSpan(
+    {
+      name: `${operation} ${model}`,
+      kind: SpanKind.CLIENT,
+      attrs: base,
+      metricAttrs: () => (responseModel ? { ...base, "gen_ai.response.model": responseModel } : base),
+    },
+    async (span) => {
       const { result, response } = await fn();
+      if (!response) return result;
 
-      if (response) {
-        responseModel = response.model;
+      responseModel = response.model;
+      if (response.id) span.setAttribute("gen_ai.response.id", response.id);
+      if (response.model) span.setAttribute("gen_ai.response.model", response.model);
+      if (response.finishReasons) span.setAttribute("gen_ai.response.finish_reasons", response.finishReasons);
 
-        if (response.id) span.setAttribute("gen_ai.response.id", response.id);
-        if (response.model) span.setAttribute("gen_ai.response.model", response.model);
-        if (response.finishReasons) span.setAttribute("gen_ai.response.finish_reasons", response.finishReasons);
+      const tokenAttrs: Attributes = responseModel ? { ...base, "gen_ai.response.model": responseModel } : base;
 
-        const tokenAttrs = {
-          "gen_ai.operation.name": "chat",
-          "gen_ai.provider.name": PROVIDER_NAME,
-          "gen_ai.request.model": model,
-          ...(responseModel ? { "gen_ai.response.model": responseModel } : {}),
-        };
-
-        if (response.inputTokens != null) {
-          span.setAttribute("gen_ai.usage.input_tokens", response.inputTokens);
-          tokenUsage.record(response.inputTokens, { ...tokenAttrs, "gen_ai.token.type": "input" });
-        }
-        if (response.outputTokens != null) {
-          span.setAttribute("gen_ai.usage.output_tokens", response.outputTokens);
-          tokenUsage.record(response.outputTokens, { ...tokenAttrs, "gen_ai.token.type": "output" });
-        }
-        if (response.cachedInputTokens != null) {
-          // Subset of input tokens served from the prompt cache.
-          span.setAttribute("gen_ai.usage.cache_read.input_tokens", response.cachedInputTokens);
-        }
-        if (response.reasoningTokens != null) {
-          // Subset of output tokens classified as reasoning by the provider.
-          span.setAttribute("gen_ai.usage.reasoning.output_tokens", response.reasoningTokens);
-        }
+      if (response.inputTokens != null) {
+        span.setAttribute("gen_ai.usage.input_tokens", response.inputTokens);
+        tokenUsage.record(response.inputTokens, { ...tokenAttrs, "gen_ai.token.type": "input" });
+      }
+      if (response.outputTokens != null) {
+        span.setAttribute("gen_ai.usage.output_tokens", response.outputTokens);
+        tokenUsage.record(response.outputTokens, { ...tokenAttrs, "gen_ai.token.type": "output" });
+      }
+      // Subsets of input/output tokens — span-only, not split out on the metric.
+      if (response.cachedInputTokens != null) {
+        span.setAttribute("gen_ai.usage.cache_read.input_tokens", response.cachedInputTokens);
+      }
+      if (response.reasoningTokens != null) {
+        span.setAttribute("gen_ai.usage.reasoning.output_tokens", response.reasoningTokens);
       }
 
       return result;
-    } catch (error) {
-      errorType = error instanceof Error ? error.constructor.name : "Error";
-      span.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
-      span.setAttribute("error.type", errorType);
-      throw error;
-    } finally {
-      const durationS = (performance.now() - start) / 1000;
-      operationDuration.record(durationS, {
-        "gen_ai.operation.name": "chat",
-        "gen_ai.provider.name": PROVIDER_NAME,
-        "gen_ai.request.model": model,
-        ...(responseModel ? { "gen_ai.response.model": responseModel } : {}),
-        ...(errorType ? { "error.type": errorType } : {}),
-      });
-      span.end();
-    }
-  });
+    },
+  );
+}
+
+// --- Agent invocation ---
+// https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-agent-spans/#invoke-agent-span
+
+/**
+ * Wraps an agent run (LLM ↔ tool loop) in an `invoke_agent` span. The callback
+ * receives the span's `Context` so child operations can explicitly rebind it
+ * via `context.with(ctx, …)` after awaits — necessary because zone-based
+ * async context tracking is unreliable across native `await` in modern V8.
+ */
+export async function traceInvokeAgent<T>(
+  agentName: string | undefined,
+  fn: (ctx: Context) => Promise<T>,
+): Promise<T> {
+  const attrs: Attributes = {
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.provider.name": PROVIDER_NAME,
+    ...(agentName ? { "gen_ai.agent.name": agentName } : {}),
+  };
+
+  return traceSpan(
+    {
+      name: agentName ? `invoke_agent ${agentName}` : "invoke_agent",
+      kind: SpanKind.INTERNAL,
+      attrs,
+      metricAttrs: () => attrs,
+    },
+    (span) => fn(trace.setSpan(context.active(), span)),
+  );
 }
 
 // --- Tool execution ---
@@ -115,42 +157,34 @@ export interface ExecuteToolOptions {
 }
 
 /**
- * Wraps a tool invocation in an `execute_tool` span per the GenAI agent-spans spec.
- * Use this around every tool dispatch (MCP, local, anything else) so the trace
- * tree shows the agent → tool relationship uniformly.
+ * Wraps a tool invocation in an `execute_tool` span. Use this around every
+ * tool dispatch (MCP, local, anything else) so the trace tree shows the
+ * agent → tool relationship uniformly. The callback receives the span's
+ * `Context` so any nested agent runs inside the tool can rebind it across
+ * awaits.
  */
 export async function traceExecuteTool<T>(
   toolName: string,
   opts: ExecuteToolOptions,
-  fn: () => Promise<T>,
+  fn: (ctx: Context) => Promise<T>,
 ): Promise<T> {
-  return tracer.startActiveSpan(`execute_tool ${toolName}`, { kind: SpanKind.INTERNAL }, async (span) => {
-    span.setAttribute("gen_ai.operation.name", "execute_tool");
-    span.setAttribute("gen_ai.provider.name", PROVIDER_NAME);
-    span.setAttribute("gen_ai.tool.name", toolName);
-    span.setAttribute("gen_ai.tool.type", opts.toolType ?? "function");
-    if (opts.toolCallId) span.setAttribute("gen_ai.tool.call.id", opts.toolCallId);
-    if (opts.toolDescription) span.setAttribute("gen_ai.tool.description", opts.toolDescription);
+  const attrs: Attributes = {
+    "gen_ai.operation.name": "execute_tool",
+    "gen_ai.provider.name": PROVIDER_NAME,
+    "gen_ai.tool.name": toolName,
+    "gen_ai.tool.type": opts.toolType ?? "function",
+    ...(opts.toolCallId ? { "gen_ai.tool.call.id": opts.toolCallId } : {}),
+    ...(opts.toolDescription ? { "gen_ai.tool.description": opts.toolDescription } : {}),
+  };
+  // Drop high-cardinality fields (call.id, description) from the metric.
+  const metricAttrs: Attributes = {
+    "gen_ai.operation.name": "execute_tool",
+    "gen_ai.provider.name": PROVIDER_NAME,
+    "gen_ai.tool.name": toolName,
+  };
 
-    const start = performance.now();
-    let errorType: string | undefined;
-
-    try {
-      return await fn();
-    } catch (error) {
-      errorType = error instanceof Error ? error.constructor.name : "Error";
-      span.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
-      span.setAttribute("error.type", errorType);
-      throw error;
-    } finally {
-      const durationS = (performance.now() - start) / 1000;
-      operationDuration.record(durationS, {
-        "gen_ai.operation.name": "execute_tool",
-        "gen_ai.provider.name": PROVIDER_NAME,
-        "gen_ai.tool.name": toolName,
-        ...(errorType ? { "error.type": errorType } : {}),
-      });
-      span.end();
-    }
-  });
+  return traceSpan(
+    { name: `execute_tool ${toolName}`, kind: SpanKind.INTERNAL, attrs, metricAttrs: () => metricAttrs },
+    (span) => fn(trace.setSpan(context.active(), span)),
+  );
 }

@@ -39,6 +39,8 @@
         "enabled": true
     },
 
+    "telemetry": {},
+
     "models1": [
         {
             "id": "gpt-5.1",
