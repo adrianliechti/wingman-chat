@@ -1,6 +1,5 @@
 import { metrics } from "@opentelemetry/api";
 import { logs } from "@opentelemetry/api-logs";
-import { ZoneContextManager } from "@opentelemetry/context-zone";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
@@ -9,7 +8,7 @@ import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch";
 import { defaultResource, resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
-import { BatchSpanProcessor, WebTracerProvider } from "@opentelemetry/sdk-trace-web";
+import { BatchSpanProcessor, StackContextManager, WebTracerProvider } from "@opentelemetry/sdk-trace-web";
 
 const IGNORE_URLS = [/\/otel\//];
 
@@ -27,8 +26,14 @@ export function initTelemetry() {
     resource,
     spanProcessors: [new BatchSpanProcessor(traceExporter)],
   });
+  // StackContextManager only tracks context synchronously — no zone.js magic.
+  // We propagate the parent context explicitly via `AgentContext` (see otel.ts)
+  // and `context.with(...)` rebinds at every async boundary in agent.ts. This
+  // is the pattern recommended by OTel maintainers for browser apps until the
+  // TC39 AsyncContext proposal lands. See:
+  // https://github.com/open-telemetry/opentelemetry-js/discussions/2060
   tracerProvider.register({
-    contextManager: new ZoneContextManager(),
+    contextManager: new StackContextManager(),
   });
 
   // Metrics

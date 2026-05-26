@@ -245,18 +245,21 @@ export function useInternetProvider(): ToolProvider | null {
 
         try {
           context?.updateMeta?.({ status: "Planning research…" });
-          // The elicitation `await` above can drop the OTel context, so rebind
-          // the execute_tool's trace context synchronously before agentRun.
-          const runResearch = () =>
-            agentRun(
-              client,
-              model,
-              internetInstructionsText,
-              [{ role: Role.User, content: [{ type: "text", text: instructions }] }],
-              innerTools,
-              { agentName: "research", options: { signal: context?.signal } },
-            );
-          const conversation = await (context?.runInTrace ? context.runInTrace(runResearch) : runResearch());
+          const conversation = await agentRun(
+            client,
+            model,
+            internetInstructionsText,
+            [{ role: Role.User, content: [{ type: "text", text: instructions }] }],
+            innerTools,
+            {
+              agentName: "research",
+              options: { signal: context?.signal },
+              // Nest the inner research agent under the outer execute_tool span
+              // explicitly — the elicitation `await` above has already dropped
+              // the active context.
+              parentContext: context?.agentContext,
+            },
+          );
           const last = conversation[conversation.length - 1];
           const text = last ? getTextFromContent(last.content).trim() : "";
           return [{ type: "text" as const, text: text || "No answer produced." }];

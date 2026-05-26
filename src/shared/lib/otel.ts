@@ -1,5 +1,17 @@
 import { type Attributes, context, type Context, metrics, type Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
 
+/**
+ * Opaque trace context that flows through agent runs and tool invocations.
+ *
+ * We use OTel's `StackContextManager` (no zone.js), which only tracks context
+ * synchronously. To preserve parent-child span relationships across `await`,
+ * we capture an `AgentContext` when each span is created and thread it
+ * explicitly through the call chain — typically via `RunHooks.parentContext`
+ * for nested agent runs and `ToolContext.agentContext` for nested operations
+ * inside tools.
+ */
+export type AgentContext = Context;
+
 const tracer = trace.getTracer("wingman");
 const meter = metrics.getMeter("wingman");
 
@@ -23,10 +35,17 @@ const tokenUsage = meter.createHistogram("gen_ai.client.token.usage", {
  * attrs (e.g. response.model) discovered inside the body.
  */
 async function traceSpan<T>(
-  setup: { name: string; kind: SpanKind; attrs: Attributes; metricAttrs: () => Attributes },
+  setup: {
+    name: string;
+    kind: SpanKind;
+    attrs: Attributes;
+    metricAttrs: () => Attributes;
+    parentContext?: AgentContext;
+  },
   body: (span: Span) => Promise<T>,
 ): Promise<T> {
-  return tracer.startActiveSpan(setup.name, { kind: setup.kind, attributes: setup.attrs }, async (span) => {
+  const parent = setup.parentContext ?? context.active();
+  return tracer.startActiveSpan(setup.name, { kind: setup.kind, attributes: setup.attrs }, parent, async (span) => {
     const start = performance.now();
     let errorType: string | undefined;
     try {
@@ -122,13 +141,18 @@ export async function traceGenAI<T>(
 
 /**
  * Wraps an agent run (LLM ↔ tool loop) in an `invoke_agent` span. The callback
- * receives the span's `Context` so child operations can explicitly rebind it
- * via `context.with(ctx, …)` after awaits — necessary because zone-based
- * async context tracking is unreliable across native `await` in modern V8.
+ * receives the span's `AgentContext` so child operations can rebind it via
+ * `context.with(ctx, …)` across awaits — required because `StackContextManager`
+ * only tracks context synchronously.
+ *
+ * `parentContext` makes the parent span explicit: pass the `AgentContext`
+ * captured from an enclosing `execute_tool` (via `ToolContext.agentContext`)
+ * to nest this agent under its caller, even after intervening awaits.
  */
 export async function traceInvokeAgent<T>(
   agentName: string | undefined,
-  fn: (ctx: Context) => Promise<T>,
+  fn: (ctx: AgentContext) => Promise<T>,
+  parentContext?: AgentContext,
 ): Promise<T> {
   const attrs: Attributes = {
     "gen_ai.operation.name": "invoke_agent",
@@ -142,6 +166,7 @@ export async function traceInvokeAgent<T>(
       kind: SpanKind.INTERNAL,
       attrs,
       metricAttrs: () => attrs,
+      parentContext,
     },
     (span) => fn(trace.setSpan(context.active(), span)),
   );
@@ -166,7 +191,7 @@ export interface ExecuteToolOptions {
 export async function traceExecuteTool<T>(
   toolName: string,
   opts: ExecuteToolOptions,
-  fn: (ctx: Context) => Promise<T>,
+  fn: (ctx: AgentContext) => Promise<T>,
 ): Promise<T> {
   const attrs: Attributes = {
     "gen_ai.operation.name": "execute_tool",

@@ -5,10 +5,10 @@
  * duplicating the call → tool_call → tool_result cycle.
  */
 
-import { context, type Context } from "@opentelemetry/api";
+import { context } from "@opentelemetry/api";
 import type { Content, Message, Tool, ToolCallContent, ToolContext } from "../types/chat";
 import type { Client } from "./client";
-import { traceExecuteTool, traceInvokeAgent } from "./otel";
+import { type AgentContext, traceExecuteTool, traceInvokeAgent } from "./otel";
 
 /** Options forwarded verbatim to `client.complete`. */
 export type CompleteOptions = Parameters<Client["complete"]>[5];
@@ -51,6 +51,14 @@ export interface RunHooks {
 
   /** Options forwarded to `client.complete` (includes signal, effort, verbosity, …). */
   options?: CompleteOptions;
+
+  /**
+   * Explicit parent trace context for this agent run. Pass this when running
+   * an agent from inside another tool's body (see `ToolContext.agentContext`)
+   * so the `invoke_agent` span nests under the caller's `execute_tool` span
+   * across awaits. Omitted → uses the active context at call time.
+   */
+  parentContext?: AgentContext;
 }
 
 /**
@@ -67,8 +75,10 @@ export async function run(
   tools: Tool[],
   hooks: RunHooks = {},
 ): Promise<Message[]> {
-  return traceInvokeAgent(hooks.agentName, (invokeCtx) =>
-    runInner(client, model, instructions, messages, tools, hooks, invokeCtx),
+  return traceInvokeAgent(
+    hooks.agentName,
+    (invokeCtx) => runInner(client, model, instructions, messages, tools, hooks, invokeCtx),
+    hooks.parentContext,
   );
 }
 
@@ -79,7 +89,7 @@ async function runInner(
   messages: Message[],
   tools: Tool[],
   hooks: RunHooks,
-  invokeCtx: Context,
+  invokeCtx: AgentContext,
 ): Promise<Message[]> {
   let conversation = [...messages];
 
@@ -149,9 +159,9 @@ async function runInner(
           traceExecuteTool(
             toolCall.name,
             { toolCallId: toolCall.id, toolDescription: tool.description },
-            // The execute_tool span's context is captured here synchronously
-            // and exposed to the tool via `runInTrace`, so the tool can rebind
-            // it across its own awaits before spawning nested spans.
+            // Expose the execute_tool span's context to the tool so nested
+            // agent runs / spans inside the tool body can nest under it,
+            // even across awaits in the tool implementation.
             (executeCtx) => {
               const toolContext: ToolContext | undefined = baseContext
                 ? {
@@ -164,7 +174,7 @@ async function runInner(
                       resultMeta = { ...resultMeta, ...meta };
                       onToolMeta?.(toolCall.id, { ...resultMeta });
                     },
-                    runInTrace: <T>(fn: () => T) => context.with(executeCtx, fn),
+                    agentContext: executeCtx,
                   }
                 : undefined;
               return tool.function(args, toolContext);
