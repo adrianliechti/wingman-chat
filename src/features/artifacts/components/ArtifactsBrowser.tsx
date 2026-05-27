@@ -1,5 +1,5 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { Download, Edit2, Folder, FolderOpen, MoreVertical, Trash, Upload } from "lucide-react";
+import { Download, Edit2, Folder, FolderOpen, HardDrive, MoreVertical, Trash, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import type { DriveConfig } from "@/shared/config";
@@ -234,12 +234,14 @@ export function ArtifactsBrowser({
   files,
   openTabs,
   onFileClick,
+  drives = [],
   isProcessing = false,
   onUploadLocal,
   onUploadDrive,
   onDownloadAll,
   onDownloadFile,
 }: ArtifactsBrowserProps) {
+  const hasDrives = drives.length > 0 && !!onUploadDrive;
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -353,7 +355,7 @@ export function ArtifactsBrowser({
             <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 truncate flex-1">
               Files
             </span>
-            {(onUploadLocal || onUploadDrive || onDownloadAll) && (
+            {(onUploadLocal || hasDrives || onDownloadAll) && (
               <Menu>
                 <MenuButton className="shrink-0 text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5">
                   <MoreVertical size={14} />
@@ -364,7 +366,7 @@ export function ArtifactsBrowser({
                   anchor="bottom start"
                   className="w-40 origin-top-left rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
                 >
-                  {(onUploadLocal || onUploadDrive) && (
+                  {onUploadLocal && (
                     <MenuItem>
                       <button
                         type="button"
@@ -377,6 +379,35 @@ export function ArtifactsBrowser({
                       </button>
                     </MenuItem>
                   )}
+                  {hasDrives &&
+                    drives.map((drive) => (
+                      <MenuItem key={drive.id}>
+                        <button
+                          type="button"
+                          disabled={isProcessing}
+                          onClick={() => onUploadDrive?.(drive)}
+                          className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 disabled:opacity-50"
+                        >
+                          {drive.icon ? (
+                            <span
+                              className="shrink-0 bg-current inline-block"
+                              style={{
+                                width: 12,
+                                height: 12,
+                                maskImage: `url(${drive.icon})`,
+                                WebkitMaskImage: `url(${drive.icon})`,
+                                maskSize: "contain",
+                                maskRepeat: "no-repeat",
+                                maskPosition: "center",
+                              }}
+                            />
+                          ) : (
+                            <HardDrive size={12} />
+                          )}
+                          <span className="truncate">{drive.name}</span>
+                        </button>
+                      </MenuItem>
+                    ))}
                   {onDownloadAll && files.length > 0 && (
                     <MenuItem>
                       <button
@@ -417,17 +448,75 @@ export function ArtifactsBrowser({
       </div>
 
       {/* Bottom: Upload + Download all */}
-      {onUploadLocal && (
+      {(onUploadLocal || hasDrives) && (
         <div className="@container shrink-0 px-3 py-2">
-          <button
-            type="button"
-            disabled={isProcessing}
-            onClick={onUploadLocal}
-            className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors disabled:opacity-50"
-          >
-            <Upload size={12} className="shrink-0" />
-            <span className="@max-[160px]:hidden">Upload files</span>
-          </button>
+          {hasDrives ? (
+            <Menu>
+              <MenuButton
+                disabled={isProcessing}
+                className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors disabled:opacity-50"
+              >
+                <Upload size={12} className="shrink-0" />
+                <span className="@max-[160px]:hidden">Upload files</span>
+              </MenuButton>
+              <MenuItems
+                modal={false}
+                transition
+                anchor="top start"
+                className="min-w-40 origin-bottom-left rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
+              >
+                {onUploadLocal && (
+                  <MenuItem>
+                    <button
+                      type="button"
+                      onClick={onUploadLocal}
+                      className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                    >
+                      <Upload size={12} className="shrink-0" />
+                      <span className="truncate">Upload</span>
+                    </button>
+                  </MenuItem>
+                )}
+                {drives.map((drive) => (
+                  <MenuItem key={drive.id}>
+                    <button
+                      type="button"
+                      onClick={() => onUploadDrive?.(drive)}
+                      className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                    >
+                      {drive.icon ? (
+                        <span
+                          className="shrink-0 bg-current inline-block"
+                          style={{
+                            width: 12,
+                            height: 12,
+                            maskImage: `url(${drive.icon})`,
+                            WebkitMaskImage: `url(${drive.icon})`,
+                            maskSize: "contain",
+                            maskRepeat: "no-repeat",
+                            maskPosition: "center",
+                          }}
+                        />
+                      ) : (
+                        <HardDrive size={12} />
+                      )}
+                      <span className="truncate">{drive.name}</span>
+                    </button>
+                  </MenuItem>
+                ))}
+              </MenuItems>
+            </Menu>
+          ) : (
+            <button
+              type="button"
+              disabled={isProcessing}
+              onClick={onUploadLocal}
+              className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors disabled:opacity-50"
+            >
+              <Upload size={12} className="shrink-0" />
+              <span className="@max-[160px]:hidden">Upload files</span>
+            </button>
+          )}
         </div>
       )}
 

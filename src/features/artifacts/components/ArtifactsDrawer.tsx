@@ -7,6 +7,7 @@ import {
   Eye,
   File as FileIcon2,
   Files,
+  HardDrive,
   Loader2,
   PanelRightOpen,
   Play,
@@ -360,14 +361,67 @@ export function ArtifactsDrawer() {
                 </li>
               ))}
             </ul>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
-            >
-              <Upload size={13} className="shrink-0" />
-              Upload files
-            </button>
+            {config.drives.length > 0 ? (
+              <Menu>
+                <MenuButton className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors">
+                  <Upload size={13} className="shrink-0" />
+                  Upload files
+                </MenuButton>
+                <MenuItems
+                  modal={false}
+                  transition
+                  anchor="bottom"
+                  className="origin-top rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50 min-w-40"
+                >
+                  <MenuItem>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                    >
+                      <Upload size={12} className="shrink-0" />
+                      <span className="truncate">Upload</span>
+                    </button>
+                  </MenuItem>
+                  {config.drives.map((drive) => (
+                    <MenuItem key={drive.id}>
+                      <button
+                        type="button"
+                        onClick={() => setActiveDrive(drive)}
+                        className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      >
+                        {drive.icon ? (
+                          <span
+                            className="shrink-0 bg-current inline-block"
+                            style={{
+                              width: 12,
+                              height: 12,
+                              maskImage: `url(${drive.icon})`,
+                              WebkitMaskImage: `url(${drive.icon})`,
+                              maskSize: "contain",
+                              maskRepeat: "no-repeat",
+                              maskPosition: "center",
+                            }}
+                          />
+                        ) : (
+                          <HardDrive size={12} />
+                        )}
+                        <span className="truncate">{drive.name}</span>
+                      </button>
+                    </MenuItem>
+                  ))}
+                </MenuItems>
+              </Menu>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
+              >
+                <Upload size={13} className="shrink-0" />
+                Upload files
+              </button>
+            )}
             <p className="mt-3 text-xs text-neutral-300 dark:text-neutral-600">or drag &amp; drop anywhere</p>
           </div>
         </div>
