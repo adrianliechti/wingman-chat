@@ -259,16 +259,20 @@ export function ChatPage() {
       // so there is no offset to account for.
       const agentOffset = showAgentDrawer ? 344 : 0;
       const CLOSE_THRESHOLD_PX = 220;
-      let currentWidthVw = artifactsWidthVw;
+      // Inner panels need ~320px (200 left column + 120 files browser) to stay usable.
+      const MIN_PANEL_PX = 360;
+      let intendedWidthPx = (artifactsWidthVw / 100) * window.innerWidth;
       const onMouseMove = (ev: MouseEvent) => {
         if (!artifactsResizingRef.current) return;
         const vw = window.innerWidth;
         const minChatPx = 400;
         const panelRightEdge = vw - agentOffset;
-        const newWidthPx = Math.min(panelRightEdge - minChatPx, panelRightEdge - ev.clientX);
-        const newVw = Math.max(0, (newWidthPx / vw) * 100);
-        currentWidthVw = newVw;
-        setArtifactsWidthVw(newVw);
+        const targetWidthPx = Math.min(panelRightEdge - minChatPx, panelRightEdge - ev.clientX);
+        intendedWidthPx = Math.max(0, targetWidthPx);
+        // Clamp the visible width to a minimum so content stays usable while dragging,
+        // but keep `intendedWidthPx` raw so a drag past the close threshold still closes.
+        const visibleWidthPx = Math.max(MIN_PANEL_PX, intendedWidthPx);
+        setArtifactsWidthVw((visibleWidthPx / vw) * 100);
       };
       const onMouseUp = () => {
         artifactsResizingRef.current = false;
@@ -276,7 +280,7 @@ export function ChatPage() {
         document.body.classList.remove("resizing");
         window.removeEventListener("mousemove", onMouseMove);
         window.removeEventListener("mouseup", onMouseUp);
-        if ((currentWidthVw / 100) * window.innerWidth < CLOSE_THRESHOLD_PX) {
+        if (intendedWidthPx < CLOSE_THRESHOLD_PX) {
           setShowArtifactsDrawer(false);
           setTimeout(() => setArtifactsWidthVw(DEFAULT_ARTIFACTS_WIDTH_VW), 300);
         }
