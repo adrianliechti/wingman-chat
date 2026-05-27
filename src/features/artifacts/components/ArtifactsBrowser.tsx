@@ -364,7 +364,7 @@ export function ArtifactsBrowser({
                   modal={false}
                   transition
                   anchor="bottom start"
-                  className="w-40 origin-top-left rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
+                  className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-48 dark:ring-1 dark:ring-white/10"
                 >
                   {onUploadLocal && (
                     <MenuItem>
@@ -372,10 +372,10 @@ export function ArtifactsBrowser({
                         type="button"
                         disabled={isProcessing}
                         onClick={onUploadLocal}
-                        className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 disabled:opacity-50"
+                        className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 disabled:opacity-50"
                       >
-                        <Upload size={12} />
-                        Upload files
+                        <Upload size={16} />
+                        <span className="font-medium text-sm">Upload</span>
                       </button>
                     </MenuItem>
                   )}
@@ -386,14 +386,14 @@ export function ArtifactsBrowser({
                           type="button"
                           disabled={isProcessing}
                           onClick={() => onUploadDrive?.(drive)}
-                          className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 disabled:opacity-50"
+                          className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50"
                         >
                           {drive.icon ? (
                             <span
                               className="shrink-0 bg-current inline-block"
                               style={{
-                                width: 12,
-                                height: 12,
+                                width: 16,
+                                height: 16,
                                 maskImage: `url(${drive.icon})`,
                                 WebkitMaskImage: `url(${drive.icon})`,
                                 maskSize: "contain",
@@ -402,9 +402,9 @@ export function ArtifactsBrowser({
                               }}
                             />
                           ) : (
-                            <HardDrive size={12} />
+                            <HardDrive size={16} />
                           )}
-                          <span className="truncate">{drive.name}</span>
+                          <span className="font-medium text-sm truncate">{drive.name}</span>
                         </button>
                       </MenuItem>
                     ))}
@@ -413,10 +413,10 @@ export function ArtifactsBrowser({
                       <button
                         type="button"
                         onClick={onDownloadAll}
-                        className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                        className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-t border-white/20 dark:border-white/10"
                       >
-                        <Download size={12} />
-                        Download all
+                        <Download size={16} />
+                        <span className="font-medium text-sm">Download all</span>
                       </button>
                     </MenuItem>
                   )}
@@ -463,17 +463,17 @@ export function ArtifactsBrowser({
                 modal={false}
                 transition
                 anchor="top start"
-                className="min-w-40 origin-bottom-left rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
+                className="mb-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-48 dark:ring-1 dark:ring-white/10"
               >
                 {onUploadLocal && (
                   <MenuItem>
                     <button
                       type="button"
                       onClick={onUploadLocal}
-                      className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10"
                     >
-                      <Upload size={12} className="shrink-0" />
-                      <span className="truncate">Upload</span>
+                      <Upload size={16} className="shrink-0" />
+                      <span className="font-medium text-sm truncate">Upload</span>
                     </button>
                   </MenuItem>
                 )}
@@ -482,14 +482,14 @@ export function ArtifactsBrowser({
                     <button
                       type="button"
                       onClick={() => onUploadDrive?.(drive)}
-                      className="group flex w-full items-center gap-1.5 rounded-md py-1.5 px-2.5 text-xs data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
                     >
                       {drive.icon ? (
                         <span
                           className="shrink-0 bg-current inline-block"
                           style={{
-                            width: 12,
-                            height: 12,
+                            width: 16,
+                            height: 16,
                             maskImage: `url(${drive.icon})`,
                             WebkitMaskImage: `url(${drive.icon})`,
                             maskSize: "contain",
@@ -498,9 +498,9 @@ export function ArtifactsBrowser({
                           }}
                         />
                       ) : (
-                        <HardDrive size={12} />
+                        <HardDrive size={16} />
                       )}
-                      <span className="truncate">{drive.name}</span>
+                      <span className="font-medium text-sm truncate">{drive.name}</span>
                     </button>
                   </MenuItem>
                 ))}
