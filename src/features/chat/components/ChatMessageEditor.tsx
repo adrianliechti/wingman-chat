@@ -59,7 +59,7 @@ export function ChatMessageEditor({
         </div>
       </div>
       <div className="flex items-center gap-2 justify-between mt-1 pr-1 self-stretch">
-        <span className="text-[11px] text-neutral-400 dark:text-neutral-500 select-none">
+        <span className="text-xs text-neutral-400 dark:text-neutral-500 select-none">
           Esc to cancel · Enter to submit
         </span>
         <div className="flex items-center gap-1">

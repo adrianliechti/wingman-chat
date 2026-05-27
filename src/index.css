@@ -88,6 +88,35 @@ html.emoji-native .noto-emoji {
   --viewport-height: 100dvh;
 }
 
+/* Scale the whole UI up on mobile by enlarging the root font size.
+   All Tailwind spacing, sizing, and text utilities are rem-based,
+   so this proportionally enlarges text, buttons, paddings, gaps and
+   icons sized with w-/h- utilities — no per-component changes needed.
+
+   Note: SVG/img elements with raw width/height attributes (e.g. lucide-react
+   <Icon size={N} />) don't inherit rem scaling, so they're scaled explicitly
+   below. */
+@media (max-width: 639.98px) {
+  html {
+    font-size: 18px;
+  }
+
+  /* lucide-react icons: emit width/height attributes in px */
+  .lucide[width="12"] { width: 15px; height: 15px; }
+  .lucide[width="13"] { width: 16px; height: 16px; }
+  .lucide[width="14"] { width: 17px; height: 17px; }
+  .lucide[width="15"] { width: 19px; height: 19px; }
+  .lucide[width="16"] { width: 20px; height: 20px; }
+  .lucide[width="18"] { width: 22px; height: 22px; }
+  .lucide[width="20"] { width: 25px; height: 25px; }
+  .lucide[width="24"] { width: 30px; height: 30px; }
+
+  /* Custom img-based icons (McpProviderIcon, tool icons, etc.) */
+  img[width="12"][height="12"] { width: 15px; height: 15px; }
+  img[width="14"][height="14"] { width: 17px; height: 17px; }
+  img[width="16"][height="16"] { width: 20px; height: 20px; }
+}
+
 /* Global scrollbar: thin and only visible while interacting (iOS-like) */
 /* biome-ignore lint: lower-specificity universal selector intentionally follows scoped rules above */
 * {

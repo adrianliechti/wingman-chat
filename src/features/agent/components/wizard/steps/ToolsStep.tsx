@@ -52,7 +52,7 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{tool.label}</div>
                 {tool.description && (
-                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
                     {tool.description}
                   </div>
                 )}
@@ -77,7 +77,7 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
               <Server size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{server.name}</div>
-                <div className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">{server.url}</div>
+                <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{server.url}</div>
               </div>
               <button
                 type="button"

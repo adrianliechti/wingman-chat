@@ -35,7 +35,7 @@ export function WizardNavFooter({
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-[10px] text-neutral-400 dark:text-neutral-500">
+        <span className="text-xs text-neutral-400 dark:text-neutral-500">
           {currentStep + 1} / {totalSteps}
         </span>
 

@@ -218,7 +218,7 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
               >
                 <Edit size={11} />
               </button>
-              <p className="text-[10px] text-neutral-400 dark:text-neutral-500">No instructions yet.</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500">No instructions yet.</p>
             </div>
           )}
         </div>

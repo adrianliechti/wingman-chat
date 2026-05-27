@@ -28,14 +28,14 @@ export function InventoryTable({ catalog }: InventoryTableProps) {
     <div className="h-full w-full overflow-auto px-3 pt-6 pb-24">
       {grouped.map(({ domain, datasets }) => (
         <section key={domain} className="mb-8">
-          <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
             {domain}
             <span className="ml-2 font-normal opacity-60">({datasets.length})</span>
           </h3>
           <div className="overflow-x-auto rounded-xl border border-neutral-200 dark:border-neutral-800">
             <table className="w-full text-xs">
               <thead className="bg-neutral-50 dark:bg-neutral-900/60">
-                <tr className="text-left text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                <tr className="text-left text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                   <th className="px-3 py-2">Dataset</th>
                   <th className="px-3 py-2">System</th>
                   <th className="px-3 py-2">Owner</th>
@@ -55,7 +55,7 @@ export function InventoryTable({ catalog }: InventoryTableProps) {
                       <div className="flex items-center gap-2">
                         <div className="min-w-0">
                           <p className="font-semibold text-neutral-800 dark:text-neutral-100 truncate">{d.title}</p>
-                          <p className="text-[10px] font-mono text-neutral-500 dark:text-neutral-500 truncate">
+                          <p className="text-xs font-mono text-neutral-500 dark:text-neutral-500 truncate">
                             {d.name}
                           </p>
                         </div>
@@ -72,7 +72,7 @@ export function InventoryTable({ catalog }: InventoryTableProps) {
                             background: SENSITIVITY_TINT[d.sensitivity] ?? "#e2e8f0",
                             color: SENSITIVITY_INK[d.sensitivity] ?? "#0f172a",
                           }}
-                          className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded"
+                          className="text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded"
                         >
                           {d.sensitivity}
                         </span>
@@ -173,7 +173,7 @@ function DatasetDrawer({
 
         <Section label="Storage">
           {dataset.system && <KV k="System" v={dataset.system} />}
-          {dataset.location && <KV k="Location" v={<code className="text-[11px]">{dataset.location}</code>} />}
+          {dataset.location && <KV k="Location" v={<code className="text-xs">{dataset.location}</code>} />}
           {dataset.refreshCadence && <KV k="Refresh" v={dataset.refreshCadence} />}
           {dataset.sla && <KV k="SLA" v={dataset.sla} />}
         </Section>
@@ -190,9 +190,9 @@ function DatasetDrawer({
         {dataset.fields && dataset.fields.length > 0 && (
           <Section label="Fields">
             <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden">
-              <table className="w-full text-[11px]">
+              <table className="w-full text-xs">
                 <thead className="bg-neutral-50 dark:bg-neutral-900/60">
-                  <tr className="text-left text-[10px] font-semibold uppercase text-neutral-500">
+                  <tr className="text-left text-xs font-semibold uppercase text-neutral-500">
                     <th className="px-2 py-1">Name</th>
                     <th className="px-2 py-1">Type</th>
                     <th className="px-2 py-1">Notation</th>
@@ -224,7 +224,7 @@ function DatasetDrawer({
               {dataset.glossaryTerms.map((id) => (
                 <span
                   key={id}
-                  className="text-[10px] font-semibold px-2 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
+                  className="text-xs font-semibold px-2 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
                 >
                   {glossaryFor(id)}
                 </span>
@@ -240,7 +240,7 @@ function DatasetDrawer({
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <section className="mb-5">
-      <h3 className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-1.5">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-1.5">
         {label}
       </h3>
       <div className="space-y-1">{children}</div>

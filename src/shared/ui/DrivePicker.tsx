@@ -167,7 +167,7 @@ function TreeItem({ entry, depth, driveId, selected, onToggleSelect, acceptFilte
           <span className="ml-0.5 flex-1 truncate text-sm text-neutral-800 dark:text-neutral-200">{entry.name}</span>
 
           {!isDir && entry.size != null && entry.size > 0 && (
-            <span className="mr-1 whitespace-nowrap text-[11px] tabular-nums text-neutral-400 dark:text-neutral-500">
+            <span className="mr-1 whitespace-nowrap text-xs tabular-nums text-neutral-400 dark:text-neutral-500">
               {formatBytes(entry.size)}
             </span>
           )}
@@ -344,7 +344,7 @@ export function DrivePicker({ isOpen, onClose, drive, onFilesSelected, accept, m
 
                 {/* Footer */}
                 <div className="flex items-center justify-between px-5 py-3 border-t border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/30 rounded-b-xl shrink-0">
-                  <span className="text-[11px] text-neutral-500">
+                  <span className="text-xs text-neutral-500">
                     {selected.size > 0 ? `${selected.size} file${selected.size === 1 ? "" : "s"} selected` : ""}
                   </span>
                   <div className="flex items-center gap-2.5">

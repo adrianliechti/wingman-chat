@@ -793,7 +793,7 @@ export function ChatInput() {
                             <ModelMenuItem key={modelItem.id} model={modelItem} onSelect={onModelChange} />
                           ))}
                         {showHiddenModels && models.some((m) => m.id !== "realtime" && m.hidden) && (
-                          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 bg-neutral-100/60 dark:bg-white/5 border-y border-white/20 dark:border-white/10">
+                          <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 bg-neutral-100/60 dark:bg-white/5 border-y border-white/20 dark:border-white/10">
                             Hidden
                           </div>
                         )}
