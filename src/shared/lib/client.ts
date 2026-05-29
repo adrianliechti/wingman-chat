@@ -21,12 +21,12 @@ import type {
   Tool,
   ToolResultContent,
 } from "@/shared/types/chat";
-import { Role } from "@/shared/types/chat";
+import { getTextFromContent, Role } from "@/shared/types/chat";
 import type { AgentContext } from "@/shared/types/telemetry";
 import { isAbortError } from "./errors";
 import { modelName, modelType } from "./models";
-import { traceGenAI } from "./otel";
 import { dropOrphanFunctionCalls } from "./recovery";
+import { traceGenAI } from "./telemetry-genai";
 import { serializeToolResultForApi, simplifyMarkdown } from "./utils";
 
 function expandToSentences(text: string, start: number, end: number): string {
@@ -298,24 +298,37 @@ export class Client {
 
         const assistant: Message = { role: Role.Assistant, content: contentParts };
 
+        const toMessages = (msgs: Message[]) =>
+          msgs.map((m) => ({ role: m.role, parts: [{ type: "text", content: getTextFromContent(m.content) }] }));
+        const traced = { input: toMessages(input), output: toMessages([assistant]) };
+
         try {
           const finalResponse = await runner.finalResponse();
+          let finishReason = "stop";
+          if (contentParts.some((p) => p.type === "tool_call")) {
+            finishReason = "tool_calls";
+          } else if (finalResponse.status === "incomplete") {
+            finishReason =
+              finalResponse.incomplete_details?.reason === "max_output_tokens" ? "length" : "content_filter";
+          }
           return {
             result: assistant,
             response: {
               id: finalResponse.id,
               model: finalResponse.model,
+              finishReasons: [finishReason],
               inputTokens: finalResponse.usage?.input_tokens,
               cachedInputTokens: finalResponse.usage?.input_tokens_details?.cached_tokens,
               outputTokens: finalResponse.usage?.output_tokens,
               reasoningTokens: finalResponse.usage?.output_tokens_details?.reasoning_tokens,
             },
+            ...traced,
           };
         } catch (error) {
           // On abort (our signal or runner.abort()), return partial content
           // as a successful result.
           if (options?.signal?.aborted || isAbortError(error)) {
-            return { result: assistant, response: { id: "", model } };
+            return { result: assistant, response: { id: "", model }, ...traced };
           }
           throw error;
         }
@@ -715,7 +728,12 @@ export class Client {
             truncation: "auto",
             text: { format: zodTextFormat(schema, name) },
           });
-          return { result: response.output_parsed ?? null };
+          const parsed = response.output_parsed ?? null;
+          return {
+            result: parsed,
+            input: [{ role: "user", parts: [{ type: "text", content: input }] }],
+            output: [{ role: "assistant", parts: [{ type: "text", content: JSON.stringify(parsed) }] }],
+          };
         } catch (error) {
           if (isAbortError(error)) throw error;
           console.error(`Error in ${name}:`, error);

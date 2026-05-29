@@ -1,7 +1,7 @@
 import type { Content, Message, Tool, ToolCallContent, ToolContext } from "../types/chat";
 import type { AgentContext } from "../types/telemetry";
 import type { Client } from "./client";
-import { traceExecuteTool, traceInvokeAgent } from "./otel";
+import { traceExecuteTool, traceInvokeAgent } from "./telemetry-genai";
 
 /** Options forwarded verbatim to `client.complete`. */
 export type CompleteOptions = Parameters<Client["complete"]>[5];

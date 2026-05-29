@@ -4,9 +4,9 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
 
-import { initTelemetry } from "./features/repository/lib/telemetry";
 import { loadConfig } from "./shared/config.ts";
 import { prepareInitialEmojiRendering } from "./shared/lib/noto-emoji.ts";
+import { initTelemetry } from "./shared/lib/telemetry";
 
 /**
  * Display a fatal error message to the user when the app fails to start.

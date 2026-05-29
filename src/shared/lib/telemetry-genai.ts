@@ -1,4 +1,5 @@
 import { type Attributes, context, metrics, type Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import { getConfig } from "../config";
 import type { AgentContext } from "../types/telemetry";
 
 const PROVIDER_NAME = "wingman";
@@ -9,11 +10,19 @@ const meter = metrics.getMeter("wingman");
 const operationDuration = meter.createHistogram("gen_ai.client.operation.duration", {
   description: "GenAI operation duration",
   unit: "s",
+  advice: {
+    explicitBucketBoundaries: [0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92],
+  },
 });
 
 const tokenUsage = meter.createHistogram("gen_ai.client.token.usage", {
   description: "GenAI token usage",
   unit: "{token}",
+  advice: {
+    explicitBucketBoundaries: [
+      1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864,
+    ],
+  },
 });
 
 async function traceSpan<T>(
@@ -65,7 +74,7 @@ export interface GenAIResponseInfo {
 export async function traceGenAI<T>(
   operation: string,
   model: string,
-  fn: () => Promise<{ result: T; response?: GenAIResponseInfo }>,
+  fn: () => Promise<{ result: T; response?: GenAIResponseInfo; input?: unknown; output?: unknown }>,
   parentContext?: AgentContext,
 ): Promise<T> {
   const base: Attributes = {
@@ -85,7 +94,15 @@ export async function traceGenAI<T>(
       parentContext,
     },
     async (span) => {
-      const { result, response } = await fn();
+      const { result, response, input, output } = await fn();
+
+      // gen_ai.input.messages / gen_ai.output.messages are Opt-In per the
+      // GenAI semconv. Only emit when telemetry.debug is configured.
+      if (getConfig().telemetryDebug) {
+        if (input !== undefined) span.setAttribute("gen_ai.input.messages", JSON.stringify(input));
+        if (output !== undefined) span.setAttribute("gen_ai.output.messages", JSON.stringify(output));
+      }
+
       if (!response) return result;
 
       responseModel = response.model;

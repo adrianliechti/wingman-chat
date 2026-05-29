@@ -171,6 +171,10 @@ interface BridgeConfig {
   url?: string;
 }
 
+interface TelemetryConfig {
+  debug?: boolean;
+}
+
 interface ConfigSchema {
   title: string;
   disclaimer: string;
@@ -206,7 +210,7 @@ interface ConfigSchema {
   translator?: TranslatorConfig;
 
   chat?: ChatConfig;
-  telemetry?: object;
+  telemetry?: TelemetryConfig;
 }
 
 const DEFAULT_TTS_VOICES: Record<string, string> = {
@@ -258,6 +262,7 @@ interface Config {
   chat: ChatConfig | null;
 
   telemetry: boolean;
+  telemetryDebug: boolean;
 
   backgrounds: BackgroundPackConfig;
 }
@@ -324,6 +329,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
       chat: cfg.chat ?? null,
 
       telemetry: cfg.telemetry != null,
+      telemetryDebug: cfg.telemetry?.debug === true,
 
       backgrounds: cfg.backgrounds ?? {},
     };
