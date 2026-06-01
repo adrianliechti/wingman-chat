@@ -89,8 +89,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     }
   }
 
-  function onToolCallCallback(toolName: string) {
-    setVoiceToolCallRef.current(toolName);
+  function onToolCallCallback(toolName: string, callId: string) {
+    setVoiceToolCallRef.current(toolName, callId);
   }
 
   function onToolCallDoneCallback() {
@@ -131,10 +131,9 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
             updateToolMetaRef.current(toolCall.id, { ...resultMeta });
           },
           elicit: async (elicitation: Elicitation) => {
-            setVoiceToolCallRef.current(toolCall.name);
-            // Pause mic/playback so the model doesn't keep talking while the
-            // user is answering the elicitation prompt.
-            await pauseAudioRef.current();
+            setVoiceToolCallRef.current(toolCall.name, toolCall.id);
+            // Pause the mic during the elicitation, but let buffered playback finish naturally.
+            await pauseAudioRef.current(false);
             try {
               return await requestElicitationRef.current(toolCall.id, toolCall.name, elicitation);
             } finally {

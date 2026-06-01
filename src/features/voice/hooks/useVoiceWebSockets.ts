@@ -68,11 +68,14 @@ export function useVoiceWebSockets(
     onToolResultRef.current = onToolResult;
   }, [onUser, onAssistant, onToolCall, onToolCallDone, onToolResult]);
 
-  const pauseAudio = useCallback(async () => {
+  const pauseAudio = useCallback(async (interruptPlayback = true) => {
     if (!audioPausedRef.current) {
       audioPausedRef.current = true;
       await wavRecorderRef.current?.pause();
-      wavPlayerRef.current?.interrupt();
+      // Only flush buffered playback when requested, else the assistant is cut off mid-sentence.
+      if (interruptPlayback) {
+        wavPlayerRef.current?.interrupt();
+      }
     }
   }, []);
 
