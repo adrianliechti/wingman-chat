@@ -66,8 +66,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     onToolResultCallback,
   );
 
-  const addMessageRef = useRef(addMessage);
-  addMessageRef.current = addMessage;
   const setVoiceToolCallRef = useRef(setVoiceToolCall);
   setVoiceToolCallRef.current = setVoiceToolCall;
   const requestElicitationRef = useRef(requestElicitation);
@@ -81,18 +79,18 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   function onUserTranscriptCallback(text: string) {
     if (text.trim()) {
-      addMessageRef.current({ role: Role.User, content: [{ type: "text", text }] });
+      addMessage({ role: Role.User, content: [{ type: "text", text }] });
     }
   }
 
   function onAssistantTranscriptCallback(text: string) {
     if (text.trim()) {
-      addMessageRef.current({ role: Role.Assistant, content: [{ type: "text", text }] });
+      addMessage({ role: Role.Assistant, content: [{ type: "text", text }] });
     }
   }
 
-  function onToolCallCallback(toolName: string, callId: string) {
-    setVoiceToolCallRef.current(toolName, callId);
+  function onToolCallCallback(toolName: string) {
+    setVoiceToolCallRef.current(toolName);
   }
 
   function onToolCallDoneCallback() {
@@ -104,7 +102,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     callId: string,
     result: (TextContent | ImageContent | AudioContent | FileContent)[],
   ) {
-    addMessageRef.current({
+    addMessage({
       role: Role.User,
       content: [
         {
@@ -133,7 +131,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
             updateToolMetaRef.current(toolCall.id, { ...resultMeta });
           },
           elicit: async (elicitation: Elicitation) => {
-            setVoiceToolCallRef.current(toolCall.name, toolCall.id);
+            setVoiceToolCallRef.current(toolCall.name);
             // Pause mic/playback so the model doesn't keep talking while the
             // user is answering the elicitation prompt.
             await pauseAudioRef.current();

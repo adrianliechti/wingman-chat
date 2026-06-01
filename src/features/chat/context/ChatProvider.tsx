@@ -677,7 +677,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
 
   const setVoiceToolCall = useCallback(
-    (toolName: string | null, callId?: string) => {
+    (toolName: string | null) => {
       if (toolName === null) {
         updateStreamingMessage(null);
         setIsResponding(false);
@@ -689,7 +689,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           chatId: id,
           message: {
             role: Role.Assistant,
-            content: [{ type: "tool_call", id: callId ?? crypto.randomUUID(), name: toolName, arguments: "{}" }],
+            content: [{ type: "tool_call", id: crypto.randomUUID(), name: toolName, arguments: "{}" }],
           },
         });
       }
