@@ -11,7 +11,7 @@ import { type CategoryConfig, categorySlug, getConfig, type RiskConfig, riskSlug
 import { run as agentRun } from "@/shared/lib/agent";
 import type { Client } from "@/shared/lib/client";
 import { getErrorInfo } from "@/shared/lib/errors";
-import type { Chat, Content, Message, Model, ToolCallContent, ToolContext } from "@/shared/types/chat";
+import type { Content, Message, Model, ToolCallContent, ToolContext } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import type {
   ConsentResult,
@@ -291,6 +291,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
     pendingModelContextRef.current.set(targetChatId, text.trim());
   }, []);
 
+  const requestElicitation = useCallback(
+    (toolCallId: string, toolName: string, elicitation: Elicitation): Promise<ElicitationResult> => {
+      return new Promise((resolve) => {
+        setPendingElicitation({
+          toolCallId,
+          toolName,
+          elicitation,
+          resolve,
+        });
+      });
+    },
+    [],
+  );
+
   const runMessageInChat = useCallback(
     async function run(id: string, message: Message, historyOverride?: Message[], initialTitle?: string) {
       const currentModel = model;
@@ -419,14 +433,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             await updateModelContext(id, text);
           },
           elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
-            return new Promise((resolve) => {
-              setPendingElicitation({
-                toolCallId: currentToolCall.id,
-                toolName: currentToolCall.name,
-                elicitation,
-                resolve,
-              });
-            });
+            return requestElicitation(currentToolCall.id, currentToolCall.name, elicitation);
           },
           onElicitationComplete: (elicitationId: string) => {
             const cb = elicitationCompleteCallbacksRef.current.get(elicitationId);
@@ -575,6 +582,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       chatTools,
       chatInstructions,
       renderApp,
+      requestElicitation,
       updateModelContext,
       updateStreamingMessage,
     ],
@@ -687,20 +695,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
       }
     },
     [updateStreamingMessage],
-  );
-
-  const requestElicitation = useCallback(
-    (toolCallId: string, toolName: string, elicitation: Elicitation): Promise<ElicitationResult> => {
-      return new Promise((resolve) => {
-        setPendingElicitation({
-          toolCallId,
-          toolName,
-          elicitation,
-          resolve,
-        });
-      });
-    },
-    [],
   );
 
   const stopStreaming = useCallback(() => {

@@ -50,7 +50,7 @@ export function useVoiceWebSockets(
 
   const pendingResponsesRef = useRef<Map<string, PendingResponse>>(new Map());
   const argAccumRef = useRef<Map<string, string>>(new Map());
-  const pendingPostToolFiresRef = useRef<number>(0);
+  const pendingPostToolFireRef = useRef<boolean>(false);
   const toolsRef = useRef<Tool[] | undefined>(undefined);
   const toolContextFactoryRef = useRef<ToolContextFactory | undefined>(undefined);
 
@@ -104,7 +104,7 @@ export function useVoiceWebSockets(
         pendingResponsesRef.current.delete(responseId);
         if (ws.readyState !== WebSocket.OPEN) return;
         if (hasOtherActiveResponse()) {
-          pendingPostToolFiresRef.current += 1;
+          pendingPostToolFireRef.current = true;
           return;
         }
         ws.send(JSON.stringify({ type: "response.create" }));
@@ -115,10 +115,10 @@ export function useVoiceWebSockets(
 
   const drainPendingPostToolFires = useCallback(
     (ws: WebSocket) => {
-      if (pendingPostToolFiresRef.current === 0) return;
+      if (!pendingPostToolFireRef.current) return;
       if (hasOtherActiveResponse()) return;
       if (ws.readyState !== WebSocket.OPEN) return;
-      pendingPostToolFiresRef.current = 0;
+      pendingPostToolFireRef.current = false;
       ws.send(JSON.stringify({ type: "response.create" }));
     },
     [hasOtherActiveResponse],
@@ -423,7 +423,7 @@ export function useVoiceWebSockets(
           }
 
           case "error":
-            console.error("[voice] API error (full):", JSON.stringify(msg, null, 2));
+            console.error("[voice] API error:", (msg.error as Record<string, unknown>) ?? msg.type);
             break;
         }
       });
@@ -476,7 +476,7 @@ export function useVoiceWebSockets(
 
     pendingResponsesRef.current.clear();
     argAccumRef.current.clear();
-    pendingPostToolFiresRef.current = 0;
+    pendingPostToolFireRef.current = false;
 
     // Stop recorder
     if (wavRecorderRef.current) {

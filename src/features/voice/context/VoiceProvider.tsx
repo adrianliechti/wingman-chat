@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
@@ -16,19 +16,16 @@ interface VoiceProviderProps {
   children: React.ReactNode;
 }
 
-function parseTranscriptText(text: string): string {
-  try {
-    if (text.trim().startsWith("{")) {
-      const parsed = JSON.parse(text) as unknown;
-      if (parsed && typeof parsed === "object" && "text" in parsed) {
-        return (parsed as { text: string }).text;
-      }
-      if (typeof parsed === "string") return parsed;
-    }
-  } catch {
-    /* not JSON */
+function hashString(text: string): number {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash * 31 + text.charCodeAt(i)) | 0;
   }
-  return text;
+  return hash;
+}
+
+function sessionSignature(instructions: string, tools: { name: string }[]): string {
+  return `${hashString(instructions)}|${tools.map((t) => t.name).join(",")}`;
 }
 
 export function VoiceProvider({ children }: VoiceProviderProps) {
@@ -61,7 +58,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const { tools: chatTools, instructions: chatInstructions } = useChatContext("voice", model);
   const { inputDeviceId, outputDeviceId } = useAudioDevices();
 
-  const { start, stop, sendText, updateSession } = useVoiceWebSockets(
+  const { start, stop, sendText, updateSession, pauseAudio, resumeAudio } = useVoiceWebSockets(
     onUserTranscriptCallback,
     onAssistantTranscriptCallback,
     onToolCallCallback,
@@ -77,18 +74,20 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   requestElicitationRef.current = requestElicitation;
   const updateToolMetaRef = useRef(updateToolMeta);
   updateToolMetaRef.current = updateToolMeta;
+  const pauseAudioRef = useRef(pauseAudio);
+  pauseAudioRef.current = pauseAudio;
+  const resumeAudioRef = useRef(resumeAudio);
+  resumeAudioRef.current = resumeAudio;
 
   function onUserTranscriptCallback(text: string) {
-    const content = parseTranscriptText(text);
-    if (content.trim()) {
-      addMessageRef.current({ role: Role.User, content: [{ type: "text", text: content }] });
+    if (text.trim()) {
+      addMessageRef.current({ role: Role.User, content: [{ type: "text", text }] });
     }
   }
 
   function onAssistantTranscriptCallback(text: string) {
-    const content = parseTranscriptText(text);
-    if (content.trim()) {
-      addMessageRef.current({ role: Role.Assistant, content: [{ type: "text", text: content }] });
+    if (text.trim()) {
+      addMessageRef.current({ role: Role.Assistant, content: [{ type: "text", text }] });
     }
   }
 
@@ -135,7 +134,14 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
           },
           elicit: async (elicitation: Elicitation) => {
             setVoiceToolCallRef.current(toolCall.name, toolCall.id);
-            return requestElicitationRef.current(toolCall.id, toolCall.name, elicitation);
+            // Pause mic/playback so the model doesn't keep talking while the
+            // user is answering the elicitation prompt.
+            await pauseAudioRef.current();
+            try {
+              return await requestElicitationRef.current(toolCall.id, toolCall.name, elicitation);
+            } finally {
+              await resumeAudioRef.current();
+            }
           },
         };
       },
@@ -144,21 +150,26 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   const lastSessionSignatureRef = useRef<string>("");
 
+  // The realtime model can't run completions for subagents/tool context, so we
+  // resolve the first non-realtime completer model to back those operations.
+  const underlyingModelId = useMemo(
+    () => models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id,
+    [models],
+  );
+
   useEffect(() => {
     if (!isListening) return;
     const instructions = chatInstructions();
     chatTools()
       .then((tools) => {
-        const signature = `${instructions.length}|${tools.map((t) => t.name).join(",")}`;
+        const signature = sessionSignature(instructions, tools);
         if (signature === lastSessionSignatureRef.current) return;
         lastSessionSignatureRef.current = signature;
-        const factory = buildToolContextFactory(
-          models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id,
-        );
+        const factory = buildToolContextFactory(underlyingModelId);
         updateSession(tools, instructions, factory);
       })
       .catch((err) => console.error("updateSession failed:", err));
-  }, [isListening, chatTools, chatInstructions, updateSession, buildToolContextFactory, models]);
+  }, [isListening, chatTools, chatInstructions, updateSession, buildToolContextFactory, underlyingModelId]);
 
   const stopVoice = useCallback(async () => {
     await stop();
@@ -180,10 +191,9 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       const transcribeModel = config.voice?.transcriber ?? config.stt?.model;
       const tools = await chatTools();
       const instructions = chatInstructions();
-      const underlyingModelId = models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id;
       const toolContextFactory = buildToolContextFactory(underlyingModelId);
 
-      lastSessionSignatureRef.current = `${instructions.length}|${tools.map((t) => t.name).join(",")}`;
+      lastSessionSignatureRef.current = sessionSignature(instructions, tools);
 
       await start(
         realtimeModel,
@@ -216,7 +226,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     buildToolContextFactory,
     chatInstructions,
     chatTools,
-    models,
+    underlyingModelId,
     start,
     messages,
     config.voice?.model,
