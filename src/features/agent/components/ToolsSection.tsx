@@ -1,4 +1,4 @@
-import { AlertTriangle, Loader2, Plus, Server, ToggleLeft, ToggleRight, Wrench } from "lucide-react";
+import { AlertTriangle, Loader2, Plus, Server, ToggleLeft, ToggleRight, Wrench, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BridgeEditor } from "@/features/agent/components/BridgeEditor";
 import { useAgents } from "@/features/agent/hooks/useAgents";
@@ -80,6 +80,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
 
       <Section
         title="Tools"
+        icon={<Zap size={12} />}
         isOpen={true}
         collapsible={false}
         headerAction={
@@ -107,9 +108,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{tool.label}</div>
                 {tool.description && (
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
-                    {tool.description}
-                  </div>
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">{tool.description}</div>
                 )}
               </div>
               <button

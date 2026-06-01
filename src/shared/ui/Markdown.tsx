@@ -609,7 +609,7 @@ function createComponents(
     },
     ol: ({ children, ...props }) => {
       return (
-        <ol className="list-decimal list-inside ml-6 pl-0" {...props}>
+        <ol className="list-decimal list-outside pl-6 ml-0" {...props}>
           {children}
         </ol>
       );

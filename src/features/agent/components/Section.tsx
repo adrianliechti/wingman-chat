@@ -1,8 +1,10 @@
 import { ChevronRight } from "lucide-react";
+import type { ReactNode } from "react";
 import { cn } from "@/shared/lib/cn";
 
 interface SectionProps {
   title: string;
+  icon?: ReactNode;
   isOpen: boolean;
   onOpenToggle?: () => void;
   collapsible?: boolean;
@@ -13,6 +15,7 @@ interface SectionProps {
 
 export function Section({
   title,
+  icon,
   isOpen,
   onOpenToggle,
   collapsible = true,
@@ -30,16 +33,22 @@ export function Section({
             className="flex-1 flex items-center justify-between py-1 text-left"
           >
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{title}</span>
+              {icon && <span className="text-neutral-400 dark:text-neutral-500 shrink-0">{icon}</span>}
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                {title}
+              </span>
             </div>
             <ChevronRight
-              size={14}
+              size={13}
               className={cn("text-neutral-400 transition-transform duration-200", isOpen && "rotate-90")}
             />
           </button>
         ) : (
-          <div className="flex-1 flex items-center py-1">
-            <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{title}</span>
+          <div className="flex-1 flex items-center gap-2 py-1">
+            {icon && <span className="text-neutral-400 dark:text-neutral-500 shrink-0">{icon}</span>}
+            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+              {title}
+            </span>
           </div>
         )}
         {headerAction && <div className="shrink-0">{headerAction}</div>}

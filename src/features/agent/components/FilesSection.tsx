@@ -1,6 +1,9 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { FileText, HardDrive, Loader2, Plus, Upload, X } from "lucide-react";
+import { FileText, FolderOpen, HardDrive, Loader2, Plus, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+const FILES_VISIBLE_DEFAULT = 3;
+
 import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
 import type { Agent } from "@/features/agent/types/agent";
 import type { RepositoryFile } from "@/features/repository/types/repository";
@@ -20,6 +23,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
   const acceptFilter = acceptTypes().join(",");
   const [isDragOver, setIsDragOver] = useState(false);
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
+  const [showAllFiles, setShowAllFiles] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
@@ -105,6 +109,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
 
       <Section
         title="Knowledge Base"
+        icon={<FolderOpen size={12} />}
         isOpen={true}
         collapsible={false}
         headerAction={
@@ -164,52 +169,51 @@ export function FilesSection({ agent }: FilesSectionProps) {
             id={`agent-file-upload-${agent.id}`}
           />
 
-          {/* File grid */}
+          {/* File list */}
           {files.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <div className="space-y-0.5">
               {files
                 .slice()
                 .sort((a, b) => a.name.localeCompare(b.name))
+                .slice(0, showAllFiles ? undefined : FILES_VISIBLE_DEFAULT)
                 .map((file: RepositoryFile) => (
-                  <div key={file.id} className="relative group" title={file.name}>
-                    <div
-                      className={`relative w-16 h-16 ${
-                        file.status === "processing"
-                          ? "bg-white/30 dark:bg-neutral-900/80 backdrop-blur-lg border-2 border-dashed border-white/50 dark:border-neutral-600/60"
-                          : file.status === "error"
-                            ? "bg-red-100/40 dark:bg-red-900/25 backdrop-blur-lg border border-red-300/40 dark:border-red-600/25"
-                            : "bg-white/40 dark:bg-neutral-900/80 backdrop-blur-lg border border-white/40 dark:border-neutral-600/60"
-                      } rounded-xl shadow-sm flex flex-col items-center justify-center p-1.5 hover:shadow-md transition-all`}
+                  <div
+                    key={file.id}
+                    className="group flex items-center gap-2 py-1.5 rounded-lg px-1 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/40 transition-colors"
+                  >
+                    {file.status === "processing" ? (
+                      <Loader2 size={13} className="shrink-0 animate-spin text-neutral-400 dark:text-neutral-500" />
+                    ) : (
+                      <FileText size={13} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+                    )}
+                    <span
+                      className="flex-1 min-w-0 text-xs truncate text-neutral-700 dark:text-neutral-300"
+                      title={file.name}
                     >
-                      {file.status === "processing" ? (
-                        <div className="flex flex-col items-center">
-                          <Loader2 size={16} className="animate-spin text-neutral-500 dark:text-neutral-400 mb-0.5" />
-                          <div className="text-xs text-neutral-600 dark:text-neutral-400">{file.progress}%</div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center text-center w-full">
-                          <FileText
-                            size={14}
-                            className={`mb-0.5 shrink-0 ${file.status === "error" ? "text-red-600 dark:text-red-400" : "text-neutral-600 dark:text-neutral-300"}`}
-                          />
-                          <div
-                            className={`text-xs font-medium truncate w-full leading-tight ${file.status === "error" ? "text-red-700 dark:text-red-300" : "text-neutral-700 dark:text-neutral-200"}`}
-                          >
-                            {file.name}
-                          </div>
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        className="absolute top-0.5 right-0.5 size-4 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm shadow-sm"
-                        onClick={() => removeFile(file.id)}
-                        title="Remove file"
-                      >
-                        <X size={8} />
-                      </button>
-                    </div>
+                      {file.name}
+                    </span>
+                    {file.status === "processing" && (
+                      <span className="text-xs text-neutral-400 dark:text-neutral-500 shrink-0">{file.progress}%</span>
+                    )}
+                    <button
+                      type="button"
+                      className="shrink-0 p-0.5 rounded text-neutral-300 dark:text-neutral-600 hover:text-neutral-600 dark:hover:text-neutral-300 opacity-0 group-hover:opacity-100 transition-all"
+                      onClick={() => removeFile(file.id)}
+                      title="Remove file"
+                    >
+                      <X size={12} />
+                    </button>
                   </div>
                 ))}
+              {files.length > FILES_VISIBLE_DEFAULT && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllFiles((v) => !v)}
+                  className="w-full text-left px-1 py-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                >
+                  {showAllFiles ? "Show less" : `+${files.length - FILES_VISIBLE_DEFAULT} more`}
+                </button>
+              )}
             </div>
           )}
         </div>

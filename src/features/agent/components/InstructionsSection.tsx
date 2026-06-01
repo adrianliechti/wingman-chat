@@ -1,6 +1,6 @@
 import { Dialog, Transition } from "@headlessui/react";
-import { Edit, X } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Edit, ScrollText, X } from "lucide-react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
 import { Markdown } from "@/shared/ui/Markdown";
@@ -15,17 +15,29 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [value, setValue] = useState("");
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = previewRef.current;
+    if (!el) return;
+    const check = () => setIsOverflowing(el.scrollHeight > el.clientHeight);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [agent.instructions]);
 
   const openDialog = () => {
-    const existing = agent.instructions || "";
     setIsDialogOpen(true);
-    if (existing.trim()) {
-      setIsEditing(false);
-      setValue("");
-    } else {
-      setValue("");
-      setIsEditing(true);
-    }
+    setIsEditing(false);
+    setValue("");
+  };
+
+  const openDialogInEditMode = () => {
+    setValue(agent.instructions || "");
+    setIsEditing(true);
+    setIsDialogOpen(true);
   };
 
   const startEditing = () => {
@@ -115,8 +127,7 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
                           value={value}
                           onChange={(e) => setValue(e.target.value)}
                           onKeyDown={handleKeyDown}
-                          rows={12}
-                          className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-y min-h-50 backdrop-blur-sm transition-colors"
+                          className="w-full h-96 px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-none backdrop-blur-sm transition-colors"
                           placeholder="Enter instructions for this agent..."
                           autoFocus
                         />
@@ -125,17 +136,22 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
                         </p>
                       </>
                     ) : (
-                      <div className="max-h-96 overflow-auto">
-                        {agent.instructions?.trim() ? (
-                          <div className="prose prose-sm dark:prose-invert max-w-none text-sm [&>*:first-child]:mt-0">
-                            <Markdown>{agent.instructions}</Markdown>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-neutral-400 dark:text-neutral-500 italic text-center py-8">
-                            No instructions yet.
-                          </p>
-                        )}
-                      </div>
+                      <>
+                        <div className="h-96 overflow-auto">
+                          {agent.instructions?.trim() ? (
+                            <div className="prose prose-sm dark:prose-invert max-w-none text-sm [&>*:first-child]:mt-0">
+                              <Markdown>{agent.instructions}</Markdown>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-neutral-400 dark:text-neutral-500 italic text-center py-8">
+                              No instructions yet.
+                            </p>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 invisible">
+                          Instructions help the AI understand how to behave and what context to use.
+                        </p>
+                      </>
                     )}
                   </div>
 
@@ -184,44 +200,43 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
         </Dialog>
       </Transition>
 
-      <Section title="Instructions" isOpen={true} collapsible={false}>
-        <div className="space-y-2">
-          {agent.instructions?.trim() && (
-            <div className="relative rounded-lg border border-neutral-200/60 dark:border-neutral-700/60 bg-white/40 dark:bg-neutral-900/30 backdrop-blur-sm p-2 overflow-hidden">
-              <button
-                type="button"
-                onClick={openDialog}
-                className="absolute top-1.5 right-1.5 z-10 p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/70 transition-colors"
-                title="Edit instructions"
-                aria-label="Edit instructions"
-              >
-                <Edit size={11} />
-              </button>
-              <div className="max-h-24 overflow-hidden">
-                <div className="origin-top-left scale-[0.8] w-[125%] pr-6">
-                  <div className="prose prose-sm dark:prose-invert max-w-none text-xs text-neutral-700 dark:text-neutral-300 [&>*:first-child]:mt-0">
-                    <Markdown>{agent.instructions}</Markdown>
-                  </div>
-                </div>
+      <Section
+        title="Instructions"
+        icon={<ScrollText size={12} />}
+        isOpen={true}
+        collapsible={false}
+        headerAction={
+          <button
+            type="button"
+            onClick={openDialogInEditMode}
+            className="p-0.5 rounded text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+            title="Edit instructions"
+            aria-label="Edit instructions"
+          >
+            <Edit size={13} />
+          </button>
+        }
+      >
+        {agent.instructions?.trim() ? (
+          <>
+            <div ref={previewRef} className="max-h-24 overflow-hidden">
+              <div className="prose prose-sm dark:prose-invert max-w-none text-xs text-neutral-700 dark:text-neutral-300 [&>*:first-child]:mt-0">
+                <Markdown>{agent.instructions}</Markdown>
               </div>
             </div>
-          )}
-
-          {!agent.instructions?.trim() && (
-            <div className="relative rounded-lg border border-neutral-200/60 dark:border-neutral-700/60 bg-white/30 dark:bg-neutral-900/20 backdrop-blur-sm p-2 min-h-10">
+            {isOverflowing && (
               <button
                 type="button"
                 onClick={openDialog}
-                className="absolute top-1.5 right-1.5 p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/70 transition-colors"
-                title="Edit instructions"
-                aria-label="Edit instructions"
+                className="mt-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
               >
-                <Edit size={11} />
+                Show more
               </button>
-              <p className="text-xs text-neutral-400 dark:text-neutral-500">No instructions yet.</p>
-            </div>
-          )}
-        </div>
+            )}
+          </>
+        ) : (
+          <p className="text-xs text-neutral-400 dark:text-neutral-500">No instructions yet.</p>
+        )}
       </Section>
     </>
   );

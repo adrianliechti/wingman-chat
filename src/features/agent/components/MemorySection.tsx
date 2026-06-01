@@ -1,5 +1,5 @@
 import { Dialog, Transition } from "@headlessui/react";
-import { Edit, Pencil, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
+import { BrainCircuit, Edit, Pencil, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
@@ -238,6 +238,7 @@ export function MemorySection({ agent }: MemorySectionProps) {
 
       <Section
         title="Memory"
+        icon={<BrainCircuit size={12} />}
         isOpen={true}
         collapsible={false}
         headerAction={

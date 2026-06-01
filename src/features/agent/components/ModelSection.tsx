@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Cpu } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useAgents } from "@/features/agent/hooks/useAgents";
@@ -62,7 +62,7 @@ export function ModelSection({ agent }: ModelSectionProps) {
 
   if (isRealtimeAgent) {
     return (
-      <Section title="Model" isOpen={true} collapsible={false}>
+      <Section title="Model" icon={<Cpu size={12} />} isOpen={true} collapsible={false}>
         <div className="relative">
           <input
             type="text"
@@ -76,7 +76,7 @@ export function ModelSection({ agent }: ModelSectionProps) {
   }
 
   return (
-    <Section title="Model" isOpen={true} collapsible={false} overflowVisible>
+    <Section title="Model" icon={<Cpu size={12} />} isOpen={true} collapsible={false} overflowVisible>
       <div className="relative" ref={dropdownRef}>
         <button
           type="button"
