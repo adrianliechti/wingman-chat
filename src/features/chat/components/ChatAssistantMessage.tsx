@@ -335,8 +335,14 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
             // Tool calls shown inline only when streaming
             if (!isLast || !isResponding) return null;
             const preview = getToolCallPreview(part.name, part.arguments);
+            // Only the first tool call in a run gets top spacing (to match the
+            // committed result's gap); consecutive concurrent calls stay tight.
+            const isFirstToolCall = message.content[index - 1]?.type !== "tool_call";
             return (
-              <div key={partKey} className="mt-0.5 mb-0 rounded-lg overflow-hidden max-w-full">
+              <div
+                key={partKey}
+                className={cn("mb-0 rounded-lg overflow-hidden max-w-full", isFirstToolCall ? "mt-2" : "mt-0.5")}
+              >
                 <div className="flex items-center gap-2 min-w-0">
                   <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
                   <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">

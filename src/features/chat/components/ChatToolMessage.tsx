@@ -164,7 +164,7 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
 
         {/* Always render media content (images, audio, files) from tool results */}
         {toolResult?.result?.some((c) => c.type === "image" || c.type === "audio" || c.type === "file") && (
-          <div className="ml-4.5 mt-2">
+          <div className="mt-2">
             <RenderContents contents={toolResult.result} />
           </div>
         )}

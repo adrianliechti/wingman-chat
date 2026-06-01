@@ -19,6 +19,7 @@ import type {
   ModelType,
   ReasoningContent,
   Tool,
+  ToolCallContent,
   ToolResultContent,
 } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
@@ -229,6 +230,11 @@ export class Client {
 
         const emit = () => handler?.([...contentParts]);
 
+        // Track in-flight tool calls by their output index so we can grow their
+        // arguments as deltas arrive. (output_index is present on every event;
+        // the item id is optional and the call id isn't on the delta events.)
+        const toolCallsByIndex = new Map<number, ToolCallContent>();
+
         const runner = this.oai.responses
           .stream({
             model: model,
@@ -269,14 +275,43 @@ export class Client {
             }
             emit();
           })
-          .on("response.output_item.done", (event) => {
+          // Materialize the tool-call part as soon as the call starts, so its
+          // spinner appears right after the intro instead of only once the model
+          // has finished writing all the arguments.
+          .on("response.output_item.added", (event) => {
             if (event.item.type === "function_call") {
-              contentParts.push({
+              const part: ToolCallContent = {
                 type: "tool_call",
                 id: event.item.call_id,
                 name: event.item.name,
-                arguments: event.item.arguments,
-              });
+                arguments: event.item.arguments ?? "",
+              };
+              toolCallsByIndex.set(event.output_index, part);
+              contentParts.push(part);
+              emit();
+            }
+          })
+          // Grow the arguments live as the model writes them (e.g. the Python script).
+          .on("response.function_call_arguments.delta", (event) => {
+            const part = toolCallsByIndex.get(event.output_index);
+            if (part) {
+              part.arguments += event.delta;
+              emit();
+            }
+          })
+          .on("response.output_item.done", (event) => {
+            if (event.item.type === "function_call") {
+              const existing = toolCallsByIndex.get(event.output_index);
+              if (existing) {
+                existing.arguments = event.item.arguments; // authoritative final value
+              } else {
+                contentParts.push({
+                  type: "tool_call",
+                  id: event.item.call_id,
+                  name: event.item.name,
+                  arguments: event.item.arguments,
+                });
+              }
               emit();
             }
           });
