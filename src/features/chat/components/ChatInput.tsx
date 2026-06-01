@@ -465,7 +465,7 @@ export function ChatInput() {
           className={`relative @container contain-[layout_style] will-change-[height] ${
             isDragging
               ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl"
-              : `border-0 md:border border-t border-solid border-neutral-200/60 dark:border-neutral-700/60 bg-white/60 dark:bg-neutral-950/70 rounded-2xl md:rounded-2xl`
+              : `border border-solid border-neutral-200/60 dark:border-neutral-700/60 bg-white/60 dark:bg-neutral-950/70 rounded-2xl md:rounded-2xl`
           } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-sm transition-all duration-200`}
         >
           <input
@@ -479,7 +479,7 @@ export function ChatInput() {
 
           {/* Drop zone overlay */}
           {isDragging && (
-            <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-sm">
+            <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-xl">
               <div className="text-slate-700 dark:text-slate-300 font-semibold text-lg text-center">
                 Drop files here
               </div>
@@ -491,7 +491,7 @@ export function ChatInput() {
 
           {/* Attachments display */}
           {(attachments.length > 0 || extractingAttachments.size > 0) && (
-            <div className="p-3">
+            <div className={cn("p-3 transition-all duration-200", isDragging && "blur-sm")}>
               <ChatInputAttachments
                 attachments={attachments}
                 extractingAttachments={extractingAttachments}
@@ -501,7 +501,7 @@ export function ChatInput() {
           )}
 
           {/* Input area */}
-          <div className="relative flex-1">
+          <div className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}>
             {isRealtimeSelected ? (
               <>
                 <textarea
@@ -611,7 +611,12 @@ export function ChatInput() {
           </div>
 
           {/* Controls */}
-          <div className="relative flex items-center justify-between p-3 pt-0 pb-3">
+          <div
+            className={cn(
+              "relative flex items-center justify-between p-3 pt-0 pb-3 transition-all duration-200",
+              isDragging && "blur-sm",
+            )}
+          >
             {isRealtimeSelected && !isListening && (
               <button
                 type="button"

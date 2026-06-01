@@ -643,7 +643,7 @@ export function ArtifactsDrawer() {
         {/* Left column: top bar + vertical editor/terminal split */}
         <ResizablePanel defaultSize={75} minSize={200} className="h-full flex flex-col overflow-hidden">
           {/* Top bar — lives inside the left column so the files browser spans full drawer height */}
-          <div className="@container shrink-0 h-10 flex items-center px-2 gap-1">
+          <div className="@container shrink-0 h-12 md:h-10 flex items-center px-2 gap-1">
             {/* File title */}
             <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative" ref={filePickerRef}>
               {activeFile && (
@@ -659,7 +659,7 @@ export function ArtifactsDrawer() {
                 >
                   <FileIcon name={activeFile} className="shrink-0 @[18rem]:inline hidden" />
                   <span
-                    className="text-xs font-medium truncate text-neutral-600 dark:text-neutral-400"
+                    className="text-sm md:text-xs font-medium truncate text-neutral-600 dark:text-neutral-400"
                     title={getFileName(activeFile)}
                   >
                     {getFileName(activeFile)}
@@ -668,7 +668,7 @@ export function ArtifactsDrawer() {
                     <ChevronDown
                       size={12}
                       className={cn(
-                        "shrink-0 text-neutral-400 transition-transform duration-150",
+                        "shrink-0 w-3.5 h-3.5 md:w-3 md:h-3 text-neutral-400 transition-transform duration-150",
                         showFilePicker && "rotate-180",
                       )}
                     />
@@ -690,6 +690,7 @@ export function ArtifactsDrawer() {
                   ref={viewSliderRef}
                   className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0 ml-2"
                 >
+                  {/* responsive segmented control */}
                   {/* Animated slider background */}
                   {viewSliderStyle.width > 0 && (
                     <div
@@ -708,13 +709,13 @@ export function ArtifactsDrawer() {
                     onClick={() => setViewMode("preview")}
                     title="Preview"
                     className={cn(
-                      "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
+                      "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
                       viewMode === "preview"
                         ? "text-neutral-900 dark:text-neutral-50"
                         : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
                     )}
                   >
-                    <Eye size={11} strokeWidth={2.25} />
+                    <Eye size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
                   </button>
                   <button
                     type="button"
@@ -722,13 +723,13 @@ export function ArtifactsDrawer() {
                     onClick={() => setViewMode("code")}
                     title="Code"
                     className={cn(
-                      "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
+                      "relative z-10 flex items-center justify-center w-6 h-6 md:w-5 md:h-5 rounded-full transition-colors duration-200 text-xs",
                       viewMode === "code"
                         ? "text-neutral-900 dark:text-neutral-50"
                         : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
                     )}
                   >
-                    <Code size={11} strokeWidth={2.25} />
+                    <Code size={11} strokeWidth={2.25} className="w-3.5 h-3.5 md:w-2.75 md:h-2.75" />
                   </button>
                 </div>
               )}
@@ -743,7 +744,7 @@ export function ArtifactsDrawer() {
                         setShowFilePicker(false);
                       }}
                       className={cn(
-                        "w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-100 text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5",
+                        "w-full flex items-center gap-2 px-3 py-2.5 md:py-1.5 text-left text-sm md:text-xs transition-colors duration-100 text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5",
                         f.path === activeFile && "font-medium",
                       )}
                     >
@@ -767,10 +768,14 @@ export function ArtifactsDrawer() {
                       type="button"
                       onClick={handleRun}
                       disabled={isRunning}
-                      className="p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+                      className="p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
                       title={isRunning ? "Running..." : "Run"}
                     >
-                      {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                      {isRunning ? (
+                        <Loader2 size={14} className="w-4 h-4 md:w-3.5 md:h-3.5 animate-spin" />
+                      ) : (
+                        <Play size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                      )}
                     </button>
                   )}
 
@@ -790,10 +795,10 @@ export function ArtifactsDrawer() {
                                 console.error("Failed to download file:", error);
                               }
                             }}
-                            className="flex items-center gap-1 px-1.5 py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-xs"
+                            className="flex items-center gap-1 px-2 py-1.5 md:px-1.5 md:py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-sm md:text-xs"
                             title={`Download ${getFileName(activeFileData.path)}`}
                           >
-                            <Download size={13} />
+                            <Download size={13} className="w-4 h-4 md:w-3.25 md:h-3.25" />
                             <span className="@[18rem]:inline hidden">Download</span>
                           </button>
                         );
@@ -801,10 +806,10 @@ export function ArtifactsDrawer() {
                       return (
                         <Menu>
                           <MenuButton
-                            className="flex items-center gap-1 px-1.5 py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-xs"
+                            className="flex items-center gap-1 px-2 py-1.5 md:px-1.5 md:py-1 rounded transition-all duration-150 ease-out text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5 text-sm md:text-xs"
                             title="Download"
                           >
-                            <Download size={13} />
+                            <Download size={13} className="w-4 h-4 md:w-3.25 md:h-3.25" />
                             <span className="@[18rem]:inline hidden">Download</span>
                           </MenuButton>
                           <MenuItems
@@ -867,11 +872,11 @@ export function ArtifactsDrawer() {
             {chat?.id && (
               <Menu as="div" className="relative">
                 <MenuButton
-                  className="flex items-center gap-0.5 p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                  className="flex items-center gap-0.5 p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
                   title="Toggle panels"
                 >
-                  <PanelRightOpen size={14} />
-                  <ChevronDown size={10} className="opacity-60" />
+                  <PanelRightOpen size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                  <ChevronDown size={10} className="w-3 h-3 md:w-2.5 md:h-2.5 opacity-60" />
                 </MenuButton>
                 <MenuItems
                   modal={false}
@@ -884,12 +889,15 @@ export function ArtifactsDrawer() {
                       <button
                         type="button"
                         onClick={() => setShowFilesBrowser((v) => !v)}
-                        className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 md:py-1.5 text-sm md:text-xs text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                       >
-                        <Files size={12} className="shrink-0 text-neutral-400" />
+                        <Files size={12} className="shrink-0 w-3.5 h-3.5 md:w-3 md:h-3 text-neutral-400" />
                         <span className="flex-1 text-left">Files</span>
                         {showFilesBrowser && (
-                          <Check size={11} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
+                          <Check
+                            size={11}
+                            className="shrink-0 w-3.5 h-3.5 md:w-2.75 md:h-2.75 text-neutral-500 dark:text-neutral-400"
+                          />
                         )}
                       </button>
                     </MenuItem>
@@ -898,11 +906,16 @@ export function ArtifactsDrawer() {
                     <button
                       type="button"
                       onClick={toggleTerminal}
-                      className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 md:py-1.5 text-sm md:text-xs text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                     >
-                      <Terminal size={12} className="shrink-0 text-neutral-400" />
+                      <Terminal size={12} className="shrink-0 w-3.5 h-3.5 md:w-3 md:h-3 text-neutral-400" />
                       <span className="flex-1 text-left">Terminal</span>
-                      {showTerminal && <Check size={11} className="shrink-0 text-neutral-500 dark:text-neutral-400" />}
+                      {showTerminal && (
+                        <Check
+                          size={11}
+                          className="shrink-0 w-3.5 h-3.5 md:w-2.75 md:h-2.75 text-neutral-500 dark:text-neutral-400"
+                        />
+                      )}
                     </button>
                   </MenuItem>
                 </MenuItems>
