@@ -1,4 +1,5 @@
 import type { Elicitation, ElicitationResult } from "./elicitation.ts";
+import type { AgentContext } from "./telemetry";
 
 export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | string;
 
@@ -86,6 +87,8 @@ export interface ToolContext {
   setMeta?(meta: Record<string, unknown>): void;
   updateMeta?(meta: Record<string, unknown>): void;
   setContext?(text: string | null): Promise<void>;
+  /** Trace context for nested agents spawned from this tool. */
+  agentContext?: AgentContext;
 }
 
 // Content parts for messages - order matters

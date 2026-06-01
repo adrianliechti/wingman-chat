@@ -134,12 +134,6 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false }:
 
   const handleScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
     setScrollElement(element);
-    if (element) {
-      if (spacerRef.current) {
-        spacerRef.current.style.height = `${element.clientHeight}px`;
-        spacerHeightRef.current = element.clientHeight;
-      }
-    }
   }, []);
 
   const handleSpacerRef = useCallback((element: HTMLDivElement | null) => {
@@ -175,9 +169,10 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false }:
       const { scrollTop, clientHeight, scrollHeight } = scrollElement;
       const spacerHeight = spacerHeightRef.current;
 
-      // Collapse the portion of the spacer that's scrolled past
-      const visibleSpacer = Math.max(0, scrollTop + clientHeight - (scrollHeight - spacerHeight));
-      if (spacerRef.current) {
+      // Clamp to avoid Safari rubber-band growth.
+      const rawVisibleSpacer = scrollTop + clientHeight - (scrollHeight - spacerHeight);
+      const visibleSpacer = Math.max(0, Math.min(spacerHeight, rawVisibleSpacer));
+      if (spacerRef.current && visibleSpacer !== spacerHeight) {
         spacerRef.current.style.height = `${visibleSpacer}px`;
         spacerHeightRef.current = visibleSpacer;
       }
@@ -189,13 +184,6 @@ export function useChatScroll({ resetKey, messages = [], isResponding = false }:
     scrollElement.addEventListener("scroll", onScroll, { passive: true });
     return () => scrollElement.removeEventListener("scroll", onScroll);
   }, [scrollElement, isResponding]);
-
-  // ─── Initialise spacer when scroll element first mounts ──────────────────
-
-  useEffect(() => {
-    if (!scrollElement) return;
-    restoreSpacer();
-  }, [scrollElement, restoreSpacer]);
 
   // ─── Reset on chat switch ─────────────────────────────────────────────────
 

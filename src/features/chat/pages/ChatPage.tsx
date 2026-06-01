@@ -259,16 +259,20 @@ export function ChatPage() {
       // so there is no offset to account for.
       const agentOffset = showAgentDrawer ? 344 : 0;
       const CLOSE_THRESHOLD_PX = 220;
-      let currentWidthVw = artifactsWidthVw;
+      // Inner panels need ~320px (200 left column + 120 files browser) to stay usable.
+      const MIN_PANEL_PX = 360;
+      let intendedWidthPx = (artifactsWidthVw / 100) * window.innerWidth;
       const onMouseMove = (ev: MouseEvent) => {
         if (!artifactsResizingRef.current) return;
         const vw = window.innerWidth;
         const minChatPx = 400;
         const panelRightEdge = vw - agentOffset;
-        const newWidthPx = Math.min(panelRightEdge - minChatPx, panelRightEdge - ev.clientX);
-        const newVw = Math.max(0, (newWidthPx / vw) * 100);
-        currentWidthVw = newVw;
-        setArtifactsWidthVw(newVw);
+        const targetWidthPx = Math.min(panelRightEdge - minChatPx, panelRightEdge - ev.clientX);
+        intendedWidthPx = Math.max(0, targetWidthPx);
+        // Clamp the visible width to a minimum so content stays usable while dragging,
+        // but keep `intendedWidthPx` raw so a drag past the close threshold still closes.
+        const visibleWidthPx = Math.max(MIN_PANEL_PX, intendedWidthPx);
+        setArtifactsWidthVw((visibleWidthPx / vw) * 100);
       };
       const onMouseUp = () => {
         artifactsResizingRef.current = false;
@@ -276,7 +280,7 @@ export function ChatPage() {
         document.body.classList.remove("resizing");
         window.removeEventListener("mousemove", onMouseMove);
         window.removeEventListener("mouseup", onMouseUp);
-        if ((currentWidthVw / 100) * window.innerWidth < CLOSE_THRESHOLD_PX) {
+        if (intendedWidthPx < CLOSE_THRESHOLD_PX) {
           setShowArtifactsDrawer(false);
           setTimeout(() => setArtifactsWidthVw(DEFAULT_ARTIFACTS_WIDTH_VW), 300);
         }
@@ -491,7 +495,7 @@ export function ChatPage() {
 
   return (
     <div className="h-full w-full flex overflow-hidden relative">
-      <BackgroundImage opacity={messages.length === 0 ? 80 : 0} />
+      <BackgroundImage opacity={messages.length === 0 && !showArtifactsDrawer ? 80 : 0} />
 
       <div
         className={`flex-1 flex flex-col overflow-hidden relative ${isArtifactsResizing || isAppResizing ? "" : "transition-all duration-500 ease-in-out"} ${
@@ -508,7 +512,7 @@ export function ChatPage() {
         <main className="flex-1 flex flex-col overflow-hidden relative">
           {messages.length === 0 ? (
             <div className="flex-1 flex items-center justify-center pt-16 relative">
-              <div className="flex flex-col items-center text-center relative z-10 w-full max-w-4xl px-4 mb-32">
+              <div className="flex flex-col items-center text-center relative z-10 w-full max-w-4xl px-4 mb-16 md:mb-32">
                 {/* Logo - only show if no background image is available */}
                 {!backgroundImage && (
                   <div className="mb-8">
@@ -522,6 +526,11 @@ export function ChatPage() {
             <div
               className="flex-1 overflow-auto transition-opacity duration-300 relative"
               ref={handleScrollContainerRef}
+              onTouchStart={() => {
+                if (document.activeElement instanceof HTMLElement) {
+                  document.activeElement.blur();
+                }
+              }}
             >
               <div
                 className={cn(
@@ -569,7 +578,7 @@ export function ChatPage() {
 
       <footer
         className={cn(
-          "fixed bottom-0 left-0 md:px-3 md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
+          "fixed bottom-0 left-0 px-2 md:px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
           showSidebar && chats.length > 0 && !showAgentDrawer && !showAppDrawer && !showArtifactsDrawer && "md:left-59",
           showAgentDrawer && !showAppDrawer && !showArtifactsDrawer ? "right-0 md:right-83" : "right-0",
         )}

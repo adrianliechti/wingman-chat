@@ -96,7 +96,7 @@ function ExportRow({ option, busy }: { option: ExportModalOption; busy: boolean 
       <Icon size={16} className="text-neutral-400 shrink-0" />
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">{option.title}</p>
-        <p className="text-[10px] text-neutral-400">{subtitle}</p>
+        <p className="text-xs text-neutral-400">{subtitle}</p>
       </div>
     </button>
   );

@@ -310,7 +310,7 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                           )}
                         </div>
                         <p
-                          className={`text-[10px] leading-snug mt-1 ${slideMode === m.id ? "text-blue-600/70 dark:text-blue-400/70" : "text-neutral-500 dark:text-neutral-500"}`}
+                          className={`text-xs leading-snug mt-1 ${slideMode === m.id ? "text-blue-600/70 dark:text-blue-400/70" : "text-neutral-500 dark:text-neutral-500"}`}
                         >
                           {m.desc}
                         </p>
@@ -352,7 +352,7 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                         </div>
                         {s.description && (
                           <p
-                            className={`text-[10px] leading-snug mt-1 ${
+                            className={`text-xs leading-snug mt-1 ${
                               styleId === s.id
                                 ? "text-blue-600/70 dark:text-blue-400/70"
                                 : "text-neutral-500 dark:text-neutral-500"
@@ -452,7 +452,7 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                       >
                         {p.label}
                         {p.count !== null && (
-                          <span className="ml-1 font-normal opacity-60 text-[10px]">({p.count})</span>
+                          <span className="ml-1 font-normal opacity-60 text-xs">({p.count})</span>
                         )}
                       </button>
                     ))}

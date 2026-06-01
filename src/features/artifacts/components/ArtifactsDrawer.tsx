@@ -7,6 +7,7 @@ import {
   Eye,
   File as FileIcon2,
   Files,
+  HardDrive,
   Loader2,
   PanelRightOpen,
   Play,
@@ -360,14 +361,67 @@ export function ArtifactsDrawer() {
                 </li>
               ))}
             </ul>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
-            >
-              <Upload size={13} className="shrink-0" />
-              Upload files
-            </button>
+            {config.drives.length > 0 ? (
+              <Menu>
+                <MenuButton className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors">
+                  <Upload size={13} className="shrink-0" />
+                  Upload files
+                </MenuButton>
+                <MenuItems
+                  modal={false}
+                  transition
+                  anchor="bottom"
+                  className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-48 dark:ring-1 dark:ring-white/10"
+                >
+                  <MenuItem>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10"
+                    >
+                      <Upload size={16} className="shrink-0" />
+                      <span className="font-medium text-sm truncate">Upload</span>
+                    </button>
+                  </MenuItem>
+                  {config.drives.map((drive) => (
+                    <MenuItem key={drive.id}>
+                      <button
+                        type="button"
+                        onClick={() => setActiveDrive(drive)}
+                        className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
+                      >
+                        {drive.icon ? (
+                          <span
+                            className="shrink-0 bg-current inline-block"
+                            style={{
+                              width: 16,
+                              height: 16,
+                              maskImage: `url(${drive.icon})`,
+                              WebkitMaskImage: `url(${drive.icon})`,
+                              maskSize: "contain",
+                              maskRepeat: "no-repeat",
+                              maskPosition: "center",
+                            }}
+                          />
+                        ) : (
+                          <HardDrive size={16} />
+                        )}
+                        <span className="font-medium text-sm truncate">{drive.name}</span>
+                      </button>
+                    </MenuItem>
+                  ))}
+                </MenuItems>
+              </Menu>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
+              >
+                <Upload size={13} className="shrink-0" />
+                Upload files
+              </button>
+            )}
             <p className="mt-3 text-xs text-neutral-300 dark:text-neutral-600">or drag &amp; drop anywhere</p>
           </div>
         </div>
@@ -402,6 +456,7 @@ export function ArtifactsDrawer() {
       case "docx":
       case "pptx":
       case "xlsx":
+      case "email":
         return (
           <OfficeMarkdownEditor
             key={editorKey}
@@ -539,7 +594,7 @@ export function ArtifactsDrawer() {
   const isTextOnlyPreview = () => {
     if (!activeFileData) return false;
     const kind = artifactKind(activeFileData.path, activeFileData.contentType);
-    return kind === "docx" || kind === "pptx" || kind === "xlsx";
+    return kind === "docx" || kind === "pptx" || kind === "xlsx" || kind === "email";
   };
 
   // Handle run button click
@@ -552,7 +607,7 @@ export function ArtifactsDrawer() {
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: File drag-and-drop requires drag events on the drawer surface.
     <div
-      className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative pt-2 md:pt-0"
+      className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative pt-2 md:pt-0 bg-neutral-50 dark:bg-neutral-950"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -623,7 +678,7 @@ export function ArtifactsDrawer() {
               {/* Hint: office binaries are previewed as extracted text */}
               {isTextOnlyPreview() && (
                 <span
-                  className="shrink-0 text-[10px] uppercase tracking-wide font-medium text-neutral-500 dark:text-neutral-400 bg-neutral-200/60 dark:bg-neutral-800/60 rounded px-1.5 py-0.5"
+                  className="shrink-0 text-xs uppercase tracking-wide font-medium text-neutral-500 dark:text-neutral-400 bg-neutral-200/60 dark:bg-neutral-800/60 rounded px-1.5 py-0.5"
                   title="Office documents are previewed as extracted text. Download the file for the original formatting."
                 >
                   Text preview

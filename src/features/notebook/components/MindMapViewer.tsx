@@ -319,7 +319,7 @@ function MindMapInner({ root }: MindMapViewerProps) {
       {/* Config popup */}
       {showConfig && (
         <div className="absolute top-10 left-2 z-20 bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700 shadow-lg p-3 w-52">
-          <p className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2">
+          <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2">
             Layout
           </p>
           <div className="space-y-1">
@@ -368,7 +368,7 @@ function MindMapInner({ root }: MindMapViewerProps) {
             <ImageIcon size={14} className="text-neutral-400 shrink-0" />
             <div>
               <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">PNG</p>
-              <p className="text-[10px] text-neutral-400">High-res image</p>
+              <p className="text-xs text-neutral-400">High-res image</p>
             </div>
           </button>
           <button
@@ -379,7 +379,7 @@ function MindMapInner({ root }: MindMapViewerProps) {
             <FileCode size={14} className="text-neutral-400 shrink-0" />
             <div>
               <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">SVG</p>
-              <p className="text-[10px] text-neutral-400">Vector format</p>
+              <p className="text-xs text-neutral-400">Vector format</p>
             </div>
           </button>
         </div>

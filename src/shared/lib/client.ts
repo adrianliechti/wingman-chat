@@ -22,6 +22,7 @@ import type {
   ToolResultContent,
 } from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
+import type { AgentContext } from "@/shared/types/telemetry";
 import { isAbortError } from "./errors";
 import { modelName, modelType } from "./models";
 import { traceGenAI } from "./otel";
@@ -96,6 +97,7 @@ export class Client {
       summary?: "auto" | "concise" | "detailed";
       verbosity?: "low" | "medium" | "high";
       signal?: AbortSignal;
+      parentContext?: AgentContext;
     },
   ): Promise<Message> {
     return traceGenAI(
@@ -318,7 +320,7 @@ export class Client {
           throw error;
         }
       },
-      { effort: options?.effort, verbosity: options?.verbosity, toolCount: tools?.length },
+      options?.parentContext,
     ); // end traceGenAI
   }
 
@@ -369,9 +371,7 @@ export class Client {
               })
               .strict(),
           )
-          .describe(
-            "Risks that the latest user message actually triggers (not merely mentions). May be empty.",
-          ),
+          .describe("Risks that the latest user message actually triggers (not merely mentions). May be empty."),
       })
       .strict();
 
@@ -701,32 +701,29 @@ export class Client {
     input: string,
     schema: T,
     name: string,
+    parentContext?: AgentContext,
   ): Promise<z.infer<T> | null> {
-    return traceGenAI(name, model, async () => {
-      try {
-        const response = await this.oai.responses.parse({
-          model,
-          instructions,
-          input,
-          truncation: "auto",
-          text: { format: zodTextFormat(schema, name) },
-        });
-        return { result: response.output_parsed ?? null };
-      } catch (error) {
-        // Propagate user-initiated cancellations; otherwise degrade gracefully.
-        // Transient errors (rate limits, 5xx, connection issues) have already
-        // been retried by the SDK (see `maxRetries` in the constructor), so
-        // re-throwing them here would not improve reliability — callers of
-        // these utility methods (titles, suggestions, conversions, rewrites)
-        // expect a best-effort result with a fallback.
-        if (isAbortError(error)) {
-          throw error;
+    return traceGenAI(
+      name,
+      model,
+      async () => {
+        try {
+          const response = await this.oai.responses.parse({
+            model,
+            instructions,
+            input,
+            truncation: "auto",
+            text: { format: zodTextFormat(schema, name) },
+          });
+          return { result: response.output_parsed ?? null };
+        } catch (error) {
+          if (isAbortError(error)) throw error;
+          console.error(`Error in ${name}:`, error);
+          return { result: null };
         }
-
-        console.error(`Error in ${name}:`, error);
-        return { result: null };
-      }
-    });
+      },
+      parentContext,
+    );
   }
 
   private async post(path: string, fields: Record<string, string | Blob>): Promise<Response> {

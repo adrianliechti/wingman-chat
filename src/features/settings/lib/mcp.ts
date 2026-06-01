@@ -11,6 +11,7 @@ import {
   PostMessageTransport,
   RESOURCE_MIME_TYPE,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
+import { trace } from "@opentelemetry/api";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport as ClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -28,7 +29,6 @@ import {
   McpError,
   ToolListChangedNotificationSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { traceMCP } from "@/shared/lib/otel";
 import {
   type AudioContent,
   type FileContent,
@@ -349,45 +349,36 @@ export class MCPClient implements ToolProvider {
               this.activeToolContext = context ?? null;
 
               try {
-                return await traceMCP(
-                  "tools/call",
-                  tool.name,
-                  { toolName: tool.name, serverAddress: this.url },
-                  async () => {
-                    const result = await activeClient.callTool({
-                      name: tool.name,
-                      arguments: args,
-                    });
+                annotateMcpSpan(this.url, context);
 
-                    // Handle both current and compatibility result formats
-                    // Compatibility format has toolResult field, current has content field
-                    const normalizedResult: CallToolResult =
-                      "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
+                const result = await activeClient.callTool({
+                  name: tool.name,
+                  arguments: args,
+                });
 
-                    const resource = this.uiResources.get(tool.name);
+                // Handle both current and compatibility result formats
+                // Compatibility format has toolResult field, current has content field
+                const normalizedResult: CallToolResult =
+                  "toolResult" in result ? (result.toolResult as CallToolResult) : (result as CallToolResult);
 
-                    if (resource && context?.setMeta) {
-                      // Don't render the UI here — InlineMcpApp handles rendering via
-                      // restoreToolUI with the correct display mode and target iframe.
-                      // We only persist the metadata so InlineMcpApp knows what to render.
-                      const toolUiMeta = tool._meta?.ui as
-                        | { defaultDisplayMode?: string; availableDisplayModes?: string[] }
-                        | undefined;
-                      context.setMeta?.({
-                        toolProvider: this.id,
-                        toolResource: resource.uri,
-                        ...(toolUiMeta?.defaultDisplayMode
-                          ? { defaultDisplayMode: toolUiMeta.defaultDisplayMode }
-                          : {}),
-                        ...(toolUiMeta?.availableDisplayModes
-                          ? { appDisplayModes: toolUiMeta.availableDisplayModes }
-                          : {}),
-                      });
-                    }
+                const resource = this.uiResources.get(tool.name);
 
-                    return processContent(normalizedResult.content as MCPContentBlock[]);
-                  },
-                );
+                if (resource && context?.setMeta) {
+                  // Don't render the UI here — InlineMcpApp handles rendering via
+                  // restoreToolUI with the correct display mode and target iframe.
+                  // We only persist the metadata so InlineMcpApp knows what to render.
+                  const toolUiMeta = tool._meta?.ui as
+                    | { defaultDisplayMode?: string; availableDisplayModes?: string[] }
+                    | undefined;
+                  context.setMeta?.({
+                    toolProvider: this.id,
+                    toolResource: resource.uri,
+                    ...(toolUiMeta?.defaultDisplayMode ? { defaultDisplayMode: toolUiMeta.defaultDisplayMode } : {}),
+                    ...(toolUiMeta?.availableDisplayModes ? { appDisplayModes: toolUiMeta.availableDisplayModes } : {}),
+                  });
+                }
+
+                return processContent(normalizedResult.content as MCPContentBlock[]);
               } finally {
                 this.activeToolContext = null;
               }
@@ -900,6 +891,23 @@ function buildHostContext(tool: MCPTool, iframe: HTMLIFrameElement, displayMode?
       hover: window.matchMedia("(hover: hover)").matches,
     },
   };
+}
+
+function annotateMcpSpan(serverUrl: string, toolContext?: ToolContext): void {
+  const span = toolContext?.agentContext ? trace.getSpan(toolContext.agentContext) : trace.getActiveSpan();
+  if (!span) return;
+
+  span.setAttribute("mcp.method.name", "tools/call");
+  span.setAttribute("url.full", serverUrl);
+
+  try {
+    const url = new URL(serverUrl);
+    if (url.hostname) span.setAttribute("server.address", url.hostname);
+    if (url.port) span.setAttribute("server.port", Number(url.port));
+    if (url.protocol) span.setAttribute("network.protocol.name", url.protocol.replace(":", ""));
+  } catch {
+    // Malformed URL — skip the standard server.* attributes.
+  }
 }
 
 function isSafeExternalUrl(value: string): boolean {

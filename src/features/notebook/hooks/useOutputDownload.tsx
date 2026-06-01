@@ -240,7 +240,7 @@ function SlideExportRow({
       <Icon size={16} className="text-neutral-400 shrink-0" />
       <div>
         <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">{title}</p>
-        <p className="text-[10px] text-neutral-400">{subtitle}</p>
+        <p className="text-xs text-neutral-400">{subtitle}</p>
       </div>
     </button>
   );

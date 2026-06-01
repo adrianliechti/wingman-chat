@@ -23,7 +23,7 @@ export function createSubagentTool(model: string, providerInstructions: string, 
       },
       required: ["prompt"],
     },
-    function: async (args) => {
+    function: async (args, ctx) => {
       const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
       if (!prompt) {
         return [{ type: "text", text: "Error: prompt is required" }];
@@ -36,6 +36,7 @@ export function createSubagentTool(model: string, providerInstructions: string, 
           instructions,
           [{ role: Role.User, content: [{ type: "text", text: prompt }] }],
           baseTools,
+          { agentName: "subagent", parentContext: ctx?.agentContext },
         );
 
         const last = conversation[conversation.length - 1];

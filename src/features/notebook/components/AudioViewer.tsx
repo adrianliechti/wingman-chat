@@ -112,7 +112,7 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
 
           {/* Progress */}
           <div className="flex-1 flex items-center gap-2 min-w-0">
-            <span className="text-[11px] text-neutral-500 tabular-nums shrink-0 w-8 text-right">
+            <span className="text-xs text-neutral-500 tabular-nums shrink-0 w-8 text-right">
               {formatTime(currentTime)}
             </span>
             <input
@@ -123,7 +123,7 @@ export function AudioViewer({ content, audioUrl }: AudioViewerProps) {
               onChange={seek}
               className="flex-1 h-1 appearance-none bg-neutral-200 dark:bg-neutral-700 rounded-full outline-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neutral-800 dark:[&::-webkit-slider-thumb]:bg-neutral-200"
             />
-            <span className="text-[11px] text-neutral-500 tabular-nums shrink-0 w-8">{formatTime(duration)}</span>
+            <span className="text-xs text-neutral-500 tabular-nums shrink-0 w-8">{formatTime(duration)}</span>
           </div>
 
           {/* Restart */}

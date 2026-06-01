@@ -184,7 +184,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
                       {file.status === "processing" ? (
                         <div className="flex flex-col items-center">
                           <Loader2 size={16} className="animate-spin text-neutral-500 dark:text-neutral-400 mb-0.5" />
-                          <div className="text-[10px] text-neutral-600 dark:text-neutral-400">{file.progress}%</div>
+                          <div className="text-xs text-neutral-600 dark:text-neutral-400">{file.progress}%</div>
                         </div>
                       ) : (
                         <div className="flex flex-col items-center text-center w-full">
@@ -193,7 +193,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
                             className={`mb-0.5 shrink-0 ${file.status === "error" ? "text-red-600 dark:text-red-400" : "text-neutral-600 dark:text-neutral-300"}`}
                           />
                           <div
-                            className={`text-[10px] font-medium truncate w-full leading-tight ${file.status === "error" ? "text-red-700 dark:text-red-300" : "text-neutral-700 dark:text-neutral-200"}`}
+                            className={`text-xs font-medium truncate w-full leading-tight ${file.status === "error" ? "text-red-700 dark:text-red-300" : "text-neutral-700 dark:text-neutral-200"}`}
                           >
                             {file.name}
                           </div>

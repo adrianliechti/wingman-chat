@@ -260,144 +260,146 @@ export function NotebookPage() {
           </>
         )}
         {/* ── Desktop: Resizable 3-column layout ── */}
-        <ResizablePanelGroup orientation="horizontal" className="hidden md:flex h-full">
-          <ResizablePanel
-            defaultSize={300}
-            minSize={160}
-            className="h-full overflow-hidden"
-            onResize={(size) => setPanelSizes((prev) => [size.asPercentage, prev[1]])}
-          >
-            {loading ? (
-              <div className="h-full" />
-            ) : (
-              <SourcesPanel
-                sources={sources}
-                isSearching={isSearching}
-                searchWeb={searchWeb}
-                addSearchResult={addSearchResult}
-                scrapeWeb={scrapeWeb}
-                addScrapeResult={addScrapeResult}
-                onFileAdd={addFileSource}
-                onTextAdd={addTextSource}
-                onDeleteSource={deleteSource}
-                onRenameSource={renameSource}
-                onUpdateSource={writeSource}
-              />
-            )}
-          </ResizablePanel>
+        <div className="hidden md:flex h-full flex-1 min-w-0">
+          <ResizablePanelGroup orientation="horizontal" className="h-full">
+            <ResizablePanel
+              defaultSize={300}
+              minSize={160}
+              className="h-full overflow-hidden"
+              onResize={(size) => setPanelSizes((prev) => [size.asPercentage, prev[1]])}
+            >
+              {loading ? (
+                <div className="h-full" />
+              ) : (
+                <SourcesPanel
+                  sources={sources}
+                  isSearching={isSearching}
+                  searchWeb={searchWeb}
+                  addSearchResult={addSearchResult}
+                  scrapeWeb={scrapeWeb}
+                  addScrapeResult={addScrapeResult}
+                  onFileAdd={addFileSource}
+                  onTextAdd={addTextSource}
+                  onDeleteSource={deleteSource}
+                  onRenameSource={renameSource}
+                  onUpdateSource={writeSource}
+                />
+              )}
+            </ResizablePanel>
 
-          <ResizableHandle />
+            <ResizableHandle />
 
-          <ResizablePanel
-            minSize={200}
-            className="h-full overflow-hidden"
-            onResize={(size) => setPanelSizes((prev) => [prev[0], size.asPercentage])}
-          >
-            {loading ? (
-              <div className="h-full" />
-            ) : viewingOutput ? (
-              <div className="h-full flex flex-col relative">
-                {/* Output buttons */}
-                <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-                  {download.canDownload(viewingOutput) && (
+            <ResizablePanel
+              minSize={200}
+              className="h-full overflow-hidden"
+              onResize={(size) => setPanelSizes((prev) => [prev[0], size.asPercentage])}
+            >
+              {loading ? (
+                <div className="h-full" />
+              ) : viewingOutput ? (
+                <div className="h-full flex flex-col relative">
+                  {/* Output buttons */}
+                  <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+                    {download.canDownload(viewingOutput) && (
+                      <button
+                        type="button"
+                        onClick={() => download.trigger(viewingOutput)}
+                        className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                        title="Download…"
+                      >
+                        <Download size={16} className="text-neutral-500" />
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => download.trigger(viewingOutput)}
+                      onClick={() => setViewingOutputId(null)}
                       className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                      title="Download…"
+                      title="Back to chat"
                     >
-                      <Download size={16} className="text-neutral-500" />
+                      <X size={16} className="text-neutral-500" />
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setViewingOutputId(null)}
-                    className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                    title="Back to chat"
-                  >
-                    <X size={16} className="text-neutral-500" />
-                  </button>
-                </div>
+                  </div>
 
-                {/* Output content */}
-                <div className="flex-1 overflow-hidden min-h-0 pt-8 pb-4">
-                  {viewingOutput.quiz && viewingOutput.quiz.length > 0 ? (
-                    <QuizViewer questions={viewingOutput.quiz} />
-                  ) : viewingOutput.mindMap ? (
-                    <MindMapViewer root={viewingOutput.mindMap} />
-                  ) : viewingOutput.process ? (
-                    <ProcessViewer output={viewingOutput} onRefine={updateOutput} />
-                  ) : viewingOutput.architecture ? (
-                    <ArchitectureViewer output={viewingOutput} onRefine={updateOutput} />
-                  ) : viewingOutput.dataCatalog ? (
-                    <DataCatalogViewer output={viewingOutput} onRefine={updateOutput} />
-                  ) : viewingOutput.audioUrl ? (
-                    <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
-                  ) : viewingOutput.type === "slides" ? (
-                    <SlideViewer output={viewingOutput} onRefine={updateOutput} />
-                  ) : viewingOutput.imageUrl ? (
-                    <div className="h-full overflow-y-auto p-6">
-                      <div className="flex flex-col items-center gap-4">
-                        <img
-                          src={viewingOutput.imageUrl}
-                          alt={viewingOutput.title}
-                          className="max-w-full rounded-lg shadow-md"
-                        />
+                  {/* Output content */}
+                  <div className="flex-1 overflow-hidden min-h-0 pt-8 pb-4">
+                    {viewingOutput.quiz && viewingOutput.quiz.length > 0 ? (
+                      <QuizViewer questions={viewingOutput.quiz} />
+                    ) : viewingOutput.mindMap ? (
+                      <MindMapViewer root={viewingOutput.mindMap} />
+                    ) : viewingOutput.process ? (
+                      <ProcessViewer output={viewingOutput} onRefine={updateOutput} />
+                    ) : viewingOutput.architecture ? (
+                      <ArchitectureViewer output={viewingOutput} onRefine={updateOutput} />
+                    ) : viewingOutput.dataCatalog ? (
+                      <DataCatalogViewer output={viewingOutput} onRefine={updateOutput} />
+                    ) : viewingOutput.audioUrl ? (
+                      <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
+                    ) : viewingOutput.type === "slides" ? (
+                      <SlideViewer output={viewingOutput} onRefine={updateOutput} />
+                    ) : viewingOutput.imageUrl ? (
+                      <div className="h-full overflow-y-auto p-6">
+                        <div className="flex flex-col items-center gap-4">
+                          <img
+                            src={viewingOutput.imageUrl}
+                            alt={viewingOutput.title}
+                            className="max-w-full rounded-lg shadow-md"
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ) : viewingOutput.type === "report" ? (
-                    <ReportViewer content={viewingOutput.content} />
-                  ) : (
-                    <div className="h-full overflow-y-auto p-6">
-                      <div className="prose prose-neutral dark:prose-invert max-w-none">
-                        <Markdown>{viewingOutput.content}</Markdown>
+                    ) : viewingOutput.type === "report" ? (
+                      <ReportViewer content={viewingOutput.content} />
+                    ) : (
+                      <div className="h-full overflow-y-auto p-6">
+                        <div className="prose prose-neutral dark:prose-invert max-w-none">
+                          <Markdown>{viewingOutput.content}</Markdown>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <NotebookChat
-                messages={messages}
-                sources={sources}
-                isChatting={isChatting}
-                streamingContent={streamingContent}
-                onSend={sendMessage}
-                showSourcesActive={showSourcesDrawer}
-                showStudioActive={showStudioDrawer}
-                isSearching={isSearching}
-                outputCount={outputs.filter((o) => o.status === "completed").length}
-                isGeneratingOutput={outputs.some((o) => o.status === "generating")}
-                onShowSources={() => {
-                  setShowStudioDrawer(false);
-                  setShowSourcesDrawer((v) => !v);
-                }}
-                onShowStudio={() => {
-                  setShowSourcesDrawer(false);
-                  setShowStudioDrawer((v) => !v);
-                }}
-              />
-            )}
-          </ResizablePanel>
+              ) : (
+                <NotebookChat
+                  messages={messages}
+                  sources={sources}
+                  isChatting={isChatting}
+                  streamingContent={streamingContent}
+                  onSend={sendMessage}
+                  showSourcesActive={showSourcesDrawer}
+                  showStudioActive={showStudioDrawer}
+                  isSearching={isSearching}
+                  outputCount={outputs.filter((o) => o.status === "completed").length}
+                  isGeneratingOutput={outputs.some((o) => o.status === "generating")}
+                  onShowSources={() => {
+                    setShowStudioDrawer(false);
+                    setShowSourcesDrawer((v) => !v);
+                  }}
+                  onShowStudio={() => {
+                    setShowSourcesDrawer(false);
+                    setShowStudioDrawer((v) => !v);
+                  }}
+                />
+              )}
+            </ResizablePanel>
 
-          <ResizableHandle />
+            <ResizableHandle />
 
-          <ResizablePanel defaultSize={300} minSize={160} className="h-full overflow-hidden">
-            {loading ? (
-              <div className="h-full" />
-            ) : (
-              <StudioPanel
-                sources={sources}
-                outputs={outputs}
-                onGenerate={generateOutput}
-                onDeleteOutput={deleteOutput}
-                onSelectOutput={handleSelectOutput}
-                onDownloadOutput={download.trigger}
-                canDownload={download.canDownload}
-              />
-            )}
-          </ResizablePanel>
-        </ResizablePanelGroup>
+            <ResizablePanel defaultSize={300} minSize={160} className="h-full overflow-hidden">
+              {loading ? (
+                <div className="h-full" />
+              ) : (
+                <StudioPanel
+                  sources={sources}
+                  outputs={outputs}
+                  onGenerate={generateOutput}
+                  onDeleteOutput={deleteOutput}
+                  onSelectOutput={handleSelectOutput}
+                  onDownloadOutput={download.trigger}
+                  canDownload={download.canDownload}
+                />
+              )}
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </div>
 
         {/* ── Mobile: Center content (full width) ── */}
         <div className="md:hidden flex-1 min-w-0 h-full overflow-hidden">

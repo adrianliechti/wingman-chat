@@ -864,7 +864,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                                   {tool.name}
                                 </div>
                                 {tool.description && (
-                                  <div className="text-[10px] text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
                                     {tool.description}
                                   </div>
                                 )}

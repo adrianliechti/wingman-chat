@@ -1,7 +1,6 @@
 import { convertFileToText, readFileAsText } from "@/shared/lib/convert";
 import { isTextContentType } from "@/shared/lib/fileTypes";
 import { readAsDataURL } from "@/shared/lib/utils";
-import { xlsxToCsv } from "@/shared/lib/xlsx";
 
 // Artifact kind type
 export type ArtifactKind =
@@ -16,6 +15,7 @@ export type ArtifactKind =
   | "docx"
   | "xlsx"
   | "pptx"
+  | "email"
   | "binary";
 
 // Result type for processed files
@@ -25,51 +25,34 @@ export interface ProcessedFile {
   contentType: string;
 }
 
-// Process an uploaded file, converting XLSX to CSV and DOCX to Markdown when detected
+// Binary uploads preserved verbatim as data URLs. Office docs render via
+// OfficeMarkdownEditor, PDFs via PdfEditor, and email files (.msg/.eml) are
+// extracted on demand (preview or AI via Python `extract-msg` / `email`).
+// Converting at upload time would lose the original formatting / attachments.
+const BINARY_PRESERVED_MIME_BY_EXT: Record<string, string> = {
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  pdf: "application/pdf",
+  msg: "application/vnd.ms-outlook",
+  eml: "message/rfc822",
+};
+
+// Process an uploaded file, preserving office docs / PDFs / email files as
+// binary so previewers and Python tools can use the originals.
 export async function processUploadedFile(file: File): Promise<ProcessedFile[]> {
   const fileName = file.name.toLowerCase();
+  const ext = fileName.split(".").pop() || "";
 
-  // XLSX needs special handling: artifacts wants separate files per sheet
-  const isXlsx =
-    fileName.endsWith(".xlsx") || file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-
-  if (isXlsx) {
-    try {
-      const results = await xlsxToCsv(file);
-      const baseName = file.name.replace(/\.xlsx$/i, "");
-
-      return results.map((result) => {
-        const csvPath = results.length === 1 ? `/${baseName}.csv` : `/${baseName}_${result.sheetName}.csv`;
-
-        return {
-          path: csvPath,
-          content: result.csv,
-          contentType: "text/csv",
-        };
-      });
-    } catch (error) {
-      console.error(`Error converting XLSX file ${file.name}:`, error);
-    }
+  if (BINARY_PRESERVED_MIME_BY_EXT[ext]) {
+    const contentType = file.type || BINARY_PRESERVED_MIME_BY_EXT[ext];
+    const content = await readAsDataURL(file);
+    return [{ path: `/${file.name}`, content, contentType }];
   }
 
-  // Try shared converter for docx, pptx, pdf, email, text
+  // Try shared converter for text/code formats
   try {
     const content = await convertFileToText(file);
-    const ext = fileName.split(".").pop() || "";
-    const convertedExts: Record<string, { newExt: string; contentType: string }> = {
-      docx: { newExt: "md", contentType: "text/markdown" },
-      pptx: { newExt: "md", contentType: "text/markdown" },
-      pdf: { newExt: "md", contentType: "text/markdown" },
-      msg: { newExt: "md", contentType: "text/markdown" },
-      eml: { newExt: "md", contentType: "text/markdown" },
-    };
-
-    if (convertedExts[ext]) {
-      const { newExt, contentType } = convertedExts[ext];
-      const baseName = file.name.replace(/\.[^.]+$/, "");
-      return [{ path: `/${baseName}.${newExt}`, content, contentType }];
-    }
-
     return [{ path: `/${file.name}`, content, contentType: file.type || "text/plain" }];
   } catch (error) {
     console.error(`Error converting file ${file.name}:`, error);
@@ -169,7 +152,7 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     return "pdf";
   }
 
-  // Word documents (.docx) — rendered via docx-preview
+  // Office documents and email — previewed via OfficeMarkdownEditor
   if (
     ext === "docx" ||
     normalizedContentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -177,17 +160,24 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     return "docx";
   }
 
-  // Excel workbooks (.xlsx) — rendered per-sheet as CSV tables
   if (ext === "xlsx" || normalizedContentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
     return "xlsx";
   }
 
-  // PowerPoint decks (.pptx) — extracted to markdown via convertFileToText
   if (
     ext === "pptx" ||
     normalizedContentType === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
   ) {
     return "pptx";
+  }
+
+  if (
+    ext === "msg" ||
+    ext === "eml" ||
+    normalizedContentType === "application/vnd.ms-outlook" ||
+    normalizedContentType === "message/rfc822"
+  ) {
+    return "email";
   }
 
   // Code files
@@ -295,8 +285,8 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     return "code";
   }
 
+  // Extensions caught earlier (pdf, docx, xlsx, pptx) are omitted.
   const binaryExtensions = [
-    "pdf",
     "zip",
     "gz",
     "tgz",
@@ -305,11 +295,8 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     "7z",
     "rar",
     "doc",
-    "docx",
     "ppt",
-    "pptx",
     "xls",
-    "xlsx",
     "woff",
     "woff2",
     "ttf",

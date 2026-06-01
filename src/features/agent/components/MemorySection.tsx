@@ -288,12 +288,12 @@ export function MemorySection({ agent }: MemorySectionProps) {
                 >
                   <Edit size={11} />
                 </button>
-                <p className="text-[10px] text-neutral-400 dark:text-neutral-500">No memories yet.</p>
+                <p className="text-xs text-neutral-400 dark:text-neutral-500">No memories yet.</p>
               </div>
             )}
           </div>
         ) : (
-          <p className="text-[10px] text-neutral-400 dark:text-neutral-500">
+          <p className="text-xs text-neutral-400 dark:text-neutral-500">
             Enable to let this agent remember context across conversations.
           </p>
         )}

@@ -100,7 +100,7 @@ function ProcessInner({ output, onRefine }: ProcessViewerProps) {
                 {isRefining ? <Loader2 size={14} className="animate-spin" /> : <SparklesIcon size={14} />}
               </button>
             </div>
-            {refineError && <p className="text-[10px] text-red-500 mt-1 px-3">{refineError}</p>}
+            {refineError && <p className="text-xs text-red-500 mt-1 px-3">{refineError}</p>}
           </form>
         </div>
       </div>

@@ -214,7 +214,7 @@ export function BridgeEditor({ isOpen, onClose, onSave, onDelete, bridge }: Brid
                       <button
                         type="button"
                         onClick={handleAddHeader}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors"
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors"
                       >
                         <Plus size={12} />
                         Add Header
