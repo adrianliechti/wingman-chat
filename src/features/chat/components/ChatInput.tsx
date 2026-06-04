@@ -269,7 +269,7 @@ export function ChatInput() {
   useEffect(() => {
     if (messages.length === 0) {
       // Check if this is a touch device
-      const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+      const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
 
       if (!isTouchDevice && contentInputRef.current) {
         // Small delay to ensure DOM is ready

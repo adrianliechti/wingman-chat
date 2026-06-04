@@ -16,7 +16,7 @@ interface SupportConfig {
 
 interface ToolConfig {
   id: string;
-  url: string;
+  url?: string;
   name: string;
   description: string;
   icon?: string;
@@ -282,6 +282,9 @@ export const loadConfig = async (): Promise<Config | undefined> => {
 
       client: new Client(),
 
+      // Relative MCPs (no explicit url) are proxied through `/api/v1/mcp/{id}`
+      // and gated by backend RBAC. They are resolved to their proxy url here;
+      // availability filtering against `/v1/mcp` happens at runtime in ToolsProvider.
       mcps:
         cfg.tools?.map((mcp) => ({
           ...mcp,

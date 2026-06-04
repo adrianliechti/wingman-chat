@@ -41,12 +41,21 @@
 
     "telemetry": {},
 
-    "models1": [
+    "_models": [
         {
             "id": "gpt-5.1",
 
             "name": "GPT-5.1",
             "description": "Default Model"
+        }
+    ],
+
+
+    "tools": [
+        {
+            "id": "web",
+            "name": "Web",
+            "description": "Search and browse the web"
         }
     ],
 

@@ -87,6 +87,25 @@ export class Client {
     return mappedModels;
   }
 
+  // Lists the MCP servers the backend currently exposes (RBAC-filtered). The
+  // OpenAI SDK has no helper for this endpoint, so we hit `/v1/mcp` directly
+  // (same `{ object: "list", data: [...] }` shape as `/v1/models`).
+  async listMCPs(): Promise<string[]> {
+    const resp = await fetch(new URL("/api/v1/mcp", window.location.origin));
+
+    if (!resp.ok) {
+      throw new Error(`failed to list mcps: ${resp.status}`);
+    }
+
+    const body = await resp.json();
+
+    if (!Array.isArray(body?.data)) {
+      return [];
+    }
+
+    return body.data.map((mcp: { id: string }) => mcp.id);
+  }
+
   async complete(
     model: string,
     instructions: string,

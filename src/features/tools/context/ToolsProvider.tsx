@@ -47,6 +47,41 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     (config.mcps || []).map((mcp) => new MCPClient(mcp.id, mcp.url, mcp.name, mcp.description, mcp.headers, mcp.icon)),
   );
 
+  // Relative MCPs are proxied through `/api/v1/mcp/{id}` and gated by backend
+  // RBAC; only these are filtered against the availability list. MCPs with an
+  // explicit url point elsewhere and are always shown.
+  const relativeMcpIds = useMemo(() => {
+    const base = new URL("/api/v1/mcp/", window.location.origin).toString();
+    return new Set((config.mcps || []).filter((mcp) => mcp.url.startsWith(base)).map((mcp) => mcp.id));
+  }, [config.mcps]);
+
+  // MCP ids the backend reports as available (RBAC-filtered), mirroring how
+  // useModels filters config models against /v1/models. null = not yet loaded
+  // or the endpoint is unavailable → fall back to showing all configured MCPs.
+  const [availableMcpIds, setAvailableMcpIds] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    config.client
+      .listMCPs()
+      .then((ids) => {
+        if (!cancelled) setAvailableMcpIds(new Set(ids));
+      })
+      .catch((error) => console.error("error loading mcps", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [config.client]);
+
+  // Config MCP clients visible to the user: relative ones are hidden unless the
+  // backend lists them as available.
+  const visibleConfigMcpClients = useMemo(
+    () =>
+      configMcpClients.filter(
+        (client) => !relativeMcpIds.has(client.id) || !availableMcpIds || availableMcpIds.has(client.id),
+      ),
+    [configMcpClients, relativeMcpIds, availableMcpIds],
+  );
+
   // Local Wingman auto-discovery
   const bridgeHost = config.bridge?.url;
   const { available: companionAvailable } = useCompanion(bridgeHost);
@@ -85,11 +120,11 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // All MCP clients & lookup set (include local wingman only when the app is detected)
   const allMcpClients = useMemo(
     () => [
-      ...configMcpClients,
+      ...visibleConfigMcpClients,
       ...(companionAvailable && companionClient ? [companionClient] : []),
       ...agentMcpClients,
     ],
-    [configMcpClients, companionAvailable, companionClient, agentMcpClients],
+    [visibleConfigMcpClients, companionAvailable, companionClient, agentMcpClients],
   );
   const mcpIds = useMemo(() => new Set(allMcpClients.map((c) => c.id)), [allMcpClients]);
 
@@ -129,7 +164,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     if (internetProvider) list.push(internetProvider);
     if (artifactsProvider) list.push(artifactsProvider);
     list.push(skillBuilderProvider);
-    list.push(...configMcpClients);
+    list.push(...visibleConfigMcpClients);
     if (companionAvailable && companionClient) list.push(companionClient);
     list.push(...agentProviders);
     return list;
@@ -138,7 +173,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     canvasProvider,
     artifactsProvider,
     skillBuilderProvider,
-    configMcpClients,
+    visibleConfigMcpClients,
     companionAvailable,
     companionClient,
     agentProviders,

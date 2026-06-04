@@ -2,7 +2,10 @@ import { useMemo } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
+import { useModels } from "@/features/chat/hooks/useModels";
 import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
+import voiceInstructions from "@/features/chat/prompts/voice.txt?raw";
+import voiceToolsInstructions from "@/features/chat/prompts/voice-tools.txt?raw";
 import { useProfile } from "@/features/settings/hooks/useProfile";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
@@ -25,6 +28,7 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
 
   // Get current agent for its instructions
   const { currentAgent } = useAgents();
+  const { models } = useModels();
 
   const context = useMemo<ChatContext>(() => {
     const getFilteredProviders = () => {
@@ -39,9 +43,14 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
       }
 
       // Further filter based on model configuration
-      if (model?.tools) {
-        const enabledTools = new Set(model.tools.enabled || []);
-        const disabledTools = new Set(model.tools.disabled || []);
+      const filterModel: Pick<Model, "tools"> | null | undefined =
+        mode === "voice" && (model?.id === "realtime" || !model?.tools) && currentAgent?.model
+          ? (models.find((m) => m.id === currentAgent.model) ?? model)
+          : model;
+
+      if (filterModel?.tools) {
+        const enabledTools = new Set(filterModel.tools.enabled || []);
+        const disabledTools = new Set(filterModel.tools.disabled || []);
 
         filteredProviders = filteredProviders.filter((provider: ToolProvider) => {
           const matchId = provider.id;
@@ -71,8 +80,12 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
 
         const baseTools = toolsArrays.flat();
 
-        // Add subagent tool only when there are other tools to delegate to.
-        if (baseTools.length === 0 || !model?.id) {
+        const subagentModel =
+          mode === "voice"
+            ? (models.find((m) => m.id !== "realtime" && (!m.type || m.type === "completer"))?.id ?? null)
+            : (model?.id ?? null);
+
+        if (baseTools.length === 0 || !subagentModel) {
           return baseTools;
         }
 
@@ -81,7 +94,7 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
           .filter((s): s is string => !!s)
           .join("\n\n");
 
-        return [...baseTools, createSubagentTool(model.id, providerInstructions, baseTools)];
+        return [...baseTools, createSubagentTool(subagentModel, providerInstructions, baseTools)];
       },
 
       instructions: () => {
@@ -104,7 +117,9 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
         }
 
         if (mode === "voice") {
-          instructionsList.push("Respond concisely and naturally for voice interaction.");
+          instructionsList.push(voiceInstructions);
+          const hasTools = filteredProviders.some((p: ToolProvider) => p.tools.length > 0);
+          if (hasTools) instructionsList.push(voiceToolsInstructions);
         }
 
         // Add instructions from filtered providers
@@ -122,6 +137,7 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
   }, [
     mode,
     model,
+    models,
     generateInstructions,
     providers,
     getProviderState,

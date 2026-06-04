@@ -114,6 +114,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [pendingElicitation, setPendingElicitation] = useState<PendingElicitation | null>(null);
   const [toolMeta, setToolMeta] = useState<Record<string, Record<string, unknown>>>({});
+  const updateToolMeta = useCallback((toolCallId: string, meta: Record<string, unknown>) => {
+    setToolMeta((prev) => {
+      const existing = prev[toolCallId];
+      const merged = existing ? { ...existing, ...meta } : { ...meta };
+      return { ...prev, [toolCallId]: merged };
+    });
+  }, []);
   const elicitationCompleteCallbacksRef = useRef<Map<string, () => void>>(new Map());
   const [pendingConsent, setPendingConsent] = useState<PendingConsent | null>(null);
   // chatId -> set of category ids the user has accepted in this session. Intentionally not persisted.
@@ -235,25 +242,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
       throw new Error("no model selected");
     }
 
-    let id = chatId;
-    let chatItem = id ? chats.find((c) => c.id === id) || null : null;
-
-    if (!chatItem) {
-      chatItem = await createChatHook();
-      chatItem.model = model;
-
-      setChatId(chatItem.id);
-      updateChat(chatItem.id, () => ({ model }));
-
-      id = chatItem.id;
+    const existingId = chatIdRef.current;
+    if (existingId) {
+      const existingChat = chats.find((c) => c.id === existingId);
+      if (existingChat) return { id: existingId, chat: existingChat };
     }
 
-    if (!id || !chatItem) {
-      throw new Error("failed to create or resolve chat");
-    }
-
-    return { id, chat: chatItem };
-  }, [model, createChatHook, updateChat, chatId, chats]);
+    const chatItem = await createChatHook();
+    chatItem.model = model;
+    chatIdRef.current = chatItem.id;
+    setChatId(chatItem.id);
+    updateChat(chatItem.id, () => ({ model }));
+    return { id: chatItem.id, chat: chatItem };
+  }, [model, createChatHook, updateChat, chats]);
 
   // Public helper for features (drawer, uploads, terminal) that need a
   // filesystem before the user sends their first message. Creates a chat if
@@ -289,6 +290,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     pendingModelContextRef.current.set(targetChatId, text.trim());
   }, []);
+
+  const requestElicitation = useCallback(
+    (toolCallId: string, toolName: string, elicitation: Elicitation): Promise<ElicitationResult> => {
+      return new Promise((resolve) => {
+        setPendingElicitation({
+          toolCallId,
+          toolName,
+          elicitation,
+          resolve,
+        });
+      });
+    },
+    [],
+  );
 
   const runMessageInChat = useCallback(
     async function run(id: string, message: Message, historyOverride?: Message[], initialTitle?: string) {
@@ -418,14 +433,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             await updateModelContext(id, text);
           },
           elicit: (elicitation: Elicitation): Promise<ElicitationResult> => {
-            return new Promise((resolve) => {
-              setPendingElicitation({
-                toolCallId: currentToolCall.id,
-                toolName: currentToolCall.name,
-                elicitation,
-                resolve,
-              });
-            });
+            return requestElicitation(currentToolCall.id, currentToolCall.name, elicitation);
           },
           onElicitationComplete: (elicitationId: string) => {
             const cb = elicitationCompleteCallbacksRef.current.get(elicitationId);
@@ -574,6 +582,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       chatTools,
       chatInstructions,
       renderApp,
+      requestElicitation,
       updateModelContext,
       updateStreamingMessage,
     ],
@@ -668,24 +677,24 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
 
   const setVoiceToolCall = useCallback(
-    (toolName: string | null) => {
+    (toolName: string | null, callId?: string) => {
       if (toolName === null) {
         updateStreamingMessage(null);
         setIsResponding(false);
       } else {
-        const id = chatId;
+        const id = chatIdRef.current;
         if (!id) return;
         setIsResponding(true);
         updateStreamingMessage({
           chatId: id,
           message: {
             role: Role.Assistant,
-            content: [{ type: "tool_call", id: crypto.randomUUID(), name: toolName, arguments: "{}" }],
+            content: [{ type: "tool_call", id: callId ?? crypto.randomUUID(), name: toolName, arguments: "{}" }],
           },
         });
       }
     },
-    [chatId, updateStreamingMessage],
+    [updateStreamingMessage],
   );
 
   const stopStreaming = useCallback(() => {
@@ -739,7 +748,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Elicitation
     pendingElicitation,
     resolveElicitation,
+    requestElicitation,
     toolMeta,
+    updateToolMeta,
 
     pendingConsent,
     resolveConsent,
