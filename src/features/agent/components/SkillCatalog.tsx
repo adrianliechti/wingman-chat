@@ -2,6 +2,7 @@ import { Dialog, Menu, MenuButton, MenuItem, MenuItems, Transition } from "@head
 import JSZip from "jszip";
 import {
   ArrowLeft,
+  Code,
   Download,
   Eye,
   FileText,
@@ -20,6 +21,7 @@ import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { Skill } from "@/features/skills/lib/skillParser";
 import { downloadSkill, parseSkillFile, validateSkillName } from "@/features/skills/lib/skillParser";
 import { getConfig } from "@/shared/config";
+import { cn } from "@/shared/lib/cn";
 import { Markdown } from "@/shared/ui/Markdown";
 
 interface SkillCatalogProps {
@@ -50,12 +52,15 @@ export function SkillCatalog({
   const [search, setSearch] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [stableOrder, setStableOrder] = useState<string[]>([]);
 
   // Two-panel state
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [previewTab, setPreviewTab] = useState<"edit" | "preview">("edit");
   const [pendingDelete, setPendingDelete] = useState(false);
+  const previewSliderRef = useRef<HTMLDivElement>(null);
+  const [previewSliderStyle, setPreviewSliderStyle] = useState({ left: 0, width: 0 });
 
   // Editor fields
   const [edName, setEdName] = useState("");
@@ -68,6 +73,22 @@ export function SkillCatalog({
       if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
     };
   }, []);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: editMode triggers remeasurement when the switcher mounts
+  useEffect(() => {
+    const measure = () => {
+      const container = previewSliderRef.current;
+      if (!container) return;
+      const active = container.querySelector<HTMLElement>(`[data-view="${previewTab}"]`);
+      if (!active) return;
+      const cr = container.getBoundingClientRect();
+      const br = active.getBoundingClientRect();
+      setPreviewSliderStyle({ left: br.left - cr.left, width: br.width });
+    };
+    measure();
+    const id = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(id);
+  }, [previewTab, editMode]);
 
   const openEditor = useCallback((skill: Skill | "new") => {
     if (skill === "new") {
@@ -88,6 +109,16 @@ export function SkillCatalog({
 
   useEffect(() => {
     if (isOpen) {
+      setStableOrder(
+        [...allSkills]
+          .sort((a, b) => {
+            const aEnabled = enabledSkillNames.has(a.name) ? 0 : 1;
+            const bEnabled = enabledSkillNames.has(b.name) ? 0 : 1;
+            if (aEnabled !== bEnabled) return aEnabled - bEnabled;
+            return a.name.localeCompare(b.name);
+          })
+          .map((s) => s.id),
+      );
       if (initialView === "new") {
         openEditor("new");
       } else {
@@ -101,6 +132,7 @@ export function SkillCatalog({
       setSearch("");
       setPendingDelete(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialView, openEditor]);
 
   useEffect(() => {
@@ -193,15 +225,18 @@ export function SkillCatalog({
 
   const filteredSkills = useMemo(() => {
     const sorted = [...allSkills].sort((a, b) => {
-      const aEnabled = enabledSkillNames.has(a.name) ? 0 : 1;
-      const bEnabled = enabledSkillNames.has(b.name) ? 0 : 1;
-      if (aEnabled !== bEnabled) return aEnabled - bEnabled;
+      const ai = stableOrder.indexOf(a.id);
+      const bi = stableOrder.indexOf(b.id);
+      // Known skills keep stable order; newly added skills go to the end
+      const aPos = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
+      const bPos = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
+      if (aPos !== bPos) return aPos - bPos;
       return a.name.localeCompare(b.name);
     });
     if (!search.trim()) return sorted;
     const q = search.toLowerCase();
     return sorted.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
-  }, [allSkills, search, enabledSkillNames]);
+  }, [allSkills, search, stableOrder]);
 
   const handleDeleteConfirm = (skill: Skill) => {
     removeSkill(skill.id);
@@ -316,7 +351,7 @@ export function SkillCatalog({
               leaveTo="opacity-0 scale-95"
             >
               <Dialog.Panel
-                className="relative flex h-[85dvh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-neutral-200/50 bg-white/95 shadow-xl backdrop-blur-xl sm:h-140 dark:border-neutral-700/50 dark:bg-neutral-900/95"
+                className="relative flex h-[90dvh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-neutral-200/50 bg-white/95 shadow-xl backdrop-blur-xl sm:h-[75dvh] dark:border-neutral-700/50 dark:bg-neutral-900/95"
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
               >
@@ -459,7 +494,7 @@ export function SkillCatalog({
                     </div>
 
                     {/* List footer actions */}
-                    <div className="flex items-center gap-1.5 border-t border-neutral-200/60 px-3 py-2.5 dark:border-neutral-800/60">
+                    <div className="flex items-center gap-1.5 border-t border-neutral-200/60 px-3 py-3 dark:border-neutral-800/60">
                       <button
                         type="button"
                         onClick={() => openEditor("new")}
@@ -542,30 +577,48 @@ export function SkillCatalog({
                               >
                                 Instructions
                               </label>
-                              <div className="flex items-center gap-px rounded-md border border-neutral-200/70 bg-neutral-100/60 p-0.5 dark:border-neutral-700/60 dark:bg-neutral-800/60">
+                              <div
+                                ref={previewSliderRef}
+                                className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0"
+                              >
+                                {previewSliderStyle.width > 0 && (
+                                  <div
+                                    className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
+                                    style={{
+                                      left: `${previewSliderStyle.left}px`,
+                                      width: `${previewSliderStyle.width}px`,
+                                      height: "calc(100% - 4px)",
+                                      top: "2px",
+                                    }}
+                                  />
+                                )}
                                 <button
                                   type="button"
+                                  data-view="edit"
                                   onClick={() => setPreviewTab("edit")}
-                                  className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors ${
+                                  title="Edit"
+                                  className={cn(
+                                    "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
                                     previewTab === "edit"
-                                      ? "bg-white text-neutral-800 shadow-sm dark:bg-neutral-700 dark:text-neutral-100"
-                                      : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
-                                  }`}
+                                      ? "text-neutral-900 dark:text-neutral-50"
+                                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                                  )}
                                 >
-                                  <Pencil size={10} />
-                                  Edit
+                                  <Code size={11} strokeWidth={2.25} />
                                 </button>
                                 <button
                                   type="button"
+                                  data-view="preview"
                                   onClick={() => setPreviewTab("preview")}
-                                  className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors ${
+                                  title="Preview"
+                                  className={cn(
+                                    "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
                                     previewTab === "preview"
-                                      ? "bg-white text-neutral-800 shadow-sm dark:bg-neutral-700 dark:text-neutral-100"
-                                      : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300"
-                                  }`}
+                                      ? "text-neutral-900 dark:text-neutral-50"
+                                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                                  )}
                                 >
-                                  <Eye size={10} />
-                                  Preview
+                                  <Eye size={11} strokeWidth={2.25} />
                                 </button>
                               </div>
                             </div>

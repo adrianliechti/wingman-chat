@@ -1,4 +1,4 @@
-import { ChevronDown, Cpu } from "lucide-react";
+import { ChevronDown, Mic } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useAgents } from "@/features/agent/hooks/useAgents";
@@ -52,31 +52,21 @@ export function ModelSection({ agent }: ModelSectionProps) {
   };
 
   const effectiveModel =
-    agent.model && models.some((m) => m.id === agent.model)
-      ? agent.model
-      : (models.find((m) => !m.hidden)?.id ?? models[0]?.id ?? "");
-  const effectiveModelName = models.find((m) => m.id === effectiveModel)?.name ?? effectiveModel;
+    agent.model === "realtime"
+      ? "realtime"
+      : agent.model && models.some((m) => m.id === agent.model)
+        ? agent.model
+        : (models.find((m) => !m.hidden)?.id ?? models[0]?.id ?? "");
+  const effectiveModelName =
+    effectiveModel === "realtime"
+      ? "Real-time Voice"
+      : (models.find((m) => m.id === effectiveModel)?.name ?? effectiveModel);
 
   const visibleModels = models.filter((m) => m.id !== "realtime" && !m.hidden);
   const hiddenModels = models.filter((m) => m.id !== "realtime" && m.hidden);
 
-  if (isRealtimeAgent) {
-    return (
-      <Section title="Model" icon={<Cpu size={12} />} isOpen={true} collapsible={false}>
-        <div className="relative">
-          <input
-            type="text"
-            value="Real-time Voice"
-            disabled
-            className="w-full rounded-lg bg-neutral-100/60 dark:bg-neutral-800/40 py-2 pl-3 pr-3 text-sm text-neutral-400 dark:text-neutral-500 border border-neutral-200/60 dark:border-neutral-700/60 cursor-not-allowed"
-          />
-        </div>
-      </Section>
-    );
-  }
-
   return (
-    <Section title="Model" icon={<Cpu size={12} />} isOpen={true} collapsible={false} overflowVisible>
+    <Section title="Model" isOpen={true} collapsible={false} overflowVisible headerClassName="pt-2" key={agent.id}>
       <div className="relative" ref={dropdownRef}>
         <button
           type="button"
@@ -98,12 +88,28 @@ export function ModelSection({ agent }: ModelSectionProps) {
 
         {isOpen && (
           <div className="absolute z-20 mt-1 w-full max-h-64 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100/80 dark:bg-neutral-800/80 p-1 backdrop-blur-xl shadow-lg">
+            <button
+              key="realtime"
+              type="button"
+              onClick={() => handleSelect("realtime")}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-700/80 flex items-center gap-2 ${
+                effectiveModel === "realtime"
+                  ? "font-semibold text-neutral-900 dark:text-neutral-100"
+                  : "font-normal text-neutral-800 dark:text-neutral-200"
+              }`}
+            >
+              <Mic size={13} className="shrink-0 text-neutral-400" />
+              Real-time Voice
+            </button>
+            {visibleModels.length > 0 && (
+              <div className="mx-1 my-1 border-t border-neutral-200/60 dark:border-white/10" />
+            )}
             {visibleModels.map((m) => (
               <button
                 key={m.id}
                 type="button"
                 onClick={() => handleSelect(m.id)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-700/80 ${
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-700/80 flex items-center ${
                   m.id === effectiveModel
                     ? "font-semibold text-neutral-900 dark:text-neutral-100"
                     : "font-normal text-neutral-800 dark:text-neutral-200"

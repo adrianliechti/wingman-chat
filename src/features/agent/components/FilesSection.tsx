@@ -12,6 +12,7 @@ import { acceptTypes } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { Section } from "./Section";
+import { SectionEmptyState } from "./SectionEmptyState";
 
 interface FilesSectionProps {
   agent: Agent;
@@ -110,6 +111,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
       <Section
         title="Knowledge Base"
         icon={<FolderOpen size={12} />}
+        count={files.length}
         isOpen={true}
         collapsible={false}
         headerAction={
@@ -169,6 +171,15 @@ export function FilesSection({ agent }: FilesSectionProps) {
             id={`agent-file-upload-${agent.id}`}
           />
 
+          {/* Empty state */}
+          {files.length === 0 && (
+            <SectionEmptyState
+              icon={<FolderOpen size={12} />}
+              label="No files yet"
+              description="Upload files to give this agent context"
+            />
+          )}
+
           {/* File list */}
           {files.length > 0 && (
             <div className="space-y-0.5">
@@ -197,7 +208,7 @@ export function FilesSection({ agent }: FilesSectionProps) {
                     )}
                     <button
                       type="button"
-                      className="shrink-0 p-0.5 rounded text-neutral-300 dark:text-neutral-600 hover:text-neutral-600 dark:hover:text-neutral-300 opacity-0 group-hover:opacity-100 transition-all"
+                      className="shrink-0 p-1 rounded text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
                       onClick={() => removeFile(file.id)}
                       title="Remove file"
                     >

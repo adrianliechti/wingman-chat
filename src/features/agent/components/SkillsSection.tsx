@@ -1,10 +1,11 @@
-import { BookOpen, Plus, Sparkles, X, Zap } from "lucide-react";
+import { Settings, Sparkles, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { Skill } from "@/features/skills/lib/skillParser";
 import { Section } from "./Section";
+import { SectionEmptyState } from "./SectionEmptyState";
 import { SkillCatalog } from "./SkillCatalog";
 
 interface SkillsSectionProps {
@@ -45,73 +46,65 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
     }
   };
 
-  const openNewSkill = () => {
-    setCatalogInitial("new");
-    setCatalogOpen(true);
-  };
-
-  const openCatalog = () => {
-    setCatalogInitial("list");
-    setCatalogOpen(true);
-  };
+  const getInitials = (name: string) =>
+    name
+      .split(/[-_\s]+/)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() ?? "")
+      .join("");
 
   return (
     <>
       <Section
         title="Skills"
         icon={<Sparkles size={12} />}
+        count={enabledSkills.length}
         isOpen={true}
         collapsible={false}
         headerAction={
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={openNewSkill}
-              className="p-0.5 rounded text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-              title="Create new skill"
-            >
-              <Plus size={13} />
-            </button>
-            <button
-              type="button"
-              onClick={openCatalog}
-              className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-            >
-              <BookOpen size={12} /> Catalog
-            </button>
-          </div>
+          <button
+            type="button"
+            className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+            onClick={() => {
+              setCatalogInitial("list");
+              setCatalogOpen(true);
+            }}
+          >
+            <Settings size={12} /> Manage skills
+          </button>
         }
       >
         {/* Empty state */}
         {enabledSkills.length === 0 && (
-          <p className="text-xs text-neutral-400 dark:text-neutral-500">
-            No skills added.{" "}
-            <button
-              type="button"
-              onClick={openCatalog}
-              className="underline underline-offset-2 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-            >
-              Browse catalog
-            </button>
-          </p>
+          <SectionEmptyState
+            icon={<Sparkles size={13} />}
+            label="No skills attached"
+            description="Add skills to extend this agent"
+            onClick={() => {
+              setCatalogOpen(true);
+              setCatalogInitial("list");
+            }}
+          />
         )}
 
         {/* Enabled skills */}
         {enabledSkills.length > 0 && (
-          <div className="space-y-0.5">
+          <div className="divide-y divide-neutral-200/40 dark:divide-neutral-700/40">
             {enabledSkills.map((skill) => (
               <div key={skill.id} className="flex items-center gap-2 py-1.5">
-                <Zap size={14} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-xs text-neutral-900 dark:text-neutral-100 truncate">
-                    {skill.name}
-                  </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">{skill.description}</div>
+                <div className="shrink-0 w-5 h-5 rounded border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 flex items-center justify-center text-[9px] font-semibold text-neutral-600 dark:text-neutral-300">
+                  {getInitials(skill.name)}
                 </div>
+                <span
+                  className="flex-1 min-w-0 text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate"
+                  title={skill.description}
+                >
+                  {skill.name}
+                </span>
                 <button
                   type="button"
                   onClick={() => toggleSkill(skill.name)}
-                  className="shrink-0 p-1 rounded text-neutral-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                  className="shrink-0 p-1 rounded text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
                   title="Remove skill"
                 >
                   <X size={12} />

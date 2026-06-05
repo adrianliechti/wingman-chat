@@ -21,7 +21,14 @@ function ResizablePanel({ ...props }: ResizablePrimitive.PanelProps) {
 function handleResizeDragStart() {
   document.body.classList.add("resizing");
   const onUp = () => {
-    document.body.classList.remove("resizing");
+    // Defer removing the class by two rAF frames so the library can commit its
+    // final layout update before the CSS transition is re-enabled. Without this,
+    // fast drags that leave the handle trigger a brief catch-up animation.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.body.classList.remove("resizing");
+      });
+    });
     window.removeEventListener("pointerup", onUp);
     window.removeEventListener("pointercancel", onUp);
   };
@@ -40,7 +47,7 @@ function ResizableHandle({
     <ResizablePrimitive.Separator
       data-slot="resizable-handle"
       className={cn(
-        "relative flex w-0 shrink-0 items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neutral-400 aria-[orientation=horizontal]:h-0 aria-[orientation=horizontal]:w-full",
+        "relative flex w-1 shrink-0 items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neutral-400 aria-[orientation=horizontal]:h-1 aria-[orientation=horizontal]:w-full",
         className,
       )}
       onPointerDown={handleResizeDragStart}

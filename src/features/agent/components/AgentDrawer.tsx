@@ -1,11 +1,12 @@
 import {
   Bot,
   Check,
-  ChevronDown,
+  ChevronLeft,
   Download,
-  Edit,
   Folder,
+  List,
   MessageSquare,
+  Mic,
   PenLine,
   Plus,
   Sparkles,
@@ -36,21 +37,39 @@ import { AgentWizard } from "./wizard/AgentWizard";
 
 interface AgentDetailsProps {
   agent: Agent;
+  onDelete: () => void;
+  onExport: () => void;
 }
 
-function AgentDetails({ agent }: AgentDetailsProps) {
+function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
   const config = getConfig();
 
   return (
     <div className="flex flex-col flex-1 overflow-auto">
       <ModelSection agent={agent} />
       <InstructionsSection agent={agent} />
-
-      {config.repository && <FilesSection agent={agent} />}
-
-      <SkillsSection agent={agent} />
       <ToolsSection agent={agent} />
+      <SkillsSection agent={agent} />
+      {config.repository && <FilesSection agent={agent} />}
       {config.memory && <MemorySection agent={agent} />}
+      <div className="shrink-0 px-3 py-3 mt-auto border-t border-neutral-200/60 dark:border-neutral-700/60 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onExport}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 border border-neutral-200/80 dark:border-neutral-700/60 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 transition-colors"
+        >
+          <Download size={12} />
+          Export
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-red-500 hover:text-red-600 border border-red-200/80 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+        >
+          <Trash2 size={12} />
+          Delete
+        </button>
+      </div>
     </div>
   );
 }
@@ -60,11 +79,12 @@ function AgentDetails({ agent }: AgentDetailsProps) {
 export function AgentDrawer() {
   const { agents, currentAgent, setCurrentAgent, updateAgent, deleteAgent, setShowAgentDrawer } = useAgents();
 
+  // "list" shows the agent list; "details" shows the selected agent's configuration
+  const [view, setView] = useState<"list" | "details">(currentAgent ? "details" : "list");
+
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const inlineEditInputRef = useRef<HTMLInputElement>(null);
 
   // Pending file uploads after wizard creation
@@ -91,21 +111,6 @@ export function AgentDrawer() {
   }, []);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        if (!inlineEditingId) {
-          setIsDropdownOpen(false);
-        }
-      }
-    };
-
-    if (isDropdownOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [isDropdownOpen, inlineEditingId]);
-
-  useEffect(() => {
     if (!inlineEditingId) return;
 
     const frame = requestAnimationFrame(() => {
@@ -125,7 +130,6 @@ export function AgentDrawer() {
       updateAgent(inlineEditingId, { name: editingName.trim() });
       setInlineEditingId(null);
       setEditingName("");
-      setIsDropdownOpen(false);
     }
   };
 
@@ -147,314 +151,263 @@ export function AgentDrawer() {
 
   const handleAgentSelect = (agent: Agent | null) => {
     setCurrentAgent(agent);
-    if (!agent) setShowAgentDrawer(false);
-    setIsDropdownOpen(false);
+    if (!agent) {
+      setShowAgentDrawer(false);
+    } else {
+      setView("details");
+    }
+  };
+
+  const handleListSelect = (agent: Agent) => {
+    cancelInlineEdit();
+    setCurrentAgent(agent);
+    setView("details");
   };
 
   const openWizard = () => {
-    setIsDropdownOpen(false);
     setWizardOpen(true);
   };
 
   return (
-    <div className="h-full flex flex-col md:rounded-lg overflow-hidden transition-all duration-150 ease-linear bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md md:border md:border-neutral-200/60 md:dark:border-neutral-700/60 md:shadow-sm pt-2 md:pt-0">
-      {/* Panel header: title + close */}
-      <div className="shrink-0 h-12 md:h-10 flex items-center px-3 gap-2 border-b border-neutral-200/60 dark:border-neutral-700/60">
-        <Bot size={15} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
-        <span className="flex-1 text-sm font-semibold text-neutral-800 dark:text-neutral-200 tracking-tight">
-          Agent
-        </span>
-        <button
-          type="button"
-          onClick={() => setShowAgentDrawer(false)}
-          className="p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
-          title="Close agent panel"
-          aria-label="Close agent panel"
-        >
-          <X size={15} />
-        </button>
-      </div>
-
-      {/* Agent selector */}
-      <div className="px-3 py-2.5 border-b border-neutral-200/60 dark:border-neutral-700/60">
-        <div className="relative w-full" ref={dropdownRef}>
-          <button
-            type="button"
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="relative w-full rounded-lg bg-white/40 dark:bg-neutral-900/60 py-1.5 pl-3 pr-8 text-left shadow-sm border border-neutral-200/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-slate-500/50 dark:focus:ring-slate-400/50 hover:border-neutral-300/80 dark:hover:border-neutral-600/80 transition-colors backdrop-blur-lg"
-          >
-            <span className="flex items-center gap-2">
-              <Bot size={14} className="shrink-0 text-neutral-500 dark:text-neutral-400" />
-              <span
-                className={cn(
-                  "block truncate text-sm",
-                  currentAgent
-                    ? "text-neutral-900 dark:text-neutral-100 font-medium"
-                    : "text-neutral-400 dark:text-neutral-500",
-                )}
-              >
-                {currentAgent?.name ?? "No agent"}
-              </span>
+    <div className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-neutral-50 dark:bg-neutral-950 pt-2 md:pt-0">
+      {/* Panel header: back (details only) + inline agent selector + close */}
+      <div className="shrink-0 h-12 md:h-10 flex items-center px-3 gap-2">
+        {view === "list" ? (
+          <>
+            <span className="flex-1 min-w-0 text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate">
+              Agents
             </span>
-            <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-              <ChevronDown
-                size={14}
-                className={cn(
-                  "text-neutral-400 dark:text-neutral-500 transition-transform",
-                  isDropdownOpen && "rotate-180",
-                )}
+            <button
+              type="button"
+              onClick={() => setShowAgentDrawer(false)}
+              className="shrink-0 p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+              title="Close"
+              aria-label="Close agent drawer"
+            >
+              <X size={15} />
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => setView("list")}
+              className="shrink-0 p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+              title="Back to agents"
+              aria-label="Back to agents"
+            >
+              <Bot size={15} />
+            </button>
+            {inlineEditingId === currentAgent?.id ? (
+              <input
+                ref={inlineEditInputRef}
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                onKeyDown={handleInputKeyDown}
+                className="flex-1 min-w-0 text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 bg-transparent border-b border-neutral-400 dark:border-neutral-500 outline-none truncate"
               />
-            </span>
-          </button>
-
-          {isDropdownOpen && (
-            <div className="absolute z-20 mt-1 w-full max-h-80 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white/90 dark:bg-neutral-900/90 p-1 backdrop-blur-xl shadow-lg">
-              {/* No agent option */}
+            ) : (
               <button
                 type="button"
-                className="group relative cursor-pointer select-none py-1.5 pl-3 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 flex items-center gap-2 w-full"
-                onClick={() => handleAgentSelect(null)}
+                onClick={() => currentAgent && startInlineEdit(currentAgent)}
+                className="flex-1 min-w-0 text-left text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate hover:opacity-70 transition-opacity"
+                title="Click to rename"
               >
-                <X size={14} className="text-neutral-400 dark:text-neutral-500 shrink-0" />
-                <span
-                  className={cn(
-                    "block truncate text-sm",
-                    !currentAgent ? "font-semibold" : "font-normal text-neutral-500 dark:text-neutral-400",
-                  )}
+                {currentAgent?.name ?? "Agent"}
+              </button>
+            )}
+            {inlineEditingId === currentAgent?.id ? (
+              <>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={saveInlineEdit}
+                  className="shrink-0 p-1 rounded-md text-green-500 hover:text-green-600 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                  title="Save"
+                  aria-label="Save agent name"
                 >
-                  No agent
-                </span>
-              </button>
-
-              {/* Create New */}
+                  <Check size={13} />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={cancelInlineEdit}
+                  className="shrink-0 p-1 rounded-md text-neutral-400 hover:text-red-500 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                  title="Cancel"
+                  aria-label="Cancel rename"
+                >
+                  <X size={13} />
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  openWizard();
-                }}
-                className="w-full flex items-center gap-2 py-1.5 pl-3 pr-4 rounded-lg text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 font-medium transition-colors"
+                onClick={() => setShowAgentDrawer(false)}
+                className="shrink-0 p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                title="Close"
+                aria-label="Close agent drawer"
               >
-                <Plus size={14} className="shrink-0" /> Create New Agent
+                <X size={15} />
               </button>
-
-              {/* Existing Agents */}
-              {agents.length > 0 && (
-                <div className="border-t border-neutral-200/60 dark:border-neutral-700/40 mt-1 pt-1">
-                  {agents
-                    .slice()
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((agent) => {
-                      const isCurrent = currentAgent?.id === agent.id;
-                      const isEditing = inlineEditingId === agent.id;
-                      return (
-                        <div
-                          key={`${agent.id}-${agent.name}`}
-                          className="group relative cursor-pointer select-none py-1.5 pl-3 pr-2 rounded-lg text-neutral-900 dark:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 flex items-center justify-between"
-                        >
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            {isEditing ? (
-                              <div className="flex items-center gap-1 flex-1">
-                                <Bot size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-                                <input
-                                  ref={inlineEditInputRef}
-                                  type="text"
-                                  value={editingName}
-                                  onChange={(e) => setEditingName(e.target.value)}
-                                  onKeyDown={handleInputKeyDown}
-                                  className="flex-1 text-sm bg-transparent border-0 border-b border-slate-500 rounded-none px-1 py-0 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-slate-600 dark:focus:border-slate-400"
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    saveInlineEdit();
-                                  }}
-                                  className="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 rounded transition-colors shrink-0"
-                                  title="Save"
-                                >
-                                  <Check size={12} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    cancelInlineEdit();
-                                  }}
-                                  className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded transition-colors shrink-0"
-                                  title="Cancel"
-                                >
-                                  <X size={12} />
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleAgentSelect(agent)}
-                                className="flex items-center gap-2 flex-1 text-left min-w-0"
-                              >
-                                <Bot size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-                                <span
-                                  className={cn("block truncate text-sm", isCurrent ? "font-semibold" : "font-normal")}
-                                >
-                                  {agent.name}
-                                </span>
-                              </button>
-                            )}
-                          </div>
-                          {!isEditing && (
-                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity ml-1 shrink-0">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  exportSingleAgentAsZip(agent.id);
-                                }}
-                                className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded transition-colors"
-                                title="Export agent"
-                              >
-                                <Download size={12} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  startInlineEdit(agent);
-                                }}
-                                className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded transition-colors"
-                                title="Rename agent"
-                              >
-                                <Edit size={12} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (window.confirm(`Delete agent "${agent.name}"?`)) {
-                                    deleteAgent(agent.id);
-                                    if (isCurrent) setCurrentAgent(null);
-                                  }
-                                }}
-                                className="p-1 text-neutral-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
-                                title="Delete agent"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+            )}
+          </>
+        )}
       </div>
 
-      {/* Agent Details */}
-      {currentAgent ? (
-        <AgentDetails key={currentAgent.id} agent={currentAgent} />
-      ) : (
-        <div className="flex flex-col flex-1 items-center justify-center p-6 text-center overflow-auto">
-          <div className="w-12 h-12 rounded-2xl bg-neutral-100 dark:bg-neutral-800/80 flex items-center justify-center mb-4">
-            <Bot size={24} className="text-neutral-400 dark:text-neutral-500" />
-          </div>
-          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200 mb-1">
-            {agents.length === 0 ? "No agents yet" : "No agent selected"}
-          </h3>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-5 max-w-xs leading-relaxed">
-            {agents.length === 0
-              ? "Agents bundle instructions, files, skills, and tools into a reusable configuration."
-              : "Select an agent from the dropdown above to configure it."}
-          </p>
-          {agents.length === 0 && (
-            <div className="text-xs text-neutral-400 dark:text-neutral-500 space-y-2 mb-5 text-left">
-              <div className="flex items-center gap-2">
-                <PenLine size={12} className="shrink-0 text-neutral-400" />
-                <span>Custom instructions</span>
+      {/* Agent list or details */}
+      {view === "list" ? (
+        <div className="flex flex-col flex-1 overflow-hidden">
+          {agents.length === 0 ? (
+            /* Empty state */
+            <div className="flex flex-col flex-1 items-center justify-center p-6 text-center overflow-auto">
+              <div className="w-12 h-12 rounded-2xl bg-neutral-100 dark:bg-neutral-800/80 flex items-center justify-center mb-4">
+                <Bot size={24} className="text-neutral-400 dark:text-neutral-500" />
               </div>
-              <div className="flex items-center gap-2">
-                <Folder size={12} className="shrink-0 text-neutral-400" />
-                <span>Upload reference documents</span>
+              <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200 mb-1">No agents yet</h3>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-5 max-w-xs leading-relaxed">
+                Agents bundle instructions, files, skills, and tools into a reusable configuration.
+              </p>
+              <div className="text-xs text-neutral-400 dark:text-neutral-500 space-y-2 mb-5 text-left">
+                <div className="flex items-center gap-2">
+                  <PenLine size={12} className="shrink-0 text-neutral-400" />
+                  <span>Custom instructions</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Folder size={12} className="shrink-0 text-neutral-400" />
+                  <span>Upload reference documents</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Sparkles size={12} className="shrink-0 text-neutral-400" />
+                  <span>Select specialized skills</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <MessageSquare size={12} className="shrink-0 text-neutral-400" />
+                  <span>Configure tools &amp; MCP servers</span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Sparkles size={12} className="shrink-0 text-neutral-400" />
-                <span>Select specialized skills</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <MessageSquare size={12} className="shrink-0 text-neutral-400" />
-                <span>Configure tools &amp; MCP servers</span>
-              </div>
+              <button
+                type="button"
+                onClick={openWizard}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 transition-opacity"
+              >
+                <Plus size={12} />
+                Create Agent
+              </button>
             </div>
-          )}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={openWizard}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 transition-opacity"
-            >
-              <Plus size={12} />
-              Create Agent
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.accept = ".zip,.json";
-                input.multiple = false;
-                input.onchange = async (event) => {
-                  const file = (event.target as HTMLInputElement).files?.[0];
-                  if (!file) return;
-                  const isZip = file.name.endsWith(".zip");
-                  if (isZip) {
-                    if (
-                      !window.confirm("Import agents from ZIP? This will merge with your existing agents and skills.")
-                    )
-                      return;
-                    try {
-                      await importAgentsFromZip(file);
-                      alert("Agents imported successfully! Please refresh the page to see the changes.");
-                      window.location.reload();
-                    } catch (error) {
-                      console.error("Failed to import agents:", error);
-                      alert("Failed to import agents. Please check the file and try again.");
-                    }
-                  } else {
-                    try {
-                      const jsonData = await file.text();
-                      const parsed = JSON.parse(jsonData);
-                      const count = parsed.repositories?.length ?? 0;
-                      if (!count) {
-                        alert("Invalid import file.");
-                        return;
+          ) : (
+            /* Agent list */
+            <>
+              <div className="flex-1 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800">
+                {agents
+                  .slice()
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((agent) => (
+                    <button
+                      key={agent.id}
+                      type="button"
+                      onClick={() => handleListSelect(agent)}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
+                        "hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60",
+                        currentAgent?.id === agent.id && "bg-neutral-100/60 dark:bg-neutral-800/40",
+                      )}
+                    >
+                      <div className="shrink-0 w-8 h-8 rounded-xl bg-neutral-200 dark:bg-neutral-800 flex items-center justify-center">
+                        {agent.model === "realtime" ? (
+                          <Mic size={15} className="text-neutral-600 dark:text-neutral-300" />
+                        ) : (
+                          <Bot size={15} className="text-neutral-600 dark:text-neutral-300" />
+                        )}
+                      </div>
+                      <span className="flex-1 min-w-0 text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                        {agent.name}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+              <div className="shrink-0 px-3 py-2.5 border-t border-neutral-200/60 dark:border-neutral-700/60 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openWizard}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 transition-opacity"
+                >
+                  <Plus size={12} />
+                  New Agent
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.accept = ".zip,.json";
+                    input.multiple = false;
+                    input.onchange = async (event) => {
+                      const file = (event.target as HTMLInputElement).files?.[0];
+                      if (!file) return;
+                      const isZip = file.name.endsWith(".zip");
+                      if (isZip) {
+                        if (
+                          !window.confirm(
+                            "Import agents from ZIP? This will merge with your existing agents and skills.",
+                          )
+                        )
+                          return;
+                        try {
+                          await importAgentsFromZip(file);
+                          alert("Agents imported successfully! Please refresh the page to see the changes.");
+                          window.location.reload();
+                        } catch (error) {
+                          console.error("Failed to import agents:", error);
+                          alert("Failed to import agents. Please check the file and try again.");
+                        }
+                      } else {
+                        try {
+                          const jsonData = await file.text();
+                          const parsed = JSON.parse(jsonData);
+                          const count = parsed.repositories?.length ?? 0;
+                          if (!count) {
+                            alert("Invalid import file.");
+                            return;
+                          }
+                          if (
+                            !window.confirm(`Import ${count} legacy repositor${count === 1 ? "y" : "ies"} as agents?`)
+                          )
+                            return;
+                          const result = await importAgentsFromLegacyJson(jsonData);
+                          alert(
+                            `Imported ${result.imported} agent${result.imported === 1 ? "" : "s"}. Please refresh to see changes.`,
+                          );
+                          window.location.reload();
+                        } catch (error) {
+                          console.error("Failed to import agents:", error);
+                          alert("Failed to import. Please check the file format and try again.");
+                        }
                       }
-                      if (!window.confirm(`Import ${count} legacy repositor${count === 1 ? "y" : "ies"} as agents?`))
-                        return;
-                      const result = await importAgentsFromLegacyJson(jsonData);
-                      alert(
-                        `Imported ${result.imported} agent${result.imported === 1 ? "" : "s"}. Please refresh to see changes.`,
-                      );
-                      window.location.reload();
-                    } catch (error) {
-                      console.error("Failed to import agents:", error);
-                      alert("Failed to import. Please check the file format and try again.");
-                    }
-                  }
-                };
-                input.click();
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 border border-neutral-200/80 dark:border-neutral-700/60 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 transition-colors"
-            >
-              <Upload size={12} />
-              Import
-            </button>
-          </div>
+                    };
+                    input.click();
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 border border-neutral-200/80 dark:border-neutral-700/60 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 transition-colors"
+                >
+                  <Upload size={12} />
+                  Import
+                </button>
+              </div>
+            </>
+          )}
         </div>
-      )}
+      ) : /* Details view */
+      currentAgent ? (
+        <AgentDetails
+          key={currentAgent.id}
+          agent={currentAgent}
+          onExport={() => exportSingleAgentAsZip(currentAgent.id)}
+          onDelete={() => {
+            if (!window.confirm(`Delete "${currentAgent.name}"? This cannot be undone.`)) return;
+            deleteAgent(currentAgent.id);
+            handleAgentSelect(null);
+          }}
+        />
+      ) : null}
 
       <AgentWizard isOpen={wizardOpen} onClose={() => setWizardOpen(false)} onCreated={handleWizardCreated} />
     </div>

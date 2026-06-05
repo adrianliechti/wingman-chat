@@ -207,6 +207,55 @@ export function ChatPage() {
   const appResizingRef = useRef(false);
   const [isAppResizing, setIsAppResizing] = useState(false);
 
+  // Agent drawer resize state (as vw percentage, desktop only)
+  const DEFAULT_AGENT_WIDTH_VW = 20;
+  const [agentWidthVw, setAgentWidthVw] = useState(DEFAULT_AGENT_WIDTH_VW);
+  const agentResizingRef = useRef(false);
+  const [isAgentResizing, setIsAgentResizing] = useState(false);
+
+  const handleAgentResizeMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      agentResizingRef.current = true;
+      setIsAgentResizing(true);
+      document.body.classList.add("resizing");
+      const CLOSE_THRESHOLD_PX = 200;
+      const MIN_PANEL_PX = 280;
+      const MAX_PANEL_PX = 500;
+      // Capture the sibling drawer offset at drag start so resizing the agent
+      // never squeezes the chat panel below its minimum width.
+      const siblingOffset = showArtifactsDrawer
+        ? (artifactsWidthVw / 100) * window.innerWidth + 12
+        : showAppDrawer
+          ? (appWidthVw / 100) * window.innerWidth + 12
+          : 0;
+      let intendedWidthPx = (agentWidthVw / 100) * window.innerWidth;
+      const onMouseMove = (ev: MouseEvent) => {
+        if (!agentResizingRef.current) return;
+        const vw = window.innerWidth;
+        const minChatPx = 400;
+        const targetWidthPx = Math.min(vw - minChatPx - siblingOffset, MAX_PANEL_PX, vw - ev.clientX);
+        intendedWidthPx = Math.max(0, targetWidthPx);
+        const visibleWidthPx = Math.max(MIN_PANEL_PX, intendedWidthPx);
+        setAgentWidthVw((visibleWidthPx / vw) * 100);
+      };
+      const onMouseUp = () => {
+        agentResizingRef.current = false;
+        setIsAgentResizing(false);
+        document.body.classList.remove("resizing");
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+        if (intendedWidthPx < CLOSE_THRESHOLD_PX) {
+          setShowAgentDrawer(false);
+          setTimeout(() => setAgentWidthVw(DEFAULT_AGENT_WIDTH_VW), 300);
+        }
+      };
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+    },
+    [agentWidthVw, showArtifactsDrawer, artifactsWidthVw, showAppDrawer, appWidthVw, setShowAgentDrawer],
+  );
+
   const handleAppResizeMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
@@ -214,10 +263,10 @@ export function ChatPage() {
       setIsAppResizing(true);
       document.body.classList.add("resizing");
       // Capture the agent drawer state at drag start — it won't change mid-drag.
-      // 20rem (320px) agent panel + 0.75rem (12px) agent gap + 0.75rem (12px) app gap = 344px.
+      // agent panel width (px) + 0.75rem (12px) app gap = total offset.
       // When the agent drawer is hidden the app drawer is flush to the right (right: 0),
       // so there is no offset to account for.
-      const agentOffset = showAgentDrawer ? 344 : 0;
+      const agentOffset = showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth + 12 : 0;
       const CLOSE_THRESHOLD_PX = 120;
       let currentWidthVw = appWidthVw;
       const onMouseMove = (ev: MouseEvent) => {
@@ -244,7 +293,7 @@ export function ChatPage() {
       window.addEventListener("mousemove", onMouseMove);
       window.addEventListener("mouseup", onMouseUp);
     },
-    [showAgentDrawer, appWidthVw, setShowAppDrawer],
+    [showAgentDrawer, agentWidthVw, appWidthVw, setShowAppDrawer],
   );
 
   const handleArtifactsResizeMouseDown = useCallback(
@@ -254,10 +303,10 @@ export function ChatPage() {
       setIsArtifactsResizing(true);
       document.body.classList.add("resizing");
       // Capture the agent drawer state at drag start — it won't change mid-drag.
-      // 20rem (320px) agent panel + 0.75rem (12px) agent gap + 0.75rem (12px) artifacts gap = 344px.
+      // agent panel width (px) + 0.75rem (12px) artifacts gap = total offset.
       // When the agent drawer is hidden the artifacts drawer is flush to the right (right: 0),
       // so there is no offset to account for.
-      const agentOffset = showAgentDrawer ? 344 : 0;
+      const agentOffset = showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth + 12 : 0;
       const CLOSE_THRESHOLD_PX = 220;
       // Inner panels need ~320px (200 left column + 120 files browser) to stay usable.
       const MIN_PANEL_PX = 360;
@@ -288,7 +337,7 @@ export function ChatPage() {
       window.addEventListener("mousemove", onMouseMove);
       window.addEventListener("mouseup", onMouseUp);
     },
-    [showAgentDrawer, artifactsWidthVw, setShowArtifactsDrawer],
+    [showAgentDrawer, agentWidthVw, artifactsWidthVw, setShowArtifactsDrawer],
   );
 
   // Sidebar integration (now only controls visibility)
@@ -498,15 +547,17 @@ export function ChatPage() {
       <BackgroundImage opacity={messages.length === 0 && !showArtifactsDrawer ? 80 : 0} />
 
       <div
-        className={`flex-1 flex flex-col overflow-hidden relative ${isArtifactsResizing || isAppResizing ? "" : "transition-all duration-500 ease-in-out"} ${
-          showAgentDrawer && !showAppDrawer && !showArtifactsDrawer ? "md:mr-83" : ""
-        }`}
+        className={`flex-1 flex flex-col overflow-hidden relative ${isArtifactsResizing || isAppResizing || isAgentResizing ? "" : "transition-all duration-500 ease-in-out"}`}
         style={
           !isMobile && showAppDrawer
-            ? { marginRight: `calc(${appWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})` }
+            ? { marginRight: `calc(${appWidthVw}vw + ${showAgentDrawer ? `${agentWidthVw}vw + 1.5rem` : "0.75rem"})` }
             : !isMobile && !showAppDrawer && showArtifactsDrawer
-              ? { marginRight: `calc(${artifactsWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})` }
-              : undefined
+              ? {
+                  marginRight: `calc(${artifactsWidthVw}vw + ${showAgentDrawer ? `${agentWidthVw}vw + 1.5rem` : "0.75rem"})`,
+                }
+              : !isMobile && showAgentDrawer && !showAppDrawer && !showArtifactsDrawer
+                ? { marginRight: `calc(${agentWidthVw}vw + 0.75rem)` }
+                : undefined
         }
       >
         <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -580,20 +631,25 @@ export function ChatPage() {
         className={cn(
           "fixed bottom-0 left-0 px-2 md:px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:pb-4 pointer-events-none z-20 transition-[left,right] duration-500 ease-in-out",
           showSidebar && chats.length > 0 && !showAgentDrawer && !showAppDrawer && !showArtifactsDrawer && "md:left-59",
-          showAgentDrawer && !showAppDrawer && !showArtifactsDrawer ? "right-0 md:right-83" : "right-0",
+          "right-0",
         )}
         style={
           !isMobile && showAppDrawer
             ? {
-                right: `calc(${appWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})`,
-                ...(isAppResizing ? { transition: "right 50ms ease-out" } : {}),
+                right: `calc(${appWidthVw}vw + ${showAgentDrawer ? `${agentWidthVw}vw + 1.5rem` : "0.75rem"})`,
+                ...(isAppResizing || isAgentResizing ? { transition: "right 50ms ease-out" } : {}),
               }
             : !isMobile && !showAppDrawer && showArtifactsDrawer
               ? {
-                  right: `calc(${artifactsWidthVw}vw + ${showAgentDrawer ? "21.5rem" : "0.75rem"})`,
-                  ...(isArtifactsResizing ? { transition: "right 50ms ease-out" } : {}),
+                  right: `calc(${artifactsWidthVw}vw + ${showAgentDrawer ? `${agentWidthVw}vw + 1.5rem` : "0.75rem"})`,
+                  ...(isArtifactsResizing || isAgentResizing ? { transition: "right 50ms ease-out" } : {}),
                 }
-              : undefined
+              : !isMobile && showAgentDrawer && !showAppDrawer && !showArtifactsDrawer
+                ? {
+                    right: `calc(${agentWidthVw}vw + 0.75rem)`,
+                    ...(isAgentResizing ? { transition: "right 50ms ease-out" } : {}),
+                  }
+                : undefined
         }
       >
         <div
@@ -625,7 +681,7 @@ export function ChatPage() {
           )}
           style={{
             width: isMobile ? undefined : `${artifactsWidthVw}vw`,
-            right: !isMobile && showAgentDrawer ? "calc(20rem + 1.5rem)" : undefined,
+            right: !isMobile && showAgentDrawer ? `calc(${agentWidthVw}vw + 0.5rem)` : undefined,
             top: isMobile ? "48px" : undefined,
             bottom: isMobile ? 0 : undefined,
           }}
@@ -661,15 +717,42 @@ export function ChatPage() {
       {shouldRenderAgentDrawer && (
         <div
           className={cn(
-            "w-full z-25 transition-all duration-150 ease-linear transform fixed right-0 md:right-3 md:top-18 md:bottom-4 md:w-80",
+            "w-full transform fixed right-0 md:top-14 md:bottom-0 max-w-none z-25",
+            !isAgentResizing && "transition-all duration-300 ease-out",
+            isMobile ? "w-full" : "",
             isAgentDrawerAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
           )}
           style={{
+            width: isMobile ? undefined : `${agentWidthVw}vw`,
+            maxWidth: isMobile ? undefined : "500px",
             top: isMobile ? "48px" : undefined,
             bottom: isMobile ? 0 : undefined,
           }}
         >
-          <AgentDrawer />
+          {/* Resize handle on the left edge */}
+          {!isMobile && (
+            <button
+              type="button"
+              aria-label="Resize agent panel"
+              className="absolute -left-2 top-0 bottom-0 w-4 z-10 group flex items-center justify-center"
+              style={{ cursor: "ew-resize" }}
+              onMouseDown={handleAgentResizeMouseDown}
+            >
+              <div className="z-10 bg-neutral-300 rounded-sm dark:bg-neutral-700 shadow-sm opacity-60">
+                <div className="grid grid-cols-1 justify-items-center gap-0.5 px-0.5 py-1.5">
+                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                  <div className="h-px w-px rounded-full bg-neutral-600 dark:bg-neutral-400" />
+                </div>
+              </div>
+            </button>
+          )}
+          <div className="h-full border-l border-black/10 dark:border-white/10 overflow-hidden">
+            <AgentDrawer />
+          </div>
         </div>
       )}
 
@@ -685,7 +768,7 @@ export function ChatPage() {
         )}
         style={{
           width: isMobile ? undefined : `${appWidthVw}vw`,
-          right: !isMobile && showAgentDrawer ? "calc(20rem + 1.5rem)" : undefined,
+          right: !isMobile && showAgentDrawer ? `calc(${agentWidthVw}vw + 1.5rem)` : undefined,
           top: isMobile ? "48px" : undefined,
           bottom: isMobile ? 0 : undefined,
         }}
