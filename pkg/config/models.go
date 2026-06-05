@@ -210,4 +210,13 @@ type Drive struct {
 	Path string `json:"-" yaml:"path,omitempty"`
 	URL  string `json:"-" yaml:"url,omitempty"`
 	Icon string `json:"icon,omitempty" yaml:"icon,omitempty"`
+
+	Auth *DriveAuth `json:"-" yaml:"auth,omitempty"`
+}
+
+type DriveAuth struct {
+	Issuer       string `json:"-" yaml:"issuer,omitempty"`
+	ClientID     string `json:"-" yaml:"client_id,omitempty"`
+	ClientSecret string `json:"-" yaml:"client_secret,omitempty"`
+	Scope        string `json:"-" yaml:"scope,omitempty"`
 }
