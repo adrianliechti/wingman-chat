@@ -30,6 +30,7 @@ import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { BashEditor } from "@/shared/ui/editors/BashEditor";
 import { CodeEditor } from "@/shared/ui/editors/CodeEditor";
 import { CsvEditor } from "@/shared/ui/editors/CsvEditor";
+import { DocxEditor } from "@/shared/ui/editors/DocxEditor";
 import { HtmlEditor } from "@/shared/ui/editors/HtmlEditor";
 import { JsEditor } from "@/shared/ui/editors/JsEditor";
 import { MarkdownEditor } from "@/shared/ui/editors/MarkdownEditor";
@@ -464,6 +465,14 @@ export function ArtifactsDrawer() {
           />
         );
       case "docx":
+        return (
+          <DocxEditor
+            key={editorKey}
+            path={activeFileData.path}
+            content={activeFileData.content}
+            contentType={activeFileData.contentType}
+          />
+        );
       case "xlsx":
       case "email":
         return (
@@ -597,15 +606,15 @@ export function ArtifactsDrawer() {
     return ["html", "svg", "csv", "markdown"].includes(kind);
   };
 
-  // Office binaries (docx/xlsx) are previewed via extracted markdown —
-  // not a fidelity-preserving render. Surface that to the user so they don't
+  // Office binaries previewed via extracted markdown — not a
+  // fidelity-preserving render. Surface that to the user so they don't
   // think the formatting is gone; downloading still gives the real file.
-  // PPTX gets a fidelity-preserving slide preview (PptxEditor), so it's
-  // deliberately excluded here.
+  // PPTX and DOCX get fidelity-preserving previews (PptxEditor/DocxEditor),
+  // so they're deliberately excluded here.
   const isTextOnlyPreview = () => {
     if (!activeFileData) return false;
     const kind = artifactKind(activeFileData.path, activeFileData.contentType);
-    return kind === "docx" || kind === "xlsx" || kind === "email";
+    return kind === "xlsx" || kind === "email";
   };
 
   // Handle run button click
