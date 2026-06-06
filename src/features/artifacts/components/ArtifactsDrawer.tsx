@@ -40,6 +40,7 @@ import { PptxEditor } from "@/shared/ui/editors/PptxEditor";
 import { PythonEditor } from "@/shared/ui/editors/PythonEditor";
 import { SvgEditor } from "@/shared/ui/editors/SvgEditor";
 import { TextEditor } from "@/shared/ui/editors/TextEditor";
+import { XlsxEditor } from "@/shared/ui/editors/XlsxEditor";
 import { FileIcon } from "@/shared/ui/FileIcon";
 import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
@@ -474,6 +475,14 @@ export function ArtifactsDrawer() {
           />
         );
       case "xlsx":
+        return (
+          <XlsxEditor
+            key={editorKey}
+            path={activeFileData.path}
+            content={activeFileData.content}
+            contentType={activeFileData.contentType}
+          />
+        );
       case "email":
         return (
           <OfficeMarkdownEditor
@@ -606,15 +615,14 @@ export function ArtifactsDrawer() {
     return ["html", "svg", "csv", "markdown"].includes(kind);
   };
 
-  // Office binaries previewed via extracted markdown — not a
-  // fidelity-preserving render. Surface that to the user so they don't
-  // think the formatting is gone; downloading still gives the real file.
-  // PPTX and DOCX get fidelity-preserving previews (PptxEditor/DocxEditor),
-  // so they're deliberately excluded here.
+  // Email is previewed via extracted markdown — not a fidelity-preserving
+  // render. Surface that to the user so they don't think the formatting is
+  // gone; downloading still gives the real file. PPTX/DOCX/XLSX get
+  // fidelity-preserving previews, so they're deliberately excluded here.
   const isTextOnlyPreview = () => {
     if (!activeFileData) return false;
     const kind = artifactKind(activeFileData.path, activeFileData.contentType);
-    return kind === "xlsx" || kind === "email";
+    return kind === "email";
   };
 
   // Handle run button click
