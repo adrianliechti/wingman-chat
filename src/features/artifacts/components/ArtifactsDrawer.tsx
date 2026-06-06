@@ -35,6 +35,7 @@ import { JsEditor } from "@/shared/ui/editors/JsEditor";
 import { MarkdownEditor } from "@/shared/ui/editors/MarkdownEditor";
 import { OfficeMarkdownEditor } from "@/shared/ui/editors/OfficeMarkdownEditor";
 import { PdfEditor } from "@/shared/ui/editors/PdfEditor";
+import { PptxEditor } from "@/shared/ui/editors/PptxEditor";
 import { PythonEditor } from "@/shared/ui/editors/PythonEditor";
 import { SvgEditor } from "@/shared/ui/editors/SvgEditor";
 import { TextEditor } from "@/shared/ui/editors/TextEditor";
@@ -453,8 +454,16 @@ export function ArtifactsDrawer() {
         );
       case "pdf":
         return <PdfEditor key={editorKey} content={activeFileData.content} />;
-      case "docx":
       case "pptx":
+        return (
+          <PptxEditor
+            key={editorKey}
+            path={activeFileData.path}
+            content={activeFileData.content}
+            contentType={activeFileData.contentType}
+          />
+        );
+      case "docx":
       case "xlsx":
       case "email":
         return (
@@ -588,13 +597,15 @@ export function ArtifactsDrawer() {
     return ["html", "svg", "csv", "markdown"].includes(kind);
   };
 
-  // Office binaries (docx/pptx/xlsx) are previewed via extracted markdown —
+  // Office binaries (docx/xlsx) are previewed via extracted markdown —
   // not a fidelity-preserving render. Surface that to the user so they don't
   // think the formatting is gone; downloading still gives the real file.
+  // PPTX gets a fidelity-preserving slide preview (PptxEditor), so it's
+  // deliberately excluded here.
   const isTextOnlyPreview = () => {
     if (!activeFileData) return false;
     const kind = artifactKind(activeFileData.path, activeFileData.contentType);
-    return kind === "docx" || kind === "pptx" || kind === "xlsx" || kind === "email";
+    return kind === "docx" || kind === "xlsx" || kind === "email";
   };
 
   // Handle run button click
