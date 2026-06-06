@@ -1,5 +1,5 @@
 import JSZip from "jszip";
-import { escapeHtml, parseXml, ptToPx, px } from "./ooxml";
+import { cssFontStack, escapeHtml, mixHex, parseThemeDoc, parseXml, ptToPx, px } from "./ooxml";
 
 /**
  * Converts an XLSX file to one self-contained HTML document per sheet with
@@ -19,8 +19,10 @@ const MAX_COLS = 100;
 export async function xlsxToHtml(file: File | Blob | ArrayBuffer): Promise<XlsxHtmlResult> {
   const zip = await JSZip.loadAsync(file as Blob);
 
+  const workbookXml = await zip.file("xl/workbook.xml")?.async("string");
   const ctx: XlsxCtx = {
     zip,
+    workbookDoc: workbookXml ? parseXml(workbookXml) : null,
     sharedStrings: [],
     themeColors: [],
     numFmts: new Map(),
@@ -31,7 +33,7 @@ export async function xlsxToHtml(file: File | Blob | ArrayBuffer): Promise<XlsxH
     date1904: false,
   };
 
-  await loadWorkbookProps(ctx);
+  loadWorkbookProps(ctx);
   await loadSharedStrings(ctx);
   await loadThemeColors(ctx);
   await loadCellStyles(ctx);
@@ -93,6 +95,7 @@ interface CellXf {
 
 interface XlsxCtx {
   zip: JSZip;
+  workbookDoc: Document | null;
   sharedStrings: string[];
   themeColors: string[];
   numFmts: Map<number, string>;
@@ -112,10 +115,8 @@ function firstEl(parent: Document | Element | undefined | null, name: string): E
   return els(parent, name)[0];
 }
 
-async function loadWorkbookProps(ctx: XlsxCtx): Promise<void> {
-  const xml = await ctx.zip.file("xl/workbook.xml")?.async("string");
-  if (!xml) return;
-  const pr = firstEl(parseXml(xml), "workbookPr");
+function loadWorkbookProps(ctx: XlsxCtx): void {
+  const pr = firstEl(ctx.workbookDoc, "workbookPr");
   ctx.date1904 = pr?.getAttribute("date1904") === "1" || pr?.getAttribute("date1904") === "true";
 }
 
@@ -148,17 +149,7 @@ async function loadThemeColors(ctx: XlsxCtx): Promise<void> {
     ];
     return;
   }
-  const doc = parseXml(xml);
-  const scheme = firstEl(doc, "clrScheme");
-  const byName: Record<string, string> = {};
-  if (scheme) {
-    for (const slot of scheme.children) {
-      const name = slot.tagName.replace("a:", "");
-      const hex =
-        firstEl(slot, "srgbClr")?.getAttribute("val") || firstEl(slot, "sysClr")?.getAttribute("lastClr") || "";
-      byName[name] = hex;
-    }
-  }
+  const byName = parseThemeDoc(parseXml(xml)).colors;
   ctx.themeColors = [
     byName.lt1 || "FFFFFF",
     byName.dk1 || "000000",
@@ -255,14 +246,7 @@ function xlsxColor(el: Element | undefined, ctx: XlsxCtx): string | undefined {
 
 /** Excel tint: positive lightens toward white, negative darkens. */
 function applyTint(hex: string, tint: number): string {
-  const c = [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
-  const out = c.map((v) => {
-    const n = tint > 0 ? v + (255 - v) * tint : v * (1 + tint);
-    return Math.max(0, Math.min(255, Math.round(n)))
-      .toString(16)
-      .padStart(2, "0");
-  });
-  return out.join("").toUpperCase();
+  return tint > 0 ? mixHex(hex, 1 - tint, true) : mixHex(hex, 1 + tint, false);
 }
 
 async function loadCellStyles(ctx: XlsxCtx): Promise<void> {
@@ -276,13 +260,21 @@ async function loadCellStyles(ctx: XlsxCtx): Promise<void> {
     if (!Number.isNaN(id) && code) ctx.numFmts.set(id, code);
   }
 
+  // Presence means "on" unless val explicitly disables (Excel writes
+  // <b val="0"/> to switch OFF an inherited toggle).
+  const flagOn = (el: Element | undefined): boolean => {
+    if (!el) return false;
+    const v = el.getAttribute("val");
+    return v !== "0" && v !== "false" && v !== "none";
+  };
+
   for (const font of els(firstEl(doc, "fonts"), "font")) {
     const szAttr = firstEl(font, "sz")?.getAttribute("val");
     ctx.fonts.push({
-      bold: !!firstEl(font, "b"),
-      italic: !!firstEl(font, "i"),
-      underline: !!firstEl(font, "u"),
-      strike: !!firstEl(font, "strike"),
+      bold: flagOn(firstEl(font, "b")),
+      italic: flagOn(firstEl(font, "i")),
+      underline: flagOn(firstEl(font, "u")),
+      strike: flagOn(firstEl(font, "strike")),
       sizePt: szAttr ? parseFloat(szAttr) : undefined,
       color: xlsxColor(firstEl(font, "color"), ctx),
       name: firstEl(font, "name")?.getAttribute("val") ?? undefined,
@@ -331,7 +323,6 @@ interface SheetEntry {
 }
 
 async function getSheetEntries(ctx: XlsxCtx): Promise<SheetEntry[]> {
-  const workbookXml = await ctx.zip.file("xl/workbook.xml")?.async("string");
   const relsXml = await ctx.zip.file("xl/_rels/workbook.xml.rels")?.async("string");
 
   const rIdToPath = new Map<string, string>();
@@ -348,9 +339,9 @@ async function getSheetEntries(ctx: XlsxCtx): Promise<SheetEntry[]> {
   }
 
   const entries: SheetEntry[] = [];
-  if (workbookXml) {
+  if (ctx.workbookDoc) {
     let i = 0;
-    for (const sheet of els(parseXml(workbookXml), "sheet")) {
+    for (const sheet of els(ctx.workbookDoc, "sheet")) {
       i++;
       const rId =
         sheet.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id") ||
@@ -444,9 +435,9 @@ function formatNumberValue(raw: string, code: string, date1904: boolean): string
   if (Number.isNaN(n)) return raw;
 
   if (code === "General") {
-    // Trim float noise, keep up to 10 significant digits
-    const s = String(Math.round(n * 1e10) / 1e10);
-    return s;
+    // Trim float noise; beyond ~1e10 the rounding trick itself overflows
+    // Number.MAX_SAFE_INTEGER and corrupts the value, so pass through.
+    return Math.abs(n) >= 1e10 ? String(n) : String(Math.round(n * 1e10) / 1e10);
   }
 
   if (isDateFormat(code)) {
@@ -561,7 +552,24 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
       link.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id") ||
       link.getAttribute("r:id");
     const target = rId ? extRels.get(rId) : undefined;
-    if (ref && target) links.set(ref.split(":")[0], target);
+    if (!ref || !target) continue;
+    const [a, b] = ref.split(":");
+    if (!b) {
+      links.set(a, target);
+      continue;
+    }
+    // Ranged hyperlink (e.g. "A1:C3") covers every cell in the range
+    const c1 = colIndexFromRef(a);
+    const r1 = parseInt(a.replace(/^[A-Z]+/, ""), 10);
+    const c2 = colIndexFromRef(b);
+    const r2 = parseInt(b.replace(/^[A-Z]+/, ""), 10);
+    if ((r2 - r1 + 1) * (c2 - c1 + 1) > 10000) {
+      links.set(a, target);
+      continue;
+    }
+    for (let rr = r1; rr <= r2; rr++) {
+      for (let cc = c1; cc <= c2; cc++) links.set(`${colLetter(cc)}${rr}`, target);
+    }
   }
 
   // Cells
@@ -661,6 +669,69 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
     headerCells.push(`<th>${colLetter(c)}</th>`);
   }
 
+  const sideCss = (side: BorderSide | undefined): string | undefined => {
+    if (!side) return undefined;
+    const w = side.style.includes("thick") ? 2.5 : side.style.includes("medium") ? 2 : 1;
+    const styleCss = side.style.includes("dash")
+      ? "dashed"
+      : side.style.includes("dot")
+        ? "dotted"
+        : side.style === "double"
+          ? "double"
+          : "solid";
+    return `${w}px ${styleCss} ${side.color}`;
+  };
+
+  // Cell style strings depend only on (styleIdx, kind) — sheets have at most
+  // dozens of distinct xfs, so memoize instead of rebuilding per cell.
+  const styleCache = new Map<string, string>();
+  const cellStyleCss = (styleIdx: number, kind: CellData["kind"]): string => {
+    const cacheKey = `${styleIdx}|${kind}`;
+    const cached = styleCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const xf = ctx.cellXfs[styleIdx];
+    const styles: string[] = [];
+
+    const font = xf ? ctx.fonts[xf.fontId] : undefined;
+    if (font) {
+      if (font.bold) styles.push("font-weight:bold");
+      if (font.italic) styles.push("font-style:italic");
+      const deco: string[] = [];
+      if (font.underline) deco.push("underline");
+      if (font.strike) deco.push("line-through");
+      if (deco.length) styles.push(`text-decoration:${deco.join(" ")}`);
+      if (font.sizePt && font.sizePt !== 11) styles.push(`font-size:${px(ptToPx(font.sizePt))}`);
+      if (font.color) styles.push(`color:${font.color}`);
+      if (font.name) styles.push(`font-family:${cssFontStack(font.name)}`);
+    }
+
+    const fill = xf ? ctx.fills[xf.fillId] : undefined;
+    if (fill) styles.push(`background:${fill}`);
+
+    const border = xf ? ctx.borders[xf.borderId] : undefined;
+    for (const [name, sideVal] of [
+      ["left", border?.left],
+      ["right", border?.right],
+      ["top", border?.top],
+      ["bottom", border?.bottom],
+    ] as const) {
+      const css = sideCss(sideVal);
+      if (css) styles.push(`border-${name}:${css}`);
+    }
+
+    // Alignment: explicit, else Excel "general" (numbers right, bool center)
+    const hAlign = xf?.hAlign ?? (kind === "n" ? "right" : kind === "b" ? "center" : undefined);
+    if (hAlign && hAlign !== "general") styles.push(`text-align:${hAlign === "centerContinuous" ? "center" : hAlign}`);
+    if (xf?.vAlign === "center") styles.push("vertical-align:middle");
+    else if (xf?.vAlign === "top") styles.push("vertical-align:top");
+    if (xf?.wrapText) styles.push("white-space:pre-wrap", "word-wrap:break-word");
+
+    const result = styles.length ? ` style="${styles.join(";")};"` : "";
+    styleCache.set(cacheKey, result);
+    return result;
+  };
+
   const bodyRows: string[] = [];
   for (let r = 0; r <= maxRow; r++) {
     if (hiddenRows.has(r)) continue;
@@ -673,55 +744,7 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
 
       const data = cells.get(c);
       const merge = mergeStart.get(`${r}:${c}`);
-      const xf = data ? ctx.cellXfs[data.styleIdx] : undefined;
-
-      const styles: string[] = [];
-      const font = xf ? ctx.fonts[xf.fontId] : undefined;
-      if (font) {
-        if (font.bold) styles.push("font-weight:bold");
-        if (font.italic) styles.push("font-style:italic");
-        const deco: string[] = [];
-        if (font.underline) deco.push("underline");
-        if (font.strike) deco.push("line-through");
-        if (deco.length) styles.push(`text-decoration:${deco.join(" ")}`);
-        if (font.sizePt && font.sizePt !== 11) styles.push(`font-size:${px(ptToPx(font.sizePt))}`);
-        if (font.color) styles.push(`color:${font.color}`);
-        if (font.name) styles.push(`font-family:'${font.name}', Calibri, sans-serif`);
-      }
-
-      const fill = xf ? ctx.fills[xf.fillId] : undefined;
-      if (fill) styles.push(`background:${fill}`);
-
-      const border = xf ? ctx.borders[xf.borderId] : undefined;
-      const sideCss = (side: BorderSide | undefined): string | undefined => {
-        if (!side) return undefined;
-        const w = side.style.includes("thick") ? 2.5 : side.style.includes("medium") ? 2 : 1;
-        const styleCss = side.style.includes("dash")
-          ? "dashed"
-          : side.style.includes("dot")
-            ? "dotted"
-            : side.style === "double"
-              ? "double"
-              : "solid";
-        return `${w}px ${styleCss} ${side.color}`;
-      };
-      for (const [name, sideVal] of [
-        ["left", border?.left],
-        ["right", border?.right],
-        ["top", border?.top],
-        ["bottom", border?.bottom],
-      ] as const) {
-        const css = sideCss(sideVal);
-        if (css) styles.push(`border-${name}:${css}`);
-      }
-
-      // Alignment: explicit, else Excel "general" (numbers right, bool center)
-      const hAlign = xf?.hAlign ?? (data?.kind === "n" ? "right" : data?.kind === "b" ? "center" : undefined);
-      if (hAlign && hAlign !== "general")
-        styles.push(`text-align:${hAlign === "centerContinuous" ? "center" : hAlign}`);
-      if (xf?.vAlign === "center") styles.push("vertical-align:middle");
-      else if (xf?.vAlign === "top") styles.push("vertical-align:top");
-      if (xf?.wrapText) styles.push("white-space:pre-wrap", "word-wrap:break-word");
+      const styleAttr = data ? cellStyleCss(data.styleIdx, data.kind) : "";
 
       const spanAttrs = merge
         ? `${merge.cols > 1 ? ` colspan="${merge.cols}"` : ""}${merge.rows > 1 ? ` rowspan="${merge.rows}"` : ""}`
@@ -729,7 +752,7 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
       const content = data?.link
         ? `<a href="${escapeHtml(data.link)}" target="_blank" rel="noreferrer">${data.html}</a>`
         : (data?.html ?? "");
-      tds.push(`<td${spanAttrs}${styles.length ? ` style="${styles.join(";")};"` : ""}>${content}</td>`);
+      tds.push(`<td${spanAttrs}${styleAttr}>${content}</td>`);
     }
 
     const ht = rowHeightPx.get(r);

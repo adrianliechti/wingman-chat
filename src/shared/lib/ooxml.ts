@@ -108,3 +108,199 @@ export const MEDIA_MIME: Record<string, string> = {
   tif: "image/tiff",
   tiff: "image/tiff",
 };
+
+export interface Rel {
+  target: string;
+  type: string;
+  external: boolean;
+}
+
+/** Path of the .rels part describing `partPath`. */
+export function relsPathFor(partPath: string): string {
+  const dir = partPath.substring(0, partPath.lastIndexOf("/"));
+  const name = partPath.substring(partPath.lastIndexOf("/") + 1);
+  return `${dir}/_rels/${name}.rels`;
+}
+
+/** Parse a .rels document into an rId → relationship map. */
+export function parseRels(doc: Document | null): Map<string, Rel> {
+  const rels = new Map<string, Rel>();
+  if (!doc) return rels;
+  for (const rel of doc.getElementsByTagName("Relationship")) {
+    const id = rel.getAttribute("Id");
+    const target = rel.getAttribute("Target");
+    if (id && target) {
+      rels.set(id, {
+        target,
+        type: rel.getAttribute("Type") || "",
+        external: rel.getAttribute("TargetMode") === "External",
+      });
+    }
+  }
+  return rels;
+}
+
+/**
+ * Load a zip-internal media part as a data URL, with caching. Unsupported
+ * formats (EMF/WMF, …) cache an empty sentinel and return undefined.
+ */
+export async function loadMediaDataUrl(
+  zip: { file(path: string): { async(type: "base64"): Promise<string> } | null },
+  cache: Map<string, string>,
+  path: string,
+): Promise<string | undefined> {
+  const cached = cache.get(path);
+  if (cached !== undefined) return cached || undefined;
+
+  const ext = path.substring(path.lastIndexOf(".") + 1).toLowerCase();
+  const mime = MEDIA_MIME[ext];
+  if (!mime) {
+    cache.set(path, "");
+    return undefined;
+  }
+
+  const base64 = await zip.file(path)?.async("base64");
+  const dataUrl = base64 ? `data:${mime};base64,${base64}` : "";
+  cache.set(path, dataUrl);
+  return dataUrl || undefined;
+}
+
+// ============================================================================
+// Theme (DrawingML a:clrScheme / a:fontScheme — shared by pptx/docx/xlsx)
+// ============================================================================
+
+export interface OoxmlTheme {
+  /** Theme color slots (dk1, lt1, accent1, …) → hex without '#' */
+  colors: Record<string, string>;
+  majorFont: string;
+  minorFont: string;
+}
+
+export function parseThemeDoc(doc: Document | null): OoxmlTheme {
+  const theme: OoxmlTheme = { colors: {}, majorFont: "Calibri Light", minorFont: "Calibri" };
+  if (!doc) return theme;
+
+  const clrScheme = doc.getElementsByTagName("a:clrScheme")[0];
+  if (clrScheme) {
+    for (const slot of clrScheme.children) {
+      const name = slot.tagName.replace("a:", "");
+      const hex = child(slot, "a:srgbClr")?.getAttribute("val") || child(slot, "a:sysClr")?.getAttribute("lastClr");
+      if (hex) theme.colors[name] = hex;
+    }
+  }
+
+  const fontScheme = doc.getElementsByTagName("a:fontScheme")[0];
+  const major = child(child(fontScheme, "a:majorFont"), "a:latin")?.getAttribute("typeface");
+  const minor = child(child(fontScheme, "a:minorFont"), "a:latin")?.getAttribute("typeface");
+  if (major) theme.majorFont = major;
+  if (minor) theme.minorFont = minor;
+  return theme;
+}
+
+// ============================================================================
+// Colors & fonts
+// ============================================================================
+
+/**
+ * Mix a 6-digit hex color toward white (tint) or black (shade).
+ * `keep` is the fraction of the original color retained (0..1).
+ */
+export function mixHex(hex: string, keep: number, towardWhite: boolean): string {
+  const c = [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+  return c
+    .map((v) => {
+      const n = towardWhite ? v * keep + 255 * (1 - keep) : v * keep;
+      return Math.max(0, Math.min(255, Math.round(n)))
+        .toString(16)
+        .padStart(2, "0");
+    })
+    .join("")
+    .toUpperCase();
+}
+
+/**
+ * CSS font-family stack for a document-declared typeface. Quotes and
+ * backslashes are stripped — the value lands inside single quotes within a
+ * double-quoted style attribute, where a stray quote would truncate the rule.
+ */
+export function cssFontStack(font: string): string {
+  const safe = font.replace(/['"\\]/g, "");
+  return `'${safe}', 'Segoe UI', system-ui, -apple-system, sans-serif`;
+}
+
+// ============================================================================
+// List numbering & bullet glyphs
+// ============================================================================
+
+export function toAlpha(n: number): string {
+  let s = "";
+  let v = n;
+  while (v > 0) {
+    s = String.fromCharCode(((v - 1) % 26) + 97) + s;
+    v = Math.floor((v - 1) / 26);
+  }
+  return s;
+}
+
+const ROMAN: [number, string][] = [
+  [1000, "m"],
+  [900, "cm"],
+  [500, "d"],
+  [400, "cd"],
+  [100, "c"],
+  [90, "xc"],
+  [50, "l"],
+  [40, "xl"],
+  [10, "x"],
+  [9, "ix"],
+  [5, "v"],
+  [4, "iv"],
+  [1, "i"],
+];
+
+export function toRoman(n: number): string {
+  let s = "";
+  let v = n;
+  for (const [val, sym] of ROMAN) {
+    while (v >= val) {
+      s += sym;
+      v -= val;
+    }
+  }
+  return s;
+}
+
+/** Wingdings/Symbol/Courier glyph codes → Unicode equivalents. */
+const SYMBOL_GLYPHS: Record<number, string> = {
+  183: "•",
+  161: "○",
+  167: "▪",
+  216: "➢",
+  252: "✓",
+  118: "❖",
+  108: "●",
+  110: "■",
+  117: "◆",
+  113: "❑",
+  111: "○",
+  45: "–",
+};
+
+/**
+ * Map a bullet character from a symbolic font (Wingdings, Symbol, Courier
+ * bullets) to a Unicode glyph browsers can render. Codes in the F0xx private
+ * use area are normalized first. Non-symbolic fonts pass through unchanged.
+ */
+export function mapBulletChar(char: string, font: string): string {
+  if (!char) return "•";
+  let code = char.charCodeAt(0);
+  const isPua = code >= 0xf000;
+  if (isPua) code -= 0xf000;
+  const f = font.toLowerCase();
+  if (isPua || f.includes("wingdings") || f.includes("symbol") || f.includes("courier")) {
+    // Real Unicode glyphs (≥ U+2000) already render fine; raw symbolic codes
+    // fall back to a plain bullet.
+    return SYMBOL_GLYPHS[code] ?? (code >= 0x2000 ? String.fromCharCode(code) : "•");
+  }
+  return String.fromCharCode(code);
+}

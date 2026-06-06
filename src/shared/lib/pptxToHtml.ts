@@ -3,16 +3,25 @@ import {
   boolAttr,
   child,
   childList,
+  cssFontStack,
   descend,
   emuToPx,
   escapeHtml,
   getRId,
   intAttr,
-  MEDIA_MIME,
+  loadMediaDataUrl,
+  mapBulletChar,
+  type OoxmlTheme,
+  parseRels,
+  parseThemeDoc,
   parseXml,
   ptToPx,
   px,
+  type Rel,
+  relsPathFor,
   resolveTarget,
+  toAlpha,
+  toRoman,
 } from "./ooxml";
 import { getSlideOrder } from "./pptx";
 
@@ -75,19 +84,9 @@ export async function pptxToHtml(file: File): Promise<PptxHtmlResult> {
 // Shared context & part loading
 // ============================================================================
 
-interface Rel {
-  target: string;
-  type: string;
-  external: boolean;
-}
-
 type Rels = Map<string, Rel>;
 
-interface Theme {
-  /** Theme color slots (dk1, lt1, accent1, …) → hex without '#' */
-  colors: Record<string, string>;
-  majorFont: string;
-  minorFont: string;
+interface Theme extends OoxmlTheme {
   fillStyles: Element[];
   lineStyles: Element[];
   bgFillStyles: Element[];
@@ -133,22 +132,7 @@ async function loadXml(shared: SharedCtx, path: string): Promise<Document | null
 async function loadRels(shared: SharedCtx, partPath: string): Promise<Rels> {
   const cached = shared.relsCache.get(partPath);
   if (cached) return cached;
-
-  const dir = partPath.substring(0, partPath.lastIndexOf("/"));
-  const name = partPath.substring(partPath.lastIndexOf("/") + 1);
-  const relsDoc = await loadXml(shared, `${dir}/_rels/${name}.rels`);
-
-  const rels: Rels = new Map();
-  if (relsDoc) {
-    for (const rel of relsDoc.getElementsByTagName("Relationship")) {
-      const id = rel.getAttribute("Id");
-      const target = rel.getAttribute("Target");
-      const type = rel.getAttribute("Type") || "";
-      if (id && target) {
-        rels.set(id, { target, type, external: rel.getAttribute("TargetMode") === "External" });
-      }
-    }
-  }
+  const rels = parseRels(await loadXml(shared, relsPathFor(partPath)));
   shared.relsCache.set(partPath, rels);
   return rels;
 }
@@ -161,21 +145,7 @@ function findRelByType(rels: Rels, typeSuffix: string): Rel | undefined {
 }
 
 async function loadMedia(shared: SharedCtx, path: string): Promise<string | undefined> {
-  const cached = shared.mediaCache.get(path);
-  if (cached !== undefined) return cached || undefined;
-
-  const ext = path.substring(path.lastIndexOf(".") + 1).toLowerCase();
-  const mime = MEDIA_MIME[ext];
-  if (!mime) {
-    // EMF/WMF and other formats browsers can't render
-    shared.mediaCache.set(path, "");
-    return undefined;
-  }
-
-  const base64 = await shared.zip.file(path)?.async("base64");
-  const dataUrl = base64 ? `data:${mime};base64,${base64}` : "";
-  shared.mediaCache.set(path, dataUrl);
-  return dataUrl || undefined;
+  return loadMediaDataUrl(shared.zip, shared.mediaCache, path);
 }
 
 // ============================================================================
@@ -186,39 +156,14 @@ async function loadTheme(shared: SharedCtx, themePath: string): Promise<Theme> {
   const cached = shared.themeCache.get(themePath);
   if (cached) return cached;
 
-  const theme: Theme = {
-    colors: {},
-    majorFont: "Calibri Light",
-    minorFont: "Calibri",
-    fillStyles: [],
-    lineStyles: [],
-    bgFillStyles: [],
-  };
-
   const doc = await loadXml(shared, themePath);
-  if (doc) {
-    const clrScheme = doc.getElementsByTagName("a:clrScheme")[0];
-    if (clrScheme) {
-      for (const slot of clrScheme.children) {
-        const name = slot.tagName.replace("a:", "");
-        const srgb = child(slot, "a:srgbClr");
-        const sys = child(slot, "a:sysClr");
-        const hex = srgb?.getAttribute("val") || sys?.getAttribute("lastClr");
-        if (hex) theme.colors[name] = hex;
-      }
-    }
-
-    const fontScheme = doc.getElementsByTagName("a:fontScheme")[0];
-    const majorLatin = child(child(fontScheme, "a:majorFont"), "a:latin")?.getAttribute("typeface");
-    const minorLatin = child(child(fontScheme, "a:minorFont"), "a:latin")?.getAttribute("typeface");
-    if (majorLatin) theme.majorFont = majorLatin;
-    if (minorLatin) theme.minorFont = minorLatin;
-
-    const fmtScheme = doc.getElementsByTagName("a:fmtScheme")[0];
-    theme.fillStyles = childList(child(fmtScheme, "a:fillStyleLst"));
-    theme.lineStyles = childList(child(fmtScheme, "a:lnStyleLst"));
-    theme.bgFillStyles = childList(child(fmtScheme, "a:bgFillStyleLst"));
-  }
+  const fmtScheme = doc?.getElementsByTagName("a:fmtScheme")[0];
+  const theme: Theme = {
+    ...parseThemeDoc(doc),
+    fillStyles: childList(child(fmtScheme, "a:fillStyleLst")),
+    lineStyles: childList(child(fmtScheme, "a:lnStyleLst")),
+    bgFillStyles: childList(child(fmtScheme, "a:bgFillStyleLst")),
+  };
 
   shared.themeCache.set(themePath, theme);
   return theme;
@@ -640,7 +585,7 @@ async function renderSlideDocument(
     '<html><head><meta charset="utf-8"><style>',
     "*{margin:0;padding:0;box-sizing:border-box;}",
     `html,body{width:${px(width)};height:${px(height)};overflow:hidden;}`,
-    `body{position:relative;font-family:${cssFontFamily(theme.minorFont)};color:${textColor};` +
+    `body{position:relative;font-family:${cssFontStack(theme.minorFont)};color:${textColor};` +
       `background:${bgCss};background-size:cover;-webkit-font-smoothing:antialiased;}`,
     "a{color:inherit;text-decoration:underline;}",
     "table{border-collapse:collapse;table-layout:fixed;}",
@@ -658,6 +603,14 @@ async function renderSlideDocument(
  * finish loading (metrics change). Idempotent — original sizes are kept in
  * data attributes.
  */
+
+/** Declared normAutofit shrinks down to PowerPoint's floor. */
+const AUTOFIT_NORM_FLOOR = 0.25;
+/** Soft (undeclared) autofit keeps text readable: higher floor… */
+const AUTOFIT_SOFT_FLOOR = 0.4;
+/** …and only intervenes when content overflows the shape by >25%. */
+const AUTOFIT_SOFT_TRIGGER = 1.25;
+
 const AUTOFIT_SCRIPT = `(function(){
 var PROPS=['fontSize','lineHeight','marginTop','marginBottom','minWidth'];
 function fit(el){
@@ -677,14 +630,15 @@ function fit(el){
   });
   if(!items.length)return;
   var soft=el.dataset.autofit==='soft';
-  var floor=soft?0.4:0.25;
+  var floor=soft?${AUTOFIT_SOFT_FLOOR}:${AUTOFIT_NORM_FLOOR};
   var prevJc=el.style.justifyContent;
   el.style.justifyContent='flex-start';
   function apply(s){items.forEach(function(it){it.e.style[it.p]=it.v*s+'px'})}
   function ok(){return el.scrollHeight<=el.clientHeight+1&&el.scrollWidth<=el.clientWidth+1}
   apply(1);
-  // Soft mode only intervenes on gross overflow (>25% beyond the shape)
-  var trigger=soft?(el.scrollHeight>el.clientHeight*1.25||el.scrollWidth>el.clientWidth*1.25):!ok();
+  // Soft mode only intervenes on gross overflow past the trigger ratio
+  var T=${AUTOFIT_SOFT_TRIGGER};
+  var trigger=soft?(el.scrollHeight>el.clientHeight*T||el.scrollWidth>el.clientWidth*T):!ok();
   if(trigger&&!ok()){
     var lo=floor,hi=1;
     for(var i=0;i<8;i++){var mid=(lo+hi)/2;apply(mid);if(ok())lo=mid;else hi=mid}
@@ -696,11 +650,6 @@ function run(){[].slice.call(document.querySelectorAll('[data-autofit]')).forEac
 run();
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(run);
 })();`;
-
-function cssFontFamily(font: string): string {
-  // Single quotes: these values land inside double-quoted style attributes
-  return `'${font}', 'Segoe UI', system-ui, -apple-system, sans-serif`;
-}
 
 // ============================================================================
 // Shape tree rendering
@@ -906,9 +855,12 @@ async function renderShape(sp: Element, part: PartCtx, ctx: SlideCtx, opts: Tree
     }
   }
 
-  // Border: explicit → style reference
-  let line = lineToStyle(child(spPr, "a:ln"), env);
-  if (!line && !child(spPr, "a:ln") && lnRef) {
+  // Border: explicit → style reference. An explicit a:ln that resolves to no
+  // style (noFill) deliberately suppresses the themed outline, hence the
+  // `!ln` check rather than just `!line`.
+  const ln = child(spPr, "a:ln");
+  let line = lineToStyle(ln, env);
+  if (!line && !ln && lnRef) {
     const refColor = resolveColorIn(lnRef, env);
     const idx = intAttr(lnRef, "idx") ?? 0;
     if (refColor && idx > 0) {
@@ -948,7 +900,6 @@ async function renderShape(sp: Element, part: PartCtx, ctx: SlideCtx, opts: Tree
       layoutPh,
       masterPh,
       fontRefColor,
-      shapeWidth: xfrm.w,
     });
   }
 
@@ -966,7 +917,6 @@ interface TextEnv {
   layoutPh?: Element;
   masterPh?: Element;
   fontRefColor?: string;
-  shapeWidth: number;
   /** Render in normal document flow (table cells) instead of absolutely positioned */
   flow?: boolean;
 }
@@ -1041,59 +991,7 @@ function chainBullet(chain: (Element | undefined)[]): Element | undefined {
   return undefined;
 }
 
-const WINGDINGS_BULLETS: Record<string, string> = {
-  "§": "▪",
-  "•": "•",
-  Ø: "➢",
-  ü: "✓",
-  v: "❖",
-  l: "●",
-  n: "■",
-  u: "◆",
-  q: "❑",
-  "¡": "○",
-  Ÿ: "•",
-  "‣": "‣",
-  "-": "–",
-};
-
 function formatAutoNum(scheme: string, n: number): string {
-  const toAlpha = (num: number) => {
-    let s = "";
-    let v = num;
-    while (v > 0) {
-      s = String.fromCharCode(((v - 1) % 26) + 97) + s;
-      v = Math.floor((v - 1) / 26);
-    }
-    return s;
-  };
-  const toRoman = (num: number) => {
-    const map: [number, string][] = [
-      [1000, "m"],
-      [900, "cm"],
-      [500, "d"],
-      [400, "cd"],
-      [100, "c"],
-      [90, "xc"],
-      [50, "l"],
-      [40, "xl"],
-      [10, "x"],
-      [9, "ix"],
-      [5, "v"],
-      [4, "iv"],
-      [1, "i"],
-    ];
-    let s = "";
-    let v = num;
-    for (const [val, sym] of map) {
-      while (v >= val) {
-        s += sym;
-        v -= val;
-      }
-    }
-    return s;
-  };
-
   let body: string;
   if (scheme.startsWith("alphaLc")) body = toAlpha(n);
   else if (scheme.startsWith("alphaUc")) body = toAlpha(n).toUpperCase();
@@ -1206,10 +1104,24 @@ function renderTextBody(txBody: Element, tenv: TextEnv): string {
     }
     const content = runParts.join("");
 
-    // Default size for this paragraph level. Empty paragraphs take their
-    // height from a:endParaRPr (that's what PowerPoint sizes the blank line by).
-    const endParaRPr = !content ? child(p, "a:endParaRPr") : undefined;
-    const defaultSzAttr = chainAttr([endParaRPr, ...defRPrChain], "sz");
+    // Paragraph font size drives the CSS line-box strut, so it must follow
+    // the paragraph's actual runs — a larger phantom default would inflate
+    // the line pitch and vertically shift the text. Empty paragraphs take
+    // their height from a:endParaRPr (what PowerPoint sizes blank lines by).
+    let szSource: (Element | undefined)[];
+    if (content) {
+      let firstRunRPr: Element | undefined;
+      for (const node of p.children) {
+        if (node.tagName === "a:r" || node.tagName === "a:fld") {
+          firstRunRPr = child(node, "a:rPr");
+          break;
+        }
+      }
+      szSource = [firstRunRPr, ...defRPrChain];
+    } else {
+      szSource = [child(p, "a:endParaRPr"), ...defRPrChain];
+    }
+    const defaultSzAttr = chainAttr(szSource, "sz");
     const defaultSzPt = (defaultSzAttr ? parseInt(defaultSzAttr, 10) / 100 : 18) * fontScale;
 
     const pStyles = [
@@ -1236,7 +1148,7 @@ function renderTextBody(txBody: Element, tenv: TextEnv): string {
       if (bullet.tagName === "a:buChar") {
         const raw = bullet.getAttribute("char") || "•";
         const buFont = chainChild(pChain, "a:buFont")?.getAttribute("typeface") || "";
-        marker = buFont.toLowerCase().includes("wingdings") ? WINGDINGS_BULLETS[raw] || "•" : raw;
+        marker = mapBulletChar(raw, buFont);
       } else {
         // Auto numbering with per-level counters
         const startAt = intAttr(bullet, "startAt") ?? 1;
@@ -1335,7 +1247,7 @@ function renderRun(r: Element, defRPrChain: Element[], tenv: TextEnv, fontScale:
   if (font === "+mj-lt") font = ctx.theme.majorFont;
   else if (font === "+mn-lt") font = ctx.theme.minorFont;
   if (!font && (tenv.ph?.type === "title" || tenv.ph?.type === "ctrTitle")) font = ctx.theme.majorFont;
-  if (font) styles.push(`font-family:${cssFontFamily(font)}`);
+  if (font) styles.push(`font-family:${cssFontStack(font)}`);
 
   // Hyperlink
   const hlink = child(rPr, "a:hlinkClick");
@@ -1659,7 +1571,6 @@ function renderTable(tbl: Element, xfrm: Xfrm, part: PartCtx, ctx: SlideCtx, opt
           ctx,
           part,
           ph: null,
-          shapeWidth: 0,
           flow: true,
         });
       }

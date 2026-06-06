@@ -2,16 +2,26 @@ import JSZip from "jszip";
 import {
   child,
   childList,
+  cssFontStack,
   descend,
   emuToPx,
   escapeHtml,
   getRId,
   intAttr,
-  MEDIA_MIME,
+  loadMediaDataUrl,
+  mapBulletChar,
+  mixHex,
+  type OoxmlTheme,
+  parseRels,
+  parseThemeDoc,
   parseXml,
   ptToPx,
   px,
+  type Rel,
+  relsPathFor,
   resolveTarget,
+  toAlpha,
+  toRoman,
   twipToPx,
 } from "./ooxml";
 
@@ -47,10 +57,8 @@ export async function docxToHtml(file: File | Blob | ArrayBuffer): Promise<strin
     mediaCache: new Map(),
   };
 
-  await loadDocxRels(ctx);
-  await loadDocxTheme(ctx);
-  await loadStyles(ctx);
-  await loadNumbering(ctx);
+  // Independent parts — overlap the zip reads/parses
+  await Promise.all([loadDocxRels(ctx), loadDocxTheme(ctx), loadStyles(ctx), loadNumbering(ctx)]);
 
   return renderDocument(ctx);
 }
@@ -59,23 +67,10 @@ export async function docxToHtml(file: File | Blob | ArrayBuffer): Promise<strin
 // Context & part loading
 // ============================================================================
 
-interface DocxRel {
-  target: string;
-  type: string;
-  external: boolean;
-}
-
-interface DocxTheme {
-  colors: Record<string, string>;
-  majorFont: string;
-  minorFont: string;
-}
-
 interface NumLevel {
   numFmt: string;
   lvlText: string;
   start: number;
-  suffix: string;
   rPr?: Element;
   pPr?: Element;
 }
@@ -88,8 +83,8 @@ interface NumDef {
 interface DocxCtx {
   zip: JSZip;
   doc: Document;
-  rels: Map<string, DocxRel>;
-  theme: DocxTheme;
+  rels: Map<string, Rel>;
+  theme: OoxmlTheme;
   /** styleId → style element */
   styles: Map<string, Element>;
   /** default style per type (paragraph / character / table) */
@@ -105,40 +100,15 @@ interface DocxCtx {
 }
 
 async function loadDocxRels(ctx: DocxCtx): Promise<void> {
-  const xml = await ctx.zip.file("word/_rels/document.xml.rels")?.async("string");
+  const xml = await ctx.zip.file(relsPathFor("word/document.xml"))?.async("string");
   if (!xml) return;
-  for (const rel of parseXml(xml).getElementsByTagName("Relationship")) {
-    const id = rel.getAttribute("Id");
-    const target = rel.getAttribute("Target");
-    if (id && target) {
-      ctx.rels.set(id, {
-        target,
-        type: rel.getAttribute("Type") || "",
-        external: rel.getAttribute("TargetMode") === "External",
-      });
-    }
-  }
+  ctx.rels = parseRels(parseXml(xml));
 }
 
 async function loadDocxTheme(ctx: DocxCtx): Promise<void> {
   const xml = await ctx.zip.file("word/theme/theme1.xml")?.async("string");
   if (!xml) return;
-  const doc = parseXml(xml);
-
-  const clrScheme = doc.getElementsByTagName("a:clrScheme")[0];
-  if (clrScheme) {
-    for (const slot of clrScheme.children) {
-      const name = slot.tagName.replace("a:", "");
-      const hex = child(slot, "a:srgbClr")?.getAttribute("val") || child(slot, "a:sysClr")?.getAttribute("lastClr");
-      if (hex) ctx.theme.colors[name] = hex;
-    }
-  }
-
-  const fontScheme = doc.getElementsByTagName("a:fontScheme")[0];
-  const major = child(child(fontScheme, "a:majorFont"), "a:latin")?.getAttribute("typeface");
-  const minor = child(child(fontScheme, "a:minorFont"), "a:latin")?.getAttribute("typeface");
-  if (major) ctx.theme.majorFont = major;
-  if (minor) ctx.theme.minorFont = minor;
+  ctx.theme = parseThemeDoc(parseXml(xml));
 }
 
 async function loadStyles(ctx: DocxCtx): Promise<void> {
@@ -176,7 +146,6 @@ async function loadNumbering(ctx: DocxCtx): Promise<void> {
         numFmt: child(lvl, "w:numFmt")?.getAttribute("w:val") || "decimal",
         lvlText: child(lvl, "w:lvlText")?.getAttribute("w:val") || "%1.",
         start: intAttr(child(lvl, "w:start"), "w:val") ?? 1,
-        suffix: child(lvl, "w:suff")?.getAttribute("w:val") || "tab",
         rPr: child(lvl, "w:rPr"),
         pPr: child(lvl, "w:pPr"),
       });
@@ -200,7 +169,6 @@ async function loadNumbering(ctx: DocxCtx): Promise<void> {
           numFmt: child(lvlEl, "w:numFmt")?.getAttribute("w:val") || existing?.numFmt || "decimal",
           lvlText: child(lvlEl, "w:lvlText")?.getAttribute("w:val") || existing?.lvlText || "%1.",
           start: intAttr(child(lvlEl, "w:start"), "w:val") ?? existing?.start ?? 1,
-          suffix: child(lvlEl, "w:suff")?.getAttribute("w:val") || existing?.suffix || "tab",
           rPr: child(lvlEl, "w:rPr") ?? existing?.rPr,
           pPr: child(lvlEl, "w:pPr") ?? existing?.pPr,
         });
@@ -213,18 +181,7 @@ async function loadNumbering(ctx: DocxCtx): Promise<void> {
 }
 
 async function loadDocxMedia(ctx: DocxCtx, path: string): Promise<string | undefined> {
-  const cached = ctx.mediaCache.get(path);
-  if (cached !== undefined) return cached || undefined;
-  const ext = path.substring(path.lastIndexOf(".") + 1).toLowerCase();
-  const mime = MEDIA_MIME[ext];
-  if (!mime) {
-    ctx.mediaCache.set(path, "");
-    return undefined;
-  }
-  const base64 = await ctx.zip.file(path)?.async("base64");
-  const dataUrl = base64 ? `data:${mime};base64,${base64}` : "";
-  ctx.mediaCache.set(path, dataUrl);
-  return dataUrl || undefined;
+  return loadMediaDataUrl(ctx.zip, ctx.mediaCache, path);
 }
 
 // ============================================================================
@@ -352,25 +309,14 @@ function wordColor(
     if (hex) {
       const tint = el.getAttribute(`${themeAttr.replace("Color", "")}Tint`) || el.getAttribute("w:themeTint");
       const shade = el.getAttribute(`${themeAttr.replace("Color", "")}Shade`) || el.getAttribute("w:themeShade");
-      if (tint) hex = applyHexFactor(hex, parseInt(tint, 16) / 255, true);
-      else if (shade) hex = applyHexFactor(hex, parseInt(shade, 16) / 255, false);
+      if (tint) hex = mixHex(hex, parseInt(tint, 16) / 255, true);
+      else if (shade) hex = mixHex(hex, parseInt(shade, 16) / 255, false);
       return `#${hex}`;
     }
   }
   const val = el.getAttribute(valAttr);
   if (val && val !== "auto") return `#${val}`;
   return undefined;
-}
-
-function applyHexFactor(hex: string, f: number, towardWhite: boolean): string {
-  const c = [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
-  const out = c.map((v) => {
-    const n = towardWhite ? v * f + 255 * (1 - f) : v * f;
-    return Math.max(0, Math.min(255, Math.round(n)))
-      .toString(16)
-      .padStart(2, "0");
-  });
-  return out.join("").toUpperCase();
 }
 
 const HIGHLIGHT_COLORS: Record<string, string> = {
@@ -454,7 +400,7 @@ function runStyles(ctx: DocxCtx, chain: (Element | undefined)[]): string[] {
   if (!font && themeFont) {
     font = themeFont.startsWith("major") ? ctx.theme.majorFont : ctx.theme.minorFont;
   }
-  if (font) styles.push(`font-family:'${font}', 'Segoe UI', system-ui, sans-serif`);
+  if (font) styles.push(`font-family:${cssFontStack(font)}`);
 
   const vertAlign = chainChild(chain, "w:vertAlign")?.getAttribute("w:val");
   if (vertAlign === "superscript") styles.push("vertical-align:super;font-size:0.7em");
@@ -469,29 +415,6 @@ function runStyles(ctx: DocxCtx, chain: (Element | undefined)[]): string[] {
   if (chainOnOff(chain, "w:vanish")) styles.push("display:none");
 
   return styles;
-}
-
-const SYMBOL_CHARS: Record<number, string> = {
-  183: "•",
-  167: "▪",
-  216: "➢",
-  252: "✓",
-  118: "❖",
-  108: "●",
-  110: "■",
-  117: "◆",
-  113: "❑",
-  111: "○",
-  45: "–",
-};
-
-function mapSymbolChar(charCode: number, font: string): string {
-  const code = charCode >= 0xf000 ? charCode - 0xf000 : charCode;
-  const f = font.toLowerCase();
-  if (f.includes("wingdings") || f.includes("symbol") || f.includes("courier")) {
-    return SYMBOL_CHARS[code] ?? "•";
-  }
-  return String.fromCharCode(code);
 }
 
 async function renderRun(ctx: DocxCtx, r: Element, pStyleId: string | undefined): Promise<string> {
@@ -522,7 +445,7 @@ async function renderRun(ctx: DocxCtx, r: Element, pStyleId: string | undefined)
       case "w:sym": {
         const charHex = node.getAttribute("w:char") || "B7";
         const font = node.getAttribute("w:font") || "";
-        parts.push(escapeHtml(mapSymbolChar(parseInt(charHex, 16), font)));
+        parts.push(escapeHtml(mapBulletChar(String.fromCharCode(parseInt(charHex, 16)), font)));
         break;
       }
       case "w:drawing":
@@ -612,41 +535,6 @@ async function renderLegacyPict(ctx: DocxCtx, pict: Element): Promise<string> {
 // ============================================================================
 
 function formatNumber(fmt: string, n: number): string {
-  const toAlpha = (num: number) => {
-    let s = "";
-    let v = num;
-    while (v > 0) {
-      s = String.fromCharCode(((v - 1) % 26) + 97) + s;
-      v = Math.floor((v - 1) / 26);
-    }
-    return s;
-  };
-  const toRoman = (num: number) => {
-    const map: [number, string][] = [
-      [1000, "m"],
-      [900, "cm"],
-      [500, "d"],
-      [400, "cd"],
-      [100, "c"],
-      [90, "xc"],
-      [50, "l"],
-      [40, "xl"],
-      [10, "x"],
-      [9, "ix"],
-      [5, "v"],
-      [4, "iv"],
-      [1, "i"],
-    ];
-    let s = "";
-    let v = num;
-    for (const [val, sym] of map) {
-      while (v >= val) {
-        s += sym;
-        v -= val;
-      }
-    }
-    return s;
-  };
   switch (fmt) {
     case "lowerLetter":
       return toAlpha(n);
@@ -681,7 +569,7 @@ function resolveNumbering(ctx: DocxCtx, numId: string, ilvl: number): NumberingI
   if (lvl.numFmt === "bullet") {
     const ch = lvl.lvlText || "•";
     const font = child(lvl.rPr, "w:rFonts")?.getAttribute("w:ascii") || "";
-    marker = ch.length === 1 ? mapSymbolChar(ch.charCodeAt(0), font) : ch;
+    marker = ch.length === 1 ? mapBulletChar(ch, font) : ch;
   } else {
     // Advance counters: increment this level, reset deeper ones
     const counters = ctx.listCounters.get(def.abstractId) ?? [];
@@ -811,7 +699,9 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
             break;
           }
           if (inFieldInstr > 0) break;
-          if (node.getElementsByTagName("w:br")[0]?.getAttribute("w:type") === "page") pageBreakAfter = true;
+          if (Array.from(node.getElementsByTagName("w:br")).some((br) => br.getAttribute("w:type") === "page")) {
+            pageBreakAfter = true;
+          }
           html += await renderRun(ctx, node, pStyleId);
           break;
         }
@@ -1077,7 +967,7 @@ async function renderDocument(ctx: DocxCtx): Promise<string> {
   const baseStyles = runStyles(ctx, baseChain);
   if (!baseStyles.some((s) => s.startsWith("font-size"))) baseStyles.push("font-size:14.67px");
   if (!baseStyles.some((s) => s.startsWith("font-family"))) {
-    baseStyles.push(`font-family:'${ctx.theme.minorFont}', 'Segoe UI', system-ui, sans-serif`);
+    baseStyles.push(`font-family:${cssFontStack(ctx.theme.minorFont)}`);
   }
 
   const pagesHtml = pages.map((blocks) => `<div class="pg">${blocks.join("")}</div>`).join("");

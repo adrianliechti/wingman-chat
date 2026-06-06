@@ -15,10 +15,10 @@
  *   session.destroy();
  */
 
-import type { File } from "@/shared/types/file";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { isBinaryContentType } from "@/shared/lib/fileTypes";
 import { decodeBase64, parseDataUrl } from "@/shared/lib/utils";
+import type { File } from "@/shared/types/file";
 
 const SW_URL = "/html-preview-sw.js";
 const SCOPE_PREFIX = "/__preview__/";

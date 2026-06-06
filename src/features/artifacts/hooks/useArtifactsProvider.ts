@@ -7,9 +7,9 @@ import llmInstructionsText from "@/features/artifacts/prompts/llm.txt?raw";
 import officeInstructionsText from "@/features/artifacts/prompts/office.txt?raw";
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
+import { createFileTools, type FileData, type FileEntry, type WritableFileSource } from "@/shared/lib/file-tools";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
-import { createFileTools, type FileData, type FileEntry, type WritableFileSource } from "@/shared/lib/file-tools";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
 import { useArtifacts } from "./useArtifacts";
 

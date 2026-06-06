@@ -1,10 +1,9 @@
 import { Loader2 } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { cn } from "@/shared/lib/cn";
-import { dataUrlToBytes } from "@/shared/lib/fileContent";
-import { getFileName } from "@/shared/lib/utils";
-import { type XlsxHtmlResult, xlsxToHtml } from "@/shared/lib/xlsxToHtml";
+import { xlsxToHtml } from "@/shared/lib/xlsxToHtml";
 import { OfficeMarkdownEditor } from "./OfficeMarkdownEditor";
+import { OFFICE_IFRAME_SANDBOX, useOfficeConversion } from "./useOfficeConversion";
 
 interface XlsxEditorProps {
   path: string;
@@ -20,39 +19,13 @@ interface XlsxEditorProps {
  * Falls back to the extracted-markdown preview if conversion fails.
  */
 export const XlsxEditor = memo(function XlsxEditor({ path, content, contentType }: XlsxEditorProps) {
-  const [result, setResult] = useState<XlsxHtmlResult | null>(null);
-  const [failed, setFailed] = useState(false);
+  const { result, failed } = useOfficeConversion(path, content, contentType, xlsxToHtml);
   const [activeSheet, setActiveSheet] = useState(0);
 
+  // New workbook → back to the first sheet
   useEffect(() => {
-    let cancelled = false;
-    setResult(null);
-    setFailed(false);
     setActiveSheet(0);
-
-    const parsed = dataUrlToBytes(content);
-    if (!parsed) {
-      setFailed(true);
-      return;
-    }
-
-    const file = new File([parsed.bytes.slice()], getFileName(path), {
-      type: contentType ?? parsed.mimeType,
-    });
-
-    xlsxToHtml(file)
-      .then((res) => {
-        if (!cancelled) setResult(res);
-      })
-      .catch((e) => {
-        console.error("XLSX preview failed, falling back to text preview:", e);
-        if (!cancelled) setFailed(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [path, content, contentType]);
+  }, [result]);
 
   if (failed) {
     return <OfficeMarkdownEditor path={path} content={content} contentType={contentType} />;
@@ -71,7 +44,12 @@ export const XlsxEditor = memo(function XlsxEditor({ path, content, contentType 
 
   return (
     <div className="h-full flex flex-col bg-white">
-      <iframe srcDoc={sheet.html} className="flex-1 w-full border-none" sandbox="" title={sheet.name} />
+      <iframe
+        srcDoc={sheet.html}
+        className="flex-1 w-full border-none"
+        sandbox={OFFICE_IFRAME_SANDBOX}
+        title={sheet.name}
+      />
       {result.sheets.length > 1 && (
         <div className="shrink-0 flex items-center gap-0.5 px-2 py-1 overflow-x-auto border-t border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900">
           {result.sheets.map((s, i) => (

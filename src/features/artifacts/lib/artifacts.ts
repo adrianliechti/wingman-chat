@@ -26,8 +26,9 @@ export interface ProcessedFile {
 }
 
 // Binary uploads preserved verbatim as data URLs. Office docs render via
-// OfficeMarkdownEditor, PDFs via PdfEditor, and email files (.msg/.eml) are
-// extracted on demand (preview or AI via Python `extract-msg` / `email`).
+// their high-fidelity editors (PptxEditor/DocxEditor/XlsxEditor), PDFs via
+// PdfEditor, and email files (.msg/.eml) are extracted on demand (preview
+// via OfficeMarkdownEditor or AI via Python `extract-msg` / `email`).
 // Converting at upload time would lose the original formatting / attachments.
 const BINARY_PRESERVED_MIME_BY_EXT: Record<string, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -152,7 +153,8 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     return "pdf";
   }
 
-  // Office documents and email — previewed via OfficeMarkdownEditor
+  // Office documents (high-fidelity editors; OfficeMarkdownEditor is the
+  // extraction fallback) and email (extracted text)
   if (
     ext === "docx" ||
     normalizedContentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"

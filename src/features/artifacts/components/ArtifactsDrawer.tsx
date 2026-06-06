@@ -326,11 +326,6 @@ export function ArtifactsDrawer() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showFilePicker]);
 
-  // Render the appropriate editor based on file type
-  const renderEditor = () => {
-    return renderFileEditor();
-  };
-
   // Render the file-specific editor
   const renderFileEditor = () => {
     if (!activeFile) {
@@ -615,16 +610,6 @@ export function ArtifactsDrawer() {
     return ["html", "svg", "csv", "markdown"].includes(kind);
   };
 
-  // Email is previewed via extracted markdown — not a fidelity-preserving
-  // render. Surface that to the user so they don't think the formatting is
-  // gone; downloading still gives the real file. PPTX/DOCX/XLSX get
-  // fidelity-preserving previews, so they're deliberately excluded here.
-  const isTextOnlyPreview = () => {
-    if (!activeFileData) return false;
-    const kind = artifactKind(activeFileData.path, activeFileData.contentType);
-    return kind === "email";
-  };
-
   // Handle run button click
   const handleRun = async () => {
     if (runHandler) {
@@ -703,15 +688,9 @@ export function ArtifactsDrawer() {
                   )}
                 </button>
               )}
-              {/* Hint: office binaries are previewed as extracted text */}
-              {isTextOnlyPreview() && (
-                <span
-                  className="shrink-0 text-xs uppercase tracking-wide font-medium text-neutral-500 dark:text-neutral-400 bg-neutral-200/60 dark:bg-neutral-800/60 rounded px-1.5 py-0.5"
-                  title="Office documents are previewed as extracted text. Download the file for the original formatting."
-                >
-                  Text preview
-                </span>
-              )}
+              {/* The "Text preview" disclosure for extracted-text rendering
+                  lives inside OfficeMarkdownEditor so it also covers the
+                  fallback paths of the high-fidelity office editors. */}
               {/* View mode segmented control — inline after filename */}
               {supportsPreview() && (
                 <div
@@ -941,7 +920,7 @@ export function ArtifactsDrawer() {
           {/* Vertical split: editor on top, terminal on bottom */}
           <ResizablePanelGroup orientation="vertical" className="flex-1 min-h-0">
             <ResizablePanel defaultSize={70} minSize={20} className="h-full overflow-hidden relative z-0">
-              {renderEditor()}
+              {renderFileEditor()}
             </ResizablePanel>
 
             {/* Terminal — spans only the left column, below the editor */}
