@@ -32,6 +32,9 @@ import type { ChangeEvent, FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useAgents } from "@/features/agent/hooks/useAgents";
+import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { processUploadedFile } from "@/features/artifacts/lib/artifacts";
+import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useSettings } from "@/features/settings/hooks/useSettings";
@@ -41,7 +44,7 @@ import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { cn } from "@/shared/lib/cn";
-import { acceptTypes, canConvert, convertFileToText } from "@/shared/lib/convert";
+import { acceptTypes, canConvert } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { lookupContentType, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
 import type { Content, ImageContent, Message, Model, TextContent, ToolProvider } from "@/shared/types/chat";
@@ -55,7 +58,9 @@ import { ChatInputAttachments } from "./ChatInputAttachments";
 export function ChatInput() {
   const config = getConfig();
 
-  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding, stopStreaming } = useChat();
+  const { sendMessage, models, model, setModel: onModelChange, messages, isResponding, stopStreaming, ensureChat } =
+    useChat();
+  const { fs: artifactsFs } = useArtifacts();
   const { currentAgent, setCurrentAgent } = useAgents();
   const { profile } = useSettings();
   const {
@@ -95,6 +100,10 @@ export function ChatInput() {
   const [voiceTextInput, setVoiceTextInput] = useState("");
 
   const [attachments, setAttachments] = useState<Content[]>([]);
+  // Documents attached in the chat input are uploaded into the artifacts
+  // workspace instead of being extracted to inline text. We track lightweight
+  // references here for the chip UI and the on-send reference line.
+  const [artifactAttachments, setArtifactAttachments] = useState<{ path: string; name: string }[]>([]);
   const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
 
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
@@ -205,51 +214,76 @@ export function ChatInput() {
 
       const visionFiles = config.vision?.files ?? [];
 
-      const processedContents = await Promise.allSettled(
-        files.map(async (file, index) => {
-          const fileId = fileIds[index];
+      // Normalize MIME types up front (browsers sometimes omit/guess them).
+      const prepared = files.map((file, index) => {
+        const effectiveType =
+          file.type && file.type !== "application/octet-stream"
+            ? file.type
+            : (lookupContentType(file.name.split(".").pop() ?? "") ?? file.type);
+        const effectiveFile =
+          effectiveType !== file.type ? new File([file], file.name, { type: effectiveType }) : file;
+        return { fileId: fileIds[index], effectiveFile, effectiveType };
+      });
+
+      // Documents (non-vision, convertible) are uploaded into the artifacts
+      // workspace rather than extracted to inline text. Ensure a filesystem
+      // exists for them — for a draft chat this creates the chat, which enables
+      // artifacts silently (no drawer) since the new chat has no history yet.
+      const hasArtifactUploads = prepared.some(
+        (p) => !visionFiles.includes(p.effectiveType) && canConvert(p.effectiveFile),
+      );
+
+      let fs: FileSystemManager | null = null;
+      if (hasArtifactUploads) {
+        try {
+          const ensured = await ensureChat();
+          fs = ensured.fs;
+        } catch (error) {
+          console.error("Failed to prepare artifacts filesystem for attachments:", error);
+        }
+      }
+
+      const results = await Promise.allSettled(
+        prepared.map(async ({ effectiveFile, effectiveType }) => {
           try {
-            let content: Content | null = null;
-
-            // Infer MIME from extension when browser didn't detect it
-            const effectiveType =
-              file.type && file.type !== "application/octet-stream"
-                ? file.type
-                : (lookupContentType(file.name.split(".").pop() ?? "") ?? file.type);
-
-            // Re-wrap with correct type if it was wrong
-            const effectiveFile =
-              effectiveType !== file.type ? new File([file], file.name, { type: effectiveType }) : file;
-
             if (visionFiles.includes(effectiveType)) {
               const blob = await resizeImageBlob(effectiveFile, 1920, 1920);
               const dataUrl = await readAsDataURL(blob);
-              content = { type: "image", name: file.name, data: dataUrl } as ImageContent;
-            } else if (canConvert(effectiveFile)) {
-              const text = await convertFileToText(file);
-              content = { type: "text", text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
+              const content: ImageContent = { type: "image", name: effectiveFile.name, data: dataUrl };
+              return { content };
             }
 
-            return { fileId, content };
+            if (fs && canConvert(effectiveFile)) {
+              const processed = await processUploadedFile(effectiveFile);
+              const artifacts: { path: string; name: string }[] = [];
+              for (const p of processed) {
+                await fs.createFile(p.path, p.content, p.contentType);
+                artifacts.push({ path: p.path, name: p.path.split("/").pop() ?? p.path });
+              }
+              return { artifacts };
+            }
+
+            return {};
           } catch (error) {
-            console.error(`Error processing file ${file.name}:`, error);
-            return { fileId, content: null };
+            console.error(`Error processing file ${effectiveFile.name}:`, error);
+            return {};
           }
         }),
       );
 
-      // Batch state updates
-      const validContents = processedContents
-        .filter(
-          (result): result is PromiseFulfilledResult<{ fileId: string; content: TextContent | ImageContent }> =>
-            result.status === "fulfilled" && result.value.content !== null,
-        )
-        .map((result) => result.value.content);
+      const newContents: Content[] = [];
+      const newArtifacts: { path: string; name: string }[] = [];
+      for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        if ("content" in result.value && result.value.content) newContents.push(result.value.content);
+        if ("artifacts" in result.value && result.value.artifacts) newArtifacts.push(...result.value.artifacts);
+      }
 
-      setAttachments((prev) => [...prev, ...validContents]);
+      if (newContents.length) setAttachments((prev) => [...prev, ...newContents]);
+      if (newArtifacts.length) setArtifactAttachments((prev) => [...prev, ...newArtifacts]);
       setExtractingAttachments(new Set()); // Clear all at once
     },
-    [config.vision?.files],
+    [config.vision?.files, ensureChat],
   );
 
   const isDragging = useDropZone(containerRef, handleFiles);
@@ -315,6 +349,17 @@ export function ChatInput() {
 
         const messageContent: Content[] = [{ type: "text", text: content }, ...finalAttachments];
 
+        // Tell the model which files were uploaded into the artifacts workspace
+        // so it knows to read them (their content is no longer inlined).
+        if (artifactAttachments.length > 0) {
+          const list = artifactAttachments.map((a) => a.path).join(", ");
+          const reference: TextContent = {
+            type: "text",
+            text: `Attached files (available in the artifacts workspace): ${list}`,
+          };
+          messageContent.push(reference);
+        }
+
         const message: Message = {
           role: Role.User,
           content: messageContent,
@@ -323,9 +368,10 @@ export function ChatInput() {
         sendMessage(message);
         setContent("");
         setAttachments([]);
+        setArtifactAttachments([]);
       }
     },
-    [isResponding, content, attachments, isContinuousCaptureActive, captureFrame, sendMessage],
+    [isResponding, content, attachments, artifactAttachments, isContinuousCaptureActive, captureFrame, sendMessage],
   );
 
   const handleAttachmentClick = useCallback(() => {
@@ -388,6 +434,22 @@ export function ChatInput() {
   const handleRemoveAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   }, []);
+
+  const handleRemoveArtifactAttachment = useCallback(
+    (index: number) => {
+      setArtifactAttachments((prev) => {
+        const target = prev[index];
+        if (target && artifactsFs) {
+          // Remove the orphaned file from the artifacts workspace too.
+          artifactsFs
+            .deleteFile(target.path)
+            .catch((error) => console.error("Failed to remove artifact attachment:", error));
+        }
+        return prev.filter((_, i) => i !== index);
+      });
+    },
+    [artifactsFs],
+  );
 
   const handleContentChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
@@ -490,12 +552,14 @@ export function ChatInput() {
           )}
 
           {/* Attachments display */}
-          {(attachments.length > 0 || extractingAttachments.size > 0) && (
+          {(attachments.length > 0 || artifactAttachments.length > 0 || extractingAttachments.size > 0) && (
             <div className="p-3">
               <ChatInputAttachments
                 attachments={attachments}
+                artifactAttachments={artifactAttachments}
                 extractingAttachments={extractingAttachments}
                 onRemove={handleRemoveAttachment}
+                onRemoveArtifact={handleRemoveArtifactAttachment}
               />
             </div>
           )}

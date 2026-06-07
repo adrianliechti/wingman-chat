@@ -10,7 +10,7 @@ import { executeCode } from "@/features/tools/lib/interpreter";
 import { createFileTools, type FileData, type FileEntry, type WritableFileSource } from "@/shared/lib/file-tools";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
-import type { Tool, ToolProvider } from "@/shared/types/chat";
+import type { Tool, ToolContext, ToolProvider } from "@/shared/types/chat";
 import { useArtifacts } from "./useArtifacts";
 
 /**
@@ -219,7 +219,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           },
           required: [],
         },
-        function: async (args: Record<string, unknown>) => {
+        function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const fs = fsRef.current;
           const { code, packages } = args;
           const path = normalizeArtifactPath(args.path as string | undefined);
@@ -268,9 +268,12 @@ export function useArtifactsProvider(): ToolProvider | null {
               return [{ type: "text" as const, text: `Error executing code: ${result.error || "Unknown error"}` }];
             }
 
-            // Sync changed files back to artifacts
+            // Sync changed files back to artifacts and surface the ones written
+            // so the chat can show them as chips on the assistant's response.
             if (fs && result.files) {
-              await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
+              const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
+              const written = [...summary.createdPaths, ...summary.updatedPaths];
+              if (written.length > 0) context?.setMeta?.({ artifactFiles: written });
             }
 
             return [{ type: "text" as const, text: result.output }];
@@ -299,7 +302,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           },
           required: ["command"],
         },
-        function: async (args: Record<string, unknown>) => {
+        function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const fs = fsRef.current;
           const { command } = args;
 
@@ -329,12 +332,16 @@ export function useArtifactsProvider(): ToolProvider | null {
               command,
             });
 
-            // Save changed files back to artifacts after execution
+            // Save changed files back to artifacts after execution and surface
+            // the ones written so the chat can show them as chips on the
+            // assistant's response.
             if (fs) {
               const { memFs } = getSingleton();
               const currentFiles = await readFilesFromFs(memFs);
 
-              await fs.applyOverlaySnapshot(currentFiles, { deleteMissing: true });
+              const summary = await fs.applyOverlaySnapshot(currentFiles, { deleteMissing: true });
+              const written = [...summary.createdPaths, ...summary.updatedPaths];
+              if (written.length > 0) context?.setMeta?.({ artifactFiles: written });
             }
 
             const parts: string[] = [];

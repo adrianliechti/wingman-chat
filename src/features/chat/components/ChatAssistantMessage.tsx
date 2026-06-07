@@ -1,5 +1,6 @@
 import { AlertCircle, ChevronRight, Loader2, RotateCcw } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
+import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
@@ -11,7 +12,7 @@ import { CopyButton } from "@/shared/ui/CopyButton";
 import { Markdown } from "@/shared/ui/Markdown";
 import { PlayButton } from "@/shared/ui/PlayButton";
 import { ChatMessageElicitation } from "./ChatMessageElicitation";
-import { getToolCallPreview } from "./chatMessageUtils";
+import { collectTurnArtifactPaths, getToolCallPreview, isTurnEnd } from "./chatMessageUtils";
 
 // Error message component
 function ErrorMessage({ title, message, onRetry }: { title: string; message: string; onRetry?: () => void }) {
@@ -117,10 +118,19 @@ function getMessagePartKey(part: Message["content"][number], index: number, scop
 
 export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   message,
+  index,
   isLast,
   isResponding,
 }: ChatAssistantMessageProps) {
-  const { pendingElicitation, resolveElicitation, retryMessage, toolMeta } = useChat();
+  const { messages, pendingElicitation, resolveElicitation, retryMessage, toolMeta } = useChat();
+
+  // Files written during this turn (create_file + python/bash), surfaced as
+  // clickable chips on the turn's completion message rather than auto-opening
+  // the artifacts drawer.
+  const turnArtifactPaths = useMemo(
+    () => (isTurnEnd(messages, index) ? collectTurnArtifactPaths(messages, index) : []),
+    [messages, index],
+  );
 
   const toolCallParts = message.content.filter((p) => p.type === "tool_call");
   const hasToolCalls = toolCallParts.length > 0;
@@ -361,6 +371,14 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
         {hasMedia && (
           <div className="pt-2">
             <RenderContents contents={mediaParts} />
+          </div>
+        )}
+
+        {turnArtifactPaths.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {turnArtifactPaths.map((path) => (
+              <ArtifactChip key={path} path={path} />
+            ))}
           </div>
         )}
 

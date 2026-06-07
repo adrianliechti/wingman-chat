@@ -3,10 +3,17 @@ import { memo } from "react";
 
 import type { Content } from "@/shared/types/chat";
 
+interface ArtifactAttachment {
+  path: string;
+  name: string;
+}
+
 interface ChatInputAttachmentsProps {
   attachments: Content[];
+  artifactAttachments?: ArtifactAttachment[];
   extractingAttachments: Set<string>;
   onRemove?: (index: number) => void;
+  onRemoveArtifact?: (index: number) => void;
 }
 
 const getContentIcon = (content: Content) => {
@@ -34,8 +41,14 @@ const getContentName = (content: Content): string => {
 };
 
 export const ChatInputAttachments = memo(
-  ({ attachments, extractingAttachments, onRemove }: ChatInputAttachmentsProps) => {
-    if (attachments.length === 0 && extractingAttachments.size === 0) {
+  ({
+    attachments,
+    artifactAttachments = [],
+    extractingAttachments,
+    onRemove,
+    onRemoveArtifact,
+  }: ChatInputAttachmentsProps) => {
+    if (attachments.length === 0 && artifactAttachments.length === 0 && extractingAttachments.size === 0) {
       return null;
     }
 
@@ -80,6 +93,28 @@ export const ChatInputAttachments = memo(
                 type="button"
                 className="absolute top-0.5 right-0.5 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm shadow-sm"
                 onClick={() => onRemove(index)}
+              >
+                <X size={10} />
+              </button>
+            )}
+          </div>
+        ))}
+
+        {/* Artifact attachments (documents uploaded into the artifacts workspace) */}
+        {artifactAttachments.map((artifact, index) => (
+          <div
+            key={`artifact:${artifact.path}`}
+            className="relative size-14 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm flex items-center justify-center group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all"
+            title={artifact.name}
+          >
+            <div className="text-neutral-600 dark:text-neutral-300">
+              <FileText size={24} />
+            </div>
+            {onRemoveArtifact && (
+              <button
+                type="button"
+                className="absolute top-0.5 right-0.5 size-5 bg-neutral-800/80 hover:bg-neutral-900 dark:bg-neutral-200/80 dark:hover:bg-neutral-100 text-white dark:text-neutral-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm shadow-sm"
+                onClick={() => onRemoveArtifact(index)}
               >
                 <X size={10} />
               </button>

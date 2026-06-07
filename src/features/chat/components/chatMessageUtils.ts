@@ -1,3 +1,68 @@
+import type { Message, TextContent, ToolResultContent } from "@/shared/types/chat";
+
+// Artifacts-provider tools that produce/write files (unnamespaced — the
+// notebook source tools use a `source_` prefix and a different filesystem).
+const ARTIFACT_WRITE_TOOLS = new Set(["create_file", "execute_python_code", "execute_bash_code"]);
+
+function parsePathFromJson(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const obj = JSON.parse(raw);
+    return typeof obj?.path === "string" ? obj.path : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Artifact file paths a single tool result wrote, if any. */
+function toolResultArtifactPaths(result: ToolResultContent): string[] {
+  if (result.name === "create_file") {
+    const resultText = result.result?.find((c): c is TextContent => c.type === "text");
+    const path = parsePathFromJson(resultText?.text) ?? parsePathFromJson(result.arguments);
+    return path ? [path] : [];
+  }
+  // execute_python_code / execute_bash_code report written files via meta.
+  const files = result.meta?.artifactFiles;
+  return Array.isArray(files) ? files.filter((p): p is string => typeof p === "string") : [];
+}
+
+/** Whether a message is a genuine user prompt (not a tool-result carrier). */
+function isUserPrompt(message: Message): boolean {
+  return message.role === "user" && message.content.some((c) => c.type !== "tool_result");
+}
+
+/**
+ * Collect the artifact files written during the assistant turn ending at
+ * `assistantIndex` — gathered from every tool result since the preceding user
+ * prompt. Deduplicated, in first-seen order. Used to show the created files as
+ * chips on the assistant's completion message.
+ */
+export function collectTurnArtifactPaths(messages: Message[], assistantIndex: number): string[] {
+  let start = 0;
+  for (let i = assistantIndex - 1; i >= 0; i--) {
+    if (isUserPrompt(messages[i])) {
+      start = i + 1;
+      break;
+    }
+  }
+
+  const seen = new Set<string>();
+  for (let i = start; i <= assistantIndex; i++) {
+    for (const part of messages[i]?.content ?? []) {
+      if (part.type !== "tool_result") continue;
+      if (!ARTIFACT_WRITE_TOOLS.has(part.name)) continue;
+      for (const path of toolResultArtifactPaths(part)) seen.add(path);
+    }
+  }
+  return [...seen];
+}
+
+/** Whether the assistant message at `index` ends a turn (next is a new prompt). */
+export function isTurnEnd(messages: Message[], index: number): boolean {
+  const next = messages[index + 1];
+  return !next || isUserPrompt(next);
+}
+
 // Helper function to extract and format common parameters for tool calls
 export function getToolCallPreview(_toolName: string, arguments_: string): string | null {
   try {

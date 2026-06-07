@@ -33,7 +33,9 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   // When the active filesystem changes, reconcile UI state:
   //  - Draft chat (fs === null): clear active file and collapse enabled state
   //    while preserving drawer visibility so the panel stays open.
-  //  - Existing chat with files: auto-enable artifacts + surface the drawer.
+  //  - Chat with files: auto-enable artifacts (so the model gets the tools).
+  //    The drawer is never auto-opened — created files surface as inline chips
+  //    in the conversation; the user opens the panel on demand.
   //  - Otherwise: clear active file if it no longer exists in the new chat.
   useEffect(() => {
     if (!fs) {
@@ -51,7 +53,6 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
 
         if (fileCount > 0) {
           setIsEnabled(true);
-          setShowArtifactsDrawer(true);
         }
 
         // Clear active file if it doesn't exist in the new filesystem
@@ -79,10 +80,10 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   useEffect(() => {
     if (!fs) return undefined;
 
-    const unsubscribeCreated = fs.subscribe("fileCreated", (path: string) => {
-      setActiveFile(path);
-      setShowArtifactsDrawer(true);
-      // Auto-enable artifacts when a file is created
+    const unsubscribeCreated = fs.subscribe("fileCreated", () => {
+      // Enable artifacts when a file appears, but never auto-open the drawer:
+      // created files are surfaced inline in the conversation (artifact chips),
+      // and the user opens the panel on demand.
       setIsEnabled(true);
     });
 

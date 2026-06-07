@@ -31,6 +31,9 @@ export interface OverlayCommitSummary {
   created: number;
   updated: number;
   deleted: number;
+  createdPaths: string[];
+  updatedPaths: string[];
+  deletedPaths: string[];
 }
 
 export interface OverlaySnapshotOptions {
@@ -268,9 +271,9 @@ export class FileSystemManager implements FileSystem {
    * Apply explicit overlay delta (upserts + deletes) to OPFS.
    */
   async applyOverlayDelta(delta: OverlayDelta): Promise<OverlayCommitSummary> {
-    let created = 0;
-    let updated = 0;
-    let deleted = 0;
+    const createdPaths: string[] = [];
+    const updatedPaths: string[] = [];
+    const deletedPaths: string[] = [];
 
     for (const [rawPath, file] of Object.entries(delta.upserts)) {
       const path = this.normalizePath(rawPath);
@@ -279,11 +282,11 @@ export class FileSystemManager implements FileSystem {
       if (!existing) {
         await opfs.writeArtifact(this.chatId, path, file.content, file.contentType);
         this.emit("fileCreated", path);
-        created++;
+        createdPaths.push(path);
       } else if (existing.content !== file.content || existing.contentType !== file.contentType) {
         await opfs.writeArtifact(this.chatId, path, file.content, file.contentType ?? existing.contentType);
         this.emit("fileUpdated", path);
-        updated++;
+        updatedPaths.push(path);
       }
     }
 
@@ -291,11 +294,18 @@ export class FileSystemManager implements FileSystem {
       // deleteFile normalizes internally
       const didDelete = await this.deleteFile(rawPath);
       if (didDelete) {
-        deleted++;
+        deletedPaths.push(this.normalizePath(rawPath));
       }
     }
 
-    return { created, updated, deleted };
+    return {
+      created: createdPaths.length,
+      updated: updatedPaths.length,
+      deleted: deletedPaths.length,
+      createdPaths,
+      updatedPaths,
+      deletedPaths,
+    };
   }
 
   /**
