@@ -828,6 +828,88 @@ async function renderTable(ctx: DocxCtx, tbl: Element): Promise<string> {
 
   const rows = childList(tbl, "w:tr");
 
+  // ── Table-style conditional formatting (ECMA-376 §17.7.6) ─────────────────
+  // Built-in styles ("Light List - Accent 1", banded grids, …) keep their
+  // header shading, banded-row fills, borders and fonts in styles.xml as a
+  // base format plus w:tblStylePr conditional blocks. w:tblLook selects which
+  // conditionals apply to each cell.
+  const tblStyleChainArr = styleChain(ctx, tblStyleId); // leaf → root
+  const numCols = colWidths.length;
+  const lastRowIndex = rows.length - 1;
+
+  const lookEl = chainChild(tblPrChain, "w:tblLook");
+  const lookFlag = (name: string, bit: number, dflt: boolean): boolean => {
+    const a = lookEl?.getAttribute(`w:${name}`);
+    if (a != null) return a === "1" || a === "true";
+    const valHex = lookEl?.getAttribute("w:val");
+    if (valHex) return (parseInt(valHex, 16) & bit) !== 0;
+    return dflt;
+  };
+  const look = {
+    firstRow: lookFlag("firstRow", 0x0020, true),
+    lastRow: lookFlag("lastRow", 0x0040, false),
+    firstCol: lookFlag("firstColumn", 0x0080, true),
+    lastCol: lookFlag("lastColumn", 0x0100, false),
+    hBand: !lookFlag("noHBand", 0x0200, false),
+    vBand: !lookFlag("noVBand", 0x0400, false),
+  };
+  const rowBand = intAttr(chainChild(tblPrChain, "w:tblStyleRowBandSize"), "w:val") || 1;
+  const colBand = intAttr(chainChild(tblPrChain, "w:tblStyleColBandSize"), "w:val") || 1;
+
+  /** w:tblStylePr blocks of a type across the style chain (leaf first); the
+   *  whole table's base format is the style element itself. */
+  const condBlocks = (type: string): Element[] => {
+    const out: Element[] = [];
+    for (const st of tblStyleChainArr) {
+      if (type === "wholeTable") out.push(st);
+      else for (const sp of childList(st, "w:tblStylePr")) if (sp.getAttribute("w:type") === type) out.push(sp);
+    }
+    return out;
+  };
+
+  /** Conditional types active for a cell, highest priority first. */
+  const cellCondTypes = (ri: number, colIndex: number, gridSpan: number): string[] => {
+    const fr = look.firstRow && ri === 0;
+    const lr = look.lastRow && ri === lastRowIndex;
+    const fc = look.firstCol && colIndex === 0;
+    const lc = look.lastCol && colIndex + gridSpan >= numCols;
+    const types: string[] = [];
+    if (fr && fc) types.push("nwCell");
+    if (fr && lc) types.push("neCell");
+    if (lr && fc) types.push("swCell");
+    if (lr && lc) types.push("seCell");
+    if (fr) types.push("firstRow");
+    if (lr) types.push("lastRow");
+    if (fc) types.push("firstCol");
+    if (lc) types.push("lastCol");
+    if (look.hBand && !fr && !lr) {
+      const ord = ri - (look.firstRow ? 1 : 0);
+      types.push(Math.floor(ord / rowBand) % 2 === 0 ? "band1Horz" : "band2Horz");
+    }
+    if (look.vBand && !fc && !lc) {
+      const ord = colIndex - (look.firstCol ? 1 : 0);
+      types.push(Math.floor(ord / colBand) % 2 === 0 ? "band1Vert" : "band2Vert");
+    }
+    return types;
+  };
+
+  /** Ordered (highest first) tcPr & rPr for a cell from the table style,
+   *  including wholeTable as the lowest-priority base. */
+  const cellStyleProps = (ri: number, colIndex: number, gridSpan: number): { tcPr: Element[]; rPr: Element[] } => {
+    const tcPr: Element[] = [];
+    const rPr: Element[] = [];
+    if (!tblStyleChainArr.length) return { tcPr, rPr };
+    for (const type of [...cellCondTypes(ri, colIndex, gridSpan), "wholeTable"]) {
+      for (const block of condBlocks(type)) {
+        const tc = child(block, "w:tcPr");
+        if (tc) tcPr.push(tc);
+        const rp = child(block, "w:rPr");
+        if (rp) rPr.push(rp);
+      }
+    }
+    return { tcPr, rPr };
+  };
+
   // Build a column-index map to resolve vertical merges
   type CellInfo = { tc: Element; colIndex: number; gridSpan: number };
   const grid: CellInfo[][] = rows.map((row) => {
@@ -868,12 +950,14 @@ async function renderTable(ctx: DocxCtx, tbl: Element): Promise<string> {
       }
 
       const tcPr = child(tc, "w:tcPr");
+      const sp = cellStyleProps(ri, colIndex, gridSpan);
       const styles: string[] = [
         `padding:${px(defMar.top)} ${px(defMar.right)} ${px(defMar.bottom)} ${px(defMar.left)}`,
       ];
 
-      // Borders: explicit cell → table inside/outer
+      // Borders: explicit cell → table-style cell borders → table inside/outer
       const tcBorders = child(tcPr, "w:tcBorders");
+      const styleTcBorders = sp.tcPr.map((t) => child(t, "w:tcBorders")).filter((e): e is Element => !!e);
       for (const [side, tag] of [
         ["top", "w:top"],
         ["left", "w:left"],
@@ -881,7 +965,13 @@ async function renderTable(ctx: DocxCtx, tbl: Element): Promise<string> {
         ["right", "w:right"],
       ] as const) {
         let css = borderCss(child(tcBorders, tag), ctx);
-        if (!css) {
+        if (css === undefined) {
+          for (const stb of styleTcBorders) {
+            css = borderCss(child(stb, tag), ctx);
+            if (css !== undefined) break;
+          }
+        }
+        if (css === undefined) {
           const isOuterRow = (side === "top" && ri === 0) || (side === "bottom" && ri === rows.length - 1);
           const isOuterCol =
             (side === "left" && colIndex === 0) || (side === "right" && colIndex + gridSpan >= colWidths.length);
@@ -894,12 +984,37 @@ async function renderTable(ctx: DocxCtx, tbl: Element): Promise<string> {
         if (css && css !== "none") styles.push(`border-${side}:${css}`);
       }
 
-      const shd = child(tcPr, "w:shd");
-      const fill = shd?.getAttribute("w:fill");
-      if (fill && fill !== "auto") styles.push(`background-color:#${fill}`);
+      // Shading: explicit cell fill → table-style cell/conditional fill
+      let fillCss = wordColor(child(tcPr, "w:shd"), ctx, "w:fill", "w:themeFill");
+      if (!fillCss) {
+        for (const t of sp.tcPr) {
+          fillCss = wordColor(child(t, "w:shd"), ctx, "w:fill", "w:themeFill");
+          if (fillCss) break;
+        }
+      }
+      if (fillCss) styles.push(`background-color:${fillCss}`);
 
-      const vAlign = child(tcPr, "w:vAlign")?.getAttribute("w:val");
+      let vAlign = child(tcPr, "w:vAlign")?.getAttribute("w:val");
+      if (!vAlign) {
+        for (const t of sp.tcPr) {
+          const v = child(t, "w:vAlign")?.getAttribute("w:val");
+          if (v) {
+            vAlign = v;
+            break;
+          }
+        }
+      }
       styles.push(`vertical-align:${vAlign === "center" ? "middle" : vAlign === "bottom" ? "bottom" : "top"}`);
+
+      // Table-style run formatting (bold header, banded font color, …) applied
+      // as inherited cell CSS; direct run formatting on each run still wins.
+      if (sp.rPr.length) {
+        for (const decl of runStyles(ctx, sp.rPr)) {
+          if (/^(font-weight|font-style|color|font-family|font-size|text-decoration|text-transform|font-variant|letter-spacing):/.test(decl)) {
+            styles.push(decl);
+          }
+        }
+      }
 
       // Cell content: paragraphs and nested tables
       let content = "";
