@@ -800,19 +800,93 @@ function geometryStyle(spPr: Element | undefined, w: number, h: number): string 
   return "";
 }
 
+// Common preset geometries as normalized polygon silhouettes (points in a
+// 0–100 box). Used to clip the shape's fill and to stroke its outline so
+// arrows/chevrons/triangles/stars render with their real shape instead of a
+// plain rectangle. Adjustment guides are approximated with Office defaults.
+const PRESET_POLY: Record<string, [number, number][]> = {
+  triangle: [[50, 0], [100, 100], [0, 100]],
+  rtTriangle: [[0, 0], [0, 100], [100, 100]],
+  diamond: [[50, 0], [100, 50], [50, 100], [0, 50]],
+  flowChartDecision: [[50, 0], [100, 50], [50, 100], [0, 50]],
+  parallelogram: [[25, 0], [100, 0], [75, 100], [0, 100]],
+  trapezoid: [[25, 0], [75, 0], [100, 100], [0, 100]],
+  pentagon: [[50, 0], [98, 38], [79, 100], [21, 100], [2, 38]],
+  hexagon: [[25, 0], [75, 0], [100, 50], [75, 100], [25, 100], [0, 50]],
+  heptagon: [[50, 0], [89, 21], [99, 61], [72, 99], [28, 99], [1, 61], [11, 21]],
+  octagon: [[30, 0], [70, 0], [100, 30], [100, 70], [70, 100], [30, 100], [0, 70], [0, 30]],
+  rightArrow: [[0, 25], [60, 25], [60, 0], [100, 50], [60, 100], [60, 75], [0, 75]],
+  leftArrow: [[40, 0], [40, 25], [100, 25], [100, 75], [40, 75], [40, 100], [0, 50]],
+  upArrow: [[0, 40], [50, 0], [100, 40], [75, 40], [75, 100], [25, 100], [25, 40]],
+  downArrow: [[25, 0], [75, 0], [75, 60], [100, 60], [50, 100], [0, 60], [25, 60]],
+  leftRightArrow: [[0, 50], [25, 0], [25, 25], [75, 25], [75, 0], [100, 50], [75, 100], [75, 75], [25, 75], [25, 100]],
+  upDownArrow: [[50, 0], [100, 25], [75, 25], [75, 75], [100, 75], [50, 100], [0, 75], [25, 75], [25, 25], [0, 25]],
+  chevron: [[0, 0], [75, 0], [100, 50], [75, 100], [0, 100], [25, 50]],
+  homePlate: [[0, 0], [75, 0], [100, 50], [75, 100], [0, 100]],
+  plus: [[35, 0], [65, 0], [65, 35], [100, 35], [100, 65], [65, 65], [65, 100], [35, 100], [35, 65], [0, 65], [0, 35], [35, 35]],
+  mathPlus: [[40, 0], [60, 0], [60, 40], [100, 40], [100, 60], [60, 60], [60, 100], [40, 100], [40, 60], [0, 60], [0, 40], [40, 40]],
+  star4: [[50, 0], [64, 36], [100, 50], [64, 64], [50, 100], [36, 64], [0, 50], [36, 36]],
+  star5: [[50, 0], [61, 35], [98, 35], [68, 57], [79, 91], [50, 70], [21, 91], [32, 57], [2, 35], [39, 35]],
+  star6: [[50, 0], [63, 25], [93, 25], [75, 50], [93, 75], [63, 75], [50, 100], [37, 75], [7, 75], [25, 50], [7, 25], [37, 25]],
+};
+
+interface ShapeGeo {
+  radiusCss?: string;
+  clipCss?: string;
+  points?: [number, number][];
+}
+
+/** Resolve a shape's geometry to CSS: a border-radius for rect/round/ellipse,
+ *  or a polygon clip-path (+ points for stroking) for known presets. */
+function shapeGeometry(spPr: Element | undefined, w: number, h: number): ShapeGeo {
+  const prst = child(spPr, "a:prstGeom")?.getAttribute("prst");
+  if (!prst) return {};
+  if (prst === "ellipse") return { radiusCss: "border-radius:50%" };
+  if (prst === "roundRect" || prst === "round1Rect" || prst === "round2SameRect" || prst === "round2DiagRect") {
+    const radius = geometryStyle(spPr, w, h); // reuse adj parsing → "border-radius:Npx;"
+    return { radiusCss: radius ? radius.replace(/;$/, "") : undefined };
+  }
+  const poly = PRESET_POLY[prst];
+  if (poly) {
+    const clip = poly.map(([x, y]) => `${x}% ${y}%`).join(",");
+    return { clipCss: `clip-path:polygon(${clip})`, points: poly };
+  }
+  return {};
+}
+
+/** Outline a clipped polygon shape with an overlaid SVG stroke that follows the
+ *  silhouette (a CSS border would be rectangular and clipped). */
+function polygonOutline(points: [number, number][], line: LineStyle): string {
+  const pts = points.map(([x, y]) => `${x},${y}`).join(" ");
+  const dashAttr =
+    line.dash === "dashed" ? ' stroke-dasharray="4 3"' : line.dash === "dotted" ? ' stroke-dasharray="1 3"' : "";
+  return (
+    `<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;">` +
+    `<polygon points="${pts}" fill="none" stroke="${line.color}" stroke-width="${line.widthPx}" vector-effect="non-scaling-stroke"${dashAttr}/></svg>`
+  );
+}
+
 // --- Effects ---
 
-function effectStyle(spPr: Element | undefined, env: ColorEnv): string {
+interface Shadow {
+  dx: number;
+  dy: number;
+  blur: number;
+  color: string;
+}
+
+function shadowParts(spPr: Element | undefined, env: ColorEnv): Shadow | null {
   const shdw = descend(spPr, "a:effectLst", "a:outerShdw");
-  if (!shdw) return "";
+  if (!shdw) return null;
   const color = resolveColorIn(shdw, env) ?? "rgba(0,0,0,0.4)";
   const blur = emuToPx(intAttr(shdw, "blurRad") ?? 0);
   const dist = emuToPx(intAttr(shdw, "dist") ?? 0);
   const dirDeg = ((intAttr(shdw, "dir") ?? 0) / 60000) * (Math.PI / 180);
   const dx = Math.round(dist * Math.cos(dirDeg) * 100) / 100;
   const dy = Math.round(dist * Math.sin(dirDeg) * 100) / 100;
-  return `box-shadow:${dx}px ${dy}px ${px(blur)} ${color};`;
+  return { dx, dy, blur, color };
 }
+
 
 // --- Shape (p:sp) ---
 
@@ -874,18 +948,32 @@ async function renderShape(sp: Element, part: PartCtx, ctx: SlideCtx, opts: Tree
     }
   }
 
-  const geom = geometryStyle(spPr, xfrm.w, xfrm.h);
-  const effects = effectStyle(spPr, env);
+  const geo = shapeGeometry(spPr, xfrm.w, xfrm.h);
+  const shadow = shadowParts(spPr, env);
 
   // Background/border layer (kept separate so overflowing text doesn't stretch it)
   let bgLayer = "";
-  if ((bgCss && bgCss !== "transparent") || line || effects) {
+  const hasFill = !!bgCss && bgCss !== "transparent";
+  if (hasFill || line || shadow) {
     const styles = ["position:absolute", "inset:0"];
-    if (bgCss && bgCss !== "transparent") styles.push(`background:${bgCss}`);
-    if (line) styles.push(`border:${px(line.widthPx)} ${line.dash} ${line.color}`);
-    if (geom) styles.push(geom.slice(0, -1));
-    if (effects) styles.push(effects.slice(0, -1));
-    bgLayer = `<div style="${styles.join(";")};"></div>`;
+    if (hasFill) styles.push(`background:${bgCss}`);
+    if (geo.radiusCss) styles.push(geo.radiusCss);
+    if (geo.clipCss) styles.push(geo.clipCss);
+    // A clip-path also clips box-shadow, so clipped shapes use a
+    // silhouette-following drop-shadow filter instead.
+    if (shadow) {
+      if (geo.clipCss) styles.push(`filter:drop-shadow(${shadow.dx}px ${shadow.dy}px ${px(shadow.blur)} ${shadow.color})`);
+      else styles.push(`box-shadow:${shadow.dx}px ${shadow.dy}px ${px(shadow.blur)} ${shadow.color}`);
+    }
+    // Outline: rect/rounded shapes use a CSS border; clipped polygons are
+    // stroked with an overlaid SVG so the line follows the silhouette.
+    let svgOutline = "";
+    if (line && !geo.points) {
+      styles.push(`border:${px(line.widthPx)} ${line.dash} ${line.color}`);
+    } else if (line && geo.points) {
+      svgOutline = polygonOutline(geo.points, line);
+    }
+    bgLayer = `<div style="${styles.join(";")};"></div>${svgOutline}`;
   }
 
   // Text
@@ -938,17 +1026,22 @@ function buildLevelChain(tenv: TextEnv, txBody: Element, lvl: number): Element[]
   pushFrom(descend(tenv.layoutPh, "p:txBody", "a:lstStyle"));
   pushFrom(descend(tenv.masterPh, "p:txBody", "a:lstStyle"));
 
-  // Master global text styles by placeholder type
+  // Master global text styles apply to PLACEHOLDERS by type. Non-placeholder
+  // shapes take their text defaults from the shape style's fontRef (resolved in
+  // renderRun); applying otherStyle here would force tx1 (black) onto themed
+  // colored shapes whose fontRef is light (white) — the common "filled shape
+  // with white text" case.
   const masterDoc = tenv.ctx.masterDoc;
-  if (masterDoc) {
+  if (masterDoc && tenv.ph) {
     const txStyles = masterDoc.getElementsByTagName("p:txStyles")[0];
     if (txStyles) {
-      const phType = tenv.ph?.type;
-      let sectionName: string;
-      if (phType === "title" || phType === "ctrTitle") sectionName = "p:titleStyle";
-      else if (phType === "dt" || phType === "ftr" || phType === "sldNum") sectionName = "p:otherStyle";
-      else if (tenv.ph) sectionName = "p:bodyStyle";
-      else sectionName = "p:otherStyle";
+      const phType = tenv.ph.type;
+      const sectionName =
+        phType === "title" || phType === "ctrTitle"
+          ? "p:titleStyle"
+          : phType === "dt" || phType === "ftr" || phType === "sldNum"
+            ? "p:otherStyle"
+            : "p:bodyStyle";
       pushFrom(child(txStyles, sectionName));
     }
   }
@@ -1301,9 +1394,9 @@ async function renderPicture(pic: Element, part: PartCtx, ctx: SlideCtx, opts: T
   if (!url) return "";
 
   const env: ColorEnv = { theme: ctx.theme, clrMap: ctx.clrMap };
-  const geom = geometryStyle(spPr, xfrm.w, xfrm.h);
+  const geo = shapeGeometry(spPr, xfrm.w, xfrm.h);
   const line = lineToStyle(child(spPr, "a:ln"), env);
-  const effects = effectStyle(spPr, env);
+  const shadow = shadowParts(spPr, env);
 
   // Crop (a:srcRect, values in 1000ths of a percent)
   const srcRect = child(blipFill, "a:srcRect");
@@ -1321,11 +1414,25 @@ async function renderPicture(pic: Element, part: PartCtx, ctx: SlideCtx, opts: T
   }
 
   const wrapperStyles = [positionStyle(xfrm, opts), "overflow:hidden"];
-  if (geom) wrapperStyles.push(geom.slice(0, -1));
-  if (line) wrapperStyles.push(`border:${px(line.widthPx)} ${line.dash} ${line.color}`);
-  if (effects) wrapperStyles.push(effects.slice(0, -1));
+  if (geo.radiusCss) wrapperStyles.push(geo.radiusCss);
+  if (geo.clipCss) wrapperStyles.push(geo.clipCss);
+  if (shadow) {
+    if (geo.clipCss) {
+      wrapperStyles.push(`filter:drop-shadow(${shadow.dx}px ${shadow.dy}px ${px(shadow.blur)} ${shadow.color})`);
+    } else {
+      wrapperStyles.push(`box-shadow:${shadow.dx}px ${shadow.dy}px ${px(shadow.blur)} ${shadow.color}`);
+    }
+  }
+  // Outline: rounded/rect pictures use a CSS border; polygon-cropped pictures
+  // (crop-to-shape) get a silhouette-following SVG stroke.
+  let svgOutline = "";
+  if (line && !geo.points) {
+    wrapperStyles.push(`border:${px(line.widthPx)} ${line.dash} ${line.color}`);
+  } else if (line && geo.points) {
+    svgOutline = polygonOutline(geo.points, line);
+  }
 
-  return `<div style="${wrapperStyles.join(";")}"><img src="${url}" alt="" style="${imgStyle}"/></div>`;
+  return `<div style="${wrapperStyles.join(";")}"><img src="${url}" alt="" style="${imgStyle}"/>${svgOutline}</div>`;
 }
 
 // ============================================================================
