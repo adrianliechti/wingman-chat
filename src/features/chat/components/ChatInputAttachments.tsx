@@ -5,7 +5,7 @@ import type { Content } from "@/shared/types/chat";
 
 interface ChatInputAttachmentsProps {
   attachments: Content[];
-  /** Paths of files uploaded into the artifacts workspace. */
+  /** Display names of document attachments queued for the artifacts workspace. */
   artifactAttachments?: string[];
   extractingAttachments: Set<string>;
   onRemove?: (index: number) => void;

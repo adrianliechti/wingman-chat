@@ -18,6 +18,13 @@ export interface ArtifactsContextType {
   setShowArtifactsDrawer: (show: boolean) => void;
   toggleArtifactsDrawer: () => void;
   /**
+   * Enable the artifacts feature (tools + instructions) for the active chat
+   * without opening the drawer. Used when files are attached in the chat input
+   * so the model has the artifacts tools on the turn the attachment is sent —
+   * the file itself is written into the workspace at send time.
+   */
+  enableArtifacts: () => void;
+  /**
    * Inject the active filesystem. Pass `null` to clear (draft chat / no
    * chat selected). Typically called by the chat feature when the active
    * chat changes.

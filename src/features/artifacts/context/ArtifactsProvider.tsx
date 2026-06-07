@@ -115,6 +115,11 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     setShowArtifactsDrawer((prev) => !prev);
   }, []);
 
+  // Turn on the artifacts tools/instructions without revealing the drawer.
+  const enableArtifacts = useCallback(() => {
+    setIsEnabled(true);
+  }, []);
+
   const value = {
     isAvailable,
     isEnabled,
@@ -124,6 +129,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     openFile,
     setShowArtifactsDrawer,
     toggleArtifactsDrawer,
+    enableArtifacts,
     setFileSystem,
   };
 
