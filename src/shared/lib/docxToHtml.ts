@@ -60,10 +60,15 @@ export async function docxToHtml(file: File | Blob | ArrayBuffer): Promise<strin
     endnotes: new Map(),
     fnRefs: [],
     enRefs: [],
+    headers: new Map(),
+    footers: new Map(),
+    titlePg: false,
   };
 
   // Independent parts — overlap the zip reads/parses
   await Promise.all([loadDocxRels(ctx), loadDocxTheme(ctx), loadStyles(ctx), loadNumbering(ctx), loadDocxNotes(ctx)]);
+  // Headers/footers need the document rels resolved first.
+  await loadHeadersFooters(ctx);
 
   return renderDocument(ctx);
 }
@@ -108,6 +113,16 @@ interface DocxCtx {
   /** references in document order → assigned display number */
   fnRefs: { id: string; num: number }[];
   enRefs: { id: string; num: number }[];
+  /** header/footer parts by type (default/first/even) + their own rels */
+  headers: Map<string, HeaderFooter>;
+  footers: Map<string, HeaderFooter>;
+  /** different first-page header/footer */
+  titlePg: boolean;
+}
+
+interface HeaderFooter {
+  doc: Document;
+  rels: Map<string, Rel>;
 }
 
 async function loadDocxRels(ctx: DocxCtx): Promise<void> {
@@ -211,6 +226,31 @@ async function loadDocxNotes(ctx: DocxCtx): Promise<void> {
     load("word/footnotes.xml", "w:footnote", ctx.footnotes),
     load("word/endnotes.xml", "w:endnote", ctx.endnotes),
   ]);
+}
+
+/** Load header/footer parts referenced by the document's section properties.
+ *  Each part keeps its own relationships (images/hyperlinks use a separate id
+ *  space from the main document). */
+async function loadHeadersFooters(ctx: DocxCtx): Promise<void> {
+  const sectPrs = ctx.doc.getElementsByTagName("w:sectPr");
+  const sectPr = sectPrs[sectPrs.length - 1]; // last section governs the page furniture
+  if (!sectPr) return;
+  ctx.titlePg = !!child(sectPr, "w:titlePg") && onOff(child(sectPr, "w:titlePg")) !== false;
+
+  const load = async (refTag: string, store: Map<string, HeaderFooter>): Promise<void> => {
+    for (const ref of childList(sectPr, refTag)) {
+      const type = ref.getAttribute("w:type") || "default";
+      const rId = getRId(ref, "id");
+      const rel = rId ? ctx.rels.get(rId) : undefined;
+      if (!rel || rel.external) continue;
+      const partPath = resolveTarget("word/document.xml", rel.target);
+      const xml = await ctx.zip.file(partPath)?.async("string");
+      if (!xml) continue;
+      const relsXml = await ctx.zip.file(relsPathFor(partPath))?.async("string");
+      store.set(type, { doc: parseXml(xml), rels: relsXml ? parseRels(parseXml(relsXml)) : new Map() });
+    }
+  };
+  await Promise.all([load("w:headerReference", ctx.headers), load("w:footerReference", ctx.footers)]);
 }
 
 type NoteKind = "fn" | "en";
@@ -427,6 +467,9 @@ function runStyles(ctx: DocxCtx, chain: (Element | undefined)[]): string[] {
     else if (uVal === "dotted") styles.push("text-decoration-style:dotted");
     else if (uVal?.includes("dash")) styles.push("text-decoration-style:dashed");
     else if (uVal === "wave") styles.push("text-decoration-style:wavy");
+    // Underline can carry its own color (text-decoration-color).
+    const uColor = wordColor(u, ctx, "w:color");
+    if (uColor && deco.includes("underline")) styles.push(`text-decoration-color:${uColor}`);
   }
 
   const color = wordColor(chainChild(chain, "w:color"), ctx);
@@ -435,14 +478,15 @@ function runStyles(ctx: DocxCtx, chain: (Element | undefined)[]): string[] {
   const highlight = chainChild(chain, "w:highlight")?.getAttribute("w:val");
   if (highlight && HIGHLIGHT_COLORS[highlight]) styles.push(`background-color:${HIGHLIGHT_COLORS[highlight]}`);
   else {
-    const shd = chainChild(chain, "w:shd");
-    const fill = shd?.getAttribute("w:fill");
-    if (fill && fill !== "auto") styles.push(`background-color:#${fill}`);
+    // Run shading: theme fill (w:themeFill) or explicit w:fill.
+    const shFill = wordColor(chainChild(chain, "w:shd"), ctx, "w:fill", "w:themeFill");
+    if (shFill) styles.push(`background-color:${shFill}`);
   }
 
+  // Font: ascii → hAnsi typeface, then their theme variants (major/minor).
   const rFonts = chainChild(chain, "w:rFonts");
-  let font = rFonts?.getAttribute("w:ascii") || "";
-  const themeFont = rFonts?.getAttribute("w:asciiTheme");
+  let font = rFonts?.getAttribute("w:ascii") || rFonts?.getAttribute("w:hAnsi") || "";
+  const themeFont = rFonts?.getAttribute("w:asciiTheme") || rFonts?.getAttribute("w:hAnsiTheme");
   if (!font && themeFont) {
     font = themeFont.startsWith("major") ? ctx.theme.majorFont : ctx.theme.minorFont;
   }
@@ -451,6 +495,10 @@ function runStyles(ctx: DocxCtx, chain: (Element | undefined)[]): string[] {
   const vertAlign = chainChild(chain, "w:vertAlign")?.getAttribute("w:val");
   if (vertAlign === "superscript") styles.push("vertical-align:super;font-size:0.7em");
   else if (vertAlign === "subscript") styles.push("vertical-align:sub;font-size:0.7em");
+
+  // Raised/lowered text (w:position, half-points; positive = raised).
+  const position = intAttr(chainChild(chain, "w:position"), "w:val");
+  if (position) styles.push("position:relative", `bottom:${px(ptToPx(position / 2))}`);
 
   if (chainOnOff(chain, "w:caps")) styles.push("text-transform:uppercase");
   else if (chainOnOff(chain, "w:smallCaps")) styles.push("font-variant:small-caps");
@@ -754,14 +802,15 @@ function resolveNumbering(ctx: DocxCtx, numId: string, ilvl: number): NumberingI
     const font = child(lvl.rPr, "w:rFonts")?.getAttribute("w:ascii") || "";
     marker = ch.length === 1 ? mapBulletChar(ch, font) : ch;
   } else {
-    // Advance counters: increment this level, reset deeper ones
-    const counters = ctx.listCounters.get(def.abstractId) ?? [];
+    // Advance counters: increment this level, reset deeper ones. Keyed by numId
+    // (the list instance) — two numIds sharing an abstractNum number independently.
+    const counters = ctx.listCounters.get(numId) ?? [];
     for (let l = 0; l < ilvl; l++) {
       if (counters[l] == null) counters[l] = def.levels.get(l)?.start ?? 1;
     }
     counters[ilvl] = counters[ilvl] == null ? lvl.start : counters[ilvl] + 1;
     counters.length = ilvl + 1;
-    ctx.listCounters.set(def.abstractId, counters);
+    ctx.listCounters.set(numId, counters);
 
     marker = lvl.lvlText.replace(/%(\d)/g, (_, d) => {
       const l = parseInt(d, 10) - 1;
@@ -854,10 +903,9 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
     }
   }
 
-  // Shading & borders
-  const shd = chainChild(pChain, "w:shd");
-  const fill = shd?.getAttribute("w:fill");
-  if (fill && fill !== "auto") styles.push(`background-color:#${fill}`);
+  // Shading & borders (theme fill or explicit fill)
+  const shFill = wordColor(chainChild(pChain, "w:shd"), ctx, "w:fill", "w:themeFill");
+  if (shFill) styles.push(`background-color:${shFill}`);
 
   const pBdr = chainChild(pChain, "w:pBdr");
   if (pBdr) {
@@ -1264,6 +1312,31 @@ async function renderNotesSection(ctx: DocxCtx): Promise<string> {
   return (await block("fn", "Footnotes")) + (await block("en", "Endnotes"));
 }
 
+/** Render the block-level children (paragraphs, tables, content controls) of a container. */
+async function renderBlocks(ctx: DocxCtx, parent: Element): Promise<string> {
+  let html = "";
+  for (const block of parent.children) {
+    if (block.tagName === "w:p") html += (await renderParagraph(ctx, block)).html;
+    else if (block.tagName === "w:tbl") html += await renderTable(ctx, block);
+    else if (block.tagName === "w:sdt") {
+      const content = child(block, "w:sdtContent");
+      if (content) html += await renderBlocks(ctx, content);
+    }
+  }
+  return html;
+}
+
+/** Render a header/footer part with its own relationships in scope. */
+async function renderHeaderFooter(ctx: DocxCtx, hf: HeaderFooter): Promise<string> {
+  const saved = ctx.rels;
+  ctx.rels = hf.rels;
+  try {
+    return await renderBlocks(ctx, hf.doc.documentElement);
+  } finally {
+    ctx.rels = saved;
+  }
+}
+
 async function renderDocument(ctx: DocxCtx): Promise<string> {
   const body = descend(ctx.doc.documentElement, "w:body");
   if (!body) throw new Error("Invalid DOCX: empty body");
@@ -1322,7 +1395,32 @@ async function renderDocument(ctx: DocxCtx): Promise<string> {
     baseStyles.push(`font-family:${cssFontStack(ctx.theme.minorFont)}`);
   }
 
-  const pagesHtml = pages.map((blocks) => `<div class="pg">${blocks.join("")}</div>`).join("");
+  // Header/footer furniture. Rendered once; the first page may use a distinct
+  // "first" header/footer when w:titlePg is set, otherwise the default repeats.
+  const defHdr = ctx.headers.get("default");
+  const defFtr = ctx.footers.get("default");
+  const firstHdr = ctx.titlePg ? ctx.headers.get("first") : undefined;
+  const firstFtr = ctx.titlePg ? ctx.footers.get("first") : undefined;
+  const defHdrHtml = defHdr ? await renderHeaderFooter(ctx, defHdr) : "";
+  const defFtrHtml = defFtr ? await renderHeaderFooter(ctx, defFtr) : "";
+  const firstHdrHtml = firstHdr ? await renderHeaderFooter(ctx, firstHdr) : "";
+  const firstFtrHtml = firstFtr ? await renderHeaderFooter(ctx, firstFtr) : "";
+  const hasHF = ctx.headers.size > 0 || ctx.footers.size > 0;
+
+  const pagesHtml = pages
+    .map((blocks, idx) => {
+      if (!hasHF) return `<div class="pg">${blocks.join("")}</div>`;
+      const hdr = idx === 0 && firstHdrHtml ? firstHdrHtml : defHdrHtml;
+      const ftr = idx === 0 && firstFtrHtml ? firstFtrHtml : defFtrHtml;
+      return (
+        `<div class="pg pg-hf">` +
+        (hdr ? `<div class="hf hf-top">${hdr}</div>` : "") +
+        `<div class="pg-body">${blocks.join("")}</div>` +
+        (ftr ? `<div class="hf hf-bot">${ftr}</div>` : "") +
+        `</div>`
+      );
+    })
+    .join("");
 
   return [
     "<!DOCTYPE html>",
@@ -1346,6 +1444,12 @@ async function renderDocument(ctx: DocxCtx): Promise<string> {
     ".note{display:flex;gap:6px;font-size:0.82em;line-height:1.35;margin:2px 0;}",
     ".note-num{color:#0563C1;text-decoration:none;flex:0 0 auto;min-width:1.4em;text-align:right;}",
     ".note-body .p{min-height:0;}",
+    ".pg-hf{display:flex;flex-direction:column;}",
+    ".pg-hf .pg-body{flex:1 0 auto;display:flow-root;}",
+    ".hf{color:#3c3c3c;}",
+    ".hf-top{margin-bottom:12px;}",
+    ".hf-bot{margin-top:auto;padding-top:8px;}",
+    ".hf .p{min-height:0;}",
     "</style></head><body>",
     pagesHtml,
     // Fit the page to the viewport width

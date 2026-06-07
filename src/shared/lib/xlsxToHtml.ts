@@ -927,6 +927,13 @@ function tokenizeNumberFormat(section: string): { tokens: FmtToken[]; numSpec: s
 }
 
 function formatNumberSpec(value: number, numSpec: string): string {
+  // Trailing commas scale the value down by 1000 each (e.g. #,##0, = thousands,
+  // #,##0,, = millions — pervasive in financial statements).
+  const scale = numSpec.match(/,+$/);
+  if (scale) {
+    value /= 1000 ** scale[0].length;
+    numSpec = numSpec.slice(0, -scale[0].length);
+  }
   const hasThousands = numSpec.includes(",") && /[#0]/.test(numSpec);
   const dec = countDecimalPlaces(numSpec);
   if (hasThousands) return formatThousands(value, dec);
@@ -1439,7 +1446,15 @@ async function renderSheet(
 ): Promise<string> {
   const doc = parseXml(xml);
 
-  const showGridLines = firstEl(doc, "sheetView")?.getAttribute("showGridLines") !== "0";
+  const sheetView = firstEl(doc, "sheetView");
+  const showGridLines = sheetView?.getAttribute("showGridLines") !== "0";
+
+  // Frozen panes (Freeze Panes): xSplit/ySplit = count of frozen cols/rows.
+  const pane = firstEl(sheetView, "pane");
+  const paneState = pane?.getAttribute("state");
+  const frozen = paneState === "frozen" || paneState === "frozenSplit";
+  const frozenRows = frozen ? parseInt(pane?.getAttribute("ySplit") || "0", 10) || 0 : 0;
+  const frozenCols = frozen ? parseInt(pane?.getAttribute("xSplit") || "0", 10) || 0 : 0;
 
   // Column widths (Excel width unit ≈ characters of Calibri 11 ≈ 7px)
   const colWidthPx = new Map<number, number>();
@@ -1703,11 +1718,32 @@ async function renderSheet(
   };
   const cfRules = compileCf(doc, ctx, numbersIn, textsIn);
 
+  // Pixel geometry of the grid (shared by frozen panes and the drawing overlay).
+  // colX/rowY give a cell's offset from the table's top-left, accounting for the
+  // leading row-number column and header row, skipping hidden tracks.
+  const ROWNUM_W = 46;
+  const HEADER_H = 20;
+  const colW = (c: number) => (hiddenCols.has(c) ? 0 : (colWidthPx.get(c) ?? 64));
+  const rowH = (r: number) => (hiddenRows.has(r) ? 0 : (rowHeightPx.get(r) ?? 20));
+  const colX = (c: number) => {
+    let x = ROWNUM_W;
+    for (let i = 0; i < c; i++) x += colW(i);
+    return x;
+  };
+  const rowY = (r: number) => {
+    let y = HEADER_H;
+    for (let i = 0; i < r; i++) y += rowH(i);
+    return y;
+  };
+
   const bodyRows: string[] = [];
   for (let r = 0; r <= maxRow; r++) {
     if (hiddenRows.has(r)) continue;
     const cells = rowData.get(r) ?? new Map<number, CellData>();
-    const tds: string[] = [`<td class="rn">${r + 1}</td>`];
+    const frozenR = r < frozenRows;
+    // Row-number cell: sticky-left always; also sticky-top when in a frozen row.
+    const rnSticky = frozenR ? ` style="top:${px(rowY(r))};z-index:6;"` : "";
+    const tds: string[] = [`<td class="rn"${rnSticky}>${r + 1}</td>`];
 
     for (let c = 0; c <= maxCol; c++) {
       if (hiddenCols.has(c)) continue;
@@ -1715,8 +1751,12 @@ async function renderSheet(
 
       const data = cells.get(c);
       const merge = mergeStart.get(`${r}:${c}`);
+      const frozenC = c < frozenCols;
 
       const decls: string[] = [];
+      // Frozen cells need an opaque background so scrolled content doesn't show
+      // through; placed first so the cell's own fill/CF background wins.
+      if (frozenR || frozenC) decls.push("background:#fff");
       const base = data ? cellStyleCss(data.styleIdx, data.kind) : "";
       if (base) decls.push(base);
 
@@ -1742,11 +1782,43 @@ async function renderSheet(
         if (deco.length) decls.push(`text-decoration:${deco.join(" ")}`);
         if (cf.icon) iconHtml = `<span class="cf-ico">${cf.icon}</span>`;
       }
+
+      // Text spill: an unwrapped text cell overflows into adjacent empty cells
+      // (Excel's default for long labels). Left/general spills right, right-align
+      // spills left, center spills if both sides are free.
+      const xf = data ? ctx.cellXfs[data.styleIdx] : undefined;
+      if (data && data.kind === "s" && data.html && !xf?.wrapText) {
+        const hA = xf?.hAlign;
+        const emptyAt = (cc: number) =>
+          cc < 0 || cc > maxCol || (!cells.get(cc) && !mergedAway.has(`${r}:${cc}`) && !mergeStart.has(`${r}:${cc}`));
+        const isLeft = !hA || hA === "left" || hA === "general";
+        const spill =
+          (isLeft && emptyAt(c + 1)) ||
+          (hA === "right" && emptyAt(c - 1)) ||
+          (hA === "center" && emptyAt(c + 1) && emptyAt(c - 1));
+        if (spill) decls.push("overflow:visible");
+      }
+
+      // Frozen panes: stick the cell within the scroll viewport.
+      if (frozenR || frozenC) {
+        decls.push("position:sticky");
+        if (frozenR) decls.push(`top:${px(rowY(r))}`);
+        if (frozenC) decls.push(`left:${px(colX(c))}`);
+        decls.push(`z-index:${frozenR && frozenC ? 6 : 5}`);
+      }
+
       const styleAttr = decls.length ? ` style="${decls.join(";")};"` : "";
 
-      const spanAttrs = merge
-        ? `${merge.cols > 1 ? ` colspan="${merge.cols}"` : ""}${merge.rows > 1 ? ` rowspan="${merge.rows}"` : ""}`
-        : "";
+      // Span only visible tracks — a merge crossing a hidden row/col must not
+      // count it, or the colspan/rowspan overshoots and misaligns the row.
+      let spanAttrs = "";
+      if (merge) {
+        let cols = merge.cols;
+        let rows = merge.rows;
+        for (let cc = c; cc < c + merge.cols; cc++) if (hiddenCols.has(cc)) cols--;
+        for (let rr = r; rr < r + merge.rows; rr++) if (hiddenRows.has(rr)) rows--;
+        spanAttrs = `${cols > 1 ? ` colspan="${cols}"` : ""}${rows > 1 ? ` rowspan="${rows}"` : ""}`;
+      }
       let inner = data?.link
         ? `<a href="${escapeHtml(data.link)}" target="_blank" rel="noreferrer">${data.html}</a>`
         : (data?.html ?? "");
@@ -1773,24 +1845,9 @@ async function renderSheet(
     ? `<div class="trunc">Preview truncated to ${MAX_ROWS} rows × ${MAX_COLS} columns — download the file for the full sheet.</div>`
     : "";
 
-  // Drawing overlay (images & charts). Positions are relative to the table's
-  // top-left, so account for the leading row-number column and header row.
+  // Drawing overlay (images & charts), positioned with the shared grid geometry.
   let overlay = "";
   if (drawing) {
-    const ROWNUM_W = 46;
-    const HEADER_H = 20;
-    const colW = (c: number) => (hiddenCols.has(c) ? 0 : (colWidthPx.get(c) ?? 64));
-    const rowH = (r: number) => (hiddenRows.has(r) ? 0 : (rowHeightPx.get(r) ?? 20));
-    const colX = (c: number) => {
-      let x = ROWNUM_W;
-      for (let i = 0; i < c; i++) x += colW(i);
-      return x;
-    };
-    const rowY = (r: number) => {
-      let y = HEADER_H;
-      for (let i = 0; i < r; i++) y += rowH(i);
-      return y;
-    };
     overlay = await renderDrawings(ctx, drawing, colX, rowY);
   }
 

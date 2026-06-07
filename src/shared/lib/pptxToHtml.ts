@@ -1317,6 +1317,11 @@ function renderRun(r: Element, defRPrChain: Element[], tenv: TextEnv, fontScale:
   const i = chainAttr(chain, "i");
   if (i === "1") styles.push("font-style:italic");
 
+  // Caps (corporate templates often force ALL CAPS titles via cap="all").
+  const cap = chainAttr(chain, "cap");
+  if (cap === "all") styles.push("text-transform:uppercase");
+  else if (cap === "small") styles.push("font-variant:small-caps");
+
   const u = chainAttr(chain, "u");
   const strike = chainAttr(chain, "strike");
   const deco: string[] = [];
