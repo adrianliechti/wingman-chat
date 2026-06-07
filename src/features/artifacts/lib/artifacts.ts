@@ -1,5 +1,5 @@
-import { convertFileToText, readFileAsText } from "@/shared/lib/convert";
-import { isTextContentType } from "@/shared/lib/fileTypes";
+import { readFileAsText } from "@/shared/lib/convert";
+import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { readAsDataURL } from "@/shared/lib/utils";
 
 // Artifact kind type
@@ -51,25 +51,12 @@ export async function processUploadedFile(file: File): Promise<ProcessedFile[]> 
     return [{ path: `/${file.name}`, content, contentType }];
   }
 
-  // Try shared converter for text/code formats
-  try {
-    const content = await convertFileToText(file);
-    return [{ path: `/${file.name}`, content, contentType: file.type || "text/plain" }];
-  } catch (error) {
-    console.error(`Error converting file ${file.name}:`, error);
-  }
-
-  // Final fallback: binary as data URL
-  const contentType = file.type || "text/plain";
+  // Everything else is stored verbatim — text/code as text, other binaries as
+  // data URLs. No conversion: the artifact holds the original file.
+  const contentType = file.type || inferContentTypeFromPath(file.name) || "text/plain";
   const content = isTextContentType(contentType) ? await readFileAsText(file) : await readAsDataURL(file);
 
-  return [
-    {
-      path: `/${file.name}`,
-      content,
-      contentType,
-    },
-  ];
+  return [{ path: `/${file.name}`, content, contentType }];
 }
 
 // Helper function to get the language/extension from a file path
