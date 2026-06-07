@@ -24,6 +24,7 @@ import {
   toRoman,
   twipToPx,
 } from "./ooxml";
+import { ommlToMathml } from "./ommlToMathml";
 
 /**
  * Converts a DOCX file to a single self-contained HTML document with high
@@ -740,6 +741,12 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
         case "w:pict":
           html += await renderLegacyPict(ctx, node);
           break;
+        case "m:oMathPara":
+          html += `<span class="math-block">${ommlToMathml(node, true)}</span>`;
+          break;
+        case "m:oMath":
+          html += ommlToMathml(node, false);
+          break;
       }
     }
   };
@@ -985,6 +992,8 @@ async function renderDocument(ctx: DocxCtx): Promise<string> {
     "td{word-wrap:break-word;}",
     "a{color:#0563C1;text-decoration:underline;}",
     "img{max-width:100%;}",
+    ".math-block{display:block;text-align:center;margin:6px 0;}",
+    "math{font-size:1.1em;}",
     "</style></head><body>",
     pagesHtml,
     // Fit the page to the viewport width
