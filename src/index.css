@@ -1,8 +1,18 @@
 @import "tailwindcss";
 
-/* Prevent iframes from swallowing mouse events while a resizable panel is being dragged */
-body.resizing iframe {
-  pointer-events: none;
+/* While dragging a resizable panel, cover the page with a transparent overlay
+   so iframes don't swallow the drag. We intentionally do NOT set
+   `pointer-events: none` on the iframes themselves: toggling that on a
+   sandboxed iframe leaves its compositor scroll/hit-test region stale, so the
+   iframe can't be scrolled afterwards until it reloads (e.g. switching files).
+   The overlay sits above everything; mouse events still bubble to the window
+   listeners that drive the resize. */
+body.resizing::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  cursor: ew-resize;
 }
 
 /* Keep the resize cursor visible across the whole page while dragging a panel handle,
