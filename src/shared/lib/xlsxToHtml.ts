@@ -382,6 +382,7 @@ async function loadSheetRels(ctx: XlsxCtx, sheetPath: string): Promise<Map<strin
 // Number formatting
 // ============================================================================
 
+// US-English built-in number formats (ECMA-376 §18.8.30).
 const BUILTIN_FORMATS: Record<number, string> = {
   0: "General",
   1: "0",
@@ -391,6 +392,8 @@ const BUILTIN_FORMATS: Record<number, string> = {
   9: "0%",
   10: "0.00%",
   11: "0.00E+00",
+  12: "# ?/?",
+  13: "# ??/??",
   14: "m/d/yyyy",
   15: "d-mmm-yy",
   16: "d-mmm",
@@ -400,80 +403,354 @@ const BUILTIN_FORMATS: Record<number, string> = {
   20: "h:mm",
   21: "h:mm:ss",
   22: "m/d/yyyy h:mm",
-  37: "#,##0",
-  38: "#,##0",
-  39: "#,##0.00",
-  40: "#,##0.00",
-  44: "#,##0.00",
+  37: "#,##0;(#,##0)",
+  38: "#,##0;[Red](#,##0)",
+  39: "#,##0.00;(#,##0.00)",
+  40: "#,##0.00;[Red](#,##0.00)",
+  44: '_("$"* #,##0.00_);_("$"* (#,##0.00);_("$"* "-"??_);_(@_)',
   45: "mm:ss",
   46: "[h]:mm:ss",
   47: "mm:ss.0",
+  48: "##0.0E+0",
   49: "@",
+  // Japanese-locale built-ins (East-Asian Office writes these IDs back with
+  // these de-facto codes; the era/weekday tokens are handled below).
+  27: "[$-411]ge.m.d",
+  28: '[$-411]ggge"年"m"月"d"日"',
+  29: '[$-411]ggge"年"m"月"d"日"',
+  30: "m/d/yy",
+  31: 'yyyy"年"m"月"d"日"',
+  55: 'yyyy"年"m"月"',
+  56: 'm"月"d"日"',
 };
 
 function formatCode(ctx: XlsxCtx, numFmtId: number): string {
   return ctx.numFmts.get(numFmtId) ?? BUILTIN_FORMATS[numFmtId] ?? "General";
 }
 
-function isDateFormat(code: string): boolean {
-  // Strip quoted literals, bracketed sections and color codes before probing
-  const bare = code.replace(/"[^"]*"/g, "").replace(/\[[^\]]*\]/g, "");
-  return /[ymdhs]/i.test(bare) && !/[#0]/.test(bare);
+// ── Date / time ───────────────────────────────────────────────────────────
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** Japanese short / long weekday names (aaa / aaaa format codes). */
+const JP_WEEKDAY_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
+const JP_WEEKDAY_LONG = ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"];
+
+/** Japanese imperial eras, newest-first (ECMA-376 §18.8.30 g/gg/ggg, e/ee). */
+const JP_ERAS: { start: number; abbr: string; short: string; long: string }[] = [
+  { start: Date.UTC(2019, 4, 1), abbr: "R", short: "令", long: "令和" },
+  { start: Date.UTC(1989, 0, 8), abbr: "H", short: "平", long: "平成" },
+  { start: Date.UTC(1926, 11, 25), abbr: "S", short: "昭", long: "昭和" },
+  { start: Date.UTC(1912, 6, 30), abbr: "T", short: "大", long: "大正" },
+  { start: Date.UTC(1868, 0, 25), abbr: "M", short: "明", long: "明治" },
+];
+
+function resolveJpEra(date: Date): { abbr: string; short: string; long: string; year: number } {
+  for (const era of JP_ERAS) {
+    if (date.getTime() >= era.start) {
+      return {
+        abbr: era.abbr,
+        short: era.short,
+        long: era.long,
+        year: date.getUTCFullYear() - new Date(era.start).getUTCFullYear() + 1,
+      };
+    }
+  }
+  const last = JP_ERAS[JP_ERAS.length - 1];
+  return { abbr: last.abbr, short: last.short, long: last.long, year: date.getUTCFullYear() };
 }
 
-function excelSerialToDate(serial: number, date1904: boolean): Date {
-  const epoch = date1904 ? Date.UTC(1904, 0, 1) : Date.UTC(1899, 11, 30);
-  return new Date(epoch + serial * 86400000);
+/**
+ * Convert an Excel date serial to a UTC Date. The 1900 system uses the
+ * 1899-12-30 epoch (which absorbs Excel's 1900-leap-year bug); the 1904
+ * system is offset by 1462 days, so we fold it into the same conversion.
+ */
+function excelSerialToUTCDate(serial: number, date1904: boolean): Date {
+  const adjusted = date1904 ? serial + 1462 : serial;
+  return new Date((adjusted - 25569) * 86400000);
 }
 
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
+/** True if a format code is a date/time format (ECMA-376 §18.8.30). */
+function isDateFormatCode(code: string): boolean {
+  // Elapsed-time brackets [h]/[m]/[s] are themselves time formats — detect
+  // before stripping bracket content.
+  if (/\[[hms]+\]/i.test(code)) return true;
+  // Strip quoted literals and bracket metadata, then look for date/time tokens.
+  // y/m/d/h/s never appear unquoted in a numeric format spec (which uses only
+  // #0?.,%Ee), so any of them signals a date/time; aaa+ is the Japanese
+  // weekday code. (The reference requires y/d here and so misclassifies
+  // time-only "h:mm" and month-name "mmm" formats as plain numbers.)
+  const stripped = code.replace(/"[^"]*"/g, "").replace(/\[[^\]]*\]/g, "");
+  return /[ymdhs]/i.test(stripped) || /a{3,}/i.test(stripped);
+}
+
+/**
+ * Format an Excel date serial using an ECMA-376 format code. Supports
+ * y/yy/yyyy, m..mmmmm, d..dddd, h/hh (12- or 24-hour via AM/PM), m/mm minutes,
+ * s/ss, AM/PM, A/P, [h]/[m]/[s] elapsed time, quoted literals, escapes, and
+ * Japanese era (g/gg/ggg, e/ee) and weekday (aaa/aaaa) codes.
+ */
+function formatExcelDateCode(serial: number, fmtCode: string, date1904: boolean): string {
+  const date = excelSerialToUTCDate(serial, date1904);
+  const yr = date.getUTCFullYear();
+  const mo = date.getUTCMonth() + 1;
+  const dy = date.getUTCDate();
+  const wd = date.getUTCDay();
+  const hr = date.getUTCHours();
+  const mi = date.getUTCMinutes();
+  const sc = date.getUTCSeconds();
+
+  const section = fmtCode.split(";")[0];
+  const hasAmPm = /am\/pm|a\/p/i.test(section);
+  let era: ReturnType<typeof resolveJpEra> | null = null;
+  const getEra = () => {
+    if (!era) era = resolveJpEra(date);
+    return era;
+  };
+
+  let result = "";
+  let i = 0;
+  let prevWasHour = false;
+
+  while (i < section.length) {
+    const ch = section[i];
+    if (ch === '"') {
+      i++;
+      while (i < section.length && section[i] !== '"') result += section[i++];
+      if (i < section.length) i++;
+      prevWasHour = false;
+    } else if (ch === "[") {
+      const end = section.indexOf("]", i);
+      const inner = end > i ? section.slice(i + 1, end) : "";
+      const elapsed = inner.match(/^([hms])\1*$/i);
+      if (elapsed) {
+        const kind = elapsed[1].toLowerCase();
+        const sign = serial < 0 ? "-" : "";
+        const absSec = Math.floor(Math.abs(serial) * 86400);
+        const v = kind === "h" ? Math.floor(absSec / 3600) : kind === "m" ? Math.floor(absSec / 60) : absSec;
+        result += sign + (inner.length >= 2 ? String(v).padStart(inner.length, "0") : String(v));
+        i = end + 1;
+        prevWasHour = kind === "h";
+      } else {
+        i = end >= 0 ? end + 1 : section.length;
+      }
+    } else if (ch === "_" || ch === "*") {
+      i += 2; // pad / fill char pair — drop both
+    } else if (ch === "\\") {
+      if (i + 1 < section.length) result += section[i + 1];
+      i += 2;
+      prevWasHour = false;
+    } else if (ch === "y" || ch === "Y") {
+      let n = 0;
+      while (i < section.length && section[i].toLowerCase() === "y") { n++; i++; }
+      result += n <= 2 ? String(yr).slice(-2) : String(yr).padStart(4, "0");
+      prevWasHour = false;
+    } else if (ch === "m" || ch === "M") {
+      let n = 0;
+      while (i < section.length && section[i].toLowerCase() === "m") { n++; i++; }
+      // Minutes when right after h/hh, or right before :s/:ss; else month.
+      const rest = section.slice(i).replace(/\[[^\]]*\]/g, "");
+      if (prevWasHour || /^:s/i.test(rest)) {
+        result += n >= 2 ? String(mi).padStart(2, "0") : String(mi);
+      } else if (n === 1) result += String(mo);
+      else if (n === 2) result += String(mo).padStart(2, "0");
+      else if (n === 3) result += MONTH_NAMES[mo - 1].slice(0, 3);
+      else if (n === 4) result += MONTH_NAMES[mo - 1];
+      else result += MONTH_NAMES[mo - 1][0];
+      prevWasHour = false;
+    } else if (ch === "d" || ch === "D") {
+      let n = 0;
+      while (i < section.length && section[i].toLowerCase() === "d") { n++; i++; }
+      if (n === 1) result += String(dy);
+      else if (n === 2) result += String(dy).padStart(2, "0");
+      else if (n === 3) result += WEEKDAY_NAMES[wd].slice(0, 3);
+      else result += WEEKDAY_NAMES[wd];
+      prevWasHour = false;
+    } else if (ch === "h" || ch === "H") {
+      let n = 0;
+      while (i < section.length && section[i].toLowerCase() === "h") { n++; i++; }
+      const h = hasAmPm ? hr % 12 || 12 : hr;
+      result += n >= 2 ? String(h).padStart(2, "0") : String(h);
+      prevWasHour = true;
+    } else if (ch === "s" || ch === "S") {
+      let n = 0;
+      while (i < section.length && section[i].toLowerCase() === "s") { n++; i++; }
+      result += n >= 2 ? String(sc).padStart(2, "0") : String(sc);
+      prevWasHour = false;
+    } else if (ch === "g" || ch === "G") {
+      let n = 0;
+      while (i < section.length && section[i].toLowerCase() === "g") { n++; i++; }
+      const e = getEra();
+      result += n === 1 ? e.abbr : n === 2 ? e.short : e.long;
+      prevWasHour = false;
+    } else if (ch === "e" || ch === "E") {
+      let n = 0;
+      while (i < section.length && section[i].toLowerCase() === "e") { n++; i++; }
+      const y = getEra().year;
+      result += n >= 2 ? String(y).padStart(2, "0") : String(y);
+      prevWasHour = false;
+    } else if (ch === "A" || ch === "a") {
+      const upper = section.slice(i).toUpperCase();
+      if (upper.startsWith("AAAA")) { result += JP_WEEKDAY_LONG[wd]; i += 4; }
+      else if (upper.startsWith("AAA")) { result += JP_WEEKDAY_SHORT[wd]; i += 3; }
+      else if (upper.startsWith("AM/PM")) { result += hr < 12 ? "AM" : "PM"; i += 5; }
+      else if (upper.startsWith("A/P")) { result += hr < 12 ? "A" : "P"; i += 3; }
+      else { result += ch; i++; }
+      prevWasHour = false;
+    } else {
+      result += ch;
+      i++;
+      if (ch !== ":" && ch !== "/" && ch !== "-" && ch !== "." && ch !== " ") prevWasHour = false;
+    }
+  }
+  return result;
+}
+
+// ── Numbers ─────────────────────────────────────────────────────────────────
+
+function formatThousands(num: number, decimals: number): string {
+  return num.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+function countDecimalPlaces(fmt: string): number {
+  const m = fmt.match(/\.([0#?]+)/);
+  return m ? m[1].length : 0;
+}
+
+type FmtToken =
+  | { kind: "lit"; text: string }
+  | { kind: "num" }
+  | { kind: "percent" }
+  | { kind: "sci"; expSign: boolean };
+
+/**
+ * Split a format section into ordered tokens, preserving literal surroundings
+ * (quoted strings, escapes, unquoted symbols like $/€/¥) so they can be
+ * reassembled around the formatted number. Drops [..] metadata, _-pad and
+ * *-fill pairs (ECMA-376 §18.8.30).
+ */
+function tokenizeNumberFormat(section: string): { tokens: FmtToken[]; numSpec: string } {
+  const tokens: FmtToken[] = [];
+  let numSpec = "";
+  let numPushed = false;
+  let sciPushed = false;
+  const pushLit = (s: string) => {
+    if (!s) return;
+    const last = tokens[tokens.length - 1];
+    if (last && last.kind === "lit") last.text += s;
+    else tokens.push({ kind: "lit", text: s });
+  };
+  const ensureNum = () => {
+    if (!numPushed) { tokens.push({ kind: "num" }); numPushed = true; }
+  };
+
+  let i = 0;
+  while (i < section.length) {
+    const ch = section[i];
+    if (ch === '"') {
+      i++;
+      let s = "";
+      while (i < section.length && section[i] !== '"') s += section[i++];
+      if (i < section.length) i++;
+      pushLit(s);
+    } else if (ch === "\\") {
+      if (i + 1 < section.length) pushLit(section[i + 1]);
+      i += 2;
+    } else if (ch === "[") {
+      while (i < section.length && section[i] !== "]") i++;
+      if (i < section.length) i++;
+    } else if (ch === "_" || ch === "*") {
+      i += 2;
+    } else if (ch === "#" || ch === "0" || ch === "?" || ch === "." || ch === ",") {
+      ensureNum();
+      numSpec += ch;
+      i++;
+    } else if (ch === "%") {
+      tokens.push({ kind: "percent" });
+      i++;
+    } else if ((ch === "E" || ch === "e") && (section[i + 1] === "+" || section[i + 1] === "-")) {
+      if (!sciPushed) {
+        tokens.push({ kind: "sci", expSign: section[i + 1] === "+" });
+        sciPushed = true;
+      }
+      i += 2;
+      while (i < section.length && section[i] === "0") i++;
+    } else {
+      pushLit(ch);
+      i++;
+    }
+  }
+  return { tokens, numSpec };
+}
+
+function formatNumberSpec(value: number, numSpec: string): string {
+  const hasThousands = numSpec.includes(",") && /[#0]/.test(numSpec);
+  const dec = countDecimalPlaces(numSpec);
+  if (hasThousands) return formatThousands(value, dec);
+  if (numSpec.includes(".")) return value.toFixed(dec);
+  if (/[#0?]/.test(numSpec)) return Math.round(value).toString();
+  return String(value);
+}
+
+function applyFormatCode(num: number, formatCode: string): string {
+  // Up to 4 sections: positive;negative;zero;text (§18.8.30). Pick the one
+  // matching the sign; a dedicated negative section formats the magnitude
+  // (the minus is conveyed by the section's own literals, e.g. parentheses).
+  const sections = formatCode.split(";");
+  let section: string;
+  let useMagnitude = false;
+  if (num > 0) section = sections[0];
+  else if (num < 0) {
+    if (sections.length > 1) { section = sections[1]; useMagnitude = true; }
+    else section = sections[0];
+  } else section = sections.length > 2 ? sections[2] : sections[0];
+
+  const { tokens, numSpec } = tokenizeNumberFormat(section);
+  const hasPercent = tokens.some((t) => t.kind === "percent");
+  const sciTok = tokens.find((t) => t.kind === "sci") as Extract<FmtToken, { kind: "sci" }> | undefined;
+
+  let value = useMagnitude ? Math.abs(num) : num;
+  if (hasPercent) value *= 100;
+
+  let numberText: string;
+  let expText = "";
+  if (sciTok) {
+    const dec = countDecimalPlaces(numSpec);
+    const [mantissa, exp] = value.toExponential(dec).split("e");
+    numberText = mantissa;
+    const e = parseInt(exp, 10);
+    const sign = e < 0 ? "-" : sciTok.expSign ? "+" : "";
+    expText = sign + String(Math.abs(e)).padStart(2, "0");
+  } else {
+    numberText = formatNumberSpec(value, numSpec);
+  }
+
+  let result = "";
+  let numberEmitted = false;
+  for (const t of tokens) {
+    if (t.kind === "lit") result += t.text;
+    else if (t.kind === "percent") result += "%";
+    else if (t.kind === "num") { result += numberText; numberEmitted = true; }
+    else if (t.kind === "sci") result += `E${expText}`;
+  }
+  if (!numberEmitted && (numSpec.length > 0 || sciTok)) result += numberText;
+  return result;
+}
+
+/** Trim binary float noise for the General format without corrupting large ints. */
+function formatGeneral(n: number): string {
+  return Math.abs(n) >= 1e10 ? String(n) : String(Math.round(n * 1e10) / 1e10);
 }
 
 function formatNumberValue(raw: string, code: string, date1904: boolean): string {
   const n = parseFloat(raw);
   if (Number.isNaN(n)) return raw;
-
-  if (code === "General") {
-    // Trim float noise; beyond ~1e10 the rounding trick itself overflows
-    // Number.MAX_SAFE_INTEGER and corrupts the value, so pass through.
-    return Math.abs(n) >= 1e10 ? String(n) : String(Math.round(n * 1e10) / 1e10);
-  }
-
-  if (isDateFormat(code)) {
-    const d = excelSerialToDate(n, date1904);
-    const bare = code.replace(/"[^"]*"/g, "").replace(/\[[^\]]*\]/g, "");
-    const hasDate = /[ymd]/i.test(bare);
-    const hasTime = /[hs]|AM\/PM/i.test(bare);
-    const datePart = `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
-    const timePart = `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
-    if (hasDate && hasTime) return `${datePart} ${timePart}`;
-    if (hasTime) return timePart;
-    return datePart;
-  }
-
-  // Use only the positive section of multi-part formats
-  const section = code.split(";")[0];
-  const percent = section.includes("%");
-  const value = percent ? n * 100 : n;
-
-  // Decimal places from the format's ".00" run
-  const decMatch = section.match(/\.([0#]+)/);
-  const decimals = decMatch ? decMatch[1].length : 0;
-  const grouped = section.includes(",");
-
-  let s = grouped
-    ? value.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-    : value.toFixed(decimals);
-
-  if (percent) s += "%";
-
-  // Carry simple currency prefixes through ("$"#,##0.00 / [$CHF] etc.)
-  const currency = section.match(/\[\$([^\]-]+)[^\]]*\]/)?.[1] ?? section.match(/^"([^"]+)"/)?.[1];
-  if (currency) s = `${currency} ${s}`;
-  else if (section.trimStart().startsWith("$")) s = `$${s}`;
-
-  return s;
+  if (code === "General" || code === "@") return formatGeneral(n);
+  if (isDateFormatCode(code)) return formatExcelDateCode(n, code, date1904);
+  return applyFormatCode(n, code);
 }
 
 // ============================================================================
