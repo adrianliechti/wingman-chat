@@ -30,6 +30,7 @@ export async function xlsxToHtml(file: File | Blob | ArrayBuffer): Promise<XlsxH
     fills: [],
     borders: [],
     cellXfs: [],
+    dxfs: [],
     date1904: false,
   };
 
@@ -93,6 +94,16 @@ interface CellXf {
   wrapText?: boolean;
 }
 
+/** Differential format (ECMA-376 §18.8.14) referenced by conditional rules. */
+interface Dxf {
+  fontColor?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  fill?: string;
+}
+
 interface XlsxCtx {
   zip: JSZip;
   workbookDoc: Document | null;
@@ -103,6 +114,7 @@ interface XlsxCtx {
   fills: (string | undefined)[];
   borders: BorderStyle[];
   cellXfs: CellXf[];
+  dxfs: Dxf[];
   date1904: boolean;
 }
 
@@ -313,6 +325,24 @@ async function loadCellStyles(ctx: XlsxCtx): Promise<void> {
       hAlign: alignment?.getAttribute("horizontal") ?? undefined,
       vAlign: alignment?.getAttribute("vertical") ?? undefined,
       wrapText: alignment?.getAttribute("wrapText") === "1" || alignment?.getAttribute("wrapText") === "true",
+    });
+  }
+
+  // Differential formats for conditional formatting. In a CF <dxf> the visible
+  // highlight is stored in the patternFill's bgColor (not fgColor like a normal
+  // cell fill) — a well-known Excel quirk — so prefer bgColor here.
+  for (const dxf of els(firstEl(doc, "dxfs"), "dxf")) {
+    const font = firstEl(dxf, "font");
+    const pattern = firstEl(dxf, "patternFill");
+    ctx.dxfs.push({
+      fontColor: font ? xlsxColor(firstEl(font, "color"), ctx) : undefined,
+      bold: font && firstEl(font, "b") ? flagOn(firstEl(font, "b")) : undefined,
+      italic: font && firstEl(font, "i") ? flagOn(firstEl(font, "i")) : undefined,
+      underline: font && firstEl(font, "u") ? flagOn(firstEl(font, "u")) : undefined,
+      strike: font && firstEl(font, "strike") ? flagOn(firstEl(font, "strike")) : undefined,
+      fill: pattern
+        ? (xlsxColor(firstEl(pattern, "bgColor"), ctx) ?? xlsxColor(firstEl(pattern, "fgColor"), ctx))
+        : undefined,
     });
   }
 }
@@ -781,6 +811,414 @@ interface CellData {
   /** general-alignment hint: numbers right, text left, bool/error center */
   kind: "n" | "s" | "b";
   link?: string;
+  /** raw values for conditional-formatting evaluation */
+  num?: number;
+  text?: string;
+}
+
+// ============================================================================
+// Conditional formatting (ECMA-376 §18.3.1)
+// ============================================================================
+
+interface CfRange {
+  top: number;
+  left: number;
+  bottom: number;
+  right: number;
+}
+
+interface Cfvo {
+  kind: string;
+  value: string | null;
+}
+
+type CfRule =
+  | { type: "colorScale"; priority: number; stopVals: number[]; colors: string[] }
+  | { type: "dataBar"; priority: number; color: string; min: number; max: number }
+  | { type: "iconSet"; priority: number; set: string; reverse: boolean; thresholds: number[] }
+  | { type: "cellIs"; priority: number; operator: string; args: CfArg[]; dxfId?: number; stop: boolean }
+  | { type: "text"; priority: number; op: string; text: string; dxfId?: number; stop: boolean }
+  | { type: "top10"; priority: number; threshold: number; isTop: boolean; dxfId?: number; stop: boolean }
+  | { type: "aboveAverage"; priority: number; avg: number; isAbove: boolean; dxfId?: number; stop: boolean }
+  | { type: "dupUnique"; priority: number; dupValues: Set<string>; wantDup: boolean; dxfId?: number; stop: boolean };
+
+interface CfArg {
+  num?: number;
+  text?: string;
+}
+
+interface CompiledCf {
+  ranges: CfRange[];
+  rule: CfRule;
+}
+
+interface CfResult {
+  bg?: string;
+  fontColor?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  bar?: { color: string; ratio: number };
+  icon?: string;
+}
+
+function parseCfRange(token: string): CfRange | null {
+  const t = token.trim();
+  if (!t) return null;
+  const [a, b] = t.split(":");
+  const r1 = parseInt(a.replace(/^[A-Za-z]+/, ""), 10) - 1;
+  const c1 = colIndexFromRef(a.toUpperCase());
+  if (Number.isNaN(r1)) return null;
+  if (!b) return { top: r1, left: c1, bottom: r1, right: c1 };
+  const r2 = parseInt(b.replace(/^[A-Za-z]+/, ""), 10) - 1;
+  const c2 = colIndexFromRef(b.toUpperCase());
+  return { top: Math.min(r1, r2), left: Math.min(c1, c2), bottom: Math.max(r1, r2), right: Math.max(c1, c2) };
+}
+
+function cfRangeHas(ranges: CfRange[], r: number, c: number): boolean {
+  return ranges.some((rg) => r >= rg.top && r <= rg.bottom && c >= rg.left && c <= rg.right);
+}
+
+/** Resolve a <cfvo> against the range's numeric samples (ECMA-376 §18.3.1.11). */
+function resolveCfvo(cfv: Cfvo, samples: number[]): number {
+  const n = cfv.value != null ? parseFloat(cfv.value) : NaN;
+  const minv = samples.length ? Math.min(...samples) : 0;
+  const maxv = samples.length ? Math.max(...samples) : 0;
+  switch (cfv.kind) {
+    case "min":
+      return minv;
+    case "max":
+      return maxv;
+    case "percent":
+      return minv + (maxv - minv) * ((Number.isNaN(n) ? 50 : n) / 100);
+    case "percentile": {
+      if (!samples.length) return 0;
+      const s = [...samples].sort((a, b) => a - b);
+      const p = (Number.isNaN(n) ? 50 : n) / 100;
+      const idx = Math.max(0, Math.min(s.length - 1, Math.round(p * (s.length - 1))));
+      return s[idx];
+    }
+    default: // num, formula (constants), and anything unrecognized
+      return Number.isNaN(n) ? 0 : n;
+  }
+}
+
+/** Parse a cellIs operand: quoted string → text, numeric literal → num, else
+ *  a cell reference/formula we can't evaluate (left unset → never matches). */
+function parseCfArg(f: string): CfArg {
+  const t = f.trim();
+  if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) return { text: t.slice(1, -1).replace(/""/g, '"') };
+  const n = parseFloat(t);
+  if (!Number.isNaN(n) && /^[-+]?[\d.eE+]+$/.test(t)) return { num: n };
+  return {};
+}
+
+function top10Threshold(samples: number[], rank: number, percent: boolean, isTop: boolean): number | null {
+  const sorted = [...samples].sort((a, b) => a - b);
+  const n = sorted.length;
+  if (!n) return null;
+  if (percent) {
+    const p = isTop ? 1 - rank / 100 : rank / 100;
+    const idx = Math.max(0, Math.min(n - 1, Math.round(p * (n - 1))));
+    return sorted[idx];
+  }
+  const r = Math.min(rank, n);
+  return isTop ? sorted[Math.max(0, n - r)] : sorted[Math.min(n - 1, r - 1)];
+}
+
+function compileCf(
+  doc: Document,
+  ctx: XlsxCtx,
+  numbersIn: (r: CfRange) => number[],
+  textsIn: (r: CfRange) => string[],
+): CompiledCf[] {
+  const out: CompiledCf[] = [];
+  const cfvos = (parent: Element | undefined): Cfvo[] =>
+    els(parent, "cfvo").map((v) => ({ kind: v.getAttribute("type") || "num", value: v.getAttribute("val") }));
+
+  for (const cf of els(doc, "conditionalFormatting")) {
+    const ranges = (cf.getAttribute("sqref") || "")
+      .split(/\s+/)
+      .map(parseCfRange)
+      .filter((r): r is CfRange => r !== null);
+    if (!ranges.length) continue;
+    const samples = ranges.flatMap(numbersIn);
+
+    for (const el of els(cf, "cfRule")) {
+      const type = el.getAttribute("type");
+      const priority = parseInt(el.getAttribute("priority") || "0", 10);
+      const dxfId = el.hasAttribute("dxfId") ? parseInt(el.getAttribute("dxfId") || "0", 10) : undefined;
+      const stop = el.getAttribute("stopIfTrue") === "1";
+      let rule: CfRule | null = null;
+
+      if (type === "colorScale") {
+        const cs = firstEl(el, "colorScale");
+        rule = {
+          type: "colorScale",
+          priority,
+          stopVals: cfvos(cs).map((v) => resolveCfvo(v, samples)),
+          colors: els(cs, "color").map((c) => xlsxColor(c, ctx) ?? "#FFFFFF"),
+        };
+      } else if (type === "dataBar") {
+        const db = firstEl(el, "dataBar");
+        const vos = cfvos(db);
+        rule = {
+          type: "dataBar",
+          priority,
+          color: xlsxColor(firstEl(db, "color"), ctx) ?? "#638EC6",
+          min: resolveCfvo(vos[0] ?? { kind: "min", value: null }, samples),
+          max: resolveCfvo(vos[1] ?? { kind: "max", value: null }, samples),
+        };
+      } else if (type === "iconSet") {
+        const is = firstEl(el, "iconSet");
+        rule = {
+          type: "iconSet",
+          priority,
+          set: is?.getAttribute("iconSet") || "3TrafficLights1",
+          reverse: is?.getAttribute("reverse") === "1",
+          thresholds: cfvos(is).map((v) => resolveCfvo(v, samples)),
+        };
+      } else if (type === "cellIs") {
+        rule = {
+          type: "cellIs",
+          priority,
+          operator: el.getAttribute("operator") || "equal",
+          args: els(el, "formula").map((f) => parseCfArg(f.textContent || "")),
+          dxfId,
+          stop,
+        };
+      } else if (type === "containsText" || type === "notContainsText" || type === "beginsWith" || type === "endsWith") {
+        rule = { type: "text", priority, op: type, text: el.getAttribute("text") || "", dxfId, stop };
+      } else if (type === "top10") {
+        const t = top10Threshold(
+          samples,
+          parseInt(el.getAttribute("rank") || "10", 10),
+          el.getAttribute("percent") === "1",
+          el.getAttribute("bottom") !== "1",
+        );
+        if (t != null) rule = { type: "top10", priority, threshold: t, isTop: el.getAttribute("bottom") !== "1", dxfId, stop };
+      } else if (type === "aboveAverage") {
+        if (samples.length) {
+          rule = {
+            type: "aboveAverage",
+            priority,
+            avg: samples.reduce((a, b) => a + b, 0) / samples.length,
+            isAbove: el.getAttribute("aboveAverage") !== "0",
+            dxfId,
+            stop,
+          };
+        }
+      } else if (type === "duplicateValues" || type === "uniqueValues") {
+        const freq = new Map<string, number>();
+        for (const range of ranges) for (const t of textsIn(range)) freq.set(t, (freq.get(t) || 0) + 1);
+        const dupValues = new Set<string>();
+        for (const [k, n] of freq) if (n > 1) dupValues.add(k);
+        rule = { type: "dupUnique", priority, dupValues, wantDup: type === "duplicateValues", dxfId, stop };
+      }
+      // type === "expression" is intentionally skipped (needs a formula engine).
+
+      if (rule) out.push({ ranges, rule });
+    }
+  }
+
+  // Excel evaluates rules by ascending priority (lowest number wins first);
+  // per property the first match wins, and stopIfTrue halts later rules.
+  out.sort((a, b) => a.rule.priority - b.rule.priority);
+  return out;
+}
+
+function interpolateHex(a: string, b: string, t: number): string {
+  const pa = a.replace("#", "");
+  const pb = b.replace("#", "");
+  const mix = (i: number) =>
+    Math.round(parseInt(pa.slice(i, i + 2), 16) + (parseInt(pb.slice(i, i + 2), 16) - parseInt(pa.slice(i, i + 2), 16)) * t)
+      .toString(16)
+      .padStart(2, "0")
+      .toUpperCase();
+  return `#${mix(0)}${mix(2)}${mix(4)}`;
+}
+
+function colorScaleAt(num: number, vals: number[], colors: string[]): string {
+  if (!colors.length) return "#FFFFFF";
+  if (num <= vals[0]) return colors[0];
+  if (num >= vals[vals.length - 1]) return colors[colors.length - 1];
+  for (let i = 1; i < vals.length; i++) {
+    if (num <= vals[i]) {
+      const lo = vals[i - 1];
+      const hi = vals[i];
+      return interpolateHex(colors[i - 1], colors[i], hi === lo ? 0 : (num - lo) / (hi - lo));
+    }
+  }
+  return colors[colors.length - 1];
+}
+
+/** Map common icon-set families to glyphs. `idx` is 0 (lowest) … count-1. */
+function iconGlyph(set: string, idx: number, count: number): string {
+  const s = set.toLowerCase();
+  const pick = (arr: string[]) => arr[Math.max(0, Math.min(arr.length - 1, idx))];
+  if (s.includes("trafficlights") || s.includes("signs"))
+    return pick(count >= 4 ? ["⚫", "🔴", "🟡", "🟢"] : ["🔴", "🟡", "🟢"]);
+  if (s.includes("symbols")) return pick(["❌", "❗", "✅"]);
+  if (s.includes("flags")) return "🚩";
+  if (s.includes("arrows")) {
+    if (count >= 5) return pick(["⬇️", "↘️", "➡️", "↗️", "⬆️"]);
+    if (count === 4) return pick(["⬇️", "↘️", "↗️", "⬆️"]);
+    return pick(["🔻", "➡️", "🔺"]);
+  }
+  if (s.includes("rating") || s.includes("quarters") || s.includes("boxes"))
+    return pick(["○", "◔", "◑", "◕", "●"].slice(0, Math.max(3, count)));
+  // Fallback: green→yellow→red circles scaled to count.
+  return pick(["🔴", "🟠", "🟡", "🟢", "🔵"].slice(0, Math.max(3, count)));
+}
+
+function applyCfDxf(result: CfResult, dxf: Dxf | undefined): void {
+  if (!dxf) return;
+  if (dxf.fill && result.bg == null) result.bg = dxf.fill;
+  if (dxf.fontColor && result.fontColor == null) result.fontColor = dxf.fontColor;
+  if (dxf.bold && result.bold == null) result.bold = true;
+  if (dxf.italic && result.italic == null) result.italic = true;
+  if (dxf.underline && result.underline == null) result.underline = true;
+  if (dxf.strike && result.strike == null) result.strike = true;
+}
+
+function evaluateCf(
+  compiled: CompiledCf[],
+  ctx: XlsxCtx,
+  r: number,
+  c: number,
+  num: number | null,
+  text: string | null,
+): CfResult {
+  const result: CfResult = {};
+  for (const { ranges, rule } of compiled) {
+    if (!cfRangeHas(ranges, r, c)) continue;
+
+    switch (rule.type) {
+      case "colorScale":
+        if (num != null && result.bg == null) result.bg = colorScaleAt(num, rule.stopVals, rule.colors);
+        break;
+      case "dataBar":
+        if (num != null && !result.bar) {
+          const range = rule.max - rule.min;
+          const ratio = range === 0 ? 0 : Math.max(0, Math.min(1, (num - rule.min) / range));
+          result.bar = { color: rule.color, ratio };
+        }
+        break;
+      case "iconSet":
+        if (num != null && !result.icon) {
+          const t = rule.thresholds;
+          let idx = 0;
+          for (let i = 1; i < t.length; i++) if (num >= t[i]) idx = i;
+          if (rule.reverse) idx = t.length - 1 - idx;
+          result.icon = iconGlyph(rule.set, idx, t.length);
+        }
+        break;
+      case "cellIs": {
+        let matched = false;
+        if (num != null && rule.args.every((a) => a.num != null)) {
+          matched = cfNumMatch(num, rule.operator, rule.args.map((a) => a.num as number));
+        } else if (text != null && rule.args.every((a) => a.text != null)) {
+          matched = cfTextMatch(text, rule.operator, rule.args.map((a) => a.text as string));
+        }
+        if (matched) {
+          applyCfDxf(result, rule.dxfId != null ? ctx.dxfs[rule.dxfId] : undefined);
+          if (rule.stop) return result;
+        }
+        break;
+      }
+      case "text": {
+        if (text == null) break;
+        const hay = text.toLowerCase();
+        const needle = rule.text.toLowerCase();
+        const matched =
+          rule.op === "containsText"
+            ? hay.includes(needle)
+            : rule.op === "notContainsText"
+              ? !hay.includes(needle)
+              : rule.op === "beginsWith"
+                ? hay.startsWith(needle)
+                : hay.endsWith(needle);
+        if (matched) {
+          applyCfDxf(result, rule.dxfId != null ? ctx.dxfs[rule.dxfId] : undefined);
+          if (rule.stop) return result;
+        }
+        break;
+      }
+      case "top10":
+        if (num != null && (rule.isTop ? num >= rule.threshold : num <= rule.threshold)) {
+          applyCfDxf(result, rule.dxfId != null ? ctx.dxfs[rule.dxfId] : undefined);
+          if (rule.stop) return result;
+        }
+        break;
+      case "aboveAverage":
+        if (num != null && (rule.isAbove ? num > rule.avg : num < rule.avg)) {
+          applyCfDxf(result, rule.dxfId != null ? ctx.dxfs[rule.dxfId] : undefined);
+          if (rule.stop) return result;
+        }
+        break;
+      case "dupUnique": {
+        const key = text ?? (num != null ? String(num) : null);
+        if (key != null && rule.dupValues.has(key) === rule.wantDup) {
+          applyCfDxf(result, rule.dxfId != null ? ctx.dxfs[rule.dxfId] : undefined);
+          if (rule.stop) return result;
+        }
+        break;
+      }
+    }
+  }
+  return result;
+}
+
+function cfNumMatch(n: number, op: string, args: number[]): boolean {
+  switch (op) {
+    case "greaterThan":
+      return n > args[0];
+    case "greaterThanOrEqual":
+      return n >= args[0];
+    case "lessThan":
+      return n < args[0];
+    case "lessThanOrEqual":
+      return n <= args[0];
+    case "equal":
+      return n === args[0];
+    case "notEqual":
+      return n !== args[0];
+    case "between":
+      return n >= args[0] && n <= args[1];
+    case "notBetween":
+      return n < args[0] || n > args[1];
+    default:
+      return false;
+  }
+}
+
+function cfTextMatch(text: string, op: string, args: string[]): boolean {
+  const a = (text ?? "").toLowerCase();
+  const b = (args[0] ?? "").toLowerCase();
+  switch (op) {
+    case "equal":
+      return a === b;
+    case "notEqual":
+      return a !== b;
+    case "containsText":
+      return a.includes(b);
+    case "beginsWith":
+      return a.startsWith(b);
+    case "endsWith":
+      return a.endsWith(b);
+    default:
+      return false;
+  }
+}
+
+/** "#RRGGBB" → "rgba(r,g,b,a)" for translucent data-bar fills. */
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): string {
@@ -886,18 +1324,21 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
 
       let html = "";
       let kind: CellData["kind"] = "n";
+      let rawNum: number | undefined;
+      let rawText: string | undefined;
       if (type === "s") {
-        html = escapeHtml(ctx.sharedStrings[parseInt(v, 10)] ?? "");
+        rawText = ctx.sharedStrings[parseInt(v, 10)] ?? "";
+        html = escapeHtml(rawText);
         kind = "s";
       } else if (type === "str") {
+        rawText = v;
         html = escapeHtml(v);
         kind = "s";
       } else if (type === "inlineStr" || (!vEl && firstEl(cell, "is"))) {
-        html = escapeHtml(
-          els(firstEl(cell, "is"), "t")
-            .map((t) => t.textContent ?? "")
-            .join(""),
-        );
+        rawText = els(firstEl(cell, "is"), "t")
+          .map((t) => t.textContent ?? "")
+          .join("");
+        html = escapeHtml(rawText);
         kind = "s";
       } else if (type === "b") {
         html = v === "1" ? "TRUE" : "FALSE";
@@ -907,13 +1348,15 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
         kind = "b";
       } else if (v !== "") {
         const xf = ctx.cellXfs[styleIdx];
+        const n = parseFloat(v);
+        if (!Number.isNaN(n)) rawNum = n;
         html = escapeHtml(formatNumberValue(v, formatCode(ctx, xf?.numFmtId ?? 0), ctx.date1904));
         kind = "n";
       }
 
       if (html === "" && styleIdx === 0) continue;
       const link = ref ? links.get(ref) : undefined;
-      cells.set(c, { html, styleIdx, kind, link });
+      cells.set(c, { html, styleIdx, kind, link, num: rawNum, text: rawText });
       maxCol = Math.max(maxCol, c);
     }
     if (cells.size > 0 || rowHeightPx.has(r)) {
@@ -959,8 +1402,10 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
     return `${w}px ${styleCss} ${side.color}`;
   };
 
-  // Cell style strings depend only on (styleIdx, kind) — sheets have at most
-  // dozens of distinct xfs, so memoize instead of rebuilding per cell.
+  // Base cell style declarations depend only on (styleIdx, kind) — sheets have
+  // at most dozens of distinct xfs, so memoize instead of rebuilding per cell.
+  // Returns the inner CSS (no `style="…"` wrapper) so per-cell conditional
+  // formatting can be appended after it (later declarations win → CF overrides).
   const styleCache = new Map<string, string>();
   const cellStyleCss = (styleIdx: number, kind: CellData["kind"]): string => {
     const cacheKey = `${styleIdx}|${kind}`;
@@ -1004,10 +1449,37 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
     else if (xf?.vAlign === "top") styles.push("vertical-align:top");
     if (xf?.wrapText) styles.push("white-space:pre-wrap", "word-wrap:break-word");
 
-    const result = styles.length ? ` style="${styles.join(";")};"` : "";
+    const result = styles.join(";");
     styleCache.set(cacheKey, result);
     return result;
   };
+
+  // Conditional formatting: compile once per sheet against the data bounds.
+  // Sample only populated cells so whole-column sqrefs (e.g. "A1:A1048576")
+  // stay cheap.
+  const numbersIn = (range: CfRange): number[] => {
+    const out: number[] = [];
+    for (const [r, cellsRow] of rowData) {
+      if (r < range.top || r > range.bottom) continue;
+      for (const [c, d] of cellsRow) {
+        if (c >= range.left && c <= range.right && d.num != null) out.push(d.num);
+      }
+    }
+    return out;
+  };
+  const textsIn = (range: CfRange): string[] => {
+    const out: string[] = [];
+    for (const [r, cellsRow] of rowData) {
+      if (r < range.top || r > range.bottom) continue;
+      for (const [c, d] of cellsRow) {
+        if (c < range.left || c > range.right) continue;
+        const key = d.text ?? (d.num != null ? String(d.num) : undefined);
+        if (key != null) out.push(key);
+      }
+    }
+    return out;
+  };
+  const cfRules = compileCf(doc, ctx, numbersIn, textsIn);
 
   const bodyRows: string[] = [];
   for (let r = 0; r <= maxRow; r++) {
@@ -1021,15 +1493,42 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
 
       const data = cells.get(c);
       const merge = mergeStart.get(`${r}:${c}`);
-      const styleAttr = data ? cellStyleCss(data.styleIdx, data.kind) : "";
+
+      const decls: string[] = [];
+      const base = data ? cellStyleCss(data.styleIdx, data.kind) : "";
+      if (base) decls.push(base);
+
+      let iconHtml = "";
+      if (data && cfRules.length) {
+        const cf = evaluateCf(cfRules, ctx, r, c, data.num ?? null, data.text ?? null);
+        // Data bar paints behind the value; its translucent gradient overlays
+        // the (already-emitted) base background-color.
+        if (cf.bar) {
+          const pct = Math.round(cf.bar.ratio * 100);
+          decls.push(
+            `background-image:linear-gradient(90deg,${hexToRgba(cf.bar.color, 0.85)} ${pct}%,transparent ${pct}%)`,
+            "background-repeat:no-repeat",
+          );
+        }
+        if (cf.bg) decls.push(`background-color:${cf.bg}`);
+        if (cf.fontColor) decls.push(`color:${cf.fontColor}`);
+        if (cf.bold) decls.push("font-weight:bold");
+        if (cf.italic) decls.push("font-style:italic");
+        const deco: string[] = [];
+        if (cf.underline) deco.push("underline");
+        if (cf.strike) deco.push("line-through");
+        if (deco.length) decls.push(`text-decoration:${deco.join(" ")}`);
+        if (cf.icon) iconHtml = `<span class="cf-ico">${cf.icon}</span>`;
+      }
+      const styleAttr = decls.length ? ` style="${decls.join(";")};"` : "";
 
       const spanAttrs = merge
         ? `${merge.cols > 1 ? ` colspan="${merge.cols}"` : ""}${merge.rows > 1 ? ` rowspan="${merge.rows}"` : ""}`
         : "";
-      const content = data?.link
+      const inner = data?.link
         ? `<a href="${escapeHtml(data.link)}" target="_blank" rel="noreferrer">${data.html}</a>`
         : (data?.html ?? "");
-      tds.push(`<td${spanAttrs}${styleAttr}>${content}</td>`);
+      tds.push(`<td${spanAttrs}${styleAttr}>${iconHtml}${inner}</td>`);
     }
 
     const ht = rowHeightPx.get(r);
@@ -1052,6 +1551,7 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
     "td.rn{background:#F6F7F9;border:1px solid #DEE1E6;color:#5F6368;text-align:center;font-size:11.5px;position:sticky;left:0;z-index:1;}",
     "th.rn{left:0;z-index:3;position:sticky;}",
     "a{color:#0563C1;}",
+    ".cf-ico{display:inline-block;width:1.1em;margin-right:3px;text-align:center;font-size:0.85em;line-height:1;}",
     ".trunc{padding:6px 10px;background:#FFF7E0;color:#8A6D1A;font-size:12px;border-bottom:1px solid #EFE3B5;position:sticky;top:0;z-index:4;}",
     "</style></head><body>",
     truncationNote,
