@@ -56,10 +56,14 @@ export async function docxToHtml(file: File | Blob | ArrayBuffer): Promise<strin
     numbering: new Map(),
     listCounters: new Map(),
     mediaCache: new Map(),
+    footnotes: new Map(),
+    endnotes: new Map(),
+    fnRefs: [],
+    enRefs: [],
   };
 
   // Independent parts — overlap the zip reads/parses
-  await Promise.all([loadDocxRels(ctx), loadDocxTheme(ctx), loadStyles(ctx), loadNumbering(ctx)]);
+  await Promise.all([loadDocxRels(ctx), loadDocxTheme(ctx), loadStyles(ctx), loadNumbering(ctx), loadDocxNotes(ctx)]);
 
   return renderDocument(ctx);
 }
@@ -98,6 +102,12 @@ interface DocxCtx {
   listCounters: Map<string, number[]>;
   /** media part path → data URL */
   mediaCache: Map<string, string>;
+  /** footnote / endnote id → note element (separators excluded) */
+  footnotes: Map<string, Element>;
+  endnotes: Map<string, Element>;
+  /** references in document order → assigned display number */
+  fnRefs: { id: string; num: number }[];
+  enRefs: { id: string; num: number }[];
 }
 
 async function loadDocxRels(ctx: DocxCtx): Promise<void> {
@@ -183,6 +193,41 @@ async function loadNumbering(ctx: DocxCtx): Promise<void> {
 
 async function loadDocxMedia(ctx: DocxCtx, path: string): Promise<string | undefined> {
   return loadMediaDataUrl(ctx.zip, ctx.mediaCache, path);
+}
+
+/** Load footnotes.xml / endnotes.xml. Separator notes (which carry a w:type)
+ *  are skipped — only real notes are indexed by id. */
+async function loadDocxNotes(ctx: DocxCtx): Promise<void> {
+  const load = async (file: string, tag: string, map: Map<string, Element>): Promise<void> => {
+    const xml = await ctx.zip.file(file)?.async("string");
+    if (!xml) return;
+    for (const note of parseXml(xml).getElementsByTagName(tag)) {
+      const id = note.getAttribute("w:id");
+      // Real notes have no w:type; separator/continuationSeparator/notice do.
+      if (id && !note.getAttribute("w:type")) map.set(id, note);
+    }
+  };
+  await Promise.all([
+    load("word/footnotes.xml", "w:footnote", ctx.footnotes),
+    load("word/endnotes.xml", "w:endnote", ctx.endnotes),
+  ]);
+}
+
+type NoteKind = "fn" | "en";
+
+/** Assign (or reuse) a sequential display number for a note reference, in
+ *  document order. Footnotes use arabic, endnotes lower-roman (Word defaults). */
+function assignNote(ctx: DocxCtx, kind: NoteKind, id: string): number {
+  const refs = kind === "fn" ? ctx.fnRefs : ctx.enRefs;
+  const existing = refs.find((r) => r.id === id);
+  if (existing) return existing.num;
+  const num = refs.length + 1;
+  refs.push({ id, num });
+  return num;
+}
+
+function noteLabel(kind: NoteKind, num: number): string {
+  return kind === "en" ? toRoman(num).toLowerCase() : String(num);
 }
 
 // ============================================================================
@@ -456,9 +501,16 @@ async function renderRun(ctx: DocxCtx, r: Element, pStyleId: string | undefined)
         parts.push(await renderLegacyPict(ctx, node));
         break;
       case "w:footnoteReference":
-      case "w:endnoteReference":
-        parts.push(`<sup>[${node.getAttribute("w:id") ?? "*"}]</sup>`);
+      case "w:endnoteReference": {
+        const kind: NoteKind = node.tagName === "w:endnoteReference" ? "en" : "fn";
+        const id = node.getAttribute("w:id") ?? "";
+        const notes = kind === "fn" ? ctx.footnotes : ctx.endnotes;
+        if (!notes.has(id)) break; // separator/unknown — nothing to link
+        const num = assignNote(ctx, kind, id);
+        const lbl = noteLabel(kind, num);
+        parts.push(`<sup class="noteref"><a id="${kind}ref-${num}" href="#${kind}-${num}">${lbl}</a></sup>`);
         break;
+      }
     }
   }
 
@@ -1038,6 +1090,34 @@ async function renderTable(ctx: DocxCtx, tbl: Element): Promise<string> {
 // Document assembly
 // ============================================================================
 
+/** Render the collected footnotes and endnotes as linked sections. Called
+ *  after the body so references have been numbered in document order. */
+async function renderNotesSection(ctx: DocxCtx): Promise<string> {
+  const block = async (kind: NoteKind, title: string): Promise<string> => {
+    const refs = kind === "fn" ? ctx.fnRefs : ctx.enRefs;
+    const map = kind === "fn" ? ctx.footnotes : ctx.endnotes;
+    if (!refs.length) return "";
+    const items: string[] = [];
+    // Index-based loop: rendering a note may reference further notes, which
+    // append to the list and get rendered in turn.
+    for (let i = 0; i < refs.length; i++) {
+      const { id, num } = refs[i];
+      const note = map.get(id);
+      if (!note) continue;
+      let content = "";
+      for (const blk of note.children) {
+        if (blk.tagName === "w:p") content += (await renderParagraph(ctx, blk)).html;
+        else if (blk.tagName === "w:tbl") content += await renderTable(ctx, blk);
+      }
+      items.push(
+        `<div class="note" id="${kind}-${num}"><a class="note-num" href="#${kind}ref-${num}">${noteLabel(kind, num)}</a><div class="note-body">${content}</div></div>`,
+      );
+    }
+    return items.length ? `<div class="notes"><div class="notes-h">${title}</div>${items.join("")}</div>` : "";
+  };
+  return (await block("fn", "Footnotes")) + (await block("en", "Endnotes"));
+}
+
 async function renderDocument(ctx: DocxCtx): Promise<string> {
   const body = descend(ctx.doc.documentElement, "w:body");
   if (!body) throw new Error("Invalid DOCX: empty body");
@@ -1084,6 +1164,10 @@ async function renderDocument(ctx: DocxCtx): Promise<string> {
   };
   await walkBlocks(body);
 
+  // Footnotes / endnotes, appended on the final page (references are now numbered)
+  const notesHtml = await renderNotesSection(ctx);
+  if (notesHtml) pages[pages.length - 1].push(notesHtml);
+
   // Document-wide default text style (docDefaults + default paragraph style)
   const baseChain = buildRPrChain(ctx, undefined, undefined);
   const baseStyles = runStyles(ctx, baseChain);
@@ -1109,6 +1193,13 @@ async function renderDocument(ctx: DocxCtx): Promise<string> {
     "img{max-width:100%;}",
     ".math-block{display:block;text-align:center;margin:6px 0;}",
     "math{font-size:1.1em;}",
+    ".noteref a{color:inherit;text-decoration:none;}",
+    ".noteref a:hover{text-decoration:underline;}",
+    ".notes{margin-top:20px;padding-top:8px;border-top:1px solid #C9CCD1;}",
+    ".notes-h{font-size:0.82em;font-weight:bold;color:#444;margin-bottom:4px;}",
+    ".note{display:flex;gap:6px;font-size:0.82em;line-height:1.35;margin:2px 0;}",
+    ".note-num{color:#0563C1;text-decoration:none;flex:0 0 auto;min-width:1.4em;text-align:right;}",
+    ".note-body .p{min-height:0;}",
     "</style></head><body>",
     pagesHtml,
     // Fit the page to the viewport width
