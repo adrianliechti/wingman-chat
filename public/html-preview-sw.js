@@ -139,17 +139,6 @@ function buildResponse(entry, extraHeaders = {}) {
   const headers = new Headers({
     "Content-Type": entry.contentType,
     "Cache-Control": "no-store",
-    // Force the previewed document into an opaque origin even though it is
-    // served from the app's own origin. Without this (and without
-    // `allow-same-origin` on the iframe), scripts in untrusted preview HTML
-    // would run with full access to the app's localStorage/OPFS/cookies.
-    // The directives mirror the iframe sandbox so previews keep working:
-    // scripts, forms, popups and modals are allowed, but same-origin is not.
-    "Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups allow-modals",
-    // The preview now runs in an opaque origin, so same-document fetch()/XHR
-    // of sibling files becomes a cross-origin request. Allow it so multi-file
-    // previews that load data via fetch continue to work.
-    "Access-Control-Allow-Origin": "*",
     ...extraHeaders,
   });
   return new Response(entry.body, { status: 200, headers });

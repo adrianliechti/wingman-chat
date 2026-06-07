@@ -248,7 +248,7 @@ export function HtmlPreview({
       ref={iframeRef}
       src={session ? session.previewUrl(path) : "about:blank"}
       title={title || "HTML preview"}
-      sandbox="allow-scripts allow-forms allow-popups allow-modals"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
       className={className}
       style={style}
     />
