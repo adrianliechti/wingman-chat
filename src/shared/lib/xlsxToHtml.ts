@@ -1,5 +1,18 @@
 import JSZip from "jszip";
-import { cssFontStack, escapeHtml, mixHex, parseThemeDoc, parseXml, ptToPx, px } from "./ooxml";
+import {
+  child,
+  cssFontStack,
+  emuToPx,
+  escapeHtml,
+  loadMediaDataUrl,
+  mixHex,
+  parseThemeDoc,
+  parseXml,
+  ptToPx,
+  px,
+  resolveTarget,
+} from "./ooxml";
+import { type FillResolver, parseChart, renderChartSvg } from "./ooxmlChart";
 
 /**
  * Converts an XLSX file to one self-contained HTML document per sheet with
@@ -32,11 +45,12 @@ export async function xlsxToHtml(file: File | Blob | ArrayBuffer): Promise<XlsxH
     cellXfs: [],
     dxfs: [],
     date1904: false,
+    mediaCache: new Map(),
   };
 
   loadWorkbookProps(ctx);
+  await loadThemeColors(ctx); // before shared strings so rich-text run colors resolve
   await loadSharedStrings(ctx);
-  await loadThemeColors(ctx);
   await loadCellStyles(ctx);
 
   const sheets = await getSheetEntries(ctx);
@@ -49,7 +63,8 @@ export async function xlsxToHtml(file: File | Blob | ArrayBuffer): Promise<XlsxH
     const xml = await zip.file(entry.path)?.async("string");
     if (!xml) continue;
     const rels = await loadSheetRels(ctx, entry.path);
-    out.sheets.push({ name: entry.name, html: renderSheet(ctx, xml, rels) });
+    const drawing = await loadSheetDrawing(ctx, entry.path);
+    out.sheets.push({ name: entry.name, html: await renderSheet(ctx, xml, rels, drawing) });
   }
 
   if (out.sheets.length === 0) {
@@ -92,6 +107,14 @@ interface CellXf {
   hAlign?: string;
   vAlign?: string;
   wrapText?: boolean;
+  indent?: number;
+  rotation?: number;
+}
+
+/** A shared/inline string: pre-rendered HTML plus its plain text (for matching). */
+interface RichString {
+  html: string;
+  text: string;
 }
 
 /** Differential format (ECMA-376 §18.8.14) referenced by conditional rules. */
@@ -107,7 +130,7 @@ interface Dxf {
 interface XlsxCtx {
   zip: JSZip;
   workbookDoc: Document | null;
-  sharedStrings: string[];
+  sharedStrings: RichString[];
   themeColors: string[];
   numFmts: Map<number, string>;
   fonts: FontStyle[];
@@ -116,6 +139,8 @@ interface XlsxCtx {
   cellXfs: CellXf[];
   dxfs: Dxf[];
   date1904: boolean;
+  /** media part path → data URL (embedded drawing images) */
+  mediaCache: Map<string, string>;
 }
 
 function els(parent: Document | Element | undefined | null, name: string): Element[] {
@@ -136,11 +161,56 @@ async function loadSharedStrings(ctx: XlsxCtx): Promise<void> {
   const xml = await ctx.zip.file("xl/sharedStrings.xml")?.async("string");
   if (!xml) return;
   const doc = parseXml(xml);
-  ctx.sharedStrings = els(doc, "si").map((si) =>
-    els(si, "t")
+  ctx.sharedStrings = els(doc, "si").map((si) => parseRichString(si, ctx));
+}
+
+/** CSS for a rich-text run's <rPr> (b/i/u/strike/sz/color/font). */
+function richRunStyle(rPr: Element | undefined, ctx: XlsxCtx): string {
+  if (!rPr) return "";
+  const on = (name: string): boolean => {
+    const el = firstEl(rPr, name);
+    if (!el) return false;
+    const v = el.getAttribute("val");
+    return v !== "0" && v !== "false";
+  };
+  const s: string[] = [];
+  if (on("b")) s.push("font-weight:bold");
+  if (on("i")) s.push("font-style:italic");
+  const deco: string[] = [];
+  if (on("u")) deco.push("underline");
+  if (on("strike")) deco.push("line-through");
+  if (deco.length) s.push(`text-decoration:${deco.join(" ")}`);
+  const sz = firstEl(rPr, "sz")?.getAttribute("val");
+  if (sz) s.push(`font-size:${px(ptToPx(parseFloat(sz)))}`);
+  const color = xlsxColor(firstEl(rPr, "color"), ctx);
+  if (color) s.push(`color:${color}`);
+  const font = firstEl(rPr, "rFont")?.getAttribute("val") || firstEl(rPr, "name")?.getAttribute("val");
+  if (font) s.push(`font-family:${cssFontStack(font)}`);
+  return s.join(";");
+}
+
+/**
+ * Parse a shared-string <si> or inline <is>. Plain strings collapse to escaped
+ * text; rich strings (multiple <r> runs) render each run as a styled span so
+ * inline bold/italic/color/font is preserved.
+ */
+function parseRichString(node: Element, ctx: XlsxCtx): RichString {
+  const runs = els(node, "r");
+  if (!runs.length) {
+    const text = els(node, "t")
       .map((t) => t.textContent ?? "")
-      .join(""),
-  );
+      .join("");
+    return { html: escapeHtml(text), text };
+  }
+  let html = "";
+  let text = "";
+  for (const r of runs) {
+    const t = firstEl(r, "t")?.textContent ?? "";
+    text += t;
+    const style = richRunStyle(firstEl(r, "rPr"), ctx);
+    html += style ? `<span style="${style};">${escapeHtml(t)}</span>` : escapeHtml(t);
+  }
+  return { html, text };
 }
 
 /** Excel theme color indices: lt1, dk1, lt2, dk2, accent1–6, hlink, folHlink */
@@ -325,6 +395,8 @@ async function loadCellStyles(ctx: XlsxCtx): Promise<void> {
       hAlign: alignment?.getAttribute("horizontal") ?? undefined,
       vAlign: alignment?.getAttribute("vertical") ?? undefined,
       wrapText: alignment?.getAttribute("wrapText") === "1" || alignment?.getAttribute("wrapText") === "true",
+      indent: parseInt(alignment?.getAttribute("indent") || "0", 10) || undefined,
+      rotation: parseInt(alignment?.getAttribute("textRotation") || "0", 10) || undefined,
     });
   }
 
@@ -406,6 +478,144 @@ async function loadSheetRels(ctx: XlsxCtx, sheetPath: string): Promise<Map<strin
     if (id && target && rel.getAttribute("TargetMode") === "External") map.set(id, target);
   }
   return map;
+}
+
+// ============================================================================
+// Worksheet drawings (embedded images & charts)
+// ============================================================================
+
+interface SheetDrawing {
+  doc: Document;
+  path: string;
+  rels: Map<string, string>;
+}
+
+/** Load a worksheet's drawing part (drawingN.xml) and its relationships. */
+async function loadSheetDrawing(ctx: XlsxCtx, sheetPath: string): Promise<SheetDrawing | null> {
+  const dir = sheetPath.substring(0, sheetPath.lastIndexOf("/"));
+  const name = sheetPath.substring(sheetPath.lastIndexOf("/") + 1);
+  const relsXml = await ctx.zip.file(`${dir}/_rels/${name}.rels`)?.async("string");
+  if (!relsXml) return null;
+
+  let target: string | undefined;
+  for (const rel of els(parseXml(relsXml), "Relationship")) {
+    if ((rel.getAttribute("Type") || "").endsWith("/drawing")) target = rel.getAttribute("Target") || undefined;
+  }
+  if (!target) return null;
+
+  const drawingPath = resolveTarget(sheetPath, target);
+  const dxml = await ctx.zip.file(drawingPath)?.async("string");
+  if (!dxml) return null;
+
+  const ddir = drawingPath.substring(0, drawingPath.lastIndexOf("/"));
+  const dname = drawingPath.substring(drawingPath.lastIndexOf("/") + 1);
+  const drelsXml = await ctx.zip.file(`${ddir}/_rels/${dname}.rels`)?.async("string");
+  const rels = new Map<string, string>();
+  if (drelsXml) {
+    for (const rel of els(parseXml(drelsXml), "Relationship")) {
+      const id = rel.getAttribute("Id");
+      const t = rel.getAttribute("Target");
+      if (id && t) rels.set(id, t);
+    }
+  }
+  return { doc: parseXml(dxml), path: drawingPath, rels };
+}
+
+const REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+/** DrawingML scheme/srgb color resolver for chart fills, using the workbook theme. */
+function drawingFill(ctx: XlsxCtx): FillResolver {
+  const tc = ctx.themeColors;
+  const scheme: Record<string, string | undefined> = {
+    lt1: tc[0], dk1: tc[1], lt2: tc[2], dk2: tc[3],
+    bg1: tc[0], tx1: tc[1], bg2: tc[2], tx2: tc[3],
+    accent1: tc[4], accent2: tc[5], accent3: tc[6], accent4: tc[7], accent5: tc[8], accent6: tc[9],
+    hlink: tc[10], folHlink: tc[11],
+  };
+  return (spPr) => {
+    const fill = child(spPr, "a:solidFill");
+    if (!fill) return undefined;
+    const srgb = child(fill, "a:srgbClr");
+    if (srgb?.getAttribute("val")) return `#${srgb.getAttribute("val")}`;
+    const sch = child(fill, "a:schemeClr");
+    if (sch) {
+      const hex = scheme[sch.getAttribute("val") || ""];
+      if (hex) return `#${hex}`;
+    }
+    return undefined;
+  };
+}
+
+/**
+ * Render a sheet's drawings as an absolutely-positioned overlay. `colX`/`rowY`
+ * convert a grid cell index to its pixel offset within the rendered table.
+ */
+async function renderDrawings(
+  ctx: XlsxCtx,
+  drawing: SheetDrawing,
+  colX: (c: number) => number,
+  rowY: (r: number) => number,
+): Promise<string> {
+  const anchors = [...els(drawing.doc, "twoCellAnchor"), ...els(drawing.doc, "oneCellAnchor")];
+  if (!anchors.length) return "";
+
+  const accents = ctx.themeColors.slice(4, 10).map((h) => (h ? `#${h}` : undefined));
+  const resolveFill = drawingFill(ctx);
+  const items: string[] = [];
+
+  for (const anchor of anchors) {
+    const from = firstEl(anchor, "from");
+    if (!from) continue;
+    const num = (parent: Element | undefined, tag: string) => parseInt(firstEl(parent, tag)?.textContent || "0", 10);
+    const fromCol = num(from, "col");
+    const fromRow = num(from, "row");
+    const x = colX(fromCol) + emuToPx(num(from, "colOff"));
+    const y = rowY(fromRow) + emuToPx(num(from, "rowOff"));
+
+    let w: number;
+    let h: number;
+    const to = firstEl(anchor, "to");
+    if (to) {
+      w = colX(num(to, "col")) + emuToPx(num(to, "colOff")) - x;
+      h = rowY(num(to, "row")) + emuToPx(num(to, "rowOff")) - y;
+    } else {
+      const ext = firstEl(anchor, "ext");
+      w = emuToPx(parseInt(ext?.getAttribute("cx") || "0", 10));
+      h = emuToPx(parseInt(ext?.getAttribute("cy") || "0", 10));
+    }
+    if (w <= 0 || h <= 0) continue;
+    const pos = `position:absolute;left:${px(x)};top:${px(y)};width:${px(w)};height:${px(h)};`;
+
+    // Picture
+    const blip = firstEl(anchor, "blip");
+    if (blip) {
+      const rId = blip.getAttributeNS(REL_NS, "embed") || blip.getAttribute("r:embed");
+      const target = rId ? drawing.rels.get(rId) : undefined;
+      if (target) {
+        const url = await loadMediaDataUrl(ctx.zip, ctx.mediaCache, resolveTarget(drawing.path, target));
+        if (url) items.push(`<img src="${url}" alt="" style="${pos}object-fit:contain;"/>`);
+      }
+      continue;
+    }
+
+    // Chart
+    const chartEl = firstEl(anchor, "chart");
+    if (chartEl) {
+      const rId = chartEl.getAttributeNS(REL_NS, "id") || chartEl.getAttribute("r:id");
+      const target = rId ? drawing.rels.get(rId) : undefined;
+      if (target) {
+        const cxml = await ctx.zip.file(resolveTarget(drawing.path, target))?.async("string");
+        if (cxml) {
+          const data = parseChart(parseXml(cxml), resolveFill, accents);
+          if (data?.series.length) {
+            items.push(`<div style="${pos}background:#fff;border:1px solid #E3E6EA;">${renderChartSvg(data, w, h)}</div>`);
+          }
+        }
+      }
+    }
+  }
+
+  return items.length ? `<div style="position:absolute;top:0;left:0;pointer-events:none;">${items.join("")}</div>` : "";
 }
 
 // ============================================================================
@@ -1221,7 +1431,12 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): string {
+async function renderSheet(
+  ctx: XlsxCtx,
+  xml: string,
+  extRels: Map<string, string>,
+  drawing: SheetDrawing | null,
+): Promise<string> {
   const doc = parseXml(xml);
 
   const showGridLines = firstEl(doc, "sheetView")?.getAttribute("showGridLines") !== "0";
@@ -1327,18 +1542,19 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
       let rawNum: number | undefined;
       let rawText: string | undefined;
       if (type === "s") {
-        rawText = ctx.sharedStrings[parseInt(v, 10)] ?? "";
-        html = escapeHtml(rawText);
+        const ss = ctx.sharedStrings[parseInt(v, 10)];
+        html = ss?.html ?? "";
+        rawText = ss?.text ?? "";
         kind = "s";
       } else if (type === "str") {
         rawText = v;
         html = escapeHtml(v);
         kind = "s";
       } else if (type === "inlineStr" || (!vEl && firstEl(cell, "is"))) {
-        rawText = els(firstEl(cell, "is"), "t")
-          .map((t) => t.textContent ?? "")
-          .join("");
-        html = escapeHtml(rawText);
+        const isEl = firstEl(cell, "is");
+        const rich = isEl ? parseRichString(isEl, ctx) : { html: "", text: "" };
+        html = rich.html;
+        rawText = rich.text;
         kind = "s";
       } else if (type === "b") {
         html = v === "1" ? "TRUE" : "FALSE";
@@ -1449,6 +1665,12 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
     else if (xf?.vAlign === "top") styles.push("vertical-align:top");
     if (xf?.wrapText) styles.push("white-space:pre-wrap", "word-wrap:break-word");
 
+    // Indent (~8px per level), applied on the alignment side.
+    if (xf?.indent) {
+      const pad = 4 + xf.indent * 8;
+      styles.push(hAlign === "right" ? `padding-right:${pad}px` : `padding-left:${pad}px`);
+    }
+
     const result = styles.join(";");
     styleCache.set(cacheKey, result);
     return result;
@@ -1525,9 +1747,21 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
       const spanAttrs = merge
         ? `${merge.cols > 1 ? ` colspan="${merge.cols}"` : ""}${merge.rows > 1 ? ` rowspan="${merge.rows}"` : ""}`
         : "";
-      const inner = data?.link
+      let inner = data?.link
         ? `<a href="${escapeHtml(data.link)}" target="_blank" rel="noreferrer">${data.html}</a>`
         : (data?.html ?? "");
+      // Text rotation: 1–90 = counter-clockwise, 91–180 = clockwise (val−90),
+      // 255 = vertically stacked. Wrap content so the cell box stays put.
+      const rot = data ? ctx.cellXfs[data.styleIdx]?.rotation : undefined;
+      if (rot && inner) {
+        const transform =
+          rot === 255 ? "" : `transform:rotate(${rot <= 90 ? -rot : rot - 90}deg);`;
+        const css =
+          rot === 255
+            ? "writing-mode:vertical-rl;text-orientation:upright;"
+            : `display:inline-block;${transform}transform-origin:center;white-space:nowrap;`;
+        inner = `<span style="${css}">${inner}</span>`;
+      }
       tds.push(`<td${spanAttrs}${styleAttr}>${iconHtml}${inner}</td>`);
     }
 
@@ -1538,6 +1772,34 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
   const truncationNote = truncated
     ? `<div class="trunc">Preview truncated to ${MAX_ROWS} rows × ${MAX_COLS} columns — download the file for the full sheet.</div>`
     : "";
+
+  // Drawing overlay (images & charts). Positions are relative to the table's
+  // top-left, so account for the leading row-number column and header row.
+  let overlay = "";
+  if (drawing) {
+    const ROWNUM_W = 46;
+    const HEADER_H = 20;
+    const colW = (c: number) => (hiddenCols.has(c) ? 0 : (colWidthPx.get(c) ?? 64));
+    const rowH = (r: number) => (hiddenRows.has(r) ? 0 : (rowHeightPx.get(r) ?? 20));
+    const colX = (c: number) => {
+      let x = ROWNUM_W;
+      for (let i = 0; i < c; i++) x += colW(i);
+      return x;
+    };
+    const rowY = (r: number) => {
+      let y = HEADER_H;
+      for (let i = 0; i < r; i++) y += rowH(i);
+      return y;
+    };
+    overlay = await renderDrawings(ctx, drawing, colX, rowY);
+  }
+
+  const tableHtml =
+    `<table><colgroup>${colgroup.join("")}</colgroup><thead><tr>${headerCells.join("")}</tr></thead><tbody>` +
+    `${bodyRows.join("")}</tbody></table>`;
+  const grid = overlay
+    ? `<div style="position:relative;display:inline-block;">${tableHtml}${overlay}</div>`
+    : tableHtml;
 
   return [
     "<!DOCTYPE html>",
@@ -1555,9 +1817,7 @@ function renderSheet(ctx: XlsxCtx, xml: string, extRels: Map<string, string>): s
     ".trunc{padding:6px 10px;background:#FFF7E0;color:#8A6D1A;font-size:12px;border-bottom:1px solid #EFE3B5;position:sticky;top:0;z-index:4;}",
     "</style></head><body>",
     truncationNote,
-    `<table><colgroup>${colgroup.join("")}</colgroup><thead><tr>${headerCells.join("")}</tr></thead><tbody>`,
-    ...bodyRows,
-    "</tbody></table>",
+    grid,
     "</body></html>",
   ].join("");
 }
