@@ -511,6 +511,9 @@ function runStyles(ctx: DocxCtx, chain: (Element | undefined)[]): string[] {
   return styles;
 }
 
+/** Private-use marker for a tab character, resolved during paragraph assembly. */
+const TAB_SENTINEL = "\uE000";
+
 async function renderRun(ctx: DocxCtx, r: Element, pStyleId: string | undefined): Promise<string> {
   const rPr = child(r, "w:rPr");
   const chain = buildRPrChain(ctx, rPr, pStyleId);
@@ -531,7 +534,9 @@ async function renderRun(ctx: DocxCtx, r: Element, pStyleId: string | undefined)
         parts.push("<br/>");
         break;
       case "w:tab":
-        parts.push('<span style="display:inline-block;width:36px;"></span>');
+        // Sentinel — the paragraph turns these into fixed spacers or, for
+        // TOC/index-style tab stops, flex segments with leaders.
+        parts.push(TAB_SENTINEL);
         break;
       case "w:noBreakHyphen":
         parts.push("&#8209;");
@@ -564,6 +569,9 @@ async function renderRun(ctx: DocxCtx, r: Element, pStyleId: string | undefined)
 
   const text = parts.join("");
   if (!text) return "";
+  // A tab-only run returns bare sentinels so the paragraph can split on them
+  // for tab-stop layout without breaking span nesting.
+  if (parts.every((p) => p === TAB_SENTINEL)) return text;
   return styles.length ? `<span style="${styles.join(";")};">${text}</span>` : text;
 }
 
@@ -997,6 +1005,37 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
     }
   };
   await walkInline(p);
+
+  // Tabs: TOC/index-style tab stops (a leader, or right/center/decimal stops)
+  // become a flex row whose tab gaps stretch and carry leader dots; everything
+  // else keeps a simple fixed-width spacer.
+  if (html.includes(TAB_SENTINEL)) {
+    const tabsEl = chainChild(pChain, "w:tabs");
+    const stops = tabsEl
+      ? childList(tabsEl, "w:tab")
+          .map((t) => ({ val: t.getAttribute("w:val"), leader: t.getAttribute("w:leader") }))
+          .filter((t) => t.val !== "clear")
+      : [];
+    const leaderStop = stops.find((t) => t.leader && t.leader !== "none");
+    const advanced = !!leaderStop || stops.some((t) => t.val === "right" || t.val === "center" || t.val === "decimal");
+    if (advanced) {
+      const leaderCls =
+        leaderStop?.leader === "underscore"
+          ? " ld-u"
+          : leaderStop?.leader === "hyphen"
+            ? " ld-h"
+            : leaderStop?.leader
+              ? " ld-d"
+              : "";
+      const segs = html.split(TAB_SENTINEL);
+      const inner = segs
+        .map((s, i) => (i === 0 ? `<span>${s}</span>` : `<span class="tab-ld${leaderCls}"></span><span>${s}</span>`))
+        .join("");
+      html = `<div class="tab-row">${inner}</div>`;
+    } else {
+      html = html.split(TAB_SENTINEL).join('<span style="display:inline-block;min-width:36px;"></span>');
+    }
+  }
 
   // List marker
   let markerHtml = "";
@@ -1450,6 +1489,11 @@ async function renderDocument(ctx: DocxCtx): Promise<string> {
     ".hf-top{margin-bottom:12px;}",
     ".hf-bot{margin-top:auto;padding-top:8px;}",
     ".hf .p{min-height:0;}",
+    ".tab-row{display:flex;align-items:baseline;width:100%;}",
+    ".tab-ld{flex:1 1 auto;min-width:1.5em;align-self:center;height:0;margin:0 3px;position:relative;top:0.35em;}",
+    ".tab-ld.ld-d{border-bottom:1.5px dotted;}",
+    ".tab-ld.ld-h{border-bottom:1px dashed;}",
+    ".tab-ld.ld-u{border-bottom:1px solid;top:0.45em;}",
     "</style></head><body>",
     pagesHtml,
     // Fit the page to the viewport width
