@@ -54,6 +54,7 @@ import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { useBackground } from "@/shell/hooks/useBackground";
 import { ChatInputAttachments } from "./ChatInputAttachments";
+import { formatArtifactReference } from "./chatMessageUtils";
 
 export function ChatInput() {
   const config = getConfig();
@@ -101,9 +102,9 @@ export function ChatInput() {
 
   const [attachments, setAttachments] = useState<Content[]>([]);
   // Documents attached in the chat input are uploaded into the artifacts
-  // workspace instead of being extracted to inline text. We track lightweight
-  // references here for the chip UI and the on-send reference line.
-  const [artifactAttachments, setArtifactAttachments] = useState<{ path: string; name: string }[]>([]);
+  // workspace instead of being extracted to inline text. We track their paths
+  // here for the chip UI and the on-send reference line.
+  const [artifactAttachments, setArtifactAttachments] = useState<string[]>([]);
   const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
 
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
@@ -255,10 +256,10 @@ export function ChatInput() {
 
             if (fs && canConvert(effectiveFile)) {
               const processed = await processUploadedFile(effectiveFile);
-              const artifacts: { path: string; name: string }[] = [];
+              const artifacts: string[] = [];
               for (const p of processed) {
                 await fs.createFile(p.path, p.content, p.contentType);
-                artifacts.push({ path: p.path, name: p.path.split("/").pop() ?? p.path });
+                artifacts.push(p.path);
               }
               return { artifacts };
             }
@@ -272,7 +273,7 @@ export function ChatInput() {
       );
 
       const newContents: Content[] = [];
-      const newArtifacts: { path: string; name: string }[] = [];
+      const newArtifacts: string[] = [];
       for (const result of results) {
         if (result.status !== "fulfilled") continue;
         if ("content" in result.value && result.value.content) newContents.push(result.value.content);
@@ -350,12 +351,12 @@ export function ChatInput() {
         const messageContent: Content[] = [{ type: "text", text: content }, ...finalAttachments];
 
         // Tell the model which files were uploaded into the artifacts workspace
-        // so it knows to read them (their content is no longer inlined).
+        // so it knows to read them (their content is no longer inlined). The UI
+        // renders this line back as clickable artifact chips.
         if (artifactAttachments.length > 0) {
-          const list = artifactAttachments.map((a) => a.path).join(", ");
           const reference: TextContent = {
             type: "text",
-            text: `Attached files (available in the artifacts workspace): ${list}`,
+            text: formatArtifactReference(artifactAttachments),
           };
           messageContent.push(reference);
         }
@@ -438,12 +439,10 @@ export function ChatInput() {
   const handleRemoveArtifactAttachment = useCallback(
     (index: number) => {
       setArtifactAttachments((prev) => {
-        const target = prev[index];
-        if (target && artifactsFs) {
+        const path = prev[index];
+        if (path && artifactsFs) {
           // Remove the orphaned file from the artifacts workspace too.
-          artifactsFs
-            .deleteFile(target.path)
-            .catch((error) => console.error("Failed to remove artifact attachment:", error));
+          artifactsFs.deleteFile(path).catch((error) => console.error("Failed to remove artifact attachment:", error));
         }
         return prev.filter((_, i) => i !== index);
       });

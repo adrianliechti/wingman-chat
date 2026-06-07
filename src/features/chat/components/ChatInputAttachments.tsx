@@ -3,14 +3,10 @@ import { memo } from "react";
 
 import type { Content } from "@/shared/types/chat";
 
-interface ArtifactAttachment {
-  path: string;
-  name: string;
-}
-
 interface ChatInputAttachmentsProps {
   attachments: Content[];
-  artifactAttachments?: ArtifactAttachment[];
+  /** Paths of files uploaded into the artifacts workspace. */
+  artifactAttachments?: string[];
   extractingAttachments: Set<string>;
   onRemove?: (index: number) => void;
   onRemoveArtifact?: (index: number) => void;
@@ -101,11 +97,11 @@ export const ChatInputAttachments = memo(
         ))}
 
         {/* Artifact attachments (documents uploaded into the artifacts workspace) */}
-        {artifactAttachments.map((artifact, index) => (
+        {artifactAttachments.map((path, index) => (
           <div
-            key={`artifact:${artifact.path}`}
+            key={`artifact:${path}`}
             className="relative size-14 bg-white/40 dark:bg-black/25 backdrop-blur-lg rounded-xl border border-white/40 dark:border-white/25 shadow-sm flex items-center justify-center group hover:shadow-md hover:border-white/60 dark:hover:border-white/40 transition-all"
-            title={artifact.name}
+            title={path.split("/").pop() || path}
           >
             <div className="text-neutral-600 dark:text-neutral-300">
               <FileText size={24} />

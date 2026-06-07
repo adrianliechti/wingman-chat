@@ -4,6 +4,26 @@ import type { Message, TextContent, ToolResultContent } from "@/shared/types/cha
 // notebook source tools use a `source_` prefix and a different filesystem).
 const ARTIFACT_WRITE_TOOLS = new Set(["create_file", "execute_python_code", "execute_bash_code"]);
 
+// User attachments are uploaded into the artifacts workspace and referenced in
+// the sent message by this prose line so the model knows to read them. The UI
+// parses it back to render clickable artifact chips instead of the raw text.
+const ARTIFACT_REFERENCE_PREFIX = "Attached files (available in the artifacts workspace): ";
+
+/** Build the model-facing reference line for files attached to a message. */
+export function formatArtifactReference(paths: string[]): string {
+  return `${ARTIFACT_REFERENCE_PREFIX}${paths.join(", ")}`;
+}
+
+/** Extract artifact paths from a reference line, or [] if it isn't one. */
+export function parseArtifactReference(text: string): string[] {
+  if (!text.startsWith(ARTIFACT_REFERENCE_PREFIX)) return [];
+  return text
+    .slice(ARTIFACT_REFERENCE_PREFIX.length)
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
 function parsePathFromJson(raw: string | undefined): string | null {
   if (!raw) return null;
   try {

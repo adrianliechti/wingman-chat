@@ -1,5 +1,6 @@
 import { Pencil } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
+import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { cn } from "@/shared/lib/cn";
 import type { AudioContent, Content, FileContent, ImageContent, Message, TextContent } from "@/shared/types/chat";
@@ -7,6 +8,7 @@ import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { CopyButton } from "@/shared/ui/CopyButton";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatMessageEditor } from "./ChatMessageEditor";
+import { parseArtifactReference } from "./chatMessageUtils";
 
 type ChatUserMessageProps = {
   message: Message;
@@ -29,6 +31,15 @@ export const ChatUserMessage = memo(function ChatUserMessage({
   // Get additional text parts (file attachments) - all text content after the first one
   const textParts = message.content.filter((p): p is TextContent => p.type === "text");
   const additionalTextContent = textParts.slice(1);
+  // Split off artifact-attachment references — rendered as clickable chips that
+  // open the file in the artifacts editor — from any other plain text parts.
+  const attachedArtifactPaths: string[] = [];
+  const plainTextAttachments: TextContent[] = [];
+  for (const part of additionalTextContent) {
+    const paths = parseArtifactReference(part.text);
+    if (paths.length) attachedArtifactPaths.push(...paths);
+    else plainTextAttachments.push(part);
+  }
   const [editAdditionalTextContent, setEditAdditionalTextContent] = useState<TextContent[]>(additionalTextContent);
   // Get media content (images, audio, files) for editing
   const mediaContent = message.content.filter(
@@ -146,10 +157,18 @@ export const ChatUserMessage = memo(function ChatUserMessage({
           <>
             <div className="rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 wrap-break-words overflow-x-auto">
               <pre className="whitespace-pre-wrap font-sans">{textContent}</pre>
-              {/* Show additional text content (file attachments) as attachment tiles */}
-              {additionalTextContent.length > 0 && (
+              {/* Artifact attachments — clickable chips that open the file in the editor */}
+              {attachedArtifactPaths.length > 0 && (
+                <div className="pt-2 flex flex-wrap gap-2">
+                  {attachedArtifactPaths.map((path) => (
+                    <ArtifactChip key={path} path={path} />
+                  ))}
+                </div>
+              )}
+              {/* Any remaining plain text attachments as attachment tiles */}
+              {plainTextAttachments.length > 0 && (
                 <div className="pt-2">
-                  <ChatInputAttachments attachments={additionalTextContent} extractingAttachments={new Set()} />
+                  <ChatInputAttachments attachments={plainTextAttachments} extractingAttachments={new Set()} />
                 </div>
               )}
 
