@@ -523,6 +523,99 @@ async function renderRun(ctx: DocxCtx, r: Element, pStyleId: string | undefined)
 // Images
 // ============================================================================
 
+/** Resolve a DrawingML color container (a:solidFill / a:ln) to CSS. Handles
+ *  srgbClr and schemeClr (mapped to the document theme). */
+function dmlSolidColor(fill: Element | undefined, ctx: DocxCtx): string | undefined {
+  if (!fill) return undefined;
+  const srgb = fill.getElementsByTagName("a:srgbClr")[0];
+  if (srgb) {
+    const v = srgb.getAttribute("val");
+    if (v) return `#${v}`;
+  }
+  const sch = fill.getElementsByTagName("a:schemeClr")[0];
+  if (sch) {
+    const v = sch.getAttribute("val") || "";
+    const slot = ({ tx1: "dk1", bg1: "lt1", tx2: "dk2", bg2: "lt2" } as Record<string, string>)[v] || v;
+    const hex = ctx.theme.colors[slot];
+    if (hex) return `#${hex}`;
+  }
+  return undefined;
+}
+
+/** Render a DrawingML WordprocessingShape (text box / autoshape with text). */
+async function renderWpShape(ctx: DocxCtx, container: Element, wsp: Element, w: number, h: number): Promise<string> {
+  const spPr = wsp.getElementsByTagName("wps:spPr")[0] ?? child(wsp, "wps:spPr");
+
+  // Fill (solid; gradient approximated by its first stop)
+  let bg = dmlSolidColor(child(spPr, "a:solidFill"), ctx);
+  if (!bg) bg = dmlSolidColor(descend(spPr, "a:gradFill", "a:gsLst"), ctx);
+  const noFill = !!child(spPr, "a:noFill");
+
+  // Outline
+  const ln = child(spPr, "a:ln");
+  let borderCssVal: string | undefined;
+  if (ln && !child(ln, "a:noFill")) {
+    const color = dmlSolidColor(child(ln, "a:solidFill"), ctx);
+    if (color) {
+      const wEmu = intAttr(ln, "w");
+      const widthPx = Math.max(wEmu ? emuToPx(wEmu) : 1, 0.75);
+      const dash = child(ln, "a:prstDash")?.getAttribute("val") || "";
+      const style = dash.includes("dot") ? "dotted" : dash.includes("dash") ? "dashed" : "solid";
+      borderCssVal = `${px(widthPx)} ${style} ${color}`;
+    }
+  }
+
+  // Geometry → border-radius for round/ellipse
+  const prst = descend(spPr, "a:prstGeom")?.getAttribute("prst");
+  let radiusCss: string | undefined;
+  if (prst === "ellipse") radiusCss = "border-radius:50%";
+  else if (prst?.startsWith("round")) radiusCss = `border-radius:${px(Math.min(w, h) * 0.12 || 8)}`;
+
+  // Body insets + vertical anchor
+  const bodyPr = child(wsp, "wps:bodyPr");
+  const lIns = emuToPx(intAttr(bodyPr, "lIns") ?? 91440);
+  const rIns = emuToPx(intAttr(bodyPr, "rIns") ?? 91440);
+  const tIns = emuToPx(intAttr(bodyPr, "tIns") ?? 45720);
+  const bIns = emuToPx(intAttr(bodyPr, "bIns") ?? 45720);
+  const anchor = bodyPr?.getAttribute("anchor");
+
+  // Text content
+  const content = wsp.getElementsByTagName("w:txbxContent")[0];
+  let inner = "";
+  if (content) {
+    for (const blk of content.children) {
+      if (blk.tagName === "w:p") inner += (await renderParagraph(ctx, blk)).html;
+      else if (blk.tagName === "w:tbl") inner += await renderTable(ctx, blk);
+    }
+  }
+  // A shape with neither text, fill nor outline isn't worth a box.
+  if (!inner && !bg && !borderCssVal) return "";
+
+  const isAnchor = container.tagName === "wp:anchor";
+  const vCenter = anchor === "ctr" || anchor === "b";
+  const styles = [`width:${px(w)}`, "box-sizing:border-box", "overflow:hidden"];
+  if (h) styles.push(`min-height:${px(h)}`);
+  styles.push(`padding:${px(tIns)} ${px(rIns)} ${px(bIns)} ${px(lIns)}`);
+  if (bg && !noFill) styles.push(`background:${bg}`);
+  if (borderCssVal) styles.push(`border:${borderCssVal}`);
+  if (radiusCss) styles.push(radiusCss);
+
+  if (vCenter) {
+    styles.push("display:flex", "flex-direction:column", `justify-content:${anchor === "ctr" ? "center" : "flex-end"}`);
+  } else {
+    styles.push(`display:${isAnchor ? "block" : "inline-block"}`);
+    if (!isAnchor) styles.push("vertical-align:top");
+  }
+  if (isAnchor) {
+    const align = descend(container, "wp:positionH", "wp:align")?.textContent;
+    if (align === "right") styles.push("float:right", "margin:4px 0 4px 12px");
+    else if (align === "left") styles.push("float:left", "margin:4px 12px 4px 0");
+    else styles.push("margin:8px auto");
+  }
+
+  return `<div style="${styles.join(";")};">${inner}</div>`;
+}
+
 async function renderDrawing(ctx: DocxCtx, drawing: Element): Promise<string> {
   const container = child(drawing, "wp:inline") ?? child(drawing, "wp:anchor");
   if (!container) return "";
@@ -532,38 +625,75 @@ async function renderDrawing(ctx: DocxCtx, drawing: Element): Promise<string> {
   const h = emuToPx(intAttr(extent, "cy") ?? 0);
 
   const graphicData = descend(container, "a:graphic", "a:graphicData");
+
+  // Picture (a:blip)
   const blip = graphicData?.getElementsByTagName("a:blip")[0];
-  const rId = getRId(blip);
-  const rel = rId ? ctx.rels.get(rId) : undefined;
-
-  if (!rel || rel.external) {
-    const uri = graphicData?.getAttribute("uri") || "";
-    if (uri.includes("/chart") || uri.includes("/diagram")) {
-      return (
-        `<span style="display:inline-block;width:${px(w)};height:${px(h)};border:1px dashed #c0c0c0;` +
-        `border-radius:4px;color:#909090;font-size:12px;text-align:center;line-height:${px(h)};">Chart</span>`
-      );
+  if (blip) {
+    const rId = getRId(blip);
+    const rel = rId ? ctx.rels.get(rId) : undefined;
+    if (rel && !rel.external) {
+      const url = await loadDocxMedia(ctx, resolveTarget("word/document.xml", rel.target));
+      if (url) {
+        const styles = [`width:${px(w)}`, `height:${px(h)}`];
+        if (container.tagName === "wp:anchor") {
+          const align = descend(container, "wp:positionH", "wp:align")?.textContent;
+          if (align === "right") styles.push("float:right", "margin:4px 0 4px 12px");
+          else if (align === "left") styles.push("float:left", "margin:4px 12px 4px 0");
+          else styles.push("display:block", "margin:8px auto");
+        } else {
+          styles.push("vertical-align:middle");
+        }
+        return `<img src="${url}" alt="" style="${styles.join(";")};"/>`;
+      }
     }
-    return "";
   }
 
-  const url = await loadDocxMedia(ctx, resolveTarget("word/document.xml", rel.target));
-  if (!url) return "";
+  // Text box / shape (wps:wsp)
+  const wsp = graphicData?.getElementsByTagName("wps:wsp")[0];
+  if (wsp) return renderWpShape(ctx, container, wsp, w, h);
 
-  const styles = [`width:${px(w)}`, `height:${px(h)}`];
-  if (container.tagName === "wp:anchor") {
-    const align = descend(container, "wp:positionH", "wp:align")?.textContent;
-    if (align === "right") styles.push("float:right", "margin:4px 0 4px 12px");
-    else if (align === "left") styles.push("float:left", "margin:4px 12px 4px 0");
-    else styles.push("display:block", "margin:8px auto");
-  } else {
-    styles.push("vertical-align:middle");
+  // Chart / diagram placeholder
+  const uri = graphicData?.getAttribute("uri") || "";
+  if (uri.includes("/chart") || uri.includes("/diagram")) {
+    return (
+      `<span style="display:inline-block;width:${px(w)};height:${px(h)};border:1px dashed #c0c0c0;` +
+      `border-radius:4px;color:#909090;font-size:12px;text-align:center;line-height:${px(h)};">Chart</span>`
+    );
   }
-
-  return `<img src="${url}" alt="" style="${styles.join(";")};"/>`;
+  return "";
 }
 
 async function renderLegacyPict(ctx: DocxCtx, pict: Element): Promise<string> {
+  // VML text box (v:shape/v:rect/v:roundrect with a <v:textbox><w:txbxContent>)
+  const txbxContent = pict.getElementsByTagName("w:txbxContent")[0];
+  if (txbxContent) {
+    const shape =
+      pict.getElementsByTagName("v:shape")[0] ??
+      pict.getElementsByTagName("v:rect")[0] ??
+      pict.getElementsByTagName("v:roundrect")[0];
+    const styleAttr = shape?.getAttribute("style") || "";
+    const wMatch = styleAttr.match(/width:([\d.]+)pt/);
+    const hMatch = styleAttr.match(/height:([\d.]+)pt/);
+    const styles = ["display:inline-block", "vertical-align:top", "box-sizing:border-box", "padding:4px 6px"];
+    if (wMatch) styles.push(`width:${px(ptToPx(parseFloat(wMatch[1])))}`);
+    if (hMatch) styles.push(`min-height:${px(ptToPx(parseFloat(hMatch[1])))}`);
+    const fill = shape?.getAttribute("fillcolor");
+    if (fill && shape?.getAttribute("filled") !== "f") styles.push(`background:${fill}`);
+    if (shape?.getAttribute("stroked") !== "f") {
+      const stroke = shape?.getAttribute("strokecolor") || "#000000";
+      const sw = shape?.getAttribute("strokeweight");
+      const swPx = sw ? ptToPx(parseFloat(sw)) : 1;
+      styles.push(`border:${px(Math.max(swPx, 0.75))} solid ${stroke}`);
+    }
+    if (shape?.tagName === "v:roundrect") styles.push("border-radius:8px");
+    let inner = "";
+    for (const blk of txbxContent.children) {
+      if (blk.tagName === "w:p") inner += (await renderParagraph(ctx, blk)).html;
+      else if (blk.tagName === "w:tbl") inner += await renderTable(ctx, blk);
+    }
+    return `<div style="${styles.join(";")};">${inner}</div>`;
+  }
+
   const imagedata = pict.getElementsByTagName("v:imagedata")[0];
   const rId = getRId(imagedata, "id");
   const rel = rId ? ctx.rels.get(rId) : undefined;
@@ -692,13 +822,27 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
   if (hanging) styles.push(`text-indent:${px(-twipToPx(hanging))}`);
   else if (firstLine) styles.push(`text-indent:${px(twipToPx(firstLine))}`);
 
-  // Spacing
+  // Spacing. w:before/w:after are in twips; w:beforeAutospacing/afterAutospacing
+  // override them with Word's automatic paragraph spacing (rendered ≈14px, the
+  // value Word uses for HTML/"web"-style auto spacing).
   const spacing = chainChild(pChain, "w:spacing");
   const contextual = chainOnOff(pChain, "w:contextualSpacing");
-  const before = contextual ? 0 : (intAttr(spacing, "w:before") ?? 0);
-  const after = contextual ? 0 : (intAttr(spacing, "w:after") ?? 0);
-  if (before) styles.push(`margin-top:${px(twipToPx(before))}`);
-  if (after) styles.push(`margin-bottom:${px(twipToPx(after))}`);
+  const isOn = (v: string | null) => v === "1" || v === "true" || v === "on";
+  const autoBefore = isOn(spacing?.getAttribute("w:beforeAutospacing") ?? null);
+  const autoAfter = isOn(spacing?.getAttribute("w:afterAutospacing") ?? null);
+  const AUTO_SPACING_PX = 14;
+  if (!contextual) {
+    if (autoBefore) styles.push(`margin-top:${px(AUTO_SPACING_PX)}`);
+    else {
+      const before = intAttr(spacing, "w:before") ?? 0;
+      if (before) styles.push(`margin-top:${px(twipToPx(before))}`);
+    }
+    if (autoAfter) styles.push(`margin-bottom:${px(AUTO_SPACING_PX)}`);
+    else {
+      const after = intAttr(spacing, "w:after") ?? 0;
+      if (after) styles.push(`margin-bottom:${px(twipToPx(after))}`);
+    }
+  }
 
   const line = intAttr(spacing, "w:line");
   const lineRule = spacing?.getAttribute("w:lineRule");
@@ -783,7 +927,9 @@ async function renderParagraph(ctx: DocxCtx, p: Element): Promise<BlockResult> {
           break;
         }
         case "mc:AlternateContent": {
-          const choice = child(node, "mc:Fallback") ?? child(node, "mc:Choice");
+          // Prefer the modern DrawingML Choice (text boxes/shapes live here);
+          // fall back to the legacy VML Fallback only if there's no Choice.
+          const choice = child(node, "mc:Choice") ?? child(node, "mc:Fallback");
           if (choice) await walkInline(choice);
           break;
         }
