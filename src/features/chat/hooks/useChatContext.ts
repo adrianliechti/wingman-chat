@@ -9,6 +9,7 @@ import { useProfile } from "@/features/settings/hooks/useProfile";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { setModel as setInterpreterModel } from "@/features/tools/lib/llmCommand";
 import { createSubagentTool } from "@/features/tools/lib/subagent";
+import { renderTemplate } from "@/shared/lib/template";
 import type { Model, Tool, ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 
@@ -102,6 +103,12 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
         const profileInstructions = generateInstructions();
 
         const instructionsList: string[] = [];
+
+        // Model-level instructions form the start of the system prompt.
+        // Placeholders like {{date}} are resolved at send time.
+        if (model?.instructions?.trim()) {
+          instructionsList.push(renderTemplate(model.instructions));
+        }
 
         if (profileInstructions.trim()) {
           instructionsList.push(profileInstructions);

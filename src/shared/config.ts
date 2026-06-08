@@ -26,6 +26,7 @@ interface ModelConfig {
   id: string;
   name: string;
   description?: string;
+  instructions?: string;
   effort?: "none" | "minimal" | "low" | "medium" | "high";
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
