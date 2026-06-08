@@ -22,7 +22,6 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
       return false;
     }
   });
-  const [isEnabled, setIsEnabled] = useState(false);
 
   // Externally-injected filesystem setter. The chat feature calls this
   // whenever the active chat changes; artifacts owns no chat knowledge.
@@ -30,46 +29,33 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     setFs(next);
   }, []);
 
-  // When the active filesystem changes, reconcile UI state:
-  //  - Draft chat (fs === null): clear active file and collapse enabled state
-  //    while preserving drawer visibility so the panel stays open.
-  //  - Chat with files: auto-enable artifacts (so the model gets the tools).
-  //    The drawer is never auto-opened — created files surface as inline chips
-  //    in the conversation; the user opens the panel on demand.
-  //  - Otherwise: clear active file if it no longer exists in the new chat.
+  // When the active filesystem changes, reconcile the active file:
+  //  - Draft chat (fs === null): clear the active file.
+  //  - Chat with files: clear the active file if it no longer exists in the
+  //    new chat.
+  // Artifacts itself is always active when available, so there is no enabled
+  // state to toggle here. The drawer is never auto-opened — created files
+  // surface as inline chips in the conversation; the user opens the panel on
+  // demand.
   useEffect(() => {
     if (!fs) {
       setActiveFile(null);
-      setIsEnabled(false);
       return;
     }
 
     let cancelled = false;
 
-    (async () => {
-      try {
-        const fileCount = await fs.getFileCount();
-        if (cancelled) return;
-
-        if (fileCount > 0) {
-          setIsEnabled(true);
+    // Clear active file if it doesn't exist in the new filesystem
+    setActiveFile((current) => {
+      if (!current) return current;
+      // Kick off async existence check; updates state when resolved.
+      fs.fileExists(current).then((exists) => {
+        if (!cancelled && !exists) {
+          setActiveFile((prev) => (prev === current ? null : prev));
         }
-
-        // Clear active file if it doesn't exist in the new filesystem
-        setActiveFile((current) => {
-          if (!current) return current;
-          // Kick off async existence check; updates state when resolved.
-          fs.fileExists(current).then((exists) => {
-            if (!cancelled && !exists) {
-              setActiveFile((prev) => (prev === current ? null : prev));
-            }
-          });
-          return current;
-        });
-      } catch (error) {
-        console.warn("Failed to reconcile artifacts state for new filesystem:", error);
-      }
-    })();
+      });
+      return current;
+    });
 
     return () => {
       cancelled = true;
@@ -79,13 +65,6 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   // Subscribe to filesystem events for UI state changes
   useEffect(() => {
     if (!fs) return undefined;
-
-    const unsubscribeCreated = fs.subscribe("fileCreated", () => {
-      // Enable artifacts when a file appears, but never auto-open the drawer:
-      // created files are surfaced inline in the conversation (artifact chips),
-      // and the user opens the panel on demand.
-      setIsEnabled(true);
-    });
 
     const unsubscribeDeleted = fs.subscribe("fileDeleted", (path: string) => {
       // Clear active file if it was the deleted one.
@@ -98,7 +77,6 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
 
     // Cleanup function
     return () => {
-      unsubscribeCreated();
       unsubscribeDeleted();
       unsubscribeRenamed();
     };
@@ -115,21 +93,14 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     setShowArtifactsDrawer((prev) => !prev);
   }, []);
 
-  // Turn on the artifacts tools/instructions without revealing the drawer.
-  const enableArtifacts = useCallback(() => {
-    setIsEnabled(true);
-  }, []);
-
   const value = {
     isAvailable,
-    isEnabled,
     fs,
     activeFile,
     showArtifactsDrawer,
     openFile,
     setShowArtifactsDrawer,
     toggleArtifactsDrawer,
-    enableArtifacts,
     setFileSystem,
   };
 

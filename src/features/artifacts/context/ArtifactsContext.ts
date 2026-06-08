@@ -3,7 +3,6 @@ import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 
 export interface ArtifactsContextType {
   isAvailable: boolean;
-  isEnabled: boolean;
   /**
    * The active filesystem. `null` while no chat is active (e.g. a draft
    * chat before the first message). Injected from the outside via
@@ -17,13 +16,6 @@ export interface ArtifactsContextType {
   openFile: (path: string) => void;
   setShowArtifactsDrawer: (show: boolean) => void;
   toggleArtifactsDrawer: () => void;
-  /**
-   * Enable the artifacts feature (tools + instructions) for the active chat
-   * without opening the drawer. Used when files are attached in the chat input
-   * so the model has the artifacts tools on the turn the attachment is sent —
-   * the file itself is written into the workspace at send time.
-   */
-  enableArtifacts: () => void;
   /**
    * Inject the active filesystem. Pass `null` to clear (draft chat / no
    * chat selected). Typically called by the chat feature when the active

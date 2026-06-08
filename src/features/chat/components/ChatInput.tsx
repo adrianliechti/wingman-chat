@@ -59,7 +59,7 @@ export function ChatInput() {
   const config = getConfig();
 
   const { sendMessage, models, model, setModel: onModelChange, messages, isResponding, stopStreaming } = useChat();
-  const { isAvailable: artifactsAvailable, enableArtifacts } = useArtifacts();
+  const { isAvailable: artifactsAvailable } = useArtifacts();
   const { currentAgent, setCurrentAgent } = useAgents();
   const { profile } = useSettings();
   const {
@@ -234,13 +234,12 @@ export function ChatInput() {
         else if (artifactsAvailable && canConvert(effectiveFile)) docFiles.push(effectiveFile);
       }
 
-      // Documents: hold them pending and enable artifacts now (silently, no
-      // drawer) so the model gets the tools on the turn they're sent. The actual
-      // write into the workspace happens at send time — nothing is persisted if
-      // the attachment is removed or never sent.
+      // Documents: hold them pending until send. The actual write into the
+      // workspace happens at send time — nothing is persisted if the attachment
+      // is removed or never sent. Artifacts is always active when available, so
+      // the model already has the tools.
       if (docFiles.length > 0) {
         setPendingFiles((prev) => [...prev, ...docFiles]);
-        enableArtifacts();
       }
 
       // Images: resize/encode now (async) — shown via the extracting spinner.
@@ -268,7 +267,7 @@ export function ChatInput() {
         });
       }
     },
-    [config.vision?.files, artifactsAvailable, enableArtifacts],
+    [config.vision?.files, artifactsAvailable],
   );
 
   const isDragging = useDropZone(containerRef, handleFiles);
