@@ -12,6 +12,8 @@ export type Model = {
   type?: ModelType;
   description?: string;
 
+  instructions?: string;
+
   hidden?: boolean;
 
   effort?: "none" | "minimal" | "low" | "medium" | "high";
