@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { processUploadedFile } from "@/features/artifacts/lib/artifacts";
@@ -35,6 +34,7 @@ import { lookupContentType, readAsDataURL, resizeImageBlob } from "@/shared/lib/
 import type { Content, ImageContent, Message, Model, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { ModelDropdown } from "@/shared/ui/ModelDropdown";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { useBackground } from "@/shell/hooks/useBackground";
@@ -78,8 +78,6 @@ export function ChatInput() {
       void requestAudioPermission();
     }
   }, [isRealtimeSelected, voiceAvailable, inputDevices.length, requestAudioPermission]);
-
-  const [showHiddenModels, setShowHiddenModels] = useState(false);
 
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
@@ -725,41 +723,29 @@ export function ChatInput() {
                 />
               )}
               {/* Model selector */}
-              {models.length > 0 && !isRealtimeSelected && !currentAgent?.model && (
-                <Menu>
-                  <MenuButton
-                    onPointerDownCapture={(e) => {
-                      flushSync(() => setShowHiddenModels(e.altKey));
-                    }}
-                    className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
-                  >
-                    <span className="shrink-0 flex justify-center">{toolIndicator}</span>
-                    <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
-                  </MenuButton>
-                  <MenuItems
-                    modal={false}
-                    transition
-                    anchor="bottom start"
-                    className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 whitespace-nowrap dark:ring-1 dark:ring-white/10"
-                  >
-                    {models
-                      .filter((m) => m.id !== "realtime" && !m.hidden)
-                      .map((modelItem) => (
-                        <ModelMenuItem key={modelItem.id} model={modelItem} onSelect={onModelChange} />
-                      ))}
-                    {showHiddenModels && models.some((m) => m.id !== "realtime" && m.hidden) && (
-                      <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 bg-neutral-100/60 dark:bg-white/5 border-y border-white/20 dark:border-white/10">
-                        Hidden
-                      </div>
-                    )}
-                    {showHiddenModels &&
-                      models
-                        .filter((m) => m.id !== "realtime" && m.hidden)
-                        .map((modelItem) => (
-                          <ModelMenuItem key={modelItem.id} model={modelItem} onSelect={onModelChange} />
-                        ))}
-                  </MenuItems>
-                </Menu>
+              {/* Model selector */}
+              {models.length > 0 && !isRealtimeSelected && !currentAgent && (
+                <ModelDropdown
+                  models={models}
+                  value={model?.id ?? ""}
+                  onChange={(modelId) => {
+                    const m = models.find((m) => m.id === modelId);
+                    if (m) onModelChange(m);
+                  }}
+                  dropdownClassName="w-auto min-w-48 whitespace-nowrap"
+                  renderItem={(m, onSelect) => <ModelMenuItem key={m.id} model={m} onSelect={onSelect} />}
+                  trigger={({ onClick, onPointerDownCapture }) => (
+                    <button
+                      type="button"
+                      onClick={onClick}
+                      onPointerDownCapture={onPointerDownCapture}
+                      className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
+                    >
+                      <span className="shrink-0 flex justify-center">{toolIndicator}</span>
+                      <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
+                    </button>
+                  )}
+                />
               )}
 
               {/* Agent picker — combined trigger + active-agent badge */}
@@ -1118,26 +1104,24 @@ export function ChatInput() {
   );
 }
 
-function ModelMenuItem({ model, onSelect }: { model: Model; onSelect: (model: Model) => void }) {
+function ModelMenuItem({ model, onSelect }: { model: Model; onSelect: (modelId: string) => void }) {
   return (
-    <MenuItem>
-      <button
-        type="button"
-        onClick={() => onSelect(model)}
-        title={model.description}
-        className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-      >
-        <div className="flex items-center gap-2.5 w-full">
-          <div className="flex flex-col items-start flex-1 min-w-0">
-            <div className="font-semibold text-sm leading-tight whitespace-nowrap">{model.name ?? model.id}</div>
-            {model.description && (
-              <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
-                {model.description}
-              </div>
-            )}
-          </div>
+    <button
+      type="button"
+      onClick={() => onSelect(model.id)}
+      title={model.description}
+      className="group flex w-full flex-col items-start px-3 py-2 rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
+    >
+      <div className="flex items-center gap-2.5 w-full">
+        <div className="flex flex-col items-start flex-1 min-w-0">
+          <div className="font-semibold text-sm leading-tight whitespace-nowrap">{model.name ?? model.id}</div>
+          {model.description && (
+            <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
+              {model.description}
+            </div>
+          )}
         </div>
-      </button>
-    </MenuItem>
+      </div>
+    </button>
   );
 }

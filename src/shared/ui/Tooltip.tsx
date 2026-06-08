@@ -1,3 +1,4 @@
+import { arrow, autoUpdate, flip, offset, shift, useFloating } from "@floating-ui/react-dom";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -11,75 +12,61 @@ interface TooltipProps {
 }
 
 export function Tooltip({ content, children, className, side = "right" }: TooltipProps) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [visible, setVisible] = useState(false);
+  const arrowRef = useRef<HTMLSpanElement>(null);
 
-  const handleMouseEnter = () => {
-    if (!ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    const GAP = 6;
-    let top = 0;
-    let left = 0;
-    if (side === "right") {
-      top = rect.top + rect.height / 2;
-      left = rect.right + GAP;
-    } else if (side === "left") {
-      top = rect.top + rect.height / 2;
-      left = rect.left - GAP;
-    } else if (side === "top") {
-      top = rect.top - GAP;
-      left = rect.left + rect.width / 2;
-    } else {
-      top = rect.bottom + GAP;
-      left = rect.left + rect.width / 2;
-    }
-    setPos({ top, left });
-  };
+  const { refs, floatingStyles, middlewareData, placement } = useFloating({
+    placement: side,
+    whileElementsMounted: autoUpdate,
+    middleware: [offset(8), flip(), shift({ padding: 8 }), arrow({ element: arrowRef })],
+  });
 
-  const handleMouseLeave = () => setPos(null);
+  const arrowSide = ({ top: "bottom", bottom: "top", left: "right", right: "left" } as const)[
+    placement.split("-")[0] as "top" | "bottom" | "left" | "right"
+  ];
 
-  const transformClass = {
-    right: "-translate-y-1/2",
-    left: "-translate-x-full -translate-y-1/2",
-    top: "-translate-x-1/2 -translate-y-full",
-    bottom: "-translate-x-1/2",
-  }[side];
+  const arrowPositionStyle: React.CSSProperties =
+    arrowSide === "left" || arrowSide === "right"
+      ? { top: middlewareData.arrow?.y, [arrowSide]: -8 }
+      : { left: middlewareData.arrow?.x, [arrowSide]: -8 };
 
-  const arrowClass = {
-    right:
-      "absolute left-0 top-1/2 -translate-x-full -translate-y-1/2 border-4 border-transparent border-r-neutral-900 dark:border-r-neutral-700",
-    left: "absolute right-0 top-1/2 translate-x-full -translate-y-1/2 border-4 border-transparent border-l-neutral-900 dark:border-l-neutral-700",
-    top: "absolute bottom-0 left-1/2 translate-y-full -translate-x-1/2 border-4 border-transparent border-t-neutral-900 dark:border-t-neutral-700",
-    bottom:
-      "absolute top-0 left-1/2 -translate-y-full -translate-x-1/2 border-4 border-transparent border-b-neutral-900 dark:border-b-neutral-700",
-  }[side];
+  const arrowColorClass = {
+    left: "border-r-neutral-900 dark:border-r-neutral-700",
+    right: "border-l-neutral-900 dark:border-l-neutral-700",
+    top: "border-b-neutral-900 dark:border-b-neutral-700",
+    bottom: "border-t-neutral-900 dark:border-t-neutral-700",
+  }[arrowSide];
 
   return (
     <span
-      ref={ref}
+      ref={refs.setReference}
       role="none"
       className={cn("group/tooltip block", className)}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
     >
       {children}
-      {pos &&
-        createPortal(
+      {createPortal(
+        <span
+          ref={refs.setFloating}
+          role="tooltip"
+          aria-hidden={!visible}
+          style={{
+            ...floatingStyles,
+            opacity: visible ? 1 : 0,
+            transition: "opacity 150ms ease",
+          }}
+          className="pointer-events-none z-9999 px-2 py-1 rounded-md text-xs font-medium max-w-xs wrap-break-word whitespace-normal bg-neutral-900 text-white dark:bg-neutral-700 dark:text-neutral-100"
+        >
           <span
-            role="tooltip"
-            style={{ top: pos.top, left: pos.left }}
-            className={cn(
-              "pointer-events-none fixed z-[9999] px-2 py-1 rounded-md text-xs font-medium max-w-xs break-words whitespace-normal",
-              "bg-neutral-900 text-white dark:bg-neutral-700 dark:text-neutral-100",
-              "animate-in fade-in duration-150",
-              transformClass,
-            )}
-          >
-            <span className={arrowClass} />
-            {content}
-          </span>,
-          document.body,
-        )}
+            ref={arrowRef}
+            style={{ position: "absolute", ...arrowPositionStyle }}
+            className={cn("border-4 border-transparent", arrowColorClass)}
+          />
+          {content}
+        </span>,
+        document.body,
+      )}
     </span>
   );
 }

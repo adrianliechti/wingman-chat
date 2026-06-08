@@ -429,11 +429,6 @@ export function AgentDrawer() {
                                   >
                                     {agent.name}
                                   </span>
-                                  {isActive && (
-                                    <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-neutral-300 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 leading-none">
-                                      Active
-                                    </span>
-                                  )}
                                 </div>
                                 {(() => {
                                   const toolsCount = agent.tools.length + agent.servers.length;
@@ -465,6 +460,11 @@ export function AgentDrawer() {
                                   );
                                 })()}
                               </div>
+                              {isActive && (
+                                <span className="shrink-0 self-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-neutral-300 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 leading-none">
+                                  Active
+                                </span>
+                              )}
                             </button>
                             {/* Three-dot menu button */}
                             <div className="relative shrink-0 pr-1">

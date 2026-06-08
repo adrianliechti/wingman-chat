@@ -1,3 +1,4 @@
+import { flip, offset, shift, useFloating } from "@floating-ui/react-dom";
 import {
   Dialog,
   DialogBackdrop,
@@ -8,7 +9,6 @@ import {
   MenuItem,
   MenuItems,
 } from "@headlessui/react";
-
 import {
   Bot,
   Check,
@@ -73,16 +73,27 @@ export function ChatInputAddMenu({
 
   // File submenu
   const [showFileSubmenu, setShowFileSubmenu] = useState(false);
-  const [fileSubmenuPos, setFileSubmenuPos] = useState<{ top: number; left: number } | null>(null);
-  const fileMenuRef = useRef<HTMLButtonElement>(null);
-  const fileMenuPanelRef = useRef<HTMLDivElement>(null);
   const fileSubmenuTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { refs: fileRefs, floatingStyles: fileFloatingStyles } = useFloating({
+    placement: "right-start",
+    middleware: [
+      offset(4),
+      flip({ fallbackPlacements: ["right-end", "left-start", "left-end"] }),
+      shift({ padding: 8 }),
+    ],
+  });
 
   // Agent submenu
   const [showAgentSubmenu, setShowAgentSubmenu] = useState(false);
-  const [agentSubmenuPos, setAgentSubmenuPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
-  const agentMenuRef = useRef<HTMLButtonElement>(null);
   const agentSubmenuTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { refs: agentRefs, floatingStyles: agentFloatingStyles } = useFloating({
+    placement: "right-start",
+    middleware: [
+      offset(4),
+      flip({ fallbackPlacements: ["right-end", "left-start", "left-end"] }),
+      shift({ padding: 8 }),
+    ],
+  });
 
   // Agent wizard
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -141,7 +152,6 @@ export function ChatInputAddMenu({
             modal={false}
             transition
             anchor="bottom end"
-            ref={fileMenuPanelRef}
             className="max-h-[60vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-y-auto shadow-lg shadow-black/20 dark:shadow-black/50 z-50 min-w-40 dark:ring-1 dark:ring-white/10 py-1"
           >
             {isScreenCaptureAvailable && (
@@ -180,14 +190,12 @@ export function ChatInputAddMenu({
             )}
             <MenuItem>
               <button
-                ref={fileMenuRef}
+                ref={fileRefs.setReference}
                 type="button"
                 onClick={() => (config.drives.length === 0 ? onAttachmentClick() : undefined)}
                 onMouseEnter={() => {
                   if (fileSubmenuTimer.current) clearTimeout(fileSubmenuTimer.current);
                   if (config.drives.length === 0) return;
-                  const rect = (fileMenuPanelRef.current ?? fileMenuRef.current)?.getBoundingClientRect();
-                  if (rect) setFileSubmenuPos({ top: rect.top, left: rect.right });
                   setShowFileSubmenu(true);
                 }}
                 onMouseLeave={() => {
@@ -201,13 +209,13 @@ export function ChatInputAddMenu({
               </button>
             </MenuItem>
             {showFileSubmenu &&
-              fileSubmenuPos &&
               createPortal(
                 <div
+                  ref={fileRefs.setFloating}
                   data-file-submenu
                   role="none"
-                  style={{ top: fileSubmenuPos.top, left: fileSubmenuPos.left }}
-                  className="fixed z-9999 pl-2"
+                  style={fileFloatingStyles}
+                  className="z-9999"
                   onMouseEnter={() => {
                     if (fileSubmenuTimer.current) clearTimeout(fileSubmenuTimer.current);
                     setShowFileSubmenu(true);
@@ -260,18 +268,10 @@ export function ChatInputAddMenu({
               )}
             <MenuItem>
               <button
-                ref={agentMenuRef}
+                ref={agentRefs.setReference}
                 type="button"
                 onMouseEnter={() => {
                   if (agentSubmenuTimer.current) clearTimeout(agentSubmenuTimer.current);
-                  const panelRect = fileMenuPanelRef.current?.getBoundingClientRect();
-                  const buttonRect = agentMenuRef.current?.getBoundingClientRect();
-                  if (panelRect && buttonRect)
-                    setAgentSubmenuPos({
-                      top: buttonRect.top,
-                      left: panelRect.right,
-                      maxHeight: window.innerHeight - buttonRect.top - 16,
-                    });
                   setShowAgentSubmenu(true);
                 }}
                 onMouseLeave={() => {
@@ -285,13 +285,13 @@ export function ChatInputAddMenu({
               </button>
             </MenuItem>
             {showAgentSubmenu &&
-              agentSubmenuPos &&
               createPortal(
                 <div
+                  ref={agentRefs.setFloating}
                   data-agent-submenu
                   role="none"
-                  style={{ top: agentSubmenuPos.top, left: agentSubmenuPos.left }}
-                  className="fixed z-9999 pl-2"
+                  style={agentFloatingStyles}
+                  className="z-9999"
                   onMouseEnter={() => {
                     if (agentSubmenuTimer.current) clearTimeout(agentSubmenuTimer.current);
                     setShowAgentSubmenu(true);
@@ -300,10 +300,7 @@ export function ChatInputAddMenu({
                     agentSubmenuTimer.current = setTimeout(() => setShowAgentSubmenu(false), 150);
                   }}
                 >
-                  <div
-                    style={{ maxHeight: agentSubmenuPos.maxHeight }}
-                    className="rounded-xl border-2 bg-white/70 dark:bg-neutral-950/90 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 shadow-lg shadow-black/20 dark:shadow-black/50 dark:ring-1 dark:ring-white/10 py-1 min-w-48 flex flex-col overflow-hidden"
-                  >
+                  <div className="rounded-xl border-2 bg-white/70 dark:bg-neutral-950/90 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 shadow-lg shadow-black/20 dark:shadow-black/50 dark:ring-1 dark:ring-white/10 py-1 min-w-48 flex flex-col overflow-hidden max-h-[min(60vh,400px)]">
                     {agents.length === 0 && (
                       <p className="px-4 py-2 text-sm text-neutral-500 dark:text-neutral-400">No agents configured</p>
                     )}
@@ -581,7 +578,82 @@ export function ChatInputAddMenu({
                       );
                     })}
                   </div>
-                  <div className="mx-4 my-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
+                </>
+              )}
+
+              {/* Agents section */}
+              {agents.length > 0 && (
+                <>
+                  <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
+                  <div className="px-4 pb-1 flex items-center justify-between">
+                    <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                      Agents
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        title="Add Agent"
+                        onClick={() => {
+                          setShowMobileSheet(false);
+                          setWizardOpen(true);
+                        }}
+                        className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
+                      >
+                        <Plus size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        title="Manage Agents"
+                        onClick={() => {
+                          setShowMobileSheet(false);
+                          setAgentDrawerView("list");
+                          setShowAgentDrawer(true);
+                        }}
+                        className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
+                      >
+                        <FolderCog size={16} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="px-2 pb-2">
+                    {agents.map((agent) => (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        onClick={() => {
+                          setCurrentAgent(agent);
+                          setShowMobileSheet(false);
+                        }}
+                        className={`group flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors ${
+                          currentAgent?.id === agent.id
+                            ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
+                            : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
+                        }`}
+                      >
+                        <Bot size={16} className="shrink-0" />
+                        <span className="font-medium text-sm flex-1 text-left truncate">{agent.name}</span>
+                        {currentAgent?.id === agent.id && (
+                          <>
+                            <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-neutral-300 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 leading-none">
+                              Active
+                            </span>
+                            <button
+                              type="button"
+                              title="Deselect agent"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCurrentAgent(null);
+                                setShowMobileSheet(false);
+                              }}
+                              className="shrink-0 p-0.5 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-200 dark:hover:bg-neutral-700 dark:hover:text-neutral-200 transition-colors"
+                            >
+                              <X size={13} />
+                            </button>
+                          </>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </>
               )}
             </div>

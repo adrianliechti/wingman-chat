@@ -156,8 +156,8 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: toolsVersion is a cache-bust trigger, not a real dependency
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
-    if (canvasProvider) list.push(canvasProvider);
     if (internetProvider) list.push(internetProvider);
+    if (canvasProvider) list.push(canvasProvider);
     if (artifactsProvider) list.push(artifactsProvider);
     list.push(skillBuilderProvider);
     list.push(...visibleConfigMcpClients);
