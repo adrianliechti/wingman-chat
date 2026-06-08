@@ -2,6 +2,7 @@ import { AlertCircle, ChevronRight, Loader2, RotateCcw } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
 import { useChat } from "@/features/chat/hooks/useChat";
+import { SkillChip } from "@/features/skills/components/SkillChip";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { getToolDisplayName } from "@/shared/lib/utils";
@@ -12,7 +13,7 @@ import { CopyButton } from "@/shared/ui/CopyButton";
 import { Markdown } from "@/shared/ui/Markdown";
 import { PlayButton } from "@/shared/ui/PlayButton";
 import { ChatMessageElicitation } from "./ChatMessageElicitation";
-import { collectTurnArtifactPaths, getToolCallPreview, isTurnEnd } from "./chatMessageUtils";
+import { collectTurnArtifactPaths, collectTurnSkillNames, getToolCallPreview, isTurnEnd } from "./chatMessageUtils";
 
 // Error message component
 function ErrorMessage({ title, message, onRetry }: { title: string; message: string; onRetry?: () => void }) {
@@ -129,6 +130,11 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   // the artifacts drawer.
   const turnArtifactPaths = useMemo(
     () => (isTurnEnd(messages, index) ? collectTurnArtifactPaths(messages, index) : []),
+    [messages, index],
+  );
+
+  const turnSkillNames = useMemo(
+    () => (isTurnEnd(messages, index) ? collectTurnSkillNames(messages, index) : []),
     [messages, index],
   );
 
@@ -378,6 +384,14 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
           <div className="mt-3 flex flex-wrap gap-2">
             {turnArtifactPaths.map((path) => (
               <ArtifactChip key={path} path={path} />
+            ))}
+          </div>
+        )}
+
+        {turnSkillNames.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {turnSkillNames.map((name) => (
+              <SkillChip key={name} name={name} />
             ))}
           </div>
         )}

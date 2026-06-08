@@ -32,6 +32,8 @@ interface SkillCatalogProps {
   onSkillSaved: (skill: Skill, isNew: boolean, oldName?: string) => void;
   onImported: (names: string[]) => void;
   initialView?: "list" | "new";
+  /** When set, pre-selects this skill in preview (read-only) mode on open. */
+  initialSkillName?: string;
 }
 
 export function SkillCatalog({
@@ -42,6 +44,7 @@ export function SkillCatalog({
   onSkillSaved,
   onImported,
   initialView = "list",
+  initialSkillName,
 }: SkillCatalogProps) {
   const { skills: allSkills, addSkill, updateSkill, removeSkill } = useSkills();
   const editorNameInputId = useId();
@@ -58,7 +61,6 @@ export function SkillCatalog({
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [previewTab, setPreviewTab] = useState<"edit" | "preview">("edit");
-  const [pendingDelete, setPendingDelete] = useState(false);
   const previewSliderRef = useRef<HTMLDivElement>(null);
   const [previewSliderStyle, setPreviewSliderStyle] = useState({ left: 0, width: 0 });
 
@@ -103,7 +105,6 @@ export function SkillCatalog({
       setEdContent(skill.content);
     }
     setPreviewTab("edit");
-    setPendingDelete(false);
     setEditMode(true);
   }, []);
 
@@ -121,19 +122,21 @@ export function SkillCatalog({
       );
       if (initialView === "new") {
         openEditor("new");
+      } else if (initialSkillName) {
+        const target = allSkills.find((s) => s.name === initialSkillName);
+        setSelectedSkill(target ?? null);
+        setEditMode(false);
       } else {
         setSelectedSkill(null);
         setEditMode(false);
-        setPendingDelete(false);
       }
     } else {
       setSelectedSkill(null);
       setEditMode(false);
       setSearch("");
-      setPendingDelete(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, initialView, openEditor]);
+  }, [isOpen, initialView, initialSkillName, openEditor]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -177,7 +180,6 @@ export function SkillCatalog({
       discardAndRun(() => {
         setSelectedSkill(skill);
         setEditMode(false);
-        setPendingDelete(false);
       });
     },
     [discardAndRun],
@@ -245,7 +247,6 @@ export function SkillCatalog({
     }
     setSelectedSkill(null);
     setEditMode(false);
-    setPendingDelete(false);
   };
 
   const handleImport = () => {
@@ -749,7 +750,11 @@ export function SkillCatalog({
                               <MenuItem>
                                 <button
                                   type="button"
-                                  onClick={() => setPendingDelete(true)}
+                                  onClick={() => {
+                                    if (window.confirm(`Delete "${selectedSkill.name}"? This cannot be undone.`)) {
+                                      handleDeleteConfirm(selectedSkill);
+                                    }
+                                  }}
                                   className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 transition-colors data-focus:bg-red-50 dark:text-red-400 dark:data-focus:bg-red-950/30"
                                 >
                                   <Trash2 size={13} />
@@ -759,31 +764,6 @@ export function SkillCatalog({
                             </MenuItems>
                           </Menu>
                         </div>
-
-                        {/* Delete confirmation */}
-                        {pendingDelete && (
-                          <div className="flex items-center justify-between border-b border-red-200/60 bg-red-50/60 px-5 py-2.5 dark:border-red-900/40 dark:bg-red-950/20">
-                            <span className="text-xs font-medium text-red-600 dark:text-red-400">
-                              Delete "{selectedSkill.name}"? This cannot be undone.
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setPendingDelete(false)}
-                                className="rounded px-2.5 py-1 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-neutral-800/60"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteConfirm(selectedSkill)}
-                                className="rounded bg-red-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-red-700"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-                        )}
 
                         <div className="flex-1 overflow-y-auto px-5 py-4">
                           {selectedSkill.description && (

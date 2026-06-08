@@ -67,7 +67,7 @@ export function ChatInputAddMenu({
   onDriveSelect,
 }: ChatInputAddMenuProps) {
   const config = getConfig();
-  const { agents, currentAgent, setCurrentAgent, setShowAgentDrawer } = useAgents();
+  const { agents, currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
 
   const [showMobileSheet, setShowMobileSheet] = useState(false);
 
@@ -80,7 +80,9 @@ export function ChatInputAddMenu({
 
   // Agent submenu
   const [showAgentSubmenu, setShowAgentSubmenu] = useState(false);
-  const [agentSubmenuPos, setAgentSubmenuPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  const [agentSubmenuPos, setAgentSubmenuPos] = useState<{ bottom: number; left: number; maxHeight: number } | null>(
+    null,
+  );
   const agentMenuRef = useRef<HTMLButtonElement>(null);
   const agentSubmenuTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -120,7 +122,7 @@ export function ChatInputAddMenu({
       {/* Mobile: Plus button opens bottom sheet */}
       <button
         type="button"
-        className="md:hidden p-2.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+        className="md:hidden pl-1.5 pr-0.5 py-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
         title="More options"
         onClick={() => setShowMobileSheet(true)}
       >
@@ -267,9 +269,9 @@ export function ChatInputAddMenu({
                   const rect = (fileMenuPanelRef.current ?? agentMenuRef.current)?.getBoundingClientRect();
                   if (rect)
                     setAgentSubmenuPos({
-                      top: rect.top,
+                      bottom: window.innerHeight - rect.bottom,
                       left: rect.right,
-                      maxHeight: window.innerHeight - rect.top - 16,
+                      maxHeight: rect.bottom - 16,
                     });
                   setShowAgentSubmenu(true);
                 }}
@@ -289,7 +291,7 @@ export function ChatInputAddMenu({
                 <div
                   data-agent-submenu
                   role="none"
-                  style={{ top: agentSubmenuPos.top, left: agentSubmenuPos.left }}
+                  style={{ bottom: agentSubmenuPos.bottom, left: agentSubmenuPos.left }}
                   className="fixed z-9999 pl-2"
                   onMouseEnter={() => {
                     if (agentSubmenuTimer.current) clearTimeout(agentSubmenuTimer.current);
@@ -306,7 +308,7 @@ export function ChatInputAddMenu({
                     {agents.length === 0 && (
                       <p className="px-4 py-2 text-sm text-neutral-500 dark:text-neutral-400">No agents configured</p>
                     )}
-                    <div className="overflow-y-auto flex-1">
+                    <div className="overflow-y-auto">
                       {agents.map((agent) => (
                         <div
                           key={agent.id}
@@ -317,6 +319,7 @@ export function ChatInputAddMenu({
                             onClick={() => {
                               setCurrentAgent(agent);
                               setShowAgentSubmenu(false);
+                              setAgentDrawerView("details");
                               setShowAgentDrawer(true);
                             }}
                             className="flex flex-1 min-w-0 items-center gap-3 px-4 py-1.5"
@@ -346,6 +349,7 @@ export function ChatInputAddMenu({
                       type="button"
                       onClick={() => {
                         setShowAgentSubmenu(false);
+                        setAgentDrawerView("list");
                         setShowAgentDrawer(true);
                       }}
                       className="flex w-full items-center gap-3 px-4 py-1.5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
@@ -557,7 +561,7 @@ export function ChatInputAddMenu({
                             }
                           }}
                           disabled={providerInitializing}
-                          className={`flex w-full items-center gap-3 px-3 py-2.5 rounded-xl transition-colors disabled:opacity-50 ${
+                          className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50 ${
                             providerEnabled
                               ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
                               : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"

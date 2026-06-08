@@ -2,7 +2,6 @@ import { Coffee } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import { useCanvasProvider } from "@/features/canvas/hooks/useCanvasProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
@@ -114,9 +113,6 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const artifactsProvider = useArtifactsProvider();
   const skillBuilderProvider = useSkillBuilderProvider();
 
-  // Keep the feature-list indicator in sync with the artifacts drawer.
-  const { isEnabled: artifactsEnabled, showArtifactsDrawer } = useArtifacts();
-
   // All MCP clients & lookup set (include local wingman only when the app is detected)
   const allMcpClients = useMemo(
     () => [
@@ -185,10 +181,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     (id: string): ProviderState => {
       if (id === COMPANION_ID && !companionEnabled) return ProviderState.Disconnected;
       if (mcpIds.has(id)) return mcpStates.get(id) ?? ProviderState.Disconnected;
-      if (id === "artifacts" && (artifactsEnabled || showArtifactsDrawer)) return ProviderState.Connected;
       return desiredTools.has(id) ? ProviderState.Connected : ProviderState.Disconnected;
     },
-    [mcpIds, mcpStates, desiredTools, companionEnabled, artifactsEnabled, showArtifactsDrawer],
+    [mcpIds, mcpStates, desiredTools, companionEnabled],
   );
 
   // Track in-flight connection promises so callers can await an already-running connect

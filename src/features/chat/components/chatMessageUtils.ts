@@ -77,6 +77,55 @@ export function collectTurnArtifactPaths(messages: Message[], assistantIndex: nu
   return [...seen];
 }
 
+// Skill-builder tools that create or modify skills.
+const SKILL_WRITE_TOOLS = new Set(["create_skill", "update_skill"]);
+
+/** Skill name from a skill tool result, or null. */
+function toolResultSkillName(result: ToolResultContent): string | null {
+  const resultText = result.result?.find((c): c is TextContent => c.type === "text");
+  if (resultText?.text) {
+    try {
+      const obj = JSON.parse(resultText.text);
+      if (typeof obj?.skill?.name === "string") return obj.skill.name;
+    } catch {
+      // fall through
+    }
+  }
+  // Fallback: read from arguments
+  try {
+    const args = JSON.parse(result.arguments ?? "{}");
+    if (typeof args?.name === "string") return args.name;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
+ * Collect skill names written/updated during the assistant turn ending at
+ * `assistantIndex`. Deduplicated, in first-seen order.
+ */
+export function collectTurnSkillNames(messages: Message[], assistantIndex: number): string[] {
+  let start = 0;
+  for (let i = assistantIndex - 1; i >= 0; i--) {
+    if (isUserPrompt(messages[i])) {
+      start = i + 1;
+      break;
+    }
+  }
+
+  const seen = new Set<string>();
+  for (let i = start; i <= assistantIndex; i++) {
+    for (const part of messages[i]?.content ?? []) {
+      if (part.type !== "tool_result") continue;
+      if (!SKILL_WRITE_TOOLS.has(part.name)) continue;
+      const name = toolResultSkillName(part);
+      if (name) seen.add(name);
+    }
+  }
+  return [...seen];
+}
+
 /** Whether the assistant message at `index` ends a turn (next is a new prompt). */
 export function isTurnEnd(messages: Message[], index: number): boolean {
   const next = messages[index + 1];

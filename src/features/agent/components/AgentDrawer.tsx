@@ -4,11 +4,11 @@ import {
   ChevronLeft,
   Download,
   Folder,
-  List,
   MessageSquare,
   Mic,
   PenLine,
   Plus,
+  Rocket,
   Sparkles,
   Trash2,
   Upload,
@@ -77,10 +77,17 @@ function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
 // ─── Main AgentDrawer component ───
 
 export function AgentDrawer() {
-  const { agents, currentAgent, setCurrentAgent, updateAgent, deleteAgent, setShowAgentDrawer } = useAgents();
+  const { agents, currentAgent, setCurrentAgent, updateAgent, deleteAgent, setShowAgentDrawer, agentDrawerView } =
+    useAgents();
+  const config = getConfig();
 
   // "list" shows the agent list; "details" shows the selected agent's configuration
-  const [view, setView] = useState<"list" | "details">(currentAgent ? "details" : "list");
+  const [view, setView] = useState<"list" | "details">("list");
+
+  // Sync view whenever the drawer is (re-)opened
+  useEffect(() => {
+    setView(agentDrawerView);
+  }, [agentDrawerView]);
 
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -301,29 +308,97 @@ export function AgentDrawer() {
                 {agents
                   .slice()
                   .sort((a, b) => a.name.localeCompare(b.name))
-                  .map((agent) => (
-                    <button
-                      key={agent.id}
-                      type="button"
-                      onClick={() => handleListSelect(agent)}
-                      className={cn(
-                        "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
-                        "hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60",
-                        currentAgent?.id === agent.id && "bg-neutral-100/60 dark:bg-neutral-800/40",
-                      )}
-                    >
-                      <div className="shrink-0 w-8 h-8 rounded-xl bg-neutral-200 dark:bg-neutral-800 flex items-center justify-center">
-                        {agent.model === "realtime" ? (
-                          <Mic size={15} className="text-neutral-600 dark:text-neutral-300" />
-                        ) : (
-                          <Bot size={15} className="text-neutral-600 dark:text-neutral-300" />
+                  .map((agent) => {
+                    const isActive = currentAgent?.id === agent.id;
+                    return (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        onClick={() => handleListSelect(agent)}
+                        className={cn(
+                          "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors",
+                          isActive
+                            ? "bg-neutral-200/60 dark:bg-neutral-800/60"
+                            : "hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60",
                         )}
-                      </div>
-                      <span className="flex-1 min-w-0 text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate">
-                        {agent.name}
-                      </span>
-                    </button>
-                  ))}
+                      >
+                        <div
+                          className={cn(
+                            "shrink-0 w-8 h-8 rounded-xl flex items-center justify-center",
+                            isActive ? "bg-neutral-300 dark:bg-neutral-700" : "bg-neutral-200 dark:bg-neutral-800",
+                          )}
+                        >
+                          {agent.model === "realtime" ? (
+                            <Mic
+                              size={15}
+                              className={
+                                isActive
+                                  ? "text-neutral-800 dark:text-neutral-100"
+                                  : "text-neutral-600 dark:text-neutral-300"
+                              }
+                            />
+                          ) : (
+                            <Bot
+                              size={15}
+                              className={
+                                isActive
+                                  ? "text-neutral-800 dark:text-neutral-100"
+                                  : "text-neutral-600 dark:text-neutral-300"
+                              }
+                            />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={cn(
+                                "flex-1 min-w-0 text-sm font-medium truncate",
+                                isActive
+                                  ? "text-neutral-900 dark:text-neutral-50"
+                                  : "text-neutral-900 dark:text-neutral-100",
+                              )}
+                            >
+                              {agent.name}
+                            </span>
+                            {isActive && (
+                              <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-neutral-300 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 leading-none">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                          {(() => {
+                            const toolsCount = agent.tools.length + agent.servers.length;
+                            return (
+                              (agent.skills.length > 0 ||
+                                toolsCount > 0 ||
+                                (config.repository && (agent.files?.length ?? 0) > 0)) && (
+                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                  {toolsCount > 0 && (
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] text-neutral-400 dark:text-neutral-500">
+                                      <Rocket size={9} />
+                                      {toolsCount} {toolsCount === 1 ? "connector" : "connectors"}
+                                    </span>
+                                  )}
+                                  {config.repository && (agent.files?.length ?? 0) > 0 && (
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] text-neutral-400 dark:text-neutral-500">
+                                      <Folder size={9} />
+                                      {agent.files!.length} {agent.files!.length === 1 ? "file" : "files"}
+                                    </span>
+                                  )}
+                                  {agent.skills.length > 0 && (
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] text-neutral-400 dark:text-neutral-500">
+                                      <Sparkles size={9} />
+                                      {agent.skills.length} {agent.skills.length === 1 ? "skill" : "skills"}
+                                    </span>
+                                  )}
+                                </div>
+                              )
+                            );
+                          })()}
+                        </div>
+                      </button>
+                    );
+                  })}
               </div>
               <div className="shrink-0 px-3 py-2.5 border-t border-neutral-200/60 dark:border-neutral-700/60 flex items-center gap-2">
                 <button

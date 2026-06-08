@@ -9,7 +9,7 @@ interface SectionEmptyStateProps {
 
 export function SectionEmptyState({ icon, label, description, onClick }: SectionEmptyStateProps) {
   const baseClass =
-    "w-full flex items-center justify-center gap-2.5 rounded-xl border border-dashed border-neutral-300/70 dark:border-neutral-700/60 bg-neutral-50/40 dark:bg-neutral-800/20 py-3";
+    "w-full flex items-center justify-start gap-2.5 rounded-xl border border-dashed border-neutral-300/70 dark:border-neutral-700/60 bg-neutral-50/40 dark:bg-neutral-800/20 py-3 px-3";
   const interactiveClass =
     "group hover:border-neutral-400/70 dark:hover:border-neutral-600/70 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/40 transition-all duration-150";
   const iconClass = onClick

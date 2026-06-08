@@ -309,6 +309,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [currentAgent, setCurrentAgent] = useState<Agent | null>(null);
   const [showAgentDrawer, setShowAgentDrawer] = useState(false);
+  const [agentDrawerView, setAgentDrawerView] = useState<"list" | "details">("list");
   const [isLoaded, setIsLoaded] = useState(false);
 
   const pendingSaves = useRef<Set<string>>(new Set());
@@ -632,7 +633,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   );
 
   const toggleAgentDrawer = useCallback(() => {
-    setShowAgentDrawer((prev) => !prev);
+    setShowAgentDrawer((prev) => {
+      if (!prev) setAgentDrawerView("list");
+      return !prev;
+    });
   }, []);
 
   const value: AgentContextType = {
@@ -645,6 +649,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     showAgentDrawer,
     setShowAgentDrawer,
     toggleAgentDrawer,
+    agentDrawerView,
+    setAgentDrawerView,
     upsertFile,
     removeFile,
     addServer,

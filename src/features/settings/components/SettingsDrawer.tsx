@@ -726,7 +726,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         onClick={importChats}
                         className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
                       >
-                        <Download size={14} />
+                        <Upload size={14} />
                         Import
                       </button>
                       <button
@@ -735,7 +735,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         disabled={chats.length === 0}
                         className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
                       >
-                        <Upload size={14} />
+                        <Download size={14} />
                         Export
                       </button>
                       <button
@@ -781,7 +781,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         onClick={importAgents}
                         className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors backdrop-blur-sm"
                       >
-                        <Download size={14} />
+                        <Upload size={14} />
                         Import
                       </button>
                       <button
@@ -790,7 +790,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         disabled={agents.length === 0}
                         className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
                       >
-                        <Upload size={14} />
+                        <Download size={14} />
                         Export
                       </button>
                       <button

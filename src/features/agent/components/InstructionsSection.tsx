@@ -213,7 +213,7 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
             >
               <div className="relative px-3.5 pt-3 pb-3">
                 <div className="prose prose-xs dark:prose-invert max-w-none text-xs [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 line-clamp-4 text-neutral-600 dark:text-neutral-400">
-                  <Markdown>{agent.instructions}</Markdown>
+                  <Markdown compact>{agent.instructions}</Markdown>
                 </div>
                 <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-neutral-50/80 dark:from-transparent to-transparent pointer-events-none" />
               </div>

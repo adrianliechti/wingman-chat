@@ -64,6 +64,18 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  if (search) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSearch("");
+                  }
+                }
+              }}
+              onBlur={() => {
+                if (!search) setSearchOpen(false);
+              }}
               placeholder="Filter…"
               className="w-full pl-7 pr-7 py-1 text-xs rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
             />
@@ -121,9 +133,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
                   <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
                     {skill.name}
                   </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
-                    {skill.description}
-                  </div>
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">{skill.description}</div>
                 </div>
               </button>
             );

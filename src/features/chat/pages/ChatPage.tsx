@@ -1,7 +1,8 @@
 import { useMatch, useNavigate } from "@tanstack/react-router";
-import { AppWindow, ArrowDown, BotMessageSquare, ChevronLeft, Info, Plus as PlusIcon, Shapes } from "lucide-react";
+import { AppWindow, ArrowDown, Bot, BotMessageSquare, ChevronLeft, Info, Plus as PlusIcon, Shapes } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
+import { SkillCatalog } from "@/features/agent/components/SkillCatalog";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
@@ -12,6 +13,8 @@ import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
+import { useSkills } from "@/features/skills/hooks/useSkills";
+import type { Skill } from "@/features/skills/lib/skillParser";
 import { useVoice } from "@/features/voice/hooks/useVoice";
 import { useChatScroll } from "@/shared";
 import { getConfig } from "@/shared/config";
@@ -153,7 +156,43 @@ export function ChatPage() {
     toggleArtifactsDrawer,
     setShowArtifactsDrawer,
   } = useArtifacts();
-  const { showAgentDrawer, setShowAgentDrawer, toggleAgentDrawer } = useAgents();
+  const { agents, currentAgent, updateAgent, showAgentDrawer, setShowAgentDrawer, toggleAgentDrawer } = useAgents();
+  const { showSkillCatalog, skillCatalogTarget, closeSkillCatalog } = useSkills();
+
+  const agentSkillIds = useMemo(() => new Set(currentAgent?.skills ?? []), [currentAgent]);
+
+  const handleSkillToggle = useCallback(
+    (skillName: string) => {
+      if (!currentAgent) return;
+      const current = currentAgent.skills ?? [];
+      const next = current.includes(skillName) ? current.filter((n) => n !== skillName) : [...current, skillName];
+      updateAgent(currentAgent.id, { skills: next });
+    },
+    [currentAgent, updateAgent],
+  );
+
+  const handleSkillSaved = useCallback(
+    (skill: Skill, isNew: boolean, oldName?: string) => {
+      if (isNew && currentAgent) {
+        updateAgent(currentAgent.id, { skills: [...(currentAgent.skills ?? []), skill.name] });
+      } else if (oldName) {
+        for (const a of agents) {
+          if (a.skills?.includes(oldName)) {
+            updateAgent(a.id, { skills: a.skills.map((n) => (n === oldName ? skill.name : n)) });
+          }
+        }
+      }
+    },
+    [currentAgent, agents, updateAgent],
+  );
+
+  const handleSkillImported = useCallback(
+    (names: string[]) => {
+      if (!currentAgent) return;
+      updateAgent(currentAgent.id, { skills: [...(currentAgent.skills ?? []), ...names] });
+    },
+    [currentAgent, updateAgent],
+  );
   const { showAppDrawer, hasAppContent, toggleAppDrawer, setShowAppDrawer } = useApp();
 
   // Mutual exclusivity: closing one when the other opens
@@ -437,7 +476,7 @@ export function ChatPage() {
           onClick={toggleAgentDrawer}
           title={showAgentDrawer ? "Close agent" : "Open agent"}
         >
-          <BotMessageSquare size={20} />
+          <Bot size={20} />
         </button>
         <button
           type="button"
@@ -811,6 +850,15 @@ export function ChatPage() {
           </div>
         </div>
       </div>
+      <SkillCatalog
+        isOpen={showSkillCatalog}
+        onClose={closeSkillCatalog}
+        enabledSkillNames={agentSkillIds}
+        onToggle={handleSkillToggle}
+        onSkillSaved={handleSkillSaved}
+        onImported={handleSkillImported}
+        initialSkillName={skillCatalogTarget ?? undefined}
+      />
     </div>
   );
 }

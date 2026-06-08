@@ -165,7 +165,7 @@ export function ChatInput() {
 
   // Providers visible in the UI: exclude model-configured and artifacts; hidden entirely when agent active
   const visibleProviders = useMemo(
-    () => (currentAgent ? [] : providers.filter((p: ToolProvider) => !modelTools.has(p.id))),
+    () => (currentAgent ? [] : providers.filter((p: ToolProvider) => p.id !== "artifacts" && !modelTools.has(p.id))),
     [currentAgent, providers, modelTools],
   );
 
@@ -627,7 +627,7 @@ export function ChatInput() {
                 {shouldShowPlaceholder && (
                   <div
                     className={cn(
-                      "absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-600 dark:text-neutral-300 transition-all duration-200",
+                      "absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200",
                       messages.length === 0 && "typewriter-text",
                     )}
                     style={
