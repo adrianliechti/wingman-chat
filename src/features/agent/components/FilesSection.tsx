@@ -110,7 +110,6 @@ export function FilesSection({ agent }: FilesSectionProps) {
 
       <Section
         title="Knowledge Base"
-        icon={<FolderOpen size={12} />}
         count={files.length}
         isOpen={true}
         collapsible={false}

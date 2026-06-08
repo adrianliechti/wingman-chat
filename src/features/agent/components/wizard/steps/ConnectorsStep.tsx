@@ -35,6 +35,17 @@ export function ConnectorsStep({ selectedTools, servers, dispatch }: ConnectorsS
         description="Connectors power up your agent with real capabilities — searching the web, generating images, creating skills, or connecting to external services via MCP servers. Toggle on what you need, or skip this and enable connectors later."
       />
 
+      {/* Actions */}
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setBridgeEditorOpen(true)}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
+        >
+          <Plus size={11} /> Add MCP Server
+        </button>
+      </div>
+
       <div className="space-y-0.5">
         {availableTools.map((tool) => {
           const isEnabled = selectedSet.has(tool.id);
@@ -60,7 +71,7 @@ export function ConnectorsStep({ selectedTools, servers, dispatch }: ConnectorsS
                 onClick={() => dispatch({ type: "TOGGLE_CONNECTOR", id: tool.id })}
                 className={`shrink-0 ${isEnabled ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
               >
-                {isEnabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                {isEnabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
               </button>
             </div>
           );
@@ -88,14 +99,6 @@ export function ConnectorsStep({ selectedTools, servers, dispatch }: ConnectorsS
           ))}
         </div>
       )}
-
-      <button
-        type="button"
-        onClick={() => setBridgeEditorOpen(true)}
-        className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
-      >
-        <Plus size={12} /> Add MCP Server
-      </button>
 
       <BridgeEditor
         isOpen={bridgeEditorOpen}

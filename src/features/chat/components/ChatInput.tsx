@@ -2,7 +2,6 @@ import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
   AudioLines,
   Bot,
-  Check,
   Loader2,
   LoaderCircle,
   MessageSquare,
@@ -31,7 +30,7 @@ import { cn } from "@/shared/lib/cn";
 import { acceptTypes, canConvert } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
 import { lookupContentType, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
-import type { Content, ImageContent, Message, Model, TextContent, ToolProvider } from "@/shared/types/chat";
+import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { ModelDropdown } from "@/shared/ui/ModelDropdown";
@@ -46,7 +45,7 @@ export function ChatInput() {
   const config = getConfig();
 
   const { sendMessage, models, model, setModel: onModelChange, messages, isResponding, stopStreaming } = useChat();
-  const { agents, currentAgent, setCurrentAgent, setShowAgentDrawer } = useAgents();
+  const { currentAgent, setCurrentAgent, setShowAgentDrawer } = useAgents();
   const { isAvailable: artifactsAvailable } = useArtifacts();
   const { profile } = useSettings();
   const {
@@ -723,7 +722,6 @@ export function ChatInput() {
                 />
               )}
               {/* Model selector */}
-              {/* Model selector */}
               {models.length > 0 && !isRealtimeSelected && !currentAgent && (
                 <ModelDropdown
                   models={models}
@@ -733,7 +731,6 @@ export function ChatInput() {
                     if (m) onModelChange(m);
                   }}
                   dropdownClassName="w-auto min-w-48 whitespace-nowrap"
-                  renderItem={(m, onSelect) => <ModelMenuItem key={m.id} model={m} onSelect={onSelect} />}
                   trigger={({ onClick, onPointerDownCapture }) => (
                     <button
                       type="button"
@@ -788,55 +785,6 @@ export function ChatInput() {
                   <span>Sharing</span>
                 </button>
               )}
-
-              <Menu>
-                <MenuButton
-                  className={cn(
-                    "flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-xs font-medium transition-colors",
-                    currentAgent ? "hidden" : "hidden",
-                  )}
-                  title="Select agent"
-                  aria-label="Select agent"
-                >
-                  <Bot size={14} className="shrink-0" />
-                </MenuButton>
-                <MenuItems
-                  modal={false}
-                  transition
-                  anchor="bottom start"
-                  className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-48 dark:ring-1 dark:ring-white/10"
-                >
-                  <MenuItem>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCurrentAgent(null);
-                        setShowAgentDrawer(false);
-                      }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 border-b border-white/20 dark:border-white/10"
-                    >
-                      <X size={14} className="shrink-0 text-neutral-400" />
-                      <span>No agent</span>
-                      {!currentAgent && <Check size={13} className="ml-auto shrink-0 text-blue-500" />}
-                    </button>
-                  </MenuItem>
-                  {agents.map((agent) => (
-                    <MenuItem key={agent.id}>
-                      <button
-                        type="button"
-                        onClick={() => setCurrentAgent(agent)}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 border-b border-white/20 dark:border-white/10 last:border-b-0"
-                      >
-                        <Bot size={14} className="shrink-0 text-neutral-400" />
-                        <span className="truncate">{agent.name}</span>
-                        {currentAgent?.id === agent.id && (
-                          <Check size={13} className="ml-auto shrink-0 text-blue-500" />
-                        )}
-                      </button>
-                    </MenuItem>
-                  ))}
-                </MenuItems>
-              </Menu>
 
               {voiceAvailable && isRealtimeSelected && (
                 <Menu>
@@ -1101,27 +1049,5 @@ export function ChatInput() {
         />
       )}
     </>
-  );
-}
-
-function ModelMenuItem({ model, onSelect }: { model: Model; onSelect: (modelId: string) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(model.id)}
-      title={model.description}
-      className="group flex w-full flex-col items-start px-3 py-2 rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
-    >
-      <div className="flex items-center gap-2.5 w-full">
-        <div className="flex flex-col items-start flex-1 min-w-0">
-          <div className="font-semibold text-sm leading-tight whitespace-nowrap">{model.name ?? model.id}</div>
-          {model.description && (
-            <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
-              {model.description}
-            </div>
-          )}
-        </div>
-      </div>
-    </button>
   );
 }

@@ -1,4 +1,4 @@
-import { Check, Plus, Search, X } from "lucide-react";
+import { Check, Plus, Search, Settings2, X } from "lucide-react";
 import { type Dispatch, useEffect, useMemo, useRef, useState } from "react";
 import { SkillCatalog } from "@/features/agent/components/SkillCatalog";
 import { useSkills } from "@/features/skills/hooks/useSkills";
@@ -16,6 +16,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogView, setCatalogView] = useState<"new" | "list">("new");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -51,10 +52,23 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
       <div className="flex items-center gap-1.5">
         <button
           type="button"
-          onClick={() => setCatalogOpen(true)}
+          onClick={() => {
+            setCatalogView("new");
+            setCatalogOpen(true);
+          }}
           className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
         >
           <Plus size={11} /> New
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCatalogView("list");
+            setCatalogOpen(true);
+          }}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
+        >
+          <Settings2 size={11} /> Manage skills
         </button>
         {searchOpen ? (
           <div className="relative flex-1">
@@ -154,7 +168,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
             }
           }
         }}
-        initialView="new"
+        initialView={catalogView}
       />
     </div>
   );

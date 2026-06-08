@@ -108,18 +108,24 @@ export function SkillCatalog({
     setEditMode(true);
   }, []);
 
+  // Capture order only on open so toggling doesn't re-sort.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: order is intentionally captured only on open
+  useEffect(() => {
+    if (!isOpen) return;
+    setStableOrder(
+      [...allSkills]
+        .sort((a, b) => {
+          const aEnabled = enabledSkillNames.has(a.name) ? 0 : 1;
+          const bEnabled = enabledSkillNames.has(b.name) ? 0 : 1;
+          if (aEnabled !== bEnabled) return aEnabled - bEnabled;
+          return a.name.localeCompare(b.name);
+        })
+        .map((s) => s.id),
+    );
+  }, [isOpen]);
+
   useEffect(() => {
     if (isOpen) {
-      setStableOrder(
-        [...allSkills]
-          .sort((a, b) => {
-            const aEnabled = enabledSkillNames.has(a.name) ? 0 : 1;
-            const bEnabled = enabledSkillNames.has(b.name) ? 0 : 1;
-            if (aEnabled !== bEnabled) return aEnabled - bEnabled;
-            return a.name.localeCompare(b.name);
-          })
-          .map((s) => s.id),
-      );
       if (initialView === "new") {
         openEditor("new");
       } else if (initialSkillName) {
@@ -136,7 +142,7 @@ export function SkillCatalog({
       setSearch("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, initialView, initialSkillName, openEditor, allSkills, enabledSkillNames]);
+  }, [isOpen, initialView, initialSkillName, openEditor, allSkills]);
 
   useEffect(() => {
     if (!isOpen) return;

@@ -33,7 +33,6 @@ interface StoredFileMeta {
 function serializeAgentMd(agent: Agent): string {
   const lines: string[] = ["---"];
   lines.push(`name: ${agent.name}`);
-  if (agent.description) lines.push(`description: ${agent.description}`);
   if (agent.model) lines.push(`model: ${agent.model}`);
   if (agent.skills.length > 0) lines.push(`skills: [${agent.skills.map((s) => `'${s}'`).join(", ")}]`);
   if (agent.tools.length > 0) lines.push(`tools: [${agent.tools.map((t) => `'${t}'`).join(", ")}]`);
@@ -49,7 +48,6 @@ function serializeAgentMd(agent: Agent): string {
 function parseAgentMd(content: string):
   | {
       name: string;
-      description?: string;
       model?: string;
       skills: string[];
       tools: string[];
@@ -92,7 +90,6 @@ function parseAgentMd(content: string):
 
   return {
     name: fields.name || "Untitled",
-    description: fields.description || undefined,
     skills: parseList(fields.skills),
     tools: parseList(fields.tools),
     model: fields.model || undefined,
@@ -174,7 +171,6 @@ async function loadAgent(id: string): Promise<Agent | undefined> {
 
   // Try AGENTS.md first, then legacy AGENT.md, then agent.json
   let name = "Untitled";
-  let description: string | undefined;
   let instructions: string | undefined;
   let skills: string[] = [];
   let tools: string[] = [];
@@ -187,7 +183,6 @@ async function loadAgent(id: string): Promise<Agent | undefined> {
     const parsed = parseAgentMd(mdContent);
     if (parsed) {
       name = parsed.name;
-      description = parsed.description;
       instructions = parsed.instructions;
       skills = parsed.skills;
       tools = parsed.tools;
@@ -239,7 +234,6 @@ async function loadAgent(id: string): Promise<Agent | undefined> {
   return {
     id,
     name,
-    description,
     instructions,
     skills,
     servers,
@@ -415,7 +409,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       const newAgent: Agent = {
         id: crypto.randomUUID(),
         name,
-        description: initialData?.description,
         model: initialData?.model,
         instructions: initialData?.instructions,
         skills: initialData?.skills ?? [],

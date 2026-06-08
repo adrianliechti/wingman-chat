@@ -1,4 +1,4 @@
-import { Settings, Sparkles, X } from "lucide-react";
+import { Settings, Settings2, Sparkles, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
@@ -57,7 +57,6 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
     <>
       <Section
         title="Skills"
-        icon={<Sparkles size={12} />}
         count={enabledSkills.length}
         isOpen={true}
         collapsible={false}
@@ -70,7 +69,7 @@ export function SkillsSection({ agent }: SkillsSectionProps) {
               setCatalogOpen(true);
             }}
           >
-            <Settings size={12} /> Manage skills
+            <Settings2 size={12} /> Manage skills
           </button>
         }
       >

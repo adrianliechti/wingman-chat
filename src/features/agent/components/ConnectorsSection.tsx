@@ -1,4 +1,4 @@
-import { AlertTriangle, Loader2, Pencil, Plus, Server, ToggleLeft, ToggleRight, Wrench, Zap } from "lucide-react";
+import { AlertTriangle, Loader2, Pencil, Plus, Server, ToggleLeft, ToggleRight, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BridgeEditor } from "@/features/agent/components/BridgeEditor";
 import { useAgents } from "@/features/agent/hooks/useAgents";
@@ -81,7 +81,6 @@ export function ConnectorsSection({ agent }: ConnectorsSectionProps) {
 
       <Section
         title="Connectors"
-        icon={<Zap size={12} />}
         isOpen={true}
         collapsible={false}
         headerAction={
