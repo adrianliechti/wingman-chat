@@ -32,7 +32,7 @@ How to use it:
 1. Provide exactly one of `code` or `path`.
 2. Use `path` only for an existing artifact file, typically for longer scripts.
 3. Use `code` for short one-off snippets and temporary experiments.
-4. Add `packages` when needed. Common bundled packages include numpy, pandas, scipy, matplotlib, plotly, seaborn, openpyxl, xlsxwriter, `docx`, `pptx`, and docx2txt.
+4. Add `packages` when needed. Common bundled packages include numpy, pandas, scipy, matplotlib, plotly, seaborn, openpyxl, xlsxwriter, `docx`, `pptx`, docx2txt, pdfminer.six, pdfplumber, markdownify, and tabulate.
 5. Print important intermediate results when the output needs explanation.
 
 Limitations:

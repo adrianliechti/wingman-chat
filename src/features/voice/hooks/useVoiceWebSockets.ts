@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { AudioRecorder } from "@/features/voice/lib/AudioRecorder";
 import { AudioStreamPlayer } from "@/features/voice/lib/AudioStreamPlayer";
+import { parseToolArguments } from "@/shared/lib/toolArguments";
 import { decodeBase64, serializeToolResultForApi } from "@/shared/lib/utils";
 import type {
   AudioContent,
@@ -364,7 +365,7 @@ export function useVoiceWebSockets(
 
                         let args: Record<string, unknown> | undefined;
                         try {
-                          args = JSON.parse(argsStr) as Record<string, unknown>;
+                          args = parseToolArguments(argsStr);
                         } catch (parseError) {
                           console.error("Malformed tool arguments:", argsStr, parseError);
                         }

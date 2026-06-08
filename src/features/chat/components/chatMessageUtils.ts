@@ -1,3 +1,4 @@
+import { tryParseToolArguments } from "@/shared/lib/toolArguments";
 import type { Message, TextContent, ToolResultContent } from "@/shared/types/chat";
 
 // Artifacts-provider tools that produce/write files (unnamespaced — the
@@ -25,13 +26,8 @@ export function parseArtifactReference(text: string): string[] {
 }
 
 function parsePathFromJson(raw: string | undefined): string | null {
-  if (!raw) return null;
-  try {
-    const obj = JSON.parse(raw);
-    return typeof obj?.path === "string" ? obj.path : null;
-  } catch {
-    return null;
-  }
+  const obj = tryParseToolArguments(raw);
+  return obj && typeof obj.path === "string" ? obj.path : null;
 }
 
 /** Artifact file paths a single tool result wrote, if any. */
@@ -134,70 +130,68 @@ export function isTurnEnd(messages: Message[], index: number): boolean {
 
 // Helper function to extract and format common parameters for tool calls
 export function getToolCallPreview(_toolName: string, arguments_: string): string | null {
-  try {
-    const args = JSON.parse(arguments_);
+  const args = tryParseToolArguments(arguments_);
+  if (!args) return null;
 
-    // Common parameter names to look for (in order of preference)
-    // Prioritize short, descriptive fields over potentially long content
-    const commonParams = [
-      // Identification (short & descriptive)
-      "title",
-      "name",
-      "label",
-      // Location (usually short)
-      "city",
-      "location",
-      "place",
-      // Web & Network (usually concise)
-      "url",
-      "link",
-      "uri",
-      "endpoint",
-      "address",
-      // Files & Paths (usually concise)
-      "filename",
-      "file",
-      "path",
-      "filepath",
-      "folder",
-      "directory",
-      // Communication (usually short)
-      "subject",
-      "email",
-      "recipient",
-      "to",
-      // Commands (usually short)
-      "command",
-      // Search & Query (can vary in length, but often short)
-      "query",
-      "search",
-      "keyword",
-      "q",
-      "search_query",
-      "term",
-      // Short inputs
-      "question",
-      "input",
-      "value",
-      // Potentially long content (last resort)
-      "message",
-      "prompt",
-      "instruction",
-      "text",
-      "content",
-      "body",
-      "data",
-    ];
+  // Common parameter names to look for (in order of preference)
+  // Prioritize short, descriptive fields over potentially long content
+  const commonParams = [
+    // Identification (short & descriptive)
+    "title",
+    "name",
+    "label",
+    // Location (usually short)
+    "city",
+    "location",
+    "place",
+    // Web & Network (usually concise)
+    "url",
+    "link",
+    "uri",
+    "endpoint",
+    "address",
+    // Files & Paths (usually concise)
+    "filename",
+    "file",
+    "path",
+    "filepath",
+    "folder",
+    "directory",
+    // Communication (usually short)
+    "subject",
+    "email",
+    "recipient",
+    "to",
+    // Commands (usually short)
+    "command",
+    // Search & Query (can vary in length, but often short)
+    "query",
+    "search",
+    "keyword",
+    "q",
+    "search_query",
+    "term",
+    // Short inputs
+    "question",
+    "input",
+    "value",
+    // Potentially long content (last resort)
+    "message",
+    "prompt",
+    "instruction",
+    "text",
+    "content",
+    "body",
+    "data",
+  ];
 
-    // Find the first matching parameter
-    for (const param of commonParams) {
-      if (args[param] && typeof args[param] === "string") {
-        return args[param];
-      }
+  // Find the first matching parameter
+  for (const param of commonParams) {
+    const value = args[param];
+    if (value && typeof value === "string") {
+      return value;
     }
-
-    return null;
-  } catch {
-    return null;
   }
+
+  return null;
 }

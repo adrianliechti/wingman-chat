@@ -38,6 +38,7 @@
     "dompurify": "^3.4.8",
     "emoji-regex": "^10.6.0",
     "html2canvas": "^1.4.1",
+    "jsonrepair": "^3.14.0",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "just-bash": "^3.0.1",
