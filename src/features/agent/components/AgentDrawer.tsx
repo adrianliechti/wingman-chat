@@ -19,11 +19,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
-import {
-  exportSingleAgentAsZip,
-  importAgentsFromLegacyJson,
-  importAgentsFromZip,
-} from "@/features/settings/lib/agentImportExport";
+import { exportSingleAgentAsZip, triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { ConnectorsSection } from "./ConnectorsSection";
@@ -296,14 +292,24 @@ export function AgentDrawer() {
                   <span>Configure tools &amp; MCP servers</span>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={openWizard}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 transition-opacity"
-              >
-                <Plus size={12} />
-                Create Agent
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openWizard}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 transition-opacity"
+                >
+                  <Plus size={12} />
+                  Create Agent
+                </button>
+                <button
+                  type="button"
+                  onClick={triggerAgentImport}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 border border-neutral-200/80 dark:border-neutral-700/60 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 transition-colors"
+                >
+                  <Upload size={12} />
+                  Import
+                </button>
+              </div>
             </div>
           ) : (
             /* Agent list */
@@ -533,56 +539,7 @@ export function AgentDrawer() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    const input = document.createElement("input");
-                    input.type = "file";
-                    input.accept = ".zip,.json";
-                    input.multiple = false;
-                    input.onchange = async (event) => {
-                      const file = (event.target as HTMLInputElement).files?.[0];
-                      if (!file) return;
-                      const isZip = file.name.endsWith(".zip");
-                      if (isZip) {
-                        if (
-                          !window.confirm(
-                            "Import agents from ZIP? This will merge with your existing agents and skills.",
-                          )
-                        )
-                          return;
-                        try {
-                          await importAgentsFromZip(file);
-                          alert("Agents imported successfully! Please refresh the page to see the changes.");
-                          window.location.reload();
-                        } catch (error) {
-                          console.error("Failed to import agents:", error);
-                          alert("Failed to import agents. Please check the file and try again.");
-                        }
-                      } else {
-                        try {
-                          const jsonData = await file.text();
-                          const parsed = JSON.parse(jsonData);
-                          const count = parsed.repositories?.length ?? 0;
-                          if (!count) {
-                            alert("Invalid import file.");
-                            return;
-                          }
-                          if (
-                            !window.confirm(`Import ${count} legacy repositor${count === 1 ? "y" : "ies"} as agents?`)
-                          )
-                            return;
-                          const result = await importAgentsFromLegacyJson(jsonData);
-                          alert(
-                            `Imported ${result.imported} agent${result.imported === 1 ? "" : "s"}. Please refresh to see changes.`,
-                          );
-                          window.location.reload();
-                        } catch (error) {
-                          console.error("Failed to import agents:", error);
-                          alert("Failed to import. Please check the file format and try again.");
-                        }
-                      }
-                    };
-                    input.click();
-                  }}
+                  onClick={triggerAgentImport}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 border border-neutral-200/80 dark:border-neutral-700/60 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 transition-colors"
                 >
                   <Upload size={12} />

@@ -412,3 +412,64 @@ async function importLegacyRepositoriesFromZip(zip: JSZip): Promise<void> {
 
   await rebuildFolderIndex("agents");
 }
+
+// ============================================================================
+// Trigger Import (UI helper)
+// ============================================================================
+
+/**
+ * Opens a file picker and imports agents from the selected ZIP or legacy JSON.
+ * Handles confirmation dialogs, alerts, and page reload on success.
+ */
+export function triggerAgentImport(): void {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".zip,.json";
+  input.multiple = false;
+
+  input.onchange = async (event) => {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+
+    const isZip = file.name.endsWith(".zip");
+
+    if (isZip) {
+      if (!window.confirm("Import agents from ZIP? This will merge with your existing agents and skills.")) return;
+      try {
+        await importAgentsFromZip(file);
+        alert("Agents imported successfully! Please refresh the page to see the changes.");
+        window.location.reload();
+      } catch (error) {
+        console.error("Failed to import agents:", error);
+        alert("Failed to import agents. Please check the file and try again.");
+      }
+    } else {
+      try {
+        const jsonData = await file.text();
+        const parsed = JSON.parse(jsonData);
+        const count = parsed.repositories?.length ?? 0;
+        if (!count) {
+          alert("Invalid import file: Expected repositories array not found.");
+          return;
+        }
+        if (
+          !window.confirm(
+            `Import ${count} legacy repositor${count === 1 ? "y" : "ies"} as agents? This will add to your existing agents.`,
+          )
+        )
+          return;
+
+        const result = await importAgentsFromLegacyJson(jsonData);
+        alert(
+          `Successfully imported ${result.imported} repositor${result.imported === 1 ? "y" : "ies"} as agent${result.imported === 1 ? "" : "s"}. Please refresh to see changes.`,
+        );
+        window.location.reload();
+      } catch (error) {
+        console.error("Failed to import agents:", error);
+        alert("Failed to import. Please check the file format and try again.");
+      }
+    }
+  };
+
+  input.click();
+}

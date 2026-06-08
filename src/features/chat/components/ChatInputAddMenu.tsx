@@ -80,9 +80,7 @@ export function ChatInputAddMenu({
 
   // Agent submenu
   const [showAgentSubmenu, setShowAgentSubmenu] = useState(false);
-  const [agentSubmenuPos, setAgentSubmenuPos] = useState<{ bottom: number; left: number; maxHeight: number } | null>(
-    null,
-  );
+  const [agentSubmenuPos, setAgentSubmenuPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
   const agentMenuRef = useRef<HTMLButtonElement>(null);
   const agentSubmenuTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -266,12 +264,13 @@ export function ChatInputAddMenu({
                 type="button"
                 onMouseEnter={() => {
                   if (agentSubmenuTimer.current) clearTimeout(agentSubmenuTimer.current);
-                  const rect = (fileMenuPanelRef.current ?? agentMenuRef.current)?.getBoundingClientRect();
-                  if (rect)
+                  const panelRect = fileMenuPanelRef.current?.getBoundingClientRect();
+                  const buttonRect = agentMenuRef.current?.getBoundingClientRect();
+                  if (panelRect && buttonRect)
                     setAgentSubmenuPos({
-                      bottom: window.innerHeight - rect.bottom,
-                      left: rect.right,
-                      maxHeight: rect.bottom - 16,
+                      top: buttonRect.top,
+                      left: panelRect.right,
+                      maxHeight: window.innerHeight - buttonRect.top - 16,
                     });
                   setShowAgentSubmenu(true);
                 }}
@@ -291,7 +290,7 @@ export function ChatInputAddMenu({
                 <div
                   data-agent-submenu
                   role="none"
-                  style={{ bottom: agentSubmenuPos.bottom, left: agentSubmenuPos.left }}
+                  style={{ top: agentSubmenuPos.top, left: agentSubmenuPos.left }}
                   className="fixed z-9999 pl-2"
                   onMouseEnter={() => {
                     if (agentSubmenuTimer.current) clearTimeout(agentSubmenuTimer.current);
@@ -435,16 +434,14 @@ export function ChatInputAddMenu({
             </div>
 
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200/60 dark:border-neutral-800/60 shrink-0">
-              <DialogTitle className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                More Options
-              </DialogTitle>
+            <div className="flex items-center justify-end px-4 py-1 border-b border-neutral-200/60 dark:border-neutral-800/60 shrink-0">
+              <DialogTitle className="sr-only">More Options</DialogTitle>
               <button
                 type="button"
                 onClick={() => setShowMobileSheet(false)}
-                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
+                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
               >
-                <X size={16} />
+                <X size={14} />
               </button>
             </div>
 
@@ -536,7 +533,7 @@ export function ChatInputAddMenu({
                   <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
                   <div className="px-4 pb-1">
                     <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-                      Features
+                      Connectors
                     </p>
                   </div>
                   <div className="px-2">
