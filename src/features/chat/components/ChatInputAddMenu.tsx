@@ -151,8 +151,8 @@ export function ChatInputAddMenu({
           <MenuItems
             modal={false}
             transition
-            anchor="bottom end"
-            className="max-h-[60vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-y-auto shadow-lg shadow-black/20 dark:shadow-black/50 z-50 min-w-40 dark:ring-1 dark:ring-white/10 py-1"
+            anchor="top start"
+            className="max-h-[60vh]! mb-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-y-auto shadow-lg shadow-black/20 dark:shadow-black/50 z-50 min-w-40 dark:ring-1 dark:ring-white/10 py-1"
           >
             {isScreenCaptureAvailable && (
               <MenuItem>
