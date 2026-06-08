@@ -97,8 +97,19 @@ export interface CodeExecutionResult {
 
 let pyodideReady: Promise<PyodideInterface> | null = null;
 const loadedPackages = new Set<string>();
-let kaleidoMockApplied = false;
 let plotlyShimApplied = false;
+
+// Native-binary deps that pure-Python wheels declare but only import lazily for
+// features we don't use. We register a micropip mock (keyed off the dependent
+// package being installed) so resolution succeeds; the real module is never
+// imported at runtime. Mirrors MOCKED_NATIVE_DEPS in bundle-pyodide-packages.mjs.
+//   kaleido    — plotly image export (built-in renderer works without it)
+//   pypdfium2  — pdfplumber page.to_image() (extract_text/extract_tables don't need it)
+const MOCK_PACKAGES: ReadonlyArray<{ trigger: string; name: string; version: string }> = [
+  { trigger: "plotly", name: "kaleido", version: "1.1.0" },
+  { trigger: "pdfplumber", name: "pypdfium2", version: "5.9.0" },
+];
+const appliedMocks = new Set<string>();
 
 /**
  * `pyodide.loadPackage()` reports failures via `errorCallback` (default: log
@@ -213,11 +224,16 @@ async function ensurePackagesLoaded(pyodide: PyodideInterface, packages: string[
 
   await loadPyodidePackages(pyodide, ["micropip"]);
 
-  // Mock kaleido so micropip skips the native-binary dep when installing
-  // plotly. Plotly's built-in renderer works without it.
-  if (wheels.has("plotly") && !kaleidoMockApplied) {
-    await pyodide.runPythonAsync('import micropip; micropip.add_mock_package("kaleido", "1.1.0")');
-    kaleidoMockApplied = true;
+  // Register micropip mocks for native-binary deps so install resolves without
+  // them (see MOCK_PACKAGES). The mocked modules are only imported lazily by
+  // their dependents for features we don't use.
+  for (const { trigger, name, version } of MOCK_PACKAGES) {
+    if (wheels.has(trigger) && !appliedMocks.has(name)) {
+      await pyodide.runPythonAsync(
+        `import micropip; micropip.add_mock_package(${JSON.stringify(name)}, ${JSON.stringify(version)})`,
+      );
+      appliedMocks.add(name);
+    }
   }
 
   // Single batched install — micropip accepts a list of wheel URLs.
