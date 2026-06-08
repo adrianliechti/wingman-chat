@@ -1,11 +1,12 @@
 import { useMatch, useNavigate } from "@tanstack/react-router";
-import { AppWindow, ArrowDown, Bot, ChevronLeft, Info, Plus as PlusIcon, Shapes } from "lucide-react";
+import { AppWindow, ArrowDown, ChevronLeft, Info, Plus as PlusIcon, Shapes } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AgentDrawer } from "@/features/agent/components/AgentDrawer";
 import { SkillCatalog } from "@/features/agent/components/SkillCatalog";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { AgentHintButton } from "@/features/chat/components/AgentHintButton";
 import { ChatConsentBackdrop, ChatConsentBanner } from "@/features/chat/components/ChatConsentOverlay";
 import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
@@ -156,7 +157,7 @@ export function ChatPage() {
     toggleArtifactsDrawer,
     setShowArtifactsDrawer,
   } = useArtifacts();
-  const { agents, currentAgent, updateAgent, showAgentDrawer, setShowAgentDrawer, toggleAgentDrawer } = useAgents();
+  const { agents, currentAgent, updateAgent, showAgentDrawer, setShowAgentDrawer } = useAgents();
   const { showSkillCatalog, skillCatalogTarget, closeSkillCatalog } = useSkills();
 
   const agentSkillIds = useMemo(() => new Set(currentAgent?.skills ?? []), [currentAgent]);
@@ -465,19 +466,7 @@ export function ChatPage() {
             <Shapes size={20} />
           </button>
         )}
-        <button
-          type="button"
-          className={cn(
-            "p-2 rounded-full transition-all duration-150 ease-out",
-            showAgentDrawer
-              ? "text-neutral-900 dark:text-neutral-100 bg-neutral-200 dark:bg-neutral-700/60"
-              : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-          )}
-          onClick={toggleAgentDrawer}
-          title={showAgentDrawer ? "Close agent" : "Open agent"}
-        >
-          <Bot size={20} />
-        </button>
+        <AgentHintButton />
         <button
           type="button"
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"
@@ -497,8 +486,6 @@ export function ChatPage() {
     artifactsAvailable,
     showArtifactsDrawer,
     toggleArtifactsDrawer,
-    showAgentDrawer,
-    toggleAgentDrawer,
     showAppDrawer,
     hasAppContent,
     toggleAppDrawer,
