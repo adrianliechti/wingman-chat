@@ -134,16 +134,7 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
         return instructionsList.join("\n\n");
       },
     };
-  }, [
-    mode,
-    model,
-    models,
-    generateInstructions,
-    providers,
-    getProviderState,
-    artifactsProvider,
-    currentAgent,
-  ]);
+  }, [mode, model, models, generateInstructions, providers, getProviderState, artifactsProvider, currentAgent]);
 
   return context;
 }

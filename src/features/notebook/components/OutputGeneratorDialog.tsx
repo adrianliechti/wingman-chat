@@ -451,9 +451,7 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                         }`}
                       >
                         {p.label}
-                        {p.count !== null && (
-                          <span className="ml-1 font-normal opacity-60 text-xs">({p.count})</span>
-                        )}
+                        {p.count !== null && <span className="ml-1 font-normal opacity-60 text-xs">({p.count})</span>}
                       </button>
                     ))}
                   </div>

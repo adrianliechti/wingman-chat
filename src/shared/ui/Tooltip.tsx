@@ -57,6 +57,7 @@ export function Tooltip({ content, children, className, side = "right" }: Toolti
   return (
     <span
       ref={ref}
+      role="none"
       className={cn("group/tooltip block", className)}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}

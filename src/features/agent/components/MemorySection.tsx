@@ -274,28 +274,27 @@ export function MemorySection({ agent }: MemorySectionProps) {
         }
       >
         {agent.memory ? (
-          <>
-            {content?.trim() ? (
-              <div
-                className="relative rounded-xl border border-neutral-200/70 dark:border-neutral-700/50 bg-neutral-50/60 dark:bg-neutral-800/30 overflow-hidden cursor-pointer"
-                onClick={() => openDialog(false)}
-              >
-                <div className="relative px-3.5 pt-3 pb-3">
-                  <div className="prose prose-xs dark:prose-invert max-w-none text-xs [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 line-clamp-4 text-neutral-600 dark:text-neutral-400">
-                    <Markdown compact>{content}</Markdown>
-                  </div>
-                  <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-neutral-50/80 dark:from-transparent to-transparent pointer-events-none" />
+          content?.trim() ? (
+            <button
+              type="button"
+              className="relative rounded-xl border border-neutral-200/70 dark:border-neutral-700/50 bg-neutral-50/60 dark:bg-neutral-800/30 overflow-hidden cursor-pointer w-full text-left"
+              onClick={() => openDialog(false)}
+            >
+              <div className="relative px-3.5 pt-3 pb-3">
+                <div className="prose prose-xs dark:prose-invert max-w-none text-xs [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 line-clamp-4 text-neutral-600 dark:text-neutral-400">
+                  <Markdown compact>{content}</Markdown>
                 </div>
+                <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-neutral-50/80 dark:from-transparent to-transparent pointer-events-none" />
               </div>
-            ) : (
-              <SectionEmptyState
-                icon={<Edit size={12} />}
-                label="No memories yet"
-                description="The agent will write here as you chat"
-                onClick={openDialog}
-              />
-            )}
-          </>
+            </button>
+          ) : (
+            <SectionEmptyState
+              icon={<Edit size={12} />}
+              label="No memories yet"
+              description="The agent will write here as you chat"
+              onClick={openDialog}
+            />
+          )
         ) : (
           <p className="text-xs text-neutral-400 dark:text-neutral-500">
             Enable to let this agent remember context across conversations.

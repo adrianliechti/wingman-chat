@@ -119,7 +119,6 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
                           rows={12}
                           className="w-full px-3 py-2 text-sm rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 resize-y min-h-50 backdrop-blur-sm transition-colors"
                           placeholder="Enter instructions for this agent..."
-                          // biome-ignore lint/a11y/noAutofocus: intentional focus when editing
                           autoFocus
                         />
                         <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
@@ -207,8 +206,9 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
       >
         <div>
           {agent.instructions?.trim() ? (
-            <div
-              className="relative rounded-xl border border-neutral-200/70 dark:border-neutral-700/50 bg-neutral-50/60 dark:bg-neutral-800/30 overflow-hidden cursor-pointer"
+            <button
+              type="button"
+              className="relative rounded-xl border border-neutral-200/70 dark:border-neutral-700/50 bg-neutral-50/60 dark:bg-neutral-800/30 overflow-hidden cursor-pointer w-full text-left"
               onClick={() => openDialog(false)}
             >
               <div className="relative px-3.5 pt-3 pb-3">
@@ -217,7 +217,7 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
                 </div>
                 <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-neutral-50/80 dark:from-transparent to-transparent pointer-events-none" />
               </div>
-            </div>
+            </button>
           ) : (
             <SectionEmptyState
               icon={<Edit size={12} />}

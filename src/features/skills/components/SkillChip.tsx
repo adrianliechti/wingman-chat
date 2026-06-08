@@ -1,4 +1,4 @@
-import { Expand, PanelRightOpen, Sparkles } from "lucide-react";
+import { Expand, Sparkles } from "lucide-react";
 import { memo } from "react";
 import { cn } from "@/shared/lib/cn";
 import { useSkills } from "../hooks/useSkills";

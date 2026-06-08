@@ -52,9 +52,7 @@ export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) 
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{tool.label}</div>
                 {tool.description && (
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
-                    {tool.description}
-                  </div>
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">{tool.description}</div>
                 )}
               </div>
               <button

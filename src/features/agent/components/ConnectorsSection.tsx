@@ -9,11 +9,11 @@ import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { Section } from "./Section";
 
-interface ToolsSectionProps {
+interface ConnectorsSectionProps {
   agent: Agent;
 }
 
-export function ToolsSection({ agent }: ToolsSectionProps) {
+export function ConnectorsSection({ agent }: ConnectorsSectionProps) {
   const { updateAgent, addServer, updateServer, removeServer, toggleServer } = useAgents();
   const { providers, getProviderState, setProviderEnabled } = useToolsContext();
 

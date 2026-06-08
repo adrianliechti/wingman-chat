@@ -152,7 +152,9 @@ function FileDisplay({ content, className }: { content: FileContent; className?:
 
       {/* Filename + size */}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-neutral-700 dark:text-neutral-200">{content.name}</span>
+        <span className="block truncate text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          {content.name}
+        </span>
         {size && <span className="block text-xs text-neutral-400 dark:text-neutral-500">{size}</span>}
       </span>
 

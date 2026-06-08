@@ -1,10 +1,8 @@
 import { ChevronRight } from "lucide-react";
-import type { ReactNode } from "react";
 import { cn } from "@/shared/lib/cn";
 
 interface SectionProps {
   title: string;
-  icon?: ReactNode;
   count?: number;
   isOpen: boolean;
   onOpenToggle?: () => void;
@@ -18,7 +16,6 @@ interface SectionProps {
 
 export function Section({
   title,
-  icon,
   count,
   isOpen,
   onOpenToggle,

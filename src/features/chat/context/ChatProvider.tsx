@@ -259,8 +259,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       updateChat(chatItem.id, () => ({ model }));
     }
 
-    const fsForChat =
-      fsRef.current?.chatId === chatItem.id ? fsRef.current : new FileSystemManager(chatItem.id);
+    const fsForChat = fsRef.current?.chatId === chatItem.id ? fsRef.current : new FileSystemManager(chatItem.id);
     fsRef.current = fsForChat;
 
     return { id: chatItem.id, chat: chatItem, fs: fsForChat };

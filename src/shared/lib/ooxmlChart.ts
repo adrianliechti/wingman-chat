@@ -58,7 +58,11 @@ function chartTitle(doc: Document): string | undefined {
   return t || undefined;
 }
 
-export function parseChart(doc: Document, resolveFill: FillResolver, accents: (string | undefined)[]): ChartData | null {
+export function parseChart(
+  doc: Document,
+  resolveFill: FillResolver,
+  accents: (string | undefined)[],
+): ChartData | null {
   const plotArea = descend(doc.documentElement, "c:chart", "c:plotArea");
   if (!plotArea) return null;
   const TYPES = ["c:barChart", "c:lineChart", "c:pieChart", "c:doughnutChart", "c:areaChart"];
@@ -209,11 +213,15 @@ function renderCartesian(data: ChartData, W: number, top: number, bottom: number
     if (horiz) {
       const x = plotX + (plotW * (val - axMin)) / range;
       out.push(`<line x1="${x}" y1="${plotY}" x2="${x}" y2="${plotY + plotH}" stroke="#E6E6E6"/>`);
-      out.push(`<text x="${x}" y="${plotY + plotH + 12}" text-anchor="middle" font-size="9" fill="#888">${escapeHtml(chartFmt(val))}</text>`);
+      out.push(
+        `<text x="${x}" y="${plotY + plotH + 12}" text-anchor="middle" font-size="9" fill="#888">${escapeHtml(chartFmt(val))}</text>`,
+      );
     } else {
       const y = plotY + plotH - (plotH * (val - axMin)) / range;
       out.push(`<line x1="${plotX}" y1="${y}" x2="${plotX + plotW}" y2="${y}" stroke="#E6E6E6"/>`);
-      out.push(`<text x="${plotX - 4}" y="${y + 3}" text-anchor="end" font-size="9" fill="#888">${escapeHtml(chartFmt(val))}</text>`);
+      out.push(
+        `<text x="${plotX - 4}" y="${y + 3}" text-anchor="end" font-size="9" fill="#888">${escapeHtml(chartFmt(val))}</text>`,
+      );
     }
   }
 
@@ -255,25 +263,43 @@ function renderCartesian(data: ChartData, W: number, top: number, bottom: number
           let a: number;
           let b: number;
           if (stacked) {
-            if (v >= 0) { a = valToX(posAcc); b = valToX(posAcc + v); posAcc += v; }
-            else { a = valToX(negAcc); b = valToX(negAcc + v); negAcc += v; }
+            if (v >= 0) {
+              a = valToX(posAcc);
+              b = valToX(posAcc + v);
+              posAcc += v;
+            } else {
+              a = valToX(negAcc);
+              b = valToX(negAcc + v);
+              negAcc += v;
+            }
           } else {
             a = valToX(Math.min(0, v));
             b = valToX(Math.max(0, v));
           }
-          out.push(`<rect x="${Math.min(a, b).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.abs(b - a).toFixed(1)}" height="${thick.toFixed(1)}" fill="${color}"/>`);
+          out.push(
+            `<rect x="${Math.min(a, b).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.abs(b - a).toFixed(1)}" height="${thick.toFixed(1)}" fill="${color}"/>`,
+          );
         } else {
           const x = groupStart + (stacked ? 0 : barW * si);
           let a: number;
           let b: number;
           if (stacked) {
-            if (v >= 0) { a = valToY(posAcc); b = valToY(posAcc + v); posAcc += v; }
-            else { a = valToY(negAcc); b = valToY(negAcc + v); negAcc += v; }
+            if (v >= 0) {
+              a = valToY(posAcc);
+              b = valToY(posAcc + v);
+              posAcc += v;
+            } else {
+              a = valToY(negAcc);
+              b = valToY(negAcc + v);
+              negAcc += v;
+            }
           } else {
             a = valToY(Math.max(0, v));
             b = valToY(Math.min(0, v));
           }
-          out.push(`<rect x="${x.toFixed(1)}" y="${Math.min(a, b).toFixed(1)}" width="${thick.toFixed(1)}" height="${Math.abs(b - a).toFixed(1)}" fill="${color}"/>`);
+          out.push(
+            `<rect x="${x.toFixed(1)}" y="${Math.min(a, b).toFixed(1)}" width="${thick.toFixed(1)}" height="${Math.abs(b - a).toFixed(1)}" fill="${color}"/>`,
+          );
         }
       });
     }
@@ -284,10 +310,14 @@ function renderCartesian(data: ChartData, W: number, top: number, bottom: number
     if (!label) continue;
     if (horiz) {
       const y = plotY + catSpan * (c + 0.5) + 3;
-      out.push(`<text x="${plotX - 4}" y="${y}" text-anchor="end" font-size="9" fill="#888">${escapeHtml(truncate(label, 10))}</text>`);
+      out.push(
+        `<text x="${plotX - 4}" y="${y}" text-anchor="end" font-size="9" fill="#888">${escapeHtml(truncate(label, 10))}</text>`,
+      );
     } else {
       const x = plotX + catSpan * (c + 0.5);
-      out.push(`<text x="${x}" y="${plotY + plotH + 12}" text-anchor="middle" font-size="9" fill="#888">${escapeHtml(truncate(label, 10))}</text>`);
+      out.push(
+        `<text x="${x}" y="${plotY + plotH + 12}" text-anchor="middle" font-size="9" fill="#888">${escapeHtml(truncate(label, 10))}</text>`,
+      );
     }
   }
 

@@ -767,11 +767,7 @@ type ToolResultContent = TextContent | ImageContent | AudioContent | FileContent
 
 /** Derive a download filename from a resource URI (e.g. "runs://id/chart.png" -> "chart.png"). */
 function filenameFromUri(uri: string | undefined, fallback = "resource"): string {
-  const segment = uri
-    ?.split(/[?#]/)[0]
-    .split("/")
-    .filter(Boolean)
-    .pop();
+  const segment = uri?.split(/[?#]/)[0].split("/").filter(Boolean).pop();
   if (!segment) return fallback;
   try {
     return decodeURIComponent(segment);

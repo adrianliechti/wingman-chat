@@ -1295,7 +1295,11 @@ async function renderTable(ctx: DocxCtx, tbl: Element): Promise<string> {
       // as inherited cell CSS; direct run formatting on each run still wins.
       if (sp.rPr.length) {
         for (const decl of runStyles(ctx, sp.rPr)) {
-          if (/^(font-weight|font-style|color|font-family|font-size|text-decoration|text-transform|font-variant|letter-spacing):/.test(decl)) {
+          if (
+            /^(font-weight|font-style|color|font-family|font-size|text-decoration|text-transform|font-variant|letter-spacing):/.test(
+              decl,
+            )
+          ) {
             styles.push(decl);
           }
         }

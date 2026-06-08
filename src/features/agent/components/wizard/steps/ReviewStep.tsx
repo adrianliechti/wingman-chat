@@ -161,9 +161,7 @@ export function ReviewStep({
         <div className="flex items-center justify-between py-1">
           <div>
             <div className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Memory</div>
-            <div className="text-xs text-neutral-400 dark:text-neutral-500">
-              Remember context across conversations
-            </div>
+            <div className="text-xs text-neutral-400 dark:text-neutral-500">Remember context across conversations</div>
           </div>
           <button
             type="button"

@@ -136,7 +136,7 @@ export function SkillCatalog({
       setSearch("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, initialView, initialSkillName, openEditor]);
+  }, [isOpen, initialView, initialSkillName, openEditor, allSkills, enabledSkillNames]);
 
   useEffect(() => {
     if (!isOpen) return;

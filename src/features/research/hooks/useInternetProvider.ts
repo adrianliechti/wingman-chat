@@ -281,7 +281,7 @@ export function useInternetProvider(): ToolProvider | null {
 
     return {
       id: "internet",
-      name: "Internet",
+      name: "Web Search",
       description: "Access up-to-date information",
       icon: Globe,
       tools: [searchAgent],

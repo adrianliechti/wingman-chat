@@ -67,7 +67,7 @@ function runToMathML(text: string, variant: string | null): string {
   for (const ch of text) {
     if (ch === " ") {
       flushNum();
-      out += "<mspace width=\"0.25em\"/>";
+      out += '<mspace width="0.25em"/>';
       continue;
     }
     if (ch >= "0" && ch <= "9") {
@@ -148,8 +148,7 @@ function delimiter(el: Element): string {
   const beg = mval(pr, "m:begChr") ?? "(";
   const end = mval(pr, "m:endChr") ?? ")";
   const sep = mval(pr, "m:sepChr") ?? "|";
-  const fence = (ch: string) =>
-    ch ? `<mo fence="true" stretchy="true">${escapeHtml(ch)}</mo>` : "";
+  const fence = (ch: string) => (ch ? `<mo fence="true" stretchy="true">${escapeHtml(ch)}</mo>` : "");
   const inner = childList(el, "m:e")
     .map((e) => arg(e))
     .join(`<mo separator="true">${escapeHtml(sep)}</mo>`);
@@ -178,7 +177,12 @@ function accent(el: Element): string {
 
 function matrix(el: Element): string {
   const rows = childList(el, "m:mr")
-    .map((mr) => `<mtr>${childList(mr, "m:e").map((e) => `<mtd>${seq(e)}</mtd>`).join("")}</mtr>`)
+    .map(
+      (mr) =>
+        `<mtr>${childList(mr, "m:e")
+          .map((e) => `<mtd>${seq(e)}</mtd>`)
+          .join("")}</mtr>`,
+    )
     .join("");
   return `<mtable rowspacing="0.2em" columnspacing="0.5em">${rows}</mtable>`;
 }
@@ -269,9 +273,6 @@ export function ommlToMathml(el: Element, display: boolean): string {
   // m:oMathPara wraps one or more m:oMath equations (display blocks).
   const maths = el.tagName === "m:oMathPara" ? childList(el, "m:oMath") : [el];
   return maths
-    .map(
-      (m) =>
-        `<math xmlns="http://www.w3.org/1998/Math/MathML" display="${mode}">${seq(m)}</math>`,
-    )
+    .map((m) => `<math xmlns="http://www.w3.org/1998/Math/MathML" display="${mode}">${seq(m)}</math>`)
     .join("");
 }

@@ -178,7 +178,7 @@ export function useCanvasProvider(): ToolProvider | null {
 
     return {
       id: "canvas",
-      name: "Canvas",
+      name: "Image Generator",
       description: "Create and edit images",
       icon: Image,
       instructions: canvasInstructionsText,

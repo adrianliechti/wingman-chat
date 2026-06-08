@@ -461,7 +461,7 @@ async function getSheetEntries(ctx: XlsxCtx): Promise<SheetEntry[]> {
     const paths = Object.keys(ctx.zip.files)
       .filter((p) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(p))
       .sort();
-    paths.forEach((p, i) => entries.push({ name: `Sheet${i + 1}`, path: p }));
+    for (let i = 0; i < paths.length; i++) entries.push({ name: `Sheet${i + 1}`, path: paths[i] });
   }
   return entries;
 }
@@ -527,10 +527,22 @@ const REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationsh
 function drawingFill(ctx: XlsxCtx): FillResolver {
   const tc = ctx.themeColors;
   const scheme: Record<string, string | undefined> = {
-    lt1: tc[0], dk1: tc[1], lt2: tc[2], dk2: tc[3],
-    bg1: tc[0], tx1: tc[1], bg2: tc[2], tx2: tc[3],
-    accent1: tc[4], accent2: tc[5], accent3: tc[6], accent4: tc[7], accent5: tc[8], accent6: tc[9],
-    hlink: tc[10], folHlink: tc[11],
+    lt1: tc[0],
+    dk1: tc[1],
+    lt2: tc[2],
+    dk2: tc[3],
+    bg1: tc[0],
+    tx1: tc[1],
+    bg2: tc[2],
+    tx2: tc[3],
+    accent1: tc[4],
+    accent2: tc[5],
+    accent3: tc[6],
+    accent4: tc[7],
+    accent5: tc[8],
+    accent6: tc[9],
+    hlink: tc[10],
+    folHlink: tc[11],
   };
   return (spPr) => {
     const fill = child(spPr, "a:solidFill");
@@ -608,7 +620,9 @@ async function renderDrawings(
         if (cxml) {
           const data = parseChart(parseXml(cxml), resolveFill, accents);
           if (data?.series.length) {
-            items.push(`<div style="${pos}background:#fff;border:1px solid #E3E6EA;">${renderChartSvg(data, w, h)}</div>`);
+            items.push(
+              `<div style="${pos}background:#fff;border:1px solid #E3E6EA;">${renderChartSvg(data, w, h)}</div>`,
+            );
           }
         }
       }
@@ -671,8 +685,18 @@ function formatCode(ctx: XlsxCtx, numFmtId: number): string {
 // ── Date / time ───────────────────────────────────────────────────────────
 
 const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 /** Japanese short / long weekday names (aaa / aaaa format codes). */
@@ -785,12 +809,18 @@ function formatExcelDateCode(serial: number, fmtCode: string, date1904: boolean)
       prevWasHour = false;
     } else if (ch === "y" || ch === "Y") {
       let n = 0;
-      while (i < section.length && section[i].toLowerCase() === "y") { n++; i++; }
+      while (i < section.length && section[i].toLowerCase() === "y") {
+        n++;
+        i++;
+      }
       result += n <= 2 ? String(yr).slice(-2) : String(yr).padStart(4, "0");
       prevWasHour = false;
     } else if (ch === "m" || ch === "M") {
       let n = 0;
-      while (i < section.length && section[i].toLowerCase() === "m") { n++; i++; }
+      while (i < section.length && section[i].toLowerCase() === "m") {
+        n++;
+        i++;
+      }
       // Minutes when right after h/hh, or right before :s/:ss; else month.
       const rest = section.slice(i).replace(/\[[^\]]*\]/g, "");
       if (prevWasHour || /^:s/i.test(rest)) {
@@ -803,7 +833,10 @@ function formatExcelDateCode(serial: number, fmtCode: string, date1904: boolean)
       prevWasHour = false;
     } else if (ch === "d" || ch === "D") {
       let n = 0;
-      while (i < section.length && section[i].toLowerCase() === "d") { n++; i++; }
+      while (i < section.length && section[i].toLowerCase() === "d") {
+        n++;
+        i++;
+      }
       if (n === 1) result += String(dy);
       else if (n === 2) result += String(dy).padStart(2, "0");
       else if (n === 3) result += WEEKDAY_NAMES[wd].slice(0, 3);
@@ -811,34 +844,57 @@ function formatExcelDateCode(serial: number, fmtCode: string, date1904: boolean)
       prevWasHour = false;
     } else if (ch === "h" || ch === "H") {
       let n = 0;
-      while (i < section.length && section[i].toLowerCase() === "h") { n++; i++; }
+      while (i < section.length && section[i].toLowerCase() === "h") {
+        n++;
+        i++;
+      }
       const h = hasAmPm ? hr % 12 || 12 : hr;
       result += n >= 2 ? String(h).padStart(2, "0") : String(h);
       prevWasHour = true;
     } else if (ch === "s" || ch === "S") {
       let n = 0;
-      while (i < section.length && section[i].toLowerCase() === "s") { n++; i++; }
+      while (i < section.length && section[i].toLowerCase() === "s") {
+        n++;
+        i++;
+      }
       result += n >= 2 ? String(sc).padStart(2, "0") : String(sc);
       prevWasHour = false;
     } else if (ch === "g" || ch === "G") {
       let n = 0;
-      while (i < section.length && section[i].toLowerCase() === "g") { n++; i++; }
+      while (i < section.length && section[i].toLowerCase() === "g") {
+        n++;
+        i++;
+      }
       const e = getEra();
       result += n === 1 ? e.abbr : n === 2 ? e.short : e.long;
       prevWasHour = false;
     } else if (ch === "e" || ch === "E") {
       let n = 0;
-      while (i < section.length && section[i].toLowerCase() === "e") { n++; i++; }
+      while (i < section.length && section[i].toLowerCase() === "e") {
+        n++;
+        i++;
+      }
       const y = getEra().year;
       result += n >= 2 ? String(y).padStart(2, "0") : String(y);
       prevWasHour = false;
     } else if (ch === "A" || ch === "a") {
       const upper = section.slice(i).toUpperCase();
-      if (upper.startsWith("AAAA")) { result += JP_WEEKDAY_LONG[wd]; i += 4; }
-      else if (upper.startsWith("AAA")) { result += JP_WEEKDAY_SHORT[wd]; i += 3; }
-      else if (upper.startsWith("AM/PM")) { result += hr < 12 ? "AM" : "PM"; i += 5; }
-      else if (upper.startsWith("A/P")) { result += hr < 12 ? "A" : "P"; i += 3; }
-      else { result += ch; i++; }
+      if (upper.startsWith("AAAA")) {
+        result += JP_WEEKDAY_LONG[wd];
+        i += 4;
+      } else if (upper.startsWith("AAA")) {
+        result += JP_WEEKDAY_SHORT[wd];
+        i += 3;
+      } else if (upper.startsWith("AM/PM")) {
+        result += hr < 12 ? "AM" : "PM";
+        i += 5;
+      } else if (upper.startsWith("A/P")) {
+        result += hr < 12 ? "A" : "P";
+        i += 3;
+      } else {
+        result += ch;
+        i++;
+      }
       prevWasHour = false;
     } else {
       result += ch;
@@ -884,7 +940,10 @@ function tokenizeNumberFormat(section: string): { tokens: FmtToken[]; numSpec: s
     else tokens.push({ kind: "lit", text: s });
   };
   const ensureNum = () => {
-    if (!numPushed) { tokens.push({ kind: "num" }); numPushed = true; }
+    if (!numPushed) {
+      tokens.push({ kind: "num" });
+      numPushed = true;
+    }
   };
 
   let i = 0;
@@ -951,8 +1010,10 @@ function applyFormatCode(num: number, formatCode: string): string {
   let useMagnitude = false;
   if (num > 0) section = sections[0];
   else if (num < 0) {
-    if (sections.length > 1) { section = sections[1]; useMagnitude = true; }
-    else section = sections[0];
+    if (sections.length > 1) {
+      section = sections[1];
+      useMagnitude = true;
+    } else section = sections[0];
   } else section = sections.length > 2 ? sections[2] : sections[0];
 
   const { tokens, numSpec } = tokenizeNumberFormat(section);
@@ -980,8 +1041,10 @@ function applyFormatCode(num: number, formatCode: string): string {
   for (const t of tokens) {
     if (t.kind === "lit") result += t.text;
     else if (t.kind === "percent") result += "%";
-    else if (t.kind === "num") { result += numberText; numberEmitted = true; }
-    else if (t.kind === "sci") result += `E${expText}`;
+    else if (t.kind === "num") {
+      result += numberText;
+      numberEmitted = true;
+    } else if (t.kind === "sci") result += `E${expText}`;
   }
   if (!numberEmitted && (numSpec.length > 0 || sciTok)) result += numberText;
   return result;
@@ -1205,7 +1268,12 @@ function compileCf(
           dxfId,
           stop,
         };
-      } else if (type === "containsText" || type === "notContainsText" || type === "beginsWith" || type === "endsWith") {
+      } else if (
+        type === "containsText" ||
+        type === "notContainsText" ||
+        type === "beginsWith" ||
+        type === "endsWith"
+      ) {
         rule = { type: "text", priority, op: type, text: el.getAttribute("text") || "", dxfId, stop };
       } else if (type === "top10") {
         const t = top10Threshold(
@@ -1214,7 +1282,8 @@ function compileCf(
           el.getAttribute("percent") === "1",
           el.getAttribute("bottom") !== "1",
         );
-        if (t != null) rule = { type: "top10", priority, threshold: t, isTop: el.getAttribute("bottom") !== "1", dxfId, stop };
+        if (t != null)
+          rule = { type: "top10", priority, threshold: t, isTop: el.getAttribute("bottom") !== "1", dxfId, stop };
       } else if (type === "aboveAverage") {
         if (samples.length) {
           rule = {
@@ -1249,7 +1318,9 @@ function interpolateHex(a: string, b: string, t: number): string {
   const pa = a.replace("#", "");
   const pb = b.replace("#", "");
   const mix = (i: number) =>
-    Math.round(parseInt(pa.slice(i, i + 2), 16) + (parseInt(pb.slice(i, i + 2), 16) - parseInt(pa.slice(i, i + 2), 16)) * t)
+    Math.round(
+      parseInt(pa.slice(i, i + 2), 16) + (parseInt(pb.slice(i, i + 2), 16) - parseInt(pa.slice(i, i + 2), 16)) * t,
+    )
       .toString(16)
       .padStart(2, "0")
       .toUpperCase();
@@ -1334,9 +1405,17 @@ function evaluateCf(
       case "cellIs": {
         let matched = false;
         if (num != null && rule.args.every((a) => a.num != null)) {
-          matched = cfNumMatch(num, rule.operator, rule.args.map((a) => a.num as number));
+          matched = cfNumMatch(
+            num,
+            rule.operator,
+            rule.args.map((a) => a.num as number),
+          );
         } else if (text != null && rule.args.every((a) => a.text != null)) {
-          matched = cfTextMatch(text, rule.operator, rule.args.map((a) => a.text as string));
+          matched = cfTextMatch(
+            text,
+            rule.operator,
+            rule.args.map((a) => a.text as string),
+          );
         }
         if (matched) {
           applyCfDxf(result, rule.dxfId != null ? ctx.dxfs[rule.dxfId] : undefined);
@@ -1826,8 +1905,7 @@ async function renderSheet(
       // 255 = vertically stacked. Wrap content so the cell box stays put.
       const rot = data ? ctx.cellXfs[data.styleIdx]?.rotation : undefined;
       if (rot && inner) {
-        const transform =
-          rot === 255 ? "" : `transform:rotate(${rot <= 90 ? -rot : rot - 90}deg);`;
+        const transform = rot === 255 ? "" : `transform:rotate(${rot <= 90 ? -rot : rot - 90}deg);`;
         const css =
           rot === 255
             ? "writing-mode:vertical-rl;text-orientation:upright;"

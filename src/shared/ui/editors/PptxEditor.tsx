@@ -22,6 +22,7 @@ export const PptxEditor = memo(function PptxEditor({ path, content, contentType 
   const [activeIndex, setActiveIndex] = useState(1);
 
   // New deck → back to the first slide
+  // biome-ignore lint/correctness/useExhaustiveDependencies: result triggers reset intentionally
   useEffect(() => {
     setActiveIndex(1);
   }, [result]);
