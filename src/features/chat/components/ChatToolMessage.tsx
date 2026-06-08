@@ -4,6 +4,7 @@ import { useChat } from "@/features/chat/hooks/useChat";
 import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { cn } from "@/shared/lib/cn";
+import { tryParseToolArguments } from "@/shared/lib/toolArguments";
 import { getToolDisplayName } from "@/shared/lib/utils";
 import type { Content, Message, ToolResultContent } from "@/shared/types/chat";
 import { CodeRenderer } from "@/shared/ui/CodeRenderer";
@@ -12,18 +13,14 @@ import { getToolCallPreview } from "./chatMessageUtils";
 import { InlineMcpApp } from "./InlineMcpApp";
 
 function extractCodeFromArguments(arguments_: string): { code: string; packages?: string[] } | null {
-  try {
-    const args = JSON.parse(arguments_);
-    if (args.code && typeof args.code === "string") {
-      return {
-        code: args.code,
-        packages: args.packages,
-      };
-    }
-    return null;
-  } catch {
-    return null;
+  const args = tryParseToolArguments(arguments_);
+  if (args && typeof args.code === "string" && args.code) {
+    return {
+      code: args.code,
+      packages: args.packages as string[] | undefined,
+    };
   }
+  return null;
 }
 
 type ChatToolMessageProps = {

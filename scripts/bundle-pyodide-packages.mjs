@@ -52,8 +52,11 @@ const PYPI_PACKAGES = [
   "python-pptx",
   "docx2txt",
   "pypdf",
+  "pdfminer.six",
   "reportlab",
   "markdown",
+  "markdownify",
+  "tabulate",
   // Pin to last release before red-black-tree-mod was added — that dep only
   // ships as an sdist and our bundler only handles pure-Python wheels.
   "extract-msg==0.36.5",

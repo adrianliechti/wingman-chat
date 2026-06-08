@@ -106,7 +106,7 @@ export function createSourceExecTools(getSources: () => readonly File[], options
     {
       name: "execute_python_code",
       description:
-        "Execute Python code in a sandboxed Pyodide environment. All notebook sources are available under `/home/user/`, and files created or modified there are saved back as notebook sources. Packages numpy, pandas, matplotlib, plotly, pillow, openpyxl, pypdf, python-docx, beautifulsoup4 are preloaded.",
+        "Execute Python code in a sandboxed Pyodide environment. All notebook sources are available under `/home/user/`, and files created or modified there are saved back as notebook sources. Packages numpy, pandas, matplotlib, plotly, pillow, openpyxl, pypdf, pdfminer.six, python-docx, beautifulsoup4, markdownify, tabulate are preloaded.",
       parameters: {
         type: "object",
         properties: {
@@ -123,8 +123,13 @@ export function createSourceExecTools(getSources: () => readonly File[], options
         required: ["code"],
       },
       function: async (args: Record<string, unknown>) => {
-        const code = (args.code as string) ?? "";
-        const packages = args.packages as string[] | undefined;
+        const code = typeof args.code === "string" ? args.code : "";
+        // Coerce defensively: models sometimes send `packages` as a bare string.
+        const packages = Array.isArray(args.packages)
+          ? args.packages.filter((p): p is string => typeof p === "string")
+          : typeof args.packages === "string"
+            ? [args.packages]
+            : undefined;
         if (!code.trim()) {
           return [{ type: "text" as const, text: "Error: `code` is required." }];
         }
@@ -171,7 +176,7 @@ export function createSourceExecTools(getSources: () => readonly File[], options
         required: ["command"],
       },
       function: async (args: Record<string, unknown>) => {
-        const command = (args.command as string) ?? "";
+        const command = typeof args.command === "string" ? args.command : "";
         if (!command.trim()) {
           return [{ type: "text" as const, text: "Error: `command` is required." }];
         }

@@ -1,6 +1,7 @@
 import { Loader2, Maximize2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+import { parseToolArguments } from "@/shared/lib/toolArguments";
 import type { ToolContext, ToolResultContent } from "@/shared/types/chat";
 import { useApp } from "@/shell/hooks/useApp";
 
@@ -62,7 +63,7 @@ export function InlineMcpApp({ toolResult, isLastFullscreenApp }: InlineMcpAppPr
     setActiveAppKey(appKey);
 
     try {
-      const args = JSON.parse(toolResult.arguments || "{}");
+      const args = parseToolArguments(toolResult.arguments);
       await setProviderEnabled(providerId, true);
 
       const context: ToolContext = {
@@ -97,7 +98,7 @@ export function InlineMcpApp({ toolResult, isLastFullscreenApp }: InlineMcpAppPr
     setIsLoading(true);
 
     try {
-      const args = JSON.parse(toolResult.arguments || "{}");
+      const args = parseToolArguments(toolResult.arguments);
       await setProviderEnabled(providerId, true);
 
       await renderAppInto(iframe);

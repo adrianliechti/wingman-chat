@@ -197,7 +197,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       {
         name: "execute_python_code",
         description:
-          "Execute Python code with optional package dependencies. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back.",
+          "Execute Python code with optional package dependencies. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). For long scripts heavy with quotes or backslashes (regex, nested strings), prefer writing the script to a .py artifact first and running it via `path` — this avoids JSON-escaping mistakes in the `code` string. All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back.",
         parameters: {
           type: "object",
           properties: {
@@ -221,8 +221,16 @@ export function useArtifactsProvider(): ToolProvider | null {
         },
         function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const fs = fsRef.current;
-          const { code, packages } = args;
-          const path = normalizeArtifactPath(args.path as string | undefined);
+          const { code } = args;
+          const path = normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
+          // Models occasionally send `packages` as a bare string ("numpy") rather
+          // than an array; coerce defensively so `executeCode` never hits a
+          // non-array `.map`. (Imports are auto-detected anyway, so this is a hint.)
+          const packages = Array.isArray(args.packages)
+            ? args.packages.filter((p): p is string => typeof p === "string")
+            : typeof args.packages === "string"
+              ? [args.packages]
+              : undefined;
 
           try {
             // Load artifact files into Pyodide's VFS
@@ -260,7 +268,7 @@ export function useArtifactsProvider(): ToolProvider | null {
 
             const result = await executeCode({
               code: script,
-              packages: packages as string[] | undefined,
+              packages,
               files: artifactFiles,
             });
 

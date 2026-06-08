@@ -8,7 +8,7 @@ Available libraries (all preloaded, no network install needed):
 - DOCX: `python-docx` (import `docx`), `docx2txt` (extract text)
 - PPTX: `python-pptx` (import `pptx`)
 - XLSX: `openpyxl`, `xlsxwriter`, `pandas` (`pd.read_excel` / `df.to_excel`)
-- PDF: `reportlab` (create), `pypdf` (read, merge, split, watermark, rotate)
+- PDF: `reportlab` (create), `pypdf` (merge, split, watermark, rotate, quick text), `pdfminer.six` (import `pdfminer`; high-fidelity text & layout extraction — prefer over `pypdf` for prose, columns, or tables)
 - Email: `extract-msg` (import `extract_msg`) for `.msg`; stdlib `email`/`email.parser` for `.eml`
 - Charts: `matplotlib`, `seaborn`, `plotly` (write PNG/SVG and embed)
 
@@ -249,8 +249,15 @@ for src in ["/home/user/a.pdf", "/home/user/b.pdf"]:
 with open("/home/user/merged.pdf", "wb") as f:
     writer.write(f)
 
-# Extract text
+# Extract text — quick pass with pypdf
 text = "\n".join(p.extract_text() or "" for p in PdfReader("/home/user/in.pdf").pages)
+```
+
+For prose, multi-column layouts, or tables, `pdfminer.six` extracts text far more faithfully than `pypdf`:
+
+```python
+from pdfminer.high_level import extract_text
+text = extract_text("/home/user/in.pdf")
 ```
 
 ### Email (.msg / .eml)
