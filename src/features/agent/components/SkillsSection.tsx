@@ -1,4 +1,4 @@
-import { Settings, Settings2, Sparkles, X } from "lucide-react";
+import { Settings2, Sparkles, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";

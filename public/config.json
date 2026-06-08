@@ -51,7 +51,7 @@
     ],
 
 
-    "tools": [
+    "_tools": [
         {
             "id": "web",
             "name": "Web",
