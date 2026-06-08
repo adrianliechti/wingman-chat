@@ -126,26 +126,72 @@ async function loadPyodidePackages(pyodide: PyodideInterface, names: string[]): 
   }
 }
 
-function syncFilesToPyodide(pyodide: PyodideInterface, files: ArtifactFiles): void {
-  // Clear existing files
-  clearDirectory(pyodide, SANDBOX_HOME);
-  ensureDir(pyodide, SANDBOX_HOME);
+// The Pyodide FS is a session-long singleton, so we reconcile its /home/user
+// tree incrementally instead of wiping and rewriting every file on each call.
+// `lastSyncedFiles` mirrors what is currently materialized in the FS (the full
+// set collected after the previous run); diffing the next input against it lets
+// us skip rewriting unchanged files and only delete ones that went away. A null
+// value (first run, a new Pyodide instance, or after an error) forces a full
+// clean rebuild so stale files never leak across chats.
+let lastSyncedFiles: ArtifactFiles | null = null;
+let lastSyncedPyodide: PyodideInterface | null = null;
 
-  for (const [path, file] of Object.entries(files)) {
-    const fsPath = `${SANDBOX_HOME}/${path.startsWith("/") ? path.slice(1) : path}`;
-    const dir = fsPath.substring(0, fsPath.lastIndexOf("/"));
-    if (dir) ensureDir(pyodide, dir);
+function artifactFsPath(path: string): string {
+  return `${SANDBOX_HOME}/${path.startsWith("/") ? path.slice(1) : path}`;
+}
 
-    if (isDataUrl(file.content) || (file.contentType && !isTextContentType(file.contentType))) {
-      const parsed = dataUrlToBytes(file.content);
-      pyodide.FS.writeFile(fsPath, parsed ? parsed.bytes : new TextEncoder().encode(file.content));
-    } else {
-      pyodide.FS.writeFile(fsPath, file.content);
-    }
+function writeFileToPyodide(pyodide: PyodideInterface, path: string, file: ArtifactFile): void {
+  const fsPath = artifactFsPath(path);
+  const dir = fsPath.substring(0, fsPath.lastIndexOf("/"));
+  if (dir) ensureDir(pyodide, dir);
+
+  if (isDataUrl(file.content) || (file.contentType && !isTextContentType(file.contentType))) {
+    const parsed = dataUrlToBytes(file.content);
+    pyodide.FS.writeFile(fsPath, parsed ? parsed.bytes : new TextEncoder().encode(file.content));
+  } else {
+    pyodide.FS.writeFile(fsPath, file.content);
   }
 }
 
-function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFiles): ArtifactFiles {
+function syncFilesToPyodide(pyodide: PyodideInterface, files: ArtifactFiles): void {
+  // `prev` is what we last materialized in the FS. A different instance or a
+  // missing record means we can't trust the tree, so wipe it and treat every
+  // input as new (the delete loop below is then a no-op over an empty `prev`).
+  let prev = lastSyncedPyodide === pyodide ? lastSyncedFiles : null;
+  lastSyncedPyodide = pyodide;
+  if (prev === null) {
+    clearDirectory(pyodide, SANDBOX_HOME);
+    prev = {};
+  }
+  ensureDir(pyodide, SANDBOX_HOME);
+
+  // Remove files that were present last time but are gone now.
+  for (const path of Object.keys(prev)) {
+    if (!(path in files)) {
+      try {
+        pyodide.FS.unlink(artifactFsPath(path));
+      } catch {
+        // Already gone (e.g. removed by the previous run).
+      }
+    }
+  }
+
+  // Write only files whose content or type changed since the last sync.
+  for (const [path, file] of Object.entries(files)) {
+    const before = prev[path];
+    if (before && before.content === file.content && before.contentType === file.contentType) continue;
+    writeFileToPyodide(pyodide, path, file);
+  }
+}
+
+// Only a genuine Date older than the run start proves the file was untouched by
+// user code. Anything else (unexpected type, equal/newer timestamp) falls
+// through to a fresh read — we never risk returning stale content.
+function isUnmodifiedSince(mtime: unknown, runStart: number): boolean {
+  return mtime instanceof Date && mtime.getTime() < runStart;
+}
+
+function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFiles, runStart: number): ArtifactFiles {
   const files: ArtifactFiles = {};
 
   const walk = (dir: string) => {
@@ -168,7 +214,15 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
         const artifactPath = `/${fullPath.slice(SANDBOX_HOME.length + 1)}`;
         if (artifactPath === "/") continue;
 
-        const contentType = sourceFiles[artifactPath]?.contentType ?? inferContentTypeFromPath(artifactPath);
+        // Input file the run never touched: reuse the caller's content verbatim
+        // instead of reading the bytes back and re-encoding them.
+        const source = sourceFiles[artifactPath];
+        if (source && isUnmodifiedSince(stat.mtime, runStart)) {
+          files[artifactPath] = source;
+          continue;
+        }
+
+        const contentType = source?.contentType ?? inferContentTypeFromPath(artifactPath);
 
         if (isTextContentType(contentType)) {
           files[artifactPath] = {
@@ -297,16 +351,23 @@ export async function executeCode(request: CodeExecutionRequest): Promise<CodeEx
     }
 
     clearRenderQueue(pyodide);
+    const runStart = Date.now();
     const output = await runPythonCode(pyodide, code);
     await processRenderQueue(pyodide);
+
+    const resultFiles = collectPyodideFiles(pyodide, files, runStart);
+    // Remember the materialized tree so the next call can sync incrementally.
+    lastSyncedFiles = resultFiles;
 
     return {
       success: true,
       output,
-      files: collectPyodideFiles(pyodide, files),
+      files: resultFiles,
     };
   } catch (error) {
     console.error("Code execution error:", error);
+    // FS state may be inconsistent — force a clean rebuild on the next call.
+    lastSyncedFiles = null;
     return {
       success: false,
       output: "",
