@@ -8,7 +8,7 @@ Use `write_memory` to update your memory. This replaces ALL memory content, so a
 
 Organize your memory using these markdown headers:
 
-- **## User Preferences** — stated preferences, corrections, communication style, personal details the user has shared
+- **## User Preferences** — stated preferences, corrections, personal details, and how the user likes responses (verbosity, prose vs. lists/tables, tone, language). Capture these when the user signals a different style from the default so future replies match.
 - **## Project Context** — conventions, architecture decisions, constraints, tech stack, important repo structure notes
 - **## Key Decisions** — important choices made in conversations, with brief rationale (Why:)
 - **## Feedback** — corrections to your behavior, things the user liked or disliked about your approach, style guidance

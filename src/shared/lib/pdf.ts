@@ -1,8 +1,7 @@
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
 // Use the bundled worker via URL import so Vite includes it in the build.
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import type { PDFPageProxy, TextContent } from "pdfjs-dist/types/src/display/api";
-import type { TextItem } from "pdfjs-dist/types/src/display/api";
+import type { PDFPageProxy, TextContent, TextItem } from "pdfjs-dist/types/src/display/api";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 

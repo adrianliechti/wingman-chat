@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
-import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import { useModels } from "@/features/chat/hooks/useModels";
 import defaultInstructions from "@/features/chat/prompts/default.txt?raw";
@@ -22,8 +21,8 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
   const { generateInstructions } = useProfile();
   const { providers, getProviderState } = useToolsContext();
 
-  // Conditionally include artifacts provider
-  const { isEnabled: artifactsEnabled, showArtifactsDrawer } = useArtifacts();
+  // Artifacts provider — non-null whenever the feature is available, in which
+  // case it's always active (no per-chat enable toggle).
   const artifactsProvider = useArtifactsProvider();
 
   // Get current agent for its instructions
@@ -35,10 +34,11 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
       // Start with base providers (includes agent repo, skills, bridges, and conditionally enabled built-in tools)
       let filteredProviders = providers.filter((p: ToolProvider) => getProviderState(p.id) === ProviderState.Connected);
 
-      // Add artifacts provider: either explicitly enabled via agent tools toggle (already in filteredProviders),
-      // or auto-enabled when drawer is visible / chat has files (legacy fallback)
+      // Add the artifacts provider whenever the feature is available (the
+      // provider is null otherwise). It may already be present if explicitly
+      // enabled via the agent tools toggle.
       const artifactsAlreadyIncluded = filteredProviders.some((p: ToolProvider) => p.id === "artifacts");
-      if (!artifactsAlreadyIncluded && artifactsProvider && (artifactsEnabled || showArtifactsDrawer)) {
+      if (!artifactsAlreadyIncluded && artifactsProvider) {
         filteredProviders = [...filteredProviders, artifactsProvider];
       }
 
@@ -141,8 +141,6 @@ export function useChatContext(mode: "voice" | "chat" = "chat", model?: Model | 
     generateInstructions,
     providers,
     getProviderState,
-    artifactsEnabled,
-    showArtifactsDrawer,
     artifactsProvider,
     currentAgent,
   ]);

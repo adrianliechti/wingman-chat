@@ -680,6 +680,15 @@ async function rasterizeSlideDoc(
     // overlay). A stylesheet keeps layout identical.
     if (options.hideText) {
       hideTextStyle = doc.createElement("style");
+      // Content SVGs are hidden wholesale: the hybrid export re-emits every
+      // SVG as an editable overlay image (pptx-static-parser), so leaving
+      // them in the background would double-paint their shapes — and SVG
+      // <text> paints via `fill`, which the color rules below don't reach.
+      //
+      // The selector MUST be scoped under `body`: this document gets
+      // serialized into an <svg><foreignObject> wrapper for rasterization,
+      // and a bare `svg` selector would match the wrapper root itself,
+      // blanking the entire layer.
       hideTextStyle.textContent = `
         * {
           color: transparent !important;
@@ -687,6 +696,9 @@ async function rasterizeSlideDoc(
           -webkit-text-fill-color: transparent !important;
           text-decoration-color: transparent !important;
           caret-color: transparent !important;
+        }
+        body svg {
+          visibility: hidden !important;
         }
       `;
       doc.head.appendChild(hideTextStyle);

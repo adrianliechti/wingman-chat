@@ -117,13 +117,19 @@ export class MCPClient implements ToolProvider {
     icon?: ToolIcon,
   ) {
     this.id = id;
-    this.url = url.endsWith("/") ? url : `${url}/`;
+    this.url = url;
     this.name = name;
     this.description = description;
     this.headers = headers;
     this._configIcon = icon;
-    this.icon = icon ?? new URL("icon", this.url).href;
+    this.icon = icon ?? this.iconUrl();
     this.authProvider = new BrowserOAuthClientProvider(id);
+  }
+
+  /** Resolve the server's default icon, ensuring a trailing slash so the path isn't dropped. */
+  private iconUrl(): string {
+    const base = this.url.endsWith("/") ? this.url : `${this.url}/`;
+    return new URL("icon", base).href;
   }
 
   async connect(): Promise<void> {
@@ -239,7 +245,7 @@ export class MCPClient implements ToolProvider {
     // Pick up the server-published icon when no config/agent icon was provided.
     if (!this._configIcon) {
       const serverIcons = client.getServerVersion()?.icons as McpIcon[] | undefined;
-      this.icon = pickIcon(serverIcons) ?? new URL("icon", this.url).href;
+      this.icon = pickIcon(serverIcons) ?? this.iconUrl();
     }
 
     // Load and store tools and instructions after connection

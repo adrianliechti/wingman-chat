@@ -19,6 +19,10 @@ export interface ParsedParagraph {
   color?: string;
   textAlign?: string;
   isBullet?: boolean;
+  /** Computed line-height as a multiple of the font size (1.2 = "normal"). */
+  lineHeightRatio?: number;
+  /** Computed letter-spacing in CSS px (0 = "normal"). */
+  letterSpacingPx?: number;
 }
 
 export interface ParsedElement {
@@ -27,6 +31,12 @@ export interface ParsedElement {
   y: number;
   w: number;
   h: number;
+  /**
+   * True when `paragraphs` are the element's measured visual lines (one
+   * paragraph per rendered line). The exporter then disables wrapping so the
+   * text can never re-wrap differently from the rasterized background.
+   */
+  preWrapped?: boolean;
   fontSize?: number;
   fontFamily?: string;
   fontWeight?: string;
@@ -140,7 +150,7 @@ export async function parseSlideHtml(html: string): Promise<ParsedSlide> {
         const isLeaf = isLeafTextBlock(el);
 
         if (isLeaf) {
-          const paragraphs = extractParagraphs(el, win);
+          const { paragraphs, preWrapped } = extractParagraphs(el, win);
           if (paragraphs.length > 0) {
             elements.push({
               type: "text",
@@ -148,6 +158,7 @@ export async function parseSlideHtml(html: string): Promise<ParsedSlide> {
               y: rect.top,
               w: rect.width,
               h: rect.height,
+              preWrapped,
               fontSize: parseFloat(style.fontSize) || 16,
               fontFamily: style.fontFamily?.split(",")[0]?.replace(/["']/g, "").trim() || "Calibri",
               fontWeight: style.fontWeight,
@@ -239,11 +250,28 @@ function isLeafTextBlock(el: HTMLElement): boolean {
   return false;
 }
 
-function extractParagraphs(el: HTMLElement, win: Window): ParsedParagraph[] {
+/**
+ * Computed line-height as a ratio of the font size. Browsers resolve
+ * "normal" to ~1.2 for most fonts; treat it as exactly that so the PPTX
+ * spacing reproduces the measured box heights.
+ */
+function lineHeightRatioOf(style: CSSStyleDeclaration): number {
+  const fs = parseFloat(style.fontSize) || 16;
+  const lh = parseFloat(style.lineHeight);
+  if (!Number.isFinite(lh) || lh <= 0) return 1.2;
+  return Math.round((lh / fs) * 1000) / 1000;
+}
+
+function letterSpacingPxOf(style: CSSStyleDeclaration): number {
+  const ls = parseFloat(style.letterSpacing);
+  return Number.isFinite(ls) ? ls : 0;
+}
+
+function extractParagraphs(el: HTMLElement, win: Window): { paragraphs: ParsedParagraph[]; preWrapped: boolean } {
   const style = win.getComputedStyle(el);
 
   if (el.tagName === "UL" || el.tagName === "OL") {
-    return [...el.querySelectorAll("li")]
+    const paragraphs = [...el.querySelectorAll("li")]
       .map((li) => {
         const liStyle = win.getComputedStyle(li);
         return {
@@ -255,25 +283,71 @@ function extractParagraphs(el: HTMLElement, win: Window): ParsedParagraph[] {
           color: liStyle.color,
           textAlign: liStyle.textAlign,
           isBullet: true,
+          lineHeightRatio: lineHeightRatioOf(liStyle),
+          letterSpacingPx: letterSpacingPxOf(liStyle),
         };
       })
       .filter((p) => p.text);
+    return { paragraphs, preWrapped: false };
   }
 
   const text = el.textContent?.trim();
-  if (!text) return [];
+  if (!text) return { paragraphs: [], preWrapped: false };
 
-  return [
-    {
-      text,
-      fontSize: parseFloat(style.fontSize) || 16,
-      fontFamily: style.fontFamily?.split(",")[0]?.replace(/["']/g, "").trim() || "Calibri",
-      fontWeight: style.fontWeight,
-      fontStyle: style.fontStyle,
-      color: style.color,
-      textAlign: style.textAlign,
-    },
-  ];
+  // Export the element's measured visual lines as one paragraph each.
+  // Re-wrapping is the main source of drift between the browser layout
+  // and PPTX renderers (PowerPoint, the in-app preview) — pinning the
+  // line breaks makes the overlay text match the rasterized background.
+  const lines = splitTextLines(el);
+  const base = {
+    fontSize: parseFloat(style.fontSize) || 16,
+    fontFamily: style.fontFamily?.split(",")[0]?.replace(/["']/g, "").trim() || "Calibri",
+    fontWeight: style.fontWeight,
+    fontStyle: style.fontStyle,
+    color: style.color,
+    textAlign: style.textAlign,
+    lineHeightRatio: lineHeightRatioOf(style),
+    letterSpacingPx: letterSpacingPxOf(style),
+  };
+
+  if (lines.length > 1) {
+    return { paragraphs: lines.map((line) => ({ text: line, ...base })), preWrapped: true };
+  }
+  return { paragraphs: [{ text, ...base }], preWrapped: true };
+}
+
+/**
+ * Split a text element into its rendered visual lines by measuring each
+ * character's Range rect and grouping consecutive characters by line top.
+ * Collapsed whitespace (zero-size rects) is skipped; runs of source
+ * whitespace are normalized to single spaces.
+ */
+function splitTextLines(el: HTMLElement): string[] {
+  const doc = el.ownerDocument;
+  const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const range = doc.createRange();
+
+  const lines: { top: number; text: string }[] = [];
+  let cur: { top: number; text: string } | null = null;
+
+  for (let tn = walker.nextNode() as Text | null; tn; tn = walker.nextNode() as Text | null) {
+    const content = tn.textContent ?? "";
+    for (let i = 0; i < content.length; i++) {
+      range.setStart(tn, i);
+      range.setEnd(tn, i + 1);
+      const r = range.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue; // collapsed whitespace
+      if (!cur || Math.abs(r.top - cur.top) > r.height * 0.5) {
+        if (cur) lines.push(cur);
+        cur = { top: r.top, text: content[i] };
+      } else {
+        cur.text += content[i];
+      }
+    }
+  }
+  if (cur) lines.push(cur);
+
+  return lines.map((l) => l.text.replace(/\s+/g, " ").trim()).filter(Boolean);
 }
 
 function skipChildren(walker: TreeWalker, parent: Element) {
@@ -284,10 +358,60 @@ function skipChildren(walker: TreeWalker, parent: Element) {
   if (next) walker.previousNode();
 }
 
+/**
+ * Style properties to bake into the SVG clone before standalone
+ * serialization. Computed values resolve CSS variables (`fill="var(--x)"`),
+ * `inherit`, and document-stylesheet rules — none of which survive when the
+ * SVG is loaded as an isolated image (where unresolved fills paint black).
+ */
+const SVG_INLINE_PROPS = [
+  "fill",
+  "fill-opacity",
+  "stroke",
+  "stroke-width",
+  "stroke-opacity",
+  "stroke-dasharray",
+  "stroke-linecap",
+  "stroke-linejoin",
+  "opacity",
+  "font-family",
+  "font-size",
+  "font-weight",
+  "font-style",
+  "letter-spacing",
+  "text-anchor",
+  "dominant-baseline",
+  "stop-color",
+  "stop-opacity",
+] as const;
+
+function inlineSvgComputedStyles(src: SVGSVGElement, clone: SVGSVGElement, win: Window): void {
+  const srcEls: Element[] = [src, ...src.querySelectorAll("*")];
+  const cloneEls: Element[] = [clone, ...clone.querySelectorAll("*")];
+  for (let i = 0; i < srcEls.length && i < cloneEls.length; i++) {
+    const cs = win.getComputedStyle(srcEls[i]);
+    let styleText = "";
+    for (const prop of SVG_INLINE_PROPS) {
+      const v = cs.getPropertyValue(prop);
+      if (v) styleText += `${prop}:${v};`;
+    }
+    if (styleText) cloneEls[i].setAttribute("style", styleText);
+  }
+}
+
 async function rasterizeSvg(svg: SVGSVGElement, width: number, height: number): Promise<string | null> {
   let url: string | undefined;
   try {
-    const svgStr = new XMLSerializer().serializeToString(svg);
+    const win = svg.ownerDocument.defaultView;
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    // The clone may have been sized by CSS — pin the layout size explicitly
+    // so the standalone image rasterizes at the rendered dimensions.
+    clone.setAttribute("width", String(width));
+    clone.setAttribute("height", String(height));
+    if (win) inlineSvgComputedStyles(svg, clone, win);
+
+    const svgStr = new XMLSerializer().serializeToString(clone);
     const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
     url = URL.createObjectURL(blob);
     const objUrl = url;

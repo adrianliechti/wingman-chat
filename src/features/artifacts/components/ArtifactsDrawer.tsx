@@ -30,14 +30,17 @@ import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
 import { BashEditor } from "@/shared/ui/editors/BashEditor";
 import { CodeEditor } from "@/shared/ui/editors/CodeEditor";
 import { CsvEditor } from "@/shared/ui/editors/CsvEditor";
+import { DocxEditor } from "@/shared/ui/editors/DocxEditor";
 import { HtmlEditor } from "@/shared/ui/editors/HtmlEditor";
 import { JsEditor } from "@/shared/ui/editors/JsEditor";
 import { MarkdownEditor } from "@/shared/ui/editors/MarkdownEditor";
 import { OfficeMarkdownEditor } from "@/shared/ui/editors/OfficeMarkdownEditor";
 import { PdfEditor } from "@/shared/ui/editors/PdfEditor";
+import { PptxEditor } from "@/shared/ui/editors/PptxEditor";
 import { PythonEditor } from "@/shared/ui/editors/PythonEditor";
 import { SvgEditor } from "@/shared/ui/editors/SvgEditor";
 import { TextEditor } from "@/shared/ui/editors/TextEditor";
+import { XlsxEditor } from "@/shared/ui/editors/XlsxEditor";
 import { FileIcon } from "@/shared/ui/FileIcon";
 import { ResizablePanel, ResizablePanelGroup } from "@/shared/ui/Resizable";
 import { ArtifactsBrowser } from "./ArtifactsBrowser";
@@ -323,11 +326,6 @@ export function ArtifactsDrawer() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showFilePicker]);
 
-  // Render the appropriate editor based on file type
-  const renderEditor = () => {
-    return renderFileEditor();
-  };
-
   // Render the file-specific editor
   const renderFileEditor = () => {
     if (!activeFile) {
@@ -453,9 +451,33 @@ export function ArtifactsDrawer() {
         );
       case "pdf":
         return <PdfEditor key={editorKey} content={activeFileData.content} />;
-      case "docx":
       case "pptx":
+        return (
+          <PptxEditor
+            key={editorKey}
+            path={activeFileData.path}
+            content={activeFileData.content}
+            contentType={activeFileData.contentType}
+          />
+        );
+      case "docx":
+        return (
+          <DocxEditor
+            key={editorKey}
+            path={activeFileData.path}
+            content={activeFileData.content}
+            contentType={activeFileData.contentType}
+          />
+        );
       case "xlsx":
+        return (
+          <XlsxEditor
+            key={editorKey}
+            path={activeFileData.path}
+            content={activeFileData.content}
+            contentType={activeFileData.contentType}
+          />
+        );
       case "email":
         return (
           <OfficeMarkdownEditor
@@ -588,15 +610,6 @@ export function ArtifactsDrawer() {
     return ["html", "svg", "csv", "markdown"].includes(kind);
   };
 
-  // Office binaries (docx/pptx/xlsx) are previewed via extracted markdown —
-  // not a fidelity-preserving render. Surface that to the user so they don't
-  // think the formatting is gone; downloading still gives the real file.
-  const isTextOnlyPreview = () => {
-    if (!activeFileData) return false;
-    const kind = artifactKind(activeFileData.path, activeFileData.contentType);
-    return kind === "docx" || kind === "pptx" || kind === "xlsx" || kind === "email";
-  };
-
   // Handle run button click
   const handleRun = async () => {
     if (runHandler) {
@@ -675,15 +688,9 @@ export function ArtifactsDrawer() {
                   )}
                 </button>
               )}
-              {/* Hint: office binaries are previewed as extracted text */}
-              {isTextOnlyPreview() && (
-                <span
-                  className="shrink-0 text-xs uppercase tracking-wide font-medium text-neutral-500 dark:text-neutral-400 bg-neutral-200/60 dark:bg-neutral-800/60 rounded px-1.5 py-0.5"
-                  title="Office documents are previewed as extracted text. Download the file for the original formatting."
-                >
-                  Text preview
-                </span>
-              )}
+              {/* The "Text preview" disclosure for extracted-text rendering
+                  lives inside OfficeMarkdownEditor so it also covers the
+                  fallback paths of the high-fidelity office editors. */}
               {/* View mode segmented control — inline after filename */}
               {supportsPreview() && (
                 <div
@@ -926,7 +933,7 @@ export function ArtifactsDrawer() {
           {/* Vertical split: editor on top, terminal on bottom */}
           <ResizablePanelGroup orientation="vertical" className="flex-1 min-h-0">
             <ResizablePanel defaultSize={70} minSize={20} className="h-full overflow-hidden relative z-0">
-              {renderEditor()}
+              {renderFileEditor()}
             </ResizablePanel>
 
             {/* Terminal — spans only the left column, below the editor */}

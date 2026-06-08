@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import type { ProcessedFile } from "@/features/artifacts/lib/artifacts";
 import { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { useChatContext } from "@/features/chat/hooks/useChatContext";
 import { useChats } from "@/features/chat/hooks/useChats";
@@ -237,38 +238,40 @@ export function ChatProvider({ children }: ChatProviderProps) {
     [chat, updateChat, setSelectedModel],
   );
 
+  // Single chat-creation path. Returns the active chat (creating it if needed)
+  // together with its `FileSystemManager`. The fs is bound eagerly and cached
+  // in `fsRef` so callers get it without waiting for React to re-derive `fs`.
+  // Used by message sending, addMessage, and ensureChat alike — there is no
+  // separate creation logic. Note: unlike `createChat`, this preserves the
+  // draft's tool selections (no resetTools) so they carry into the first turn.
   const getOrCreateChat = useCallback(async () => {
     if (!model) {
       throw new Error("no model selected");
     }
 
     const existingId = chatIdRef.current;
-    if (existingId) {
-      const existingChat = chats.find((c) => c.id === existingId);
-      if (existingChat) return { id: existingId, chat: existingChat };
+    let chatItem = existingId ? chats.find((c) => c.id === existingId) : undefined;
+    if (!chatItem) {
+      chatItem = await createChatHook();
+      chatItem.model = model;
+      chatIdRef.current = chatItem.id;
+      setChatId(chatItem.id);
+      updateChat(chatItem.id, () => ({ model }));
     }
 
-    const chatItem = await createChatHook();
-    chatItem.model = model;
-    chatIdRef.current = chatItem.id;
-    setChatId(chatItem.id);
-    updateChat(chatItem.id, () => ({ model }));
-    return { id: chatItem.id, chat: chatItem };
+    const fsForChat =
+      fsRef.current?.chatId === chatItem.id ? fsRef.current : new FileSystemManager(chatItem.id);
+    fsRef.current = fsForChat;
+
+    return { id: chatItem.id, chat: chatItem, fs: fsForChat };
   }, [model, createChatHook, updateChat, chats]);
 
-  // Public helper for features (drawer, uploads, terminal) that need a
-  // filesystem before the user sends their first message. Creates a chat if
-  // necessary and returns a FileSystemManager bound to it — callers don't
-  // need to wait for React to re-render the artifacts `fs` state.
+  // Public alias for features (drawer, terminal, attachment sends) that need a
+  // filesystem before the user's first message — same creation path as sending.
   const ensureChat = useCallback(async () => {
-    if (chat && fs) {
-      return { chat, fs };
-    }
-    const newChat = await createChat();
-    const newFs = new FileSystemManager(newChat.id);
-    fsRef.current = newFs;
-    return { chat: newChat, fs: newFs };
-  }, [chat, fs, createChat]);
+    const { chat: ensuredChat, fs: ensuredFs } = await getOrCreateChat();
+    return { chat: ensuredChat, fs: ensuredFs };
+  }, [getOrCreateChat]);
 
   const addMessage = useCallback(
     async (message: Message) => {
@@ -589,10 +592,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
   );
 
   const sendMessage = useCallback(
-    async (message: Message, historyOverride?: Message[]) => {
-      const { id, chat: chatObj } = await getOrCreateChat();
+    async (message: Message, historyOverride?: Message[], artifactFiles?: ProcessedFile[]) => {
+      const { id, chat: chatObj, fs: chatFs } = await getOrCreateChat();
       if (!chatObj) {
         throw new Error(`Chat ${id} not found`);
+      }
+      // Deferred chat-input attachments: now that the chat (and its fs) exist,
+      // write them into the workspace before the turn so the model can read
+      // them via the artifacts tools (artifacts was enabled at attach time).
+      if (artifactFiles?.length) {
+        for (const file of artifactFiles) {
+          try {
+            await chatFs.createFile(file.path, file.content, file.contentType);
+          } catch (error) {
+            console.error(`Failed to write attachment ${file.path} into artifacts:`, error);
+          }
+        }
       }
       await runMessageInChat(id, message, historyOverride, chatObj.title);
     },

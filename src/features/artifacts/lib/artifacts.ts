@@ -1,5 +1,5 @@
-import { convertFileToText, readFileAsText } from "@/shared/lib/convert";
-import { isTextContentType } from "@/shared/lib/fileTypes";
+import { readFileAsText } from "@/shared/lib/convert";
+import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { readAsDataURL } from "@/shared/lib/utils";
 
 // Artifact kind type
@@ -26,8 +26,9 @@ export interface ProcessedFile {
 }
 
 // Binary uploads preserved verbatim as data URLs. Office docs render via
-// OfficeMarkdownEditor, PDFs via PdfEditor, and email files (.msg/.eml) are
-// extracted on demand (preview or AI via Python `extract-msg` / `email`).
+// their high-fidelity editors (PptxEditor/DocxEditor/XlsxEditor), PDFs via
+// PdfEditor, and email files (.msg/.eml) are extracted on demand (preview
+// via OfficeMarkdownEditor or AI via Python `extract-msg` / `email`).
 // Converting at upload time would lose the original formatting / attachments.
 const BINARY_PRESERVED_MIME_BY_EXT: Record<string, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -50,25 +51,12 @@ export async function processUploadedFile(file: File): Promise<ProcessedFile[]> 
     return [{ path: `/${file.name}`, content, contentType }];
   }
 
-  // Try shared converter for text/code formats
-  try {
-    const content = await convertFileToText(file);
-    return [{ path: `/${file.name}`, content, contentType: file.type || "text/plain" }];
-  } catch (error) {
-    console.error(`Error converting file ${file.name}:`, error);
-  }
-
-  // Final fallback: binary as data URL
-  const contentType = file.type || "text/plain";
+  // Everything else is stored verbatim — text/code as text, other binaries as
+  // data URLs. No conversion: the artifact holds the original file.
+  const contentType = file.type || inferContentTypeFromPath(file.name) || "text/plain";
   const content = isTextContentType(contentType) ? await readFileAsText(file) : await readAsDataURL(file);
 
-  return [
-    {
-      path: `/${file.name}`,
-      content,
-      contentType,
-    },
-  ];
+  return [{ path: `/${file.name}`, content, contentType }];
 }
 
 // Helper function to get the language/extension from a file path
@@ -152,7 +140,8 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
     return "pdf";
   }
 
-  // Office documents and email — previewed via OfficeMarkdownEditor
+  // Office documents (high-fidelity editors; OfficeMarkdownEditor is the
+  // extraction fallback) and email (extracted text)
   if (
     ext === "docx" ||
     normalizedContentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
