@@ -1,8 +1,11 @@
 ### LLM helper (`llm`)
 
-Both interpreters expose an `llm` helper that calls a configured language model with a single prompt string and returns its text response.
+Both interpreters expose an `llm` helper that calls a language model with a prompt string and returns its text response. By default it uses the model of the current chat; per-call parameters can override it.
 
 - Python: `await llm("your prompt")` — async, returns `str`
+  - Optional keyword arguments: `model` (model id), `system` (system instructions), `effort` (`"none"`, `"minimal"`, `"low"`, `"medium"`, `"high"`)
+  - Example: `await llm(text, system="Reply with a single word: positive, negative or neutral.", effort="none")`
 - Bash: `llm "your prompt"` (or pipe via stdin: `cat file.txt | llm "summarize this"`) — writes the response to stdout
+  - Optional flags: `-m/--model <id>`, `-s/--system <instructions>`, `-e/--effort <level>`
 
-Use it for sub-tasks where another model call is genuinely useful — summarizing intermediate results, classifying or extracting structured information from text, generating short content snippets inside a larger pipeline. Avoid using it for tasks you can answer directly without an extra round trip.
+Use it for sub-tasks where another model call is genuinely useful — summarizing intermediate results, classifying or extracting structured information from text, generating short content snippets inside a larger pipeline. Prefer `system` for fixed instructions and keep the prompt to the data being processed. Avoid using it for tasks you can answer directly without an extra round trip.

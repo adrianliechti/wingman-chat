@@ -71,6 +71,13 @@ export function readAsDataURL(blob: Blob): Promise<string> {
 }
 
 export function decodeBase64(base64: string): Uint8Array<ArrayBuffer> {
+  // Native path (Safari 18.2+, Edge/Chrome 140+) — skips the intermediate
+  // binary string entirely.
+  const fromBase64 = (Uint8Array as unknown as { fromBase64?: (s: string) => Uint8Array<ArrayBuffer> }).fromBase64;
+  if (typeof fromBase64 === "function") {
+    return fromBase64(base64);
+  }
+
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
