@@ -34,12 +34,14 @@ How to use it:
 3. Use `code` for short one-off snippets and temporary experiments.
 4. Add `packages` when needed. Common bundled packages include numpy, pandas, scipy, matplotlib, plotly, seaborn, openpyxl, xlsxwriter, `docx`, `pptx`, docx2txt, pdfminer.six, pdfplumber, markdownify, and tabulate.
 5. Print important intermediate results when the output needs explanation.
+6. For async code, use top-level `await` directly (e.g. `result = await main()`). Never call `asyncio.run(...)` or `loop.run_until_complete(...)` — they cannot block inside the browser event loop.
 
 Limitations:
 - No network access.
 - Only Pyodide built-ins and bundled offline packages are available.
 - Visualizations can generate files but do not display inline.
 - The script runs in a sandbox at `/home/user/`.
+- `asyncio.run()` / `run_until_complete()` are unavailable; top-level `await` is supported instead.
 
 ### Bash Interpreter (`execute_bash_code`)
 

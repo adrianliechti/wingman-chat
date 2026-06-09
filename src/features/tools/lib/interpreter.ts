@@ -67,13 +67,14 @@ function getWorker(): Worker {
 }
 
 export async function executeCode(request: CodeExecutionRequest): Promise<CodeExecutionResult> {
+  let pendingReject: ((error: Error) => void) | null = null;
   try {
     const target = getWorker();
     return await new Promise<CodeExecutionResult>((resolve, reject) => {
+      pendingReject = reject;
       pendingRejects.add(reject);
       const { port1, port2 } = new MessageChannel();
       port1.onmessage = (event: MessageEvent<CodeExecutionResult>) => {
-        pendingRejects.delete(reject);
         port1.close();
         resolve(event.data);
       };
@@ -86,5 +87,7 @@ export async function executeCode(request: CodeExecutionRequest): Promise<CodeEx
       output: "",
       error: error instanceof Error ? error.message : String(error),
     };
+  } finally {
+    if (pendingReject) pendingRejects.delete(pendingReject);
   }
 }

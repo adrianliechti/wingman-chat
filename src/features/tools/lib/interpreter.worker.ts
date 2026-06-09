@@ -12,6 +12,7 @@ import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodid
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { SANDBOX_HOME } from "@/shared/lib/sandbox";
+import ASYNCIO_SHIM from "./asyncioShim.py?raw";
 import type {
   ArtifactFile,
   ArtifactFiles,
@@ -40,6 +41,11 @@ const ctx = self as unknown as {
 const PACKAGE_ALIASES: Record<string, string> = {
   docx: "python-docx",
   pptx: "python-pptx",
+  // Bundled as pdfplumber's pinned dep; values must be manifest keys (PEP 503
+  // form), so "pdfminer-six" rather than the PyPI spelling "pdfminer.six".
+  pdfminer: "pdfminer-six",
+  // Bundled as extract-msg's dep.
+  msoffcrypto: "msoffcrypto-tool",
 };
 
 // Packages that cannot run in Pyodide (native binaries) — silently ignored when requested.
@@ -106,6 +112,12 @@ _stdlib = set(getattr(_sys, 'stdlib_module_names', set())) | set(_sys.builtin_mo
 let pyodideReady: Promise<PyodideInterface> | null = null;
 const loadedPackages = new Set<string>();
 let plotlyShimApplied = false;
+
+// `_wingman_rewrite_async` from asyncioShim.py — rewrites blocking asyncio
+// entrypoints (asyncio.run, run_until_complete) into top-level await, which
+// runPythonAsync supports while synchronous blocking needs JSPI (unavailable
+// in Safari). Cached as a callable proxy at load time.
+let rewriteAsyncEntrypoints: ((code: string) => string) | null = null;
 
 // Native-binary deps that pure-Python wheels declare but only import lazily for
 // features we don't use. We register a micropip mock (keyed off the dependent
@@ -326,8 +338,14 @@ function loadPyodide(): Promise<PyodideInterface> {
   if (!pyodideReady) {
     pyodideReady = loadPyodideRuntime({ indexURL: "/pyodide/" })
       .then(async (p) => {
+        // Default cwd is /home/pyodide, which is outside the synced tree —
+        // relative-path writes (open("out.csv", "w")) would be silently lost.
+        p.FS.mkdirTree(SANDBOX_HOME);
+        p.FS.chdir(SANDBOX_HOME);
         p.globals.set("_wingman_llm", requestLlm);
         await p.runPythonAsync(LLM_SHIM);
+        await p.runPythonAsync(ASYNCIO_SHIM);
+        rewriteAsyncEntrypoints = p.globals.get("_wingman_rewrite_async") as (code: string) => string;
         console.log("Pyodide loaded successfully");
         return p;
       })
@@ -341,10 +359,21 @@ function loadPyodide(): Promise<PyodideInterface> {
 }
 
 async function executeCode(request: CodeExecutionRequest): Promise<CodeExecutionResult> {
-  const { code, packages = [], files = {} } = request;
+  const { packages = [], files = {} } = request;
 
   try {
     const pyodide = await loadPyodide();
+
+    let code = request.code;
+    if (rewriteAsyncEntrypoints) {
+      try {
+        code = rewriteAsyncEntrypoints(request.code);
+      } catch (error) {
+        // A rewrite failure must never block execution — run the original.
+        console.error("asyncio entrypoint rewrite failed; running original code:", error);
+      }
+    }
+
     const importedPackages = await findImportedPackages(pyodide, code);
     const requestedPackages = [
       ...new Set([...importedPackages, ...packages.map(normalizePackageName).filter(Boolean)]),
@@ -536,7 +565,18 @@ ctx.addEventListener("message", (event) => {
   const { request, port } = event.data;
   executionChain = executionChain.then(async () => {
     // executeCode never throws — errors come back as { success: false }.
-    port.postMessage(await executeCode(request));
+    const result = await executeCode(request);
+    try {
+      port.postMessage(result);
+    } catch (error) {
+      // A non-cloneable result must not break the chain (every subsequent run
+      // would hang) — report the failure on the same port instead.
+      port.postMessage({
+        success: false,
+        output: "",
+        error: `Failed to serialize execution result: ${error instanceof Error ? error.message : String(error)}`,
+      } satisfies CodeExecutionResult);
+    }
     port.close();
   });
 });
