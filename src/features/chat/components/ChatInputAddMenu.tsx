@@ -20,6 +20,7 @@ import {
   Paperclip,
   Plus,
   ScreenShare,
+  Settings2,
   Sparkles,
   TriangleAlert,
   X,
@@ -71,9 +72,25 @@ export function ChatInputAddMenu({
 
   const [showMobileSheet, setShowMobileSheet] = useState(false);
 
-  // File submenu
-  const [showFileSubmenu, setShowFileSubmenu] = useState(false);
-  const fileSubmenuTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Submenus — only one can be active at a time
+  const [activeSubmenu, setActiveSubmenu] = useState<"file" | "agent" | null>(null);
+  const submenuTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const openSubmenu = useCallback((name: "file" | "agent") => {
+    if (submenuTimer.current) clearTimeout(submenuTimer.current);
+    setActiveSubmenu(name);
+  }, []);
+
+  const scheduleCloseSubmenu = useCallback(() => {
+    submenuTimer.current = setTimeout(() => setActiveSubmenu(null), 150);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (submenuTimer.current) clearTimeout(submenuTimer.current);
+    };
+  }, []);
+
   const { refs: fileRefs, floatingStyles: fileFloatingStyles } = useFloating({
     placement: "right-start",
     middleware: [
@@ -83,9 +100,6 @@ export function ChatInputAddMenu({
     ],
   });
 
-  // Agent submenu
-  const [showAgentSubmenu, setShowAgentSubmenu] = useState(false);
-  const agentSubmenuTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { refs: agentRefs, floatingStyles: agentFloatingStyles } = useFloating({
     placement: "right-start",
     middleware: [
@@ -152,7 +166,7 @@ export function ChatInputAddMenu({
             modal={false}
             transition
             anchor="top start"
-            className="max-h-[60vh]! mb-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-y-auto shadow-lg shadow-black/20 dark:shadow-black/50 z-50 min-w-40 dark:ring-1 dark:ring-white/10 py-1"
+            className="max-h-[60vh]! mb-2 rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 p-1 overflow-y-auto z-50 min-w-40 transition duration-100 ease-out data-closed:scale-95 data-closed:opacity-0"
           >
             {isScreenCaptureAvailable && (
               <MenuItem>
@@ -173,7 +187,7 @@ export function ChatInputAddMenu({
                         await onContinuousCaptureToggle();
                       }}
                       className={cn(
-                        "group flex w-full items-center gap-3 px-4 py-1.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 transition-colors",
+                        "group flex w-full items-center gap-3 px-3 py-2 rounded-lg data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/60 dark:hover:bg-white/5 transition-colors",
                         isContinuousCaptureActive
                           ? "text-green-600 dark:text-green-400"
                           : "text-neutral-800 dark:text-neutral-200",
@@ -194,21 +208,18 @@ export function ChatInputAddMenu({
                 type="button"
                 onClick={() => (config.drives.length === 0 ? onAttachmentClick() : undefined)}
                 onMouseEnter={() => {
-                  if (fileSubmenuTimer.current) clearTimeout(fileSubmenuTimer.current);
                   if (config.drives.length === 0) return;
-                  setShowFileSubmenu(true);
+                  openSubmenu("file");
                 }}
-                onMouseLeave={() => {
-                  fileSubmenuTimer.current = setTimeout(() => setShowFileSubmenu(false), 150);
-                }}
-                className="group flex w-full items-center gap-3 px-4 py-1.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors"
+                onMouseLeave={scheduleCloseSubmenu}
+                className="group flex w-full items-center gap-3 px-3 py-2 rounded-lg data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
               >
                 <Paperclip size={16} className="shrink-0" />
                 <span className="font-medium text-sm flex-1 text-left">Add File</span>
                 {config.drives.length > 0 && <ChevronRight size={14} className="shrink-0 text-neutral-400" />}
               </button>
             </MenuItem>
-            {showFileSubmenu &&
+            {activeSubmenu === "file" &&
               createPortal(
                 <div
                   ref={fileRefs.setFloating}
@@ -216,19 +227,14 @@ export function ChatInputAddMenu({
                   role="none"
                   style={fileFloatingStyles}
                   className="z-9999"
-                  onMouseEnter={() => {
-                    if (fileSubmenuTimer.current) clearTimeout(fileSubmenuTimer.current);
-                    setShowFileSubmenu(true);
-                  }}
-                  onMouseLeave={() => {
-                    fileSubmenuTimer.current = setTimeout(() => setShowFileSubmenu(false), 150);
-                  }}
+                  onMouseEnter={() => openSubmenu("file")}
+                  onMouseLeave={scheduleCloseSubmenu}
                 >
-                  <div className="rounded-xl border-2 bg-white/70 dark:bg-neutral-950/90 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 shadow-lg shadow-black/20 dark:shadow-black/50 dark:ring-1 dark:ring-white/10 py-1 min-w-40">
+                  <div className="rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 p-1 min-w-40">
                     <button
                       type="button"
                       onClick={onAttachmentClick}
-                      className="flex w-full items-center gap-3 px-4 py-1.5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
+                      className="flex w-full items-center gap-3 px-3 py-2 rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
                     >
                       <Paperclip size={16} className="shrink-0" />
                       <span className="font-medium text-sm">Upload</span>
@@ -238,10 +244,10 @@ export function ChatInputAddMenu({
                         key={fp.id}
                         type="button"
                         onClick={() => {
-                          setShowFileSubmenu(false);
+                          setActiveSubmenu(null);
                           onDriveSelect(fp);
                         }}
-                        className="flex w-full items-center gap-3 px-4 py-1.5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
+                        className="flex w-full items-center gap-3 px-3 py-2 rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
                       >
                         {fp.icon ? (
                           <span
@@ -270,21 +276,16 @@ export function ChatInputAddMenu({
               <button
                 ref={agentRefs.setReference}
                 type="button"
-                onMouseEnter={() => {
-                  if (agentSubmenuTimer.current) clearTimeout(agentSubmenuTimer.current);
-                  setShowAgentSubmenu(true);
-                }}
-                onMouseLeave={() => {
-                  agentSubmenuTimer.current = setTimeout(() => setShowAgentSubmenu(false), 150);
-                }}
-                className="group flex w-full items-center gap-3 px-4 py-1.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors"
+                onMouseEnter={() => openSubmenu("agent")}
+                onMouseLeave={scheduleCloseSubmenu}
+                className="group flex w-full items-center gap-3 px-3 py-2 rounded-lg data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
               >
                 <Bot size={16} className="shrink-0" />
                 <span className="font-medium text-sm flex-1 text-left">Agents</span>
                 <ChevronRight size={14} className="shrink-0 text-neutral-400" />
               </button>
             </MenuItem>
-            {showAgentSubmenu &&
+            {activeSubmenu === "agent" &&
               createPortal(
                 <div
                   ref={agentRefs.setFloating}
@@ -292,15 +293,10 @@ export function ChatInputAddMenu({
                   role="none"
                   style={agentFloatingStyles}
                   className="z-9999"
-                  onMouseEnter={() => {
-                    if (agentSubmenuTimer.current) clearTimeout(agentSubmenuTimer.current);
-                    setShowAgentSubmenu(true);
-                  }}
-                  onMouseLeave={() => {
-                    agentSubmenuTimer.current = setTimeout(() => setShowAgentSubmenu(false), 150);
-                  }}
+                  onMouseEnter={() => openSubmenu("agent")}
+                  onMouseLeave={scheduleCloseSubmenu}
                 >
-                  <div className="rounded-xl border-2 bg-white/70 dark:bg-neutral-950/90 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 shadow-lg shadow-black/20 dark:shadow-black/50 dark:ring-1 dark:ring-white/10 py-1 min-w-48 flex flex-col overflow-hidden max-h-[min(60vh,400px)]">
+                  <div className="rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 p-1 min-w-48 flex flex-col overflow-hidden max-h-[min(60vh,400px)]">
                     {agents.length === 0 && (
                       <p className="px-4 py-2 text-sm text-neutral-500 dark:text-neutral-400">No agents configured</p>
                     )}
@@ -308,17 +304,17 @@ export function ChatInputAddMenu({
                       {agents.map((agent) => (
                         <div
                           key={agent.id}
-                          className="group/agent flex w-full items-center hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
+                          className="group/agent flex w-full items-center rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
                         >
                           <button
                             type="button"
                             onClick={() => {
                               setCurrentAgent(agent);
-                              setShowAgentSubmenu(false);
+                              setActiveSubmenu(null);
                               setAgentDrawerView("details");
                               setShowAgentDrawer(true);
                             }}
-                            className="flex flex-1 min-w-0 items-center gap-3 px-4 py-1.5"
+                            className="flex flex-1 min-w-0 items-center gap-3 px-3 py-2"
                           >
                             <Bot size={16} className="shrink-0" />
                             <span className="font-medium text-sm flex-1 text-left truncate">{agent.name}</span>
@@ -333,10 +329,10 @@ export function ChatInputAddMenu({
                     <button
                       type="button"
                       onClick={() => {
-                        setShowAgentSubmenu(false);
+                        setActiveSubmenu(null);
                         setWizardOpen(true);
                       }}
-                      className="flex w-full items-center gap-3 px-4 py-1.5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
+                      className="flex w-full items-center gap-3 px-3 py-2 rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
                     >
                       <Plus size={16} className="shrink-0" />
                       <span className="font-medium text-sm">Add Agent</span>
@@ -344,11 +340,11 @@ export function ChatInputAddMenu({
                     <button
                       type="button"
                       onClick={() => {
-                        setShowAgentSubmenu(false);
+                        setActiveSubmenu(null);
                         setAgentDrawerView("list");
                         setShowAgentDrawer(true);
                       }}
-                      className="flex w-full items-center gap-3 px-4 py-1.5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
+                      className="flex w-full items-center gap-3 px-3 py-2 rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
                     >
                       <FolderCog size={16} className="shrink-0" />
                       <span className="font-medium text-sm">Manage Agents</span>
@@ -394,7 +390,7 @@ export function ChatInputAddMenu({
                         }
                       }}
                       disabled={providerInitializing}
-                      className="group flex w-full items-center gap-3 px-4 py-1.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors disabled:opacity-50"
+                      className="group flex w-full items-center gap-3 px-3 py-2 rounded-lg data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors disabled:opacity-50"
                     >
                       {renderProviderIcon(provider, state)}
                       <span className="font-medium text-sm flex-1 text-left truncate">{provider.name}</span>
@@ -530,7 +526,7 @@ export function ChatInputAddMenu({
                   <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
                   <div className="px-4 pb-1">
                     <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-                      Connectors
+                      Tools
                     </p>
                   </div>
                   <div className="px-2">
@@ -611,7 +607,7 @@ export function ChatInputAddMenu({
                         }}
                         className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
                       >
-                        <FolderCog size={16} />
+                        <Settings2 size={16} />
                       </button>
                     </div>
                   </div>

@@ -6,7 +6,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { cn } from "@/shared/lib/cn";
 
 export function AgentHintButton() {
-  const { currentAgent, showAgentDrawer, setShowAgentDrawer } = useAgents();
+  const { currentAgent, showAgentDrawer, setShowAgentDrawer, setAgentDrawerView } = useAgents();
   const [hintOpen, setHintOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -40,6 +40,7 @@ export function AgentHintButton() {
       return;
     }
     if (currentAgent) {
+      setAgentDrawerView("details");
       setShowAgentDrawer(true);
       return;
     }

@@ -1,16 +1,18 @@
 import {
   Bot,
   Check,
+  ChevronDown,
   Download,
   Folder,
+  FolderCog,
   MessageSquare,
   Mic,
   MoreVertical,
-  Pencil,
   PenLine,
   Plus,
   Rocket,
   Sparkles,
+  SquarePen,
   Trash2,
   Upload,
   X,
@@ -22,12 +24,13 @@ import type { Agent } from "@/features/agent/types/agent";
 import { exportSingleAgentAsZip, triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
-import { ConnectorsSection } from "./ConnectorsSection";
+import { DropdownMenu, DropdownMenuDivider, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { FilesSection } from "./FilesSection";
 import { InstructionsSection } from "./InstructionsSection";
 import { MemorySection } from "./MemorySection";
 import { ModelSection } from "./ModelSection";
 import { SkillsSection } from "./SkillsSection";
+import { ToolsSection } from "./ToolsSection";
 import { AgentWizard } from "./wizard/AgentWizard";
 
 // ─── Agent details: sections ───
@@ -45,7 +48,7 @@ function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
     <div className="flex flex-col flex-1 overflow-auto">
       <ModelSection agent={agent} />
       <InstructionsSection agent={agent} />
-      <ConnectorsSection agent={agent} />
+      <ToolsSection agent={agent} />
       <SkillsSection agent={agent} />
       {config.repository && <FilesSection agent={agent} />}
       {config.memory && <MemorySection agent={agent} />}
@@ -178,7 +181,7 @@ export function AgentDrawer() {
   return (
     <div className="h-full flex flex-col overflow-hidden animate-in fade-in duration-200 relative bg-neutral-50 dark:bg-neutral-950 pt-2 md:pt-0">
       {/* Panel header: back (details only) + inline agent selector + close */}
-      <div className="shrink-0 h-12 md:h-10 flex items-center px-3 gap-2">
+      <div className="shrink-0 h-12 md:h-10 flex items-center px-4 gap-2">
         {view === "list" ? (
           <>
             <span className="flex-1 min-w-0 text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate">
@@ -196,67 +199,60 @@ export function AgentDrawer() {
           </>
         ) : (
           <>
+            <span className="flex-1 min-w-0 truncate">
+              <DropdownMenu
+                anchor="bottom start"
+                panelClassName="min-w-48 flex flex-col"
+                trigger={
+                  <MenuButton className="inline-flex items-center gap-1 text-left text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate hover:opacity-70 transition-opacity max-w-full">
+                    <span className="truncate">{currentAgent?.name ?? "Agent"}</span>
+                    <ChevronDown size={13} className="shrink-0 opacity-60" />
+                  </MenuButton>
+                }
+              >
+                <DropdownMenuItem
+                  icon={<X size={13} />}
+                  onClick={() => {
+                    setCurrentAgent(null);
+                    setShowAgentDrawer(false);
+                  }}
+                >
+                  No agent
+                </DropdownMenuItem>
+                <DropdownMenuDivider />
+                <div className="overflow-y-auto max-h-80">
+                  {agents
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((agent) => (
+                      <DropdownMenuItem
+                        key={agent.id}
+                        icon={agent.model === "realtime" ? <Mic size={13} /> : <Bot size={13} />}
+                        selected={currentAgent?.id === agent.id}
+                        onClick={() => {
+                          setCurrentAgent(agent);
+                          setView("details");
+                        }}
+                      >
+                        {agent.name}
+                      </DropdownMenuItem>
+                    ))}
+                </div>
+                <DropdownMenuDivider />
+                <DropdownMenuItem icon={<FolderCog size={13} />} onClick={() => setView("list")}>
+                  Manage agents
+                </DropdownMenuItem>
+              </DropdownMenu>
+            </span>
             <button
               type="button"
-              onClick={() => setView("list")}
+              onClick={() => setShowAgentDrawer(false)}
               className="shrink-0 p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
-              title="Back to agents"
-              aria-label="Back to agents"
+              title="Close"
+              aria-label="Close agent drawer"
             >
-              <Bot size={15} />
+              <X size={15} />
             </button>
-            {inlineEditingId === currentAgent?.id ? (
-              <input
-                ref={inlineEditInputRef}
-                value={editingName}
-                onChange={(e) => setEditingName(e.target.value)}
-                onKeyDown={handleInputKeyDown}
-                className="flex-1 min-w-0 text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 bg-transparent border-b border-neutral-400 dark:border-neutral-500 outline-none truncate"
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => currentAgent && startInlineEdit(currentAgent)}
-                className="flex-1 min-w-0 text-left text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate hover:opacity-70 transition-opacity"
-                title="Click to rename"
-              >
-                {currentAgent?.name ?? "Agent"}
-              </button>
-            )}
-            {inlineEditingId === currentAgent?.id ? (
-              <>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={saveInlineEdit}
-                  className="shrink-0 p-1 rounded-md text-green-500 hover:text-green-600 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
-                  title="Save"
-                  aria-label="Save agent name"
-                >
-                  <Check size={13} />
-                </button>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={cancelInlineEdit}
-                  className="shrink-0 p-1 rounded-md text-neutral-400 hover:text-red-500 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
-                  title="Cancel"
-                  aria-label="Cancel rename"
-                >
-                  <X size={13} />
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowAgentDrawer(false)}
-                className="shrink-0 p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
-                title="Close"
-                aria-label="Close agent drawer"
-              >
-                <X size={15} />
-              </button>
-            )}
           </>
         )}
       </div>
@@ -315,30 +311,17 @@ export function AgentDrawer() {
             /* Agent list */
             <>
               <div className="flex-1 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800">
-                {/* Click-outside overlay for open menus */}
-                {openMenuId && (
-                  <button
-                    type="button"
-                    aria-label="Close menu"
-                    className="fixed inset-0 z-40 cursor-default bg-transparent"
-                    onClick={() => setOpenMenuId(null)}
-                  />
-                )}
                 {agents
                   .slice()
                   .sort((a, b) => a.name.localeCompare(b.name))
                   .map((agent) => {
                     const isActive = currentAgent?.id === agent.id;
                     const isRenaming = inlineEditingId === agent.id && view === "list";
-                    const isMenuOpen = openMenuId === agent.id;
                     return (
                       <div
                         key={agent.id}
                         className={cn(
-                          "relative flex items-center transition-colors",
-                          isActive
-                            ? "bg-neutral-200/60 dark:bg-neutral-800/60"
-                            : "hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60",
+                          "relative flex items-center transition-colors hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60",
                         )}
                       >
                         {isRenaming ? (
@@ -346,14 +329,22 @@ export function AgentDrawer() {
                           <div className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2.5 overflow-hidden">
                             <div
                               className={cn(
-                                "shrink-0 w-8 h-8 rounded-xl flex items-center justify-center",
-                                isActive ? "bg-neutral-300 dark:bg-neutral-700" : "bg-neutral-200 dark:bg-neutral-800",
+                                "shrink-0 w-8 h-8 rounded-xl flex items-center justify-center border",
+                                isActive
+                                  ? "border-neutral-400 dark:border-neutral-500"
+                                  : "border-neutral-200 dark:border-neutral-700",
                               )}
                             >
                               {agent.model === "realtime" ? (
-                                <Mic size={15} className="text-neutral-600 dark:text-neutral-300" />
+                                <Mic
+                                  size={15}
+                                  className={`text-neutral-600 dark:text-neutral-400 ${!isActive ? "opacity-40" : ""}`}
+                                />
                               ) : (
-                                <Bot size={15} className="text-neutral-600 dark:text-neutral-300" />
+                                <Bot
+                                  size={15}
+                                  className={`text-neutral-600 dark:text-neutral-400 ${!isActive ? "opacity-40" : ""}`}
+                                />
                               )}
                             </div>
                             <input
@@ -391,41 +382,28 @@ export function AgentDrawer() {
                             >
                               <div
                                 className={cn(
-                                  "shrink-0 w-8 h-8 rounded-xl flex items-center justify-center",
+                                  "shrink-0 w-8 h-8 rounded-xl flex items-center justify-center border",
                                   isActive
-                                    ? "bg-neutral-300 dark:bg-neutral-700"
-                                    : "bg-neutral-200 dark:bg-neutral-800",
+                                    ? "border-neutral-400 dark:border-neutral-500"
+                                    : "border-neutral-200 dark:border-neutral-700",
                                 )}
                               >
                                 {agent.model === "realtime" ? (
                                   <Mic
                                     size={15}
-                                    className={
-                                      isActive
-                                        ? "text-neutral-800 dark:text-neutral-100"
-                                        : "text-neutral-600 dark:text-neutral-300"
-                                    }
+                                    className={`text-neutral-600 dark:text-neutral-400 ${!isActive ? "opacity-40" : ""}`}
                                   />
                                 ) : (
                                   <Bot
                                     size={15}
-                                    className={
-                                      isActive
-                                        ? "text-neutral-800 dark:text-neutral-100"
-                                        : "text-neutral-600 dark:text-neutral-300"
-                                    }
+                                    className={`text-neutral-600 dark:text-neutral-400 ${!isActive ? "opacity-40" : ""}`}
                                   />
                                 )}
                               </div>
                               <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                                 <div className="flex items-center gap-2">
                                   <span
-                                    className={cn(
-                                      "flex-1 min-w-0 text-sm font-medium truncate",
-                                      isActive
-                                        ? "text-neutral-900 dark:text-neutral-50"
-                                        : "text-neutral-900 dark:text-neutral-100",
-                                    )}
+                                    className={`flex-1 min-w-0 text-sm truncate ${isActive ? "text-neutral-900 dark:text-neutral-100 font-medium" : "text-neutral-500 dark:text-neutral-400"}`}
                                   >
                                     {agent.name}
                                   </span>
@@ -440,7 +418,7 @@ export function AgentDrawer() {
                                         {toolsCount > 0 && (
                                           <span className="inline-flex items-center gap-0.5 text-[10px] text-neutral-400 dark:text-neutral-500">
                                             <Rocket size={9} />
-                                            {toolsCount} {toolsCount === 1 ? "connector" : "connectors"}
+                                            {toolsCount} {toolsCount === 1 ? "tool" : "tools"}
                                           </span>
                                         )}
                                         {config.repository && (agent.files?.length ?? 0) > 0 && (
@@ -466,61 +444,43 @@ export function AgentDrawer() {
                                 </span>
                               )}
                             </button>
-                            {/* Three-dot menu button */}
-                            <div className="relative shrink-0 pr-1">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOpenMenuId(isMenuOpen ? null : agent.id);
-                                }}
-                                className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
-                                title="More options"
-                                aria-label="More options"
+                            {/* Three-dot menu */}
+                            <div className="shrink-0 pr-1">
+                              <DropdownMenu
+                                anchor="bottom end"
+                                trigger={
+                                  <MenuButton
+                                    className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                                    title="More options"
+                                    aria-label="More options"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <MoreVertical size={14} />
+                                  </MenuButton>
+                                }
                               >
-                                <MoreVertical size={14} />
-                              </button>
-                              {isMenuOpen && (
-                                <div className="absolute right-0 top-full mt-1 z-50 w-36 rounded-lg border border-neutral-200/80 dark:border-neutral-700/60 bg-white dark:bg-neutral-900 shadow-lg py-1 overflow-hidden">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      startInlineEdit(agent);
-                                    }}
-                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                                  >
-                                    <Pencil size={12} />
-                                    Rename
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleListSelect(agent);
-                                    }}
-                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                                  >
-                                    <PenLine size={12} />
-                                    Edit
-                                  </button>
-                                  <div className="my-1 border-t border-neutral-200/60 dark:border-neutral-700/60" />
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setOpenMenuId(null);
-                                      if (!window.confirm(`Delete "${agent.name}"? This cannot be undone.`)) return;
-                                      if (isActive) setCurrentAgent(null);
-                                      deleteAgent(agent.id);
-                                    }}
-                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-                                  >
-                                    <Trash2 size={12} />
-                                    Delete
-                                  </button>
-                                </div>
-                              )}
+                                <DropdownMenuItem icon={<PenLine size={12} />} onClick={() => startInlineEdit(agent)}>
+                                  Rename
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  icon={<SquarePen size={12} />}
+                                  onClick={() => handleListSelect(agent)}
+                                >
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuDivider />
+                                <DropdownMenuItem
+                                  icon={<Trash2 size={12} />}
+                                  destructive
+                                  onClick={() => {
+                                    if (!window.confirm(`Delete "${agent.name}"? This cannot be undone.`)) return;
+                                    if (isActive) setCurrentAgent(null);
+                                    deleteAgent(agent.id);
+                                  }}
+                                >
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenu>
                             </div>
                           </>
                         )}

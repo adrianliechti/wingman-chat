@@ -1,6 +1,6 @@
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { FileText, FolderOpen, HardDrive, Loader2, Plus, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 
 const FILES_VISIBLE_DEFAULT = 3;
 
@@ -115,40 +115,26 @@ export function FilesSection({ agent }: FilesSectionProps) {
         collapsible={false}
         headerAction={
           config.drives.length > 0 ? (
-            <Menu>
-              <MenuButton className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
-                <Plus size={12} /> Add File
-              </MenuButton>
-              <MenuItems
-                modal={false}
-                transition
-                anchor="bottom end"
-                className="mt-1 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-40"
+            <DropdownMenu
+              anchor="bottom end"
+              trigger={
+                <MenuButton className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
+                  <Plus size={12} /> Add File
+                </MenuButton>
+              }
+            >
+              <DropdownMenuItem
+                icon={<Upload size={15} />}
+                onClick={() => document.getElementById(`agent-file-upload-${agent.id}`)?.click()}
               >
-                <MenuItem>
-                  <button
-                    type="button"
-                    onClick={() => document.getElementById(`agent-file-upload-${agent.id}`)?.click()}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
-                  >
-                    <Upload size={15} className="text-neutral-500" />
-                    Upload
-                  </button>
-                </MenuItem>
-                {config.drives.map((drive) => (
-                  <MenuItem key={drive.id}>
-                    <button
-                      type="button"
-                      onClick={() => setActiveDrive(drive)}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
-                    >
-                      <HardDrive size={15} className="text-neutral-500" />
-                      {drive.name}
-                    </button>
-                  </MenuItem>
-                ))}
-              </MenuItems>
-            </Menu>
+                Upload
+              </DropdownMenuItem>
+              {config.drives.map((drive) => (
+                <DropdownMenuItem key={drive.id} icon={<HardDrive size={15} />} onClick={() => setActiveDrive(drive)}>
+                  {drive.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenu>
           ) : (
             <button
               type="button"

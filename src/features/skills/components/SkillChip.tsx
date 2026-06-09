@@ -16,7 +16,7 @@ export const SkillChip = memo(function SkillChip({ name, className }: { name: st
   const exists = !!skill;
 
   const handleOpen = () => {
-    openSkillCatalog(name);
+    openSkillCatalog(name, true);
   };
 
   return (

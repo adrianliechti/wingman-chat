@@ -20,7 +20,6 @@ import {
   Zap,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { acceptTypes } from "@/shared/lib/convert";
@@ -28,6 +27,7 @@ import { getDriveContentUrl } from "@/shared/lib/drives";
 import { downloadBlob, downloadFromUrl, getFileName } from "@/shared/lib/utils";
 import type { File } from "@/shared/types/file";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { DropdownMenu, DropdownMenuDivider, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { Markdown } from "@/shared/ui/Markdown";
 import { PLACEHOLDER_SOURCE_NAMES } from "../hooks/useNotebook";
 import { FieldRecorderOverlay } from "./FieldRecorderOverlay";
@@ -63,7 +63,6 @@ export function SourcesPanel({
   const acceptFilter = acceptTypes().join(",");
   const [extracting, setExtracting] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
-  const [showAddMenu, setShowAddMenu] = useState(false);
   const [showSearchOverlay, setShowSearchOverlay] = useState(false);
   const [showScrapeOverlay, setShowScrapeOverlay] = useState(false);
   const [showTextOverlay, setShowTextOverlay] = useState(false);
@@ -180,99 +179,42 @@ export function SourcesPanel({
 
       {/* Bottom: Add sources dropdown */}
       <div className="@container px-3 pt-3 pb-4 relative">
-        <button
-          type="button"
-          onClick={() => setShowAddMenu(!showAddMenu)}
-          title="Add sources"
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm border border-dashed border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-600 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+        <DropdownMenu
+          anchor="top"
+          trigger={
+            <MenuButton
+              title="Add sources"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm border border-dashed border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-600 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+            >
+              <Plus size={16} className="shrink-0" />
+              <span className="hidden @[10rem]:inline">Add sources</span>
+            </MenuButton>
+          }
         >
-          <Plus size={16} className="shrink-0" />
-          <span className="hidden @[10rem]:inline">Add sources</span>
-        </button>
-
-        {showAddMenu && (
-          <>
-            <button
-              type="button"
-              aria-label="Close add sources menu"
-              className="fixed inset-0 z-40"
-              onClick={() => setShowAddMenu(false)}
-            />
-            <div className="absolute bottom-full left-3 right-3 mb-1 z-50 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg py-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddMenu(false);
-                  setShowTextOverlay(true);
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <Type size={15} className="text-neutral-500" />
-                Text
-              </button>
-              {config.stt && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddMenu(false);
-                    setShowRecordOverlay(true);
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                >
-                  <Mic size={15} className="text-neutral-500" />
-                  Record
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddMenu(false);
-                  fileInputRef.current?.click();
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <Upload size={15} className="text-neutral-500" />
-                Upload
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddMenu(false);
-                  setShowScrapeOverlay(true);
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <Link size={15} className="text-neutral-500" />
-                Web Page
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddMenu(false);
-                  setShowSearchOverlay(true);
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <Globe size={15} className="text-neutral-500" />
-                Web Search
-              </button>
-              {config.drives.map((drive) => (
-                <button
-                  key={drive.id}
-                  type="button"
-                  onClick={() => {
-                    setShowAddMenu(false);
-                    setActiveDrive(drive);
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                >
-                  <HardDrive size={15} className="text-neutral-500" />
-                  {drive.name}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+          <DropdownMenuItem icon={<Type size={15} />} onClick={() => setShowTextOverlay(true)}>
+            Text
+          </DropdownMenuItem>
+          {config.stt && (
+            <DropdownMenuItem icon={<Mic size={15} />} onClick={() => setShowRecordOverlay(true)}>
+              Record
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem icon={<Upload size={15} />} onClick={() => fileInputRef.current?.click()}>
+            Upload
+          </DropdownMenuItem>
+          <DropdownMenuItem icon={<Link size={15} />} onClick={() => setShowScrapeOverlay(true)}>
+            Web Page
+          </DropdownMenuItem>
+          <DropdownMenuItem icon={<Globe size={15} />} onClick={() => setShowSearchOverlay(true)}>
+            Web Search
+          </DropdownMenuItem>
+          {config.drives.length > 0 && <DropdownMenuDivider />}
+          {config.drives.map((drive) => (
+            <DropdownMenuItem key={drive.id} icon={<HardDrive size={15} />} onClick={() => setActiveDrive(drive)}>
+              {drive.name}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenu>
 
         <input
           ref={fileInputRef}
@@ -808,32 +750,6 @@ function isBinarySource(source: File): boolean {
   return typeof source.content === "string" && source.content.startsWith("data:");
 }
 
-function SourceMenuItem({
-  icon: Icon,
-  label,
-  onClick,
-  destructive,
-}: {
-  icon: typeof Download;
-  label: string;
-  onClick: () => void;
-  destructive?: boolean;
-}) {
-  const tone = destructive
-    ? "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
-    : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors ${tone}`}
-    >
-      <Icon size={13} className={destructive ? "shrink-0" : "text-neutral-400 shrink-0"} />
-      {label}
-    </button>
-  );
-}
-
 function SourceItem({
   source,
   onDelete,
@@ -845,7 +761,6 @@ function SourceItem({
   onRename: (newPath: string) => Promise<void>;
   onUpdate: (content: string) => Promise<void>;
 }) {
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -945,68 +860,31 @@ function SourceItem({
               </span>
             </button>
 
-            <button
-              type="button"
-              title="Actions"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (menuPos) {
-                  setMenuPos(null);
-                } else {
-                  const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                  setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
-                }
-              }}
-              className="shrink-0 p-1 rounded-md text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+            <DropdownMenu
+              anchor="bottom end"
+              trigger={
+                <MenuButton
+                  title="Actions"
+                  onClick={(e) => e.stopPropagation()}
+                  className="shrink-0 p-1 rounded-md text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                >
+                  <MoreVertical size={14} />
+                </MenuButton>
+              }
             >
-              <MoreVertical size={14} />
-            </button>
+              <DropdownMenuItem icon={<PencilLine size={13} />} onClick={() => startRename()}>
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem icon={<Download size={13} />} onClick={() => handleDownload()}>
+                Download
+              </DropdownMenuItem>
+              <DropdownMenuItem icon={<Trash2 size={13} />} destructive onClick={() => onDelete()}>
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenu>
           </>
         )}
       </div>
-
-      {menuPos &&
-        createPortal(
-          <>
-            <button
-              type="button"
-              aria-label="Close menu"
-              className="fixed inset-0 z-40 cursor-default"
-              onMouseDown={() => setMenuPos(null)}
-            />
-            <div
-              className="fixed z-50 min-w-30 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl shadow-black/20 dark:shadow-black/60 py-1 overflow-hidden"
-              style={{ top: menuPos.top, right: menuPos.right }}
-            >
-              <SourceMenuItem
-                icon={PencilLine}
-                label="Rename"
-                onClick={() => {
-                  setMenuPos(null);
-                  startRename();
-                }}
-              />
-              <SourceMenuItem
-                icon={Download}
-                label="Download"
-                onClick={() => {
-                  setMenuPos(null);
-                  handleDownload();
-                }}
-              />
-              <SourceMenuItem
-                icon={Trash2}
-                label="Delete"
-                onClick={() => {
-                  setMenuPos(null);
-                  onDelete();
-                }}
-                destructive
-              />
-            </div>
-          </>,
-          document.body,
-        )}
 
       {editOpen && <SourceEditOverlay source={source} onSave={onUpdate} onClose={() => setEditOpen(false)} />}
     </>

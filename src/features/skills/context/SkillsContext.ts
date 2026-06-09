@@ -11,7 +11,8 @@ export interface SkillsContextType {
   getSkill: (name: string) => Skill | undefined;
   showSkillCatalog: boolean;
   skillCatalogTarget: string | null;
-  openSkillCatalog: (name?: string) => void;
+  skillCatalogReadOnly: boolean;
+  openSkillCatalog: (name?: string, readOnly?: boolean) => void;
   closeSkillCatalog: () => void;
 }
 

@@ -1,8 +1,7 @@
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { ArrowRight, HardDrive, ImagePlus, Loader2, Paintbrush, Sparkles, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-
 import type { Model } from "@/shared/types/chat";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 
 interface CanvasInputProps {
   prompt: string;
@@ -157,144 +156,88 @@ export function CanvasInput({
       <div className="flex items-center justify-between gap-3 px-3 pb-3">
         <div className="flex min-w-0 items-center gap-3">
           {/* Model dropdown */}
-          <Menu>
-            <MenuButton className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48">
-              <span className="shrink-0 flex justify-center">
-                <Sparkles size={14} />
-              </span>
-              <span className="truncate min-w-0">{selectedModel?.name || "Model"}</span>
-            </MenuButton>
-            <MenuItems
-              modal={false}
-              transition
-              anchor="bottom start"
-              className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 whitespace-nowrap dark:ring-1 dark:ring-white/10"
-            >
-              {models.length === 0 ? (
-                <div className="px-3 py-2 text-neutral-500 dark:text-neutral-400 text-sm">Loading models...</div>
-              ) : (
-                models.map((model) => (
-                  <MenuItem key={model.id}>
-                    <button
-                      type="button"
-                      onClick={() => onSelectModel(model)}
-                      title={model.description}
-                      className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                    >
-                      <div className="flex items-center gap-2.5 w-full">
-                        <div className="flex flex-col items-start flex-1 min-w-0">
-                          <div className="font-semibold text-sm leading-tight whitespace-nowrap">
-                            {model.name ?? model.id}
-                          </div>
-                          {model.description && (
-                            <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
-                              {model.description}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  </MenuItem>
-                ))
-              )}
-            </MenuItems>
-          </Menu>
+          <DropdownMenu
+            anchor="bottom start"
+            panelClassName="max-h-[50vh]! whitespace-nowrap"
+            trigger={
+              <MenuButton className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48">
+                <span className="shrink-0 flex justify-center">
+                  <Sparkles size={14} />
+                </span>
+                <span className="truncate min-w-0">{selectedModel?.name || "Model"}</span>
+              </MenuButton>
+            }
+          >
+            {models.length === 0 ? (
+              <div className="px-3 py-2 text-neutral-500 dark:text-neutral-400 text-sm">Loading models...</div>
+            ) : (
+              models.map((model) => (
+                <DropdownMenuItem key={model.id} description={model.description} onClick={() => onSelectModel(model)}>
+                  {model.name ?? model.id}
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenu>
 
           {/* Style dropdown */}
-          <Menu>
-            <MenuButton
-              className={`flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium transition-colors max-w-48 ${
-                selectedStyle
-                  ? "text-blue-600 dark:text-blue-400"
-                  : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-              }`}
-            >
-              <span className="shrink-0 flex justify-center">
-                <Paintbrush size={14} />
-              </span>
-              <span className="truncate min-w-0">{selectedStyle || "Style"}</span>
-            </MenuButton>
-            <MenuItems
-              modal={false}
-              transition
-              anchor="bottom start"
-              className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 whitespace-nowrap dark:ring-1 dark:ring-white/10"
-            >
-              {/* Clear style option */}
-              {selectedStyle && (
-                <MenuItem>
-                  <button
-                    type="button"
-                    onClick={() => onSelectStyle(null)}
-                    className="group flex w-full items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                  >
-                    <div className="flex items-center gap-2.5 w-full">
-                      <span className="text-sm italic text-neutral-500 dark:text-neutral-400">No style</span>
-                    </div>
-                  </button>
-                </MenuItem>
-              )}
-              {availableStyles.map((style) => (
-                <MenuItem key={style}>
-                  <button
-                    type="button"
-                    onClick={() => onSelectStyle(selectedStyle === style ? null : style)}
-                    className="group flex w-full items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                  >
-                    <div className="flex items-center gap-2.5 w-full">
-                      <span
-                        className={`font-semibold text-sm leading-tight whitespace-nowrap ${selectedStyle === style ? "text-blue-600 dark:text-blue-400" : ""}`}
-                      >
-                        {style}
-                      </span>
-                    </div>
-                  </button>
-                </MenuItem>
-              ))}
-            </MenuItems>
-          </Menu>
+          <DropdownMenu
+            anchor="bottom start"
+            panelClassName="max-h-[50vh]! whitespace-nowrap"
+            trigger={
+              <MenuButton
+                className={`flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium transition-colors max-w-48 ${
+                  selectedStyle
+                    ? "text-blue-600 dark:text-blue-400"
+                    : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                }`}
+              >
+                <span className="shrink-0 flex justify-center">
+                  <Paintbrush size={14} />
+                </span>
+                <span className="truncate min-w-0">{selectedStyle || "Style"}</span>
+              </MenuButton>
+            }
+          >
+            {selectedStyle && (
+              <DropdownMenuItem onClick={() => onSelectStyle(null)}>
+                <span className="italic text-neutral-500 dark:text-neutral-400">No style</span>
+              </DropdownMenuItem>
+            )}
+            {availableStyles.map((style) => (
+              <DropdownMenuItem
+                key={style}
+                selected={selectedStyle === style}
+                onClick={() => onSelectStyle(selectedStyle === style ? null : style)}
+              >
+                <span className={selectedStyle === style ? "text-blue-600 dark:text-blue-400" : ""}>{style}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenu>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
           {referenceImages.length < 4 &&
             (drives && drives.length > 0 && onDriveSelect ? (
-              <Menu>
-                <MenuButton
-                  className="rounded-xl p-2 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors hover:bg-neutral-100/70 dark:hover:bg-white/5"
-                  title="Add reference image"
-                >
-                  <ImagePlus size={16} />
-                </MenuButton>
-                <MenuItems
-                  modal={false}
-                  transition
-                  anchor="bottom end"
-                  className="mt-1 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-40"
-                >
-                  <MenuItem>
-                    <button
-                      type="button"
-                      onClick={onFileUploadClick}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
-                    >
-                      <Upload size={15} className="text-neutral-500" />
-                      Upload
-                    </button>
-                  </MenuItem>
-                  {drives.map((drive) => (
-                    <MenuItem key={drive.id}>
-                      <button
-                        type="button"
-                        onClick={() => onDriveSelect(drive)}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
-                      >
-                        <HardDrive size={15} className="text-neutral-500" />
-                        {drive.name}
-                      </button>
-                    </MenuItem>
-                  ))}
-                </MenuItems>
-              </Menu>
+              <DropdownMenu
+                anchor="bottom end"
+                trigger={
+                  <MenuButton
+                    className="rounded-xl p-2 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors hover:bg-neutral-100/70 dark:hover:bg-white/5"
+                    title="Add reference image"
+                  >
+                    <ImagePlus size={16} />
+                  </MenuButton>
+                }
+              >
+                <DropdownMenuItem icon={<Upload size={15} />} onClick={onFileUploadClick}>
+                  Upload
+                </DropdownMenuItem>
+                {drives.map((drive) => (
+                  <DropdownMenuItem key={drive.id} icon={<HardDrive size={15} />} onClick={() => onDriveSelect(drive)}>
+                    {drive.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenu>
             ) : (
               <button
                 type="button"

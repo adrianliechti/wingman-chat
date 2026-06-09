@@ -118,7 +118,7 @@ export function ReviewStep({
         {(selectedTools.length > 0 || servers.length > 0) && (
           <div className="px-3 py-2.5">
             <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">
-              Connectors
+              Tools
             </div>
             <div className="flex flex-wrap gap-1">
               {selectedTools.map((t) => (

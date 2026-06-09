@@ -1,4 +1,4 @@
-import { Dialog, Menu, MenuButton, MenuItem, MenuItems, Transition } from "@headlessui/react";
+import { Dialog, Transition } from "@headlessui/react";
 import JSZip from "jszip";
 import {
   ArrowLeft,
@@ -22,6 +22,7 @@ import type { Skill } from "@/features/skills/lib/skillParser";
 import { downloadSkill, parseSkillFile, validateSkillName } from "@/features/skills/lib/skillParser";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { Markdown } from "@/shared/ui/Markdown";
 
 interface SkillCatalogProps {
@@ -34,6 +35,8 @@ interface SkillCatalogProps {
   initialView?: "list" | "new";
   /** When set, pre-selects this skill in preview (read-only) mode on open. */
   initialSkillName?: string;
+  /** When true, hides all activation toggles — the catalog is for viewing/editing only. */
+  readOnlyActivation?: boolean;
 }
 
 export function SkillCatalog({
@@ -45,6 +48,7 @@ export function SkillCatalog({
   onImported,
   initialView = "list",
   initialSkillName,
+  readOnlyActivation = false,
 }: SkillCatalogProps) {
   const { skills: allSkills, addSkill, updateSkill, removeSkill } = useSkills();
   const editorNameInputId = useId();
@@ -453,33 +457,35 @@ export function SkillCatalog({
                                   : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
                               }`}
                             >
-                              <button
-                                type="button"
-                                onClick={() => onToggle(skill.name)}
-                                className="shrink-0 flex items-center justify-center rounded transition-colors"
-                                title={enabled ? "Remove from agent" : "Add to agent"}
-                              >
-                                <span
-                                  className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
-                                    enabled
-                                      ? "border-neutral-700 bg-neutral-800 dark:border-neutral-300 dark:bg-neutral-300"
-                                      : "border-neutral-300 bg-white dark:border-neutral-600 dark:bg-neutral-800"
-                                  }`}
+                              {!readOnlyActivation && (
+                                <button
+                                  type="button"
+                                  onClick={() => onToggle(skill.name)}
+                                  className="shrink-0 flex items-center justify-center rounded transition-colors"
+                                  title={enabled ? "Remove from agent" : "Add to agent"}
                                 >
-                                  {enabled && (
-                                    <svg viewBox="0 0 10 8" className="h-2.5 w-2.5" fill="none" aria-hidden="true">
-                                      <path
-                                        d="M1 4l3 3 5-6"
-                                        stroke="currentColor"
-                                        strokeWidth="1.5"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        className="text-white dark:text-neutral-900"
-                                      />
-                                    </svg>
-                                  )}
-                                </span>
-                              </button>
+                                  <span
+                                    className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+                                      enabled
+                                        ? "border-neutral-700 bg-neutral-800 dark:border-neutral-300 dark:bg-neutral-300"
+                                        : "border-neutral-300 bg-white dark:border-neutral-600 dark:bg-neutral-800"
+                                    }`}
+                                  >
+                                    {enabled && (
+                                      <svg viewBox="0 0 10 8" className="h-2.5 w-2.5" fill="none" aria-hidden="true">
+                                        <path
+                                          d="M1 4l3 3 5-6"
+                                          stroke="currentColor"
+                                          strokeWidth="1.5"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          className="text-white dark:text-neutral-900"
+                                        />
+                                      </svg>
+                                    )}
+                                  </span>
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => openPreview(skill)}
@@ -701,74 +707,66 @@ export function SkillCatalog({
                             <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                               {selectedSkill.name}
                             </span>
-                            {enabledSkillNames.has(selectedSkill.name) && (
+                            {!readOnlyActivation && enabledSkillNames.has(selectedSkill.name) && (
                               <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
                                 Active
                               </span>
                             )}
                           </div>
+                          {!readOnlyActivation && (
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={enabledSkillNames.has(selectedSkill.name)}
+                              onClick={() => onToggle(selectedSkill.name)}
+                              title={enabledSkillNames.has(selectedSkill.name) ? "Remove from agent" : "Add to agent"}
+                              className={`relative shrink-0 inline-flex h-5 w-9 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                                enabledSkillNames.has(selectedSkill.name)
+                                  ? "bg-neutral-800 dark:bg-neutral-300"
+                                  : "bg-neutral-200 dark:bg-neutral-700"
+                              }`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 dark:bg-neutral-900 ${
+                                  enabledSkillNames.has(selectedSkill.name) ? "translate-x-4" : "translate-x-0"
+                                }`}
+                              />
+                            </button>
+                          )}
                           <button
                             type="button"
-                            role="switch"
-                            aria-checked={enabledSkillNames.has(selectedSkill.name)}
-                            onClick={() => onToggle(selectedSkill.name)}
-                            title={enabledSkillNames.has(selectedSkill.name) ? "Remove from agent" : "Add to agent"}
-                            className={`relative shrink-0 inline-flex h-5 w-9 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-                              enabledSkillNames.has(selectedSkill.name)
-                                ? "bg-neutral-800 dark:bg-neutral-300"
-                                : "bg-neutral-200 dark:bg-neutral-700"
-                            }`}
+                            onClick={() => openEditor(selectedSkill)}
+                            title="Edit skill"
+                            className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
                           >
-                            <span
-                              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 dark:bg-neutral-900 ${
-                                enabledSkillNames.has(selectedSkill.name) ? "translate-x-4" : "translate-x-0"
-                              }`}
-                            />
+                            <Pencil size={15} />
                           </button>
-                          <Menu as="div" className="relative shrink-0">
-                            <MenuButton className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300">
-                              <MoreVertical size={15} />
-                            </MenuButton>
-                            <MenuItems
-                              anchor="bottom end"
-                              className="z-50 mt-1 min-w-36 rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                          <DropdownMenu
+                            anchor="bottom end"
+                            trigger={
+                              <MenuButton className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-300">
+                                <MoreVertical size={15} />
+                              </MenuButton>
+                            }
+                          >
+                            <DropdownMenuItem
+                              icon={<Download size={13} />}
+                              onClick={() => downloadSkill(selectedSkill)}
                             >
-                              <MenuItem>
-                                <button
-                                  type="button"
-                                  onClick={() => openEditor(selectedSkill)}
-                                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 transition-colors data-focus:bg-neutral-100 dark:text-neutral-300 dark:data-focus:bg-neutral-800"
-                                >
-                                  <Pencil size={13} className="text-neutral-500 dark:text-neutral-400" />
-                                  Edit
-                                </button>
-                              </MenuItem>
-                              <MenuItem>
-                                <button
-                                  type="button"
-                                  onClick={() => downloadSkill(selectedSkill)}
-                                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 transition-colors data-focus:bg-neutral-100 dark:text-neutral-300 dark:data-focus:bg-neutral-800"
-                                >
-                                  <Download size={13} className="text-neutral-500 dark:text-neutral-400" />
-                                  Export
-                                </button>
-                              </MenuItem>
-                              <MenuItem>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (window.confirm(`Delete "${selectedSkill.name}"? This cannot be undone.`)) {
-                                      handleDeleteConfirm(selectedSkill);
-                                    }
-                                  }}
-                                  className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 transition-colors data-focus:bg-red-50 dark:text-red-400 dark:data-focus:bg-red-950/30"
-                                >
-                                  <Trash2 size={13} />
-                                  Delete
-                                </button>
-                              </MenuItem>
-                            </MenuItems>
-                          </Menu>
+                              Export
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              icon={<Trash2 size={13} />}
+                              destructive
+                              onClick={() => {
+                                if (window.confirm(`Delete "${selectedSkill.name}"? This cannot be undone.`)) {
+                                  handleDeleteConfirm(selectedSkill);
+                                }
+                              }}
+                            >
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenu>
                         </div>
 
                         <div className="flex-1 overflow-y-auto px-5 py-4">

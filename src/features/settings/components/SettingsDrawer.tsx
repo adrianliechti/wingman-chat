@@ -1,9 +1,7 @@
-import { Listbox, Transition } from "@headlessui/react";
+import { Transition } from "@headlessui/react";
 import {
   Bot,
-  Check,
   ChevronRight,
-  ChevronsUpDown,
   Coffee,
   Download,
   HardDrive,
@@ -38,6 +36,7 @@ import { formatBytes } from "@/shared/lib/utils";
 import { ProviderState } from "@/shared/types/chat";
 import type { BackgroundPack, EmojiMode, LayoutMode, Theme } from "@/shared/types/settings";
 import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
+import { SelectMenu } from "@/shared/ui/SelectMenu";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { OpfsBrowser } from "./OpfsBrowser";
 
@@ -63,57 +62,6 @@ const emojiOptions: { value: EmojiMode; label: string }[] = [
   { value: "monochrome", label: "Minimal" },
   { value: "native", label: "Native" },
 ];
-
-// A generic, reusable Select component using Headless UI Listbox
-function Select<T extends string | null>({
-  label,
-  value,
-  onChange,
-  options,
-  description,
-}: {
-  label?: string;
-  value: T;
-  onChange: (value: T) => void;
-  options: { value: T; label: string }[];
-  description?: string;
-}) {
-  return (
-    <div>
-      {label && <p className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{label}</p>}
-      <Listbox value={value} onChange={onChange}>
-        <Listbox.Button className="relative w-full rounded-lg bg-white/50 dark:bg-neutral-800/50 py-2.5 pl-3 pr-10 text-left border border-neutral-300/50 dark:border-neutral-700/50 focus-visible:ring-2 focus-visible:ring-blue-500 data-[headlessui-state=open]:ring-2 data-[headlessui-state=open]:ring-blue-500 backdrop-blur-sm transition-colors">
-          <span className="block truncate text-sm">
-            {options.find((o) => o.value === value)?.label ?? "System Default"}
-          </span>
-          <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-            <ChevronsUpDown className="h-4 w-4 text-neutral-400" aria-hidden="true" />
-          </span>
-        </Listbox.Button>
-        <Transition as={Fragment} leave="transition ease-in duration-100" leaveFrom="opacity-100" leaveTo="opacity-0">
-          <Listbox.Options
-            anchor="bottom"
-            className="mt-1 w-(--button-width) max-h-60 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100/90 dark:bg-neutral-800/90 p-1 backdrop-blur-xl sm:text-sm z-100 transition duration-100 ease-in data-leave:data-closed:opacity-0"
-          >
-            {options.map((option) => (
-              <Listbox.Option
-                key={String(option.value)}
-                className="group relative cursor-pointer select-none py-2 pl-10 pr-4 rounded-lg text-neutral-900 dark:text-neutral-100 data-focus:bg-neutral-200 dark:data-focus:bg-neutral-700/80"
-                value={option.value}
-              >
-                <span className="block truncate font-normal group-data-selected:font-semibold">{option.label}</span>
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-blue-600 dark:text-blue-400 group-data-selected:visible invisible">
-                  <Check className="h-5 w-5" aria-hidden="true" />
-                </span>
-              </Listbox.Option>
-            ))}
-          </Listbox.Options>
-        </Transition>
-      </Listbox>
-      {description && <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{description}</p>}
-    </div>
-  );
-}
 
 // Compact segmented control for small option sets
 function SegmentedControl<T extends string>({
@@ -509,7 +457,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                     options={layoutOptions}
                   />
                   {backgroundPacks.length > 0 && (
-                    <Select
+                    <SelectMenu
                       label="Background"
                       value={backgroundSetting}
                       onChange={setBackground}
@@ -542,7 +490,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   ) : (
                     <>
                       {inputDevices.length > 0 && (
-                        <Select
+                        <SelectMenu
                           label="Microphone"
                           value={inputDeviceId ?? null}
                           onChange={(value) => setInputDevice(value ?? undefined)}
@@ -556,7 +504,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                         />
                       )}
                       {outputDevices.length > 0 && (
-                        <Select
+                        <SelectMenu
                           label="Speaker"
                           value={outputDeviceId ?? null}
                           onChange={(value) => setOutputDevice(value ?? undefined)}
@@ -639,7 +587,7 @@ export function SettingsDrawer({ isOpen, onClose, showAdvanced, initialSection }
                   isOpen={openSection === "chats"}
                   onClick={() => toggleSection("chats")}
                 >
-                  <Select
+                  <SelectMenu
                     label="Personality"
                     value={(profile.persona || "default") as PersonaKey}
                     onChange={(value) => updateProfile({ persona: value })}

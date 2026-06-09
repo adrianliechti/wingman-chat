@@ -1,4 +1,3 @@
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
   Check,
   ChevronDown,
@@ -27,6 +26,7 @@ import { markdownToDocx } from "@/shared/lib/markdownToDocx";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import type { File, FileEntry } from "@/shared/types/file";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { DropdownMenu, DropdownMenuDivider, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { BashEditor } from "@/shared/ui/editors/BashEditor";
 import { CodeEditor } from "@/shared/ui/editors/CodeEditor";
 import { CsvEditor } from "@/shared/ui/editors/CsvEditor";
@@ -360,56 +360,45 @@ export function ArtifactsDrawer() {
               ))}
             </ul>
             {config.drives.length > 0 ? (
-              <Menu>
-                <MenuButton className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors">
-                  <Upload size={13} className="shrink-0" />
-                  Upload files
-                </MenuButton>
-                <MenuItems
-                  modal={false}
-                  transition
-                  anchor="bottom"
-                  className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-48 dark:ring-1 dark:ring-white/10"
-                >
-                  <MenuItem>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10"
-                    >
-                      <Upload size={16} className="shrink-0" />
-                      <span className="font-medium text-sm truncate">Upload</span>
-                    </button>
-                  </MenuItem>
-                  {config.drives.map((drive) => (
-                    <MenuItem key={drive.id}>
-                      <button
-                        type="button"
-                        onClick={() => setActiveDrive(drive)}
-                        className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                      >
-                        {drive.icon ? (
-                          <span
-                            className="shrink-0 bg-current inline-block"
-                            style={{
-                              width: 16,
-                              height: 16,
-                              maskImage: `url(${drive.icon})`,
-                              WebkitMaskImage: `url(${drive.icon})`,
-                              maskSize: "contain",
-                              maskRepeat: "no-repeat",
-                              maskPosition: "center",
-                            }}
-                          />
-                        ) : (
-                          <HardDrive size={16} />
-                        )}
-                        <span className="font-medium text-sm truncate">{drive.name}</span>
-                      </button>
-                    </MenuItem>
-                  ))}
-                </MenuItems>
-              </Menu>
+              <DropdownMenu
+                anchor="bottom"
+                trigger={
+                  <MenuButton className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors">
+                    <Upload size={13} className="shrink-0" />
+                    Upload files
+                  </MenuButton>
+                }
+              >
+                <DropdownMenuItem icon={<Upload size={16} />} onClick={() => fileInputRef.current?.click()}>
+                  Upload
+                </DropdownMenuItem>
+                {config.drives.map((drive) => (
+                  <DropdownMenuItem
+                    key={drive.id}
+                    icon={
+                      drive.icon ? (
+                        <span
+                          className="shrink-0 bg-current inline-block"
+                          style={{
+                            width: 16,
+                            height: 16,
+                            maskImage: `url(${drive.icon})`,
+                            WebkitMaskImage: `url(${drive.icon})`,
+                            maskSize: "contain",
+                            maskRepeat: "no-repeat",
+                            maskPosition: "center",
+                          }}
+                        />
+                      ) : (
+                        <HardDrive size={16} />
+                      )
+                    }
+                    onClick={() => setActiveDrive(drive)}
+                  >
+                    {drive.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenu>
             ) : (
               <button
                 type="button"
@@ -741,7 +730,7 @@ export function ArtifactsDrawer() {
                 </div>
               )}
               {showFilePicker && files.length > 1 && (
-                <div className="absolute top-full left-0 mt-1 z-50 min-w-48 max-w-72 bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 rounded-lg shadow-lg overflow-hidden py-1">
+                <div className="absolute top-full left-0 mt-1 z-50 min-w-48 max-w-72 rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 overflow-hidden p-1">
                   {files.map((f) => (
                     <button
                       key={f.path}
@@ -751,7 +740,7 @@ export function ArtifactsDrawer() {
                         setShowFilePicker(false);
                       }}
                       className={cn(
-                        "w-full flex items-center gap-2 px-3 py-2.5 md:py-1.5 text-left text-sm md:text-xs transition-colors duration-100 text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5",
+                        "w-full flex items-center gap-2 px-3 py-2.5 md:py-1.5 rounded-lg text-left text-sm md:text-xs transition-colors duration-100 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/60 dark:hover:bg-white/5",
                         f.path === activeFile && "font-medium",
                       )}
                     >
@@ -875,58 +864,32 @@ export function ArtifactsDrawer() {
               </>
             )}
 
-            {/* Workspace action group: panels dropdown */}
             {chat?.id && (
-              <Menu as="div" className="relative">
-                <MenuButton
-                  className="flex items-center gap-0.5 p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
-                  title="Toggle panels"
-                >
-                  <PanelRightOpen size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
-                  <ChevronDown size={10} className="w-3 h-3 md:w-2.5 md:h-2.5 opacity-60" />
-                </MenuButton>
-                <MenuItems
-                  modal={false}
-                  transition
-                  anchor="bottom end"
-                  className="mt-1 origin-top-right rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-40 transition duration-100 ease-out data-closed:scale-95 data-closed:opacity-0"
-                >
-                  {files.length > 0 && (
-                    <MenuItem>
-                      <button
-                        type="button"
-                        onClick={() => setShowFilesBrowser((v) => !v)}
-                        className="w-full flex items-center gap-2.5 px-3 py-2.5 md:py-1.5 text-sm md:text-xs text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                      >
-                        <Files size={12} className="shrink-0 w-3.5 h-3.5 md:w-3 md:h-3 text-neutral-400" />
-                        <span className="flex-1 text-left">Files</span>
-                        {showFilesBrowser && (
-                          <Check
-                            size={11}
-                            className="shrink-0 w-3.5 h-3.5 md:w-2.75 md:h-2.75 text-neutral-500 dark:text-neutral-400"
-                          />
-                        )}
-                      </button>
-                    </MenuItem>
-                  )}
-                  <MenuItem>
-                    <button
-                      type="button"
-                      onClick={toggleTerminal}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 md:py-1.5 text-sm md:text-xs text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                    >
-                      <Terminal size={12} className="shrink-0 w-3.5 h-3.5 md:w-3 md:h-3 text-neutral-400" />
-                      <span className="flex-1 text-left">Terminal</span>
-                      {showTerminal && (
-                        <Check
-                          size={11}
-                          className="shrink-0 w-3.5 h-3.5 md:w-2.75 md:h-2.75 text-neutral-500 dark:text-neutral-400"
-                        />
-                      )}
-                    </button>
-                  </MenuItem>
-                </MenuItems>
-              </Menu>
+              <DropdownMenu
+                anchor="bottom end"
+                trigger={
+                  <MenuButton
+                    className="flex items-center gap-0.5 p-2 md:p-1.5 rounded transition-all duration-150 ease-out text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/5 dark:hover:bg-white/5"
+                    title="Toggle panels"
+                  >
+                    <PanelRightOpen size={14} className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                    <ChevronDown size={10} className="w-3 h-3 md:w-2.5 md:h-2.5 opacity-60" />
+                  </MenuButton>
+                }
+              >
+                {files.length > 0 && (
+                  <DropdownMenuItem
+                    icon={<Files size={12} />}
+                    selected={showFilesBrowser}
+                    onClick={() => setShowFilesBrowser((v) => !v)}
+                  >
+                    Files
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem icon={<Terminal size={12} />} selected={showTerminal} onClick={toggleTerminal}>
+                  Terminal
+                </DropdownMenuItem>
+              </DropdownMenu>
             )}
           </div>
 

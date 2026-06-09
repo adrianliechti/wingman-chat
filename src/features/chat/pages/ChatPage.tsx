@@ -158,7 +158,7 @@ export function ChatPage() {
     setShowArtifactsDrawer,
   } = useArtifacts();
   const { agents, currentAgent, updateAgent, showAgentDrawer, setShowAgentDrawer } = useAgents();
-  const { showSkillCatalog, skillCatalogTarget, closeSkillCatalog } = useSkills();
+  const { showSkillCatalog, skillCatalogTarget, skillCatalogReadOnly, closeSkillCatalog } = useSkills();
 
   const agentSkillIds = useMemo(() => new Set(currentAgent?.skills ?? []), [currentAgent]);
 
@@ -379,6 +379,27 @@ export function ChatPage() {
     },
     [showAgentDrawer, agentWidthVw, artifactsWidthVw, setShowArtifactsDrawer],
   );
+
+  // When agent and a sibling panel (artifacts or app) are both open on desktop,
+  // clamp the agent width so the chat area stays at or above its 400px minimum.
+  useEffect(() => {
+    const siblingOpen = showArtifactsDrawer || showAppDrawer;
+    if (!showAgentDrawer || !siblingOpen || window.innerWidth < 768) return;
+    const vw = window.innerWidth;
+    const minChatPx = 400;
+    const MIN_AGENT_PX = 280;
+    const MAX_AGENT_PX = 500;
+    const siblingWidthVw = showAppDrawer ? appWidthVw : artifactsWidthVw;
+    const siblingPx = (siblingWidthVw / 100) * vw;
+    // combined gap: 0.75rem (sibling) + 0.75rem (agent) = 1.5rem ≈ 24px
+    const gapPx = 24;
+    const maxAgentPx = vw - minChatPx - siblingPx - gapPx;
+    const currentAgentPx = (agentWidthVw / 100) * vw;
+    if (currentAgentPx > maxAgentPx) {
+      const clampedPx = Math.min(MAX_AGENT_PX, Math.max(MIN_AGENT_PX, maxAgentPx));
+      setAgentWidthVw((clampedPx / vw) * 100);
+    }
+  }, [showArtifactsDrawer, showAppDrawer, showAgentDrawer, agentWidthVw, artifactsWidthVw, appWidthVw]);
 
   // Sidebar integration (now only controls visibility)
   const { setSidebarContent, showSidebar } = useSidebar();
@@ -845,6 +866,7 @@ export function ChatPage() {
         onSkillSaved={handleSkillSaved}
         onImported={handleSkillImported}
         initialSkillName={skillCatalogTarget ?? undefined}
+        readOnlyActivation={skillCatalogReadOnly}
       />
     </div>
   );

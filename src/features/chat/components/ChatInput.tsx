@@ -1,4 +1,3 @@
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
   AudioLines,
   Bot,
@@ -33,6 +32,7 @@ import { lookupContentType, readAsDataURL, resizeImageBlob } from "@/shared/lib/
 import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { ModelDropdown } from "@/shared/ui/ModelDropdown";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
@@ -787,70 +787,48 @@ export function ChatInput() {
               )}
 
               {voiceAvailable && isRealtimeSelected && (
-                <Menu>
-                  <MenuButton
-                    className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
-                    title="Select microphone"
-                    aria-label="Select microphone"
-                  >
-                    <span className="shrink-0 flex justify-center">
-                      <Mic size={14} />
-                    </span>
-                    <span className="hidden @md:inline truncate min-w-0">
-                      {(() => {
-                        const selected = inputDevices.find((d) => d.deviceId === inputDeviceId);
-                        if (selected) return selected.label || "Microphone";
-                        return "Default";
-                      })()}
-                    </span>
-                  </MenuButton>
-                  <MenuItems
-                    modal={false}
-                    transition
-                    anchor="bottom start"
-                    className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10"
-                  >
-                    {inputDevices.length === 0 ? (
-                      <MenuItem>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void requestAudioPermission();
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5"
-                        >
-                          <Mic size={14} className="shrink-0" />
-                          <span>Allow microphone access</span>
-                        </button>
-                      </MenuItem>
-                    ) : (
-                      <>
-                        <MenuItem>
-                          <button
-                            type="button"
-                            onClick={() => setInputDevice(undefined)}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 border-b border-white/20 dark:border-white/10"
-                          >
-                            <span className="truncate">System Default</span>
-                          </button>
-                        </MenuItem>
-                        {inputDevices.map((device) => (
-                          <MenuItem key={device.deviceId}>
-                            <button
-                              type="button"
-                              onClick={() => setInputDevice(device.deviceId)}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 border-b border-white/20 dark:border-white/10 last:border-b-0"
-                            >
-                              <span className="truncate">
-                                {device.label || `Microphone (${device.deviceId.slice(0, 8)})`}
-                              </span>
-                            </button>
-                          </MenuItem>
-                        ))}
-                      </>
-                    )}
-                  </MenuItems>
-                </Menu>
+                <DropdownMenu
+                  anchor="bottom start"
+                  panelClassName="max-h-[50vh]! min-w-52"
+                  trigger={
+                    <MenuButton
+                      className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
+                      title="Select microphone"
+                      aria-label="Select microphone"
+                    >
+                      <span className="shrink-0 flex justify-center">
+                        <Mic size={14} />
+                      </span>
+                      <span className="hidden @md:inline truncate min-w-0">
+                        {(() => {
+                          const selected = inputDevices.find((d) => d.deviceId === inputDeviceId);
+                          if (selected) return selected.label || "Microphone";
+                          return "Default";
+                        })()}
+                      </span>
+                    </MenuButton>
+                  }
+                >
+                  {inputDevices.length === 0 ? (
+                    <DropdownMenuItem
+                      icon={<Mic size={14} className="shrink-0" />}
+                      onClick={() => {
+                        void requestAudioPermission();
+                      }}
+                    >
+                      Allow microphone access
+                    </DropdownMenuItem>
+                  ) : (
+                    <>
+                      <DropdownMenuItem onClick={() => setInputDevice(undefined)}>System Default</DropdownMenuItem>
+                      {inputDevices.map((device) => (
+                        <DropdownMenuItem key={device.deviceId} onClick={() => setInputDevice(device.deviceId)}>
+                          {device.label || `Microphone (${device.deviceId.slice(0, 8)})`}
+                        </DropdownMenuItem>
+                      ))}
+                    </>
+                  )}
+                </DropdownMenu>
               )}
             </div>
 

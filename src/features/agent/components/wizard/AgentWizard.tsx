@@ -3,12 +3,13 @@ import { Bot, ClipboardCheck, Folder, LayoutGrid, Wrench, X, Zap } from "lucide-
 import { Fragment, useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
+import { triggerAgentImport } from "@/features/settings/lib/agentImportExport";
 import { getConfig } from "@/shared/config";
-import { ConnectorsStep } from "./steps/ConnectorsStep";
 import { IdentityStep } from "./steps/IdentityStep";
 import { KnowledgeStep } from "./steps/KnowledgeStep";
 import { ReviewStep } from "./steps/ReviewStep";
 import { SkillsStep } from "./steps/SkillsStep";
+import { ToolsStep } from "./steps/ToolsStep";
 import { TypeStep } from "./steps/TypeStep";
 import { WizardNavFooter } from "./WizardNavFooter";
 import { type StepDef, WizardStepIndicator } from "./WizardStepIndicator";
@@ -26,7 +27,7 @@ interface WizardState {
   instructions: string;
 
   selectedSkills: string[];
-  selectedConnectors: string[];
+  selectedTools: string[];
   servers: Omit<BridgeServer, "id">[];
 
   pendingFiles: File[];
@@ -42,7 +43,7 @@ export type WizardAction =
   | { type: "SET_NAME"; value: string }
   | { type: "SET_INSTRUCTIONS"; value: string }
   | { type: "TOGGLE_SKILL"; name: string }
-  | { type: "TOGGLE_CONNECTOR"; id: string }
+  | { type: "TOGGLE_TOOL"; id: string }
   | { type: "ADD_SERVER"; server: Omit<BridgeServer, "id"> }
   | { type: "REMOVE_SERVER"; index: number }
   | { type: "ADD_FILES"; files: File[] }
@@ -60,7 +61,7 @@ function initialState(): WizardState {
     name: "",
     instructions: "",
     selectedSkills: [],
-    selectedConnectors: [],
+    selectedTools: [],
     servers: [],
     pendingFiles: [],
     model: "",
@@ -96,11 +97,11 @@ function reducer(state: WizardState, action: WizardAction): WizardState {
         : [...state.selectedSkills, action.name];
       return { ...state, selectedSkills: skills };
     }
-    case "TOGGLE_CONNECTOR": {
-      const connectors = state.selectedConnectors.includes(action.id)
-        ? state.selectedConnectors.filter((t) => t !== action.id)
-        : [...state.selectedConnectors, action.id];
-      return { ...state, selectedConnectors: connectors };
+    case "TOGGLE_TOOL": {
+      const tools = state.selectedTools.includes(action.id)
+        ? state.selectedTools.filter((t) => t !== action.id)
+        : [...state.selectedTools, action.id];
+      return { ...state, selectedTools: tools };
     }
     case "ADD_SERVER":
       return { ...state, servers: [...state.servers, action.server] };
@@ -133,7 +134,7 @@ function getSteps(): StepDef[] {
 
   steps.push({ id: "identity", label: "Identity", icon: Bot });
   steps.push({ id: "skills", label: "Skills", icon: Zap });
-  steps.push({ id: "connectors", label: "Connectors", icon: Wrench });
+  steps.push({ id: "tools", label: "Tools", icon: Wrench });
   if (config.repository) {
     steps.push({ id: "knowledge", label: "Knowledge", icon: Folder });
   }
@@ -193,7 +194,7 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
       const agent = await createAgent(s.name.trim(), {
         instructions: s.instructions.trim() || undefined,
         skills: s.selectedSkills,
-        tools: s.selectedConnectors,
+        tools: s.selectedTools,
         model: s.model || undefined,
         memory: s.memory || undefined,
       });
@@ -283,12 +284,8 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
                   {currentStepId === "skills" && (
                     <SkillsStep selectedSkills={state.selectedSkills} dispatch={dispatch} />
                   )}
-                  {currentStepId === "connectors" && (
-                    <ConnectorsStep
-                      selectedTools={state.selectedConnectors}
-                      servers={state.servers}
-                      dispatch={dispatch}
-                    />
+                  {currentStepId === "tools" && (
+                    <ToolsStep selectedTools={state.selectedTools} servers={state.servers} dispatch={dispatch} />
                   )}
                   {currentStepId === "knowledge" && (
                     <KnowledgeStep pendingFiles={state.pendingFiles} dispatch={dispatch} />
@@ -298,7 +295,7 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
                       name={state.name}
                       instructions={state.instructions}
                       selectedSkills={state.selectedSkills}
-                      selectedTools={state.selectedConnectors}
+                      selectedTools={state.selectedTools}
                       servers={state.servers}
                       pendingFiles={state.pendingFiles}
                       model={state.model}
@@ -317,6 +314,7 @@ export function AgentWizard({ isOpen, onClose, onCreated }: AgentWizardProps) {
                   onBack={handleBack}
                   onNext={handleNext}
                   onCreate={handleCreate}
+                  onImport={triggerAgentImport}
                   isCreating={isCreating}
                 />
               </Dialog.Panel>

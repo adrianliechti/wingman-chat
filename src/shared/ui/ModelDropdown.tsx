@@ -1,7 +1,13 @@
+import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { Check, Mic } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useRef } from "react";
 import { flushSync } from "react-dom";
 import type { Model } from "@/shared/types/chat";
+
+// ─── Panel class (mirrors DropdownMenu) ──────────────────────────────────────
+
+const PANEL_CLASS =
+  "z-50 rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 p-1 overflow-auto transition duration-100 ease-out data-closed:scale-95 data-closed:opacity-0";
 
 interface ModelDropdownProps {
   models: Model[];
@@ -11,6 +17,8 @@ interface ModelDropdownProps {
   dropdownClassName?: string;
   trigger: (props: { onClick: () => void; onPointerDownCapture: (e: React.PointerEvent) => void }) => React.ReactNode;
 }
+
+// ─── Single model row ─────────────────────────────────────────────────────────
 
 function ModelOption({
   id,
@@ -28,30 +36,34 @@ function ModelOption({
   onSelect: (modelId: string) => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(id)}
-      title={description}
-      className={`group flex w-full items-start gap-2 px-3 py-2 rounded-lg text-left transition-colors hover:bg-neutral-100/60 dark:hover:bg-white/5 ${
-        selected ? "text-neutral-900 dark:text-neutral-100" : "text-neutral-800 dark:text-neutral-200"
-      }`}
-    >
-      {icon && <span className="shrink-0 mt-0.5 flex justify-center text-neutral-400">{icon}</span>}
-      <span className="flex flex-col items-start flex-1 min-w-0">
-        <span className={`text-sm leading-tight ${selected ? "font-semibold" : "font-normal"}`}>{name}</span>
-        {description && (
-          <span className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 leading-snug opacity-90">
-            {description}
-          </span>
-        )}
-      </span>
-      <Check
-        size={14}
-        className={`shrink-0 mt-0.5 text-neutral-500 dark:text-neutral-400 ${selected ? "opacity-100" : "opacity-0"}`}
-      />
-    </button>
+    <MenuItem>
+      <button
+        type="button"
+        onClick={() => onSelect(id)}
+        title={description}
+        className={`group flex w-full items-start gap-2 px-3 py-2 rounded-lg text-left transition-colors data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 ${
+          selected ? "text-neutral-900 dark:text-neutral-100" : "text-neutral-800 dark:text-neutral-200"
+        }`}
+      >
+        {icon && <span className="shrink-0 mt-0.5 flex justify-center text-neutral-400">{icon}</span>}
+        <span className="flex flex-col items-start flex-1 min-w-0">
+          <span className={`text-sm leading-tight ${selected ? "font-semibold" : "font-normal"}`}>{name}</span>
+          {description && (
+            <span className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 leading-snug opacity-90">
+              {description}
+            </span>
+          )}
+        </span>
+        <Check
+          size={14}
+          className={`shrink-0 mt-0.5 text-neutral-500 dark:text-neutral-400 ${selected ? "opacity-100" : "opacity-0"}`}
+        />
+      </button>
+    </MenuItem>
   );
 }
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
 
 export function ModelDropdown({
   models,
@@ -61,92 +73,87 @@ export function ModelDropdown({
   dropdownClassName,
   trigger,
 }: ModelDropdownProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [showHiddenModels, setShowHiddenModels] = useState(false);
-  const [openUpward, setOpenUpward] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const showHiddenRef = useRef(false);
 
   const visibleModels = models.filter((m) => m.id !== "realtime" && !m.hidden);
   const hiddenModels = models.filter((m) => m.id !== "realtime" && m.hidden);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-        setShowHiddenModels(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
-
-  const handleSelect = (modelId: string) => {
-    onChange(modelId);
-    setIsOpen(false);
-    setShowHiddenModels(false);
-  };
-
-  const toggleOpen = () => {
-    if (!isOpen && containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      setOpenUpward(spaceBelow < 256 && rect.top > spaceBelow);
-    }
-    setIsOpen((prev) => !prev);
-  };
-
-  const renderModelItem = (m: Model) => (
-    <ModelOption
-      key={m.id}
-      id={m.id}
-      name={m.name ?? m.id}
-      description={m.description}
-      selected={m.id === value}
-      onSelect={handleSelect}
-    />
-  );
-
   return (
-    <div className="relative" ref={containerRef}>
-      {trigger({
-        onClick: toggleOpen,
-        onPointerDownCapture: (e: React.PointerEvent) => {
-          flushSync(() => setShowHiddenModels(e.altKey));
-        },
-      })}
+    <Menu>
+      {({ close }) => (
+        <>
+          <MenuButton as={Fragment}>
+            {trigger({
+              onClick: () => {
+                /* MenuButton click is handled by HU via the Fragment wrapper */
+              },
+              onPointerDownCapture: (e: React.PointerEvent) => {
+                flushSync(() => {
+                  showHiddenRef.current = e.altKey;
+                });
+              },
+            })}
+          </MenuButton>
 
-      {isOpen && (
-        <div
-          className={`absolute z-20 max-h-64 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700/60 bg-white dark:bg-neutral-900 shadow-lg shadow-black/20 dark:shadow-black/50 p-1 ${openUpward ? "bottom-full mb-1" : "top-full mt-1"} ${dropdownClassName ?? "w-full"}`}
-        >
-          {includeRealtime && (
-            <>
+          <MenuItems
+            modal={false}
+            transition
+            anchor="bottom start"
+            className={[PANEL_CLASS, dropdownClassName].filter(Boolean).join(" ")}
+          >
+            {includeRealtime && (
+              <>
+                <ModelOption
+                  id="realtime"
+                  name="Real-time Voice"
+                  selected={value === "realtime"}
+                  icon={<Mic size={13} className="shrink-0" />}
+                  onSelect={(id) => {
+                    onChange(id);
+                    close();
+                  }}
+                />
+                {visibleModels.length > 0 && <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />}
+              </>
+            )}
+
+            {visibleModels.map((m) => (
               <ModelOption
-                id="realtime"
-                name="Real-time Voice"
-                selected={value === "realtime"}
-                icon={<Mic size={13} className="shrink-0" />}
-                onSelect={handleSelect}
+                key={m.id}
+                id={m.id}
+                name={m.name ?? m.id}
+                description={m.description}
+                selected={m.id === value}
+                onSelect={(id) => {
+                  onChange(id);
+                  close();
+                }}
               />
-              {visibleModels.length > 0 && (
-                <div className="mx-1 my-1 border-t border-neutral-200 dark:border-neutral-700" />
-              )}
-            </>
-          )}
+            ))}
 
-          {visibleModels.map((m) => renderModelItem(m))}
-
-          {showHiddenModels && hiddenModels.length > 0 && (
-            <>
-              <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 border-y border-neutral-200 dark:border-neutral-700">
-                Hidden
-              </div>
-              {hiddenModels.map((m) => renderModelItem(m))}
-            </>
-          )}
-        </div>
+            {showHiddenRef.current && hiddenModels.length > 0 && (
+              <>
+                <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 border-y border-neutral-200/60 dark:border-white/10">
+                  Hidden
+                </div>
+                {hiddenModels.map((m) => (
+                  <ModelOption
+                    key={m.id}
+                    id={m.id}
+                    name={m.name ?? m.id}
+                    description={m.description}
+                    selected={m.id === value}
+                    onSelect={(id) => {
+                      onChange(id);
+                      close();
+                    }}
+                  />
+                ))}
+              </>
+            )}
+          </MenuItems>
+        </>
       )}
-    </div>
+    </Menu>
   );
 }

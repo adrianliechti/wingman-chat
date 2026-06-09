@@ -6,7 +6,7 @@ import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
 
-interface ConnectorsStepProps {
+interface ToolsStepProps {
   selectedTools: string[];
   servers: Omit<BridgeServer, "id">[];
   dispatch: Dispatch<WizardAction>;
@@ -14,7 +14,7 @@ interface ConnectorsStepProps {
 
 const AGENT_INTERNAL_IDS = new Set(["artifacts", "repository", "skills", "memory"]);
 
-export function ConnectorsStep({ selectedTools, servers, dispatch }: ConnectorsStepProps) {
+export function ToolsStep({ selectedTools, servers, dispatch }: ToolsStepProps) {
   const { providers } = useToolsContext();
   const [bridgeEditorOpen, setBridgeEditorOpen] = useState(false);
 
@@ -31,8 +31,8 @@ export function ConnectorsStep({ selectedTools, servers, dispatch }: ConnectorsS
   return (
     <div className="space-y-3">
       <StepHeader
-        title="Enable connectors"
-        description="Connectors power up your agent with real capabilities — searching the web, generating images, creating skills, or connecting to external services via MCP servers. Toggle on what you need, or skip this and enable connectors later."
+        title="Enable tools"
+        description="Tools power up your agent with real capabilities — searching the web, generating images, creating skills, or connecting to external services via MCP servers. Toggle on what you need, or skip this and enable tools later."
       />
 
       {/* Actions */}
@@ -68,7 +68,7 @@ export function ConnectorsStep({ selectedTools, servers, dispatch }: ConnectorsS
               </div>
               <button
                 type="button"
-                onClick={() => dispatch({ type: "TOGGLE_CONNECTOR", id: tool.id })}
+                onClick={() => dispatch({ type: "TOGGLE_TOOL", id: tool.id })}
                 className={`shrink-0 ${isEnabled ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
               >
                 {isEnabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
