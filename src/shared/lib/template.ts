@@ -12,11 +12,7 @@
  * Unknown placeholders are left untouched. Extra variables can be supplied
  * via `extra`, which takes precedence over the built-ins.
  */
-export function renderTemplate(
-  template: string,
-  extra: Record<string, string> = {},
-  now: Date = new Date(),
-): string {
+export function renderTemplate(template: string, extra: Record<string, string> = {}, now: Date = new Date()): string {
   const builtins: Record<string, () => string> = {
     date: () => now.toLocaleDateString(),
     time: () => now.toLocaleTimeString(),

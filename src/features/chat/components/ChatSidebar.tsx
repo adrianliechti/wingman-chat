@@ -5,7 +5,7 @@ import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { cn } from "@/shared/lib/cn";
 import { type Chat, getTextFromContent } from "@/shared/types/chat";
-import { DropdownMenu, DropdownMenuDivider, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 
 export function ChatSidebar() {

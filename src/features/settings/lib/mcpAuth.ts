@@ -136,7 +136,7 @@ export class BrowserOAuthClientProvider implements OAuthClientProvider {
       // Attach postMessage listener to receive the auth code from /oauth/callback
       const listener = (event: MessageEvent) => {
         if (event.origin !== window.location.origin) return;
-        if (!event.data || event.data.type !== "mcp_oauth_callback") return;
+        if (event.data?.type !== "mcp_oauth_callback") return;
 
         if (event.data.error) {
           this.pendingAuthReject?.(new Error(`OAuth error: ${event.data.error}`));

@@ -1,5 +1,4 @@
 import {
-  Check,
   ChevronDown,
   Code,
   Download,
@@ -26,7 +25,7 @@ import { markdownToDocx } from "@/shared/lib/markdownToDocx";
 import { downloadBlob, getFileName } from "@/shared/lib/utils";
 import type { File, FileEntry } from "@/shared/types/file";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
-import { DropdownMenu, DropdownMenuDivider, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { BashEditor } from "@/shared/ui/editors/BashEditor";
 import { CodeEditor } from "@/shared/ui/editors/CodeEditor";
 import { CsvEditor } from "@/shared/ui/editors/CsvEditor";

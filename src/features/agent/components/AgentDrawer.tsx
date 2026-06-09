@@ -91,7 +91,6 @@ export function AgentDrawer() {
 
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const inlineEditInputRef = useRef<HTMLInputElement>(null);
 
@@ -129,7 +128,6 @@ export function AgentDrawer() {
   }, [inlineEditingId]);
 
   const startInlineEdit = (agent: Agent) => {
-    setOpenMenuId(null);
     setInlineEditingId(agent.id);
     setEditingName(agent.name);
   };
@@ -169,7 +167,6 @@ export function AgentDrawer() {
 
   const handleListSelect = (agent: Agent) => {
     cancelInlineEdit();
-    setOpenMenuId(null);
     setCurrentAgent(agent);
     setView("details");
   };

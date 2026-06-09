@@ -116,7 +116,7 @@ export function ScreenCaptureProvider({ children }: ScreenCaptureProviderProps) 
 
     // Check if stream is still active
     const videoTrack = stream.getVideoTracks()[0];
-    if (!videoTrack || videoTrack.readyState !== "live") {
+    if (videoTrack?.readyState !== "live") {
       console.warn("Screen capture stream is not active");
       cleanupResources();
       return null;
