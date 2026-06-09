@@ -16,6 +16,10 @@ def _plotly_shim_write_image(fig, file, format=None, width=None, height=None, sc
             "Use a file path string instead."
         )
 
+    # Resolve against the cwd at call time — the image is written later (after
+    # the script finished), when the cwd may have changed.
+    file = _os.path.abspath(file)
+
     # Infer format from extension if not specified
     if format is None:
         _, ext = _os.path.splitext(file)
