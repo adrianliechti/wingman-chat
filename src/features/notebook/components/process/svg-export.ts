@@ -6,6 +6,7 @@
  * mounted. Used by `StudioPanel`'s action-menu Download flow.
  */
 
+import { escapeXml } from "../../lib/pptx-utils";
 import type { ProcessDiagram } from "../../types/notebook";
 import { buildProcessFlow } from "./layout";
 
@@ -96,10 +97,6 @@ export function renderProcessSvg(diagram: ProcessDiagram): string {
 
   svg += `</svg>`;
   return svg;
-}
-
-function escapeXml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function trim(s: string, max: number): string {

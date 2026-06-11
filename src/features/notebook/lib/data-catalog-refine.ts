@@ -34,5 +34,13 @@ export async function refineDataCatalog(output: NotebookOutput, refinement: stri
   const parsed = await client.parse(model, REFINE_INSTRUCTIONS, input, dataCatalogSchema, "data_catalog_refine");
   if (!parsed?.datasets) return output;
 
-  return { ...output, dataCatalog: normaliseDataCatalog(parsed) };
+  const dataCatalog = normaliseDataCatalog(parsed);
+  // Mirror the generator's emptiness check — a refinement must never silently
+  // replace a populated catalog with an empty one when the model returns
+  // schema-valid output that normalisation filters down to nothing.
+  if (dataCatalog.datasets.length === 0 && dataCatalog.glossary.length === 0 && dataCatalog.lineageNodes.length === 0) {
+    throw new Error("Refinement produced an empty catalog — keeping the current version");
+  }
+
+  return { ...output, dataCatalog };
 }

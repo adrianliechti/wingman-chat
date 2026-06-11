@@ -42,6 +42,7 @@ export function useOutputDownload() {
   // Unified format-picker for diagram + data-catalog outputs.
   const [unifiedTarget, setUnifiedTarget] = useState<NotebookOutput | null>(null);
   const [unifiedBusy, setUnifiedBusy] = useState(false);
+  const [unifiedError, setUnifiedError] = useState<string | null>(null);
 
   const trigger = async (output: NotebookOutput): Promise<void> => {
     // HTML slides — multi-step export overlay.
@@ -54,30 +55,36 @@ export function useOutputDownload() {
     // Diagram + data-catalog — unified format picker.
     if (getExportFormats(output).length > 0) {
       setUnifiedTarget(output);
+      setUnifiedError(null);
       return;
     }
 
-    // Single-format outputs — direct download.
-    const slug = output.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "output";
-    if (output.type === "podcast" && output.audioUrl) {
-      downloadFromUrl(output.audioUrl, `${slug}.wav`);
-    } else if (output.type === "infographic" && output.imageUrl) {
-      downloadFromUrl(output.imageUrl, `${slug}.png`);
-    } else if (output.type === "slides" && output.slides?.length) {
-      const { jsPDF } = await import("jspdf");
-      const firstImg = await loadImage(output.slides[0]);
-      const w = firstImg.naturalWidth;
-      const h = firstImg.naturalHeight;
-      const landscape = w > h;
-      const doc = new jsPDF({ orientation: landscape ? "landscape" : "portrait", unit: "px", format: [w, h] });
-      doc.addImage(output.slides[0], "PNG", 0, 0, w, h);
-      for (let i = 1; i < output.slides.length; i++) {
-        doc.addPage([w, h], landscape ? "landscape" : "portrait");
-        doc.addImage(output.slides[i], "PNG", 0, 0, w, h);
+    // Single-format outputs — direct download. Callers invoke trigger from
+    // onClick without awaiting, so never let a rejection escape unhandled.
+    try {
+      const slug = output.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "output";
+      if (output.type === "podcast" && output.audioUrl) {
+        downloadFromUrl(output.audioUrl, `${slug}.wav`);
+      } else if (output.type === "infographic" && output.imageUrl) {
+        downloadFromUrl(output.imageUrl, `${slug}.png`);
+      } else if (output.type === "slides" && output.slides?.length) {
+        const { jsPDF } = await import("jspdf");
+        const firstImg = await loadImage(output.slides[0]);
+        const w = firstImg.naturalWidth;
+        const h = firstImg.naturalHeight;
+        const landscape = w > h;
+        const doc = new jsPDF({ orientation: landscape ? "landscape" : "portrait", unit: "px", format: [w, h] });
+        doc.addImage(output.slides[0], "PNG", 0, 0, w, h);
+        for (let i = 1; i < output.slides.length; i++) {
+          doc.addPage([w, h], landscape ? "landscape" : "portrait");
+          doc.addImage(output.slides[i], "PNG", 0, 0, w, h);
+        }
+        doc.save(`${slug}.pdf`);
+      } else if (output.type === "report" && output.content) {
+        await renderReportPdf(output.content, slug);
       }
-      doc.save(`${slug}.pdf`);
-    } else if (output.type === "report" && output.content) {
-      await renderReportPdf(output.content, slug);
+    } catch (err) {
+      console.error("Download failed:", err);
     }
   };
 
@@ -117,11 +124,14 @@ export function useOutputDownload() {
   const runUnifiedExport = async (format: OutputExportFormat) => {
     if (!unifiedTarget) return;
     setUnifiedBusy(true);
+    setUnifiedError(null);
     try {
       await downloadFormat(unifiedTarget, format);
       setUnifiedTarget(null);
     } catch (err) {
       console.error("Export failed:", err);
+      // Keep the modal open and show why — the user can pick another format.
+      setUnifiedError(err instanceof Error ? err.message : "Export failed");
     } finally {
       setUnifiedBusy(false);
     }
@@ -206,6 +216,7 @@ export function useOutputDownload() {
         <ExportModal
           title={`Export ${unifiedTarget.title}`}
           busy={unifiedBusy}
+          error={unifiedError}
           onClose={() => {
             if (!unifiedBusy) setUnifiedTarget(null);
           }}
@@ -262,24 +273,24 @@ async function renderReportPdf(html: string, slug: string): Promise<void> {
   iframe.style.width = "800px";
   iframe.srcdoc = html;
   document.body.appendChild(iframe);
-  await new Promise<void>((resolve) => {
-    iframe.onload = () => resolve();
-  });
-  const { jsPDF } = await import("jspdf");
-  const html2canvas = (await import("html2canvas")).default;
-  const body = iframe.contentDocument?.body;
-  if (!body) {
-    document.body.removeChild(iframe);
-    return;
+  try {
+    await new Promise<void>((resolve) => {
+      iframe.onload = () => resolve();
+    });
+    const { jsPDF } = await import("jspdf");
+    const html2canvas = (await import("html2canvas")).default;
+    const body = iframe.contentDocument?.body;
+    if (!body) return;
+    const canvas = await html2canvas(body, { scale: 2, useCORS: true, logging: false, windowWidth: 800 });
+    const imgData = canvas.toDataURL("image/jpeg", 0.85);
+    const pxW = canvas.width;
+    const pxH = canvas.height;
+    const pdfW = 595;
+    const pdfH = (pxH / pxW) * pdfW;
+    const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: [pdfW, pdfH] });
+    doc.addImage(imgData, "JPEG", 0, 0, pdfW, pdfH);
+    doc.save(`${slug}.pdf`);
+  } finally {
+    iframe.remove();
   }
-  const canvas = await html2canvas(body, { scale: 2, useCORS: true, logging: false, windowWidth: 800 });
-  const imgData = canvas.toDataURL("image/jpeg", 0.85);
-  const pxW = canvas.width;
-  const pxH = canvas.height;
-  const pdfW = 595;
-  const pdfH = (pxH / pxW) * pdfW;
-  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: [pdfW, pdfH] });
-  doc.addImage(imgData, "JPEG", 0, 0, pdfW, pdfH);
-  doc.save(`${slug}.pdf`);
-  document.body.removeChild(iframe);
 }

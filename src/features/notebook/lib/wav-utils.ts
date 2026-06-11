@@ -7,17 +7,24 @@ export async function mergeWavBlobs(blobs: Blob[]): Promise<Blob> {
 
   const buffers = await Promise.all(blobs.map((b) => b.arrayBuffer()));
 
-  // Read format from the first WAV header
-  const firstView = new DataView(buffers[0]);
-  const numChannels = firstView.getUint16(22, true);
-  const sampleRate = firstView.getUint32(24, true);
-  const bitsPerSample = firstView.getUint16(34, true);
+  // Walk the RIFF chunk list instead of assuming a fixed 44-byte header —
+  // encoders may emit extra chunks (LIST, fact, ...) before fmt/data, which
+  // would otherwise splice header bytes into the merged audio.
+  const parsed = buffers.map(parseWav);
+  const { numChannels, sampleRate, bitsPerSample } = parsed[0];
 
-  // Extract raw PCM data (skip the 44-byte header)
+  // Raw PCM concatenation is only valid when every segment shares one format —
+  // a mismatched segment would play stretched/garbled, so fail instead.
+  for (const info of parsed) {
+    if (info.numChannels !== numChannels || info.sampleRate !== sampleRate || info.bitsPerSample !== bitsPerSample) {
+      throw new Error("Cannot merge WAV segments with mismatched audio formats");
+    }
+  }
+
   const pcmChunks: ArrayBuffer[] = [];
   let totalDataSize = 0;
-  for (const buf of buffers) {
-    const chunk = buf.slice(44);
+  for (let i = 0; i < buffers.length; i++) {
+    const chunk = buffers[i].slice(parsed[i].dataOffset, parsed[i].dataOffset + parsed[i].dataSize);
     pcmChunks.push(chunk);
     totalDataSize += chunk.byteLength;
   }
@@ -61,4 +68,59 @@ function writeString(view: DataView, offset: number, str: string) {
   for (let i = 0; i < str.length; i++) {
     view.setUint8(offset + i, str.charCodeAt(i));
   }
+}
+
+interface WavInfo {
+  numChannels: number;
+  sampleRate: number;
+  bitsPerSample: number;
+  dataOffset: number;
+  dataSize: number;
+}
+
+function readTag(view: DataView, offset: number): string {
+  return String.fromCharCode(
+    view.getUint8(offset),
+    view.getUint8(offset + 1),
+    view.getUint8(offset + 2),
+    view.getUint8(offset + 3),
+  );
+}
+
+/** Locate the fmt and data chunks of a RIFF/WAVE buffer. Throws on malformed input. */
+function parseWav(buf: ArrayBuffer): WavInfo {
+  const view = new DataView(buf);
+  if (buf.byteLength < 12 || readTag(view, 0) !== "RIFF" || readTag(view, 8) !== "WAVE") {
+    throw new Error("Not a RIFF/WAVE file");
+  }
+
+  let fmt: Pick<WavInfo, "numChannels" | "sampleRate" | "bitsPerSample"> | null = null;
+  let data: Pick<WavInfo, "dataOffset" | "dataSize"> | null = null;
+
+  let pos = 12;
+  while (pos + 8 <= view.byteLength) {
+    const id = readTag(view, pos);
+    const size = view.getUint32(pos + 4, true);
+    const body = pos + 8;
+
+    if (id === "fmt " && body + 16 <= view.byteLength) {
+      fmt = {
+        numChannels: view.getUint16(body + 2, true),
+        sampleRate: view.getUint32(body + 4, true),
+        bitsPerSample: view.getUint16(body + 14, true),
+      };
+    } else if (id === "data") {
+      // Clamp to the buffer — a streaming encoder may have written a
+      // placeholder size larger than the actual payload.
+      data = { dataOffset: body, dataSize: Math.min(size, view.byteLength - body) };
+    }
+
+    // Chunks are word-aligned: odd sizes are followed by a pad byte.
+    pos = body + size + (size % 2);
+  }
+
+  if (!fmt || !data) {
+    throw new Error("Malformed WAV: missing fmt or data chunk");
+  }
+  return { ...fmt, ...data };
 }

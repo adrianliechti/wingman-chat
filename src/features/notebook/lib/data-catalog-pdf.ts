@@ -18,6 +18,8 @@
  */
 
 import type { DataCatalog, Dataset, DataContract, GlossaryTerm, LineageEdge, LineageNode } from "../types/notebook";
+// `&apos;` is a valid HTML5 entity, so the XML escaper doubles as our HTML escaper.
+import { escapeXml as escapeHtml } from "./pptx-utils";
 
 // ── HTML template ─────────────────────────────────────────────────────
 
@@ -525,15 +527,6 @@ export async function renderDataCatalogPdf(catalog: DataCatalog): Promise<string
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 function trim(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;

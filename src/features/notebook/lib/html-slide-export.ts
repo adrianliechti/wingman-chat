@@ -807,6 +807,8 @@ export async function downloadHtmlSlidesAsPng(htmlSlides: string[], slug: string
   for (let i = 0; i < htmlSlides.length; i++) {
     const dataUrl = await renderSlideToPngDataUrl(htmlSlides[i]);
     const base64 = dataUrl.split(",")[1];
+    // Fail loudly rather than letting JSZip write a corrupt archive.
+    if (!base64) throw new Error(`Failed to render slide ${i + 1} to PNG`);
     zip.file(`slide-${i + 1}.png`, base64, { base64: true });
   }
 
@@ -831,6 +833,7 @@ export async function downloadHtmlSlidesAsPptx(htmlSlides: string[], slug: strin
 
   for (let i = 0; i < slideCount; i++) {
     const base64 = images[i].split(",")[1];
+    if (!base64) throw new Error(`Failed to render slide ${i + 1} to JPEG`);
     zip.file(`ppt/media/image${i + 1}.jpeg`, base64, { base64: true });
 
     zip.file(`ppt/slides/slide${i + 1}.xml`, slideXmlWithImage());

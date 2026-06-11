@@ -301,6 +301,7 @@ export function useNotebook(notebookId?: string) {
 
       const source: File = { path, content };
       await store.addSource(nb.id, source);
+      store.touchNotebook(nb.id);
       setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
     [ensureNotebook, reservePath],
@@ -404,6 +405,7 @@ export function useNotebook(notebookId?: string) {
         added.push(audioSource);
       }
 
+      store.touchNotebook(nb.id);
       setSources((prev) => {
         const paths = new Set(added.map((s) => s.path));
         return [...prev.filter((s) => !paths.has(s.path)), ...added];
@@ -442,6 +444,7 @@ export function useNotebook(notebookId?: string) {
 
       const source: File = { path, content };
       await store.addSource(nb.id, source);
+      store.touchNotebook(nb.id);
       setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
     [ensureNotebook, reservePath],
@@ -451,6 +454,7 @@ export function useNotebook(notebookId?: string) {
     async (path: string) => {
       if (!notebook) return;
       await store.removeSource(notebook.id, path);
+      store.touchNotebook(notebook.id);
       setSources((prev) => prev.filter((s) => s.path !== path));
     },
     [notebook],
@@ -488,6 +492,7 @@ export function useNotebook(notebookId?: string) {
 
       await store.addSource(notebook.id, renamed);
       await store.removeSource(notebook.id, oldPath);
+      store.touchNotebook(notebook.id);
       setSources((prev) => prev.map((s) => (s.path === oldPath ? renamed : s)));
     },
     [notebook],
@@ -504,6 +509,7 @@ export function useNotebook(notebookId?: string) {
       if (!notebook) return;
       const source: File = contentType ? { path, content, contentType } : { path, content };
       await store.addSource(notebook.id, source);
+      store.touchNotebook(notebook.id);
       setSources((prev) => [...prev.filter((s) => s.path !== path), source]);
     },
     [notebook],
@@ -569,6 +575,12 @@ export function useNotebook(notebookId?: string) {
         };
         const finalMessages = [...newMessages, errorMsg];
         setMessages(finalMessages);
+        // Persist the failed turn too — otherwise the user's question and the
+        // error reply silently vanish on reload.
+        await store.saveMessages(notebook.id, finalMessages).catch((saveErr) => {
+          console.error("Failed to persist messages after chat error:", saveErr);
+        });
+        store.touchNotebook(notebook.id);
       } finally {
         setIsChatting(false);
       }
@@ -595,6 +607,11 @@ export function useNotebook(notebookId?: string) {
 
       const notebookId = notebook.id;
 
+      // Mirror of the in-flight output including everything the generator
+      // reported via onProgress — the catch below persists it so a failure
+      // keeps expensive partial work (e.g. a podcast script).
+      let latest: NotebookOutput = output;
+
       const task: Promise<Partial<NotebookOutput>> = withScreenWakeLock(
         (async () => {
           const instructions = await buildInstructions(type, styleId, options);
@@ -605,6 +622,7 @@ export function useNotebook(notebookId?: string) {
             sourceTools: createSourceTools(() => sourcesRef.current),
             getSources: () => sourcesRef.current,
             onProgress: (partial) => {
+              latest = { ...latest, ...partial };
               setOutputs((prev) => prev.map((o) => (o.id === output.id ? { ...o, ...partial } : o)));
             },
           };
@@ -634,19 +652,26 @@ export function useNotebook(notebookId?: string) {
 
       task
         .then(async (partial) => {
-          const completed: NotebookOutput = { ...output, ...partial, status: "completed" };
+          const completed: NotebookOutput = { ...latest, ...partial, status: "completed" };
           setOutputs((prev) => prev.map((o) => (o.id === output.id ? completed : o)));
           await store.addOutput(notebookId, completed);
           store.touchNotebook(notebookId);
         })
-        .catch((err) => {
-          setOutputs((prev) =>
-            prev.map((o) =>
-              o.id === output.id
-                ? { ...o, status: "error" as const, error: err instanceof Error ? err.message : "Generation failed" }
-                : o,
-            ),
-          );
+        .catch(async (err) => {
+          const errored: NotebookOutput = {
+            ...latest,
+            status: "error",
+            error: err instanceof Error ? err.message : "Generation failed",
+          };
+          setOutputs((prev) => prev.map((o) => (o.id === output.id ? errored : o)));
+          // Persist the failure so it is still visible (and deletable) after a
+          // reload instead of silently disappearing.
+          try {
+            await store.addOutput(notebookId, errored);
+            store.touchNotebook(notebookId);
+          } catch (persistErr) {
+            console.error("Failed to persist errored output:", persistErr);
+          }
         });
     },
     [notebook, sources, client, getModel],

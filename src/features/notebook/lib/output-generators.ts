@@ -42,6 +42,25 @@ const USER_MESSAGE = (label: string) => ({
   content: [{ type: "text" as const, text: `Generate a ${label.toLowerCase()} from the available sources.` }],
 });
 
+/** Run `fn` over `items` with at most `limit` calls in flight. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 // ── Podcast ────────────────────────────────────────────────────────────
 
 export async function generatePodcast(ctx: GenerateContext, styleId?: string): Promise<Result> {
@@ -49,6 +68,10 @@ export async function generatePodcast(ctx: GenerateContext, styleId?: string): P
   const result = await run(ctx.client, ctx.model, ctx.instructions, [USER_MESSAGE("Podcast")], ctx.sourceTools);
   const script = getTextFromContent(result[result.length - 1].content);
   if (!script?.trim()) throw new Error("Could not generate audio script");
+
+  // Surface the script immediately — TTS can run for minutes, and if it fails
+  // the persisted error output still carries the (expensive) script.
+  ctx.onProgress({ content: script });
 
   const ttsModel = config.tts?.model || "";
   const voiceMap = config.tts?.voices ?? {};
@@ -78,18 +101,24 @@ export async function generatePodcast(ctx: GenerateContext, styleId?: string): P
     for (const para of paragraphs) segments.push({ text: para, voice: voices[0] });
   }
 
-  const audioBlobs = await Promise.all(
-    segments.map(async ({ text, voice }) => {
+  // Bounded concurrency (TTS endpoints rate-limit) with one retry per segment.
+  // Failures are loud: silently skipping a failed segment would splice
+  // sentences out of the middle of the podcast.
+  const audioBlobs = await mapWithConcurrency(segments, 4, async ({ text, voice }) => {
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
         return await ctx.client.generateAudio(ttsModel, text, resolveVoice(voice));
-      } catch {
-        return null;
+      } catch (err) {
+        if (attempt === 1) console.error("TTS segment failed after retry:", err);
       }
-    }),
-  );
+    }
+    return null;
+  });
 
   const validBlobs = audioBlobs.filter((b): b is Blob => b !== null);
-  if (validBlobs.length === 0) throw new Error("Failed to generate audio");
+  if (validBlobs.length < segments.length) {
+    throw new Error(`Failed to generate ${segments.length - validBlobs.length} of ${segments.length} audio segments`);
+  }
 
   const merged = await mergeWavBlobs(validBlobs);
   const audioUrl = await blobToDataUrl(merged);

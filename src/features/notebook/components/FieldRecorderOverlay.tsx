@@ -1,16 +1,11 @@
 import { Loader2, Mic, Square, X } from "lucide-react";
 import { useState } from "react";
 import { useFieldRecorder } from "../hooks/useFieldRecorder";
+import { formatTimestamp } from "../lib/format";
 
 interface FieldRecorderOverlayProps {
   onSave: (transcript: string, audioUrl: string) => Promise<void>;
   onClose: () => void;
-}
-
-function formatElapsed(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 export function FieldRecorderOverlay({ onSave, onClose }: FieldRecorderOverlayProps) {
@@ -89,7 +84,7 @@ export function FieldRecorderOverlay({ onSave, onClose }: FieldRecorderOverlayPr
                   </span>
                 )}
                 <span className="text-3xl font-mono font-medium text-neutral-800 dark:text-neutral-100 tabular-nums">
-                  {formatElapsed(elapsedSec)}
+                  {formatTimestamp(elapsedSec)}
                 </span>
               </div>
 

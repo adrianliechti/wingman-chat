@@ -335,6 +335,7 @@ export interface IndexEntry {
   title?: string;
   customTitle?: string;
   customIndex?: number;
+  created?: string; // ISO date string (absent on entries written before this field existed)
   updated: string; // ISO date string
 }
 

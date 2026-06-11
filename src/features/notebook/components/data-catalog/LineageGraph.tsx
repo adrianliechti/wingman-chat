@@ -268,7 +268,9 @@ function buildFlow(catalog: DataCatalog): { nodes: Node<LineageNodeData>[]; edge
     ids.forEach((id, i) => {
       const n = nodes.find((x) => x.id === id);
       if (!n) return;
-      const size = NODE_SIZE[n.kind];
+      // Persisted catalogs are read back without schema validation — an
+      // unexpected kind must not crash the whole viewer.
+      const size = NODE_SIZE[n.kind] ?? NODE_SIZE.dataset;
       pos.set(id, {
         x: LEFT_PADDING + l * COL_WIDTH,
         y: TOP_PADDING + i * ROW_HEIGHT,
