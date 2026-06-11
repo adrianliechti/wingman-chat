@@ -18,6 +18,7 @@
 
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
+import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
 import type { Tool } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
 
@@ -134,31 +135,35 @@ export function createSourceExecTools(getSources: () => readonly File[], options
           return [{ type: "text" as const, text: "Error: `code` is required." }];
         }
 
-        const before = sourcesToFileMap(getSources());
+        // Snapshot → execute → persist runs under the sandbox lock so
+        // parallel tool calls can't interleave on the shared runtimes.
+        return withSandboxLock(async () => {
+          const before = sourcesToFileMap(getSources());
 
-        try {
-          const result = await executeCode({ code, packages, files: before });
+          try {
+            const result = await executeCode({ code, packages, files: before });
 
-          if (!result.success) {
-            return [{ type: "text" as const, text: `Error executing code: ${result.error || "Unknown error"}` }];
+            if (!result.success) {
+              return [{ type: "text" as const, text: `Error executing code: ${result.error || "Unknown error"}` }];
+            }
+
+            const after = normalizeMapKeys(result.files ?? {});
+            const written = await persistWrites(before, after);
+
+            const parts: string[] = [result.output || "(no output)"];
+            if (written.length > 0) {
+              parts.push(`\nSaved sources: ${written.join(", ")}`);
+            }
+            return [{ type: "text" as const, text: parts.join("") }];
+          } catch (err) {
+            return [
+              {
+                type: "text" as const,
+                text: `Python execution failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+              },
+            ];
           }
-
-          const after = normalizeMapKeys(result.files ?? {});
-          const written = await persistWrites(before, after);
-
-          const parts: string[] = [result.output || "(no output)"];
-          if (written.length > 0) {
-            parts.push(`\nSaved sources: ${written.join(", ")}`);
-          }
-          return [{ type: "text" as const, text: parts.join("") }];
-        } catch (err) {
-          return [
-            {
-              type: "text" as const,
-              text: `Python execution failed: ${err instanceof Error ? err.message : "Unknown error"}`,
-            },
-          ];
-        }
+        });
       },
     },
     {
@@ -181,42 +186,46 @@ export function createSourceExecTools(getSources: () => readonly File[], options
           return [{ type: "text" as const, text: "Error: `command` is required." }];
         }
 
-        const before = sourcesToFileMap(getSources());
-        const { memFs } = getSingleton();
+        // Same locking rationale as the python tool above — the bash
+        // runtime is additionally a singleton working tree.
+        return withSandboxLock(async () => {
+          const before = sourcesToFileMap(getSources());
+          const { memFs } = getSingleton();
 
-        try {
-          // Mount all sources into /home/user/...
-          const inputFiles = Object.entries(before).map(([path, rec]) => ({
-            path,
-            content: rec.content,
-            contentType: rec.contentType,
-          }));
-          await loadArtifactsIntoFs(memFs, inputFiles);
+          try {
+            // Mount all sources into /home/user/...
+            const inputFiles = Object.entries(before).map(([path, rec]) => ({
+              path,
+              content: rec.content,
+              contentType: rec.contentType,
+            }));
+            await loadArtifactsIntoFs(memFs, inputFiles);
 
-          const result = await executeBash({ command });
+            const result = await executeBash({ command });
 
-          const after = normalizeMapKeys(await readFilesFromFs(memFs));
-          const written = await persistWrites(before, after);
+            const after = normalizeMapKeys(await readFilesFromFs(memFs));
+            const written = await persistWrites(before, after);
 
-          const parts: string[] = [];
-          if (result.stdout) parts.push(result.stdout);
-          if (result.stderr) parts.push(`stderr: ${result.stderr}`);
-          if (result.exitCode !== 0) parts.push(`exit code: ${result.exitCode}`);
-          if (written.length > 0) parts.push(`Saved sources: ${written.join(", ")}`);
+            const parts: string[] = [];
+            if (result.stdout) parts.push(result.stdout);
+            if (result.stderr) parts.push(`stderr: ${result.stderr}`);
+            if (result.exitCode !== 0) parts.push(`exit code: ${result.exitCode}`);
+            if (written.length > 0) parts.push(`Saved sources: ${written.join(", ")}`);
 
-          const output = parts.join("\n") || "Command executed successfully (no output)";
-          if (!result.success) {
-            return [{ type: "text" as const, text: `Error: ${output}` }];
+            const output = parts.join("\n") || "Command executed successfully (no output)";
+            if (!result.success) {
+              return [{ type: "text" as const, text: `Error: ${output}` }];
+            }
+            return [{ type: "text" as const, text: output }];
+          } catch (err) {
+            return [
+              {
+                type: "text" as const,
+                text: `Bash execution failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+              },
+            ];
           }
-          return [{ type: "text" as const, text: output }];
-        } catch (err) {
-          return [
-            {
-              type: "text" as const,
-              text: `Bash execution failed: ${err instanceof Error ? err.message : "Unknown error"}`,
-            },
-          ];
-        }
+        });
       },
     },
   ];
