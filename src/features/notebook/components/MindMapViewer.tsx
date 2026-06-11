@@ -14,6 +14,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { Download, FileCode, ImageIcon, Settings2 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { escapeXml } from "../lib/pptx-utils";
 import type { MindMapNode } from "../types/notebook";
 import { MindMapCustomEdge } from "./mindmap/MindMapEdge";
 import { MindMapCustomNode, type MindMapNodeData } from "./mindmap/MindMapNode";
@@ -165,12 +166,6 @@ const nodeTypes: NodeTypes = { mindmap: MindMapCustomNode };
 const edgeTypes: EdgeTypes = { mindmap: MindMapCustomEdge };
 const nodeOrigin: NodeOrigin = [0.5, 0.5];
 const proOptions = { hideAttribution: true };
-
-// ── SVG helpers ───────────────────────────────────────────────────────
-
-function escapeXml(s: string) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
 
 // ── Inner component ───────────────────────────────────────────────────
 

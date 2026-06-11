@@ -1,4 +1,4 @@
-import { FileCode, FileJson, FileText, ImageIcon, X } from "lucide-react";
+import { AlertCircle, FileCode, FileJson, FileText, ImageIcon, X } from "lucide-react";
 import type { ExportFormat } from "../lib/output-export";
 
 export interface ExportModalOption {
@@ -18,6 +18,8 @@ interface ExportModalProps {
   onClose: () => void;
   /** When true, the close button is disabled (e.g. while an export is rasterising). */
   busy?: boolean;
+  /** Error from the last export attempt — shown above the options. */
+  error?: string | null;
   /** Width in px — defaults to 320. Wider for catalogs that show longer subtitles. */
   width?: number;
 }
@@ -27,7 +29,7 @@ interface ExportModalProps {
  * Visually mirrors the slide-export overlay in `StudioPanel` so the entry
  * point feels consistent across output types.
  */
-export function ExportModal({ title, options, onClose, busy = false, width = 320 }: ExportModalProps) {
+export function ExportModal({ title, options, onClose, busy = false, error = null, width = 320 }: ExportModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
       <div
@@ -46,6 +48,12 @@ export function ExportModal({ title, options, onClose, busy = false, width = 320
           </button>
         </div>
         <div className="p-3 space-y-1">
+          {error && (
+            <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-3 py-2.5 rounded-lg mb-2">
+              <AlertCircle size={14} className="shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
           {options.map((opt) => (
             <ExportRow key={opt.title} option={opt} busy={busy} />
           ))}

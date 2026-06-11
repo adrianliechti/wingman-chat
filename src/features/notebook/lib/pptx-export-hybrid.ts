@@ -68,7 +68,9 @@ export async function downloadHtmlSlidesAsHybridPptx(
     // Background image
     mediaCounter++;
     const bgMediaName = `media${mediaCounter}.jpeg`;
-    zip.file(`ppt/media/${bgMediaName}`, jpeg.split(",")[1], { base64: true });
+    const bgBase64 = jpeg.split(",")[1];
+    if (!bgBase64) throw new Error(`Failed to render slide ${slideNum} background`);
+    zip.file(`ppt/media/${bgMediaName}`, bgBase64, { base64: true });
 
     // Extract images as separate editable objects
     const imageElements = parsed.elements.filter((el) => el.type === "image" && el.imageData);

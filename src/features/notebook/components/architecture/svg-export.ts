@@ -10,6 +10,7 @@
  * The PNG export rasterises this SVG via the browser's Canvas API.
  */
 
+import { escapeXml } from "../../lib/pptx-utils";
 import type { ArchitectureDiagram, ArchitectureElementKind } from "../../types/notebook";
 import { buildArchitectureFlow, type GraphFlowResult } from "./graphLayout";
 
@@ -226,10 +227,6 @@ export async function svgToPngDataUrl(svg: string, scale = 2): Promise<string> {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
-
-function escapeXml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
 
 function trim(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;

@@ -237,6 +237,68 @@ export function NotebookPage() {
     [setViewingOutput],
   );
 
+  // Shared between the desktop panels and the mobile layout/bottom sheets so
+  // the two breakpoints can't drift apart.
+  const sourcesPanel = (
+    <SourcesPanel
+      sources={sources}
+      isSearching={isSearching}
+      searchWeb={searchWeb}
+      addSearchResult={addSearchResult}
+      scrapeWeb={scrapeWeb}
+      addScrapeResult={addScrapeResult}
+      onFileAdd={addFileSource}
+      onTextAdd={addTextSource}
+      onDeleteSource={deleteSource}
+      onRenameSource={renameSource}
+      onUpdateSource={writeSource}
+    />
+  );
+
+  const studioPanel = (
+    <StudioPanel
+      sources={sources}
+      outputs={outputs}
+      onGenerate={generateOutput}
+      onDeleteOutput={deleteOutput}
+      onSelectOutput={handleSelectOutput}
+      onDownloadOutput={download.trigger}
+      canDownload={download.canDownload}
+    />
+  );
+
+  const centerContent = loading ? (
+    <div className="h-full" />
+  ) : viewingOutput ? (
+    <OutputView
+      output={viewingOutput}
+      download={download}
+      onClose={() => setViewingOutput(null)}
+      onRefine={updateOutput}
+    />
+  ) : (
+    <NotebookChat
+      messages={messages}
+      sources={sources}
+      isChatting={isChatting}
+      streamingContent={streamingContent}
+      onSend={sendMessage}
+      showSourcesActive={showSourcesDrawer}
+      showStudioActive={showStudioDrawer}
+      isSearching={isSearching}
+      outputCount={outputs.filter((o) => o.status === "completed").length}
+      isGeneratingOutput={outputs.some((o) => o.status === "generating")}
+      onShowSources={() => {
+        setShowStudioDrawer(false);
+        setShowSourcesDrawer((v) => !v);
+      }}
+      onShowStudio={() => {
+        setShowSourcesDrawer(false);
+        setShowStudioDrawer((v) => !v);
+      }}
+    />
+  );
+
   return (
     <div className="h-full w-full flex flex-col overflow-hidden relative">
       {/* Render the child route (provides :notebookId param, renders nothing visible) */}
@@ -268,23 +330,7 @@ export function NotebookPage() {
               className="h-full overflow-hidden"
               onResize={(size) => setPanelSizes((prev) => [size.asPercentage, prev[1]])}
             >
-              {loading ? (
-                <div className="h-full" />
-              ) : (
-                <SourcesPanel
-                  sources={sources}
-                  isSearching={isSearching}
-                  searchWeb={searchWeb}
-                  addSearchResult={addSearchResult}
-                  scrapeWeb={scrapeWeb}
-                  addScrapeResult={addScrapeResult}
-                  onFileAdd={addFileSource}
-                  onTextAdd={addTextSource}
-                  onDeleteSource={deleteSource}
-                  onRenameSource={renameSource}
-                  onUpdateSource={writeSource}
-                />
-              )}
+              {loading ? <div className="h-full" /> : sourcesPanel}
             </ResizablePanel>
 
             <ResizableHandle />
@@ -294,198 +340,19 @@ export function NotebookPage() {
               className="h-full overflow-hidden"
               onResize={(size) => setPanelSizes((prev) => [prev[0], size.asPercentage])}
             >
-              {loading ? (
-                <div className="h-full" />
-              ) : viewingOutput ? (
-                <div className="h-full flex flex-col relative">
-                  {/* Output buttons */}
-                  <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-                    {download.canDownload(viewingOutput) && (
-                      <button
-                        type="button"
-                        onClick={() => download.trigger(viewingOutput)}
-                        className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                        title="Download…"
-                      >
-                        <Download size={16} className="text-neutral-500" />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setViewingOutputId(null)}
-                      className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                      title="Back to chat"
-                    >
-                      <X size={16} className="text-neutral-500" />
-                    </button>
-                  </div>
-
-                  {/* Output content */}
-                  <div className="flex-1 overflow-hidden min-h-0 pt-8 pb-4">
-                    {viewingOutput.quiz && viewingOutput.quiz.length > 0 ? (
-                      <QuizViewer questions={viewingOutput.quiz} />
-                    ) : viewingOutput.mindMap ? (
-                      <MindMapViewer root={viewingOutput.mindMap} />
-                    ) : viewingOutput.process ? (
-                      <ProcessViewer output={viewingOutput} onRefine={updateOutput} />
-                    ) : viewingOutput.architecture ? (
-                      <ArchitectureViewer output={viewingOutput} onRefine={updateOutput} />
-                    ) : viewingOutput.dataCatalog ? (
-                      <DataCatalogViewer output={viewingOutput} onRefine={updateOutput} />
-                    ) : viewingOutput.audioUrl ? (
-                      <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
-                    ) : viewingOutput.type === "slides" ? (
-                      <SlideViewer output={viewingOutput} onRefine={updateOutput} />
-                    ) : viewingOutput.imageUrl ? (
-                      <div className="h-full overflow-y-auto p-6">
-                        <div className="flex flex-col items-center gap-4">
-                          <img
-                            src={viewingOutput.imageUrl}
-                            alt={viewingOutput.title}
-                            className="max-w-full rounded-lg shadow-md"
-                          />
-                        </div>
-                      </div>
-                    ) : viewingOutput.type === "report" ? (
-                      <ReportViewer content={viewingOutput.content} />
-                    ) : (
-                      <div className="h-full overflow-y-auto p-6">
-                        <div className="prose prose-neutral dark:prose-invert max-w-none">
-                          <Markdown>{viewingOutput.content}</Markdown>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <NotebookChat
-                  messages={messages}
-                  sources={sources}
-                  isChatting={isChatting}
-                  streamingContent={streamingContent}
-                  onSend={sendMessage}
-                  showSourcesActive={showSourcesDrawer}
-                  showStudioActive={showStudioDrawer}
-                  isSearching={isSearching}
-                  outputCount={outputs.filter((o) => o.status === "completed").length}
-                  isGeneratingOutput={outputs.some((o) => o.status === "generating")}
-                  onShowSources={() => {
-                    setShowStudioDrawer(false);
-                    setShowSourcesDrawer((v) => !v);
-                  }}
-                  onShowStudio={() => {
-                    setShowSourcesDrawer(false);
-                    setShowStudioDrawer((v) => !v);
-                  }}
-                />
-              )}
+              {centerContent}
             </ResizablePanel>
 
             <ResizableHandle />
 
             <ResizablePanel defaultSize={300} minSize={160} className="h-full overflow-hidden">
-              {loading ? (
-                <div className="h-full" />
-              ) : (
-                <StudioPanel
-                  sources={sources}
-                  outputs={outputs}
-                  onGenerate={generateOutput}
-                  onDeleteOutput={deleteOutput}
-                  onSelectOutput={handleSelectOutput}
-                  onDownloadOutput={download.trigger}
-                  canDownload={download.canDownload}
-                />
-              )}
+              {loading ? <div className="h-full" /> : studioPanel}
             </ResizablePanel>
           </ResizablePanelGroup>
         </div>
 
         {/* ── Mobile: Center content (full width) ── */}
-        <div className="md:hidden flex-1 min-w-0 h-full overflow-hidden">
-          {loading ? (
-            <div className="h-full" />
-          ) : viewingOutput ? (
-            <div className="h-full flex flex-col relative">
-              <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-                {download.canDownload(viewingOutput) && (
-                  <button
-                    type="button"
-                    onClick={() => download.trigger(viewingOutput)}
-                    className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                    title="Download…"
-                  >
-                    <Download size={16} className="text-neutral-500" />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setViewingOutputId(null)}
-                  className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                  title="Back to chat"
-                >
-                  <X size={16} className="text-neutral-500" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-hidden min-h-0 pt-8 pb-4">
-                {viewingOutput.quiz && viewingOutput.quiz.length > 0 ? (
-                  <QuizViewer questions={viewingOutput.quiz} />
-                ) : viewingOutput.mindMap ? (
-                  <MindMapViewer root={viewingOutput.mindMap} />
-                ) : viewingOutput.process ? (
-                  <ProcessViewer output={viewingOutput} onRefine={updateOutput} />
-                ) : viewingOutput.architecture ? (
-                  <ArchitectureViewer output={viewingOutput} onRefine={updateOutput} />
-                ) : viewingOutput.dataCatalog ? (
-                  <DataCatalogViewer output={viewingOutput} onRefine={updateOutput} />
-                ) : viewingOutput.audioUrl ? (
-                  <AudioViewer content={viewingOutput.content} audioUrl={viewingOutput.audioUrl} />
-                ) : viewingOutput.type === "slides" ? (
-                  <SlideViewer output={viewingOutput} onRefine={updateOutput} />
-                ) : viewingOutput.imageUrl ? (
-                  <div className="h-full overflow-y-auto p-6">
-                    <div className="flex flex-col items-center gap-4">
-                      <img
-                        src={viewingOutput.imageUrl}
-                        alt={viewingOutput.title}
-                        className="max-w-full rounded-lg shadow-md"
-                      />
-                    </div>
-                  </div>
-                ) : viewingOutput.type === "report" ? (
-                  <ReportViewer content={viewingOutput.content} />
-                ) : (
-                  <div className="h-full overflow-y-auto p-6">
-                    <div className="prose prose-neutral dark:prose-invert max-w-none">
-                      <Markdown>{viewingOutput.content}</Markdown>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <NotebookChat
-              messages={messages}
-              sources={sources}
-              isChatting={isChatting}
-              streamingContent={streamingContent}
-              onSend={sendMessage}
-              showSourcesActive={showSourcesDrawer}
-              showStudioActive={showStudioDrawer}
-              isSearching={isSearching}
-              outputCount={outputs.filter((o) => o.status === "completed").length}
-              isGeneratingOutput={outputs.some((o) => o.status === "generating")}
-              onShowSources={() => {
-                setShowStudioDrawer(false);
-                setShowSourcesDrawer((v) => !v);
-              }}
-              onShowStudio={() => {
-                setShowSourcesDrawer(false);
-                setShowStudioDrawer((v) => !v);
-              }}
-            />
-          )}
-        </div>
+        <div className="md:hidden flex-1 min-w-0 h-full overflow-hidden">{centerContent}</div>
 
         {/* ── Mobile: backdrop ── */}
         <button
@@ -509,21 +376,7 @@ export function NotebookPage() {
           <div className="flex justify-center pt-3 pb-1 shrink-0">
             <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />
           </div>
-          {!loading && (
-            <SourcesPanel
-              sources={sources}
-              isSearching={isSearching}
-              searchWeb={searchWeb}
-              addSearchResult={addSearchResult}
-              scrapeWeb={scrapeWeb}
-              addScrapeResult={addScrapeResult}
-              onFileAdd={addFileSource}
-              onTextAdd={addTextSource}
-              onDeleteSource={deleteSource}
-              onRenameSource={renameSource}
-              onUpdateSource={writeSource}
-            />
-          )}
+          {!loading && sourcesPanel}
         </div>
 
         {/* ── Mobile: Studio bottom sheet ── */}
@@ -535,21 +388,80 @@ export function NotebookPage() {
           <div className="flex justify-center pt-3 pb-1 shrink-0">
             <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />
           </div>
-          {!loading && (
-            <StudioPanel
-              sources={sources}
-              outputs={outputs}
-              onGenerate={generateOutput}
-              onDeleteOutput={deleteOutput}
-              onSelectOutput={handleSelectOutput}
-              onDownloadOutput={download.trigger}
-              canDownload={download.canDownload}
-            />
-          )}
+          {!loading && studioPanel}
         </div>
       </main>
 
       {download.modals}
+    </div>
+  );
+}
+
+interface OutputViewProps {
+  output: NotebookOutput;
+  download: ReturnType<typeof useOutputDownload>;
+  onClose: () => void;
+  onRefine: (output: NotebookOutput) => Promise<void>;
+}
+
+/** Output preview with download/close actions — shared by desktop and mobile. */
+function OutputView({ output, download, onClose, onRefine }: OutputViewProps) {
+  return (
+    <div className="h-full flex flex-col relative">
+      {/* Output buttons */}
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+        {download.canDownload(output) && (
+          <button
+            type="button"
+            onClick={() => download.trigger(output)}
+            className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            title="Download…"
+          >
+            <Download size={16} className="text-neutral-500" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+          title="Back to chat"
+        >
+          <X size={16} className="text-neutral-500" />
+        </button>
+      </div>
+
+      {/* Output content */}
+      <div className="flex-1 overflow-hidden min-h-0 pt-8 pb-4">
+        {output.quiz && output.quiz.length > 0 ? (
+          <QuizViewer questions={output.quiz} />
+        ) : output.mindMap ? (
+          <MindMapViewer root={output.mindMap} />
+        ) : output.process ? (
+          <ProcessViewer output={output} onRefine={onRefine} />
+        ) : output.architecture ? (
+          <ArchitectureViewer output={output} onRefine={onRefine} />
+        ) : output.dataCatalog ? (
+          <DataCatalogViewer output={output} onRefine={onRefine} />
+        ) : output.audioUrl ? (
+          <AudioViewer content={output.content} audioUrl={output.audioUrl} />
+        ) : output.type === "slides" ? (
+          <SlideViewer output={output} onRefine={onRefine} />
+        ) : output.imageUrl ? (
+          <div className="h-full overflow-y-auto p-6">
+            <div className="flex flex-col items-center gap-4">
+              <img src={output.imageUrl} alt={output.title} className="max-w-full rounded-lg shadow-md" />
+            </div>
+          </div>
+        ) : output.type === "report" ? (
+          <ReportViewer content={output.content} />
+        ) : (
+          <div className="h-full overflow-y-auto p-6">
+            <div className="prose prose-neutral dark:prose-invert max-w-none">
+              <Markdown>{output.content}</Markdown>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

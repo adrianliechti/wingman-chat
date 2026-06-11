@@ -43,7 +43,7 @@ export async function listNotebooks(): Promise<Notebook[]> {
     id: e.id,
     title: e.title || "Untitled",
     customTitle: e.customTitle,
-    createdAt: e.updated,
+    createdAt: e.created ?? e.updated,
     updatedAt: e.updated,
   }));
 }
@@ -58,6 +58,7 @@ export async function saveNotebook(notebook: Notebook): Promise<void> {
     id: notebook.id,
     title: notebook.title,
     customTitle: notebook.customTitle,
+    created: notebook.createdAt,
     updated: notebook.updatedAt,
   });
 }
