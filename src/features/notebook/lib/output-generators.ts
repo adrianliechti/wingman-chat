@@ -20,9 +20,9 @@ import { getTextFromContent } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
 import type { ArchitectureDiagram, DataCatalog, MindMapNode, NotebookOutput, ProcessDiagram } from "../types/notebook";
 import { assembleSlideHtml, getOrderedHtmlSlides } from "./html-slide-assembly";
-import { createHtmlSlideTools } from "./html-slide-tools";
+import { createHtmlSlideTools, pruneSlideWriteHistory } from "./html-slide-tools";
 import { createImageSlideTools } from "./image-slide-tools";
-import { podcastStyles } from "./styles";
+import { type BuildInstructionsOptions, buildSlidePrompts, podcastStyles } from "./styles";
 import { mergeWavBlobs } from "./wav-utils";
 
 export interface GenerateContext {
@@ -143,44 +143,215 @@ export async function generateInfographic(ctx: GenerateContext): Promise<Result>
 
 // ── Slides — HTML mode ─────────────────────────────────────────────────
 
-export async function generateHtmlSlides(ctx: GenerateContext): Promise<Result> {
+interface SlidePlanItem {
+  archetype: string;
+  title: string;
+  brief: string;
+}
+
+const WRITER_CONCURRENCY = 3;
+
+/**
+ * Two-phase HTML deck generation:
+ *
+ *   Phase 1 (planner): one agent studies the sources, writes the shared
+ *   `styles/theme.css`, and submits a per-slide plan via `set_deck_plan` —
+ *   each brief carries the actual content (data, quotes, citations).
+ *
+ *   Phase 2 (writers): one small agent per slide implements its brief in
+ *   parallel against the shared slide fs. Each writer only ever sees its
+ *   own slide, so token cost is linear in deck size and wall-clock is
+ *   bounded by the slowest slide, not the sum.
+ *
+ * Single-slide decks (one-pagers) keep the original single-loop flow —
+ * planning a one-slide deck is pure overhead.
+ */
+export async function generateHtmlSlides(
+  ctx: GenerateContext,
+  styleId?: string,
+  options?: BuildInstructionsOptions,
+): Promise<Result> {
   const config = getConfig();
   const rendererModel = config.notebook?.renderer || config.renderer?.model || "";
   const slideFs = new Map<string, string>();
 
-  const fsTools = createHtmlSlideTools(
-    slideFs,
-    ctx.client,
-    rendererModel,
-    () => {
-      const rawSlides = getOrderedHtmlSlides(slideFs);
-      if (rawSlides.length > 0) {
-        const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
-        ctx.onProgress({ slides: [...htmlSlides], slideContentType: "text/html" });
-      }
-    },
-    ctx.getSources,
-  );
+  const onWrite = () => {
+    const rawSlides = getOrderedHtmlSlides(slideFs);
+    if (rawSlides.length > 0) {
+      const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
+      ctx.onProgress({ slides: [...htmlSlides], slideContentType: "text/html" });
+    }
+  };
 
-  const message = {
+  // One-pager: the dedicated single-loop prompt already in ctx.instructions.
+  if (options?.slideCount === 1) {
+    const fsTools = createHtmlSlideTools(slideFs, ctx.client, rendererModel, onWrite, ctx.getSources);
+    const message = {
+      role: "user" as const,
+      content: [
+        {
+          type: "text" as const,
+          text: "Create a polished, professionally-designed slide deck from the available sources.",
+        },
+      ],
+    };
+    await run(ctx.client, ctx.model, ctx.instructions, [message], [...ctx.sourceTools, ...fsTools], {
+      agentName: "notebook-slides",
+      prepareMessages: pruneSlideWriteHistory,
+    });
+    return finishHtmlSlides(slideFs);
+  }
+
+  const { planner, writer } = await buildSlidePrompts(styleId, options);
+
+  // ── Phase 1: plan + design system ──
+  let plan: SlidePlanItem[] | null = null;
+  let arc = "";
+
+  const planTools: Tool[] = [
+    {
+      name: "write_file",
+      description:
+        "Write a stylesheet under styles/ (e.g. 'styles/theme.css'). Slides are written later by per-slide writers working from your plan.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Stylesheet path, e.g. 'styles/theme.css'" },
+          content: { type: "string", description: "CSS content" },
+        },
+        required: ["path", "content"],
+      },
+      function: async (args) => {
+        const path = args.path as string;
+        if (!/^styles\/[\w.-]+\.css$/i.test(path)) {
+          return [{ type: "text" as const, text: `Error: the planner may only write styles/*.css (got ${path}).` }];
+        }
+        slideFs.set(path, args.content as string);
+        return [{ type: "text" as const, text: `OK: wrote ${path} (${(args.content as string).length} bytes)` }];
+      },
+    },
+    {
+      name: "set_deck_plan",
+      description:
+        "Submit the deck plan — one entry per slide, in order. Call after styles/theme.css is written. Calling again replaces the previous plan.",
+      parameters: {
+        type: "object",
+        properties: {
+          arc: { type: "string", description: "The chosen deck arc (e.g. 'Diagnose → Insight → Recommendation')" },
+          slides: {
+            type: "array",
+            description: "One entry per slide, in deck order.",
+            items: {
+              type: "object",
+              properties: {
+                archetype: { type: "string", description: "Layout archetype from the menu" },
+                title: { type: "string", description: "Final insight headline for the slide" },
+                brief: { type: "string", description: "Self-sufficient writer brief incl. data + citations" },
+              },
+              required: ["archetype", "title", "brief"],
+            },
+          },
+        },
+        required: ["slides"],
+      },
+      function: async (args) => {
+        const raw = Array.isArray(args.slides) ? (args.slides as Record<string, unknown>[]) : [];
+        const slides = raw
+          .filter((s) => s && typeof s === "object")
+          .map((s) => ({
+            archetype: String(s.archetype ?? "").trim(),
+            title: String(s.title ?? "").trim(),
+            brief: String(s.brief ?? "").trim(),
+          }))
+          .filter((s) => s.title && s.brief);
+        if (slides.length === 0) {
+          return [
+            {
+              type: "text" as const,
+              text: "Error: `slides` must contain at least one {archetype, title, brief} entry.",
+            },
+          ];
+        }
+        plan = slides;
+        arc = typeof args.arc === "string" ? args.arc : "";
+        const themeNote = slideFs.has("styles/theme.css")
+          ? ""
+          : " WARNING: styles/theme.css has not been written yet — write it before finishing.";
+        return [{ type: "text" as const, text: `OK: deck plan recorded (${slides.length} slides).${themeNote}` }];
+      },
+    },
+  ];
+
+  const planMessage = {
     role: "user" as const,
     content: [
       {
         type: "text" as const,
-        text: "Create a polished, professionally-designed slide deck from the available sources.",
+        text: "Design the deck: study the sources, write styles/theme.css, then submit the plan via set_deck_plan.",
       },
     ],
   };
+  await run(ctx.client, ctx.model, planner, [planMessage], [...ctx.sourceTools, ...planTools], {
+    agentName: "notebook-slides-plan",
+  });
 
-  await run(ctx.client, ctx.model, ctx.instructions, [message], [...ctx.sourceTools, ...fsTools]);
+  // Cast: `plan` is assigned inside the set_deck_plan tool closure, which TS
+  // control-flow analysis can't see — it still narrows to the initializer.
+  const deckPlan = plan as SlidePlanItem[] | null;
+  if (!deckPlan || deckPlan.length === 0) throw new Error("The planner did not produce a deck plan");
+  if (!slideFs.has("styles/theme.css")) throw new Error("The planner did not produce styles/theme.css");
 
+  const total = deckPlan.length;
+  const theme = slideFs.get("styles/theme.css") ?? "";
+  const spine = deckPlan.map((s, i) => `${i + 1}. ${s.title} — ${s.archetype}`).join("\n");
+  const pad = (n: number) => String(n).padStart(2, "0");
+  console.log(`[HTML Slides] Plan ready — ${total} slides. Writing with concurrency ${WRITER_CONCURRENCY}.`);
+
+  // ── Phase 2: write slides in parallel ──
+  await mapWithConcurrency(deckPlan, WRITER_CONCURRENCY, async (item, i) => {
+    const slidePath = `slides/slide${i + 1}.html`;
+    const slideTools = createHtmlSlideTools(slideFs, ctx.client, rendererModel, onWrite, ctx.getSources, {
+      restrictSlidePath: slidePath,
+    });
+
+    const text =
+      `You are writing slide ${i + 1} of ${total}: "${item.title}" — archetype: ${item.archetype}.\n` +
+      `Write it to ${slidePath}. Page-number caption: "${pad(i + 1)} / ${pad(total)}".\n\n` +
+      (arc ? `Deck arc: ${arc}\n` : "") +
+      `Deck spine:\n${spine}\n\n` +
+      `Shared stylesheet (styles/theme.css — already in place, do not modify):\n\`\`\`css\n${theme}\n\`\`\`\n\n` +
+      `Your brief:\n${item.brief}`;
+
+    try {
+      await run(
+        ctx.client,
+        ctx.model,
+        writer,
+        [{ role: "user" as const, content: [{ type: "text" as const, text }] }],
+        [...ctx.sourceTools, ...slideTools],
+        { agentName: "notebook-slides-write", prepareMessages: pruneSlideWriteHistory },
+      );
+    } catch (error) {
+      // One failed slide must not sink the deck — the gap is visible in the
+      // result and the user can refine/regenerate it.
+      console.error(`[HTML Slides] slide ${i + 1} failed:`, error);
+    }
+    if (!slideFs.has(slidePath)) {
+      console.warn(`[HTML Slides] slide ${i + 1} was not written`);
+    }
+  });
+
+  return finishHtmlSlides(slideFs, `${spine}`);
+}
+
+function finishHtmlSlides(slideFs: Map<string, string>, content?: string): Result {
   const rawSlides = getOrderedHtmlSlides(slideFs);
   console.log("[HTML Slides] Generation complete, slides:", rawSlides.length);
   if (rawSlides.length === 0) throw new Error("No slides generated");
 
   const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
   return {
-    content: `${htmlSlides.length} slides generated`,
+    content: content || `${htmlSlides.length} slides generated`,
     slides: htmlSlides,
     slideContentType: "text/html",
   };

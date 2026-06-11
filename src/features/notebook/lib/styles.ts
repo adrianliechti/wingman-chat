@@ -27,6 +27,8 @@ import studioReportInstructions from "../prompts/studio-report.txt?raw";
 import studioSlideInstructions from "../prompts/studio-slide-deck.txt?raw";
 import studioSlideImageInstructions from "../prompts/studio-slide-images.txt?raw";
 import studioSlideOnePagerInstructions from "../prompts/studio-slide-one-pager.txt?raw";
+import studioSlidePlannerInstructions from "../prompts/studio-slide-planner.txt?raw";
+import studioSlideWriterInstructions from "../prompts/studio-slide-writer.txt?raw";
 import type { OutputType } from "../types/notebook";
 
 // ── Public prompt exports ──────────────────────────────────────────────
@@ -402,13 +404,21 @@ export async function buildInstructions(
     }
   }
 
+  return prompt + buildOverridesBlock(options, { slideCount: type === "slides" && !isOnePager });
+}
+
+/** Render the trailing "User overrides" block shared by all prompt builders. */
+function buildOverridesBlock(
+  options: BuildInstructionsOptions | undefined,
+  include: { slideCount?: boolean } = {},
+): string {
   const overrides: string[] = [];
   if (options?.language) {
     overrides.push(
       `- Write **all output text in ${options.language}** (titles, body copy, labels, captions, speaker lines). This overrides any language used in the source material.`,
     );
   }
-  if (type === "slides" && options?.slideCount && options.slideCount > 0 && !isOnePager) {
+  if (include.slideCount && options?.slideCount && options.slideCount > 0) {
     const n = Math.round(options.slideCount);
     overrides.push(
       `- Produce **exactly ${n} ${n === 1 ? "slide" : "slides"}**. This overrides any slide count mentioned elsewhere in the instructions (e.g. "8–12 slides"). Plan the deck arc to fit this exact length.`,
@@ -418,9 +428,33 @@ export async function buildInstructions(
     overrides.push(`- Additional user instructions: ${options.instructions}`);
   }
 
-  if (overrides.length > 0) {
-    prompt += `\n\n---\n\n## User overrides (highest priority)\n\n${overrides.join("\n")}\n`;
-  }
+  if (overrides.length === 0) return "";
+  return `\n\n---\n\n## User overrides (highest priority)\n\n${overrides.join("\n")}\n`;
+}
 
-  return prompt;
+/**
+ * System prompts for the two-phase HTML deck pipeline: one planner
+ * conversation produces the spine + theme.css + per-slide briefs, then one
+ * small writer conversation per slide implements its brief in parallel.
+ * Both share the same style section; the writer additionally gets the
+ * common layout rules it must obey when emitting HTML.
+ */
+export async function buildSlidePrompts(
+  styleId?: string,
+  options?: BuildInstructionsOptions,
+): Promise<{ planner: string; writer: string }> {
+  const style = slideStyles.get(styleId ?? OUTPUT_META.slides.defaultStyleId);
+  const styleText = await resolvePrompt(style.prompt);
+
+  // The planner owns deck-level overrides (slide count); writers inherit
+  // language/user instructions so copy on every slide complies.
+  const planner =
+    studioSlidePlannerInstructions.replace("{{STYLE_SECTION}}", styleText) +
+    buildOverridesBlock(options, { slideCount: true });
+  const writer =
+    studioSlideWriterInstructions
+      .replace("{{COMMON_RULES}}", slideCommonRules)
+      .replace("{{STYLE_SECTION}}", styleText) + buildOverridesBlock(options);
+
+  return { planner, writer };
 }

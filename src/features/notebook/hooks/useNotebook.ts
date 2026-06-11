@@ -633,7 +633,9 @@ export function useNotebook(notebookId?: string) {
             case "infographic":
               return generateInfographic(ctx);
             case "slides":
-              return options?.slideMode === "images" ? generateImageSlides(ctx) : generateHtmlSlides(ctx);
+              return options?.slideMode === "images"
+                ? generateImageSlides(ctx)
+                : generateHtmlSlides(ctx, styleId, options);
             case "quiz":
               return generateQuiz(ctx);
             case "mindmap":
