@@ -64,6 +64,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     onToolCallCallback,
     onToolCallDoneCallback,
     onToolResultCallback,
+    onClosedCallback,
   );
 
   const setVoiceToolCallRef = useRef(setVoiceToolCall);
@@ -94,6 +95,14 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   }
 
   function onToolCallDoneCallback() {
+    setVoiceToolCallRef.current(null);
+  }
+
+  // The hook already released mic/player after an unexpected disconnect —
+  // just bring the UI state back in sync.
+  function onClosedCallback() {
+    setIsListening(false);
+    setAudioLevel(0);
     setVoiceToolCallRef.current(null);
   }
 

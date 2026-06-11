@@ -10,11 +10,13 @@ class StreamProcessor extends AudioWorkletProcessor {
     super();
     this.buffers = [];
     this.currentBuffer = null;
+    this.currentBufferTrackId = null;
     this.currentOffset = 0;
-    this.interrupted = false;
     this.interruptedTrackIds = new Set();
     this.currentTrackId = null;
-    
+    this.lastPlayedTrackId = null;
+    this.playedSamples = {};
+
     this.port.onmessage = (e) => {
       const { event, buffer, trackId } = e.data;
       if (event === 'write') {
@@ -25,18 +27,25 @@ class StreamProcessor extends AudioWorkletProcessor {
         this.currentTrackId = trackId;
         this.buffers.push({ samples: buffer, trackId });
       } else if (event === 'interrupt') {
-        // Mark current track as interrupted
+        const playingTrackId = this.currentBufferTrackId || this.lastPlayedTrackId || this.currentTrackId;
+        const wasPlaying = !!this.currentBuffer || this.buffers.length > 0;
+        // Mark both the playing and the last written track as interrupted
+        if (playingTrackId) {
+          this.interruptedTrackIds.add(playingTrackId);
+        }
         if (this.currentTrackId) {
           this.interruptedTrackIds.add(this.currentTrackId);
         }
         this.buffers = [];
         this.currentBuffer = null;
+        this.currentBufferTrackId = null;
         this.currentOffset = 0;
-        this.interrupted = true;
-        this.port.postMessage({ event: 'interrupted' });
-      } else if (event === 'clear') {
-        this.interruptedTrackIds.clear();
-        this.interrupted = false;
+        this.port.postMessage({
+          event: 'interrupted',
+          trackId: playingTrackId,
+          offset: playingTrackId ? (this.playedSamples[playingTrackId] || 0) : 0,
+          wasPlaying,
+        });
       }
     };
   }
@@ -53,6 +62,7 @@ class StreamProcessor extends AudioWorkletProcessor {
       if (!this.currentBuffer && this.buffers.length > 0) {
         const next = this.buffers.shift();
         this.currentBuffer = next.samples;
+        this.currentBufferTrackId = next.trackId;
         this.currentOffset = 0;
       }
       
@@ -74,10 +84,19 @@ class StreamProcessor extends AudioWorkletProcessor {
       
       this.currentOffset += toCopy;
       outputOffset += toCopy;
-      
+
+      // Track playback progress per track so interrupts can report
+      // how much of a track was actually heard
+      if (this.currentBufferTrackId) {
+        this.playedSamples[this.currentBufferTrackId] =
+          (this.playedSamples[this.currentBufferTrackId] || 0) + toCopy;
+        this.lastPlayedTrackId = this.currentBufferTrackId;
+      }
+
       // Move to next buffer if current is exhausted
       if (this.currentOffset >= this.currentBuffer.length) {
         this.currentBuffer = null;
+        this.currentBufferTrackId = null;
         this.currentOffset = 0;
       }
     }
@@ -94,12 +113,24 @@ export interface AudioStreamPlayerOptions {
   sinkId?: string;
 }
 
+export interface InterruptResult {
+  /** Track that was playing when the interrupt landed (null if nothing played yet). */
+  trackId: string | null;
+  /** Samples of that track actually played back so far. */
+  offsetSamples: number;
+  /** False when playback had already drained — the listener heard everything. */
+  wasPlaying: boolean;
+}
+
+const NOOP_INTERRUPT: InterruptResult = { trackId: null, offsetSamples: 0, wasPlaying: false };
+
 export class AudioStreamPlayer {
   private sampleRate: number;
   private sinkId: string | undefined;
   private context: AudioContext | null = null;
   private workletNode: AudioWorkletNode | null = null;
   private audioEl: HTMLAudioElement | null = null;
+  private pendingInterrupts: Array<(result: InterruptResult) => void> = [];
 
   constructor(options: AudioStreamPlayerOptions = {}) {
     this.sampleRate = options.sampleRate ?? 24000;
@@ -132,6 +163,17 @@ export class AudioStreamPlayer {
 
     // Create and connect the worklet node
     this.workletNode = new AudioWorkletNode(this.context, "stream-processor");
+
+    this.workletNode.port.onmessage = (e) => {
+      if (e.data?.event === "interrupted") {
+        const resolve = this.pendingInterrupts.shift();
+        resolve?.({
+          trackId: (e.data.trackId as string | undefined) ?? null,
+          offsetSamples: (e.data.offset as number | undefined) ?? 0,
+          wasPlaying: !!e.data.wasPlaying,
+        });
+      }
+    };
 
     // Route to a specific output device via MediaStream + HTMLAudioElement,
     // which has broader setSinkId support than AudioContext.setSinkId.
@@ -173,27 +215,28 @@ export class AudioStreamPlayer {
   }
 
   /**
-   * Interrupt current playback
+   * Interrupt current playback. Resolves with the playback position of the
+   * interrupted track so callers can truncate server-side conversation state.
    */
-  interrupt(): void {
-    if (this.workletNode) {
-      this.workletNode.port.postMessage({ event: "interrupt" });
+  interrupt(): Promise<InterruptResult> {
+    const node = this.workletNode;
+    if (!node) {
+      return Promise.resolve(NOOP_INTERRUPT);
     }
-  }
-
-  /**
-   * Clear interrupted track IDs to allow playback again
-   */
-  clearInterrupts(): void {
-    if (this.workletNode) {
-      this.workletNode.port.postMessage({ event: "clear" });
-    }
+    return new Promise((resolve) => {
+      this.pendingInterrupts.push(resolve);
+      node.port.postMessage({ event: "interrupt" });
+    });
   }
 
   /**
    * Disconnect and clean up resources
    */
   disconnect(): void {
+    // Settle outstanding interrupts — the worklet will never answer them.
+    for (const resolve of this.pendingInterrupts.splice(0)) {
+      resolve(NOOP_INTERRUPT);
+    }
     if (this.audioEl) {
       this.audioEl.pause();
       this.audioEl.srcObject = null;

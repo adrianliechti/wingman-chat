@@ -91,6 +91,17 @@ export class AudioRecorder {
    * Initialize microphone access and AudioWorklet
    */
   async begin(): Promise<void> {
+    try {
+      await this.beginInternal();
+    } catch (error) {
+      // Release anything partially acquired (mic stream, context) — a failed
+      // begin() must not leave the microphone indicator on.
+      await this.end().catch(() => {});
+      throw error;
+    }
+  }
+
+  private async beginInternal(): Promise<void> {
     // Get microphone access
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
