@@ -79,15 +79,11 @@ export function createBashInstance(files?: Record<string, { content: string; con
 }
 
 export function getBashCwd(instance: BashInstance): string {
-  const bashWithCwd = instance.bash as Bash & { getCwd?: () => string };
-  return bashWithCwd.getCwd?.() ?? SANDBOX_HOME;
+  return instance.bash.getCwd();
 }
 
 export function getBashEnv(instance: BashInstance): Record<string, string> {
-  const bashWithEnv = instance.bash as Bash & { getEnv?: () => Record<string, string> };
-  return (
-    bashWithEnv.getEnv?.() ?? { HOME: SANDBOX_HOME, PWD: SANDBOX_HOME, OLDPWD: SANDBOX_HOME, PATH: "/usr/bin:/bin" }
-  );
+  return instance.bash.getEnv();
 }
 
 export async function resolveBashCwd(memFs: InMemoryFs, cwd?: string | null): Promise<string> {
@@ -112,11 +108,8 @@ export async function executeBash(request: BashExecutionRequest): Promise<BashEx
   const { command } = request;
 
   try {
-    if (!singleton) {
-      singleton = createBashInstance();
-    }
-
-    const result = await singleton.bash.exec(command);
+    const { bash } = getSingleton();
+    const result = await bash.exec(command);
 
     return {
       success: result.exitCode === 0,
@@ -142,11 +135,6 @@ export function getSingleton(): BashInstance {
     singleton = createBashInstance();
   }
   return singleton;
-}
-
-/** Reset the singleton bash instance. */
-export function resetBash(): void {
-  singleton = null;
 }
 
 /**

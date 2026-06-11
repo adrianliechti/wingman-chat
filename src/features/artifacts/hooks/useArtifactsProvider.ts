@@ -7,6 +7,7 @@ import llmInstructionsText from "@/features/artifacts/prompts/llm.txt?raw";
 import officeInstructionsText from "@/features/artifacts/prompts/office.txt?raw";
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
+import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
 import { createFileTools, type FileData, type FileEntry, type WritableFileSource } from "@/shared/lib/file-tools";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
@@ -91,32 +92,28 @@ export function useArtifactsProvider(): ToolProvider | null {
             return [{ type: "text" as const, text: JSON.stringify({ error: "File system not available" }) }];
           }
 
-          try {
-            if (!activeFile) {
-              return [
-                {
-                  type: "text" as const,
-                  text: JSON.stringify({
-                    success: true,
-                    message: "No file is currently active",
-                    currentPath: null,
-                  }),
-                },
-              ];
-            }
-
+          if (!activeFile) {
             return [
               {
                 type: "text" as const,
                 text: JSON.stringify({
                   success: true,
-                  currentPath: activeFile,
+                  message: "No file is currently active",
+                  currentPath: null,
                 }),
               },
             ];
-          } catch {
-            return [{ type: "text" as const, text: JSON.stringify({ error: "Failed to get current path" }) }];
           }
+
+          return [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                success: true,
+                currentPath: activeFile,
+              }),
+            },
+          ];
         },
       },
       {
@@ -219,81 +216,85 @@ export function useArtifactsProvider(): ToolProvider | null {
           },
           required: [],
         },
-        function: async (args: Record<string, unknown>, context?: ToolContext) => {
-          const fs = fsRef.current;
-          const { code } = args;
-          const path = normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
-          // Models occasionally send `packages` as a bare string ("numpy") rather
-          // than an array; coerce defensively so `executeCode` never hits a
-          // non-array `.map`. (Imports are auto-detected anyway, so this is a hint.)
-          const packages = Array.isArray(args.packages)
-            ? args.packages.filter((p): p is string => typeof p === "string")
-            : typeof args.packages === "string"
-              ? [args.packages]
-              : undefined;
+        // The whole snapshot → execute → sync-back section runs under the
+        // sandbox lock: parallel tool calls would otherwise commit stale
+        // full snapshots over each other's outputs (deleteMissing!).
+        function: (args: Record<string, unknown>, context?: ToolContext) =>
+          withSandboxLock(async () => {
+            const fs = fsRef.current;
+            const { code } = args;
+            const path = normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
+            // Models occasionally send `packages` as a bare string ("numpy") rather
+            // than an array; coerce defensively so `executeCode` never hits a
+            // non-array `.map`. (Imports are auto-detected anyway, so this is a hint.)
+            const packages = Array.isArray(args.packages)
+              ? args.packages.filter((p): p is string => typeof p === "string")
+              : typeof args.packages === "string"
+                ? [args.packages]
+                : undefined;
 
-          try {
-            // Load artifact files into Pyodide's VFS
-            const artifactFiles: Record<string, { content: string; contentType?: string }> = {};
-            if (fs) {
-              const snapshot = await fs.getOverlaySnapshot();
-              for (const [path, file] of Object.entries(snapshot)) {
-                artifactFiles[path] = { content: file.content, contentType: file.contentType };
-              }
-            }
-
-            const hasCode = typeof code === "string" && code.trim().length > 0;
-            const hasPath = typeof path === "string" && path.length > 0;
-
-            if (!hasCode && !hasPath) {
-              return [{ type: "text" as const, text: "Error executing code: provide `code` to run." }];
-            }
-
-            // Prefer `code` when both are provided — some models tack on `path`
-            // thinking it's a working-directory hint.
-            let script = code as string;
-
-            if (!hasCode && hasPath) {
-              if (!fs) {
-                return [{ type: "text" as const, text: "Error executing code: file system not available." }];
+            try {
+              // Load artifact files into Pyodide's VFS
+              const artifactFiles: Record<string, { content: string; contentType?: string }> = {};
+              if (fs) {
+                const snapshot = await fs.getOverlaySnapshot();
+                for (const [path, file] of Object.entries(snapshot)) {
+                  artifactFiles[path] = { content: file.content, contentType: file.contentType };
+                }
               }
 
-              const file = await fs.getFile(path);
-              if (!file) {
-                return [{ type: "text" as const, text: `Error executing code: file not found: ${path}` }];
+              const hasCode = typeof code === "string" && code.trim().length > 0;
+              const hasPath = typeof path === "string" && path.length > 0;
+
+              if (!hasCode && !hasPath) {
+                return [{ type: "text" as const, text: "Error executing code: provide `code` to run." }];
               }
 
-              script = file.content;
+              // Prefer `code` when both are provided — some models tack on `path`
+              // thinking it's a working-directory hint.
+              let script = code as string;
+
+              if (!hasCode && hasPath) {
+                if (!fs) {
+                  return [{ type: "text" as const, text: "Error executing code: file system not available." }];
+                }
+
+                const file = await fs.getFile(path);
+                if (!file) {
+                  return [{ type: "text" as const, text: `Error executing code: file not found: ${path}` }];
+                }
+
+                script = file.content;
+              }
+
+              const result = await executeCode({
+                code: script,
+                packages,
+                files: artifactFiles,
+              });
+
+              if (!result.success) {
+                return [{ type: "text" as const, text: `Error executing code: ${result.error || "Unknown error"}` }];
+              }
+
+              // Sync changed files back to artifacts and surface the ones written
+              // so the chat can show them as chips on the assistant's response.
+              if (fs && result.files) {
+                const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
+                const written = [...summary.createdPaths, ...summary.updatedPaths];
+                if (written.length > 0) context?.setMeta?.({ artifactFiles: written });
+              }
+
+              return [{ type: "text" as const, text: result.output }];
+            } catch (error) {
+              return [
+                {
+                  type: "text" as const,
+                  text: `Code execution failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+              ];
             }
-
-            const result = await executeCode({
-              code: script,
-              packages,
-              files: artifactFiles,
-            });
-
-            if (!result.success) {
-              return [{ type: "text" as const, text: `Error executing code: ${result.error || "Unknown error"}` }];
-            }
-
-            // Sync changed files back to artifacts and surface the ones written
-            // so the chat can show them as chips on the assistant's response.
-            if (fs && result.files) {
-              const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
-              const written = [...summary.createdPaths, ...summary.updatedPaths];
-              if (written.length > 0) context?.setMeta?.({ artifactFiles: written });
-            }
-
-            return [{ type: "text" as const, text: result.output }];
-          } catch (error) {
-            return [
-              {
-                type: "text" as const,
-                text: `Code execution failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-              },
-            ];
-          }
-        },
+          }),
       },
       {
         name: "execute_bash_code",
@@ -310,69 +311,72 @@ export function useArtifactsProvider(): ToolProvider | null {
           },
           required: ["command"],
         },
-        function: async (args: Record<string, unknown>, context?: ToolContext) => {
-          const fs = fsRef.current;
-          const { command } = args;
+        // Runs under the sandbox lock for the same reason as the Python tool —
+        // and because the bash runtime itself is a singleton working tree.
+        function: (args: Record<string, unknown>, context?: ToolContext) =>
+          withSandboxLock(async () => {
+            const fs = fsRef.current;
+            const { command } = args;
 
-          if (typeof command !== "string" || !command.trim()) {
-            return [
-              {
-                type: "text" as const,
-                text: "Error: `command` is required (a non-empty bash command or script).",
-              },
-            ];
-          }
+            if (typeof command !== "string" || !command.trim()) {
+              return [
+                {
+                  type: "text" as const,
+                  text: "Error: `command` is required (a non-empty bash command or script).",
+                },
+              ];
+            }
 
-          try {
-            // Load artifact files into bash's InMemoryFs before execution
-            if (fs) {
+            try {
+              // Load artifact files into bash's InMemoryFs before execution.
+              // Reconcile even without an artifacts fs — the singleton persists
+              // across chats, so skipping this would leave a previous chat's
+              // files readable here.
               const { memFs } = getSingleton();
-              const snapshot = await fs.getOverlaySnapshot();
+              const snapshot = fs ? await fs.getOverlaySnapshot() : {};
               const artifactFiles = Object.entries(snapshot).map(([path, file]) => ({
                 path,
                 content: file.content,
                 contentType: file.contentType,
               }));
               await loadArtifactsIntoFs(memFs, artifactFiles);
+
+              const result = await executeBash({
+                command,
+              });
+
+              // Save changed files back to artifacts after execution and surface
+              // the ones written so the chat can show them as chips on the
+              // assistant's response.
+              if (fs) {
+                const currentFiles = await readFilesFromFs(memFs);
+
+                const summary = await fs.applyOverlaySnapshot(currentFiles, { deleteMissing: true });
+                const written = [...summary.createdPaths, ...summary.updatedPaths];
+                if (written.length > 0) context?.setMeta?.({ artifactFiles: written });
+              }
+
+              const parts: string[] = [];
+              if (result.stdout) parts.push(result.stdout);
+              if (result.stderr) parts.push(`stderr: ${result.stderr}`);
+              if (result.exitCode !== 0) parts.push(`exit code: ${result.exitCode}`);
+
+              const output = parts.join("\n") || "Command executed successfully (no output)";
+
+              if (!result.success) {
+                return [{ type: "text" as const, text: `Error: ${output}` }];
+              }
+
+              return [{ type: "text" as const, text: output }];
+            } catch (error) {
+              return [
+                {
+                  type: "text" as const,
+                  text: `Bash execution failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                },
+              ];
             }
-
-            const result = await executeBash({
-              command,
-            });
-
-            // Save changed files back to artifacts after execution and surface
-            // the ones written so the chat can show them as chips on the
-            // assistant's response.
-            if (fs) {
-              const { memFs } = getSingleton();
-              const currentFiles = await readFilesFromFs(memFs);
-
-              const summary = await fs.applyOverlaySnapshot(currentFiles, { deleteMissing: true });
-              const written = [...summary.createdPaths, ...summary.updatedPaths];
-              if (written.length > 0) context?.setMeta?.({ artifactFiles: written });
-            }
-
-            const parts: string[] = [];
-            if (result.stdout) parts.push(result.stdout);
-            if (result.stderr) parts.push(`stderr: ${result.stderr}`);
-            if (result.exitCode !== 0) parts.push(`exit code: ${result.exitCode}`);
-
-            const output = parts.join("\n") || "Command executed successfully (no output)";
-
-            if (!result.success) {
-              return [{ type: "text" as const, text: `Error: ${output}` }];
-            }
-
-            return [{ type: "text" as const, text: output }];
-          } catch (error) {
-            return [
-              {
-                type: "text" as const,
-                text: `Bash execution failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-              },
-            ];
-          }
-        },
+          }),
       },
     ];
 

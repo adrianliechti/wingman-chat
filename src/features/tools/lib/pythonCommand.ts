@@ -129,6 +129,18 @@ async function executePython(args: string[], ctx: CommandContext): Promise<ExecR
 
     if (result.files) {
       await syncResultFiles(ctx, result.files);
+
+      // Propagate deletions: a file that existed before the run but is absent
+      // from the result snapshot was removed by the Python code — without this
+      // it would survive in the bash FS and get resurrected on sync-back.
+      for (const path of Object.keys(files)) {
+        if (path in result.files) continue;
+        try {
+          await ctx.fs.rm(`${SANDBOX_HOME}${path}`, { force: true });
+        } catch {
+          // best effort
+        }
+      }
     }
 
     if (!result.success) {

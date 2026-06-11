@@ -75,10 +75,16 @@ async function renderFigure(manifest: PlotlyRenderManifest): Promise<PlotlyRende
     if (manifest.scale != null) opts.scale = manifest.scale;
 
     const dataUrl = await Plotly.toImage(div, opts);
-    Plotly.purge(div);
 
     return { path: manifest.file, data: decodeDataUrl(dataUrl, manifest.format) };
   } finally {
+    // Purge even when newPlot/toImage throws — plotly keeps internal state
+    // (event handlers, WebGL contexts) tied to the element otherwise.
+    try {
+      Plotly.purge(div);
+    } catch {
+      /* nothing to purge */
+    }
     div.remove();
   }
 }
