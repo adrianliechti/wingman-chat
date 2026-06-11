@@ -13,6 +13,9 @@ import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
+import { useDrawerAnimation } from "@/features/chat/hooks/useDrawerAnimation";
+import { useDrawerExclusivity } from "@/features/chat/hooks/useDrawerExclusivity";
+import { useDrawerResize } from "@/features/chat/hooks/useDrawerResize";
 import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import type { Skill } from "@/features/skills/lib/skillParser";
@@ -28,39 +31,6 @@ import { useBackground } from "@/shell/hooks/useBackground";
 import { useLayout } from "@/shell/hooks/useLayout";
 import { useNavigation } from "@/shell/hooks/useNavigation";
 import { useSidebar } from "@/shell/hooks/useSidebar";
-
-// Custom hook to handle drawer animation state
-function useDrawerAnimation(isOpen: boolean) {
-  const [isAnimating, setIsAnimating] = useState(isOpen);
-  const [shouldRender, setShouldRender] = useState(isOpen);
-
-  useEffect(() => {
-    let animationTimer: NodeJS.Timeout | undefined;
-    let removeTimer: NodeJS.Timeout | undefined;
-
-    if (isOpen) {
-      // Schedule render first, then animate
-      const renderTimer = setTimeout(() => {
-        setShouldRender(true);
-        animationTimer = setTimeout(() => setIsAnimating(true), 10);
-      }, 0);
-      return () => {
-        clearTimeout(renderTimer);
-        if (animationTimer) clearTimeout(animationTimer);
-      };
-    } else {
-      // Schedule animation removal first, then unmount
-      animationTimer = setTimeout(() => setIsAnimating(false), 0);
-      removeTimer = setTimeout(() => setShouldRender(false), 300);
-      return () => {
-        if (animationTimer) clearTimeout(animationTimer);
-        if (removeTimer) clearTimeout(removeTimer);
-      };
-    }
-  }, [isOpen]);
-
-  return { isAnimating, shouldRender };
-}
 
 // Memoized disclaimer component to avoid re-computing on every render
 const Disclaimer = () => {
@@ -196,31 +166,15 @@ export function ChatPage() {
   );
   const { showAppDrawer, hasAppContent, toggleAppDrawer, setShowAppDrawer } = useApp();
 
-  // Mutual exclusivity: closing one when the other opens
-  const prevShowAppDrawer = useRef(showAppDrawer);
-  const prevShowArtifactsDrawer = useRef(showArtifactsDrawer);
-  const prevShowAgentDrawer = useRef(showAgentDrawer);
-  useEffect(() => {
-    if (showAppDrawer && !prevShowAppDrawer.current) {
-      setShowArtifactsDrawer(false);
-      if (window.innerWidth < 768) setShowAgentDrawer(false);
-    }
-    prevShowAppDrawer.current = showAppDrawer;
-  }, [showAppDrawer, setShowArtifactsDrawer, setShowAgentDrawer]);
-  useEffect(() => {
-    if (showArtifactsDrawer && !prevShowArtifactsDrawer.current) {
-      setShowAppDrawer(false);
-      if (window.innerWidth < 768) setShowAgentDrawer(false);
-    }
-    prevShowArtifactsDrawer.current = showArtifactsDrawer;
-  }, [showArtifactsDrawer, setShowAppDrawer, setShowAgentDrawer]);
-  useEffect(() => {
-    if (showAgentDrawer && !prevShowAgentDrawer.current && window.innerWidth < 768) {
-      setShowArtifactsDrawer(false);
-      setShowAppDrawer(false);
-    }
-    prevShowAgentDrawer.current = showAgentDrawer;
-  }, [showAgentDrawer, setShowArtifactsDrawer, setShowAppDrawer]);
+  // Mutual exclusivity: closing one drawer when another opens
+  useDrawerExclusivity({
+    showApp: showAppDrawer,
+    setShowApp: setShowAppDrawer,
+    showArtifacts: showArtifactsDrawer,
+    setShowArtifacts: setShowArtifactsDrawer,
+    showAgent: showAgentDrawer,
+    setShowAgent: setShowAgentDrawer,
+  });
 
   // Only need backgroundImage to check if background should be shown
   const { backgroundImage } = useBackground();
@@ -235,153 +189,55 @@ export function ChatPage() {
   // Track if we're on mobile for drawer positioning
   const [isMobile, setIsMobile] = useState(typeof window !== "undefined" ? window.innerWidth < 768 : false);
 
-  // Artifacts drawer resize state (as vw percentage, desktop only)
-  const DEFAULT_ARTIFACTS_WIDTH_VW = 50;
-  const [artifactsWidthVw, setArtifactsWidthVw] = useState(DEFAULT_ARTIFACTS_WIDTH_VW);
-  const artifactsResizingRef = useRef(false);
-  const [isArtifactsResizing, setIsArtifactsResizing] = useState(false);
-
-  // App drawer resize state (as vw percentage, desktop only)
-  const DEFAULT_APP_WIDTH_VW = 50;
-  const [appWidthVw, setAppWidthVw] = useState(DEFAULT_APP_WIDTH_VW);
-  const appResizingRef = useRef(false);
-  const [isAppResizing, setIsAppResizing] = useState(false);
-
-  // Agent drawer resize state (as vw percentage, desktop only)
-  const DEFAULT_AGENT_WIDTH_VW = 20;
-  const [agentWidthVw, setAgentWidthVw] = useState(DEFAULT_AGENT_WIDTH_VW);
-  const agentResizingRef = useRef(false);
-  const [isAgentResizing, setIsAgentResizing] = useState(false);
-
-  const handleAgentResizeMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      agentResizingRef.current = true;
-      setIsAgentResizing(true);
-      document.body.classList.add("resizing");
-      const CLOSE_THRESHOLD_PX = 200;
-      const MIN_PANEL_PX = 280;
-      const MAX_PANEL_PX = 500;
-      // Capture the sibling drawer offset at drag start so resizing the agent
-      // never squeezes the chat panel below its minimum width.
-      const siblingOffset = showArtifactsDrawer
+  // Drawer resize state — each hook owns widthVw + isResizing + the mousedown handler.
+  // getSiblingOffsetPx is called once at drag-start to snapshot the combined sibling offset.
+  const {
+    widthVw: agentWidthVw,
+    setWidthVw: setAgentWidthVw,
+    isResizing: isAgentResizing,
+    handleMouseDown: handleAgentResizeMouseDown,
+  } = useDrawerResize({
+    defaultWidthVw: 20,
+    closeThresholdPx: 200,
+    minPanelPx: 280,
+    maxPanelPx: 500,
+    getSiblingOffsetPx: () =>
+      showArtifactsDrawer
         ? (artifactsWidthVw / 100) * window.innerWidth + 12
         : showAppDrawer
           ? (appWidthVw / 100) * window.innerWidth + 12
-          : 0;
-      let intendedWidthPx = (agentWidthVw / 100) * window.innerWidth;
-      const onMouseMove = (ev: MouseEvent) => {
-        if (!agentResizingRef.current) return;
-        const vw = window.innerWidth;
-        const minChatPx = 400;
-        const targetWidthPx = Math.min(vw - minChatPx - siblingOffset, MAX_PANEL_PX, vw - ev.clientX);
-        intendedWidthPx = Math.max(0, targetWidthPx);
-        const visibleWidthPx = Math.max(MIN_PANEL_PX, intendedWidthPx);
-        setAgentWidthVw((visibleWidthPx / vw) * 100);
-      };
-      const onMouseUp = () => {
-        agentResizingRef.current = false;
-        setIsAgentResizing(false);
-        document.body.classList.remove("resizing");
-        window.removeEventListener("mousemove", onMouseMove);
-        window.removeEventListener("mouseup", onMouseUp);
-        if (intendedWidthPx < CLOSE_THRESHOLD_PX) {
-          setShowAgentDrawer(false);
-          setTimeout(() => setAgentWidthVw(DEFAULT_AGENT_WIDTH_VW), 300);
-        }
-      };
-      window.addEventListener("mousemove", onMouseMove);
-      window.addEventListener("mouseup", onMouseUp);
-    },
-    [agentWidthVw, showArtifactsDrawer, artifactsWidthVw, showAppDrawer, appWidthVw, setShowAgentDrawer],
-  );
+          : 0,
+    setShow: setShowAgentDrawer,
+  });
 
-  const handleAppResizeMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      appResizingRef.current = true;
-      setIsAppResizing(true);
-      document.body.classList.add("resizing");
-      // Capture the agent drawer state at drag start — it won't change mid-drag.
-      // agent panel width (px) + 0.75rem (12px) app gap = total offset.
-      // When the agent drawer is hidden the app drawer is flush to the right (right: 0),
-      // so there is no offset to account for.
-      const agentOffset = showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth + 12 : 0;
-      const CLOSE_THRESHOLD_PX = 120;
-      let currentWidthVw = appWidthVw;
-      const onMouseMove = (ev: MouseEvent) => {
-        if (!appResizingRef.current) return;
-        const vw = window.innerWidth;
-        const minChatPx = 400;
-        const panelRightEdge = vw - agentOffset;
-        const newWidthPx = Math.min(panelRightEdge - minChatPx, panelRightEdge - ev.clientX);
-        const newVw = Math.max(0, (newWidthPx / vw) * 100);
-        currentWidthVw = newVw;
-        setAppWidthVw(newVw);
-      };
-      const onMouseUp = () => {
-        appResizingRef.current = false;
-        setIsAppResizing(false);
-        document.body.classList.remove("resizing");
-        window.removeEventListener("mousemove", onMouseMove);
-        window.removeEventListener("mouseup", onMouseUp);
-        if ((currentWidthVw / 100) * window.innerWidth < CLOSE_THRESHOLD_PX) {
-          setShowAppDrawer(false);
-          setTimeout(() => setAppWidthVw(DEFAULT_APP_WIDTH_VW), 300);
-        }
-      };
-      window.addEventListener("mousemove", onMouseMove);
-      window.addEventListener("mouseup", onMouseUp);
-    },
-    [showAgentDrawer, agentWidthVw, appWidthVw, setShowAppDrawer],
-  );
+  const {
+    widthVw: appWidthVw,
+    setWidthVw: setAppWidthVw,
+    isResizing: isAppResizing,
+    handleMouseDown: handleAppResizeMouseDown,
+  } = useDrawerResize({
+    defaultWidthVw: 50,
+    closeThresholdPx: 120,
+    getSiblingOffsetPx: () => (showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth + 12 : 0),
+    setShow: setShowAppDrawer,
+  });
 
-  const handleArtifactsResizeMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      artifactsResizingRef.current = true;
-      setIsArtifactsResizing(true);
-      document.body.classList.add("resizing");
-      // Capture the agent drawer state at drag start — it won't change mid-drag.
-      // agent panel width (px) + 0.75rem (12px) artifacts gap = total offset.
-      // When the agent drawer is hidden the artifacts drawer is flush to the right (right: 0),
-      // so there is no offset to account for.
-      const agentOffset = showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth + 12 : 0;
-      const CLOSE_THRESHOLD_PX = 220;
-      // Inner panels need ~320px (200 left column + 120 files browser) to stay usable.
-      const MIN_PANEL_PX = 360;
-      let intendedWidthPx = (artifactsWidthVw / 100) * window.innerWidth;
-      const onMouseMove = (ev: MouseEvent) => {
-        if (!artifactsResizingRef.current) return;
-        const vw = window.innerWidth;
-        const minChatPx = 400;
-        const panelRightEdge = vw - agentOffset;
-        const targetWidthPx = Math.min(panelRightEdge - minChatPx, panelRightEdge - ev.clientX);
-        intendedWidthPx = Math.max(0, targetWidthPx);
-        // Clamp the visible width to a minimum so content stays usable while dragging,
-        // but keep `intendedWidthPx` raw so a drag past the close threshold still closes.
-        const visibleWidthPx = Math.max(MIN_PANEL_PX, intendedWidthPx);
-        setArtifactsWidthVw((visibleWidthPx / vw) * 100);
-      };
-      const onMouseUp = () => {
-        artifactsResizingRef.current = false;
-        setIsArtifactsResizing(false);
-        document.body.classList.remove("resizing");
-        window.removeEventListener("mousemove", onMouseMove);
-        window.removeEventListener("mouseup", onMouseUp);
-        if (intendedWidthPx < CLOSE_THRESHOLD_PX) {
-          setShowArtifactsDrawer(false);
-          setTimeout(() => setArtifactsWidthVw(DEFAULT_ARTIFACTS_WIDTH_VW), 300);
-        }
-      };
-      window.addEventListener("mousemove", onMouseMove);
-      window.addEventListener("mouseup", onMouseUp);
-    },
-    [showAgentDrawer, agentWidthVw, artifactsWidthVw, setShowArtifactsDrawer],
-  );
+  const {
+    widthVw: artifactsWidthVw,
+    setWidthVw: setArtifactsWidthVw,
+    isResizing: isArtifactsResizing,
+    handleMouseDown: handleArtifactsResizeMouseDown,
+  } = useDrawerResize({
+    defaultWidthVw: 50,
+    closeThresholdPx: 220,
+    minPanelPx: 360,
+    getSiblingOffsetPx: () => (showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth + 12 : 0),
+    setShow: setShowArtifactsDrawer,
+  });
 
   // When agent and a sibling panel (artifacts or app) are both open on desktop,
-  // clamp the agent width so the chat area stays at or above its 400px minimum.
+  // ensure the chat area stays at or above its 400px minimum by clamping both
+  // the agent width and the sibling width as needed.
   useEffect(() => {
     const siblingOpen = showArtifactsDrawer || showAppDrawer;
     if (!showAgentDrawer || !siblingOpen || window.innerWidth < 768) return;
@@ -389,17 +245,40 @@ export function ChatPage() {
     const minChatPx = 400;
     const MIN_AGENT_PX = 280;
     const MAX_AGENT_PX = 500;
-    const siblingWidthVw = showAppDrawer ? appWidthVw : artifactsWidthVw;
-    const siblingPx = (siblingWidthVw / 100) * vw;
     // combined gap: 0.75rem (sibling) + 0.75rem (agent) = 1.5rem ≈ 24px
     const gapPx = 24;
-    const maxAgentPx = vw - minChatPx - siblingPx - gapPx;
-    const currentAgentPx = (agentWidthVw / 100) * vw;
-    if (currentAgentPx > maxAgentPx) {
-      const clampedPx = Math.min(MAX_AGENT_PX, Math.max(MIN_AGENT_PX, maxAgentPx));
-      setAgentWidthVw((clampedPx / vw) * 100);
+    const agentPx = (agentWidthVw / 100) * vw;
+    const siblingWidthVw = showAppDrawer ? appWidthVw : artifactsWidthVw;
+    const setSiblingWidthVw = showAppDrawer ? setAppWidthVw : setArtifactsWidthVw;
+    const siblingPx = (siblingWidthVw / 100) * vw;
+
+    const totalUsed = agentPx + siblingPx + gapPx;
+    const available = vw - minChatPx;
+
+    if (totalUsed > available) {
+      // First try to shrink agent down to its minimum
+      const agentTarget = Math.min(MAX_AGENT_PX, Math.max(MIN_AGENT_PX, agentPx));
+      const remainingForSibling = available - agentTarget - gapPx;
+
+      if (remainingForSibling < siblingPx) {
+        // Sibling needs to shrink too
+        setSiblingWidthVw((Math.max(0, remainingForSibling) / vw) * 100);
+      }
+      if (agentPx > agentTarget) {
+        setAgentWidthVw((agentTarget / vw) * 100);
+      }
     }
-  }, [showArtifactsDrawer, showAppDrawer, showAgentDrawer, agentWidthVw, artifactsWidthVw, appWidthVw]);
+  }, [
+    showArtifactsDrawer,
+    showAppDrawer,
+    showAgentDrawer,
+    agentWidthVw,
+    artifactsWidthVw,
+    appWidthVw,
+    setAgentWidthVw,
+    setArtifactsWidthVw,
+    setAppWidthVw,
+  ]);
 
   // Sidebar integration (now only controls visibility)
   const { setSidebarContent, showSidebar } = useSidebar();

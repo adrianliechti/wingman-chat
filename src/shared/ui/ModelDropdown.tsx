@@ -3,11 +3,7 @@ import { Check, Mic } from "lucide-react";
 import { Fragment, useRef } from "react";
 import { flushSync } from "react-dom";
 import type { Model } from "@/shared/types/chat";
-
-// ─── Panel class (mirrors DropdownMenu) ──────────────────────────────────────
-
-const PANEL_CLASS =
-  "z-50 rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 p-1 overflow-auto transition duration-100 ease-out data-closed:scale-95 data-closed:opacity-0";
+import { PANEL_CLASS } from "./menuStyles";
 
 interface ModelDropdownProps {
   models: Model[];

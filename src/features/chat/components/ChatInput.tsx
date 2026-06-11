@@ -18,6 +18,7 @@ import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import { processUploadedFile } from "@/features/artifacts/lib/artifacts";
 import { useChat } from "@/features/chat/hooks/useChat";
+import { useFileAttachments } from "@/features/chat/hooks/useFileAttachments";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
@@ -26,9 +27,9 @@ import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { cn } from "@/shared/lib/cn";
-import { acceptTypes, canConvert } from "@/shared/lib/convert";
+import { acceptTypes } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
-import { lookupContentType, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
+import { readAsDataURL } from "@/shared/lib/utils";
 import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
@@ -82,13 +83,16 @@ export function ChatInput() {
   const [transcribingContent, setTranscribingContent] = useState(false);
   const [voiceTextInput, setVoiceTextInput] = useState("");
 
-  const [attachments, setAttachments] = useState<Content[]>([]);
-  // Documents attached in the chat input are uploaded into the artifacts
-  // workspace instead of being extracted to inline text — but the write is
-  // deferred until send, so we just hold the files here. Removing one (or never
-  // sending) leaves nothing behind.
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
+  const {
+    attachments,
+    pendingFiles,
+    extractingAttachments,
+    setExtractingAttachments,
+    setPendingFiles,
+    handleFiles,
+    clearAttachments,
+    removeAttachment,
+  } = useFileAttachments({ visionFiles: config.vision?.files ?? [], artifactsAvailable });
 
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
 
@@ -195,63 +199,6 @@ export function ChatInput() {
     setModelOverrides(model?.tools?.enabled || [], model?.tools?.disabled || []);
   }, [model?.tools?.enabled, model?.tools?.disabled, setModelOverrides]);
 
-  const handleFiles = useCallback(
-    async (files: File[]) => {
-      const visionFiles = config.vision?.files ?? [];
-
-      // Normalize MIME types up front (browsers sometimes omit/guess them), then
-      // split into vision images (sent inline) and documents (→ artifacts).
-      const imageFiles: File[] = [];
-      const docFiles: File[] = [];
-      for (const file of files) {
-        const effectiveType =
-          file.type && file.type !== "application/octet-stream"
-            ? file.type
-            : (lookupContentType(file.name.split(".").pop() ?? "") ?? file.type);
-        const effectiveFile = effectiveType !== file.type ? new File([file], file.name, { type: effectiveType }) : file;
-
-        // Documents require the artifacts workspace; without it, only images
-        // are accepted in chat (the file picker hides doc types too).
-        if (visionFiles.includes(effectiveType)) imageFiles.push(effectiveFile);
-        else if (artifactsAvailable && canConvert(effectiveFile)) docFiles.push(effectiveFile);
-      }
-
-      // Documents: hold them pending until send. The actual write into the
-      // workspace happens at send time — nothing is persisted if the attachment
-      // is removed or never sent. Artifacts is always active when available, so
-      // the model already has the tools.
-      if (docFiles.length > 0) {
-        setPendingFiles((prev) => [...prev, ...docFiles]);
-      }
-
-      // Images: resize/encode now (async) — shown via the extracting spinner.
-      if (imageFiles.length > 0) {
-        const ids = imageFiles.map((file, index) => `${file.name}-${index}`);
-        setExtractingAttachments((prev) => new Set([...prev, ...ids]));
-
-        const settled = await Promise.allSettled(
-          imageFiles.map(async (file) => {
-            const blob = await resizeImageBlob(file, 1920, 1920);
-            const dataUrl = await readAsDataURL(blob);
-            return { type: "image", name: file.name, data: dataUrl } as ImageContent;
-          }),
-        );
-
-        const valid = settled
-          .filter((r): r is PromiseFulfilledResult<ImageContent> => r.status === "fulfilled")
-          .map((r) => r.value);
-
-        setAttachments((prev) => [...prev, ...valid]);
-        setExtractingAttachments((prev) => {
-          const next = new Set(prev);
-          for (const id of ids) next.delete(id);
-          return next;
-        });
-      }
-    },
-    [config.vision?.files, artifactsAvailable],
-  );
-
   const isDragging = useDropZone(containerRef, handleFiles);
 
   // Force layout recalculation on mount to fix initial sizing issues
@@ -347,11 +294,19 @@ export function ChatInput() {
 
         sendMessage(message, undefined, artifactFiles.length > 0 ? artifactFiles : undefined);
         setContent("");
-        setAttachments([]);
-        setPendingFiles([]);
+        clearAttachments();
       }
     },
-    [isResponding, content, attachments, pendingFiles, isContinuousCaptureActive, captureFrame, sendMessage],
+    [
+      isResponding,
+      content,
+      attachments,
+      pendingFiles,
+      isContinuousCaptureActive,
+      captureFrame,
+      sendMessage,
+      clearAttachments,
+    ],
   );
 
   const handleAttachmentClick = useCallback(() => {
@@ -385,7 +340,7 @@ export function ChatInput() {
         });
       }
     },
-    [handleFiles],
+    [handleFiles, setExtractingAttachments],
   );
 
   const handleContinuousCaptureToggle = useCallback(async () => {
@@ -411,14 +366,20 @@ export function ChatInput() {
     [handleFiles],
   );
 
-  const handleRemoveAttachment = useCallback((index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  const handleRemoveAttachment = useCallback(
+    (index: number) => {
+      removeAttachment(index);
+    },
+    [removeAttachment],
+  );
 
-  const handleRemovePendingFile = useCallback((index: number) => {
-    // Nothing is written to artifacts until send, so removing just drops it.
-    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  const handleRemovePendingFile = useCallback(
+    (index: number) => {
+      // Nothing is written to artifacts until send, so removing just drops it.
+      setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+    },
+    [setPendingFiles],
+  );
 
   const handleContentChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);

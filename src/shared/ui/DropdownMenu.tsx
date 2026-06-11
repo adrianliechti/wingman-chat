@@ -1,19 +1,7 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { Check } from "lucide-react";
 import type { ReactNode } from "react";
-
-// ─── Panel ───────────────────────────────────────────────────────────────────
-
-const PANEL_CLASS =
-  "z-50 rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 p-1 overflow-auto transition duration-100 ease-out data-closed:scale-95 data-closed:opacity-0";
-
-// ─── Item base classes ────────────────────────────────────────────────────────
-
-const ITEM_CLASS =
-  "group flex w-full items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-800 dark:text-neutral-200 transition-colors data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 text-left";
-
-const ITEM_DESTRUCTIVE_CLASS =
-  "group flex w-full items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-600 dark:text-red-400 transition-colors data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-left";
+import { ITEM_CLASS, ITEM_DESTRUCTIVE_CLASS, PANEL_CLASS } from "./menuStyles";
 
 // ─── Divider ─────────────────────────────────────────────────────────────────
 
