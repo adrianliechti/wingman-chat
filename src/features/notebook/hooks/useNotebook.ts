@@ -6,6 +6,7 @@ import { convertFileToText } from "@/shared/lib/convert";
 import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { Content } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
+import { compactAgentMessage } from "../lib/chat-history";
 import * as store from "../lib/opfs-notebook";
 import {
   type GenerateContext,
@@ -85,6 +86,13 @@ async function withScreenWakeLock<T>(task: Promise<T>): Promise<T> {
 }
 
 const filenameSchema = z.object({ filename: z.string() }).strict();
+
+/**
+ * Conventional source the chat maintains to capture task-shaping decisions
+ * (audience, scope, tone, focus). Its content is appended as user
+ * instructions to every output generation.
+ */
+export const BRIEF_SOURCE_PATH = "brief.md";
 
 /** Placeholders the UI passes when the user didn't provide a real name. */
 export const PLACEHOLDER_SOURCE_NAMES = {
@@ -534,7 +542,12 @@ export function useNotebook(notebookId?: string) {
 
       try {
         const tools = [
-          ...createSourceTools(() => sourcesRef.current, { onCreate: (path, content) => addTextSource(path, content) }),
+          ...createSourceTools(() => sourcesRef.current, {
+            onCreate: (path, content) => addTextSource(path, content),
+            onWrite: writeSource,
+            onRename: renameSource,
+            onDelete: deleteSource,
+          }),
           ...createSourceExecTools(() => sourcesRef.current, {
             onWrite: writeSource,
           }),
@@ -547,16 +560,19 @@ export function useNotebook(notebookId?: string) {
           agentName: "notebook",
           onStream: (content) => setStreamingContent(content),
         });
-        const response = result[result.length - 1];
 
         setStreamingContent(null);
 
-        const assistantMsg: NotebookMessage = {
-          ...response,
-          timestamp: new Date().toISOString(),
-        };
+        // Keep the whole agent run (tool calls + results, compacted) so the
+        // next turn remembers what was read and edited — without this the
+        // model re-surveys the sources on every message and multi-turn
+        // refinement loses the prior edits from context.
+        const stamp = new Date().toISOString();
+        const agentMessages: NotebookMessage[] = result
+          .slice(conversation.length)
+          .map((m) => ({ ...compactAgentMessage(m), timestamp: stamp }));
 
-        const finalMessages = [...newMessages, assistantMsg];
+        const finalMessages = [...newMessages, ...agentMessages];
         setMessages(finalMessages);
         await store.saveMessages(notebook.id, finalMessages);
         store.touchNotebook(notebook.id);
@@ -585,7 +601,7 @@ export function useNotebook(notebookId?: string) {
         setIsChatting(false);
       }
     },
-    [notebook, messages, client, getModel, isChatting, addTextSource, writeSource],
+    [notebook, messages, client, getModel, isChatting, addTextSource, writeSource, renameSource, deleteSource],
   );
 
   // ── Outputs ────────────────────────────────────────────────────────
@@ -607,6 +623,15 @@ export function useNotebook(notebookId?: string) {
 
       const notebookId = notebook.id;
 
+      // The notebook brief (maintained via chat) feeds every generation as
+      // user instructions, ahead of any one-shot instructions from the dialog.
+      const brief = sourcesRef.current
+        .find((s) => s.path === BRIEF_SOURCE_PATH && !s.content.startsWith("data:"))
+        ?.content.trim();
+      const effectiveOptions: BuildInstructionsOptions | undefined = brief
+        ? { ...options, instructions: [brief, options?.instructions].filter(Boolean).join("\n\n") }
+        : options;
+
       // Mirror of the in-flight output including everything the generator
       // reported via onProgress — the catch below persists it so a failure
       // keeps expensive partial work (e.g. a podcast script).
@@ -614,7 +639,7 @@ export function useNotebook(notebookId?: string) {
 
       const task: Promise<Partial<NotebookOutput>> = withScreenWakeLock(
         (async () => {
-          const instructions = await buildInstructions(type, styleId, options);
+          const instructions = await buildInstructions(type, styleId, effectiveOptions);
           const ctx: GenerateContext = {
             client,
             model: getModel(),
@@ -633,7 +658,9 @@ export function useNotebook(notebookId?: string) {
             case "infographic":
               return generateInfographic(ctx);
             case "slides":
-              return options?.slideMode === "images" ? generateImageSlides(ctx) : generateHtmlSlides(ctx);
+              return options?.slideMode === "images"
+                ? generateImageSlides(ctx)
+                : generateHtmlSlides(ctx, styleId, effectiveOptions);
             case "quiz":
               return generateQuiz(ctx);
             case "mindmap":

@@ -69,6 +69,16 @@ export interface SourceToolsOptions {
    * downstream.
    */
   onCreate?: (path: string, content: string) => Promise<string>;
+  /**
+   * Optional callback that overwrites an existing source's content (used to
+   * persist `source_edit` results). Receives the source's current
+   * contentType so binary/text handling stays stable.
+   */
+  onWrite?: (path: string, content: string, contentType?: string) => Promise<void>;
+  /** Optional callback to rename/move a source. Enables `source_rename`. */
+  onRename?: (oldPath: string, newPath: string) => Promise<void>;
+  /** Optional callback to delete a source. Enables `source_delete`. */
+  onDelete?: (path: string) => Promise<void>;
 }
 
 /**
@@ -83,6 +93,13 @@ export function createSourceTools(getSources: () => File[], options?: SourceTool
   const tools = createReadOnlyFileTools(createSourceAdapter(getSources), {
     namespace: "source_",
   });
+
+  const ok = (message: string, extra?: Record<string, unknown>): { type: "text"; text: string }[] => [
+    { type: "text" as const, text: JSON.stringify({ success: true, message, ...extra }) },
+  ];
+  const fail = (error: string): { type: "text"; text: string }[] => [
+    { type: "text" as const, text: JSON.stringify({ error }) },
+  ];
 
   if (options?.onCreate) {
     const onCreate = options.onCreate;
@@ -132,6 +149,123 @@ export function createSourceTools(getSources: () => File[], options?: SourceTool
               }),
             },
           ];
+        }
+      },
+    });
+  }
+
+  if (options?.onWrite) {
+    const onWrite = options.onWrite;
+    tools.push({
+      name: "source_edit",
+      description:
+        "Make a targeted edit to an existing text source by replacing an exact snippet. Prefer this over source_create when refining an existing file — only the changed snippet needs to be written. `find` must match the current source text exactly (including whitespace); it must be unique in the file unless replace_all is true.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Path of the source to edit (e.g. `notes.md`)." },
+          find: { type: "string", description: "Exact text to replace." },
+          replace: { type: "string", description: "Replacement text (empty string deletes the matched text)." },
+          replace_all: {
+            type: "boolean",
+            description: "Replace every occurrence instead of requiring a unique match (default false).",
+          },
+        },
+        required: ["path", "find", "replace"],
+      },
+      function: async (args: Record<string, unknown>) => {
+        const path = ((args.path as string) ?? "").trim();
+        const find = (args.find as string) ?? "";
+        const replace = typeof args.replace === "string" ? (args.replace as string) : "";
+        const replaceAll = args.replace_all === true;
+
+        if (!path) return fail("path is required");
+        if (!find) return fail("find is required");
+
+        const source = getSources().find((s) => s.path === path);
+        if (!source) return fail(`No source at ${path} — call source_list_files to see what exists.`);
+        if (source.content.startsWith("data:")) return fail(`${path} is a binary source and cannot be text-edited.`);
+
+        const first = source.content.indexOf(find);
+        if (first < 0) {
+          return fail(
+            `\`find\` text not found in ${path}. Earlier reads may be outdated — call source_read_file and retry with the exact current text.`,
+          );
+        }
+        if (!replaceAll && source.content.indexOf(find, first + 1) >= 0) {
+          return fail(
+            `\`find\` matches multiple places in ${path}. Provide a longer, unique snippet or set replace_all: true.`,
+          );
+        }
+
+        const next = replaceAll
+          ? source.content.split(find).join(replace)
+          : source.content.slice(0, first) + replace + source.content.slice(first + find.length);
+
+        try {
+          await onWrite(path, next, source.contentType);
+          return ok(`Edited ${path} (${next.length} chars)`, { path });
+        } catch (err) {
+          return fail(err instanceof Error ? err.message : "Failed to edit source");
+        }
+      },
+    });
+  }
+
+  if (options?.onRename) {
+    const onRename = options.onRename;
+    tools.push({
+      name: "source_rename",
+      description:
+        "Rename or move a source to a new path. The original extension is preserved when the new path has none.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Current source path." },
+          new_path: { type: "string", description: "New source path (e.g. `archive/old-notes.md`)." },
+        },
+        required: ["path", "new_path"],
+      },
+      function: async (args: Record<string, unknown>) => {
+        const path = ((args.path as string) ?? "").trim();
+        const newPath = ((args.new_path as string) ?? "").trim();
+        if (!path || !newPath) return fail("path and new_path are required");
+        if (!getSources().some((s) => s.path === path)) {
+          return fail(`No source at ${path} — call source_list_files to see what exists.`);
+        }
+        try {
+          await onRename(path, newPath);
+          return ok(`Renamed ${path} → ${newPath}`);
+        } catch (err) {
+          return fail(err instanceof Error ? err.message : "Failed to rename source");
+        }
+      },
+    });
+  }
+
+  if (options?.onDelete) {
+    const onDelete = options.onDelete;
+    tools.push({
+      name: "source_delete",
+      description: "Delete a source from the notebook. This cannot be undone — only delete when the user asked for it.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Path of the source to delete." },
+        },
+        required: ["path"],
+      },
+      function: async (args: Record<string, unknown>) => {
+        const path = ((args.path as string) ?? "").trim();
+        if (!path) return fail("path is required");
+        if (!getSources().some((s) => s.path === path)) {
+          return fail(`No source at ${path} — call source_list_files to see what exists.`);
+        }
+        try {
+          await onDelete(path);
+          return ok(`Deleted ${path}`);
+        } catch (err) {
+          return fail(err instanceof Error ? err.message : "Failed to delete source");
         }
       },
     });
