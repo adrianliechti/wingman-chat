@@ -1,4 +1,4 @@
-import { MoreVertical, PanelRightOpen, Pencil, Search, Trash, X } from "lucide-react";
+import { Download, MoreVertical, PanelRightOpen, Pencil, Search, Trash, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/shared/lib/cn";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
@@ -12,9 +12,20 @@ interface NotebookSidebarProps {
   onDelete: (id: string) => void;
   onRename: (id: string, customTitle: string | undefined) => void;
   onNew: () => void;
+  onExport: (id: string) => void;
+  onImport: (file: File) => void;
 }
 
-export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRename, onNew }: NotebookSidebarProps) {
+export function NotebookSidebar({
+  notebooks,
+  activeId,
+  onSelect,
+  onDelete,
+  onRename,
+  onNew,
+  onExport,
+  onImport,
+}: NotebookSidebarProps) {
   const { setShowSidebar } = useSidebar();
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
@@ -22,6 +33,16 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
   const [renameValue, setRenameValue] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImportFile = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) onImport(file);
+      e.target.value = "";
+    },
+    [onImport],
+  );
 
   useEffect(() => {
     if (showSearch) {
@@ -121,6 +142,7 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
 
   return (
     <div className="flex flex-col h-full w-full bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md">
+      <input ref={importInputRef} type="file" accept=".zip" className="hidden" onChange={handleImportFile} />
       {/* Header */}
       <div className="flex items-center px-2 py-2 md:px-1 md:py-1 shrink-0 h-14 md:h-10 gap-1">
         {showSearch ? (
@@ -146,6 +168,21 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
           </div>
         ) : (
           <>
+            <DropdownMenu
+              anchor="bottom start"
+              trigger={
+                <MenuButton
+                  title="More"
+                  className="shrink-0 p-2 md:p-1.5 text-neutral-500 dark:text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/20 rounded transition-all duration-200"
+                >
+                  <MoreVertical size={20} />
+                </MenuButton>
+              }
+            >
+              <DropdownMenuItem icon={<Upload size={14} />} onClick={() => importInputRef.current?.click()}>
+                Import notebook
+              </DropdownMenuItem>
+            </DropdownMenu>
             <div className="flex-1" />
             <div className="flex items-center gap-2 md:gap-1 shrink-0">
               <button
@@ -251,6 +288,9 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
                     >
                       <DropdownMenuItem icon={<Pencil size={14} />} onClick={() => startRename(notebook)}>
                         Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuItem icon={<Download size={14} />} onClick={() => onExport(notebook.id)}>
+                        Export
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         icon={<Trash size={14} />}
