@@ -1,7 +1,7 @@
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import { MoreVertical, PanelRightOpen, Pencil, Search, Trash, X } from "lucide-react";
+import { Download, MoreVertical, PanelRightOpen, Pencil, Search, Trash, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/shared/lib/cn";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { useSidebar } from "@/shell/hooks/useSidebar";
 import type { Notebook } from "../types/notebook";
 
@@ -12,9 +12,20 @@ interface NotebookSidebarProps {
   onDelete: (id: string) => void;
   onRename: (id: string, customTitle: string | undefined) => void;
   onNew: () => void;
+  onExport: (id: string) => void;
+  onImport: (file: File) => void;
 }
 
-export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRename, onNew }: NotebookSidebarProps) {
+export function NotebookSidebar({
+  notebooks,
+  activeId,
+  onSelect,
+  onDelete,
+  onRename,
+  onNew,
+  onExport,
+  onImport,
+}: NotebookSidebarProps) {
   const { setShowSidebar } = useSidebar();
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
@@ -22,6 +33,16 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
   const [renameValue, setRenameValue] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImportFile = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) onImport(file);
+      e.target.value = "";
+    },
+    [onImport],
+  );
 
   useEffect(() => {
     if (showSearch) {
@@ -121,6 +142,7 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
 
   return (
     <div className="flex flex-col h-full w-full bg-white/80 dark:bg-neutral-950/90 backdrop-blur-md">
+      <input ref={importInputRef} type="file" accept=".zip" className="hidden" onChange={handleImportFile} />
       {/* Header */}
       <div className="flex items-center px-2 py-2 md:px-1 md:py-1 shrink-0 h-14 md:h-10 gap-1">
         {showSearch ? (
@@ -146,6 +168,21 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
           </div>
         ) : (
           <>
+            <DropdownMenu
+              anchor="bottom start"
+              trigger={
+                <MenuButton
+                  title="More"
+                  className="shrink-0 p-2 md:p-1.5 text-neutral-500 dark:text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/20 rounded transition-all duration-200"
+                >
+                  <MoreVertical size={20} />
+                </MenuButton>
+              }
+            >
+              <DropdownMenuItem icon={<Upload size={14} />} onClick={() => importInputRef.current?.click()}>
+                Import notebook
+              </DropdownMenuItem>
+            </DropdownMenu>
             <div className="flex-1" />
             <div className="flex items-center gap-2 md:gap-1 shrink-0">
               <button
@@ -175,37 +212,31 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
               {/* Category header */}
               <div className="flex items-center justify-between pl-1.5 pr-0.5 py-0.5 text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wide group/section">
                 <span>{group.category}</span>
-                <Menu>
-                  <MenuButton
-                    className="opacity-0 group-hover/section:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
-                    onClick={(e) => e.stopPropagation()}
+                <DropdownMenu
+                  anchor="bottom end"
+                  trigger={
+                    <MenuButton
+                      className="opacity-0 group-hover/section:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreVertical size={16} />
+                    </MenuButton>
+                  }
+                >
+                  <DropdownMenuItem
+                    icon={<Trash size={14} />}
+                    destructive
+                    onClick={() => {
+                      const hasActive = group.items.some((n) => n.id === activeId);
+                      group.items.forEach((n) => {
+                        onDelete(n.id);
+                      });
+                      if (hasActive) onNew();
+                    }}
                   >
-                    <MoreVertical size={16} />
-                  </MenuButton>
-                  <MenuItems
-                    modal={false}
-                    transition
-                    anchor="bottom end"
-                    className="w-40 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
-                  >
-                    <MenuItem>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const hasActive = group.items.some((n) => n.id === activeId);
-                          group.items.forEach((n) => {
-                            onDelete(n.id);
-                          });
-                          if (hasActive) onNew();
-                        }}
-                        className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
-                      >
-                        <Trash size={14} />
-                        Delete All
-                      </button>
-                    </MenuItem>
-                  </MenuItems>
-                </Menu>
+                    Delete All
+                  </DropdownMenuItem>
+                </DropdownMenu>
               </div>
 
               {/* Items */}
@@ -244,45 +275,35 @@ export function NotebookSidebar({ notebooks, activeId, onSelect, onDelete, onRen
                     </button>
                   )}
                   {renamingId !== notebook.id && (
-                    <Menu>
-                      <MenuButton
-                        className="absolute right-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
-                        onClick={(e) => e.stopPropagation()}
+                    <DropdownMenu
+                      anchor="bottom end"
+                      trigger={
+                        <MenuButton
+                          className="absolute right-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 shrink-0 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 p-0 rounded hover:bg-white/30 dark:hover:bg-black/20"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreVertical size={16} />
+                        </MenuButton>
+                      }
+                    >
+                      <DropdownMenuItem icon={<Pencil size={14} />} onClick={() => startRename(notebook)}>
+                        Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuItem icon={<Download size={14} />} onClick={() => onExport(notebook.id)}>
+                        Export
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        icon={<Trash size={14} />}
+                        destructive
+                        onClick={() => {
+                          const wasActive = notebook.id === activeId;
+                          onDelete(notebook.id);
+                          if (wasActive) onNew();
+                        }}
                       >
-                        <MoreVertical size={16} />
-                      </MenuButton>
-                      <MenuItems
-                        modal={false}
-                        transition
-                        anchor="bottom end"
-                        className="w-32 origin-top-right rounded-md border border-white/20 dark:border-white/15 bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-lg transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] data-closed:scale-95 data-closed:opacity-0 z-50"
-                      >
-                        <MenuItem>
-                          <button
-                            type="button"
-                            onClick={() => startRename(notebook)}
-                            className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-neutral-500/10 dark:data-focus:bg-neutral-500/20 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                          >
-                            <Pencil size={14} />
-                            Rename
-                          </button>
-                        </MenuItem>
-                        <MenuItem>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const wasActive = notebook.id === activeId;
-                              onDelete(notebook.id);
-                              if (wasActive) onNew();
-                            }}
-                            className="group flex w-full items-center gap-2 rounded-md py-2 px-3 data-focus:bg-red-500/10 dark:data-focus:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
-                          >
-                            <Trash size={14} />
-                            Delete
-                          </button>
-                        </MenuItem>
-                      </MenuItems>
-                    </Menu>
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenu>
                   )}
                 </div>
               ))}

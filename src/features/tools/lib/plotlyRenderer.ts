@@ -1,34 +1,28 @@
-import type { PyodideInterface } from "pyodide";
+/**
+ * Main-thread Plotly renderer.
+ *
+ * plotly.js needs a real DOM, so figures produced inside the interpreter
+ * worker are rendered here: the worker ships render manifests (and, once, the
+ * plotly.js source from its bundled wheel) over RPC and writes the returned
+ * image bytes back into its filesystem.
+ */
+
 import { decodeBase64 } from "@/shared/lib/utils";
-
-const RENDER_QUEUE_DIR = "/tmp/__plotly_render_queue__";
-
-interface RenderManifest {
-  fig: { data: unknown[]; layout?: Record<string, unknown>; config?: Record<string, unknown> };
-  file: string;
-  format: string;
-  width: number | null;
-  height: number | null;
-  scale: number | null;
-}
+import type { PlotlyRenderManifest, PlotlyRenderResult } from "./interpreterProtocol";
 
 let plotlyJsLoaded = false;
 
-async function ensurePlotlyJsLoaded(pyodide: PyodideInterface): Promise<void> {
+async function ensurePlotlyJsLoaded(source?: string): Promise<void> {
   if (plotlyJsLoaded || (window as unknown as Record<string, unknown>).Plotly) {
     plotlyJsLoaded = true;
     return;
   }
 
-  const plotlyJsPath = String(
-    pyodide.runPython(
-      "import plotly, os; os.path.join(os.path.dirname(plotly.__file__), 'package_data', 'plotly.min.js')",
-    ),
-  ).trim();
+  if (!source) {
+    throw new Error("plotly.js source not available");
+  }
 
-  const plotlyJsSource = pyodide.FS.readFile(plotlyJsPath, { encoding: "utf8" }) as string;
-
-  const blob = new Blob([plotlyJsSource], { type: "application/javascript" });
+  const blob = new Blob([source], { type: "application/javascript" });
   const url = URL.createObjectURL(blob);
 
   await new Promise<void>((resolve, reject) => {
@@ -59,7 +53,7 @@ function decodeDataUrl(dataUrl: string, format: string): Uint8Array | string {
   return decodeBase64(payload);
 }
 
-async function renderFigure(manifest: RenderManifest): Promise<{ path: string; data: Uint8Array | string }> {
+async function renderFigure(manifest: PlotlyRenderManifest): Promise<PlotlyRenderResult> {
   const Plotly = (window as unknown as Record<string, unknown>).Plotly as {
     newPlot: (el: HTMLElement, data: unknown[], layout?: unknown, config?: unknown) => Promise<void>;
     toImage: (el: HTMLElement, opts: Record<string, unknown>) => Promise<string>;
@@ -89,52 +83,24 @@ async function renderFigure(manifest: RenderManifest): Promise<{ path: string; d
   }
 }
 
-export function clearRenderQueue(pyodide: PyodideInterface): void {
-  try {
-    const entries = (pyodide.FS.readdir(RENDER_QUEUE_DIR) as string[]).filter((e: string) => e !== "." && e !== "..");
-    for (const entry of entries) {
-      pyodide.FS.unlink(`${RENDER_QUEUE_DIR}/${entry}`);
-    }
-  } catch {
-    // Queue directory may not exist yet.
-  }
-}
+/**
+ * Render a batch of figure manifests from the interpreter worker. Figures
+ * that fail to render are logged and skipped, matching the previous
+ * per-figure error behavior.
+ */
+export async function renderPlotlyFigures(
+  manifests: PlotlyRenderManifest[],
+  plotlyJs?: string,
+): Promise<PlotlyRenderResult[]> {
+  await ensurePlotlyJsLoaded(plotlyJs);
 
-export async function processRenderQueue(pyodide: PyodideInterface): Promise<void> {
-  let entries: string[];
-  try {
-    entries = (pyodide.FS.readdir(RENDER_QUEUE_DIR) as string[])
-      .filter((e: string) => e !== "." && e !== ".." && e.endsWith(".json"))
-      .sort();
-  } catch {
-    return;
-  }
-
-  if (entries.length === 0) return;
-
-  await ensurePlotlyJsLoaded(pyodide);
-
-  for (const entry of entries) {
+  const results: PlotlyRenderResult[] = [];
+  for (const manifest of manifests) {
     try {
-      const json = pyodide.FS.readFile(`${RENDER_QUEUE_DIR}/${entry}`, { encoding: "utf8" }) as string;
-      const manifest = JSON.parse(json) as RenderManifest;
-      const result = await renderFigure(manifest);
-
-      // Ensure parent directory exists
-      const dir = result.path.substring(0, result.path.lastIndexOf("/"));
-      if (dir) {
-        try {
-          pyodide.FS.mkdirTree(dir);
-        } catch {
-          /* exists */
-        }
-      }
-
-      pyodide.FS.writeFile(result.path, result.data);
+      results.push(await renderFigure(manifest));
     } catch (error) {
-      console.error(`Failed to render plotly figure from ${entry}:`, error);
+      console.error(`Failed to render plotly figure ${manifest.file}:`, error);
     }
   }
-
-  clearRenderQueue(pyodide);
+  return results;
 }

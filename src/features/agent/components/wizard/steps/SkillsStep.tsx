@@ -1,4 +1,4 @@
-import { Check, Plus, Search, X } from "lucide-react";
+import { Check, Plus, Search, Settings2, X } from "lucide-react";
 import { type Dispatch, useEffect, useMemo, useRef, useState } from "react";
 import { SkillCatalog } from "@/features/agent/components/SkillCatalog";
 import { useSkills } from "@/features/skills/hooks/useSkills";
@@ -16,6 +16,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogView, setCatalogView] = useState<"new" | "list">("new");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -51,10 +52,23 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
       <div className="flex items-center gap-1.5">
         <button
           type="button"
-          onClick={() => setCatalogOpen(true)}
+          onClick={() => {
+            setCatalogView("new");
+            setCatalogOpen(true);
+          }}
           className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
         >
           <Plus size={11} /> New
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCatalogView("list");
+            setCatalogOpen(true);
+          }}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/50 transition-colors"
+        >
+          <Settings2 size={11} /> Manage skills
         </button>
         {searchOpen ? (
           <div className="relative flex-1">
@@ -64,6 +78,18 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  if (search) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSearch("");
+                  }
+                }
+              }}
+              onBlur={() => {
+                if (!search) setSearchOpen(false);
+              }}
               placeholder="Filter…"
               className="w-full pl-7 pr-7 py-1 text-xs rounded-md bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 focus:border-transparent text-neutral-900 dark:text-neutral-100 transition-colors"
             />
@@ -121,9 +147,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
                   <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
                     {skill.name}
                   </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
-                    {skill.description}
-                  </div>
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">{skill.description}</div>
                 </div>
               </button>
             );
@@ -144,7 +168,7 @@ export function SkillsStep({ selectedSkills, dispatch }: SkillsStepProps) {
             }
           }
         }}
-        initialView="new"
+        initialView={catalogView}
       />
     </div>
   );

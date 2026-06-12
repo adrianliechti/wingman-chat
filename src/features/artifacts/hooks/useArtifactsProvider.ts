@@ -7,10 +7,10 @@ import llmInstructionsText from "@/features/artifacts/prompts/llm.txt?raw";
 import officeInstructionsText from "@/features/artifacts/prompts/office.txt?raw";
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
+import { createFileTools, type FileData, type FileEntry, type WritableFileSource } from "@/shared/lib/file-tools";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
-import { createFileTools, type FileData, type FileEntry, type WritableFileSource } from "@/shared/lib/file-tools";
-import type { Tool, ToolProvider } from "@/shared/types/chat";
+import type { Tool, ToolContext, ToolProvider } from "@/shared/types/chat";
 import { useArtifacts } from "./useArtifacts";
 
 /**
@@ -197,7 +197,7 @@ export function useArtifactsProvider(): ToolProvider | null {
       {
         name: "execute_python_code",
         description:
-          "Execute Python code with optional package dependencies. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back.",
+          "Execute Python code with optional package dependencies. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). For long scripts heavy with quotes or backslashes (regex, nested strings), prefer writing the script to a .py artifact first and running it via `path` — this avoids JSON-escaping mistakes in the `code` string. All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back.",
         parameters: {
           type: "object",
           properties: {
@@ -219,10 +219,18 @@ export function useArtifactsProvider(): ToolProvider | null {
           },
           required: [],
         },
-        function: async (args: Record<string, unknown>) => {
+        function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const fs = fsRef.current;
-          const { code, packages } = args;
-          const path = normalizeArtifactPath(args.path as string | undefined);
+          const { code } = args;
+          const path = normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
+          // Models occasionally send `packages` as a bare string ("numpy") rather
+          // than an array; coerce defensively so `executeCode` never hits a
+          // non-array `.map`. (Imports are auto-detected anyway, so this is a hint.)
+          const packages = Array.isArray(args.packages)
+            ? args.packages.filter((p): p is string => typeof p === "string")
+            : typeof args.packages === "string"
+              ? [args.packages]
+              : undefined;
 
           try {
             // Load artifact files into Pyodide's VFS
@@ -260,7 +268,7 @@ export function useArtifactsProvider(): ToolProvider | null {
 
             const result = await executeCode({
               code: script,
-              packages: packages as string[] | undefined,
+              packages,
               files: artifactFiles,
             });
 
@@ -268,9 +276,12 @@ export function useArtifactsProvider(): ToolProvider | null {
               return [{ type: "text" as const, text: `Error executing code: ${result.error || "Unknown error"}` }];
             }
 
-            // Sync changed files back to artifacts
+            // Sync changed files back to artifacts and surface the ones written
+            // so the chat can show them as chips on the assistant's response.
             if (fs && result.files) {
-              await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
+              const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
+              const written = [...summary.createdPaths, ...summary.updatedPaths];
+              if (written.length > 0) context?.setMeta?.({ artifactFiles: written });
             }
 
             return [{ type: "text" as const, text: result.output }];
@@ -299,7 +310,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           },
           required: ["command"],
         },
-        function: async (args: Record<string, unknown>) => {
+        function: async (args: Record<string, unknown>, context?: ToolContext) => {
           const fs = fsRef.current;
           const { command } = args;
 
@@ -329,12 +340,16 @@ export function useArtifactsProvider(): ToolProvider | null {
               command,
             });
 
-            // Save changed files back to artifacts after execution
+            // Save changed files back to artifacts after execution and surface
+            // the ones written so the chat can show them as chips on the
+            // assistant's response.
             if (fs) {
               const { memFs } = getSingleton();
               const currentFiles = await readFilesFromFs(memFs);
 
-              await fs.applyOverlaySnapshot(currentFiles, { deleteMissing: true });
+              const summary = await fs.applyOverlaySnapshot(currentFiles, { deleteMissing: true });
+              const written = [...summary.createdPaths, ...summary.updatedPaths];
+              if (written.length > 0) context?.setMeta?.({ artifactFiles: written });
             }
 
             const parts: string[] = [];

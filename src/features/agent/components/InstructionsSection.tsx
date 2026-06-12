@@ -1,10 +1,11 @@
 import { Dialog, Transition } from "@headlessui/react";
-import { Edit, X } from "lucide-react";
+import { Edit, Pencil, X } from "lucide-react";
 import { Fragment, useState } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
 import { Markdown } from "@/shared/ui/Markdown";
 import { Section } from "./Section";
+import { SectionEmptyState } from "./SectionEmptyState";
 
 interface InstructionsSectionProps {
   agent: Agent;
@@ -16,15 +17,15 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [value, setValue] = useState("");
 
-  const openDialog = () => {
+  const openDialog = (editMode = false) => {
     const existing = agent.instructions || "";
     setIsDialogOpen(true);
-    if (existing.trim()) {
+    if (editMode || !existing.trim()) {
+      setValue(existing);
+      setIsEditing(true);
+    } else {
       setIsEditing(false);
       setValue("");
-    } else {
-      setValue("");
-      setIsEditing(true);
     }
   };
 
@@ -140,32 +141,35 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
                   </div>
 
                   {/* Footer */}
-                  <div className="flex items-center justify-end gap-2.5 px-5 py-3 border-t border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/30">
+                  <div className="flex items-center justify-between px-5 py-3 border-t border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/30">
                     {isEditing ? (
                       <>
-                        <button
-                          type="button"
-                          onClick={cancelEditing}
-                          className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          onClick={save}
-                          className="px-3 py-1.5 text-xs font-medium rounded-md bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 transition-colors"
-                        >
-                          Save
-                        </button>
+                        <span />
+                        <div className="flex items-center gap-2.5">
+                          <button
+                            type="button"
+                            onClick={cancelEditing}
+                            className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={save}
+                            className="px-3 py-1.5 text-xs font-medium rounded-md bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 hover:opacity-90 transition-colors"
+                          >
+                            Save
+                          </button>
+                        </div>
                       </>
                     ) : (
                       <>
                         <button
                           type="button"
                           onClick={startEditing}
-                          className="px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
                         >
-                          Edit
+                          <Pencil size={13} /> Edit
                         </button>
                         <button
                           type="button"
@@ -184,42 +188,43 @@ export function InstructionsSection({ agent }: InstructionsSectionProps) {
         </Dialog>
       </Transition>
 
-      <Section title="Instructions" isOpen={true} collapsible={false}>
-        <div className="space-y-2">
-          {agent.instructions?.trim() && (
-            <div className="relative rounded-lg border border-neutral-200/60 dark:border-neutral-700/60 bg-white/40 dark:bg-neutral-900/30 backdrop-blur-sm p-2 overflow-hidden">
-              <button
-                type="button"
-                onClick={openDialog}
-                className="absolute top-1.5 right-1.5 z-10 p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/70 transition-colors"
-                title="Edit instructions"
-                aria-label="Edit instructions"
-              >
-                <Edit size={11} />
-              </button>
-              <div className="max-h-24 overflow-hidden">
-                <div className="origin-top-left scale-[0.8] w-[125%] pr-6">
-                  <div className="prose prose-sm dark:prose-invert max-w-none text-xs text-neutral-700 dark:text-neutral-300 [&>*:first-child]:mt-0">
-                    <Markdown>{agent.instructions}</Markdown>
-                  </div>
+      <Section
+        title="Instructions"
+        isOpen={true}
+        collapsible={false}
+        headerAction={
+          agent.instructions?.trim() ? (
+            <button
+              type="button"
+              onClick={() => openDialog(true)}
+              className="flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+            >
+              <Edit size={12} /> Edit
+            </button>
+          ) : null
+        }
+      >
+        <div>
+          {agent.instructions?.trim() ? (
+            <button
+              type="button"
+              className="relative rounded-xl border border-neutral-200/70 dark:border-neutral-700/50 bg-neutral-50/60 dark:bg-neutral-800/30 overflow-hidden cursor-pointer w-full text-left"
+              onClick={() => openDialog(false)}
+            >
+              <div className="relative px-3.5 pt-3 pb-3">
+                <div className="prose prose-xs dark:prose-invert max-w-none text-xs [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 line-clamp-4 text-neutral-600 dark:text-neutral-400">
+                  <Markdown compact>{agent.instructions}</Markdown>
                 </div>
+                <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-neutral-50/80 dark:from-transparent to-transparent pointer-events-none" />
               </div>
-            </div>
-          )}
-
-          {!agent.instructions?.trim() && (
-            <div className="relative rounded-lg border border-neutral-200/60 dark:border-neutral-700/60 bg-white/30 dark:bg-neutral-900/20 backdrop-blur-sm p-2 min-h-10">
-              <button
-                type="button"
-                onClick={openDialog}
-                className="absolute top-1.5 right-1.5 p-1 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/70 transition-colors"
-                title="Edit instructions"
-                aria-label="Edit instructions"
-              >
-                <Edit size={11} />
-              </button>
-              <p className="text-xs text-neutral-400 dark:text-neutral-500">No instructions yet.</p>
-            </div>
+            </button>
+          ) : (
+            <SectionEmptyState
+              icon={<Edit size={12} />}
+              label="Add instructions"
+              description="Guide how this agent behaves"
+              onClick={openDialog}
+            />
           )}
         </div>
       </Section>

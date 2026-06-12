@@ -571,6 +571,7 @@ function createComponents(
   isStreaming: boolean,
   resolveAsset: (url: string) => string | undefined,
   blockCounterRef: { current: number },
+  compact = false,
 ): Partial<Components> {
   return {
     pre: ({ children }) => {
@@ -609,7 +610,7 @@ function createComponents(
     },
     ol: ({ children, ...props }) => {
       return (
-        <ol className="list-decimal list-inside ml-6 pl-0" {...props}>
+        <ol className="list-decimal list-outside pl-6 ml-0" {...props}>
           {children}
         </ol>
       );
@@ -669,42 +670,66 @@ function createComponents(
     },
     h1: ({ children, ...props }) => {
       return (
-        <h1 id={slugify(children)} className="text-3xl font-semibold mt-6 mb-2" {...props}>
+        <h1
+          id={slugify(children)}
+          className={compact ? "text-base font-semibold mt-4 mb-1" : "text-3xl font-semibold mt-6 mb-2"}
+          {...props}
+        >
           {children}
         </h1>
       );
     },
     h2: ({ children, ...props }) => {
       return (
-        <h2 id={slugify(children)} className="text-2xl font-semibold mt-6 mb-2" {...props}>
+        <h2
+          id={slugify(children)}
+          className={compact ? "text-sm font-semibold mt-4 mb-1" : "text-2xl font-semibold mt-6 mb-2"}
+          {...props}
+        >
           {children}
         </h2>
       );
     },
     h3: ({ children, ...props }) => {
       return (
-        <h3 id={slugify(children)} className="text-xl font-semibold mt-6 mb-2" {...props}>
+        <h3
+          id={slugify(children)}
+          className={compact ? "text-sm font-semibold mt-3 mb-1" : "text-xl font-semibold mt-6 mb-2"}
+          {...props}
+        >
           {children}
         </h3>
       );
     },
     h4: ({ children, ...props }) => {
       return (
-        <h4 id={slugify(children)} className="text-lg font-semibold mt-6 mb-2" {...props}>
+        <h4
+          id={slugify(children)}
+          className={compact ? "text-sm font-semibold mt-2 mb-1" : "text-lg font-semibold mt-6 mb-2"}
+          {...props}
+        >
           {children}
         </h4>
       );
     },
     h5: ({ children, ...props }) => {
       return (
-        <h5 id={slugify(children)} className="text-base font-semibold mt-6 mb-2" {...props}>
+        <h5
+          id={slugify(children)}
+          className={compact ? "text-sm font-semibold mt-2 mb-1" : "text-base font-semibold mt-6 mb-2"}
+          {...props}
+        >
           {children}
         </h5>
       );
     },
     h6: ({ children, ...props }) => {
       return (
-        <h6 id={slugify(children)} className="text-sm font-semibold mt-6 mb-2" {...props}>
+        <h6
+          id={slugify(children)}
+          className={compact ? "text-xs font-semibold mt-2 mb-1" : "text-sm font-semibold mt-6 mb-2"}
+          {...props}
+        >
           {children}
         </h6>
       );
@@ -959,6 +984,7 @@ function createMarkdownProcessor(
   isStreaming: boolean,
   resolveAsset: (url: string) => string | undefined,
   blockCounterRef: { current: number },
+  compact = false,
 ) {
   return unified()
     .use(remarkParse)
@@ -971,13 +997,17 @@ function createMarkdownProcessor(
     .use(rehypeNotoEmoji)
     .use(rehypeReact, {
       ...baseRehypeReactOptions,
-      components: createComponents(scopeId, isStreaming, resolveAsset, blockCounterRef),
+      components: createComponents(scopeId, isStreaming, resolveAsset, blockCounterRef, compact),
     });
 }
 
 type MarkdownProps = {
   children: string;
   isStreaming?: boolean;
+  /**
+   * When true, renders headings at reduced sizes suitable for compact UI contexts.
+   */
+  compact?: boolean;
   /**
    * Optional filesystem for resolving relative `<img>` references. When
    * provided, relative image URLs are looked up in `fs` and served as blob
@@ -993,7 +1023,7 @@ type MarkdownProps = {
 
 let markdownInstanceCounter = 0;
 
-const NonMemoizedMarkdown = ({ children, isStreaming = false, fs, basePath }: MarkdownProps) => {
+const NonMemoizedMarkdown = ({ children, isStreaming = false, compact = false, fs, basePath }: MarkdownProps) => {
   const [throttled, setThrottled] = useState(children);
   const lastFlushRef = useRef(0);
   const timerRef = useRef<number>(undefined);
@@ -1007,8 +1037,9 @@ const NonMemoizedMarkdown = ({ children, isStreaming = false, fs, basePath }: Ma
   const resolveAsset = useAssetUrlResolver(fs, basePath);
 
   const processor = useMemo(
-    () => createMarkdownProcessor(scopeIdRef.current ?? "markdown", isStreaming, resolveAsset, blockCounterRef),
-    [isStreaming, resolveAsset],
+    () =>
+      createMarkdownProcessor(scopeIdRef.current ?? "markdown", isStreaming, resolveAsset, blockCounterRef, compact),
+    [isStreaming, resolveAsset, compact],
   );
 
   useEffect(() => {
@@ -1045,6 +1076,7 @@ export const Markdown = memo(
   (prev, next) =>
     prev.children === next.children &&
     prev.isStreaming === next.isStreaming &&
+    prev.compact === next.compact &&
     prev.fs === next.fs &&
     prev.basePath === next.basePath,
 );

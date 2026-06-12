@@ -8,7 +8,7 @@ Available libraries (all preloaded, no network install needed):
 - DOCX: `python-docx` (import `docx`), `docx2txt` (extract text)
 - PPTX: `python-pptx` (import `pptx`)
 - XLSX: `openpyxl`, `xlsxwriter`, `pandas` (`pd.read_excel` / `df.to_excel`)
-- PDF: `reportlab` (create), `pypdf` (read, merge, split, watermark, rotate)
+- PDF: `reportlab` (create), `pypdf` (merge, split, watermark, rotate, quick text), `pdfminer.six` (import `pdfminer`; high-fidelity text & layout extraction — prefer over `pypdf` for prose or columns), `pdfplumber` (structured **table** extraction — `page.extract_tables()`, and `page.extract_text()`)
 - Email: `extract-msg` (import `extract_msg`) for `.msg`; stdlib `email`/`email.parser` for `.eml`
 - Charts: `matplotlib`, `seaborn`, `plotly` (write PNG/SVG and embed)
 
@@ -74,6 +74,8 @@ Best practices:
 - Use built-in heading styles (`level=1..9`) so tables of contents and outlines work.
 - Use the `"List Bullet"` / `"List Number"` styles for lists.
 - Set table `style` to a built-in like `"Light Grid Accent 1"`; bare tables look unstyled in Word.
+- Set table widths explicitly. python-docx autofit renders with collapsed or uneven columns across Word/LibreOffice/Google Docs — set `table.autofit = False` and assign `cell.width` (e.g. `Inches(2.5)`) on the cells of each column so the layout is deterministic.
+- Don't build horizontal rules, dividers, or sidebars out of single-cell tables — they render as empty boxes with a minimum height. Use a paragraph bottom border instead. python-docx has no high-level border API, so add a `w:pBdr` element to the paragraph's `pPr` via `paragraph._p.get_or_add_pPr()`.
 - For more elaborate layouts (multi-column, headers/footers, footnotes), set up section properties via `section.header`, `section.footer`, and `WD_SECTION` enums.
 
 ### PPTX with `python-pptx`
@@ -128,6 +130,8 @@ Design rules (don't ship boring decks):
 - Dark backgrounds for title and conclusion slides, light for content (sandwich structure), or commit to dark throughout for a premium feel.
 - Commit to a visual motif: pick one element (rounded image frames, icons in colored circles, thick single-side borders) and repeat it on every slide.
 - Every slide needs a visual element: image, chart, icon, or shape. Plain title + bullets is forgettable.
+- Never fake a chart with rectangles, lines, or text boxes. Render real charts with matplotlib/plotly to PNG and embed them (see Chart → Office embed).
+- After adding a slide from a layout, delete placeholders you don't fill — empty placeholders render as ghost prompt boxes. Remove with `ph._element.getparent().remove(ph._element)`.
 - Vary layouts: two-column, image + text, big stat callouts, comparison columns. Don't repeat the same layout on every slide.
 - Title sizes 36–44pt bold; section header 20–24pt bold; body 14–16pt; captions 10–12pt muted.
 - Left-align body text and lists; center only titles.
@@ -136,7 +140,7 @@ Design rules (don't ship boring decks):
 
 ### XLSX with `openpyxl` (and `xlsxwriter`)
 
-**CRITICAL: use Excel formulas, never hardcode calculated values.** Spreadsheets must stay dynamic.
+**CRITICAL: use Excel formulas, never hardcode calculated values.** Spreadsheets must stay dynamic. *Any derived number must be a formula referencing source cells.* It is fine to hardcode genuine inputs (assumption cells, Year-1 seed values, true constants); never hardcode a value that is computed from other cells.
 
 ```python
 from openpyxl import Workbook
@@ -249,9 +253,30 @@ for src in ["/home/user/a.pdf", "/home/user/b.pdf"]:
 with open("/home/user/merged.pdf", "wb") as f:
     writer.write(f)
 
-# Extract text
+# Extract text — quick pass with pypdf
 text = "\n".join(p.extract_text() or "" for p in PdfReader("/home/user/in.pdf").pages)
 ```
+
+For prose or multi-column layouts, `pdfminer.six` extracts text far more faithfully than `pypdf`:
+
+```python
+from pdfminer.high_level import extract_text
+text = extract_text("/home/user/in.pdf")
+```
+
+To pull **structured tables** out of a PDF, use `pdfplumber` (returns rows as lists; feed straight into pandas):
+
+```python
+import pdfplumber, pandas as pd
+
+with pdfplumber.open("/home/user/in.pdf") as pdf:
+    for page in pdf.pages:
+        for table in page.extract_tables():
+            df = pd.DataFrame(table[1:], columns=table[0])
+            # … e.g. df.to_excel("/home/user/out.xlsx", index=False)
+```
+
+`extract_tables()` detects tables by their **ruling lines**, so it returns `[]` for borderless or whitespace-separated tables. In that case pass a text-based strategy: `page.extract_tables({"vertical_strategy": "text", "horizontal_strategy": "text"})`. (`extract_text()` still returns the content either way — fall back to parsing that if detection fails.)
 
 ### Email (.msg / .eml)
 

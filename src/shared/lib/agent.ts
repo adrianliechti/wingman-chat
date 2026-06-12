@@ -2,6 +2,7 @@ import type { Content, Message, Tool, ToolCallContent, ToolContext } from "../ty
 import type { AgentContext } from "../types/telemetry";
 import type { Client } from "./client";
 import { traceExecuteTool, traceInvokeAgent } from "./telemetry-genai";
+import { parseToolArguments, ToolArgumentsParseError } from "./toolArguments";
 
 /** Options forwarded verbatim to `client.complete`. */
 export type CompleteOptions = Parameters<Client["complete"]>[5];
@@ -118,6 +119,25 @@ async function dispatchToolCall(
     });
   }
 
+  // Parse before tracing so a malformed-JSON failure (model mis-escaped a
+  // string field like `code`) yields an actionable, model-facing message it can
+  // self-correct from — instead of a raw V8 SyntaxError. `parseToolArguments`
+  // already retries with a repair pass, so reaching the catch means the args are
+  // genuinely unrecoverable.
+  let args: Record<string, unknown>;
+  try {
+    args = parseToolArguments(toolCall.arguments);
+  } catch (error) {
+    if (error instanceof ToolArgumentsParseError) {
+      return toolErrorMessage(
+        toolCall,
+        'Error: The tool arguments were not valid JSON. This usually means a string value (e.g. `code`) contains an unescaped " or \\. Re-send the call with every " escaped as \\", every \\ as \\\\, and newlines as \\n. For long scripts with many quotes, write the code to a .py artifact and run it via `path` to avoid JSON escaping entirely.',
+        { code: "TOOL_ARGS_INVALID_JSON", message: "The tool arguments could not be parsed as JSON." },
+      );
+    }
+    throw error;
+  }
+
   try {
     let resultMeta: Record<string, unknown> | undefined;
 
@@ -129,7 +149,6 @@ async function dispatchToolCall(
         parentContext: invokeCtx,
       },
       (executeCtx) => {
-        const args = JSON.parse(toolCall.arguments || "{}");
         const baseContext = hooks.createToolContext?.(toolCall);
         const toolContext: ToolContext = {
           ...(baseContext ?? {}),

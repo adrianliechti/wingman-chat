@@ -1,11 +1,10 @@
-import { Listbox, Transition, TransitionChild } from "@headlessui/react";
+import { Transition, TransitionChild } from "@headlessui/react";
 import {
   AudioLines,
   BarChart3,
   BookMarked,
   Boxes,
   Check,
-  ChevronsUpDown,
   Image as ImageIcon,
   LayoutTemplate,
   Presentation,
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { getConfig } from "@/shared/config";
+import { SelectMenu } from "@/shared/ui/SelectMenu";
 import type { BuildInstructionsOptions, Style } from "../lib/styles";
 import {
   architectureStyles,
@@ -394,43 +394,15 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
               )}
 
               {/* ── Language ── */}
-              <div>
-                <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">Language</p>
-                <Listbox value={selectedLang} onChange={setSelectedLang} by="code">
-                  <Listbox.Button className="relative w-full rounded-lg bg-white/50 dark:bg-neutral-800/50 py-2.5 pl-3 pr-10 text-left text-sm border border-neutral-300/50 dark:border-neutral-700/50 focus-visible:ring-2 focus-visible:ring-blue-500 data-[headlessui-state=open]:ring-2 data-[headlessui-state=open]:ring-blue-500 backdrop-blur-sm transition-colors">
-                    <span className="block truncate text-neutral-800 dark:text-neutral-200">{selectedLang.name}</span>
-                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5">
-                      <ChevronsUpDown size={14} className="text-neutral-400" aria-hidden="true" />
-                    </span>
-                  </Listbox.Button>
-                  <Transition
-                    as={Fragment}
-                    leave="transition ease-in duration-100"
-                    leaveFrom="opacity-100"
-                    leaveTo="opacity-0"
-                  >
-                    <Listbox.Options
-                      anchor="bottom"
-                      className="mt-1 w-(--button-width) max-h-56 overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-100/90 dark:bg-neutral-800/90 p-1 backdrop-blur-xl text-sm z-[100] transition duration-100 ease-in data-leave:data-closed:opacity-0"
-                    >
-                      {allLanguages.map((lang) => (
-                        <Listbox.Option
-                          key={lang.code}
-                          value={lang}
-                          className="group relative cursor-pointer select-none py-2 pl-9 pr-3 rounded-lg text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-200 dark:data-focus:bg-neutral-700/80"
-                        >
-                          <span className="block truncate font-normal group-data-selected:font-semibold">
-                            {lang.name}
-                          </span>
-                          <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-blue-600 dark:text-blue-400 group-data-selected:visible invisible">
-                            <Check size={14} aria-hidden="true" />
-                          </span>
-                        </Listbox.Option>
-                      ))}
-                    </Listbox.Options>
-                  </Transition>
-                </Listbox>
-              </div>
+              <SelectMenu
+                label="Language"
+                value={selectedLang.code}
+                onChange={(code) => {
+                  const lang = allLanguages.find((l) => l.code === code);
+                  if (lang) setSelectedLang(lang);
+                }}
+                options={allLanguages.map((l) => ({ value: l.code, label: l.name }))}
+              />
 
               {/* ── Slide count (slides only) ── */}
               {isSlides && (
@@ -451,9 +423,7 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                         }`}
                       >
                         {p.label}
-                        {p.count !== null && (
-                          <span className="ml-1 font-normal opacity-60 text-xs">({p.count})</span>
-                        )}
+                        {p.count !== null && <span className="ml-1 font-normal opacity-60 text-xs">({p.count})</span>}
                       </button>
                     ))}
                   </div>

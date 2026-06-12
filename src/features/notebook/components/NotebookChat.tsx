@@ -54,6 +54,11 @@ export function NotebookChat({
     if (!input.trim() || isChatting) return;
     onSend(input.trim());
     setInput("");
+    // Keep the input focused so the user can keep typing right away — clicking
+    // the send button moves focus to it, so restore it after the re-render.
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -232,7 +237,7 @@ export function NotebookChat({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={hasSources ? "Ask about your sources..." : "Add sources first to start chatting"}
-            disabled={!hasSources || isChatting}
+            disabled={!hasSources}
             rows={1}
             className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 outline-none resize-none py-2 max-h-30 disabled:opacity-50"
             style={{ height: "auto" }}

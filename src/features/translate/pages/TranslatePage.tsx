@@ -1,4 +1,3 @@
-import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
   AlertCircle,
   ChevronDown,
@@ -25,6 +24,7 @@ import { getDriveContentUrl } from "@/shared/lib/drives";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import { CopyButton } from "@/shared/ui/CopyButton";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { InteractiveText } from "@/shared/ui/InteractiveText";
 import { PlayButton } from "@/shared/ui/PlayButton";
 import { RewritePopover } from "@/shared/ui/RewritePopover";
@@ -495,41 +495,28 @@ export function TranslatePage() {
                     <div className="h-7 flex items-center px-2 shrink-0">
                       {supportedFiles.length > 0 &&
                         (config.drives.length > 0 ? (
-                          <Menu>
-                            <MenuButton className="inline-flex items-center gap-1 pl-0.5 pr-1.5 py-0.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
-                              <UploadIcon size={14} className="-ml-0.5" />
-                              <span>Upload file</span>
-                            </MenuButton>
-                            <MenuItems
-                              modal={false}
-                              transition
-                              anchor="bottom start"
-                              className="mt-1 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg py-1 z-50 min-w-40"
-                            >
-                              <MenuItem>
-                                <button
-                                  type="button"
-                                  onClick={handleFileUploadClick}
-                                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
-                                >
-                                  <UploadIcon size={15} className="text-neutral-500" />
-                                  Upload
-                                </button>
-                              </MenuItem>
-                              {config.drives.map((drive) => (
-                                <MenuItem key={drive.id}>
-                                  <button
-                                    type="button"
-                                    onClick={() => setActiveDrive(drive)}
-                                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 data-focus:bg-neutral-100 dark:data-focus:bg-neutral-800 transition-colors"
-                                  >
-                                    <HardDrive size={15} className="text-neutral-500" />
-                                    {drive.name}
-                                  </button>
-                                </MenuItem>
-                              ))}
-                            </MenuItems>
-                          </Menu>
+                          <DropdownMenu
+                            anchor="bottom start"
+                            trigger={
+                              <MenuButton className="inline-flex items-center gap-1 pl-0.5 pr-1.5 py-0.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors">
+                                <UploadIcon size={14} className="-ml-0.5" />
+                                <span>Upload file</span>
+                              </MenuButton>
+                            }
+                          >
+                            <DropdownMenuItem icon={<UploadIcon size={15} />} onClick={handleFileUploadClick}>
+                              Upload
+                            </DropdownMenuItem>
+                            {config.drives.map((drive) => (
+                              <DropdownMenuItem
+                                key={drive.id}
+                                icon={<HardDrive size={15} />}
+                                onClick={() => setActiveDrive(drive)}
+                              >
+                                {drive.name}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenu>
                         ) : (
                           <button
                             type="button"

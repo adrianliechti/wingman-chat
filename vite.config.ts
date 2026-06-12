@@ -26,6 +26,11 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ["pyodide"],
   },
+  worker: {
+    // The Pyodide interpreter worker is a module worker (recent Edge/Safari,
+    // incl. iOS 15+); 'es' keeps dynamic imports working in the built bundle.
+    format: "es",
+  },
   server: {
     proxy: {
       "/telemetry/v1": {

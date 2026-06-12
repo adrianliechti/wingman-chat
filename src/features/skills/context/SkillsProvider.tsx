@@ -150,6 +150,22 @@ export function SkillsProvider({ children }: SkillsProviderProps) {
     [skills],
   );
 
+  const [showSkillCatalog, setShowSkillCatalog] = useState(false);
+  const [skillCatalogTarget, setSkillCatalogTarget] = useState<string | null>(null);
+  const [skillCatalogReadOnly, setSkillCatalogReadOnly] = useState(false);
+
+  const openSkillCatalog = useCallback((name?: string, readOnly?: boolean) => {
+    setSkillCatalogTarget(name ?? null);
+    setSkillCatalogReadOnly(readOnly ?? false);
+    setShowSkillCatalog(true);
+  }, []);
+
+  const closeSkillCatalog = useCallback(() => {
+    setShowSkillCatalog(false);
+    setSkillCatalogTarget(null);
+    setSkillCatalogReadOnly(false);
+  }, []);
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -167,6 +183,11 @@ export function SkillsProvider({ children }: SkillsProviderProps) {
         updateSkill,
         removeSkill,
         getSkill,
+        showSkillCatalog,
+        skillCatalogTarget,
+        skillCatalogReadOnly,
+        openSkillCatalog,
+        closeSkillCatalog,
       }}
     >
       {children}

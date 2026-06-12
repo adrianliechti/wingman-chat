@@ -55,9 +55,7 @@ export function InventoryTable({ catalog }: InventoryTableProps) {
                       <div className="flex items-center gap-2">
                         <div className="min-w-0">
                           <p className="font-semibold text-neutral-800 dark:text-neutral-100 truncate">{d.title}</p>
-                          <p className="text-xs font-mono text-neutral-500 dark:text-neutral-500 truncate">
-                            {d.name}
-                          </p>
+                          <p className="text-xs font-mono text-neutral-500 dark:text-neutral-500 truncate">{d.name}</p>
                         </div>
                         {d.inferred && <InferredBadge />}
                       </div>

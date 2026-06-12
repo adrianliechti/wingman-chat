@@ -1,6 +1,8 @@
 import { AlertCircle, ChevronRight, Loader2, RotateCcw } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
+import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
 import { useChat } from "@/features/chat/hooks/useChat";
+import { SkillChip } from "@/features/skills/components/SkillChip";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { getToolDisplayName } from "@/shared/lib/utils";
@@ -11,7 +13,7 @@ import { CopyButton } from "@/shared/ui/CopyButton";
 import { Markdown } from "@/shared/ui/Markdown";
 import { PlayButton } from "@/shared/ui/PlayButton";
 import { ChatMessageElicitation } from "./ChatMessageElicitation";
-import { getToolCallPreview } from "./chatMessageUtils";
+import { collectTurnArtifactPaths, collectTurnSkillNames, getToolCallPreview, isTurnEnd } from "./chatMessageUtils";
 
 // Error message component
 function ErrorMessage({ title, message, onRetry }: { title: string; message: string; onRetry?: () => void }) {
@@ -117,10 +119,24 @@ function getMessagePartKey(part: Message["content"][number], index: number, scop
 
 export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   message,
+  index,
   isLast,
   isResponding,
 }: ChatAssistantMessageProps) {
-  const { pendingElicitation, resolveElicitation, retryMessage, toolMeta } = useChat();
+  const { messages, pendingElicitation, resolveElicitation, retryMessage, toolMeta } = useChat();
+
+  // Files written during this turn (create_file + python/bash), surfaced as
+  // clickable chips on the turn's completion message rather than auto-opening
+  // the artifacts drawer.
+  const turnArtifactPaths = useMemo(
+    () => (isTurnEnd(messages, index) ? collectTurnArtifactPaths(messages, index) : []),
+    [messages, index],
+  );
+
+  const turnSkillNames = useMemo(
+    () => (isTurnEnd(messages, index) ? collectTurnSkillNames(messages, index) : []),
+    [messages, index],
+  );
 
   const toolCallParts = message.content.filter((p) => p.type === "tool_call");
   const hasToolCalls = toolCallParts.length > 0;
@@ -335,8 +351,14 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
             // Tool calls shown inline only when streaming
             if (!isLast || !isResponding) return null;
             const preview = getToolCallPreview(part.name, part.arguments);
+            // Only the first tool call in a run gets top spacing (to match the
+            // committed result's gap); consecutive concurrent calls stay tight.
+            const isFirstToolCall = message.content[index - 1]?.type !== "tool_call";
             return (
-              <div key={partKey} className="mt-0.5 mb-0 rounded-lg overflow-hidden max-w-full">
+              <div
+                key={partKey}
+                className={cn("mb-0 rounded-lg overflow-hidden max-w-full", isFirstToolCall ? "mt-2" : "mt-0.5")}
+              >
                 <div className="flex items-center gap-2 min-w-0">
                   <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
                   <span className="text-xs font-medium whitespace-nowrap text-neutral-500 dark:text-neutral-400">
@@ -355,6 +377,22 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
         {hasMedia && (
           <div className="pt-2">
             <RenderContents contents={mediaParts} />
+          </div>
+        )}
+
+        {turnArtifactPaths.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {turnArtifactPaths.map((path) => (
+              <ArtifactChip key={path} path={path} />
+            ))}
+          </div>
+        )}
+
+        {turnSkillNames.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {turnSkillNames.map((name) => (
+              <SkillChip key={name} name={name} />
+            ))}
           </div>
         )}
 

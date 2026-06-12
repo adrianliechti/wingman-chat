@@ -113,7 +113,7 @@ export function toOpenLineageJSON(catalog: DataCatalog): string {
   // `datasetId` (gives us a real name + system); fall back to the node label.
   const datasetRefFor = (nodeId: string): { namespace: string; name: string } | null => {
     const node = catalog.lineageNodes.find((n) => n.id === nodeId);
-    if (!node || node.kind !== "dataset") return null;
+    if (node?.kind !== "dataset") return null;
     const ds = node.datasetId ? datasetById.get(node.datasetId) : undefined;
     return {
       namespace: ds?.system ?? "wingman",

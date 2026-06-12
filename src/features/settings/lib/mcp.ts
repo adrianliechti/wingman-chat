@@ -41,6 +41,7 @@ import {
   type ToolIcon,
   type ToolProvider,
 } from "@/shared/types/chat";
+import { textToDataUrl } from "@/shared/lib/fileContent";
 import type { ElicitationSchema } from "@/shared/types/elicitation";
 import { BrowserOAuthClientProvider } from "./mcpAuth";
 
@@ -116,13 +117,19 @@ export class MCPClient implements ToolProvider {
     icon?: ToolIcon,
   ) {
     this.id = id;
-    this.url = url.endsWith("/") ? url : `${url}/`;
+    this.url = url;
     this.name = name;
     this.description = description;
     this.headers = headers;
     this._configIcon = icon;
-    this.icon = icon ?? new URL("icon", this.url).href;
+    this.icon = icon ?? this.iconUrl();
     this.authProvider = new BrowserOAuthClientProvider(id);
+  }
+
+  /** Resolve the server's default icon, ensuring a trailing slash so the path isn't dropped. */
+  private iconUrl(): string {
+    const base = this.url.endsWith("/") ? this.url : `${this.url}/`;
+    return new URL("icon", base).href;
   }
 
   async connect(): Promise<void> {
@@ -238,7 +245,7 @@ export class MCPClient implements ToolProvider {
     // Pick up the server-published icon when no config/agent icon was provided.
     if (!this._configIcon) {
       const serverIcons = client.getServerVersion()?.icons as McpIcon[] | undefined;
-      this.icon = pickIcon(serverIcons) ?? new URL("icon", this.url).href;
+      this.icon = pickIcon(serverIcons) ?? this.iconUrl();
     }
 
     // Load and store tools and instructions after connection
@@ -378,7 +385,7 @@ export class MCPClient implements ToolProvider {
                   });
                 }
 
-                return processContent(normalizedResult.content as MCPContentBlock[]);
+                return await processContent(normalizedResult.content as MCPContentBlock[], activeClient);
               } finally {
                 this.activeToolContext = null;
               }
@@ -758,35 +765,94 @@ export class MCPClient implements ToolProvider {
 
 type ToolResultContent = TextContent | ImageContent | AudioContent | FileContent;
 
-function processContent(input: MCPContentBlock[]): ToolResultContent[] {
-  if (!input?.length) {
-    return [{ type: "text" as const, text: "no content" }];
+/** Derive a download filename from a resource URI (e.g. "runs://id/chart.png" -> "chart.png"). */
+function filenameFromUri(uri: string | undefined, fallback = "resource"): string {
+  const segment = uri?.split(/[?#]/)[0].split("/").filter(Boolean).pop();
+  if (!segment) return fallback;
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+/**
+ * Convert MCP resource contents (embedded, or fetched via resources/read) into a
+ * displayable block. Images/audio are surfaced as such (inline preview); everything
+ * else becomes a file (type-specific preview + download button).
+ */
+function resourceToContent(res: MCPResourceContents, fallbackName?: string): ToolResultContent | null {
+  const mimeType = (res.mimeType as string | undefined) || "application/octet-stream";
+  const name = fallbackName ?? filenameFromUri(res.uri as string | undefined);
+
+  let data: string;
+  if ("blob" in res && typeof res.blob === "string") {
+    data = `data:${mimeType};base64,${res.blob}`; // resource blobs are already base64
+  } else if ("text" in res && typeof res.text === "string") {
+    data = textToDataUrl(res.text, mimeType);
+  } else {
+    return null;
   }
 
-  const result = input
-    .map((block): ToolResultContent | null => {
-      if (block.type === "text") {
-        return { type: "text" as const, text: block.text || "" };
-      }
+  if (mimeType.startsWith("image/")) return { type: "image", name, data };
+  if (mimeType.startsWith("audio/")) return { type: "audio", name, data };
+  return { type: "file", name, data };
+}
 
-      if (block.type === "image") {
-        const mimeType = block.mimeType || "image/png";
-        const data = `data:${mimeType};base64,${block.data || ""}`;
-        return { type: "image" as const, data };
-      }
+/**
+ * Fetch a resource_link's bytes via resources/read and map them. Resources can be
+ * session-scoped and discarded after the run, so we fetch eagerly here (while alive)
+ * rather than lazily on click. Falls back to a text marker if the fetch fails.
+ */
+async function resolveResourceLink(
+  block: Extract<MCPContentBlock, { type: "resource_link" }>,
+  client?: Client | null,
+): Promise<ToolResultContent[]> {
+  const label = block.name || block.uri;
+  if (!client) {
+    return [{ type: "text", text: `[Resource: ${label}]` }];
+  }
+  try {
+    const read = await client.readResource({ uri: block.uri });
+    const mapped = ((read.contents ?? []) as MCPResourceContents[])
+      .map((c) => resourceToContent(c, block.name))
+      .filter((c): c is ToolResultContent => c !== null);
+    return mapped.length ? mapped : [{ type: "text", text: `[Resource: ${label}]` }];
+  } catch (error) {
+    console.error("Failed to read MCP resource link", block.uri, error);
+    return [{ type: "text", text: `Could not load resource: ${label}` }];
+  }
+}
 
-      return null;
-    })
-    .filter((c): c is ToolResultContent => c !== null);
+/** Map a single MCP content block to zero or more displayable blocks. */
+async function processBlock(block: MCPContentBlock, client?: Client | null): Promise<ToolResultContent[]> {
+  switch (block.type) {
+    case "text":
+      return [{ type: "text", text: block.text || "" }];
+    case "image":
+      return [{ type: "image", data: `data:${block.mimeType || "image/png"};base64,${block.data || ""}` }];
+    case "audio":
+      return [{ type: "audio", data: `data:${block.mimeType || "audio/mpeg"};base64,${block.data || ""}` }];
+    case "resource": {
+      const mapped = resourceToContent(block.resource);
+      return mapped ? [mapped] : [];
+    }
+    case "resource_link":
+      return resolveResourceLink(block, client);
+    default:
+      return [];
+  }
+}
 
-  return result.length
-    ? result
-    : [
-        {
-          type: "text" as const,
-          text: JSON.stringify(input.length === 1 ? input[0] : input),
-        },
-      ];
+async function processContent(input: MCPContentBlock[], client?: Client | null): Promise<ToolResultContent[]> {
+  if (!input?.length) {
+    return [{ type: "text", text: "no content" }];
+  }
+
+  // Resource links resolve in parallel; original order is preserved.
+  const result = (await Promise.all(input.map((block) => processBlock(block, client)))).flat();
+
+  return result.length ? result : [{ type: "text", text: JSON.stringify(input.length === 1 ? input[0] : input) }];
 }
 
 function getHtmlContent(resource: MCPResourceContents): string {

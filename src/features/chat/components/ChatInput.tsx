@@ -1,38 +1,24 @@
 import {
-  Dialog,
-  DialogBackdrop,
-  DialogPanel,
-  DialogTitle,
-  Menu,
-  MenuButton,
-  MenuItem,
-  MenuItems,
-} from "@headlessui/react";
-import {
   AudioLines,
   Bot,
-  Check,
-  HardDrive,
   Loader2,
   LoaderCircle,
   MessageSquare,
   Mic,
-  Paperclip,
-  Plus,
   Rocket,
   ScreenShare,
   Send,
-  Sliders,
   Sparkles,
   Square,
-  TriangleAlert,
   X,
 } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { useAgents } from "@/features/agent/hooks/useAgents";
+import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
+import { processUploadedFile } from "@/features/artifacts/lib/artifacts";
 import { useChat } from "@/features/chat/hooks/useChat";
+import { useFileAttachments } from "@/features/chat/hooks/useFileAttachments";
 import { useScreenCapture } from "@/features/chat/hooks/useScreenCapture";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
@@ -41,22 +27,27 @@ import { useVoice } from "@/features/voice/hooks/useVoice";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
 import { cn } from "@/shared/lib/cn";
-import { acceptTypes, canConvert, convertFileToText } from "@/shared/lib/convert";
+import { acceptTypes } from "@/shared/lib/convert";
 import { getDriveContentUrl } from "@/shared/lib/drives";
-import { lookupContentType, readAsDataURL, resizeImageBlob } from "@/shared/lib/utils";
-import type { Content, ImageContent, Message, Model, TextContent, ToolProvider } from "@/shared/types/chat";
+import { readAsDataURL } from "@/shared/lib/utils";
+import type { Content, ImageContent, Message, TextContent, ToolProvider } from "@/shared/types/chat";
 import { ProviderState, Role } from "@/shared/types/chat";
 import { DrivePicker, type SelectedFile } from "@/shared/ui/DrivePicker";
-import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
+import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
+import { ModelDropdown } from "@/shared/ui/ModelDropdown";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { useAudioDevices } from "@/shell/hooks/useAudioDevices";
 import { useBackground } from "@/shell/hooks/useBackground";
+import { ChatInputAddMenu } from "./ChatInputAddMenu";
 import { ChatInputAttachments } from "./ChatInputAttachments";
+import { formatArtifactReference } from "./chatMessageUtils";
 
 export function ChatInput() {
   const config = getConfig();
 
   const { sendMessage, models, model, setModel: onModelChange, messages, isResponding, stopStreaming } = useChat();
-  const { currentAgent, setCurrentAgent } = useAgents();
+  const { currentAgent, setCurrentAgent, setShowAgentDrawer } = useAgents();
+  const { isAvailable: artifactsAvailable } = useArtifacts();
   const { profile } = useSettings();
   const {
     isAvailable: isScreenCaptureAvailable,
@@ -88,17 +79,22 @@ export function ChatInput() {
     }
   }, [isRealtimeSelected, voiceAvailable, inputDevices.length, requestAudioPermission]);
 
-  const [showHiddenModels, setShowHiddenModels] = useState(false);
-
   const [content, setContent] = useState("");
   const [transcribingContent, setTranscribingContent] = useState(false);
   const [voiceTextInput, setVoiceTextInput] = useState("");
 
-  const [attachments, setAttachments] = useState<Content[]>([]);
-  const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
+  const {
+    attachments,
+    pendingFiles,
+    extractingAttachments,
+    setExtractingAttachments,
+    setPendingFiles,
+    handleFiles,
+    clearAttachments,
+    removeAttachment,
+  } = useFileAttachments({ visionFiles: config.vision?.files ?? [], artifactsAvailable });
 
   const [activeDrive, setActiveDrive] = useState<(typeof config.drives)[number] | null>(null);
-  const [showMobileSheet, setShowMobileSheet] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const contentInputRef = useRef<HTMLTextAreaElement>(null);
@@ -143,6 +139,13 @@ export function ChatInput() {
   }, [profileName]);
 
   const placeholderText = messages.length === 0 ? randomPlaceholder : "Ask anything";
+
+  // Accepted upload types: always images; document types only when the
+  // artifacts workspace is available to hold them.
+  const acceptString = useMemo(
+    () => [...(config.vision?.files ?? []), ...(artifactsAvailable ? acceptTypes() : [])].join(","),
+    [config.vision?.files, artifactsAvailable],
+  );
 
   // Show placeholder when input is empty (regardless of focus state)
   const shouldShowPlaceholder = !content.trim();
@@ -196,62 +199,6 @@ export function ChatInput() {
     setModelOverrides(model?.tools?.enabled || [], model?.tools?.disabled || []);
   }, [model?.tools?.enabled, model?.tools?.disabled, setModelOverrides]);
 
-  const handleFiles = useCallback(
-    async (files: File[]) => {
-      const fileIds = files.map((file, index) => `${file.name}-${index}`);
-
-      // Set all extracting states at once
-      setExtractingAttachments((prev) => new Set([...prev, ...fileIds]));
-
-      const visionFiles = config.vision?.files ?? [];
-
-      const processedContents = await Promise.allSettled(
-        files.map(async (file, index) => {
-          const fileId = fileIds[index];
-          try {
-            let content: Content | null = null;
-
-            // Infer MIME from extension when browser didn't detect it
-            const effectiveType =
-              file.type && file.type !== "application/octet-stream"
-                ? file.type
-                : (lookupContentType(file.name.split(".").pop() ?? "") ?? file.type);
-
-            // Re-wrap with correct type if it was wrong
-            const effectiveFile =
-              effectiveType !== file.type ? new File([file], file.name, { type: effectiveType }) : file;
-
-            if (visionFiles.includes(effectiveType)) {
-              const blob = await resizeImageBlob(effectiveFile, 1920, 1920);
-              const dataUrl = await readAsDataURL(blob);
-              content = { type: "image", name: file.name, data: dataUrl } as ImageContent;
-            } else if (canConvert(effectiveFile)) {
-              const text = await convertFileToText(file);
-              content = { type: "text", text: `\`\`\`\`text\n// ${file.name}\n${text}\n\`\`\`\`` } as TextContent;
-            }
-
-            return { fileId, content };
-          } catch (error) {
-            console.error(`Error processing file ${file.name}:`, error);
-            return { fileId, content: null };
-          }
-        }),
-      );
-
-      // Batch state updates
-      const validContents = processedContents
-        .filter(
-          (result): result is PromiseFulfilledResult<{ fileId: string; content: TextContent | ImageContent }> =>
-            result.status === "fulfilled" && result.value.content !== null,
-        )
-        .map((result) => result.value.content);
-
-      setAttachments((prev) => [...prev, ...validContents]);
-      setExtractingAttachments(new Set()); // Clear all at once
-    },
-    [config.vision?.files],
-  );
-
   const isDragging = useDropZone(containerRef, handleFiles);
 
   // Force layout recalculation on mount to fix initial sizing issues
@@ -269,7 +216,7 @@ export function ChatInput() {
   useEffect(() => {
     if (messages.length === 0) {
       // Check if this is a touch device
-      const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+      const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
 
       if (!isTouchDevice && contentInputRef.current) {
         // Small delay to ensure DOM is ready
@@ -315,17 +262,51 @@ export function ChatInput() {
 
         const messageContent: Content[] = [{ type: "text", text: content }, ...finalAttachments];
 
+        // Process pending document attachments into artifact files now (at send).
+        // `sendMessage` writes them into the chat's workspace once it exists.
+        const artifactFiles = (
+          await Promise.all(
+            pendingFiles.map(async (file) => {
+              try {
+                return await processUploadedFile(file);
+              } catch (error) {
+                console.error(`Failed to process attachment ${file.name}:`, error);
+                return [];
+              }
+            }),
+          )
+        ).flat();
+
+        // Tell the model which files are available in the artifacts workspace so
+        // it reads them. The UI renders this line back as clickable chips.
+        if (artifactFiles.length > 0) {
+          const reference: TextContent = {
+            type: "text",
+            text: formatArtifactReference(artifactFiles.map((f) => f.path)),
+          };
+          messageContent.push(reference);
+        }
+
         const message: Message = {
           role: Role.User,
           content: messageContent,
         };
 
-        sendMessage(message);
+        sendMessage(message, undefined, artifactFiles.length > 0 ? artifactFiles : undefined);
         setContent("");
-        setAttachments([]);
+        clearAttachments();
       }
     },
-    [isResponding, content, attachments, isContinuousCaptureActive, captureFrame, sendMessage],
+    [
+      isResponding,
+      content,
+      attachments,
+      pendingFiles,
+      isContinuousCaptureActive,
+      captureFrame,
+      sendMessage,
+      clearAttachments,
+    ],
   );
 
   const handleAttachmentClick = useCallback(() => {
@@ -359,7 +340,7 @@ export function ChatInput() {
         });
       }
     },
-    [handleFiles],
+    [handleFiles, setExtractingAttachments],
   );
 
   const handleContinuousCaptureToggle = useCallback(async () => {
@@ -385,9 +366,20 @@ export function ChatInput() {
     [handleFiles],
   );
 
-  const handleRemoveAttachment = useCallback((index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  const handleRemoveAttachment = useCallback(
+    (index: number) => {
+      removeAttachment(index);
+    },
+    [removeAttachment],
+  );
+
+  const handleRemovePendingFile = useCallback(
+    (index: number) => {
+      // Nothing is written to artifacts until send, so removing just drops it.
+      setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+    },
+    [setPendingFiles],
+  );
 
   const handleContentChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
@@ -465,13 +457,13 @@ export function ChatInput() {
           className={`relative @container contain-[layout_style] will-change-[height] ${
             isDragging
               ? "border-2 border-dashed border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/40 shadow-2xl shadow-slate-500/30 dark:shadow-slate-400/20 scale-[1.02] transition-all duration-200 rounded-lg md:rounded-2xl"
-              : `border-0 md:border border-t border-solid border-neutral-200/60 dark:border-neutral-700/60 bg-white/60 dark:bg-neutral-950/70 rounded-2xl md:rounded-2xl`
+              : `border border-solid border-neutral-200/60 dark:border-neutral-700/60 bg-white/60 dark:bg-neutral-950/70 rounded-2xl md:rounded-2xl`
           } backdrop-blur-2xl flex flex-col min-h-16 md:min-h-12 shadow-sm transition-all duration-200`}
         >
           <input
             type="file"
             multiple
-            accept={[...(config.vision?.files ?? []), ...acceptTypes()].join(",")}
+            accept={acceptString}
             ref={fileInputRef}
             className="hidden"
             onChange={handleFileChange}
@@ -479,7 +471,7 @@ export function ChatInput() {
 
           {/* Drop zone overlay */}
           {isDragging && (
-            <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-sm">
+            <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-xl">
               <div className="text-slate-700 dark:text-slate-300 font-semibold text-lg text-center">
                 Drop files here
               </div>
@@ -490,18 +482,20 @@ export function ChatInput() {
           )}
 
           {/* Attachments display */}
-          {(attachments.length > 0 || extractingAttachments.size > 0) && (
-            <div className="p-3">
+          {(attachments.length > 0 || pendingFiles.length > 0 || extractingAttachments.size > 0) && (
+            <div className={cn("p-3 transition-all duration-200", isDragging && "blur-sm")}>
               <ChatInputAttachments
                 attachments={attachments}
+                artifactAttachments={pendingFiles.map((f) => f.name)}
                 extractingAttachments={extractingAttachments}
                 onRemove={handleRemoveAttachment}
+                onRemoveArtifact={handleRemovePendingFile}
               />
             </div>
           )}
 
           {/* Input area */}
-          <div className="relative flex-1">
+          <div className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}>
             {isRealtimeSelected ? (
               <>
                 <textarea
@@ -591,7 +585,7 @@ export function ChatInput() {
                 {shouldShowPlaceholder && (
                   <div
                     className={cn(
-                      "absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-600 dark:text-neutral-300 transition-all duration-200",
+                      "absolute top-3 md:top-4 left-3 md:left-4 pointer-events-none text-neutral-500 dark:text-neutral-400 transition-all duration-200",
                       messages.length === 0 && "typewriter-text",
                     )}
                     style={
@@ -611,7 +605,12 @@ export function ChatInput() {
           </div>
 
           {/* Controls */}
-          <div className="relative flex items-center justify-between p-3 pt-0 pb-3">
+          <div
+            className={cn(
+              "relative flex items-center justify-between p-3 pt-0 pb-3 transition-all duration-200",
+              isDragging && "blur-sm",
+            )}
+          >
             {isRealtimeSelected && !isListening && (
               <button
                 type="button"
@@ -622,8 +621,8 @@ export function ChatInput() {
                   <Mic size={15} />
                 </div>
                 <span className="text-xs text-neutral-500 dark:text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200 transition-colors whitespace-nowrap">
-                  <span className="hidden @md:inline">Click to start voice conversation</span>
-                  <span className="@md:hidden">Click to start</span>
+                  <span className="hidden @xl:inline">Click to start voice conversation</span>
+                  <span className="@xl:hidden">Click to start</span>
                 </span>
               </button>
             )}
@@ -667,6 +666,234 @@ export function ChatInput() {
               </div>
             )}
             <div className="flex items-center gap-2">
+              {!isRealtimeSelected && (
+                <ChatInputAddMenu
+                  isScreenCaptureAvailable={isScreenCaptureAvailable}
+                  isContinuousCaptureActive={isContinuousCaptureActive}
+                  canTranscribe={canTranscribe}
+                  isTranscribing={isTranscribing}
+                  isResponding={isResponding}
+                  visibleProviders={visibleProviders}
+                  getProviderState={getProviderState}
+                  setProviderEnabled={setProviderEnabled}
+                  onAttachmentClick={handleAttachmentClick}
+                  onContinuousCaptureToggle={handleContinuousCaptureToggle}
+                  onTranscriptionClick={handleTranscriptionClick}
+                  onDriveSelect={setActiveDrive}
+                />
+              )}
+              {/* Model selector */}
+              {models.length > 0 && !isRealtimeSelected && !currentAgent && (
+                <ModelDropdown
+                  models={models}
+                  value={model?.id ?? ""}
+                  onChange={(modelId) => {
+                    const m = models.find((m) => m.id === modelId);
+                    if (m) onModelChange(m);
+                  }}
+                  dropdownClassName="w-auto min-w-48 whitespace-nowrap"
+                  trigger={({ onClick, onPointerDownCapture }) => (
+                    <button
+                      type="button"
+                      onClick={onClick}
+                      onPointerDownCapture={onPointerDownCapture}
+                      className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
+                    >
+                      <span className="shrink-0 flex justify-center">{toolIndicator}</span>
+                      <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
+                    </button>
+                  )}
+                />
+              )}
+
+              {/* Agent picker — combined trigger + active-agent badge */}
+              {currentAgent && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setCurrentAgent(null);
+                    setShowAgentDrawer(false);
+                  }}
+                  className="group flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-xs font-medium transition-colors text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                  title="Deselect agent"
+                >
+                  <span className="shrink-0 w-3.5 flex justify-center relative">
+                    <Bot size={14} className="transition-opacity group-hover:opacity-0" />
+                    <X
+                      size={14}
+                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
+                    />
+                  </span>
+                  <span className="truncate max-w-28">{currentAgent.name}</span>
+                </button>
+              )}
+              {/* Screen share active indicator */}
+              {!isRealtimeSelected && isContinuousCaptureActive && (
+                <button
+                  type="button"
+                  onClick={stopCapture}
+                  className="group flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-xs font-medium transition-colors text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200"
+                  title="Stop screen sharing"
+                >
+                  <span className="shrink-0 w-3.5 flex justify-center relative">
+                    <ScreenShare size={14} className="transition-opacity group-hover:opacity-0" />
+                    <X
+                      size={14}
+                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
+                    />
+                  </span>
+                  <span>Sharing</span>
+                </button>
+              )}
+
+              {voiceAvailable && isRealtimeSelected && (
+                <DropdownMenu
+                  anchor="bottom start"
+                  panelClassName="max-h-[50vh]! min-w-52"
+                  trigger={
+                    <MenuButton
+                      className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
+                      title="Select microphone"
+                      aria-label="Select microphone"
+                    >
+                      <span className="shrink-0 flex justify-center">
+                        <Mic size={14} />
+                      </span>
+                      <span className="hidden @md:inline truncate min-w-0">
+                        {(() => {
+                          const selected = inputDevices.find((d) => d.deviceId === inputDeviceId);
+                          if (selected) return selected.label || "Microphone";
+                          return "Default";
+                        })()}
+                      </span>
+                    </MenuButton>
+                  }
+                >
+                  {inputDevices.length === 0 ? (
+                    <DropdownMenuItem
+                      icon={<Mic size={14} className="shrink-0" />}
+                      onClick={() => {
+                        void requestAudioPermission();
+                      }}
+                    >
+                      Allow microphone access
+                    </DropdownMenuItem>
+                  ) : (
+                    <>
+                      <DropdownMenuItem onClick={() => setInputDevice(undefined)}>System Default</DropdownMenuItem>
+                      {inputDevices.map((device) => (
+                        <DropdownMenuItem key={device.deviceId} onClick={() => setInputDevice(device.deviceId)}>
+                          {device.label || `Microphone (${device.deviceId.slice(0, 8)})`}
+                        </DropdownMenuItem>
+                      ))}
+                    </>
+                  )}
+                </DropdownMenu>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 md:gap-1 min-h-9 md:min-h-7">
+              {/* Dynamic Send/Mic/Voice/Loading Button */}
+              {isRealtimeSelected ? (
+                isListening ? (
+                  <>
+                    {voiceTextInput.trim() && (
+                      <button
+                        type="button"
+                        className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        onClick={() => {
+                          sendVoiceText(voiceTextInput.trim());
+                          setVoiceTextInput("");
+                        }}
+                        title="Send text"
+                      >
+                        <Send size={16} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200 transition-all text-xs font-medium"
+                      onClick={async () => {
+                        await stopVoice();
+                      }}
+                      title="Stop voice mode"
+                    >
+                      <Square size={12} />
+                      <span>Stop</span>
+                    </button>
+                  </>
+                ) : null
+              ) : isResponding ? (
+                <button
+                  type="button"
+                  className="group/stop p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                  onClick={stopStreaming}
+                  title="Stop generating (Esc)"
+                >
+                  <LoaderCircle size={16} className="animate-spin group-hover/stop:hidden" />
+                  <Square size={16} className="hidden group-hover/stop:block" />
+                </button>
+              ) : content.trim() ? (
+                <button
+                  className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                  type="submit"
+                >
+                  <Send size={16} />
+                </button>
+              ) : canTranscribe && !isListening ? (
+                transcribingContent ? (
+                  <button
+                    type="button"
+                    className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
+                    disabled
+                    title="Processing audio..."
+                  >
+                    <Loader2 size={16} className="animate-spin" />
+                  </button>
+                ) : isTranscribing ? (
+                  // Recording in progress — show stop button on all devices
+                  <button
+                    type="button"
+                    className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                    onClick={handleTranscriptionClick}
+                    title="Stop recording"
+                    disabled={isResponding}
+                  >
+                    <Square size={16} />
+                  </button>
+                ) : (
+                  // Not yet recording — desktop shows mic button; mobile uses the + menu
+                  <>
+                    <Tooltip content="Start dictate" side="bottom" className="hidden md:block">
+                      <button
+                        type="button"
+                        className="p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                        onClick={handleTranscriptionClick}
+                        disabled={isResponding}
+                      >
+                        <Mic size={16} />
+                      </button>
+                    </Tooltip>
+                    <button
+                      className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      type="submit"
+                      disabled={isResponding}
+                    >
+                      <Send size={16} />
+                    </button>
+                  </>
+                )
+              ) : (
+                <button
+                  className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                  type="submit"
+                  disabled={isResponding}
+                >
+                  <Send size={16} />
+                </button>
+              )}
+
               {voiceAvailable && !currentAgent?.model && (
                 <div
                   ref={modeSliderRef}
@@ -745,489 +972,6 @@ export function ChatInput() {
                   </button>
                 </div>
               )}
-
-              {currentAgent?.model ? (
-                /* Agent overrides model — show agent badge instead of model selector */
-                <div className="items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentAgent(null)}
-                    className="flex group items-center gap-1 pl-1 pr-1.5 py-1 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors max-w-48"
-                    title="Deselect agent"
-                  >
-                    <span className="shrink-0 w-3.5 flex justify-center relative">
-                      <Bot size={14} className="transition-opacity group-hover:opacity-0" />
-                      <X
-                        size={14}
-                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
-                      />
-                    </span>
-                    <span className="truncate min-w-0">{currentAgent.name}</span>
-                  </button>
-                </div>
-              ) : (
-                <>
-                  {models.length > 0 && !isRealtimeSelected && (
-                    <Menu>
-                      <MenuButton
-                        onPointerDownCapture={(e) => {
-                          // Commit synchronously so MenuItems mounts with the right list
-                          // on the very first render — otherwise the menu opens with the
-                          // visible-only list and then re-renders bigger, causing a jump.
-                          flushSync(() => setShowHiddenModels(e.altKey));
-                        }}
-                        className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
-                      >
-                        <span className="shrink-0 flex justify-center">{toolIndicator}</span>
-                        <span className="truncate min-w-0">{model?.name ?? model?.id ?? "Select Model"}</span>
-                      </MenuButton>
-                      <MenuItems
-                        modal={false}
-                        transition
-                        anchor="bottom start"
-                        className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 whitespace-nowrap dark:ring-1 dark:ring-white/10"
-                      >
-                        {models
-                          .filter((m) => m.id !== "realtime" && !m.hidden)
-                          .map((modelItem) => (
-                            <ModelMenuItem key={modelItem.id} model={modelItem} onSelect={onModelChange} />
-                          ))}
-                        {showHiddenModels && models.some((m) => m.id !== "realtime" && m.hidden) && (
-                          <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 bg-neutral-100/60 dark:bg-white/5 border-y border-white/20 dark:border-white/10">
-                            Hidden
-                          </div>
-                        )}
-                        {showHiddenModels &&
-                          models
-                            .filter((m) => m.id !== "realtime" && m.hidden)
-                            .map((modelItem) => (
-                              <ModelMenuItem key={modelItem.id} model={modelItem} onSelect={onModelChange} />
-                            ))}
-                      </MenuItems>
-                    </Menu>
-                  )}
-
-                  {currentAgent && (
-                    <button
-                      type="button"
-                      onClick={() => setCurrentAgent(null)}
-                      className="hidden lg:flex group items-center gap-1 pl-2 pr-1.5 py-1 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 text-sm transition-colors"
-                      title="Deselect agent"
-                    >
-                      <span className="shrink-0 w-3.5 flex justify-center relative">
-                        <Bot size={14} className="transition-opacity group-hover:opacity-0" />
-                        <X
-                          size={14}
-                          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity opacity-0 group-hover:opacity-100"
-                        />
-                      </span>
-                      <span className="max-w-20 truncate">{currentAgent.name}</span>
-                    </button>
-                  )}
-                </>
-              )}
-
-              {voiceAvailable && isRealtimeSelected && (
-                <Menu>
-                  <MenuButton
-                    className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
-                    title="Select microphone"
-                    aria-label="Select microphone"
-                  >
-                    <span className="shrink-0 flex justify-center">
-                      <Mic size={14} />
-                    </span>
-                    <span className="hidden md:inline truncate min-w-0">
-                      {(() => {
-                        const selected = inputDevices.find((d) => d.deviceId === inputDeviceId);
-                        if (selected) return selected.label || "Microphone";
-                        return "Default";
-                      })()}
-                    </span>
-                  </MenuButton>
-                  <MenuItems
-                    modal={false}
-                    transition
-                    anchor="bottom start"
-                    className="max-h-[50vh]! mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10"
-                  >
-                    {inputDevices.length === 0 ? (
-                      <MenuItem>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void requestAudioPermission();
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5"
-                        >
-                          <Mic size={14} className="shrink-0" />
-                          <span>Allow microphone access</span>
-                        </button>
-                      </MenuItem>
-                    ) : (
-                      <>
-                        <MenuItem>
-                          <button
-                            type="button"
-                            onClick={() => setInputDevice(undefined)}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 border-b border-white/20 dark:border-white/10"
-                          >
-                            <span className="truncate">System Default</span>
-                          </button>
-                        </MenuItem>
-                        {inputDevices.map((device) => (
-                          <MenuItem key={device.deviceId}>
-                            <button
-                              type="button"
-                              onClick={() => setInputDevice(device.deviceId)}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 border-b border-white/20 dark:border-white/10 last:border-b-0"
-                            >
-                              <span className="truncate">
-                                {device.label || `Microphone (${device.deviceId.slice(0, 8)})`}
-                              </span>
-                            </button>
-                          </MenuItem>
-                        ))}
-                      </>
-                    )}
-                  </MenuItems>
-                </Menu>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 md:gap-1 min-h-9 md:min-h-7">
-              {/* Features - Show inline buttons for 2 or fewer providers, otherwise show menu (hidden on mobile) */}
-              <div className="hidden md:contents">
-                {visibleProviders.length > 0 && visibleProviders.length <= 2 ? (
-                  // Inline toggle buttons for 2 or fewer providers
-                  visibleProviders.map((provider: ToolProvider) => {
-                    const icon = provider.icon || Sparkles;
-                    const state = getProviderState(provider.id);
-                    const providerEnabled = state === ProviderState.Connected;
-                    const providerInitializing = state === ProviderState.Initializing;
-                    const providerFailed = state === ProviderState.Failed;
-
-                    const renderIcon = () => {
-                      if (providerInitializing) return <LoaderCircle size={14} className="animate-spin" />;
-                      if (providerFailed) return <TriangleAlert size={14} />;
-                      if (typeof icon === "string")
-                        return <McpProviderIcon src={icon} size={14} className="shrink-0 object-contain" />;
-                      const Icon = icon;
-                      return <Icon size={14} />;
-                    };
-
-                    return (
-                      <button
-                        key={provider.id}
-                        type="button"
-                        className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 disabled:opacity-50 ${
-                          providerEnabled
-                            ? "text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 bg-blue-100/80 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded-lg"
-                            : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        }`}
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (providerInitializing) return;
-                          try {
-                            await setProviderEnabled(provider.id, !providerEnabled);
-                          } catch (error) {
-                            console.error(`Failed to toggle provider ${provider.name}:`, error);
-                          }
-                        }}
-                        disabled={providerInitializing}
-                        title={
-                          providerFailed
-                            ? `${provider.name} - Failed to connect (click to retry)`
-                            : providerEnabled
-                              ? `${provider.name} - Click to disable`
-                              : `${provider.name} - Click to enable`
-                        }
-                      >
-                        {renderIcon()}
-                      </button>
-                    );
-                  })
-                ) : visibleProviders.length > 2 ? (
-                  // Menu for more than 2 providers
-                  <Menu>
-                    <MenuButton
-                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      title="Features"
-                    >
-                      <Sliders size={16} />
-                    </MenuButton>
-                    <MenuItems
-                      modal={false}
-                      transition
-                      anchor="bottom end"
-                      className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-52 dark:ring-1 dark:ring-white/10 max-h-[60vh] overflow-y-auto"
-                    >
-                      {visibleProviders.map((provider: ToolProvider) => {
-                        const icon = provider.icon || Sparkles;
-                        const state = getProviderState(provider.id);
-                        const providerEnabled = state === ProviderState.Connected;
-                        const providerInitializing = state === ProviderState.Initializing;
-                        const providerFailed = state === ProviderState.Failed;
-
-                        const renderIcon = () => {
-                          if (typeof icon === "string")
-                            return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
-                          const Icon = icon;
-                          return <Icon size={16} />;
-                        };
-
-                        return (
-                          <MenuItem key={provider.id}>
-                            <button
-                              type="button"
-                              onClick={async (e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                try {
-                                  await setProviderEnabled(provider.id, !providerEnabled);
-                                } catch (error) {
-                                  console.error(`Failed to toggle provider ${provider.name}:`, error);
-                                }
-                              }}
-                              disabled={providerInitializing}
-                              className={`group flex w-full items-center justify-between px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0 disabled:opacity-50`}
-                            >
-                              <div className="flex items-center gap-3">
-                                {renderIcon()}
-                                <div className="flex flex-col items-start">
-                                  <span className="font-medium text-sm">{provider.name}</span>
-                                  {provider.description && (
-                                    <span className="text-xs text-neutral-600 dark:text-neutral-400">
-                                      {provider.description}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 pl-2">
-                                {providerInitializing ? (
-                                  <LoaderCircle
-                                    size={16}
-                                    className="animate-spin text-neutral-600 dark:text-neutral-400"
-                                  />
-                                ) : providerFailed ? (
-                                  <TriangleAlert
-                                    size={16}
-                                    className="text-neutral-600 dark:text-neutral-400"
-                                    strokeWidth={2.5}
-                                  />
-                                ) : providerEnabled ? (
-                                  <Check
-                                    size={16}
-                                    className="text-neutral-800 dark:text-neutral-200"
-                                    strokeWidth={2.5}
-                                  />
-                                ) : (
-                                  <div className="w-4 h-4" />
-                                )}
-                              </div>
-                            </button>
-                          </MenuItem>
-                        );
-                      })}
-                    </MenuItems>
-                  </Menu>
-                ) : null}
-              </div>
-
-              {/* Mobile: Plus button opens bottom sheet */}
-              {!isRealtimeSelected && (
-                <button
-                  type="button"
-                  className="md:hidden p-2.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  title="More options"
-                  onClick={() => setShowMobileSheet(true)}
-                >
-                  <Plus size={16} />
-                </button>
-              )}
-
-              {/* Desktop: Screen capture and attach buttons (hidden on mobile) */}
-              {!isRealtimeSelected && (
-                <div className="hidden md:contents">
-                  {isScreenCaptureAvailable && (
-                    <button
-                      type="button"
-                      className={`p-2.5 md:p-1.5 flex items-center gap-1.5 text-xs font-medium transition-all duration-300 ${
-                        isContinuousCaptureActive
-                          ? "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg"
-                          : "text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      }`}
-                      onClick={handleContinuousCaptureToggle}
-                      title={
-                        isContinuousCaptureActive ? "Stop continuous screen capture" : "Start continuous screen capture"
-                      }
-                    >
-                      <ScreenShare size={14} />
-                      {isContinuousCaptureActive && <span className="hidden sm:inline">Capturing</span>}
-                    </button>
-                  )}
-
-                  {config.drives.length > 0 ? (
-                    <Menu>
-                      <MenuButton className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200">
-                        <Paperclip size={16} />
-                      </MenuButton>
-                      <MenuItems
-                        modal={false}
-                        transition
-                        anchor="bottom end"
-                        className="mt-2 rounded-xl border-2 bg-white/40 dark:bg-neutral-950/80 backdrop-blur-3xl border-white/40 dark:border-neutral-700/60 overflow-hidden shadow-2xl shadow-black/40 dark:shadow-black/80 z-50 min-w-48 dark:ring-1 dark:ring-white/10"
-                      >
-                        <MenuItem>
-                          <button
-                            type="button"
-                            onClick={handleAttachmentClick}
-                            className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10"
-                          >
-                            <Paperclip size={16} />
-                            <span className="font-medium text-sm">Upload</span>
-                          </button>
-                        </MenuItem>
-                        {config.drives.map((fp) => (
-                          <MenuItem key={fp.id}>
-                            <button
-                              type="button"
-                              onClick={() => setActiveDrive(fp)}
-                              className="group flex w-full items-center gap-3 px-4 py-2.5 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-                            >
-                              {fp.icon ? (
-                                <span
-                                  className="shrink-0 bg-current inline-block"
-                                  style={{
-                                    width: 16,
-                                    height: 16,
-                                    maskImage: `url(${fp.icon})`,
-                                    WebkitMaskImage: `url(${fp.icon})`,
-                                    maskSize: "contain",
-                                    maskRepeat: "no-repeat",
-                                    maskPosition: "center",
-                                  }}
-                                />
-                              ) : (
-                                <HardDrive size={16} />
-                              )}
-                              <span className="font-medium text-sm">{fp.name}</span>
-                            </button>
-                          </MenuItem>
-                        ))}
-                      </MenuItems>
-                    </Menu>
-                  ) : (
-                    <button
-                      type="button"
-                      className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      onClick={handleAttachmentClick}
-                    >
-                      <Paperclip size={16} />
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Dynamic Send/Mic/Voice/Loading Button */}
-              {isRealtimeSelected ? (
-                isListening ? (
-                  <>
-                    {voiceTextInput.trim() && (
-                      <button
-                        type="button"
-                        className="p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                        onClick={() => {
-                          sendVoiceText(voiceTextInput.trim());
-                          setVoiceTextInput("");
-                        }}
-                        title="Send text"
-                      >
-                        <Send size={16} />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200 transition-all text-xs font-medium"
-                      onClick={async () => {
-                        await stopVoice();
-                      }}
-                      title="Stop voice mode"
-                    >
-                      <Square size={12} />
-                      <span>Stop</span>
-                    </button>
-                  </>
-                ) : null
-              ) : isResponding ? (
-                <button
-                  type="button"
-                  className="group/stop p-2.5 md:p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  onClick={stopStreaming}
-                  title="Stop generating (Esc)"
-                >
-                  <LoaderCircle size={16} className="animate-spin group-hover/stop:hidden" />
-                  <Square size={16} className="hidden group-hover/stop:block" />
-                </button>
-              ) : content.trim() ? (
-                <button
-                  className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  type="submit"
-                >
-                  <Send size={16} />
-                </button>
-              ) : canTranscribe && !isListening ? (
-                transcribingContent ? (
-                  <button
-                    type="button"
-                    className="p-2.5 md:p-1.5 text-neutral-600 dark:text-neutral-400"
-                    disabled
-                    title="Processing audio..."
-                  >
-                    <Loader2 size={16} className="animate-spin" />
-                  </button>
-                ) : isTranscribing ? (
-                  // Recording in progress — show stop button on all devices
-                  <button
-                    type="button"
-                    className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
-                    onClick={handleTranscriptionClick}
-                    title="Stop recording"
-                    disabled={isResponding}
-                  >
-                    <Square size={16} />
-                  </button>
-                ) : (
-                  // Not yet recording — desktop shows mic button; mobile uses the + menu
-                  <>
-                    <button
-                      type="button"
-                      className="hidden md:block p-1.5 transition-colors text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                      onClick={handleTranscriptionClick}
-                      title="Start recording"
-                      disabled={isResponding}
-                    >
-                      <Mic size={16} />
-                    </button>
-                    <button
-                      className="md:hidden p-2.5 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                      type="submit"
-                      disabled={isResponding}
-                    >
-                      <Send size={16} />
-                    </button>
-                  </>
-                )
-              ) : (
-                <button
-                  className="p-2.5 md:p-1.5 text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  type="submit"
-                  disabled={isResponding}
-                >
-                  <Send size={16} />
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -1240,217 +984,9 @@ export function ChatInput() {
           drive={activeDrive}
           onFilesSelected={handleDriveFiles}
           multiple
-          accept={[...(config.vision?.files ?? []), ...acceptTypes()].join(",")}
+          accept={acceptString}
         />
       )}
-
-      {/* Mobile bottom sheet — attach, screen capture, recording, and features */}
-      <Dialog open={showMobileSheet} onClose={setShowMobileSheet} className="relative z-50 md:hidden">
-        <DialogBackdrop
-          transition
-          className="fixed inset-0 bg-black/40 dark:bg-black/60 duration-200 ease-out data-closed:opacity-0"
-        />
-        <div className="fixed inset-x-0 bottom-0">
-          <DialogPanel
-            transition
-            className="w-full max-h-[75dvh] flex flex-col rounded-t-2xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-2xl border-t border-x border-neutral-200/50 dark:border-neutral-700/50 pb-[env(safe-area-inset-bottom)] duration-300 ease-out data-closed:translate-y-full"
-          >
-            {/* Drag handle */}
-            <div className="flex justify-center pt-3 pb-1 shrink-0">
-              <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-600" />
-            </div>
-
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200/60 dark:border-neutral-800/60 shrink-0">
-              <DialogTitle className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                More Options
-              </DialogTitle>
-              <button
-                type="button"
-                onClick={() => setShowMobileSheet(false)}
-                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-300 transition-colors"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            {/* Scrollable content */}
-            <div className="overflow-y-auto flex-1">
-              {/* Action cards */}
-              <div className="px-3 pt-2 pb-3 grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleAttachmentClick();
-                    setShowMobileSheet(false);
-                  }}
-                  className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95"
-                >
-                  <Paperclip size={20} />
-                  <span className="text-xs font-medium leading-tight text-center">Upload File</span>
-                </button>
-
-                {config.drives.map((fp) => (
-                  <button
-                    key={fp.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveDrive(fp);
-                      setShowMobileSheet(false);
-                    }}
-                    className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95"
-                  >
-                    {fp.icon ? (
-                      <span
-                        className="bg-current inline-block"
-                        style={{
-                          width: 20,
-                          height: 20,
-                          maskImage: `url(${fp.icon})`,
-                          WebkitMaskImage: `url(${fp.icon})`,
-                          maskSize: "contain",
-                          maskRepeat: "no-repeat",
-                          maskPosition: "center",
-                        }}
-                      />
-                    ) : (
-                      <HardDrive size={20} />
-                    )}
-                    <span className="text-xs font-medium leading-tight text-center">{fp.name}</span>
-                  </button>
-                ))}
-
-                {isScreenCaptureAvailable && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleContinuousCaptureToggle();
-                      setShowMobileSheet(false);
-                    }}
-                    className={`flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl transition-colors active:scale-95 ${
-                      isContinuousCaptureActive
-                        ? "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400"
-                        : "bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200"
-                    }`}
-                  >
-                    <ScreenShare size={20} />
-                    <span className="text-xs font-medium leading-tight text-center">
-                      {isContinuousCaptureActive ? "Stop Capture" : "Screen Capture"}
-                    </span>
-                  </button>
-                )}
-
-                {canTranscribe && !isTranscribing && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleTranscriptionClick();
-                      setShowMobileSheet(false);
-                    }}
-                    disabled={isResponding}
-                    className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors active:scale-95 disabled:opacity-50"
-                  >
-                    <Mic size={20} />
-                    <span className="text-xs font-medium leading-tight text-center">Start Recording</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Features section */}
-              {visibleProviders.length > 0 && (
-                <>
-                  <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
-                  <div className="px-4 pb-1">
-                    <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-                      Features
-                    </p>
-                  </div>
-                  <div className="px-2">
-                    {visibleProviders.map((provider: ToolProvider) => {
-                      const icon = provider.icon || Sparkles;
-                      const state = getProviderState(provider.id);
-                      const providerEnabled = state === ProviderState.Connected;
-                      const providerInitializing = state === ProviderState.Initializing;
-                      const providerFailed = state === ProviderState.Failed;
-
-                      const renderIcon = () => {
-                        if (providerInitializing) return <LoaderCircle size={16} className="animate-spin" />;
-                        if (providerFailed) return <TriangleAlert size={16} />;
-                        if (typeof icon === "string")
-                          return <McpProviderIcon src={icon} size={16} className="shrink-0 object-contain" />;
-                        const Icon = icon;
-                        return <Icon size={16} />;
-                      };
-
-                      return (
-                        <button
-                          key={provider.id}
-                          type="button"
-                          onClick={async (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if (providerInitializing) return;
-                            try {
-                              await setProviderEnabled(provider.id, !providerEnabled);
-                            } catch (error) {
-                              console.error(`Failed to toggle provider ${provider.name}:`, error);
-                            }
-                          }}
-                          disabled={providerInitializing}
-                          className={`flex w-full items-center gap-3 px-3 py-2.5 rounded-xl transition-colors disabled:opacity-50 ${
-                            providerEnabled
-                              ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
-                              : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
-                          }`}
-                        >
-                          {renderIcon()}
-                          <div className="flex flex-col items-start flex-1 min-w-0 text-left">
-                            <span className="font-medium text-sm">{provider.name}</span>
-                            {provider.description && (
-                              <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate w-full">
-                                {provider.description}
-                              </span>
-                            )}
-                          </div>
-                          {providerEnabled && !providerInitializing && !providerFailed && (
-                            <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
-                          )}
-                          {providerFailed && <TriangleAlert size={16} className="shrink-0 text-neutral-400" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="mx-4 my-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
-                </>
-              )}
-            </div>
-          </DialogPanel>
-        </div>
-      </Dialog>
     </>
-  );
-}
-
-function ModelMenuItem({ model, onSelect }: { model: Model; onSelect: (model: Model) => void }) {
-  return (
-    <MenuItem>
-      <button
-        type="button"
-        onClick={() => onSelect(model)}
-        title={model.description}
-        className="group flex w-full flex-col items-start px-3 py-2 data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/40 dark:hover:bg-white/3 text-neutral-800 dark:text-neutral-200 transition-colors border-b border-white/20 dark:border-white/10 last:border-b-0"
-      >
-        <div className="flex items-center gap-2.5 w-full">
-          <div className="flex flex-col items-start flex-1 min-w-0">
-            <div className="font-semibold text-sm leading-tight whitespace-nowrap">{model.name ?? model.id}</div>
-            {model.description && (
-              <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5 text-left leading-snug opacity-90">
-                {model.description}
-              </div>
-            )}
-          </div>
-        </div>
-      </button>
-    </MenuItem>
   );
 }

@@ -1,4 +1,4 @@
-import { AlertTriangle, Loader2, Plus, Server, ToggleLeft, ToggleRight, Wrench } from "lucide-react";
+import { AlertTriangle, Loader2, Pencil, Plus, Server, ToggleLeft, ToggleRight, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BridgeEditor } from "@/features/agent/components/BridgeEditor";
 import { useAgents } from "@/features/agent/hooks/useAgents";
@@ -6,6 +6,7 @@ import type { Agent, BridgeServer } from "@/features/agent/types/agent";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { ProviderState } from "@/shared/types/chat";
 import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { Section } from "./Section";
 
 interface ToolsSectionProps {
@@ -29,7 +30,7 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
   // Global tools: built-in providers + config MCPs (everything not agent-internal)
   const availableTools = useMemo(() => {
     return providers
-      .filter((p) => !agentInternalIds.has(p.id))
+      .filter((p) => !agentInternalIds.has(p.id) && p.id !== "artifacts")
       .map((p) => ({
         id: p.id,
         label: p.name,
@@ -92,42 +93,52 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
           </button>
         }
       >
-        <div className="space-y-1">
-          {availableTools.map((tool) => (
-            <div key={tool.id} className="flex items-center gap-2 py-1.5">
-              <span className="text-neutral-600 dark:text-neutral-400">
-                {!tool.Icon ? (
-                  <Wrench size={16} />
-                ) : typeof tool.Icon === "string" ? (
-                  <McpProviderIcon src={tool.Icon} size={16} />
-                ) : (
-                  <tool.Icon width={16} height={16} />
-                )}
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">{tool.label}</div>
-                {tool.description && (
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
-                    {tool.description}
-                  </div>
-                )}
+        <div className="divide-y divide-neutral-200/40 dark:divide-neutral-700/40">
+          {availableTools.map((tool) => {
+            const enabled = agentToolIds.has(tool.id);
+            return (
+              <div key={tool.id} className="flex items-center gap-2 py-1.5">
+                <button
+                  type="button"
+                  onClick={() => toggleTool(tool.id)}
+                  className="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
+                >
+                  <Tooltip
+                    content={tool.description ?? tool.label}
+                    side="left"
+                    className="inline-flex items-center gap-2 min-w-0"
+                  >
+                    <div
+                      className={`shrink-0 w-5 h-5 flex items-center justify-center text-neutral-600 dark:text-neutral-400 ${!enabled ? "opacity-40" : ""}`}
+                    >
+                      {!tool.Icon ? (
+                        <Wrench size={13} />
+                      ) : typeof tool.Icon === "string" ? (
+                        <McpProviderIcon src={tool.Icon} size={13} />
+                      ) : (
+                        <tool.Icon width={13} height={13} />
+                      )}
+                    </div>
+                    <span
+                      className={`min-w-0 text-xs truncate ${enabled ? "text-neutral-900 dark:text-neutral-100 font-medium" : "text-neutral-500 dark:text-neutral-400"}`}
+                    >
+                      {tool.label}
+                    </span>
+                  </Tooltip>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleTool(tool.id)}
+                  className={`shrink-0 ${enabled ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
+                >
+                  {enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => toggleTool(tool.id)}
-                className={`shrink-0 ${agentToolIds.has(tool.id) ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
-                title={agentToolIds.has(tool.id) ? "Enabled (click to disable)" : "Disabled (click to enable)"}
-              >
-                {agentToolIds.has(tool.id) ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-              </button>
-            </div>
-          ))}
+            );
+          })}
 
           {agent.servers.map((server) => {
             const state = server.enabled ? getProviderState(server.id) : ProviderState.Disconnected;
-            // Prefer the user-configured icon; fall back to the server-published icon
-            // from the live MCPClient (populated after connect via getServerVersion().icons),
-            // then fall back to the server's favicon.
             const liveIcon = providers.find((p) => p.id === server.id)?.icon;
             const resolvedIcon =
               typeof server.icon === "string" && server.icon
@@ -139,49 +150,65 @@ export function ToolsSection({ agent }: ToolsSectionProps) {
                     : undefined;
 
             return (
-              <div key={server.id} className="flex items-center gap-2 py-1.5">
-                {state === ProviderState.Failed ? (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setProviderEnabled(server.id, true);
-                    }}
-                    className="shrink-0 text-amber-500 hover:text-amber-600"
-                    title="Connection failed — click to retry"
+              <div key={server.id} className="group flex items-center gap-2 py-1.5">
+                <button
+                  type="button"
+                  onClick={() => toggleServer(agent.id, server.id)}
+                  className="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
+                >
+                  <Tooltip
+                    content={server.description || server.url}
+                    side="left"
+                    className="inline-flex items-center gap-2 min-w-0"
                   >
-                    <AlertTriangle size={14} />
-                  </button>
-                ) : null}
+                    <div
+                      className={`shrink-0 w-5 h-5 flex items-center justify-center text-neutral-600 dark:text-neutral-400 ${!server.enabled ? "opacity-40" : ""}`}
+                    >
+                      {state === ProviderState.Initializing ? (
+                        <Loader2 size={13} className="animate-spin" aria-label="Connecting…" />
+                      ) : state === ProviderState.Failed ? (
+                        <AlertTriangle size={13} className="text-amber-500" />
+                      ) : resolvedIcon ? (
+                        <McpProviderIcon src={resolvedIcon} size={13} className="object-contain" />
+                      ) : (
+                        <Server size={13} />
+                      )}
+                    </div>
+                    <span
+                      className={`min-w-0 text-xs truncate ${server.enabled ? "text-neutral-900 dark:text-neutral-100 font-medium" : "text-neutral-500 dark:text-neutral-400"}`}
+                    >
+                      {server.name}
+                    </span>
+                  </Tooltip>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleEditBridge(server)}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  className="shrink-0 opacity-0 group-hover:opacity-100 p-1 rounded text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-opacity"
+                  title="Edit server"
                 >
-                  {state === ProviderState.Initializing ? (
-                    <Loader2 size={14} className="shrink-0 text-neutral-400 animate-spin" aria-label="Connecting…" />
-                  ) : resolvedIcon && state !== ProviderState.Failed ? (
-                    <McpProviderIcon src={resolvedIcon} size={14} className="shrink-0 object-contain" />
-                  ) : (
-                    <Server size={14} className="text-neutral-500 dark:text-neutral-400 shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
-                      {server.name}
-                    </div>
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{server.url}</div>
-                  </div>
+                  <Pencil size={12} />
                 </button>
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleServer(agent.id, server.id);
+                    if (state === ProviderState.Failed) {
+                      setProviderEnabled(server.id, true);
+                    } else {
+                      toggleServer(agent.id, server.id);
+                    }
                   }}
                   className={`shrink-0 ${server.enabled ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-500"}`}
-                  title={server.enabled ? "Enabled (click to disable)" : "Disabled (click to enable)"}
+                  title={
+                    state === ProviderState.Failed
+                      ? "Connection failed — click to retry"
+                      : server.enabled
+                        ? "Enabled (click to disable)"
+                        : "Disabled (click to enable)"
+                  }
                 >
-                  {server.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                  {server.enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                 </button>
               </div>
             );

@@ -18,7 +18,6 @@ export interface Agent {
   id: string;
 
   name: string;
-  description?: string;
 
   model?: string; // model ID override for this agent
   instructions?: string;

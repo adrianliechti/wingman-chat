@@ -1,6 +1,8 @@
 import { Download, File } from "lucide-react";
 import mime from "mime";
-import { downloadBlob, downloadFromUrl, getFileExt, parseDataUrl } from "@/shared/lib/utils";
+import { cn } from "@/shared/lib/cn";
+import { dataUrlToBytes } from "@/shared/lib/fileContent";
+import { downloadBlob, downloadFromUrl, formatBytes, getFileExt } from "@/shared/lib/utils";
 import type { AudioContent, Content, FileContent, ImageContent } from "@/shared/types/chat";
 import { Markdown } from "./Markdown";
 import { CsvRenderer } from "./renderers/CsvRenderer";
@@ -107,6 +109,13 @@ function ImageDisplay({ content, className }: { content: ImageContent; className
   );
 }
 
+// Byte size of a data URL payload, formatted (e.g. "17.1 KB"), or null if not a data URL.
+function fileSizeLabel(data: string): string | null {
+  const parsed = dataUrlToBytes(data);
+  return parsed ? formatBytes(parsed.bytes.length) : null;
+}
+
+// Compact horizontal "attachment" chip: icon + filename + size, click to download.
 function FileDisplay({ content, className }: { content: FileContent; className?: string }) {
   const handleDownload = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -116,47 +125,49 @@ function FileDisplay({ content, className }: { content: FileContent; className?:
     downloadContent(content.data, content.name, mimeType);
   };
 
-  const fileExtension = getFileExt(content.name).slice(1).toUpperCase();
+  const ext = getFileExt(content.name).slice(1).toUpperCase();
+  const size = fileSizeLabel(content.data);
 
   return (
     <button
       type="button"
-      className={`relative inline-block cursor-pointer ${className || "w-48 h-48"}`}
       onClick={handleDownload}
       title={`Download ${content.name}`}
       aria-label={`Download ${content.name}`}
+      className={cn(
+        "group/file inline-flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-left align-top transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800/60 dark:hover:bg-neutral-700/60",
+        "w-72 max-w-full",
+        className,
+      )}
     >
-      {/* Main file container */}
-      <div className="w-full h-full bg-neutral-100 dark:bg-neutral-800 rounded-md border-2 border-dashed border-neutral-300 dark:border-neutral-600 flex flex-col items-center justify-center p-4 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors">
-        {/* File icon with extension overlay */}
-        <div className="relative mb-3">
-          <File className="w-12 h-12 text-neutral-500 dark:text-neutral-400" />
-          {fileExtension && (
-            <div className="absolute left-1/2 transform -translate-x-1/2 -bottom-2 bg-blue-600 text-white text-xs font-bold px-1.5 py-0.5 rounded w-12 text-center">
-              {fileExtension}
-            </div>
-          )}
-        </div>
+      {/* File icon with extension badge */}
+      <span className="relative shrink-0">
+        <File className="h-9 w-9 text-neutral-400 dark:text-neutral-500" strokeWidth={1.5} />
+        {ext && (
+          <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 rounded bg-neutral-500 px-1 text-[8px] font-bold leading-snug text-white dark:bg-neutral-600">
+            {ext}
+          </span>
+        )}
+      </span>
 
-        {/* Filename */}
-        <div className="text-sm text-neutral-700 dark:text-neutral-300 text-center font-medium w-full px-2">
-          <div className="truncate">{content.name}</div>
-        </div>
+      {/* Filename + size */}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          {content.name}
+        </span>
+        {size && <span className="block text-xs text-neutral-400 dark:text-neutral-500">{size}</span>}
+      </span>
 
-        {/* Download icon in corner */}
-        <div className="absolute top-2 right-2 opacity-0 hover:opacity-100 transition-opacity">
-          <Download className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
-        </div>
-      </div>
+      <Download className="h-4 w-4 shrink-0 text-neutral-400 opacity-0 transition-opacity group-hover/file:opacity-100" />
     </button>
   );
 }
 
-// Extract text content from data URL (decode base64)
+// Extract text content from data URL (UTF-8 decode the base64 payload)
 function extractTextFromDataUrl(data: string): string {
-  const parsed = parseDataUrl(data);
+  const parsed = dataUrlToBytes(data);
   if (parsed) {
-    return atob(parsed.data);
+    return new TextDecoder().decode(parsed.bytes);
   }
   return data;
 }
@@ -244,56 +255,63 @@ export function ContentRenderer({ content, className }: { content: Content; clas
   return null;
 }
 
-// Single content display for full-screen view (internal)
-function SingleContentDisplay({ content }: { content: Content }) {
-  return (
-    <div className="w-full">
-      <ContentRenderer content={content} className="w-full h-auto max-h-96 rounded-md object-contain" />
-    </div>
-  );
+// True when a content block should render as an inline image (preview) rather than a chip.
+function isImageContent(content: RenderableContent): boolean {
+  if (content.type === "image") return true;
+  if (content.type === "file") return detectMimeType(content.data, content.name).startsWith("image/");
+  return false;
 }
 
-// Multiple contents display for list view with uniform tiles (internal)
-// Only images render a visual preview; other types render a file tile.
+function asImage(content: RenderableContent): ImageContent {
+  return content.type === "image" ? content : { type: "image", name: content.name, data: content.data };
+}
+
+function asFile(content: RenderableContent): FileContent {
+  return content.type === "file" ? content : { type: "file", name: content.name || "audio.mp3", data: content.data };
+}
+
+// Single content: images/previewable files render their own preview; other files
+// render as a compact chip (sized to its content, not the full chat width).
+function SingleContentDisplay({ content }: { content: Content }) {
+  if (content.type === "image") {
+    return (
+      <div className="w-full">
+        <ImageDisplay content={content} className="max-h-96 w-auto rounded-md object-contain" />
+      </div>
+    );
+  }
+  return <ContentRenderer content={content} />;
+}
+
+// Multiple contents: a row of image thumbnails followed by a row of file chips.
 function MultipleContentsDisplay({ contents }: { contents: RenderableContent[] }) {
-  // Filter to only renderable content (images, files, audio)
-  const renderableContents = contents.filter((c) => c.type === "image" || c.type === "file" || c.type === "audio");
   const getContentKey = createContentKeyFactory();
+  const images = contents.filter(isImageContent);
+  const files = contents.filter((c) => !isImageContent(c));
 
   return (
-    <div className="flex flex-wrap gap-3">
-      {renderableContents.map((content) => {
-        const key = getContentKey(content);
-        const mimeType =
-          content.type === "image"
-            ? detectMimeType(content.data, content.name)
-            : content.type === "file"
-              ? detectMimeType(content.data, content.name)
-              : "audio/mpeg";
-
-        // Only show images as visual previews, everything else as file tiles
-        if (content.type === "image" || (content.type === "file" && mimeType.startsWith("image/"))) {
-          const imageContent =
-            content.type === "image" ? content : { type: "image" as const, name: content.name, data: content.data };
-          return (
+    <div className="flex flex-col gap-2">
+      {images.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {images.map((content) => (
             <div
-              key={key}
-              className="w-48 h-48 rounded-md overflow-hidden bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center cursor-pointer hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+              key={getContentKey(content)}
+              className="h-32 w-32 overflow-hidden rounded-md bg-neutral-100 dark:bg-neutral-800"
               title={getFilename(content)}
             >
-              <ImageDisplay content={imageContent} className="w-full h-full object-cover" />
+              <ImageDisplay content={asImage(content)} className="h-full w-full object-cover" />
             </div>
-          );
-        } else if (content.type === "file") {
-          // Everything else (video, audio, PDF, HTML, etc.) shows as file tile
-          return <FileDisplay key={key} content={content} className="w-48 h-48" />;
-        } else if (content.type === "audio") {
-          const filename = content.name || "audio.mp3";
-          const fileContent: FileContent = { type: "file", name: filename, data: content.data };
-          return <FileDisplay key={key} content={fileContent} className="w-48 h-48" />;
-        }
-        return null;
-      })}
+          ))}
+        </div>
+      )}
+
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {files.map((content) => (
+            <FileDisplay key={getContentKey(content)} content={asFile(content)} className="w-64" />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

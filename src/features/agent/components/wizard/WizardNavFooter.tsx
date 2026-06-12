@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Upload } from "lucide-react";
 
 interface WizardNavFooterProps {
   currentStep: number;
@@ -8,6 +8,7 @@ interface WizardNavFooterProps {
   onBack: () => void;
   onNext: () => void;
   onCreate: () => void;
+  onImport?: () => void;
   isCreating?: boolean;
 }
 
@@ -18,12 +19,13 @@ export function WizardNavFooter({
   onBack,
   onNext,
   onCreate,
+  onImport,
   isCreating,
 }: WizardNavFooterProps) {
   return (
     <div className="flex items-center justify-between px-5 py-3 border-t border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/30">
       <div>
-        {currentStep > 0 && (
+        {currentStep > 0 ? (
           <button
             type="button"
             onClick={onBack}
@@ -31,7 +33,15 @@ export function WizardNavFooter({
           >
             <ChevronLeft size={14} /> Back
           </button>
-        )}
+        ) : onImport ? (
+          <button
+            type="button"
+            onClick={onImport}
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 transition-colors"
+          >
+            <Upload size={14} /> Import
+          </button>
+        ) : null}
       </div>
 
       <div className="flex items-center gap-2">

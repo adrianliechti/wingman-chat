@@ -52,12 +52,26 @@ const PYPI_PACKAGES = [
   "python-pptx",
   "docx2txt",
   "pypdf",
+  // Pinned to match pdfplumber's exact `pdfminer.six==…` dependency so micropip
+  // doesn't hit a version conflict when both are in the same install batch.
+  "pdfminer.six==20251230",
+  "pdfplumber",
   "reportlab",
   "markdown",
+  "markdownify",
+  "tabulate",
   // Pin to last release before red-black-tree-mod was added — that dep only
   // ships as an sdist and our bundler only handles pure-Python wheels.
   "extract-msg==0.36.5",
 ];
+
+// Native-binary deps that have no pure wheel but are only imported lazily by
+// their dependents for features we don't use. We bundle the dependent anyway
+// and the runtime registers a micropip mock so install resolves (see
+// MOCK_PACKAGES in interpreter.ts). Names must be PEP 503 normalized.
+//   pypdfium2 — pdfplumber needs it only for page.to_image() rendering, not for
+//               extract_text()/extract_tables().
+const MOCKED_NATIVE_DEPS = new Set(["pypdfium2"]);
 
 // --- Helpers ----------------------------------------------------------------
 
@@ -208,6 +222,7 @@ async function resolveTransitiveDeps(pypiPackages, pyodideLock, builtinTargets) 
   while (queue.length > 0) {
     const pkg = queue.shift();
     for (const dep of await fetchDeps(pkg)) {
+      if (MOCKED_NATIVE_DEPS.has(dep)) continue; // mocked at runtime, not bundled
       if (isBuiltin(dep)) {
         if (!builtins.has(dep)) {
           builtins.add(dep);
@@ -235,6 +250,7 @@ async function resolveTransitiveDeps(pypiPackages, pyodideLock, builtinTargets) 
       if (visited.has(p)) continue;
       visited.add(p);
       for (const dep of depsCache.get(p) || []) {
+        if (MOCKED_NATIVE_DEPS.has(dep)) continue; // mocked at runtime, not bundled
         if (isBuiltin(dep)) {
           builtinDeps.add(builtinOriginal(dep));
         } else if (dep !== root) {
