@@ -1,29 +1,54 @@
-import { type Attributes, context, metrics, type Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import {
+  type Attributes,
+  context,
+  type Histogram,
+  metrics,
+  type Span,
+  SpanKind,
+  SpanStatusCode,
+  trace,
+} from "@opentelemetry/api";
 import { getConfig } from "../config";
 import type { AgentContext } from "../types/telemetry";
 
 const PROVIDER_NAME = "wingman";
 
 const tracer = trace.getTracer("wingman");
-const meter = metrics.getMeter("wingman");
 
-const operationDuration = meter.createHistogram("gen_ai.client.operation.duration", {
-  description: "GenAI operation duration",
-  unit: "s",
-  advice: {
-    explicitBucketBoundaries: [0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92],
-  },
-});
+// Unlike trace.getTracer (which returns a proxy that picks up the provider
+// registered later in initTelemetry), metrics.getMeter binds to whatever
+// global is set at call time — at module import that is the noop provider.
+// Create the instruments lazily so the first record() happens after init.
+let instruments: { operationDuration: Histogram; tokenUsage: Histogram } | undefined;
 
-const tokenUsage = meter.createHistogram("gen_ai.client.token.usage", {
-  description: "GenAI token usage",
-  unit: "{token}",
-  advice: {
-    explicitBucketBoundaries: [
-      1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864,
-    ],
-  },
-});
+function getInstruments() {
+  if (!instruments) {
+    const meter = metrics.getMeter("wingman");
+
+    instruments = {
+      operationDuration: meter.createHistogram("gen_ai.client.operation.duration", {
+        description: "GenAI operation duration",
+        unit: "s",
+        advice: {
+          explicitBucketBoundaries: [
+            0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92,
+          ],
+        },
+      }),
+      tokenUsage: meter.createHistogram("gen_ai.client.token.usage", {
+        description: "GenAI token usage",
+        unit: "{token}",
+        advice: {
+          explicitBucketBoundaries: [
+            1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864,
+          ],
+        },
+      }),
+    };
+  }
+
+  return instruments;
+}
 
 async function traceSpan<T>(
   setup: {
@@ -47,12 +72,18 @@ async function traceSpan<T>(
       return await body(span, childContext);
     } catch (error) {
       errorType = error instanceof Error ? error.constructor.name : "Error";
-      span.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
+      // Error strings often quote user content (interpreter stderr, API
+      // messages echoing input) — message text is Opt-In, like
+      // gen_ai.input.messages, so export only the error type by default.
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: getConfig().telemetryDebug ? String(error) : errorType,
+      });
       span.setAttribute("error.type", errorType);
       throw error;
     } finally {
       const durationS = (performance.now() - start) / 1000;
-      operationDuration.record(durationS, {
+      getInstruments().operationDuration.record(durationS, {
         ...setup.metricAttrs(),
         ...(errorType ? { "error.type": errorType } : {}),
       });
@@ -114,11 +145,11 @@ export async function traceGenAI<T>(
 
       if (response.inputTokens != null) {
         span.setAttribute("gen_ai.usage.input_tokens", response.inputTokens);
-        tokenUsage.record(response.inputTokens, { ...dims, "gen_ai.token.type": "input" });
+        getInstruments().tokenUsage.record(response.inputTokens, { ...dims, "gen_ai.token.type": "input" });
       }
       if (response.outputTokens != null) {
         span.setAttribute("gen_ai.usage.output_tokens", response.outputTokens);
-        tokenUsage.record(response.outputTokens, { ...dims, "gen_ai.token.type": "output" });
+        getInstruments().tokenUsage.record(response.outputTokens, { ...dims, "gen_ai.token.type": "output" });
       }
       if (response.cachedInputTokens != null) {
         span.setAttribute("gen_ai.usage.cache_read.input_tokens", response.cachedInputTokens);
