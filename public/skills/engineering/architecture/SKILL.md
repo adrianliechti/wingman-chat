@@ -3,15 +3,9 @@ name: architecture
 description: Create or evaluate an architecture decision record (ADR). Use when choosing between technologies (e.g., Kafka vs SQS), documenting a design decision with trade-offs and consequences, reviewing a system design proposal, or designing a new component from requirements and constraints.
 ---
 
-# /architecture
+# Architecture
 
 Create an Architecture Decision Record (ADR) or evaluate a system design.
-
-## Usage
-
-```
-/architecture $ARGUMENTS
-```
 
 ## Modes
 

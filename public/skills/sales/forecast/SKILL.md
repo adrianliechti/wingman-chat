@@ -3,19 +3,9 @@ name: forecast
 description: Generate a weighted sales forecast with best/likely/worst scenarios, commit vs. upside breakdown, and gap analysis. Use when preparing a quarterly forecast call, assessing gap-to-quota from a pipeline CSV, deciding which deals to commit vs. call upside, or checking pipeline coverage against your number.
 ---
 
-# /forecast
+# Forecast
 
 Generate a weighted sales forecast with risk analysis and commit recommendations.
-
-## Usage
-
-```
-/forecast [period]
-```
-
-Generate a forecast for: $ARGUMENTS
-
-If a file is referenced: @$1
 
 ---
 

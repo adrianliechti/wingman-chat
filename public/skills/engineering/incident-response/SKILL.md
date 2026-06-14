@@ -3,23 +3,11 @@ name: incident-response
 description: Run an incident response workflow — triage, communicate, and write postmortem. Trigger with "we have an incident", "production is down", an alert that needs severity assessment, a status update mid-incident, or when writing a blameless postmortem after resolution.
 ---
 
-# /incident-response
+# Incident Response
 
 Manage an incident from detection through postmortem.
 
-## Usage
-
-```
-/incident-response $ARGUMENTS
-```
-
 ## Modes
-
-```
-/incident-response new [description]     # Start a new incident
-/incident-response update [status]       # Post a status update
-/incident-response postmortem            # Generate postmortem from incident data
-```
 
 If no mode is specified, ask what phase the incident is in.
 

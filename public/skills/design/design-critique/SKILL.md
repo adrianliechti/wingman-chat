@@ -3,17 +3,11 @@ name: design-critique
 description: Get structured design feedback on usability, hierarchy, and consistency. Trigger with "review this design", "critique this mockup", "what do you think of this screen?", or when sharing a Figma link or screenshot for feedback at any stage from exploration to final polish.
 ---
 
-# /design-critique
+# Design Critique
 
 Get structured design feedback across multiple dimensions.
 
 ## Usage
-
-```
-/design-critique $ARGUMENTS
-```
-
-Review the design: @$1
 
 If a Figma URL is provided, pull the design from Figma. If a file is referenced, read it. Otherwise, ask the user to describe or share their design.
 

@@ -3,15 +3,9 @@ name: debug
 description: Structured debugging session — reproduce, isolate, diagnose, and fix. Trigger with an error message or stack trace, "this works in staging but not prod", "something broke after the deploy", or when behavior diverges from expected and the cause isn't obvious.
 ---
 
-# /debug
+# Debug
 
 Run a structured debugging session to find and fix issues systematically.
-
-## Usage
-
-```
-/debug $ARGUMENTS
-```
 
 ## How It Works
 

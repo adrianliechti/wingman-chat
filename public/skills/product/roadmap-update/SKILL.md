@@ -7,12 +7,6 @@ description: Update, create, or reprioritize your product roadmap. Use when addi
 
 Update, create, or reprioritize a product roadmap.
 
-## Usage
-
-```
-/roadmap-update $ARGUMENTS
-```
-
 ## Workflow
 
 ### 1. Understand Current State

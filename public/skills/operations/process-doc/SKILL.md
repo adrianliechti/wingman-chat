@@ -3,15 +3,9 @@ name: process-doc
 description: Document a business process — flowcharts, RACI, and SOPs. Use when formalizing a process that lives in someone's head, building a RACI to clarify who owns what, writing an SOP for a handoff or audit, or capturing the exceptions and edge cases of how work actually gets done.
 ---
 
-# /process-doc
+# Process Doc
 
 Document a business process as a complete standard operating procedure (SOP).
-
-## Usage
-
-```
-/process-doc $ARGUMENTS
-```
 
 ## How It Works
 

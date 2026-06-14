@@ -3,19 +3,9 @@ name: call-summary
 description: Process call notes or a transcript — extract action items, draft follow-up email, generate internal summary. Use when pasting rough notes or a transcript after a discovery, demo, or negotiation call, drafting a customer follow-up, logging the activity for your CRM, or capturing objections and next steps for your team.
 ---
 
-# /call-summary
+# Call Summary
 
 Process call notes or a transcript to extract action items, draft follow-up communications, and update records.
-
-## Usage
-
-```
-/call-summary <notes or transcript>
-```
-
-Process these call notes: $ARGUMENTS
-
-If a file is referenced: @$1
 
 ---
 

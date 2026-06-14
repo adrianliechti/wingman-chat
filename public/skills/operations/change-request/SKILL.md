@@ -3,15 +3,9 @@ name: change-request
 description: Create a change management request with impact analysis and rollback plan. Use when proposing a system or process change that needs approval, preparing a change record for CAB review, documenting risk and rollback steps before a deployment, or planning stakeholder communications for a rollout.
 ---
 
-# /change-request
+# Change Request
 
 Create a structured change request with impact analysis, risk assessment, and rollback plan.
-
-## Usage
-
-```
-/change-request $ARGUMENTS
-```
 
 ## Change Management Framework
 

@@ -7,12 +7,6 @@ description: Review and analyze product metrics with trend analysis and actionab
 
 Review and analyze product metrics, identify trends, and surface actionable insights.
 
-## Usage
-
-```
-/metrics-review $ARGUMENTS
-```
-
 ## Workflow
 
 ### 1. Gather Metrics Data

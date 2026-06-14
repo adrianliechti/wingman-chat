@@ -3,17 +3,11 @@ name: design-handoff
 description: Generate developer handoff specs from a design. Use when a design is ready for engineering and needs a spec sheet covering layout, design tokens, component props, interaction states, responsive breakpoints, edge cases, and animation details.
 ---
 
-# /design-handoff
+# Design Handoff
 
 Generate comprehensive developer handoff documentation from a design.
 
 ## Usage
-
-```
-/design-handoff $ARGUMENTS
-```
-
-Generate handoff specs for: @$1
 
 If a Figma URL is provided, pull the design from Figma. Otherwise, work from the provided description or screenshot.
 

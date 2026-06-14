@@ -7,12 +7,6 @@ description: Write a feature spec or PRD from a problem statement or feature ide
 
 Write a feature specification or product requirements document (PRD).
 
-## Usage
-
-```
-/write-spec $ARGUMENTS
-```
-
 ## Workflow
 
 ### 1. Understand the Feature

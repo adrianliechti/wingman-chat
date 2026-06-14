@@ -3,15 +3,9 @@ name: create-viz
 description: Create publication-quality visualizations with Python. Use when turning query results or a DataFrame into a chart, selecting the right chart type for a trend or comparison, generating a plot for a report or presentation, or needing an interactive chart with hover and zoom.
 ---
 
-# /create-viz - Create Visualizations
+# Create Viz create visualizations
 
 Create publication-quality data visualizations using Python. Generates charts from data with best practices for clarity, accuracy, and design.
-
-## Usage
-
-```
-/create-viz <data source> [chart type] [additional instructions]
-```
 
 ## Workflow
 
@@ -130,18 +124,6 @@ plt.show()
 4. Suggest variations (different chart type, different grouping, zoomed time range)
 
 ## Examples
-
-```
-/create-viz Show monthly revenue for the last 12 months as a line chart with the trend highlighted
-```
-
-```
-/create-viz Here's our NPS data by product: [pastes data]. Create a horizontal bar chart ranking products by score.
-```
-
-```
-/create-viz Query the orders table and create a heatmap of order volume by day-of-week and hour
-```
 
 ## Tips
 

@@ -3,15 +3,11 @@ name: kb-article
 description: Draft a knowledge base article from a resolved issue or common question. Use when a ticket resolution is worth documenting for self-service, the same question keeps coming up, a workaround needs to be published, or a known issue should be communicated to customers.
 ---
 
-# /kb-article
+# KB Article
 
 Draft a publish-ready knowledge base article from a resolved support issue, common question, or documented workaround. Structures the content for searchability and self-service.
 
 ## Usage
-
-```
-/kb-article <resolved issue, ticket reference, or topic description>
-```
 
 Examples:
 - `/kb-article How to configure SSO with Okta — resolved this for 3 customers last month`

@@ -3,15 +3,9 @@ name: vendor-review
 description: Evaluate a vendor — cost analysis, risk assessment, and recommendation. Use when reviewing a new vendor proposal, deciding whether to renew or replace a contract, comparing two vendors side-by-side, or building a TCO breakdown and negotiation points before procurement sign-off.
 ---
 
-# /vendor-review
+# Vendor Review
 
 Evaluate a vendor with structured analysis covering cost, risk, performance, and fit.
-
-## Usage
-
-```
-/vendor-review $ARGUMENTS
-```
 
 ## What I Need From You
 

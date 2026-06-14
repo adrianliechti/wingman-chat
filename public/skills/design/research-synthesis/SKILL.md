@@ -3,15 +3,9 @@ name: research-synthesis
 description: Synthesize user research into themes, insights, and recommendations. Use when you have interview transcripts, survey results, usability test notes, support tickets, or NPS responses that need to be distilled into patterns, user segments, and prioritized next steps.
 ---
 
-# /research-synthesis
+# Research Synthesis
 
 Synthesize user research data into actionable insights. See the **user-research** skill for research methods, interview guides, and analysis frameworks.
-
-## Usage
-
-```
-/research-synthesis $ARGUMENTS
-```
 
 ## What I Accept
 

@@ -3,15 +3,11 @@ name: validate-data
 description: QA an analysis before sharing -- methodology, accuracy, and bias checks. Use when reviewing an analysis before a stakeholder presentation, spot-checking calculations and aggregation logic, verifying a SQL query's results look right, or assessing whether conclusions are actually supported by the data.
 ---
 
-# /validate-data - Validate Analysis Before Sharing
+# Validate Data validate analysis before sharing
 
 Review an analysis for accuracy, methodology, and potential biases before sharing with stakeholders. Generates a confidence assessment and improvement suggestions.
 
 ## Usage
-
-```
-/validate-data <analysis to review>
-```
 
 The analysis can be:
 - A document or report in the conversation
@@ -359,18 +355,6 @@ Output:
 - Link to prior versions of recurring analyses for trend comparison
 
 ## Examples
-
-```
-/validate-data Review this quarterly revenue analysis before I send it to the exec team: [analysis]
-```
-
-```
-/validate-data Check my churn analysis -- I'm comparing Q4 churn rates to Q3 but Q4 has a shorter measurement window
-```
-
-```
-/validate-data Here's a SQL query and its results for our conversion funnel. Does the logic look right? [query + results]
-```
 
 ## Tips
 

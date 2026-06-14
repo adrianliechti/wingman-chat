@@ -3,15 +3,9 @@ name: analyze
 description: Answer data questions -- from quick lookups to full analyses. Use when looking up a single metric, investigating what's driving a trend or drop, comparing segments over time, or preparing a formal data report for stakeholders.
 ---
 
-# /analyze - Answer Data Questions
+# Analyze answer data questions
 
 Answer a data question, from a quick lookup to a full analysis to a formal report.
-
-## Usage
-
-```
-/analyze <natural language question>
-```
 
 ## Workflow
 
@@ -94,19 +88,10 @@ When a chart would communicate results more effectively than a table:
 ## Examples
 
 **Quick answer:**
-```
-/analyze How many new users signed up in December?
-```
 
 **Full analysis:**
-```
-/analyze What's causing the increase in support ticket volume over the past 3 months? Break down by category and priority.
-```
 
 **Formal report:**
-```
-/analyze Prepare a data quality assessment of our customer table -- completeness, consistency, and any issues we should address.
-```
 
 ## Tips
 

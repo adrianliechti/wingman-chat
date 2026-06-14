@@ -7,12 +7,6 @@ description: Synthesize user research from interviews, surveys, and feedback int
 
 Synthesize user research from multiple sources into structured insights and recommendations.
 
-## Usage
-
-```
-/synthesize-research $ARGUMENTS
-```
-
 ## Workflow
 
 ### 1. Gather Research Inputs

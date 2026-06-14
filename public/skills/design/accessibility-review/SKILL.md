@@ -3,17 +3,9 @@ name: accessibility-review
 description: Run a WCAG 2.1 AA accessibility audit on a design or page. Trigger with "audit accessibility", "check a11y", "is this accessible?", or when reviewing a design for color contrast, keyboard navigation, touch target size, or screen reader behavior before handoff.
 ---
 
-# /accessibility-review
+# Accessibility Review
 
 Audit a design or page for WCAG 2.1 AA accessibility compliance.
-
-## Usage
-
-```
-/accessibility-review $ARGUMENTS
-```
-
-Audit for accessibility: @$1
 
 ## WCAG 2.1 AA Quick Reference
 

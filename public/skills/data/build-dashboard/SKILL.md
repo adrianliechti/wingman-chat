@@ -3,15 +3,9 @@ name: build-dashboard
 description: Build an interactive HTML dashboard with charts, filters, and tables. Use when creating an executive overview with KPI cards, turning query results into a shareable self-contained report, building a team monitoring snapshot, or needing multiple charts with filters in one browser-openable file.
 ---
 
-# /build-dashboard - Build Interactive Dashboards
+# Build Dashboard build interactive dashboards
 
 Build a self-contained interactive HTML dashboard with charts, filters, tables, and professional styling. Opens directly in a browser -- no server or dependencies required.
-
-## Usage
-
-```
-/build-dashboard <description of dashboard> [data source]
-```
 
 ## Workflow
 
@@ -900,18 +894,6 @@ function renderTablePage(data, page, pageSize = 50) {
 ```
 
 ## Examples
-
-```
-/build-dashboard Monthly sales dashboard with revenue trend, top products, and regional breakdown. Data is in the orders table.
-```
-
-```
-/build-dashboard Here's our support ticket data [pastes CSV]. Build a dashboard showing volume by priority, response time trends, and resolution rates.
-```
-
-```
-/build-dashboard Create a template executive dashboard for a SaaS company showing MRR, churn, new customers, and NPS. Use sample data.
-```
 
 ## Tips
 

@@ -3,15 +3,9 @@ name: write-query
 description: Write optimized SQL for your dialect with best practices. Use when translating a natural-language data need into SQL, building a multi-CTE query with joins and aggregations, optimizing a query against a large partitioned table, or getting dialect-specific syntax for Snowflake, BigQuery, Postgres, etc.
 ---
 
-# /write-query - Write Optimized SQL
+# Write Query write optimized sql
 
 Write a SQL query from a natural language description, optimized for your specific SQL dialect and following best practices.
-
-## Usage
-
-```
-/write-query <description of what data you need>
-```
 
 ## Workflow
 
@@ -97,19 +91,10 @@ If a data warehouse is connected, offer to run the query and analyze the results
 ## Examples
 
 **Simple aggregation:**
-```
-/write-query Count of orders by status for the last 30 days
-```
 
 **Complex analysis:**
-```
-/write-query Cohort retention analysis -- group users by their signup month, then show what percentage are still active (had at least one event) at 1, 3, 6, and 12 months after signup
-```
 
 **Performance-critical:**
-```
-/write-query We have a 500M row events table partitioned by date. Find the top 100 users by event count in the last 7 days with their most recent event type.
-```
 
 ## Tips
 

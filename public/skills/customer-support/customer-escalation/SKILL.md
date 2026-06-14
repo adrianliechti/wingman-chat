@@ -3,15 +3,11 @@ name: customer-escalation
 description: Package an escalation for engineering, product, or leadership with full context. Use when a bug needs engineering attention beyond normal support, multiple customers report the same issue, a customer is threatening to churn, or an issue has sat unresolved past its SLA.
 ---
 
-# /customer-escalation
+# Customer Escalation
 
 Package a support issue into a structured escalation brief for engineering, product, or leadership. Gathers context, structures reproduction steps, assesses business impact, and identifies the right escalation target.
 
 ## Usage
-
-```
-/customer-escalation <issue description> [customer name or account]
-```
 
 Examples:
 - `/customer-escalation API returning 500 errors intermittently for Acme Corp`

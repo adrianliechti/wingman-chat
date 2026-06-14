@@ -3,17 +3,11 @@ name: code-review
 description: Review code changes for security, performance, and correctness. Trigger with a PR URL or diff, "review this before I merge", "is this code safe?", or when checking a change for N+1 queries, injection risks, missing edge cases, or error handling gaps.
 ---
 
-# /code-review
+# Code Review
 
 Review code changes with a structured lens on security, performance, correctness, and maintainability.
 
 ## Usage
-
-```
-/code-review <PR URL or file path>
-```
-
-Review the provided code changes: @$1
 
 If no specific file or URL is provided, ask what to review.
 

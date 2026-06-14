@@ -3,15 +3,9 @@ name: explore-data
 description: Profile and explore a dataset to understand its shape, quality, and patterns. Use when encountering a new table or file, checking null rates and column distributions, spotting data quality issues like duplicates or suspicious values, or deciding which dimensions and metrics to analyze.
 ---
 
-# /explore-data - Profile and Explore a Dataset
+# Explore Data profile and explore a dataset
 
 Generate a comprehensive data profile for a table or uploaded file. Understand its shape, quality, and patterns before diving into analysis.
-
-## Usage
-
-```
-/explore-data <table_name or file>
-```
 
 ## Workflow
 

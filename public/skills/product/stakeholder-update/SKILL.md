@@ -7,12 +7,6 @@ description: Generate a stakeholder update tailored to audience and cadence. Use
 
 Generate a stakeholder update tailored to the audience and cadence.
 
-## Usage
-
-```
-/stakeholder-update $ARGUMENTS
-```
-
 ## Workflow
 
 ### 1. Determine Update Type

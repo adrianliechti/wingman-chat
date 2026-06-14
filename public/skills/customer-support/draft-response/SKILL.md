@@ -3,15 +3,11 @@ name: draft-response
 description: Draft a professional customer-facing response tailored to the situation and relationship. Use when answering a product question, responding to an escalation or outage, delivering bad news like a delay or won't-fix, declining a feature request, or replying to a billing issue.
 ---
 
-# /draft-response
+# Draft Response
 
 Draft a professional, customer-facing response tailored to the situation, customer relationship, and communication context.
 
 ## Usage
-
-```
-/draft-response <context about the customer question, issue, or request>
-```
 
 Examples:
 - `/draft-response Acme Corp is asking when the new dashboard feature will ship`

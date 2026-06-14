@@ -3,15 +3,9 @@ name: sprint-planning
 description: Plan a sprint — scope work, estimate capacity, set goals, and draft a sprint plan. Use when kicking off a new sprint, sizing a backlog against team availability (accounting for PTO and meetings), deciding what's P0 vs. stretch, or handling carryover from the last sprint.
 ---
 
-# /sprint-planning
+# Sprint Planning
 
 Plan a sprint by scoping work, estimating capacity, and setting clear goals.
-
-## Usage
-
-```
-/sprint-planning $ARGUMENTS
-```
 
 ## How It Works
 

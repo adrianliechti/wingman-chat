@@ -108,6 +108,12 @@
     "path": "/skills/design/design-system/SKILL.md"
   },
   {
+    "name": "frontend-design",
+    "description": "Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, and making choices that don't read as templated defaults.",
+    "category": "design",
+    "path": "/skills/design/frontend-design/SKILL.md"
+  },
+  {
     "name": "research-synthesis",
     "description": "Synthesize user research into themes, insights, and recommendations. Use when you have interview transcripts, survey results, usability test notes, support tickets, or NPS responses that need to be distilled into patterns, user segments, and prioritized next steps.",
     "category": "design",
@@ -286,6 +292,54 @@
     "description": "Query decomposition and multi-source search orchestration. Breaks natural language questions into targeted searches per source, translates queries into source-specific syntax, ranks results by relevance, and handles ambiguity and fallback strategies.",
     "category": "knowledge",
     "path": "/skills/knowledge/search-strategy/SKILL.md"
+  },
+  {
+    "name": "brief",
+    "description": "Generate contextual briefings for legal work — daily summary, topic research, or incident response. Use when starting your day and need a scan of legal-relevant items across email, calendar, and contracts, when researching a specific legal question across internal sources, or when a developing situation (data breach, litigation threat, regulatory inquiry) needs rapid context.",
+    "category": "legal",
+    "path": "/skills/legal/brief/SKILL.md"
+  },
+  {
+    "name": "legal-response",
+    "description": "Generate a response to a common legal inquiry using configured templates, with built-in escalation checks for situations that shouldn't use a templated reply. Use when responding to data subject requests, litigation hold notices, vendor legal questions, NDA requests from business teams, or subpoenas.",
+    "category": "legal",
+    "path": "/skills/legal/legal-response/SKILL.md"
+  },
+  {
+    "name": "legal-risk-assessment",
+    "description": "Assess and classify legal risks using a severity-by-likelihood framework with escalation criteria. Use when evaluating contract risk, assessing deal exposure, classifying issues by severity, or determining whether a matter needs senior counsel or outside legal review.",
+    "category": "legal",
+    "path": "/skills/legal/legal-risk-assessment/SKILL.md"
+  },
+  {
+    "name": "meeting-briefing",
+    "description": "Prepare structured briefings for meetings with legal relevance and track resulting action items. Use when preparing for contract negotiations, board meetings, compliance reviews, or any meeting where legal context, background research, or action tracking is needed.",
+    "category": "legal",
+    "path": "/skills/legal/meeting-briefing/SKILL.md"
+  },
+  {
+    "name": "review-contract",
+    "description": "Review a contract against your organization's negotiation playbook — flag deviations, generate redlines, provide business impact analysis. Use when reviewing vendor or customer agreements, when you need clause-by-clause analysis against standard positions, or when preparing a negotiation strategy with prioritized redlines and fallback positions.",
+    "category": "legal",
+    "path": "/skills/legal/review-contract/SKILL.md"
+  },
+  {
+    "name": "signature-request",
+    "description": "Prepare and route a document for e-signature — run a pre-signature checklist, configure signing order, and send for execution. Use when a contract is finalized and ready to sign, when verifying entity names, exhibits, and signature blocks before sending, or when setting up an envelope with sequential or parallel signers.",
+    "category": "legal",
+    "path": "/skills/legal/signature-request/SKILL.md"
+  },
+  {
+    "name": "triage-nda",
+    "description": "Rapidly triage an incoming NDA and classify it as GREEN (standard approval), YELLOW (counsel review), or RED (full legal review). Use when a new NDA arrives from sales or business development, when screening for embedded non-solicits, non-competes, or missing carveouts, or when deciding whether an NDA can be signed under standard delegation.",
+    "category": "legal",
+    "path": "/skills/legal/triage-nda/SKILL.md"
+  },
+  {
+    "name": "vendor-check",
+    "description": "Check the status of existing agreements with a vendor across all connected systems — contract lifecycle management, CRM, email, and document storage — with gap analysis and upcoming deadlines. Use when onboarding or renewing a vendor, when you need a consolidated view of what's signed and what's missing (MSA, DPA, SOW), or when checking for approaching expirations and surviving obligations.",
+    "category": "legal",
+    "path": "/skills/legal/vendor-check/SKILL.md"
   },
   {
     "name": "brand-review",
@@ -478,5 +532,17 @@
     "description": "Analyze pipeline health — prioritize deals, flag risks, get a weekly action plan. Use when running a weekly pipeline review, deciding which deals to focus on this week, spotting stale or stuck opportunities, auditing for hygiene issues like bad close dates, or identifying single-threaded deals.",
     "category": "sales",
     "path": "/skills/sales/pipeline-review/SKILL.md"
+  },
+  {
+    "name": "doc-coauthoring",
+    "description": "Guide users through a structured workflow for co-authoring documentation. Use when user wants to write documentation, proposals, technical specs, decision docs, or similar structured content. This workflow helps users efficiently transfer context, refine content through iteration, and verify the doc works for readers. Trigger when user mentions writing docs, creating proposals, drafting specs, or similar documentation tasks.",
+    "category": "writing",
+    "path": "/skills/writing/doc-coauthoring/SKILL.md"
+  },
+  {
+    "name": "internal-comms",
+    "description": "Resources to help write all kinds of internal communications using common internal-communication formats. Use this skill whenever asked to write some sort of internal communication (status reports, leadership updates, 3P updates, company newsletters, FAQs, incident reports, project updates, etc.).",
+    "category": "writing",
+    "path": "/skills/writing/internal-comms/SKILL.md"
   }
 ]
