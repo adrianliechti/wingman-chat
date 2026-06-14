@@ -32,7 +32,7 @@ How to use it:
 1. Provide exactly one of `code` or `path`.
 2. Use `path` only for an existing artifact file, typically for longer scripts.
 3. Use `code` for short one-off snippets and temporary experiments.
-4. Add `packages` when needed. Common bundled packages include numpy, pandas, scipy, matplotlib, plotly, seaborn, openpyxl, xlsxwriter, `docx`, `pptx`, docx2txt, pdfminer.six, pdfplumber, markdownify, and tabulate.
+4. Add `packages` when needed. Common bundled packages include numpy, pandas, scipy, scikit-learn, statsmodels, sympy, xgboost, lightgbm, pydantic, matplotlib, plotly, seaborn, Pillow, opencv-python, scikit-image, openpyxl, xlsxwriter, xlrd, python-calamine, `docx`, `pptx`, docx2txt, pdfminer.six, pdfplumber, markdownify, and tabulate. Imports are auto-detected, so listing `packages` is usually optional. Stdlib modules that Pyodide ships separately (sqlite3, ssl, lzma) load automatically on import.
 5. Print important intermediate results when the output needs explanation.
 6. For async code, use top-level `await` directly (e.g. `result = await main()`). Never call `asyncio.run(...)` or `loop.run_until_complete(...)` — they cannot block inside the browser event loop.
 
