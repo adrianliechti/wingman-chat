@@ -26,9 +26,14 @@ import { useApp } from "@/shell/hooks/useApp";
 import type { ChatContextType } from "./ChatContext";
 import { ChatContext } from "./ChatContext";
 
+/** Index of the last message carrying a summary marker, or -1 if none. */
+function lastSummaryIndex(messages: Message[]): number {
+  return messages.findLastIndex((m) => m.content.some((p) => p.type === "summary"));
+}
+
 /** Drop all messages before the last summary marker so API requests stay small. */
 function pruneAtSummary(messages: Message[]): Message[] {
-  const idx = messages.findLastIndex((m) => m.content.some((p) => p.type === "summary"));
+  const idx = lastSummaryIndex(messages);
   if (idx <= 0) return [...messages];
   console.log(`[Summary] Pruning ${idx} messages before summary marker`);
   return messages.slice(idx);
@@ -56,10 +61,11 @@ function estimateTokens(messages: Message[]): number {
 }
 
 /**
- * Insert a summary marker before the current turn if the conversation exceeds
- * `threshold` estimated tokens. Original user/assistant messages stay in
- * storage (the UI still shows them); only the API request gets pruned at the
- * marker by `pruneAtSummary`. Any prior summary marker is dropped so they
+ * Insert a summary marker before the current turn when the active context —
+ * everything since the last summary marker, i.e. what's actually sent to the
+ * model — exceeds `threshold` estimated tokens. Original user/assistant messages
+ * stay in storage (the UI still shows them); only the API request gets pruned at
+ * the marker by `pruneAtSummary`. Any prior summary marker is dropped so they
  * don't stack — its content is preserved by feeding it to the new summary.
  */
 async function compactIfNeeded(
@@ -69,7 +75,12 @@ async function compactIfNeeded(
   summarizerModel: string,
 ): Promise<Message[]> {
   if (!threshold || conversation.length < 2) return conversation;
-  if (estimateTokens(conversation) < threshold) return conversation;
+  // Measure only the active window actually sent to the model (from the last
+  // summary marker on), not full storage — storage keeps every original for the
+  // UI, so measuring it all would stay above threshold and re-summarize every turn.
+  const summaryIdx = lastSummaryIndex(conversation);
+  const active = summaryIdx > 0 ? conversation.slice(summaryIdx) : conversation;
+  if (estimateTokens(active) < threshold) return conversation;
 
   // Last message is the user's just-sent turn — don't summarize it.
   const currentTurnIdx = conversation.length - 1;
