@@ -43,16 +43,13 @@ const PYODIDE_BUILTIN_TARGETS = [
   "six",
   "pyyaml",
   "tzdata",
-  // Unvendored stdlib: Pyodide ships these as separately-loadable packages, not
-  // in the base interpreter. Bundling them lets the runtime auto-load them on
-  // `import sqlite3` / `ssl` / `lzma` (and tarfile/shutil .xz, TLS).
-  // NOTE: `hashlib` is intentionally omitted — its package only registers the
-  // private `_hashlib` import (OpenSSL extras), so `import hashlib` would never
-  // auto-load it; base stdlib hashlib (all common digests + a pure-Python
-  // pbkdf2_hmac fallback) is already built in.
-  "sqlite3",
-  "ssl",
-  "lzma",
+  // NOTE: sqlite3, ssl, and lzma used to be listed here. As of Pyodide 314
+  // (PEP 783) they are no longer separately-loadable packages — they ship in
+  // the base interpreter, so `import sqlite3` / `ssl` / `lzma` just works with
+  // nothing to load. `ssl` is a no-OpenSSL stub (constants/SSLContext config
+  // work; actual TLS does not — it never did in the browser). The OpenSSL-backed
+  // `hashlib` digests are likewise gone (no package to bundle); base stdlib
+  // hashlib (common digests + a pure-Python pbkdf2_hmac fallback) is built in.
   // Data & document handling. xlrd/python-calamine read legacy .xls/.xlsb/.ods
   // that openpyxl can't; pydantic is ubiquitous for data modeling/validation.
   "xlrd",
@@ -436,6 +433,14 @@ function copyPyodideRuntime() {
   const pyodideDir = path.resolve("node_modules/pyodide");
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   const extensions = [".js", ".mjs", ".wasm", ".zip", ".json"];
+
+  // Clear stale runtime files first so renamed/removed artifacts from a prior
+  // Pyodide version don't linger (e.g. pyodide.asm.js → pyodide.asm.mjs in 314,
+  // or the dropped libopenssl-*.zip). Wheels are pruned by pruneUnexpectedWheelFiles.
+  for (const file of fs.readdirSync(OUTPUT_DIR)) {
+    if (!file.endsWith(".whl")) fs.unlinkSync(path.join(OUTPUT_DIR, file));
+  }
+
   for (const file of fs.readdirSync(pyodideDir)) {
     if (extensions.some((ext) => file.endsWith(ext))) {
       fs.copyFileSync(path.join(pyodideDir, file), path.join(OUTPUT_DIR, file));

@@ -21,10 +21,10 @@ def check(name, fn):
         print(f"FAIL  {name}: {e!r}")
 
 
-# --- Unvendored stdlib (the tzdata-class fix) -------------------------------
+# --- Base-interpreter stdlib (built in since Pyodide 314, no loading) -------
 
 def t_sqlite3():
-    import sqlite3  # was silently filtered out before -> ModuleNotFoundError
+    import sqlite3  # part of the base interpreter — nothing to load
     con = sqlite3.connect(":memory:")
     con.execute("create table t(x int)")
     con.execute("insert into t values (42)")
@@ -52,7 +52,7 @@ check("stdlib lzma round-trip", t_lzma)
 
 
 def t_hashlib_base():
-    import hashlib  # base stdlib (no separate package) must cover common cases
+    import hashlib  # base stdlib digests (OpenSSL extras dropped in Pyodide 314)
     assert hashlib.sha256(b"abc").hexdigest().startswith("ba7816bf")
     hashlib.pbkdf2_hmac("sha256", b"pw", b"salt", 1000)  # pure-Python fallback
 

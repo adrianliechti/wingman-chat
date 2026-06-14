@@ -27,8 +27,9 @@ export default defineConfig({
     exclude: ["pyodide"],
   },
   worker: {
-    // The Pyodide interpreter worker is a module worker (recent Edge/Safari,
-    // incl. iOS 15+); 'es' keeps dynamic imports working in the built bundle.
+    // Pyodide 314 (ES-module-only) requires a module worker — classic workers
+    // are unsupported. 'es' overrides Vite's default 'iife' so the interpreter
+    // worker is emitted as a module (and dynamic imports keep working).
     format: "es",
   },
   server: {

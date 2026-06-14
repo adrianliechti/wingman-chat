@@ -7,7 +7,7 @@
  * micropip. The `loadFor` helper mirrors the worker's loading strategy
  * (loadPackagesFromImports + tzdata detection + explicit extras), so this also
  * exercises that strategy, not just the lock. Proves that:
- *   - unvendored stdlib (sqlite3, ssl, lzma) auto-loads on import
+ *   - base-interpreter stdlib (sqlite3, ssl, lzma) imports with nothing to load
  *   - tzdata is pulled in for zoneinfo/pandas tz use (never imported by name)
  *   - injected PyPI wheels resolve by import name (incl. import≠pkg, e.g. docx)
  *   - their `depends` graph (PyPI→PyPI and PyPI→builtin) resolves from the lock
@@ -30,12 +30,12 @@ const TZDATA_USAGE = /\bzoneinfo\b|\bZoneInfo\(|\.tz_localize\(|\.tz_convert\(|\
 
 // [name, code, { extras?, heavy? }]
 const CASES = [
-  // --- Unvendored stdlib (the tzdata-class fix) ---
+  // --- Base-interpreter stdlib (built in since Pyodide 314, no loading) ---
   ["stdlib sqlite3", "import sqlite3\nc=sqlite3.connect(':memory:')\nc.execute('create table t(x)')\nc.execute('insert into t values(42)')\nc.execute('select x from t').fetchone()[0]"],
   ["stdlib ssl", "import ssl\nssl.create_default_context() is not None"],
   ["stdlib lzma", "import lzma\nlzma.decompress(lzma.compress(b'x'*200))==b'x'*200"],
-  // Base stdlib hashlib ships the common digests; pbkdf2_hmac/scrypt need the
-  // separate `hashlib` (OpenSSL) package, which we intentionally don't bundle.
+  // Base stdlib hashlib ships the common digests + a pure-Python pbkdf2_hmac;
+  // the OpenSSL-backed digests/HMAC dropped in Pyodide 314 are not available.
   ["stdlib hashlib (base digests)", "import hashlib\nhashlib.sha256(b'abc').hexdigest()[:8]"],
 
   // --- tzdata / zoneinfo (data-only; loadFor must detect it) ---

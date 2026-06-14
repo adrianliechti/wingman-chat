@@ -212,9 +212,10 @@ function collectPyodideFiles(pyodide: PyodideInterface, sourceFiles: ArtifactFil
  * Load everything the code needs from the offline lock in /pyodide/.
  *
  * The bundler injects the bundled PyPI wheels (seaborn, pdfplumber, python-docx,
- * …) into pyodide-lock.json alongside the Pyodide built-ins and unvendored stdlib
- * (sqlite3, ssl, lzma), so a single mechanism — Pyodide's own lock-driven loader
- * — resolves them all by import name. No manifest, micropip, or dep bookkeeping.
+ * …) into pyodide-lock.json alongside the Pyodide built-ins, so a single
+ * mechanism — Pyodide's own lock-driven loader — resolves them all by import
+ * name. No manifest, micropip, or dep bookkeeping. (sqlite3, ssl, and lzma need
+ * no loading at all since Pyodide 314 — they ship in the base interpreter.)
  */
 async function ensurePackagesLoaded(
   pyodide: PyodideInterface,
