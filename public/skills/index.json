@@ -1,0 +1,482 @@
+[
+  {
+    "name": "customer-escalation",
+    "description": "Package an escalation for engineering, product, or leadership with full context. Use when a bug needs engineering attention beyond normal support, multiple customers report the same issue, a customer is threatening to churn, or an issue has sat unresolved past its SLA.",
+    "category": "customer-support",
+    "path": "/skills/customer-support/customer-escalation/SKILL.md"
+  },
+  {
+    "name": "customer-research",
+    "description": "Multi-source research on a customer question or topic with source attribution. Use when a customer asks something you need to look up, investigating whether a bug has been reported before, checking what was previously told to a specific account, or gathering background before drafting a response.",
+    "category": "customer-support",
+    "path": "/skills/customer-support/customer-research/SKILL.md"
+  },
+  {
+    "name": "draft-response",
+    "description": "Draft a professional customer-facing response tailored to the situation and relationship. Use when answering a product question, responding to an escalation or outage, delivering bad news like a delay or won't-fix, declining a feature request, or replying to a billing issue.",
+    "category": "customer-support",
+    "path": "/skills/customer-support/draft-response/SKILL.md"
+  },
+  {
+    "name": "kb-article",
+    "description": "Draft a knowledge base article from a resolved issue or common question. Use when a ticket resolution is worth documenting for self-service, the same question keeps coming up, a workaround needs to be published, or a known issue should be communicated to customers.",
+    "category": "customer-support",
+    "path": "/skills/customer-support/kb-article/SKILL.md"
+  },
+  {
+    "name": "ticket-triage",
+    "description": "Triage and prioritize a support ticket or customer issue. Use when a new ticket comes in and needs categorization, assigning P1-P4 priority, deciding which team should handle it, or checking whether it's a duplicate or known issue before routing.",
+    "category": "customer-support",
+    "path": "/skills/customer-support/ticket-triage/SKILL.md"
+  },
+  {
+    "name": "analyze",
+    "description": "Answer data questions -- from quick lookups to full analyses. Use when looking up a single metric, investigating what's driving a trend or drop, comparing segments over time, or preparing a formal data report for stakeholders.",
+    "category": "data",
+    "path": "/skills/data/analyze/SKILL.md"
+  },
+  {
+    "name": "build-dashboard",
+    "description": "Build an interactive HTML dashboard with charts, filters, and tables. Use when creating an executive overview with KPI cards, turning query results into a shareable self-contained report, building a team monitoring snapshot, or needing multiple charts with filters in one browser-openable file.",
+    "category": "data",
+    "path": "/skills/data/build-dashboard/SKILL.md"
+  },
+  {
+    "name": "create-viz",
+    "description": "Create publication-quality visualizations with Python. Use when turning query results or a DataFrame into a chart, selecting the right chart type for a trend or comparison, generating a plot for a report or presentation, or needing an interactive chart with hover and zoom.",
+    "category": "data",
+    "path": "/skills/data/create-viz/SKILL.md"
+  },
+  {
+    "name": "data-visualization",
+    "description": "Create effective data visualizations with Python (matplotlib, seaborn, plotly). Use when building charts, choosing the right chart type for a dataset, creating publication-quality figures, or applying design principles like accessibility and color theory.",
+    "category": "data",
+    "path": "/skills/data/data-visualization/SKILL.md"
+  },
+  {
+    "name": "explore-data",
+    "description": "Profile and explore a dataset to understand its shape, quality, and patterns. Use when encountering a new table or file, checking null rates and column distributions, spotting data quality issues like duplicates or suspicious values, or deciding which dimensions and metrics to analyze.",
+    "category": "data",
+    "path": "/skills/data/explore-data/SKILL.md"
+  },
+  {
+    "name": "sql-queries",
+    "description": "Write correct, performant SQL across all major data warehouse dialects (Snowflake, BigQuery, Databricks, PostgreSQL, etc.). Use when writing queries, optimizing slow SQL, translating between dialects, or building complex analytical queries with CTEs, window functions, or aggregations.",
+    "category": "data",
+    "path": "/skills/data/sql-queries/SKILL.md"
+  },
+  {
+    "name": "statistical-analysis",
+    "description": "Apply statistical methods including descriptive stats, trend analysis, outlier detection, and hypothesis testing. Use when analyzing distributions, testing for significance, detecting anomalies, computing correlations, or interpreting statistical results.",
+    "category": "data",
+    "path": "/skills/data/statistical-analysis/SKILL.md"
+  },
+  {
+    "name": "validate-data",
+    "description": "QA an analysis before sharing -- methodology, accuracy, and bias checks. Use when reviewing an analysis before a stakeholder presentation, spot-checking calculations and aggregation logic, verifying a SQL query's results look right, or assessing whether conclusions are actually supported by the data.",
+    "category": "data",
+    "path": "/skills/data/validate-data/SKILL.md"
+  },
+  {
+    "name": "write-query",
+    "description": "Write optimized SQL for your dialect with best practices. Use when translating a natural-language data need into SQL, building a multi-CTE query with joins and aggregations, optimizing a query against a large partitioned table, or getting dialect-specific syntax for Snowflake, BigQuery, Postgres, etc.",
+    "category": "data",
+    "path": "/skills/data/write-query/SKILL.md"
+  },
+  {
+    "name": "accessibility-review",
+    "description": "Run a WCAG 2.1 AA accessibility audit on a design or page. Trigger with \"audit accessibility\", \"check a11y\", \"is this accessible?\", or when reviewing a design for color contrast, keyboard navigation, touch target size, or screen reader behavior before handoff.",
+    "category": "design",
+    "path": "/skills/design/accessibility-review/SKILL.md"
+  },
+  {
+    "name": "design-critique",
+    "description": "Get structured design feedback on usability, hierarchy, and consistency. Trigger with \"review this design\", \"critique this mockup\", \"what do you think of this screen?\", or when sharing a Figma link or screenshot for feedback at any stage from exploration to final polish.",
+    "category": "design",
+    "path": "/skills/design/design-critique/SKILL.md"
+  },
+  {
+    "name": "design-handoff",
+    "description": "Generate developer handoff specs from a design. Use when a design is ready for engineering and needs a spec sheet covering layout, design tokens, component props, interaction states, responsive breakpoints, edge cases, and animation details.",
+    "category": "design",
+    "path": "/skills/design/design-handoff/SKILL.md"
+  },
+  {
+    "name": "design-system",
+    "description": "Audit, document, or extend your design system. Use when checking for naming inconsistencies or hardcoded values across components, writing documentation for a component's variants, states, and accessibility notes, or designing a new pattern that fits the existing system.",
+    "category": "design",
+    "path": "/skills/design/design-system/SKILL.md"
+  },
+  {
+    "name": "research-synthesis",
+    "description": "Synthesize user research into themes, insights, and recommendations. Use when you have interview transcripts, survey results, usability test notes, support tickets, or NPS responses that need to be distilled into patterns, user segments, and prioritized next steps.",
+    "category": "design",
+    "path": "/skills/design/research-synthesis/SKILL.md"
+  },
+  {
+    "name": "user-research",
+    "description": "Plan, conduct, and synthesize user research. Trigger with \"user research plan\", \"interview guide\", \"usability test\", \"survey design\", \"research questions\", or when the user needs help with any aspect of understanding their users through research.",
+    "category": "design",
+    "path": "/skills/design/user-research/SKILL.md"
+  },
+  {
+    "name": "ux-copy",
+    "description": "Write or review UX copy — microcopy, error messages, empty states, CTAs. Trigger with \"write copy for\", \"what should this button say?\", \"review this error message\", or when naming a CTA, wording a confirmation dialog, filling an empty state, or writing onboarding text.",
+    "category": "design",
+    "path": "/skills/design/ux-copy/SKILL.md"
+  },
+  {
+    "name": "architecture",
+    "description": "Create or evaluate an architecture decision record (ADR). Use when choosing between technologies (e.g., Kafka vs SQS), documenting a design decision with trade-offs and consequences, reviewing a system design proposal, or designing a new component from requirements and constraints.",
+    "category": "engineering",
+    "path": "/skills/engineering/architecture/SKILL.md"
+  },
+  {
+    "name": "code-review",
+    "description": "Review code changes for security, performance, and correctness. Trigger with a PR URL or diff, \"review this before I merge\", \"is this code safe?\", or when checking a change for N+1 queries, injection risks, missing edge cases, or error handling gaps.",
+    "category": "engineering",
+    "path": "/skills/engineering/code-review/SKILL.md"
+  },
+  {
+    "name": "debug",
+    "description": "Structured debugging session — reproduce, isolate, diagnose, and fix. Trigger with an error message or stack trace, \"this works in staging but not prod\", \"something broke after the deploy\", or when behavior diverges from expected and the cause isn't obvious.",
+    "category": "engineering",
+    "path": "/skills/engineering/debug/SKILL.md"
+  },
+  {
+    "name": "deploy-checklist",
+    "description": "Pre-deployment verification checklist. Use when about to ship a release, deploying a change with database migrations or feature flags, verifying CI status and approvals before going to production, or documenting rollback triggers ahead of time.",
+    "category": "engineering",
+    "path": "/skills/engineering/deploy-checklist/SKILL.md"
+  },
+  {
+    "name": "documentation",
+    "description": "Write and maintain technical documentation. Trigger with \"write docs for\", \"document this\", \"create a README\", \"write a runbook\", \"onboarding guide\", or when the user needs help with any form of technical writing — API docs, architecture docs, or operational runbooks.",
+    "category": "engineering",
+    "path": "/skills/engineering/documentation/SKILL.md"
+  },
+  {
+    "name": "incident-response",
+    "description": "Run an incident response workflow — triage, communicate, and write postmortem. Trigger with \"we have an incident\", \"production is down\", an alert that needs severity assessment, a status update mid-incident, or when writing a blameless postmortem after resolution.",
+    "category": "engineering",
+    "path": "/skills/engineering/incident-response/SKILL.md"
+  },
+  {
+    "name": "standup",
+    "description": "Generate a standup update from recent activity. Use when preparing for daily standup, summarizing yesterday's commits and PRs and ticket moves, formatting work into yesterday/today/blockers, or structuring a few rough notes into a shareable update.",
+    "category": "engineering",
+    "path": "/skills/engineering/standup/SKILL.md"
+  },
+  {
+    "name": "system-design",
+    "description": "Design systems, services, and architectures. Trigger with \"design a system for\", \"how should we architect\", \"system design for\", \"what's the right architecture for\", or when the user needs help with API design, data modeling, or service boundaries.",
+    "category": "engineering",
+    "path": "/skills/engineering/system-design/SKILL.md"
+  },
+  {
+    "name": "tech-debt",
+    "description": "Identify, categorize, and prioritize technical debt. Trigger with \"tech debt\", \"technical debt audit\", \"what should we refactor\", \"code health\", or when the user asks about code quality, refactoring priorities, or maintenance backlog.",
+    "category": "engineering",
+    "path": "/skills/engineering/tech-debt/SKILL.md"
+  },
+  {
+    "name": "testing-strategy",
+    "description": "Design test strategies and test plans. Trigger with \"how should we test\", \"test strategy for\", \"write tests for\", \"test plan\", \"what tests do we need\", or when the user needs help with testing approaches, coverage, or test architecture.",
+    "category": "engineering",
+    "path": "/skills/engineering/testing-strategy/SKILL.md"
+  },
+  {
+    "name": "close-management",
+    "description": "Manage the month-end close process with task sequencing, dependencies, and status tracking. Use when planning the close calendar, tracking close progress, identifying blockers, or sequencing close activities by day.",
+    "category": "finance",
+    "path": "/skills/finance/close-management/SKILL.md"
+  },
+  {
+    "name": "financial-statements",
+    "description": "Generate financial statements (income statement, balance sheet, cash flow) with period-over-period comparison and variance analysis. Use when preparing a monthly or quarterly P&L, closing the books and need to flag material variances, comparing actuals to budget, building a financial summary for leadership review, or looking up financial-statement presentation requirements and period-end adjustments.",
+    "category": "finance",
+    "path": "/skills/finance/financial-statements/SKILL.md"
+  },
+  {
+    "name": "journal-entry",
+    "description": "Prepare journal entries with proper debits, credits, and supporting detail. Use when booking month-end accruals (AP, payroll, prepaid), recording depreciation or amortization, posting revenue recognition or deferred revenue adjustments, or documenting an entry for audit review.",
+    "category": "finance",
+    "path": "/skills/finance/journal-entry/SKILL.md"
+  },
+  {
+    "name": "journal-entry-prep",
+    "description": "Prepare journal entries with proper debits, credits, and supporting documentation for month-end close. Use when booking accruals, prepaid amortization, fixed asset depreciation, payroll entries, revenue recognition, or any manual journal entry.",
+    "category": "finance",
+    "path": "/skills/finance/journal-entry-prep/SKILL.md"
+  },
+  {
+    "name": "reconciliation",
+    "description": "Reconcile accounts by comparing GL balances to subledgers, bank statements, or third-party data. Use when performing bank reconciliations, GL-to-subledger recs, intercompany reconciliations, or identifying and categorizing reconciling items.",
+    "category": "finance",
+    "path": "/skills/finance/reconciliation/SKILL.md"
+  },
+  {
+    "name": "variance-analysis",
+    "description": "Decompose financial variances into drivers with narrative explanations and waterfall analysis. Use when analyzing budget vs. actual, period-over-period changes, revenue or expense variances, or preparing variance commentary for leadership.",
+    "category": "finance",
+    "path": "/skills/finance/variance-analysis/SKILL.md"
+  },
+  {
+    "name": "comp-analysis",
+    "description": "Analyze compensation — benchmarking, band placement, and equity modeling. Trigger with \"what should we pay a [role]\", \"is this offer competitive\", \"model this equity grant\", or when uploading comp data to find outliers and retention risks.",
+    "category": "human-resources",
+    "path": "/skills/human-resources/comp-analysis/SKILL.md"
+  },
+  {
+    "name": "draft-offer",
+    "description": "Draft an offer letter with comp details and terms. Use when a candidate is ready for an offer, assembling a total comp package (base, equity, signing bonus), writing the offer letter text itself, or prepping negotiation guidance for the hiring manager.",
+    "category": "human-resources",
+    "path": "/skills/human-resources/draft-offer/SKILL.md"
+  },
+  {
+    "name": "interview-prep",
+    "description": "Create structured interview plans with competency-based questions and scorecards. Trigger with \"interview plan for\", \"interview questions for\", \"how should we interview\", \"scorecard for\", or when the user is preparing to interview candidates.",
+    "category": "human-resources",
+    "path": "/skills/human-resources/interview-prep/SKILL.md"
+  },
+  {
+    "name": "onboarding",
+    "description": "Generate an onboarding checklist and first-week plan for a new hire. Use when someone has a start date coming up, building the pre-start task list (accounts, equipment, buddy), scheduling Day 1 and Week 1, or setting 30/60/90-day goals for a new team member.",
+    "category": "human-resources",
+    "path": "/skills/human-resources/onboarding/SKILL.md"
+  },
+  {
+    "name": "org-planning",
+    "description": "Headcount planning, org design, and team structure optimization. Trigger with \"org planning\", \"headcount plan\", \"team structure\", \"reorg\", \"who should we hire next\", or when the user is thinking about team size, reporting structure, or organizational design.",
+    "category": "human-resources",
+    "path": "/skills/human-resources/org-planning/SKILL.md"
+  },
+  {
+    "name": "people-report",
+    "description": "Generate headcount, attrition, diversity, or org health reports. Use when pulling a headcount snapshot for leadership, analyzing turnover trends by team, preparing diversity representation metrics, or assessing span of control and flight risk across the org.",
+    "category": "human-resources",
+    "path": "/skills/human-resources/people-report/SKILL.md"
+  },
+  {
+    "name": "performance-review",
+    "description": "Structure a performance review with self-assessment, manager template, and calibration prep. Use when review season kicks off and you need a self-assessment template, writing a manager review for a direct report, prepping rating distributions and promotion cases for calibration, or turning vague feedback into specific behavioral examples.",
+    "category": "human-resources",
+    "path": "/skills/human-resources/performance-review/SKILL.md"
+  },
+  {
+    "name": "policy-lookup",
+    "description": "Find and explain company policies in plain language. Trigger with \"what's our PTO policy\", \"can I work remotely from another country\", \"how do expenses work\", or any plain-language question about benefits, travel, leave, or handbook rules.",
+    "category": "human-resources",
+    "path": "/skills/human-resources/policy-lookup/SKILL.md"
+  },
+  {
+    "name": "recruiting-pipeline",
+    "description": "Track and manage recruiting pipeline stages. Trigger with \"recruiting update\", \"candidate pipeline\", \"how many candidates\", \"hiring status\", or when the user discusses sourcing, screening, interviewing, or extending offers.",
+    "category": "human-resources",
+    "path": "/skills/human-resources/recruiting-pipeline/SKILL.md"
+  },
+  {
+    "name": "knowledge-synthesis",
+    "description": "Combines search results from multiple sources into coherent, deduplicated answers with source attribution. Handles confidence scoring based on freshness and authority, and summarizes large result sets effectively.",
+    "category": "knowledge",
+    "path": "/skills/knowledge/knowledge-synthesis/SKILL.md"
+  },
+  {
+    "name": "search-strategy",
+    "description": "Query decomposition and multi-source search orchestration. Breaks natural language questions into targeted searches per source, translates queries into source-specific syntax, ranks results by relevance, and handles ambiguity and fallback strategies.",
+    "category": "knowledge",
+    "path": "/skills/knowledge/search-strategy/SKILL.md"
+  },
+  {
+    "name": "brand-review",
+    "description": "Review content against your brand voice, style guide, and messaging pillars, flagging deviations by severity with specific before/after fixes. Use when checking a draft before it ships, when auditing copy for voice consistency and terminology, or when screening for unsubstantiated claims, missing disclaimers, and other legal flags.",
+    "category": "marketing",
+    "path": "/skills/marketing/brand-review/SKILL.md"
+  },
+  {
+    "name": "campaign-plan",
+    "description": "Generate a full campaign brief with objectives, audience, messaging, channel strategy, content calendar, and success metrics. Use when planning a product launch, lead-gen push, or awareness campaign, when you need a week-by-week content calendar with dependencies, or when translating a marketing goal into a structured, executable plan.",
+    "category": "marketing",
+    "path": "/skills/marketing/campaign-plan/SKILL.md"
+  },
+  {
+    "name": "competitive-brief",
+    "description": "Research competitors and generate a positioning and messaging comparison with content gaps, opportunities, and threats. Use when building sales battlecards, when finding positioning gaps and messaging angles competitors haven't claimed, or when a competitor makes a move and you need to assess the impact.",
+    "category": "marketing",
+    "path": "/skills/marketing/competitive-brief/SKILL.md"
+  },
+  {
+    "name": "content-creation",
+    "description": "Draft marketing content across channels — blog posts, social media, email newsletters, landing pages, press releases, and case studies. Use when writing any marketing content, when you need channel-specific formatting, SEO-optimized copy, headline options, or calls to action.",
+    "category": "marketing",
+    "path": "/skills/marketing/content-creation/SKILL.md"
+  },
+  {
+    "name": "draft-content",
+    "description": "Draft blog posts, social media, email newsletters, landing pages, press releases, and case studies with channel-specific formatting and SEO recommendations. Use when writing any marketing content, when you need headline or subject line options, or when adapting a message for a specific platform, audience, and brand voice.",
+    "category": "marketing",
+    "path": "/skills/marketing/draft-content/SKILL.md"
+  },
+  {
+    "name": "email-sequence",
+    "description": "Design and draft multi-email sequences with full copy, timing, branching logic, exit conditions, and performance benchmarks. Use when building onboarding, lead nurture, re-engagement, win-back, or product launch flows, when you need a complete drip campaign with A/B test suggestions, or when mapping a sequence end-to-end with a flow diagram.",
+    "category": "marketing",
+    "path": "/skills/marketing/email-sequence/SKILL.md"
+  },
+  {
+    "name": "performance-report",
+    "description": "Build a marketing performance report with key metrics, trend analysis, wins and misses, and prioritized optimization recommendations. Use when wrapping a campaign, when preparing weekly, monthly, or quarterly channel summaries for stakeholders, or when you need data translated into an executive summary with next-period priorities.",
+    "category": "marketing",
+    "path": "/skills/marketing/performance-report/SKILL.md"
+  },
+  {
+    "name": "seo-audit",
+    "description": "Run a comprehensive SEO audit — keyword research, on-page analysis, content gaps, technical checks, and competitor comparison. Use when assessing a site's SEO health, when finding keyword opportunities and content gaps competitors own, or when you need a prioritized action plan split into quick wins and strategic investments.",
+    "category": "marketing",
+    "path": "/skills/marketing/seo-audit/SKILL.md"
+  },
+  {
+    "name": "capacity-plan",
+    "description": "Plan resource capacity — workload analysis and utilization forecasting. Use when heading into quarterly planning, the team feels overallocated and you need the numbers, deciding whether to hire or deprioritize, or stress-testing whether upcoming projects fit the people you have.",
+    "category": "operations",
+    "path": "/skills/operations/capacity-plan/SKILL.md"
+  },
+  {
+    "name": "change-request",
+    "description": "Create a change management request with impact analysis and rollback plan. Use when proposing a system or process change that needs approval, preparing a change record for CAB review, documenting risk and rollback steps before a deployment, or planning stakeholder communications for a rollout.",
+    "category": "operations",
+    "path": "/skills/operations/change-request/SKILL.md"
+  },
+  {
+    "name": "compliance-tracking",
+    "description": "Track compliance requirements and audit readiness. Use for compliance tracking, audit prep, or framework readiness (e.g. SOC 2, ISO 27001, GDPR), or when the user needs help tracking, preparing for, or documenting compliance activities.",
+    "category": "operations",
+    "path": "/skills/operations/compliance-tracking/SKILL.md"
+  },
+  {
+    "name": "process-doc",
+    "description": "Document a business process — flowcharts, RACI, and SOPs. Use when formalizing a process that lives in someone's head, building a RACI to clarify who owns what, writing an SOP for a handoff or audit, or capturing the exceptions and edge cases of how work actually gets done.",
+    "category": "operations",
+    "path": "/skills/operations/process-doc/SKILL.md"
+  },
+  {
+    "name": "process-optimization",
+    "description": "Analyze and improve business processes. Use when a process is slow, has too many steps, has a bottleneck, or when the user describes an inefficient workflow they want to streamline or fix.",
+    "category": "operations",
+    "path": "/skills/operations/process-optimization/SKILL.md"
+  },
+  {
+    "name": "risk-assessment",
+    "description": "Identify, assess, and mitigate operational risks. Use when building a risk register, evaluating what could go wrong, or assessing the risks associated with a project, vendor, process, or decision.",
+    "category": "operations",
+    "path": "/skills/operations/risk-assessment/SKILL.md"
+  },
+  {
+    "name": "runbook",
+    "description": "Create or update an operational runbook for a recurring task or procedure. Use when documenting a task that on-call or ops needs to run repeatably, turning tribal knowledge into exact step-by-step commands, adding troubleshooting and rollback steps to an existing procedure, or writing escalation paths for when things go wrong.",
+    "category": "operations",
+    "path": "/skills/operations/runbook/SKILL.md"
+  },
+  {
+    "name": "status-report",
+    "description": "Generate a status report with KPIs, risks, and action items. Use when writing a weekly or monthly update for leadership, summarizing project health with green/yellow/red status, surfacing risks and decisions that need stakeholder attention, or turning a pile of project tracker activity into a readable narrative.",
+    "category": "operations",
+    "path": "/skills/operations/status-report/SKILL.md"
+  },
+  {
+    "name": "vendor-review",
+    "description": "Evaluate a vendor — cost analysis, risk assessment, and recommendation. Use when reviewing a new vendor proposal, deciding whether to renew or replace a contract, comparing two vendors side-by-side, or building a TCO breakdown and negotiation points before procurement sign-off.",
+    "category": "operations",
+    "path": "/skills/operations/vendor-review/SKILL.md"
+  },
+  {
+    "name": "metrics-review",
+    "description": "Review and analyze product metrics with trend analysis and actionable insights. Use when running a weekly, monthly, or quarterly metrics review, investigating a sudden spike or drop, comparing performance against targets, or turning raw numbers into a scorecard with recommended actions.",
+    "category": "product",
+    "path": "/skills/product/metrics-review/SKILL.md"
+  },
+  {
+    "name": "product-brainstorming",
+    "description": "Brainstorm product ideas, explore problem spaces, and challenge assumptions as a thinking partner. Use when exploring a new opportunity, generating solutions to a product problem, stress-testing an idea, or when a PM needs to think out loud with a sharp sparring partner before converging on a direction.",
+    "category": "product",
+    "path": "/skills/product/product-brainstorming/SKILL.md"
+  },
+  {
+    "name": "roadmap-update",
+    "description": "Update, create, or reprioritize your product roadmap. Use when adding a new initiative and deciding what moves to make room, shifting priorities after new information comes in, moving timelines due to a dependency slip, or building a Now/Next/Later view from scratch.",
+    "category": "product",
+    "path": "/skills/product/roadmap-update/SKILL.md"
+  },
+  {
+    "name": "sprint-planning",
+    "description": "Plan a sprint — scope work, estimate capacity, set goals, and draft a sprint plan. Use when kicking off a new sprint, sizing a backlog against team availability (accounting for PTO and meetings), deciding what's P0 vs. stretch, or handling carryover from the last sprint.",
+    "category": "product",
+    "path": "/skills/product/sprint-planning/SKILL.md"
+  },
+  {
+    "name": "stakeholder-update",
+    "description": "Generate a stakeholder update tailored to audience and cadence. Use when writing a weekly or monthly status for leadership, announcing a launch, escalating a risk or blocker, or translating the same progress into exec-brief, engineering-detail, or customer-facing versions.",
+    "category": "product",
+    "path": "/skills/product/stakeholder-update/SKILL.md"
+  },
+  {
+    "name": "synthesize-research",
+    "description": "Synthesize user research from interviews, surveys, and feedback into structured insights. Use when you have a pile of interview notes, survey responses, or support tickets to make sense of, need to extract themes and rank findings by frequency and impact, or want to turn raw feedback into roadmap recommendations.",
+    "category": "product",
+    "path": "/skills/product/synthesize-research/SKILL.md"
+  },
+  {
+    "name": "write-spec",
+    "description": "Write a feature spec or PRD from a problem statement or feature idea. Use when turning a vague idea or user request into a structured document, scoping a feature with goals and non-goals, defining success metrics and acceptance criteria, or breaking a big ask into a phased spec.",
+    "category": "product",
+    "path": "/skills/product/write-spec/SKILL.md"
+  },
+  {
+    "name": "account-research",
+    "description": "Research a company or person and get actionable sales intel. Works standalone with web search, supercharged when you connect enrichment tools or your CRM. Trigger with \"research [company]\", \"look up [person]\", \"intel on [prospect]\", \"who is [name] at [company]\", or \"tell me about [company]\".",
+    "category": "sales",
+    "path": "/skills/sales/account-research/SKILL.md"
+  },
+  {
+    "name": "call-prep",
+    "description": "Prepare for a sales call with account context, attendee research, and suggested agenda. Works standalone with user input and web research, supercharged when you connect your CRM, email, chat, or transcripts. Trigger with \"prep me for my call with [company]\", \"I'm meeting with [company] prep me\", \"call prep [company]\", or \"get me ready for [meeting]\".",
+    "category": "sales",
+    "path": "/skills/sales/call-prep/SKILL.md"
+  },
+  {
+    "name": "call-summary",
+    "description": "Process call notes or a transcript — extract action items, draft follow-up email, generate internal summary. Use when pasting rough notes or a transcript after a discovery, demo, or negotiation call, drafting a customer follow-up, logging the activity for your CRM, or capturing objections and next steps for your team.",
+    "category": "sales",
+    "path": "/skills/sales/call-summary/SKILL.md"
+  },
+  {
+    "name": "competitive-intelligence",
+    "description": "Research your competitors and build an interactive battlecard. Outputs an HTML artifact with clickable competitor cards and a comparison matrix. Trigger with \"competitive intel\", \"research competitors\", \"how do we compare to [competitor]\", \"battlecard for [competitor]\", or \"what's new with [competitor]\".",
+    "category": "sales",
+    "path": "/skills/sales/competitive-intelligence/SKILL.md"
+  },
+  {
+    "name": "daily-briefing",
+    "description": "Start your day with a prioritized sales briefing. Works standalone when you tell me your meetings and priorities, supercharged when you connect your calendar, CRM, and email. Trigger with \"morning briefing\", \"daily brief\", \"what's on my plate today\", \"prep my day\", or \"start my day\".",
+    "category": "sales",
+    "path": "/skills/sales/daily-briefing/SKILL.md"
+  },
+  {
+    "name": "draft-outreach",
+    "description": "Research a prospect then draft personalized outreach. Uses web research by default, supercharged with enrichment and CRM. Trigger with \"draft outreach to [person/company]\", \"write cold email to [prospect]\", \"reach out to [name]\".",
+    "category": "sales",
+    "path": "/skills/sales/draft-outreach/SKILL.md"
+  },
+  {
+    "name": "forecast",
+    "description": "Generate a weighted sales forecast with best/likely/worst scenarios, commit vs. upside breakdown, and gap analysis. Use when preparing a quarterly forecast call, assessing gap-to-quota from a pipeline CSV, deciding which deals to commit vs. call upside, or checking pipeline coverage against your number.",
+    "category": "sales",
+    "path": "/skills/sales/forecast/SKILL.md"
+  },
+  {
+    "name": "pipeline-review",
+    "description": "Analyze pipeline health — prioritize deals, flag risks, get a weekly action plan. Use when running a weekly pipeline review, deciding which deals to focus on this week, spotting stale or stuck opportunities, auditing for hygiene issues like bad close dates, or identifying single-threaded deals.",
+    "category": "sales",
+    "path": "/skills/sales/pipeline-review/SKILL.md"
+  }
+]

@@ -2,10 +2,13 @@ import { Dialog, Transition } from "@headlessui/react";
 import JSZip from "jszip";
 import {
   ArrowLeft,
+  Check,
   Code,
+  Copy,
   Download,
   Eye,
   FileText,
+  Filter,
   Loader2,
   MoreVertical,
   Pencil,
@@ -18,8 +21,10 @@ import {
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSkills } from "@/features/skills/hooks/useSkills";
-import type { Skill } from "@/features/skills/lib/skillParser";
+import { useSkillTemplates } from "@/features/skills/hooks/useSkillTemplates";
+import type { ParsedSkill, Skill } from "@/features/skills/lib/skillParser";
 import { downloadSkill, parseSkillFile, validateSkillName } from "@/features/skills/lib/skillParser";
+import type { SkillTemplate } from "@/features/skills/lib/templates";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
@@ -52,6 +57,7 @@ export function SkillCatalog({
   readOnlyActivation = false,
 }: SkillCatalogProps) {
   const { skills: allSkills, addSkill, updateSkill, removeSkill } = useSkills();
+  const { templates, loadTemplate } = useSkillTemplates();
   const editorNameInputId = useId();
   const editorDescriptionInputId = useId();
   const editorContentInputId = useId();
@@ -61,6 +67,13 @@ export function SkillCatalog({
   const [isDragOver, setIsDragOver] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [stableOrder, setStableOrder] = useState<string[]>([]);
+
+  // Tabs: user's own skills vs. shipped templates
+  const [tab, setTab] = useState<"mine" | "templates">("mine");
+  const [templateCategory, setTemplateCategory] = useState<string>("");
+  const [selectedTemplate, setSelectedTemplate] = useState<SkillTemplate | null>(null);
+  const [templateContent, setTemplateContent] = useState<ParsedSkill | null>(null);
+  const [templateLoading, setTemplateLoading] = useState(false);
 
   // Two-panel state
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
@@ -145,6 +158,10 @@ export function SkillCatalog({
       setSelectedSkill(null);
       setEditMode(false);
       setSearch("");
+      setTab("mine");
+      setTemplateCategory("");
+      setSelectedTemplate(null);
+      setTemplateContent(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialView, initialSkillName, openEditor, allSkills]);
@@ -258,6 +275,78 @@ export function SkillCatalog({
     const q = search.toLowerCase();
     return sorted.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
   }, [allSkills, search, stableOrder]);
+
+  const existingNames = useMemo(() => new Set(allSkills.map((s) => s.name)), [allSkills]);
+
+  const templateCategories = useMemo(
+    () => Array.from(new Set(templates.map((t) => t.category).filter(Boolean))).sort(),
+    [templates],
+  );
+
+  const filteredTemplates = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return templates
+      .filter((t) => !templateCategory || t.category === templateCategory)
+      .filter((t) => !q || t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
+      .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  }, [templates, search, templateCategory]);
+
+  // Group filtered templates by category (preserving the sorted order) for headed sections.
+  const groupedTemplates = useMemo(() => {
+    const groups: { category: string; items: SkillTemplate[] }[] = [];
+    for (const t of filteredTemplates) {
+      const last = groups[groups.length - 1];
+      if (last && last.category === t.category) last.items.push(t);
+      else groups.push({ category: t.category, items: [t] });
+    }
+    return groups;
+  }, [filteredTemplates]);
+
+  const switchTab = useCallback(
+    (next: "mine" | "templates") => {
+      discardAndRun(() => {
+        setTab(next);
+        setSearch("");
+        setTemplateCategory("");
+        setSelectedSkill(null);
+        setEditMode(false);
+        setSelectedTemplate(null);
+        setTemplateContent(null);
+      });
+    },
+    [discardAndRun],
+  );
+
+  const openTemplate = useCallback(
+    (template: SkillTemplate) => {
+      setSelectedTemplate(template);
+      setTemplateContent(null);
+      setTemplateLoading(true);
+      loadTemplate(template.path)
+        .then((parsed) => setTemplateContent(parsed))
+        .finally(() => setTemplateLoading(false));
+    },
+    [loadTemplate],
+  );
+
+  const handleAddTemplate = async (parsed: ParsedSkill) => {
+    if (existingNames.has(parsed.name)) {
+      const ok = await confirm({
+        title: "Overwrite skill?",
+        message: `You already have a skill named "${parsed.name}". Adding this template will replace its contents.`,
+        danger: true,
+      });
+      if (!ok) return;
+    }
+
+    const added = addSkill(parsed);
+    onSkillSaved(added, !existingNames.has(parsed.name));
+    setTab("mine");
+    setSelectedTemplate(null);
+    setTemplateContent(null);
+    setSelectedSkill(added);
+    setEditMode(false);
+  };
 
   const handleDeleteConfirm = (skill: Skill) => {
     removeSkill(skill.id);
@@ -404,9 +493,36 @@ export function SkillCatalog({
                 <div className="flex min-h-0 flex-1 sm:flex-row flex-col">
                   {/* ── Left panel: skill list ── */}
                   <div
-                    className={`${selectedSkill || editMode ? "hidden sm:flex" : "flex"} w-full shrink-0 flex-col border-b border-neutral-200/60 sm:w-64 sm:border-b-0 sm:border-r dark:border-neutral-800/60`}
+                    className={`${selectedSkill || editMode || selectedTemplate ? "hidden sm:flex" : "flex"} w-full shrink-0 flex-col border-b border-neutral-200/60 sm:w-64 sm:border-b-0 sm:border-r dark:border-neutral-800/60`}
                   >
-                    {/* Search */}
+                    {/* Tabs: my skills vs. templates */}
+                    <div className="flex shrink-0 items-center gap-1 border-b border-neutral-200/40 px-2 py-1.5 dark:border-neutral-800/40">
+                      {[
+                        { id: "mine" as const, label: "My Skills" },
+                        { id: "templates" as const, label: "Templates" },
+                      ].map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => switchTab(t.id)}
+                          className={cn(
+                            "flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                            tab === t.id
+                              ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
+                              : "text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200",
+                          )}
+                        >
+                          {t.label}
+                          {t.id === "templates" && templates.length > 0 && (
+                            <span className="ml-1 text-[10px] text-neutral-400 dark:text-neutral-500">
+                              {templates.length}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Search (+ category filter on the templates tab) */}
                     <div className="flex items-center gap-2 border-b border-neutral-200/40 px-3 py-2 dark:border-neutral-800/40">
                       <Search size={12} className="shrink-0 text-neutral-400" />
                       <input
@@ -426,11 +542,114 @@ export function SkillCatalog({
                           <X size={11} />
                         </button>
                       )}
+                      {tab === "templates" && templateCategories.length > 0 && (
+                        <DropdownMenu
+                          anchor="bottom end"
+                          panelClassName="min-w-44 max-h-80 overflow-y-auto"
+                          trigger={
+                            <MenuButton
+                              title={
+                                templateCategory
+                                  ? `Category: ${templateCategory.replace(/-/g, " ")}`
+                                  : "Filter by category"
+                              }
+                              className={cn(
+                                "relative flex shrink-0 items-center rounded-md p-0.5 transition-colors",
+                                templateCategory
+                                  ? "text-neutral-900 dark:text-neutral-100"
+                                  : "text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300",
+                              )}
+                            >
+                              <Filter size={13} className="shrink-0" />
+                              {templateCategory && (
+                                <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-neutral-800 dark:bg-neutral-200" />
+                              )}
+                            </MenuButton>
+                          }
+                        >
+                          <DropdownMenuItem selected={!templateCategory} onClick={() => setTemplateCategory("")}>
+                            All categories
+                          </DropdownMenuItem>
+                          {templateCategories.map((c) => (
+                            <DropdownMenuItem
+                              key={c}
+                              selected={templateCategory === c}
+                              onClick={() => setTemplateCategory(c)}
+                            >
+                              <span className="capitalize">{c.replace(/-/g, " ")}</span>
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenu>
+                      )}
                     </div>
 
                     {/* Skill list */}
                     <div className="flex-1 overflow-y-auto py-1">
-                      {allSkills.length === 0 ? (
+                      {tab === "templates" ? (
+                        templates.length === 0 ? (
+                          <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
+                            <Copy size={28} className="text-neutral-300 dark:text-neutral-600" />
+                            <div>
+                              <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                                No templates available
+                              </p>
+                              <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
+                                Default skills shipped with this deployment appear here
+                              </p>
+                            </div>
+                          </div>
+                        ) : filteredTemplates.length === 0 ? (
+                          <p className="py-6 text-center text-xs text-neutral-400 dark:text-neutral-500">
+                            No templates match your search.
+                          </p>
+                        ) : (
+                          groupedTemplates.map((group) => (
+                            <div key={group.category || "_"}>
+                              {group.category && (
+                                <p className="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                                  {group.category.replace(/-/g, " ")}
+                                </p>
+                              )}
+                              {group.items.map((template) => {
+                                const added = existingNames.has(template.name);
+                                const isSelected = selectedTemplate?.name === template.name;
+                                return (
+                                  <button
+                                    key={template.path}
+                                    type="button"
+                                    onClick={() => openTemplate(template)}
+                                    className={`group flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
+                                      isSelected
+                                        ? "bg-neutral-100 dark:bg-neutral-800/70"
+                                        : "hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
+                                    }`}
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <span className="block truncate text-xs font-semibold text-neutral-900 dark:text-neutral-100">
+                                        {template.name}
+                                      </span>
+                                      {template.description && (
+                                        <span className="mt-0.5 block truncate text-[11px] leading-tight text-neutral-400 dark:text-neutral-500">
+                                          {template.description}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {added && (
+                                      <span
+                                        title="Already in your skills"
+                                        className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-medium text-neutral-400 dark:text-neutral-500"
+                                      >
+                                        <Check size={11} />
+                                        Added
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ))
+                        )
+                      ) : allSkills.length === 0 ? (
                         <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
                           <Sparkles size={28} className="text-neutral-300 dark:text-neutral-600" />
                           <div>
@@ -516,29 +735,99 @@ export function SkillCatalog({
                     </div>
 
                     {/* List footer actions */}
-                    <div className="flex items-center gap-1.5 border-t border-neutral-200/60 px-3 py-3 dark:border-neutral-800/60">
-                      <button
-                        type="button"
-                        onClick={() => openEditor("new")}
-                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-neutral-300/50 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
-                      >
-                        <Plus size={11} />
-                        New
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleImport}
-                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-neutral-300/50 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
-                      >
-                        <Upload size={11} />
-                        Import
-                      </button>
-                    </div>
+                    {tab === "mine" && (
+                      <div className="flex items-center gap-1.5 border-t border-neutral-200/60 px-3 py-3 dark:border-neutral-800/60">
+                        <button
+                          type="button"
+                          onClick={() => openEditor("new")}
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-neutral-300/50 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
+                        >
+                          <Plus size={11} />
+                          New
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleImport}
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-neutral-300/50 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/50 dark:border-neutral-600/50 dark:text-neutral-400 dark:hover:bg-neutral-800/50"
+                        >
+                          <Upload size={11} />
+                          Import
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* ── Right panel ── */}
-                  <div className={`${!selectedSkill && !editMode ? "hidden sm:flex" : "flex"} min-w-0 flex-1 flex-col`}>
-                    {editMode ? (
+                  <div
+                    className={`${!selectedSkill && !editMode && !selectedTemplate ? "hidden sm:flex" : "flex"} min-w-0 flex-1 flex-col`}
+                  >
+                    {selectedTemplate ? (
+                      /* ── Template preview ── */
+                      <>
+                        <div className="flex items-center gap-2 border-b border-neutral-200/60 px-5 py-3.5 dark:border-neutral-800/60">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedTemplate(null);
+                              setTemplateContent(null);
+                            }}
+                            className="-ml-1 shrink-0 rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 sm:hidden dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                          >
+                            <ArrowLeft size={16} />
+                          </button>
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                            <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                              {selectedTemplate.name}
+                            </span>
+                            <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                              Template
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => templateContent && handleAddTemplate(templateContent)}
+                            disabled={!templateContent}
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-neutral-200 dark:text-neutral-900"
+                          >
+                            {existingNames.has(selectedTemplate.name) ? <Copy size={13} /> : <Plus size={13} />}
+                            {existingNames.has(selectedTemplate.name) ? "Add a copy" : "Add to my skills"}
+                          </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto px-5 py-4">
+                          {templateLoading ? (
+                            <div className="flex h-full items-center justify-center">
+                              <Loader2 size={20} className="animate-spin text-neutral-300 dark:text-neutral-600" />
+                            </div>
+                          ) : !templateContent ? (
+                            <p className="py-6 text-center text-xs text-neutral-400 dark:text-neutral-500">
+                              Failed to load this template.
+                            </p>
+                          ) : (
+                            <>
+                              {templateContent.description && (
+                                <div className="mb-4">
+                                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                                    Description
+                                  </p>
+                                  <p className="text-sm text-neutral-700 dark:text-neutral-300">
+                                    {templateContent.description}
+                                  </p>
+                                </div>
+                              )}
+                              <div>
+                                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                                  Instructions
+                                </p>
+                                <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none text-sm">
+                                  <Markdown>{templateContent.content}</Markdown>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </>
+                    ) : editMode ? (
                       /* ── Editor ── */
                       <>
                         <div className="flex-1 overflow-y-auto space-y-3.5 px-5 py-4">
