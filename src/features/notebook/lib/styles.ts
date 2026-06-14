@@ -2,10 +2,10 @@
  * Output styles and instruction templates for the notebook studio.
  *
  * Studio instruction templates and slide-common rules are bundled here
- * via `?raw` imports. Per-type style prompts live as separate `.md`
- * files under `public/notebook/<type>/<id>.md` and are fetched on demand
- * (see `resolvePrompt`). User-supplied styles from `config.notebook.*`
- * can be either inline strings or URLs using the same mechanism.
+ * via `?raw` imports. Per-type style prompts come from the server's notebook
+ * inventory (`notebooks.ts`, served by `GET /notebooks`) and are fetched on
+ * demand (see `resolvePrompt`). User-supplied styles from `config.notebook.*`
+ * override the built-ins and can be inline strings or URLs the same way.
  *
  * Exposes:
  *   - per-type style registries (`config.notebook.*` overrides defaults)
@@ -30,6 +30,7 @@ import studioSlideOnePagerInstructions from "../prompts/studio-slide-one-pager.t
 import studioSlidePlannerInstructions from "../prompts/studio-slide-planner.txt?raw";
 import studioSlideWriterInstructions from "../prompts/studio-slide-writer.txt?raw";
 import type { OutputType } from "../types/notebook";
+import { notebookStyles } from "./notebooks";
 
 // ── Public prompt exports ──────────────────────────────────────────────
 
@@ -43,7 +44,7 @@ export interface Style {
   /**
    * Either inline prompt text, or a URL fetched lazily and cached.
    * URLs are detected by an `http(s)://` prefix or a leading `/`
-   * (page-absolute path served from `public/`).
+   * (e.g. `/notebooks/<type>/<id>.md` served by the inventory endpoint).
    */
   prompt: string;
   description?: string;
@@ -77,217 +78,48 @@ async function resolvePrompt(value: string): Promise<string> {
 }
 
 export interface StyleRegistry {
-  /** All styles available for this type (defaults or config overrides). */
+  /** All styles available for this type (config overrides, else inventory built-ins). */
   getAll(): Style[];
-  /** Resolve a style by id, falling back to the first available. */
-  get(id?: string): Style;
+  /** Resolve a style by id, falling back to the first available; undefined if none exist. */
+  get(id?: string): Style | undefined;
 }
 
-function makeRegistry(defaults: Style[], override: () => Style[] | undefined): StyleRegistry {
+type NotebookStyleType = "slides" | "podcasts" | "reports" | "processes" | "architectures" | "infographics";
+
+/**
+ * Registry for one output type. Built-in styles come from the server notebook
+ * inventory (`notebooks.ts`, loaded at startup); a matching `config.notebook.<type>`
+ * array, when present, overrides them. Resolution is lazy because both sources are
+ * populated after this module is first evaluated.
+ */
+function styleRegistry(type: NotebookStyleType): StyleRegistry {
   const resolve = (): Style[] => {
-    const o = override();
-    return o && o.length > 0 ? o : defaults;
+    const overrides = getConfig().notebook?.[type] as { name: string; prompt: string; voices?: string[] }[] | undefined;
+
+    if (overrides && overrides.length > 0) {
+      return overrides.map((s) => ({ id: toId(s.name), label: s.name, prompt: s.prompt, voices: s.voices }));
+    }
+
+    return notebookStyles(type);
   };
+
   return {
     getAll: resolve,
     get: (id) => {
       const all = resolve();
-      return all.find((s) => s.id === id) ?? all[0] ?? defaults[0];
+      return all.find((s) => s.id === id) ?? all[0];
     },
   };
 }
 
 const toId = (name: string) => name.toLowerCase().replace(/\s+/g, "-");
 
-// ── Registries ─────────────────────────────────────────────────────────
-
-// Default-style prompts live under `public/notebook/<type>/<id>.md` and are
-// fetched lazily via the URL-aware `resolvePrompt`. User-supplied prompts
-// from `config.notebook.*` can be either inline strings or URLs the same way.
-
-export const slideStyles: StyleRegistry = makeRegistry(
-  [
-    {
-      id: "whiteboard",
-      label: "Whiteboard",
-      description: "Clean minimal design with hand-drawn feel and open whitespace",
-      prompt: "/notebook/slides/whiteboard.md",
-    },
-    {
-      id: "consulting",
-      label: "Consulting",
-      description: "Professional business style with structured layouts and accent colors",
-      prompt: "/notebook/slides/consulting.md",
-    },
-    {
-      id: "dark",
-      label: "Dark",
-      description: "Bold dark backgrounds with high-contrast text and vibrant highlights",
-      prompt: "/notebook/slides/dark.md",
-    },
-    {
-      id: "swiss",
-      label: "Swiss",
-      description: "Grid-based typography-first design inspired by Swiss graphic style",
-      prompt: "/notebook/slides/swiss.md",
-    },
-    {
-      id: "nature",
-      label: "Nature",
-      description: "Warm earthy tones with organic shapes and natural imagery",
-      prompt: "/notebook/slides/nature.md",
-    },
-  ],
-  () => getConfig().notebook?.slides?.map((s) => ({ id: toId(s.name), label: s.name, prompt: s.prompt })),
-);
-
-export const podcastStyles: StyleRegistry = makeRegistry(
-  [
-    {
-      id: "overview",
-      label: "Overview",
-      description: "A single-host overview of the key points and main takeaways",
-      prompt: "/notebook/podcasts/overview.md",
-      voices: ["host"],
-    },
-    {
-      id: "deep-dive",
-      label: "Deep Dive",
-      description: "An in-depth exploration of the topic with detailed analysis",
-      prompt: "/notebook/podcasts/deep-dive.md",
-      voices: ["analyst"],
-    },
-    {
-      id: "briefing",
-      label: "Briefing",
-      description: "A concise narrated briefing of the essential facts",
-      prompt: "/notebook/podcasts/briefing.md",
-      voices: ["narrator"],
-    },
-    {
-      id: "story",
-      label: "Story",
-      description: "A narrative retelling that weaves sources into a compelling story",
-      prompt: "/notebook/podcasts/story.md",
-      voices: ["storyteller"],
-    },
-    {
-      id: "debate",
-      label: "Debate",
-      description: "A two-host debate examining different perspectives",
-      prompt: "/notebook/podcasts/debate.md",
-      voices: ["host", "skeptic"],
-    },
-  ],
-  () =>
-    getConfig().notebook?.podcasts?.map((p) => ({
-      id: toId(p.name),
-      label: p.name,
-      prompt: p.prompt,
-      voices: p.voices ?? ["host"],
-    })),
-);
-
-export const reportStyles: StyleRegistry = makeRegistry(
-  [
-    {
-      id: "executive",
-      label: "Executive",
-      description: "A polished summary with key findings and recommendations",
-      prompt: "/notebook/reports/executive.md",
-    },
-    {
-      id: "dashboard",
-      label: "Dashboard",
-      description: "A data-focused report with metrics and visual indicators",
-      prompt: "/notebook/reports/dashboard.md",
-    },
-    {
-      id: "research",
-      label: "Research",
-      description: "An academic-style analysis with methodology and citations",
-      prompt: "/notebook/reports/research.md",
-    },
-    {
-      id: "magazine",
-      label: "Magazine",
-      description: "An editorial-style article designed for broad audiences",
-      prompt: "/notebook/reports/magazine.md",
-    },
-  ],
-  () => getConfig().notebook?.reports?.map((r) => ({ id: toId(r.name), label: r.name, prompt: r.prompt })),
-);
-
-export const processStyles: StyleRegistry = makeRegistry(
-  [
-    {
-      id: "bpmn",
-      label: "BPMN 2.0",
-      description: "Standard banking / insurance notation — pools, lanes, gateways, events",
-      prompt: "/notebook/processes/bpmn.md",
-    },
-    {
-      id: "swimlane",
-      label: "Swimlane",
-      description: "Role-based flowchart that makes cross-team hand-offs explicit",
-      prompt: "/notebook/processes/swimlane.md",
-    },
-    {
-      id: "itil",
-      label: "ITIL / ITSM",
-      description: "Change, incident, problem, or request flows aligned with ITIL",
-      prompt: "/notebook/processes/itil.md",
-    },
-    {
-      id: "sdlc",
-      label: "SDLC",
-      description: "Requirements → design → build → release → operate, with SOX gates",
-      prompt: "/notebook/processes/sdlc.md",
-    },
-    {
-      id: "three-lines",
-      label: "3 Lines of Defence",
-      description: "Governance view — business / risk & compliance / internal audit",
-      prompt: "/notebook/processes/three-lines.md",
-    },
-  ],
-  () => getConfig().notebook?.processes?.map((p) => ({ id: toId(p.name), label: p.name, prompt: p.prompt })),
-);
-
-export const architectureStyles: StyleRegistry = makeRegistry(
-  [
-    {
-      id: "c4",
-      label: "C4 Model",
-      description: "Context · Container · Component · Deployment — all four views, switchable as tabs",
-      prompt: "/notebook/architectures/c4.md",
-    },
-    {
-      id: "sequence",
-      label: "Sequence",
-      description: "UML sequence — actors and ordered messages for one flow",
-      prompt: "/notebook/architectures/sequence.md",
-    },
-  ],
-  () => getConfig().notebook?.architectures?.map((a) => ({ id: toId(a.name), label: a.name, prompt: a.prompt })),
-);
-
-export const infographicStyles: StyleRegistry = makeRegistry(
-  [
-    { id: "auto", label: "Auto-select", prompt: "/notebook/infographics/auto.md" },
-    { id: "sketch-note", label: "Sketch Note", prompt: "/notebook/infographics/sketch-note.md" },
-    { id: "kawaii", label: "Kawaii", prompt: "/notebook/infographics/kawaii.md" },
-    { id: "professional", label: "Professional", prompt: "/notebook/infographics/professional.md" },
-    { id: "scientific", label: "Scientific", prompt: "/notebook/infographics/scientific.md" },
-    { id: "anime", label: "Anime", prompt: "/notebook/infographics/anime.md" },
-    { id: "clay", label: "Clay", prompt: "/notebook/infographics/clay.md" },
-    { id: "editorial", label: "Editorial", prompt: "/notebook/infographics/editorial.md" },
-    { id: "instructional", label: "Instructional", prompt: "/notebook/infographics/instructional.md" },
-    { id: "bento", label: "Bento Grid", prompt: "/notebook/infographics/bento.md" },
-    { id: "bricks", label: "Bricks", prompt: "/notebook/infographics/bricks.md" },
-  ],
-  () => getConfig().notebook?.infographics?.map((i) => ({ id: toId(i.name), label: i.name, prompt: i.prompt })),
-);
+export const slideStyles = styleRegistry("slides");
+export const podcastStyles = styleRegistry("podcasts");
+export const reportStyles = styleRegistry("reports");
+export const processStyles = styleRegistry("processes");
+export const architectureStyles = styleRegistry("architectures");
+export const infographicStyles = styleRegistry("infographics");
 
 // ── Output metadata ────────────────────────────────────────────────────
 
@@ -387,8 +219,9 @@ export async function buildInstructions(
     prompt = studioSlideImageInstructions;
 
     const style = slideStyles.get(styleId ?? OUTPUT_META.slides.defaultStyleId);
-    const styleText = await resolvePrompt(style.prompt);
-    prompt += `\n\n${styleText}\n`;
+    if (style) {
+      prompt += `\n\n${await resolvePrompt(style.prompt)}\n`;
+    }
   } else {
     const meta = OUTPUT_META[type];
     prompt = isOnePager ? studioSlideOnePagerInstructions : meta.template;
@@ -398,8 +231,10 @@ export async function buildInstructions(
     }
 
     if (meta.styles) {
+      // `get` can return undefined only when the notebook inventory is empty
+      // (e.g. a missing/empty notebook dir); fall back to no style section.
       const style = meta.styles.get(styleId ?? meta.defaultStyleId);
-      const styleText = await resolvePrompt(style.prompt);
+      const styleText = style ? await resolvePrompt(style.prompt) : "";
       prompt = prompt.replace("{{STYLE_SECTION}}", styleText);
     }
   }
@@ -444,7 +279,7 @@ export async function buildSlidePrompts(
   options?: BuildInstructionsOptions,
 ): Promise<{ planner: string; writer: string }> {
   const style = slideStyles.get(styleId ?? OUTPUT_META.slides.defaultStyleId);
-  const styleText = await resolvePrompt(style.prompt);
+  const styleText = style ? await resolvePrompt(style.prompt) : "";
 
   // The planner owns deck-level overrides (slide count); writers inherit
   // language/user instructions so copy on every slide complies.

@@ -13,6 +13,7 @@ import {
   MoreVertical,
   Pencil,
   Plus,
+  Replace,
   Search,
   Sparkles,
   Trash2,
@@ -329,23 +330,14 @@ export function SkillCatalog({
     [loadTemplate],
   );
 
-  const handleAddTemplate = async (parsed: ParsedSkill) => {
-    if (existingNames.has(parsed.name)) {
-      const ok = await confirm({
-        title: "Overwrite skill?",
-        message: `You already have a skill named "${parsed.name}". Adding this template will replace its contents.`,
-        danger: true,
-      });
-      if (!ok) return;
-    }
-
+  // Copy a template into the user's library. Stays in place (no tab switch / no
+  // close) so several can be added in a row. addSkill de-dupes by name, so an
+  // existing skill of the same name is replaced.
+  const addTemplate = async (template: SkillTemplate) => {
+    const parsed = await loadTemplate(template.path);
+    if (!parsed) return;
     const added = addSkill(parsed);
     onSkillSaved(added, !existingNames.has(parsed.name));
-    setTab("mine");
-    setSelectedTemplate(null);
-    setTemplateContent(null);
-    setSelectedSkill(added);
-    setEditMode(false);
   };
 
   const handleDeleteConfirm = (skill: Skill) => {
@@ -785,12 +777,12 @@ export function SkillCatalog({
                           </div>
                           <button
                             type="button"
-                            onClick={() => templateContent && handleAddTemplate(templateContent)}
-                            disabled={!templateContent}
+                            onClick={() => addTemplate(selectedTemplate)}
+                            disabled={templateLoading || !templateContent}
                             className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-neutral-200 dark:text-neutral-900"
                           >
-                            {existingNames.has(selectedTemplate.name) ? <Copy size={13} /> : <Plus size={13} />}
-                            {existingNames.has(selectedTemplate.name) ? "Add a copy" : "Add to my skills"}
+                            {existingNames.has(selectedTemplate.name) ? <Replace size={13} /> : <Plus size={13} />}
+                            {existingNames.has(selectedTemplate.name) ? "Replace" : "Add to my skills"}
                           </button>
                         </div>
 

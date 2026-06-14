@@ -1,10 +1,10 @@
 /**
  * Default skill templates shipped with the deployment.
  *
- * Templates live as static files under `public/skills/<name>/SKILL.md` and are
- * enumerated by the generated `public/skills/index.json` manifest (see
- * `scripts/skills-index.mjs`). They are fetched lazily and cached here, mirroring
- * the notebook style-template mechanism in `notebook/lib/styles.ts`.
+ * Templates live as files under the server's skills directory (`<name>/SKILL.md`,
+ * optionally grouped in category folders) and are enumerated by the server's
+ * `GET /skills` inventory endpoint (a Vite dev middleware serves the same in
+ * local dev). Each entry's `SKILL.md` is fetched lazily and cached here.
  *
  * Templates are not skills themselves — the catalog offers them as starting
  * points that the user copies into their own (editable) OPFS skill library.
@@ -21,7 +21,7 @@ export interface SkillTemplate {
   path: string;
 }
 
-const INDEX_URL = "/skills/index.json";
+const INDEX_URL = "/skills";
 
 let indexPromise: Promise<SkillTemplate[]> | null = null;
 const contentCache = new Map<string, Promise<ParsedSkill | null>>();

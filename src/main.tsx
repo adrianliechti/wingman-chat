@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
 
+import { loadNotebooks } from "./features/notebook/lib/notebooks.ts";
 import { initTelemetry } from "./features/repository/lib/telemetry";
 import { loadConfig } from "./shared/config.ts";
 import { prepareInitialEmojiRendering } from "./shared/lib/noto-emoji.ts";
@@ -63,7 +64,7 @@ const showFatalError = (title: string, message: string, error?: unknown) => {
 
 const bootstrap = async () => {
   try {
-    const [config] = await Promise.all([loadConfig(), prepareInitialEmojiRendering()]);
+    const [config] = await Promise.all([loadConfig(), loadNotebooks(), prepareInitialEmojiRendering()]);
 
     if (config?.telemetry) {
       initTelemetry();

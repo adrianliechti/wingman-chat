@@ -60,7 +60,7 @@ interface NotebookStyleBase {
   name: string;
   /**
    * Either inline prompt text, or a URL (absolute `https://…` or
-   * page-relative `/notebook/…`) fetched on demand and cached.
+   * page-relative `/notebooks/…`) fetched on demand and cached.
    * Use a URL for long templates so they don't bloat `config.json`.
    */
   prompt: string;

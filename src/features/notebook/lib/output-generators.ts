@@ -76,7 +76,7 @@ export async function generatePodcast(ctx: GenerateContext, styleId?: string): P
   const ttsModel = config.tts?.model || "";
   const voiceMap = config.tts?.voices ?? {};
   const resolveVoice = (role: string) => voiceMap[role] || role;
-  const voices = podcastStyles.get(styleId).voices ?? ["host"];
+  const voices = podcastStyles.get(styleId)?.voices ?? ["host"];
 
   // Parse script into segments. Multi-voice styles use [1]/[2] speaker tags;
   // single-voice styles treat every paragraph as a segment.

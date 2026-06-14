@@ -1,11 +1,142 @@
+import fs from "node:fs";
+import type { ServerResponse } from "node:http";
 import path from "node:path";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 const src = path.resolve(import.meta.dirname, "src");
 const shim = (file: string) => path.resolve(src, "shared/lib", file);
+
+// ── Dev parity for the server's /skills and /notebooks inventory endpoints ──
+// In production these are served by the Go server (pkg/server/library) from the
+// runtime ./skills and ./notebook dirs. That server isn't running under
+// `npm run dev`, so this plugin serves the same inventory + content locally.
+
+// biome-ignore lint/suspicious/noExplicitAny: tiny frontmatter parser with mixed value types
+function parseFrontmatter(text: string): Record<string, any> {
+  const m = text.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (!m) return {};
+  // biome-ignore lint/suspicious/noExplicitAny: see above
+  const out: Record<string, any> = {};
+  for (const line of m[1].split("\n")) {
+    const i = line.indexOf(":");
+    if (i <= 0) continue;
+    const key = line.slice(0, i).trim();
+    const raw = line.slice(i + 1).trim();
+    if (raw.startsWith("[") && raw.endsWith("]")) {
+      out[key] = raw
+        .slice(1, -1)
+        .split(",")
+        .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+        .filter(Boolean);
+    } else if (raw === "true" || raw === "false") {
+      out[key] = raw === "true";
+    } else {
+      out[key] = raw.replace(/^["']|["']$/g, "");
+    }
+  }
+  return out;
+}
+
+function stripFrontmatterBody(text: string): string {
+  const m = text.match(/^---\s*\n[\s\S]*?\n---\s*\n?/);
+  return m ? text.slice(m[0].length).replace(/^\n+/, "") : text;
+}
+
+function walkFiles(dir: string, match: (name: string) => boolean): string[] {
+  if (!fs.existsSync(dir)) return [];
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkFiles(p, match));
+    else if (match(entry.name)) out.push(p);
+  }
+  return out;
+}
+
+const toRel = (root: string, p: string) => path.relative(root, p).split(path.sep).join("/");
+
+function inventorySkills(root: string) {
+  return walkFiles(root, (n) => n === "SKILL.md")
+    .map((p) => {
+      const fm = parseFrontmatter(fs.readFileSync(p, "utf8"));
+      const r = toRel(root, p);
+      const parts = r.split("/");
+      return {
+        name: fm.name ?? "",
+        description: fm.description ?? "",
+        category: parts.length > 2 ? parts[0] : "",
+        path: `/skills/${r}`,
+      };
+    })
+    .filter((e) => e.name)
+    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+}
+
+function inventoryNotebooks(root: string) {
+  return walkFiles(root, (n) => n.endsWith(".md"))
+    .map((p) => ({ p, parts: toRel(root, p).split("/") }))
+    .filter(({ parts }) => parts.length >= 2) // style files live under a <type>/ folder
+    .map(({ p, parts }) => {
+      const fm = parseFrontmatter(fs.readFileSync(p, "utf8"));
+      const id = path.basename(p, ".md");
+      return {
+        type: parts[0],
+        id,
+        label: fm.label ?? id,
+        description: fm.description,
+        voices: fm.voices,
+        default: fm.default ?? false,
+        path: `/notebooks/${parts.join("/")}`,
+      };
+    })
+    .sort(
+      (a, b) => a.type.localeCompare(b.type) || Number(b.default) - Number(a.default) || a.label.localeCompare(b.label),
+    );
+}
+
+function libraryDevPlugin(): Plugin {
+  const SKILLS = "skills";
+  const NOTEBOOK = "notebook";
+
+  const sendFile = (res: ServerResponse, root: string, urlRel: string, strip: boolean) => {
+    const clean = path.posix.normalize(`/${urlRel}`).replace(/^\/+/, "");
+    const full = path.join(root, clean);
+    if (
+      !path.resolve(full).startsWith(path.resolve(root) + path.sep) ||
+      !fs.existsSync(full) ||
+      fs.statSync(full).isDirectory()
+    ) {
+      res.statusCode = 404;
+      res.end("not found");
+      return;
+    }
+    const body = fs.readFileSync(full, "utf8");
+    res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+    res.end(strip ? stripFrontmatterBody(body) : body);
+  };
+
+  const json = (res: ServerResponse, data: unknown) => {
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify(data));
+  };
+
+  return {
+    name: "library-dev",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = (req.url ?? "").split("?")[0];
+        if (url === "/skills") return json(res, inventorySkills(SKILLS));
+        if (url.startsWith("/skills/")) return sendFile(res, SKILLS, decodeURIComponent(url.slice(8)), false);
+        if (url === "/notebooks") return json(res, inventoryNotebooks(NOTEBOOK));
+        if (url.startsWith("/notebooks/")) return sendFile(res, NOTEBOOK, decodeURIComponent(url.slice(11)), true);
+        next();
+      });
+    },
+  };
+}
 
 const wingmanUrl = process.env.WINGMAN_URL?.replace(/\/$/, "") || "http://localhost:8080";
 const wingmanToken = process.env.WINGMAN_TOKEN || "none";
@@ -54,7 +185,7 @@ export default defineConfig({
       },
     },
   },
-  plugins: [react(), babel({ presets: [reactCompilerPreset({ target: "19" })] }), tailwindcss()],
+  plugins: [react(), babel({ presets: [reactCompilerPreset({ target: "19" })] }), tailwindcss(), libraryDevPlugin()],
   build: {
     target: "esnext",
     chunkSizeWarningLimit: 1000,
