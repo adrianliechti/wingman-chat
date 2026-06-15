@@ -9,6 +9,7 @@ import { MCPClient } from "@/features/settings/lib/mcp";
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkillsProvider } from "@/features/skills/hooks/useSkillsProvider";
 import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
+import { useTranslateProvider } from "@/features/translate/hooks/useTranslateProvider";
 import { COMPANION_ID, companionMcpUrl, useCompanion } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
 import type {
@@ -167,6 +168,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const internetProvider = useInternetProvider();
   const canvasProvider = useCanvasProvider();
   const artifactsProvider = useArtifactsProvider();
+  const translateProvider = useTranslateProvider();
   const skillsProvider = useSkillsProvider(skillSources);
   const skillBuilderProvider = useSkillBuilderProvider();
 
@@ -236,6 +238,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     if (internetProvider) list.push(internetProvider);
     if (canvasProvider) list.push(canvasProvider);
     if (artifactsProvider) list.push(artifactsProvider);
+    if (translateProvider) list.push(translateProvider);
     // Global Skills tool: only when no agent is active. With an agent, skills
     // are governed solely by its curated set (useAgentProviders, which owns the
     // "skills" id) — otherwise a stale session toggle could leak the whole
@@ -250,6 +253,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     internetProvider,
     canvasProvider,
     artifactsProvider,
+    translateProvider,
     skillsProvider,
     currentAgent,
     skillBuilderProvider,

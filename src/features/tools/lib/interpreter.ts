@@ -24,6 +24,7 @@ import { renderPlotlyFigures } from "./plotlyRenderer";
 import { runRenderImage } from "./renderCommand";
 import { runSynthesize } from "./synthesizeCommand";
 import { runTranscribe } from "./transcribeCommand";
+import { runTranslateFile, runTranslateText } from "./translateCommand";
 import { runVision } from "./visionCommand";
 
 export type { CodeExecutionRequest, CodeExecutionResult } from "./interpreterProtocol";
@@ -62,6 +63,10 @@ function getWorker(): Worker {
         void replyOnPort(message.port, () => runSynthesize(message.text, message.voice));
       } else if (message.type === "transcribe-request") {
         void replyOnPort(message.port, () => runTranscribe(message.data, message.path));
+      } else if (message.type === "translate-text-request") {
+        void replyOnPort(message.port, () => runTranslateText(message.lang, message.text));
+      } else if (message.type === "translate-file-request") {
+        void replyOnPort(message.port, () => runTranslateFile(message.lang, message.data, message.path));
       } else {
         void replyOnPort(message.port, () => renderPlotlyFigures(message.manifests, message.plotlyJs));
       }

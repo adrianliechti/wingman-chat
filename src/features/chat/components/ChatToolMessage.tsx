@@ -3,6 +3,7 @@ import { memo, useMemo, useState } from "react";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useLastFullscreenApp } from "@/features/chat/hooks/useLastFullscreenApp";
 import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
+import { TranslateToolApp } from "@/features/translate/components/TranslateToolApp";
 import { cn } from "@/shared/lib/cn";
 import type { Content, Message, ToolResultContent } from "@/shared/types/chat";
 import { CodeRenderer } from "@/shared/ui/CodeRenderer";
@@ -49,6 +50,9 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
     typeof appProviderId === "string" &&
     typeof toolResult?.meta?.toolResource === "string" &&
     providers.some((p) => p.id === appProviderId);
+  // Built-in tools can flag an internal React widget to own the display via
+  // `meta.toolComponent` (no iframe), mirroring how MCP apps claim the result.
+  const isTranslateApp = !message.error && toolResult?.meta?.toolComponent === "translate";
   const codeData = toolResult?.arguments ? extractToolCode(toolResult.arguments) : null;
   const pres = toolPresentation(toolResult?.name ?? "", toolResult?.arguments, { error: isToolError });
   const queryPreview =
@@ -160,8 +164,9 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
           </div>
         )}
 
-        {/* Render media content (images, audio, files) — unless an MCP app owns the display */}
+        {/* Render media content (images, audio, files) — unless an app owns the display */}
         {!hasMcpApp &&
+          !isTranslateApp &&
           toolResult?.result?.some((c) => c.type === "image" || c.type === "audio" || c.type === "file") && (
             <div className="mt-2">
               <RenderContents contents={toolResult.result} />
@@ -172,6 +177,9 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
         {hasMcpApp && (
           <McpApp key={`${chat?.id}-${index}`} toolResult={toolResult} isLastFullscreenApp={isLastFullscreenApp} />
         )}
+
+        {/* Render the inline translate widget for built-in translate tool results */}
+        {isTranslateApp && <TranslateToolApp toolResult={toolResult} index={index} />}
       </div>
     </div>
   );

@@ -10,6 +10,7 @@
  *   - the `render(...)` Python global — needs the chat client/config
  *   - the `synthesize(...)` Python global — needs the chat client/config
  *   - the `transcribe(...)` Python global — needs the chat client/config
+ *   - the `translate(...)` Python global — needs the chat client/config
  *   - Plotly figure rendering — plotly.js requires a real DOM
  */
 
@@ -92,6 +93,11 @@ export type WorkerToMainMessage =
   // Audio bytes read from the worker FS, transcribed on the main thread via
   // the backend speech-to-text service.
   | { type: "transcribe-request"; data: Uint8Array; path: string; port: MessagePort }
+  // Text translated on the main thread via the backend translation service.
+  | { type: "translate-text-request"; lang: string; text: string; port: MessagePort }
+  // File bytes read from the worker FS, translated on the main thread; replies
+  // with the translated file bytes, which the worker writes to the output path.
+  | { type: "translate-file-request"; lang: string; data: Uint8Array; path: string; port: MessagePort }
   // `plotlyJs` carries the plotly.js source (read from the wheel inside the
   // worker's FS) on the first render request; the main thread caches the
   // loaded script, so subsequent requests omit it.

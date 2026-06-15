@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { getConfig } from "@/shared/config";
 import { downloadFromUrl, formatBytes } from "@/shared/lib/utils";
+import { translateText } from "../lib/translate";
 import type { TranslateContextType } from "./TranslateContext";
 import { styleOptions, supportedFiles, supportedLanguages, TranslateContext, toneOptions } from "./TranslateContext";
 
@@ -116,23 +117,15 @@ export function TranslateProvider({ children }: TranslateProviderProps) {
       setTranslatedText("");
 
       try {
-        const result = await client.translate(langToUse, textToUse);
-        if (typeof result === "string") {
-          // Apply tone/style rewriting if either is not empty
-          if (toneValue || styleValue) {
-            const rewrittenResult = await client.rewriteText(
-              config.translator?.model || "",
-              result,
-              langToUse,
-              toneValue,
-              styleValue,
-            );
-            setTranslatedText(rewrittenResult);
-          } else {
-            setTranslatedText(result);
-          }
-          setLastTranslatedText(textToUse); // Track what text was translated
-        }
+        const result = await translateText(client, {
+          lang: langToUse,
+          text: textToUse,
+          tone: toneValue,
+          style: styleValue,
+          model: config.translator?.model,
+        });
+        setTranslatedText(result);
+        setLastTranslatedText(textToUse); // Track what text was translated
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "An unknown error occurred during translation.";
         setError(errorMessage);
