@@ -26,28 +26,31 @@ import { useApp } from "@/shell/hooks/useApp";
 import type { ChatContextType } from "./ChatContext";
 import { ChatContext } from "./ChatContext";
 
-/** Index of the last message carrying a summary marker, or -1 if none. */
-function lastSummaryIndex(messages: Message[]): number {
-  return messages.findLastIndex((m) => m.content.some((p) => p.type === "summary"));
+/** Messages from the last summary marker onward — the window actually sent to the model. */
+function messagesSinceSummary(messages: Message[]): Message[] {
+  const idx = messages.findLastIndex((m) => m.content.some((p) => p.type === "summary"));
+  return idx > 0 ? messages.slice(idx) : messages;
 }
 
-/** Drop all messages before the last summary marker so API requests stay small. */
+/** Drop messages before the last summary marker so API requests stay small. */
 function pruneAtSummary(messages: Message[]): Message[] {
-  const idx = lastSummaryIndex(messages);
-  if (idx <= 0) return [...messages];
-  console.log(`[Summary] Pruning ${idx} messages before summary marker`);
-  return messages.slice(idx);
+  const pruned = messagesSinceSummary(messages);
+  if (pruned.length < messages.length) {
+    console.log(`[Summary] Pruning ${messages.length - pruned.length} messages before summary marker`);
+  }
+  return pruned;
 }
 
-/** Rough token estimate (chars / 4). Skips binary content (images/files). */
+/**
+ * Rough token estimate (chars / 4) approximating the replay payload. Skips
+ * reasoning (not replayed to the API) and binary content (images/files).
+ */
 function estimateTokens(messages: Message[]): number {
   let chars = 0;
   for (const msg of messages) {
     for (const part of msg.content) {
       if (part.type === "text" || part.type === "summary") {
         chars += part.text.length;
-      } else if (part.type === "reasoning") {
-        chars += part.text.length + (part.summary?.length ?? 0);
       } else if (part.type === "tool_call") {
         chars += part.name.length + part.arguments.length;
       } else if (part.type === "tool_result") {
@@ -75,16 +78,14 @@ async function compactIfNeeded(
   summarizerModel: string,
 ): Promise<Message[]> {
   if (!threshold || conversation.length < 2) return conversation;
-  // Measure only the active window actually sent to the model (from the last
-  // summary marker on), not full storage — storage keeps every original for the
-  // UI, so measuring it all would stay above threshold and re-summarize every turn.
-  const summaryIdx = lastSummaryIndex(conversation);
-  const active = summaryIdx > 0 ? conversation.slice(summaryIdx) : conversation;
-  if (estimateTokens(active) < threshold) return conversation;
+  // Gauge only the active window (since the last summary) — measuring full
+  // storage (kept intact for the UI) would never drop back under the threshold,
+  // so we'd re-summarize on every turn.
+  if (estimateTokens(messagesSinceSummary(conversation)) < threshold) return conversation;
 
   // Last message is the user's just-sent turn — don't summarize it.
-  const currentTurnIdx = conversation.length - 1;
-  const toSummarize = conversation.slice(0, currentTurnIdx);
+  const currentTurn = conversation[conversation.length - 1];
+  const toSummarize = conversation.slice(0, -1);
 
   console.log(
     `[Summary] Compacting ${toSummarize.length} messages (~${estimateTokens(toSummarize)} est. tokens, threshold ${threshold})`,
@@ -100,7 +101,7 @@ async function compactIfNeeded(
   // Keep all original messages in storage; strip prior summary markers so
   // multiple don't accumulate. pruneAtSummary slices at the latest one.
   const preserved = toSummarize.filter((m) => !m.content.some((p) => p.type === "summary"));
-  return [...preserved, summaryMsg, conversation[currentTurnIdx]];
+  return [...preserved, summaryMsg, currentTurn];
 }
 
 interface ChatProviderProps {
