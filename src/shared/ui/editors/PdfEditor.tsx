@@ -1,6 +1,7 @@
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { memo, useEffect, useRef, useState } from "react";
+import { pdfAssetOptions } from "@/shared/lib/pdf";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -26,7 +27,7 @@ export const PdfEditor = memo(function PdfEditor({ content }: PdfEditorProps) {
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
-        const pdf = await getDocument({ data: bytes, useSystemFonts: true }).promise;
+        const pdf = await getDocument({ data: bytes, useSystemFonts: true, ...pdfAssetOptions }).promise;
         if (cancelled) return;
 
         container.innerHTML = "";

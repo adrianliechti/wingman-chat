@@ -5,6 +5,23 @@ import type { PDFPageProxy, TextContent, TextItem } from "pdfjs-dist/types/src/d
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
+// pdf.js fetches WebAssembly image decoders (openjpeg.wasm for JPEG2000, jbig2.wasm
+// for JBIG2), ICC color profiles, predefined CMaps, and standard fonts at runtime by
+// exact filename. Scanned PDFs in particular rely on the wasm decoders, so without
+// these URLs their pages render blank or garbled. The folders are served verbatim
+// from /pdfjs/* by the pdfjsAssetsPlugin in vite.config.ts.
+const pdfAssetBase = `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}pdfjs/`;
+
+/** Shared pdf.js asset URLs to pass into getDocument(). */
+export const pdfAssetOptions = {
+  wasmUrl: `${pdfAssetBase}wasm/`,
+  iccUrl: `${pdfAssetBase}iccs/`,
+  cMapUrl: `${pdfAssetBase}cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `${pdfAssetBase}standard_fonts/`,
+} as const;
+
+
 /**
  * Converts a PDF file to Markdown using pdf.js text extraction.
  *
@@ -16,7 +33,7 @@ GlobalWorkerOptions.workerSrc = workerUrl;
  */
 export async function pdfToMarkdown(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
-  const pdf = await getDocument({ data: buffer, useSystemFonts: true }).promise;
+  const pdf = await getDocument({ data: buffer, useSystemFonts: true, ...pdfAssetOptions }).promise;
 
   const pages: string[] = [];
 
