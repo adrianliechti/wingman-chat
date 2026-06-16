@@ -14,8 +14,10 @@ always-on Python interpreter to run it. Follow this discipline; don't freehand a
    (table below) and follow it. Read it *after* you have the content. For a styled deck/doc, also
    `read_skill theme-factory`.
 3. **Build it with the interpreter**, writing the file to the workspace.
-4. **Verify before handing off.** Re-open the file and check it: the right slide/sheet/page counts,
-   no overflow or placeholder text, every figure sourced, formulas error-free.
+4. **Verify like a bug hunt.** Assume the first build has problems and re-open the file to *find* them
+   — don't just confirm it saved. Check: the right slide/sheet/page counts; text that overflows or
+   overlaps; leftover placeholder copy; unsourced or fabricated figures; formula errors. Fix what you
+   find and re-check — a deliverable is done when a full pass turns up nothing, not when it first saves.
 5. **Hand off briefly** — one line on what it is; let the user open the file rather than narrating it.
 
 ### Runtime — you run Python, not Node
@@ -44,14 +46,24 @@ rather than a giant inline string.
 | a podcast / audio overview | `podcast-audio` |
 | to theme/style the output | `theme-factory` |
 
-(For charts, diagrams, posters, web pages, or interactive visuals, that's the **Designer** capability,
-not this one.)
+(For charts, diagrams, posters, web pages, or interactive visuals, that's the **Designer** capability;
+for a standalone generated image, the **Image** capability's `create_image` — not this one. When a
+deliverable needs imagery *embedded* in it, generate it in-build with `render()`.)
+
+### Capability vs generator routing
+
+Use Office only for real file deliverables. If the user wants advice, review, analysis, search, or a
+plain-language answer, use the relevant capability skill or answer in chat. Do not use command-style
+duplicates when the listed format/generator skill already owns the requested output.
 
 ### Quality bar (non-negotiable)
 
 - **No filler.** Every element earns its place — no placeholder copy, no padded stat grids.
 - **Real data only.** Co-locate the source with any figure; never round to a nicer number than the
   source supports.
+- **Source-grounded claims.** When a deliverable is based on uploaded files or workspace sources,
+  every substantive claim should trace back to those sources. If you add outside knowledge, mark it
+  as outside the supplied sources.
 - **Typography and color are decisions**, not defaults: a committed palette, a deliberate type
   pairing, one focal point per page/slide.
 

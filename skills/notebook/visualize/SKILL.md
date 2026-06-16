@@ -10,6 +10,10 @@ drawer renders **Mermaid `.mmd`** natively, the bundled Python interpreter draws
 (`matplotlib`) and images, and hand-authored SVG needs nothing. Don't load scripts from a CDN. Put
 the explanation in your chat reply; keep the artifact to the visual.
 
+**This skill is for *explaining*** — diagrams, mechanism drawings, and quick illustrative charts. For a
+rigorous chart of a real dataset (publication-quality, accessible), use `data-visualization`; for a
+business flow, C4, or tree, use `process-diagram` / `architecture-diagram` / `mind-map`.
+
 ## Pick the form (route on the verb)
 
 | Asked | Form | Build with |

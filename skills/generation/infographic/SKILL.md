@@ -9,6 +9,9 @@ Produce one striking infographic **image** that captures the key points at a gla
 detailed image prompt and render it with the interpreter's `render()` helper; the `.png` lands in
 the workspace and shows inline in chat.
 
+This is a **data-driven** poster — real facts and numbers. For an **art-led** poster or cover where
+aesthetics lead (not data), use `canvas-design` instead.
+
 > Requires a configured image service. If `render()` reports none is configured, tell the user
 > image generation isn't available and offer a report or slides instead.
 
@@ -72,6 +75,10 @@ await render(
 )
 print("wrote infographic.png")
 ```
+
+**Inspect what rendered.** Image models garble text and miscount — re-open the `.png` and look at it
+(use `vision()` if available): the title and every stat must read correctly and match the source, the
+hero must dominate, nothing misspelled. Re-render if it's off.
 
 Save `infographic.png` to the workspace root. Tell the user it's ready; to revise, push the art
 direction further (bolder palette, stronger hero, different style skill) and re-run. If they want a

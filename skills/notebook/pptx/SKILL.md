@@ -79,8 +79,11 @@ Notes:
   re-save — don't rebuild from scratch when revising. Keep the template's masters/layouts.
 
 ## Verify before handing off
-Re-check every slide: no text box runs past the slide edge or overlaps another; titles fit one line;
-every figure is real; nothing is below 14pt.
+**Assume the first build has problems** — go slide by slide hunting for them, don't just confirm the
+file exists. On each slide check: no text box runs past the slide edge or overlaps another; titles fit
+one line (a title that wrapped to two breaks decorative lines positioned for one); every figure is
+real and sourced; no leftover placeholder; nothing below 14pt; even margins and gaps. Fix what you
+find and re-check the affected slides — one fix often creates the next problem.
 
 ## Deliver
 Save as `<slug>.pptx`; one-line hand-off (topic + slide count). To revise, open the saved file and

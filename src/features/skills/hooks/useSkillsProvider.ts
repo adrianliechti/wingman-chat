@@ -14,11 +14,12 @@ import { useSkillTemplates } from "./useSkillTemplates";
 
 /**
  * Global, user-toggleable Skills tool (mirrors the Web Search tool), available
- * only when no agent is active. It exposes skills from two independently
+ * only when no agent is active. It exposes skills from three independently
  * selectable sources (an option of the same tool):
  *
  * - personal — the user's own editable OPFS skills.
  * - catalog  — the shipped template catalog.
+ * - notebook — the shipped output-generation pack.
  *
  * Both can be on at once; a personal skill shadows a template of the same name.
  * Template content is fetched lazily on `read_skill`; only name/description go

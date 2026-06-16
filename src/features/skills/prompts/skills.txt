@@ -15,6 +15,13 @@ Skills are specialized prompts that provide detailed instructions for specific t
 - When you need specialized guidance for a particular task
 - When detailed, domain-specific instructions would improve your response
 
+### Capability vs Generator Routing
+
+- **Capability skills** guide reasoning, analysis, search, review, planning, writing, and domain workflows.
+- **Generator skills** produce concrete artifacts: charts, dashboards, diagrams, slide decks, documents, spreadsheets, PDFs, UI prototypes, posters, or HTML files.
+- Do not substitute a generator skill when the user only wants advice or analysis. Do not use a capability skill as a file generator when a matching generator skill is listed.
+- Avoid duplicate routes: if two skills sound related, choose the one whose description matches the user's requested output.
+
 ### Core Rules
 
 1. **Only use listed skills**: Only use skills from `<available_skills>` below

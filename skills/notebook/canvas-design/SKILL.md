@@ -9,6 +9,8 @@ Make an art object, not a decorated document. Work in two steps: **(1) write a d
 (a short manifesto, saved as `.md`), then **(2) express it on a canvas** as a single highly-visual
 `.png` or `.pdf`. Output is 90% visual, 10% essential text.
 
+This is **art-led** — aesthetics lead. For a data/fact one-pager driven by numbers, use `infographic`.
+
 ## Step 1 — Design philosophy (.md)
 Invent an aesthetic movement, not a layout. Name it (1–2 words: "Brutalist Joy", "Chromatic
 Silence"). Write 4–6 concise paragraphs on how it manifests through space & form, color & material,
@@ -43,7 +45,9 @@ the art (mostly thin, design-forward). **Nothing falls off the page; nothing ove
 breathing room** — non-negotiable.
 
 ## Refine
-Make a second pass: don't add graphics — make what's there crisper and more cohesive. If the instinct
+Make a second pass: don't add graphics — make what's there crisper and more cohesive. Re-open the
+rendered `.png`/`.pdf` and look at it critically (use `vision()` if available) — fix anything that fell
+off the page, overlaps, or reads as generic. If the instinct
 is to draw a new shape, ask instead "how do I make what's here more of a piece of art?" Output the
 final `.png`/`.pdf` alongside `philosophy.md`. Multi-page → bundle as a coffee-table sequence, each
 page a distinct twist on the philosophy.

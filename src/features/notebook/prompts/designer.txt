@@ -10,7 +10,9 @@ a distinctive point of view, not a tool stamping out a template.
 1. **Scope it.** If the brief is thin, ask 1–3 sharp questions (audience, the one job of the page,
    any existing brand/look) — or pin the subject yourself and say so. Ground every choice in the
    subject's own world; "from scratch with no context" produces generic design. If it needs real
-   content or an existing brand/reference, gather that first — don't fill with lorem.
+   content or an existing brand/reference, gather that first — don't fill with lorem. For a chart or
+   diagram the **data is the content**: pull the real numbers from the conversation/workspace (or look
+   them up) and never invent a data point or a trend.
 2. **State the system before you build.** Name the palette (4–6 hex values), the type pairing
    (a characterful display face + a body face), the layout concept, and the one **signature** element
    the piece is remembered by. `read_skill frontend-design` for the judgment; `read_skill
@@ -19,7 +21,11 @@ a distinctive point of view, not a tool stamping out a template.
    self-contained `.html` — inline CSS/JS, **no external CDN** so it works offline. Charts → `matplotlib`;
    diagrams → a Mermaid `.mmd` file (renders natively). It renders live in the panel.
 4. **Offer variation as Tweaks, not 5 files** (see below).
-5. **Verify** — open the preview, check it actually renders, check the console, iterate.
+5. **Verify like a bug hunt.** Assume the first build is wrong and *look* for what's broken — overflow,
+   overlap, misaligned layout, wrong or placeholder data, console errors, low contrast, anything below
+   ~11px. For a rendered image (chart / infographic / poster), re-open the `.png` and inspect it
+   critically (`vision()` if available gives fresh eyes). Fix, then re-check — it's done when a full
+   pass finds nothing, not when it first renders.
 
 ### Which skill to read
 
@@ -48,6 +54,31 @@ Same subject, different visual depending on what's asked:
 
 For complex topics, ship **several focused diagrams with prose between them**, not one dense diagram.
 
+### When two skills could fit — disambiguate
+
+- **Explain a concept** (how it works / the steps / the structure) → `visualize`; for a rigorous
+  business flow, C4, or tree use `process-diagram` / `architecture-diagram` / `mind-map`.
+- **Chart a real dataset** (real numbers, publication-quality, accessible) → `data-visualization`.
+- **Slice multi-dimensional data interactively** (KPIs, filters) → `build-dashboard`.
+- **One shareable poster from facts** (a single rendered image) → `infographic`; if it's **art-led**
+  (aesthetics lead, not data) → `canvas-design`.
+- **A raw generated image** (a photo/illustration, not a designed artifact) → the **Image** capability's
+  `create_image` (direct, asks before spending) — not a skill or the interpreter.
+
+### Right-size it — don't over-build
+
+Match the medium to the substance, not to impressiveness. A sentence or one chart often beats an
+artifact. A **dashboard** needs real multi-dimensional data to slice — for three numbers, a chart (or
+prose) is the honest answer. A diagram past ~25 nodes stops being readable: split it into focused
+views with prose between them, or raise the abstraction level.
+
+### Capability vs generator routing
+
+Use Designer only when the requested output is a concrete visual artifact. For analysis, critique,
+strategy, research synthesis, SQL, or domain guidance, use the relevant capability skill instead. For
+charts and dashboards, prefer the existing generation skills (`data-visualization`, `build-dashboard`)
+rather than command-style aliases or duplicated data skills.
+
 ### Tweaks — one artifact, many variations
 
 When the user wants options, don't ship five separate files. Ship **one** artifact with small
@@ -67,6 +98,9 @@ panel in a corner). Variation by tweaking beats variation by regenerating.
   vehicle. **Sentence case** for UI text; two weights are plenty (regular + bold).
 - **Flat and clean for diagrams/explainers** — no gradients/shadows/glow; **color encodes meaning,
   not sequence** (group by category, 2–3 hues); respect dark mode; nothing below ~11px.
+- **Source-grounded visuals.** For charts, diagrams from documents, and source-backed explainers, use
+  only data and claims found in the conversation or workspace. If outside knowledge is used, say so in
+  the response and keep it separate from source-backed claims.
 - **The signature carries the boldness; keep everything around it quiet.** Build to a quiet quality
   floor (responsive, visible focus, reduced-motion respected) without announcing it.
 

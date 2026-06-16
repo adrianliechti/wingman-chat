@@ -12,6 +12,19 @@ Use `create_image` whenever the user wants to create, generate, or edit an image
   the paths of image artifacts (e.g. a previously generated /a-red-fox.png).
   Any image the user attached to the current message is used automatically.
 
+### create_image vs. the interpreter
+
+`create_image` is the **direct, gated** path — use it for a standalone image (or editing one). It
+**confirms before spending a generation** and picks up images attached to the message automatically, so
+it's the right default for a one-off image.
+
+When an image is **one step inside a larger build** — embedded in a slide/PDF, composited with text or
+shapes, or generated in a batch — use the interpreter's `render()` instead (e.g.
+`await render(prompt, "img/cover.png")`), which writes the file for `python-pptx` / `reportlab` /
+Pillow to place. For a **data poster** read the `infographic` skill; for an **art poster** read
+`canvas-design` (both drive `render()` with strong art direction). `render()` runs **un-gated** inside
+the code, so reach for it once you've committed to a build — not to fish for a single image.
+
 ### Writing the prompt
 
 - Pass the user's request through faithfully — preserve their wording and intent.
