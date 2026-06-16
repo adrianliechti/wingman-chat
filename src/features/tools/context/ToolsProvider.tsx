@@ -4,7 +4,8 @@ import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import { useCanvasProvider } from "@/features/canvas/hooks/useCanvasProvider";
-import { useNotebookGuideProvider } from "@/features/notebook/hooks/useNotebookGuideProvider";
+import { useDesignerProvider } from "@/features/notebook/hooks/useDesignerProvider";
+import { useOfficeProvider } from "@/features/notebook/hooks/useOfficeProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import { MCPClient } from "@/features/settings/lib/mcp";
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
@@ -174,7 +175,8 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const canvasProvider = useCanvasProvider();
   const artifactsProvider = useArtifactsProvider();
   const skillsProvider = useSkillsProvider(skillSources);
-  const notebookGuideProvider = useNotebookGuideProvider();
+  const officeProvider = useOfficeProvider();
+  const designerProvider = useDesignerProvider();
   const skillBuilderProvider = useSkillBuilderProvider();
 
   // All MCP clients & lookup set (include local wingman only when the app is detected)
@@ -243,10 +245,13 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
     if (internetProvider) list.push(internetProvider);
-    // Notebook generation capability — instructions-only, no-agent mode only
-    // (pairs with the skillSources.notebook toggle that surfaces its skills).
-    // Ordered before canvas so it shows ahead of "Image Generator" in the menu.
-    if (!currentAgent) list.push(notebookGuideProvider);
+    // The "Notebook" section — Office + Designer (instructions-only, no-agent mode;
+    // they pair with skillSources.notebook to surface their skills) + Image (canvas).
+    // Grouped into a submenu in the chat "+" menu.
+    if (!currentAgent) {
+      list.push(officeProvider);
+      list.push(designerProvider);
+    }
     if (canvasProvider) list.push(canvasProvider);
     if (artifactsProvider) list.push(artifactsProvider);
     // Global Skills tool: only when no agent is active. With an agent, skills
@@ -264,7 +269,8 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     canvasProvider,
     artifactsProvider,
     skillsProvider,
-    notebookGuideProvider,
+    officeProvider,
+    designerProvider,
     currentAgent,
     skillBuilderProvider,
     visibleConfigMcpClients,

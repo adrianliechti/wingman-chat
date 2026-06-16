@@ -61,9 +61,18 @@ print("wrote model.xlsx")
 - **Multiple sheets**: `wb.create_sheet("Assumptions")`. **Charts**: openpyxl `BarChart`/`LineChart`
   from cell ranges, or embed a `matplotlib` image. **From a DataFrame**: `df.to_excel("out.xlsx",
   index=False)` then reopen with openpyxl to format.
+- **Sensitivity tables**: use an **odd grid** (5×5, 7×7) so the base case sits dead-center; highlight
+  that center cell yellow.
+- **Editing an existing file**: `load_workbook("model.xlsx")`, change what's needed, re-save; write
+  cells without re-applying formats to preserve the existing look.
+
+## Before you finish
+Check: zero formula errors (`#REF! / #DIV/0! / #VALUE! / #N/A / #NAME?`); ranges still correct after
+any row/column inserts; every assumption is a labeled cell (never a magic number buried in a formula)
+with a `Source:` note; charts point at the right ranges.
 
 ## Deliver
-Save as `<slug>.xlsx`; one-line hand-off. To revise, edit and re-run.
+Save as `<slug>.xlsx`; one-line hand-off. To revise, open the saved file and modify it.
 
 > The upstream `xlsx` skill is Anthropic source-available (proprietary); this is a Python-runtime
 > adaptation for generation.

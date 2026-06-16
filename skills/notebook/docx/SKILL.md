@@ -61,9 +61,17 @@ Notes:
 - **Styling for a theme**: read `theme-factory` (or `brand-guidelines`) and apply its fonts/hex colors
   via `font.name` and `RGBColor.from_string("RRGGBB")`.
 
+## Conventions
+- **Use named styles, not hand-rolled formatting.** `add_heading(text, level)` and the built-in
+  `Heading N` / `Normal` styles cascade correctly; setting `font.bold`/`font.size` by hand on every
+  paragraph drifts. When inserting into an existing doc, match its body font.
+- **Footnotes**: use real Word footnotes, not `[1]` markers typed into the body text.
+- **Legal documents** (contract, brief, memo, NDA) on a blank doc default to **Times New Roman**.
+- **Long docs (3+ sections)**: state the section outline first, then build section by section.
+
 ## Deliver
-Save with a slugged name (`report.docx`); tell the user it's ready in one line. To revise, edit the
-same file and re-run.
+Save with a slugged name (`report.docx`); tell the user it's ready in one line. To revise, open the
+saved file and modify it.
 
 > The upstream `docx` skill is Anthropic source-available (proprietary); this is a Python-runtime
 > adaptation for generation.

@@ -20,6 +20,17 @@ Pull the real material from the conversation/workspace. Then commit to ONE visua
   "title + 3 bullets" slides.
 - **8–12 slides** unless asked otherwise. Cite figures on the slide. No filler.
 
+## Typography & hierarchy (legible from across a room)
+
+- **Nothing below 14pt** — body, labels, captions, footnotes, chart text included. Sub-14pt is
+  unreadable when projected.
+- **Size hierarchy:** title **32–40pt bold**, section header 24–28pt bold, body 16–18pt, caption 14pt.
+  The title must be **≥ 1.75× the body size**.
+- **Pick a palette archetype** per deck — corporate-neutral / warm-editorial / bold-startup /
+  academic-muted / playful-bright — and commit to it. **Do not reflexively default to a dark-blue
+  background.** Two background colors max (content + section dividers). `read_skill theme-factory` for
+  ready palettes.
+
 ## Build it
 
 ```python
@@ -56,15 +67,22 @@ print("wrote presentation.pptx")
 Notes:
 - Use `add_textbox` on the **blank** layout (`slide_layouts[6]`) for full control; set explicit
   positions so nothing collides; keep ~0.7–1.0in outer margins.
-- **Charts**: native `add_chart` with `CategoryChartData` from real numbers, or `matplotlib` →
-  `savefig("c.png")` → `slide.shapes.add_picture("c.png", ...)`.
+- **Charts**: use a real chart, never shapes faking one. Native `add_chart` with `CategoryChartData` —
+  give it a title, a legend (top), and data labels (`plot.has_data_labels = True`); keep chart text
+  ≥14pt. For anything beyond bar/line/pie, draw it in `matplotlib` (`savefig("c.png", dpi=200)`) and
+  `add_picture`.
 - **Imagery**: `await render("<prompt>", "img/cover.png")` then `add_picture`.
 - **Speaker notes**: `slide.notes_slide.notes_text_frame.text = "..."`.
-- **Editing a template**: `Presentation("template.pptx")`, iterate `slide.shapes`, set
-  `shape.text_frame.text`; keep the template's masters/layouts.
+- **Editing an existing deck**: open it (`Presentation("deck.pptx")`), change only the shapes you need,
+  re-save — don't rebuild from scratch when revising. Keep the template's masters/layouts.
+
+## Verify before handing off
+Re-check every slide: no text box runs past the slide edge or overlaps another; titles fit one line;
+every figure is real; nothing is below 14pt.
 
 ## Deliver
-Save as `<slug>.pptx`; one-line hand-off (topic + slide count). To revise, edit and re-run.
+Save as `<slug>.pptx`; one-line hand-off (topic + slide count). To revise, open the saved file and
+modify it.
 
 > The upstream `pptx` skill is Anthropic source-available (proprietary); this is a Python-runtime
 > adaptation for generation.

@@ -18,6 +18,7 @@ import {
   Library,
   LoaderCircle,
   Mic,
+  Notebook,
   Paperclip,
   PenTool,
   Plus,
@@ -37,8 +38,12 @@ import type { Agent } from "@/features/agent/types/agent";
 import { SKILL_BUILDER_ID } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import { useSkillTemplates } from "@/features/skills/hooks/useSkillTemplates";
-import { NOTEBOOK_PROVIDER_ID } from "@/features/notebook/hooks/useNotebookGuideProvider";
+import { DESIGNER_PROVIDER_ID } from "@/features/notebook/hooks/useDesignerProvider";
+import { OFFICE_PROVIDER_ID } from "@/features/notebook/hooks/useOfficeProvider";
 import { isNotebookSkillCategory, SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
+
+/** Provider ids grouped under the "Notebook" section of the + menu (Office · Designer · Image). */
+const NOTEBOOK_SECTION_IDS = [OFFICE_PROVIDER_ID, DESIGNER_PROVIDER_ID, "canvas"];
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import type { ToolProvider } from "@/shared/types/chat";
@@ -87,10 +92,17 @@ export function ChatInputAddMenu({
   const notebookTemplateCount = templates.filter((t) => isNotebookSkillCategory(t.category)).length;
   const catalogTemplateCount = templates.length - notebookTemplateCount;
 
-  // The Skills tool and Skill Builder are grouped into the "Skills" submenu, so
-  // they're filtered out of the flat tool list below.
-  const otherProviders = visibleProviders.filter((p) => p.id !== SKILLS_PROVIDER_ID && p.id !== SKILL_BUILDER_ID);
+  // The Skills tool / Skill Builder and the Notebook section (Office · Designer ·
+  // Image) are grouped into their own submenus, so they're filtered out of the
+  // flat tool list below.
+  const otherProviders = visibleProviders.filter(
+    (p) => p.id !== SKILLS_PROVIDER_ID && p.id !== SKILL_BUILDER_ID && !NOTEBOOK_SECTION_IDS.includes(p.id),
+  );
   const skillBuilder = visibleProviders.find((p) => p.id === SKILL_BUILDER_ID);
+  // The Notebook section, in Office · Designer · Image order (whichever exist).
+  const notebookProviders = NOTEBOOK_SECTION_IDS.map((id) => visibleProviders.find((p) => p.id === id)).filter(
+    (p): p is ToolProvider => !!p,
+  );
   // Skills submenu shows whenever no agent is active — My Skills / Catalog / Manage
   // are always meaningful; the Skill Builder row is rendered only if available.
   const showSkillsMenu = !currentAgent;
@@ -103,23 +115,28 @@ export function ChatInputAddMenu({
     [skillSources, setSkillSources],
   );
 
-  // Toggle a top-level tool provider. The Notebook tool pairs its injected
-  // system prompt with its skill set, so flip `skillSources.notebook` too.
+  // Toggle a tool provider. Office and Designer pair their injected system prompt
+  // with the shared Notebook skill pool, so keep `skillSources.notebook` on while
+  // either is enabled.
   const toggleProvider = useCallback(
     async (id: string, enabled: boolean) => {
       await setProviderEnabled(id, enabled);
-      if (id === NOTEBOOK_PROVIDER_ID) setSkillSources({ ...skillSources, notebook: enabled });
+      if (id === OFFICE_PROVIDER_ID || id === DESIGNER_PROVIDER_ID) {
+        const otherId = id === OFFICE_PROVIDER_ID ? DESIGNER_PROVIDER_ID : OFFICE_PROVIDER_ID;
+        const otherOn = getProviderState(otherId) === ProviderState.Connected;
+        setSkillSources({ ...skillSources, notebook: enabled || otherOn });
+      }
     },
-    [setProviderEnabled, setSkillSources, skillSources],
+    [setProviderEnabled, setSkillSources, skillSources, getProviderState],
   );
 
   const [showMobileSheet, setShowMobileSheet] = useState(false);
 
   // Submenus — only one can be active at a time
-  const [activeSubmenu, setActiveSubmenu] = useState<"file" | "agent" | "skills" | null>(null);
+  const [activeSubmenu, setActiveSubmenu] = useState<"file" | "agent" | "skills" | "notebook" | null>(null);
   const submenuTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const openSubmenu = useCallback((name: "file" | "agent" | "skills") => {
+  const openSubmenu = useCallback((name: "file" | "agent" | "skills" | "notebook") => {
     if (submenuTimer.current) clearTimeout(submenuTimer.current);
     setActiveSubmenu(name);
   }, []);
@@ -153,6 +170,15 @@ export function ChatInputAddMenu({
   });
 
   const { refs: skillsRefs, floatingStyles: skillsFloatingStyles } = useFloating({
+    placement: "right-start",
+    middleware: [
+      offset(4),
+      flip({ fallbackPlacements: ["right-end", "left-start", "left-end"] }),
+      shift({ padding: 8 }),
+    ],
+  });
+
+  const { refs: notebookRefs, floatingStyles: notebookFloatingStyles } = useFloating({
     placement: "right-start",
     middleware: [
       offset(4),
@@ -325,6 +351,21 @@ export function ChatInputAddMenu({
                 </div>,
                 document.body,
               )}
+            {notebookProviders.length > 0 && (
+              <MenuItem>
+                <button
+                  ref={notebookRefs.setReference}
+                  type="button"
+                  onMouseEnter={() => openSubmenu("notebook")}
+                  onMouseLeave={scheduleCloseSubmenu}
+                  className="group flex w-full items-center gap-3 px-3 py-2 rounded-lg data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
+                >
+                  <Notebook size={16} className="shrink-0" />
+                  <span className="font-medium text-sm flex-1 text-left">Notebook</span>
+                  <ChevronRight size={14} className="shrink-0 text-neutral-400" />
+                </button>
+              </MenuItem>
+            )}
             {showSkillsMenu && (
               <MenuItem>
                 <button
@@ -417,6 +458,50 @@ export function ChatInputAddMenu({
                       <FolderCog size={16} className="shrink-0" />
                       <span className="font-medium text-sm">Manage Agents</span>
                     </button>
+                  </div>
+                </div>,
+                document.body,
+              )}
+            {activeSubmenu === "notebook" &&
+              createPortal(
+                <div
+                  ref={notebookRefs.setFloating}
+                  data-notebook-submenu
+                  role="none"
+                  style={notebookFloatingStyles}
+                  className="z-9999"
+                  onMouseEnter={() => openSubmenu("notebook")}
+                  onMouseLeave={scheduleCloseSubmenu}
+                >
+                  <div className="rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 p-1 min-w-52 flex flex-col overflow-hidden">
+                    {notebookProviders.map((provider) => {
+                      const state = getProviderState(provider.id);
+                      const enabled = state === ProviderState.Connected;
+                      const initializing = state === ProviderState.Initializing;
+                      return (
+                        <button
+                          key={provider.id}
+                          type="button"
+                          disabled={initializing}
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            if (initializing) return;
+                            try {
+                              await toggleProvider(provider.id, !enabled);
+                            } catch (error) {
+                              console.error(`Failed to toggle provider ${provider.name}:`, error);
+                            }
+                          }}
+                          className="flex w-full items-center gap-3 px-3 py-2 rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors disabled:opacity-50"
+                        >
+                          {renderProviderIcon(provider, state)}
+                          <span className="font-medium text-sm flex-1 text-left">{provider.name}</span>
+                          <span className="shrink-0 w-4 flex justify-center">
+                            {enabled && <Check size={13} className="text-neutral-600 dark:text-neutral-400" />}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>,
                 document.body,
@@ -666,6 +751,63 @@ export function ChatInputAddMenu({
                   </button>
                 )}
               </div>
+
+              {/* Notebook section */}
+              {notebookProviders.length > 0 && (
+                <>
+                  <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
+                  <div className="px-4 pb-1">
+                    <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                      Notebook
+                    </p>
+                  </div>
+                  <div className="px-2">
+                    {notebookProviders.map((provider) => {
+                      const state = getProviderState(provider.id);
+                      const providerEnabled = state === ProviderState.Connected;
+                      const providerInitializing = state === ProviderState.Initializing;
+                      const providerFailed = state === ProviderState.Failed;
+
+                      return (
+                        <button
+                          key={provider.id}
+                          type="button"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (providerInitializing) return;
+                            try {
+                              await toggleProvider(provider.id, !providerEnabled);
+                            } catch (error) {
+                              console.error(`Failed to toggle provider ${provider.name}:`, error);
+                            }
+                          }}
+                          disabled={providerInitializing}
+                          className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50 ${
+                            providerEnabled
+                              ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
+                              : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
+                          }`}
+                        >
+                          {renderProviderIcon(provider, state)}
+                          <div className="flex flex-col items-start flex-1 min-w-0 text-left">
+                            <span className="font-medium text-sm">{provider.name}</span>
+                            {provider.description && (
+                              <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate w-full">
+                                {provider.description}
+                              </span>
+                            )}
+                          </div>
+                          {providerEnabled && !providerInitializing && !providerFailed && (
+                            <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
+                          )}
+                          {providerFailed && <TriangleAlert size={16} className="shrink-0 text-neutral-400" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
 
               {/* Features section */}
               {otherProviders.length > 0 && (
