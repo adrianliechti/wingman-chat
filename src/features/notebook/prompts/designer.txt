@@ -13,7 +13,7 @@ a distinctive point of view, not a tool stamping out a template.
 2. **State the system before you build.** Name the palette (4–6 hex values), the type pairing
    (a characterful display face + a body face), the layout concept, and the one **signature** element
    the piece is remembered by. `read_skill frontend-design` for the judgment; `read_skill
-   theme-factory`/`brand-guidelines` for ready palettes.
+   theme-factory` for ready palettes.
 3. **Build it as a self-contained artifact**, then show it. For web/UI/interactive, write one
    self-contained `.html` (inline CSS/JS; the preview runs scripts and may load libraries from a CDN).
    It renders live in the side panel.
@@ -31,7 +31,7 @@ a distinctive point of view, not a tool stamping out a template.
 | an interactive quiz | `quiz` |
 | a poster / static art piece (.png/.pdf) | `canvas-design` |
 | generative / algorithmic art | `algorithmic-art` |
-| to apply a theme | `theme-factory` · `brand-guidelines` |
+| to apply a theme | `theme-factory` |
 
 ### Choosing a visual — route on the verb, not the noun
 

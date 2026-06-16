@@ -42,8 +42,8 @@ import { DESIGNER_PROVIDER_ID } from "@/features/notebook/hooks/useDesignerProvi
 import { OFFICE_PROVIDER_ID } from "@/features/notebook/hooks/useOfficeProvider";
 import { isNotebookSkillCategory, SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
 
-/** Provider ids grouped under the "Notebook" section of the + menu (Office · Designer · Image). */
-const NOTEBOOK_SECTION_IDS = [OFFICE_PROVIDER_ID, DESIGNER_PROVIDER_ID, "canvas"];
+/** Provider ids grouped under the "Notebook" section of the + menu (Office · Image · Designer). */
+const NOTEBOOK_SECTION_IDS = [OFFICE_PROVIDER_ID, "canvas", DESIGNER_PROVIDER_ID];
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import type { ToolProvider } from "@/shared/types/chat";
@@ -351,21 +351,6 @@ export function ChatInputAddMenu({
                 </div>,
                 document.body,
               )}
-            {notebookProviders.length > 0 && (
-              <MenuItem>
-                <button
-                  ref={notebookRefs.setReference}
-                  type="button"
-                  onMouseEnter={() => openSubmenu("notebook")}
-                  onMouseLeave={scheduleCloseSubmenu}
-                  className="group flex w-full items-center gap-3 px-3 py-2 rounded-lg data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
-                >
-                  <Notebook size={16} className="shrink-0" />
-                  <span className="font-medium text-sm flex-1 text-left">Notebook</span>
-                  <ChevronRight size={14} className="shrink-0 text-neutral-400" />
-                </button>
-              </MenuItem>
-            )}
             {showSkillsMenu && (
               <MenuItem>
                 <button
@@ -394,6 +379,21 @@ export function ChatInputAddMenu({
                 <ChevronRight size={14} className="shrink-0 text-neutral-400" />
               </button>
             </MenuItem>
+            {notebookProviders.length > 0 && (
+              <MenuItem>
+                <button
+                  ref={notebookRefs.setReference}
+                  type="button"
+                  onMouseEnter={() => openSubmenu("notebook")}
+                  onMouseLeave={scheduleCloseSubmenu}
+                  className="group flex w-full items-center gap-3 px-3 py-2 rounded-lg data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
+                >
+                  <Notebook size={16} className="shrink-0" />
+                  <span className="font-medium text-sm flex-1 text-left">Notebook</span>
+                  <ChevronRight size={14} className="shrink-0 text-neutral-400" />
+                </button>
+              </MenuItem>
+            )}
             {activeSubmenu === "agent" &&
               createPortal(
                 <div
@@ -479,27 +479,35 @@ export function ChatInputAddMenu({
                       const enabled = state === ProviderState.Connected;
                       const initializing = state === ProviderState.Initializing;
                       return (
-                        <button
+                        <Tooltip
                           key={provider.id}
-                          type="button"
-                          disabled={initializing}
-                          onClick={async (e) => {
-                            e.preventDefault();
-                            if (initializing) return;
-                            try {
-                              await toggleProvider(provider.id, !enabled);
-                            } catch (error) {
-                              console.error(`Failed to toggle provider ${provider.name}:`, error);
-                            }
-                          }}
-                          className="flex w-full items-center gap-3 px-3 py-2 rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors disabled:opacity-50"
+                          content={
+                            provider.description ?? (enabled ? `Disable ${provider.name}` : `Enable ${provider.name}`)
+                          }
+                          side="right"
+                          className="w-full"
                         >
-                          {renderProviderIcon(provider, state)}
-                          <span className="font-medium text-sm flex-1 text-left">{provider.name}</span>
-                          <span className="shrink-0 w-4 flex justify-center">
-                            {enabled && <Check size={13} className="text-neutral-600 dark:text-neutral-400" />}
-                          </span>
-                        </button>
+                          <button
+                            type="button"
+                            disabled={initializing}
+                            onClick={async (e) => {
+                              e.preventDefault();
+                              if (initializing) return;
+                              try {
+                                await toggleProvider(provider.id, !enabled);
+                              } catch (error) {
+                                console.error(`Failed to toggle provider ${provider.name}:`, error);
+                              }
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors disabled:opacity-50"
+                          >
+                            {renderProviderIcon(provider, state)}
+                            <span className="font-medium text-sm flex-1 text-left">{provider.name}</span>
+                            <span className="shrink-0 w-4 flex justify-center">
+                              {enabled && <Check size={13} className="text-neutral-600 dark:text-neutral-400" />}
+                            </span>
+                          </button>
+                        </Tooltip>
                       );
                     })}
                   </div>
@@ -752,63 +760,6 @@ export function ChatInputAddMenu({
                 )}
               </div>
 
-              {/* Notebook section */}
-              {notebookProviders.length > 0 && (
-                <>
-                  <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
-                  <div className="px-4 pb-1">
-                    <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-                      Notebook
-                    </p>
-                  </div>
-                  <div className="px-2">
-                    {notebookProviders.map((provider) => {
-                      const state = getProviderState(provider.id);
-                      const providerEnabled = state === ProviderState.Connected;
-                      const providerInitializing = state === ProviderState.Initializing;
-                      const providerFailed = state === ProviderState.Failed;
-
-                      return (
-                        <button
-                          key={provider.id}
-                          type="button"
-                          onClick={async (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if (providerInitializing) return;
-                            try {
-                              await toggleProvider(provider.id, !providerEnabled);
-                            } catch (error) {
-                              console.error(`Failed to toggle provider ${provider.name}:`, error);
-                            }
-                          }}
-                          disabled={providerInitializing}
-                          className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50 ${
-                            providerEnabled
-                              ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
-                              : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
-                          }`}
-                        >
-                          {renderProviderIcon(provider, state)}
-                          <div className="flex flex-col items-start flex-1 min-w-0 text-left">
-                            <span className="font-medium text-sm">{provider.name}</span>
-                            {provider.description && (
-                              <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate w-full">
-                                {provider.description}
-                              </span>
-                            )}
-                          </div>
-                          {providerEnabled && !providerInitializing && !providerFailed && (
-                            <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
-                          )}
-                          {providerFailed && <TriangleAlert size={16} className="shrink-0 text-neutral-400" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-
               {/* Features section */}
               {otherProviders.length > 0 && (
                 <>
@@ -1030,6 +981,63 @@ export function ChatInputAddMenu({
                         )}
                       </button>
                     ))}
+                  </div>
+                </>
+              )}
+
+              {/* Notebook section */}
+              {notebookProviders.length > 0 && (
+                <>
+                  <div className="mx-3 mb-2 border-t border-neutral-200/60 dark:border-neutral-800/60" />
+                  <div className="px-4 pb-1">
+                    <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                      Notebook
+                    </p>
+                  </div>
+                  <div className="px-2">
+                    {notebookProviders.map((provider) => {
+                      const state = getProviderState(provider.id);
+                      const providerEnabled = state === ProviderState.Connected;
+                      const providerInitializing = state === ProviderState.Initializing;
+                      const providerFailed = state === ProviderState.Failed;
+
+                      return (
+                        <button
+                          key={provider.id}
+                          type="button"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (providerInitializing) return;
+                            try {
+                              await toggleProvider(provider.id, !providerEnabled);
+                            } catch (error) {
+                              console.error(`Failed to toggle provider ${provider.name}:`, error);
+                            }
+                          }}
+                          disabled={providerInitializing}
+                          className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50 ${
+                            providerEnabled
+                              ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
+                              : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
+                          }`}
+                        >
+                          {renderProviderIcon(provider, state)}
+                          <div className="flex flex-col items-start flex-1 min-w-0 text-left">
+                            <span className="font-medium text-sm">{provider.name}</span>
+                            {provider.description && (
+                              <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate w-full">
+                                {provider.description}
+                              </span>
+                            )}
+                          </div>
+                          {providerEnabled && !providerInitializing && !providerFailed && (
+                            <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
+                          )}
+                          {providerFailed && <TriangleAlert size={16} className="shrink-0 text-neutral-400" />}
+                        </button>
+                      );
+                    })}
                   </div>
                 </>
               )}

@@ -47,5 +47,3 @@ Make a second pass: don't add graphics — make what's there crisper and more co
 is to draw a new shape, ask instead "how do I make what's here more of a piece of art?" Output the
 final `.png`/`.pdf` alongside `philosophy.md`. Multi-page → bundle as a coffee-table sequence, each
 page a distinct twist on the philosophy.
-
-> Adapted from Anthropic's open `canvas-design` skill (Python-runtime expression).

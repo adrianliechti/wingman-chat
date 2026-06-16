@@ -199,6 +199,8 @@ interface BridgeConfig {
 interface ConfigSchema {
   title: string;
   disclaimer: string;
+  /** Show the top-level navigation tabs. Set to false to show only Chat. Default true. */
+  navigation?: boolean;
   bridge?: BridgeConfig;
   support?: SupportConfig;
 
@@ -249,6 +251,8 @@ const DEFAULT_TRANSLATOR_LANGUAGES = ["en", "de", "fr", "it", "es"];
 interface Config {
   title: string;
   disclaimer: string;
+  /** Whether to show the navigation tabs (false = Chat only, no tab bar). */
+  navigation: boolean;
   bridge: BridgeConfig | null;
   support: SupportConfig | null;
 
@@ -302,6 +306,7 @@ export const loadConfig = async (): Promise<Config | undefined> => {
     config = {
       title: cfg.title,
       disclaimer: cfg.disclaimer,
+      navigation: cfg.navigation !== false,
       bridge: cfg.bridge ?? null,
       support: cfg.support ?? null,
 

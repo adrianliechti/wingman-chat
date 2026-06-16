@@ -63,5 +63,3 @@ Words are design material, not decoration. Write from the user's side of the scr
 what people control, not how the system is built). Active voice; an action keeps its name through the
 flow ("Publish" → "Published"). Treat errors and empty states as direction, not mood. Sentence case,
 plain verbs, no filler; each element does exactly one job.
-
-> Adapted from Anthropic's open `frontend-design` skill.

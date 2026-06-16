@@ -5,9 +5,9 @@ description: Create or edit PowerPoint presentations (.pptx) — pitch decks, sl
 
 # PPTX — slide decks (Python runtime)
 
-Build `.pptx` files with **`python-pptx`** in the interpreter (the upstream skill's `pptxgenjs`
-(Node) and XML-unpack paths do not run here — use python-pptx directly). Save to the workspace; it
-renders in the side panel.
+Build `.pptx` files with **`python-pptx`** in the interpreter (Node tools like `pptxgenjs` and
+XML-unpack flows don't run here — use python-pptx directly). Save to the workspace; it renders in the
+side panel.
 
 ## Get the content first, then design
 Pull the real material from the conversation/workspace. Then commit to ONE visual system before slide
@@ -83,6 +83,3 @@ every figure is real; nothing is below 14pt.
 ## Deliver
 Save as `<slug>.pptx`; one-line hand-off (topic + slide count). To revise, open the saved file and
 modify it.
-
-> The upstream `pptx` skill is Anthropic source-available (proprietary); this is a Python-runtime
-> adaptation for generation.

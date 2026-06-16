@@ -21,19 +21,18 @@ statistics or points, and any comparison worth showing. Use real numbers — nev
 
 A generic "modern flat-vector, clean, lots of whitespace, grid of stat cards" prompt produces a
 **boring, corporate-looking** infographic. Don't do that. Instead **commit to a distinctive art
-direction** by reading one of the `infographic-style-*` skills and applying its full direction:
+direction**:
 
-- `infographic-style-bento` — modular bento-box cards, app-like, bold per-card accents
-- `infographic-style-editorial` — magazine spread, serif headlines, refined palette, hero numbers
-- `infographic-style-scientific` — diagram-led, precise, annotated
-- `infographic-style-sketch-note` — hand-drawn, energetic, doodle icons
-- `infographic-style-clay` / `infographic-style-kawaii` / `infographic-style-anime` — illustrative, characterful
-- `infographic-style-professional` — polished corporate (use only when the user wants understated)
+- **Bento** — modular bento-box cards, app-like, bold per-card accents
+- **Editorial** — magazine spread, serif headlines, refined palette, hero numbers
+- **Scientific** — diagram-led, precise, annotated
+- **Sketch-note** — hand-drawn, energetic, doodle icons
+- **Clay / kawaii / anime** — illustrative, characterful
+- **Professional** — polished corporate (use only when the user wants understated)
 
 If the user names a look, use it. **If they don't, pick the one that best fits the subject** (e.g.
 a product/tech overview → bento or editorial) and apply it fully — never fall back to plain flat
-vector unless the user explicitly asks for something minimal. `infographic-style-auto` exists to
-help you choose.
+vector unless the user explicitly asks for something minimal.
 
 ## 3. What makes it striking (not boring)
 

@@ -155,7 +155,8 @@ export function AppLayout() {
     if (page.key === "canvas") return !!config.renderer;
     return true;
   });
-  const showNavigation = pages.length > 1;
+  // `config.navigation: false` hides the tab bar entirely — only Chat is shown.
+  const showNavigation = config.navigation && pages.length > 1;
 
   return (
     <div className="h-dvh w-dvw flex overflow-hidden relative">

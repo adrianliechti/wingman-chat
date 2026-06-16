@@ -16,10 +16,9 @@ relationships (who calls whom, over what protocol).
 
 ## 2. Pick the kind and style
 
-- **C4-style** (default) for structure — a Context or Container view. `read_skill` the
-  `architecture-style-c4` skill for conventions.
-- **Sequence diagram** when the user wants an interaction/message flow over time. `read_skill`
-  `architecture-style-sequence`.
+- **C4-style** (default) for structure — a Context or Container view: people → systems → containers,
+  each labelled with its responsibility and tech.
+- **Sequence diagram** when the user wants an interaction/message flow over time.
 
 ## 3. Modelling rules
 

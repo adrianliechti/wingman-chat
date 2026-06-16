@@ -6,8 +6,8 @@ description: Create or edit spreadsheets (.xlsx) — data tables, financial mode
 # XLSX — spreadsheets (Python runtime)
 
 Build `.xlsx` files with **`openpyxl`** (formatting + formulas) and **`pandas`** (data wrangling) in
-the interpreter. Save to the workspace; it renders in the side panel. (LibreOffice recalc from the
-upstream skill is unavailable — Excel recalculates formulas when the file is opened.)
+the interpreter. Save to the workspace; it renders in the side panel. (No LibreOffice to recalc —
+Excel recalculates formulas when the file is opened.)
 
 ## Requirements for every workbook
 
@@ -73,6 +73,3 @@ with a `Source:` note; charts point at the right ranges.
 
 ## Deliver
 Save as `<slug>.xlsx`; one-line hand-off. To revise, open the saved file and modify it.
-
-> The upstream `xlsx` skill is Anthropic source-available (proprietary); this is a Python-runtime
-> adaptation for generation.

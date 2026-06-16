@@ -17,9 +17,9 @@ exception paths.
 
 ## 2. Pick a framework and style
 
-Default to **BPMN-style swimlanes**. If the user named a framework ("ITIL", "SDLC", "three lines
-of defence", "swimlane"), `read_skill` the matching `process-style-*` skill and follow its lane
-conventions.
+Default to **BPMN-style swimlanes** — one lane per role/system, tasks as verb-phrases, gateways for
+decisions. If the user named a framework (ITIL, SDLC, three lines of defence, swimlane), follow its
+lane conventions.
 
 ## 3. Modelling rules (non-negotiable)
 

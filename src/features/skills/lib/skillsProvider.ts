@@ -25,7 +25,7 @@ export interface SkillSources {
  * generation pack. These are surfaced as their own Skills source so the chat
  * generation skills + their styles don't crowd the general catalog.
  */
-export const NOTEBOOK_SKILL_CATEGORIES = new Set(["notebook", "generation", "styles"]);
+export const NOTEBOOK_SKILL_CATEGORIES = new Set(["notebook", "generation"]);
 export const isNotebookSkillCategory = (category: string): boolean => NOTEBOOK_SKILL_CATEGORIES.has(category);
 
 /**

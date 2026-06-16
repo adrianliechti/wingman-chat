@@ -37,6 +37,3 @@ type pairing across every slide/section.
 ## Custom theme
 If none fit, generate one: name it for the feel, pick a cohesive 4-colour palette (one dark, one
 primary, one accent, one light/text) + a font pairing, show it for confirmation, then apply as above.
-
-> Palettes adapted from Anthropic's open `theme-factory` skill (two presets verbatim; others are
-> cohesive equivalents — adjust freely).

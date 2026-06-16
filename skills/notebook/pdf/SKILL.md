@@ -6,8 +6,8 @@ description: Work with PDF files — create new PDFs, merge/split/rotate, extrac
 # PDF — create, combine, and extract (Python runtime)
 
 Use **`reportlab`** to create PDFs, **`pypdf`** to merge/split/rotate/encrypt, and **`pdfplumber`**
-to extract text/tables. (The upstream skill's JS libraries and CLI tools don't run here — these
-Python libraries cover the same operations.) Save to the workspace; the drawer renders PDFs.
+to extract text/tables. (JS libraries and CLI tools don't run here — these Python libraries cover the
+same operations.) Save to the workspace; the drawer renders PDFs.
 
 ## Create a PDF (reportlab)
 
@@ -67,6 +67,3 @@ with pdfplumber.open("in.pdf") as pdf:
 
 ## Deliver
 Save as `<slug>.pdf`; one-line hand-off. To revise, edit and re-run.
-
-> The upstream `pdf` skill is Anthropic source-available (proprietary); this is a Python-runtime
-> adaptation for generation.

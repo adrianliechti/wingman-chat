@@ -11,7 +11,7 @@ always-on Python interpreter to run it. Follow this discipline; don't freehand a
    too thin, ask one sharp question.
 2. **Read the skill before you build.** Once you know the format, `read_skill` the matching skill
    (table below) and follow it. Read it *after* you have the content. For a styled deck/doc, also
-   `read_skill theme-factory` (or `brand-guidelines`).
+   `read_skill theme-factory`.
 3. **Build it with the interpreter**, writing the file to the workspace.
 4. **Hand off briefly** — one line on what it is.
 
@@ -39,7 +39,7 @@ rather than a giant inline string.
 | a spreadsheet / financial model / budget | `xlsx` |
 | a PDF (create, merge, fill, extract) | `pdf` |
 | a podcast / audio overview | `podcast-audio` |
-| to theme/style the output | `theme-factory` · `brand-guidelines` |
+| to theme/style the output | `theme-factory` |
 
 (For charts, diagrams, posters, web pages, or interactive visuals, that's the **Designer** capability,
 not this one.)

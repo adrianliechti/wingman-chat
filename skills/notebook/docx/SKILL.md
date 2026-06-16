@@ -5,9 +5,9 @@ description: Create or edit Word documents (.docx) — reports, memos, letters, 
 
 # DOCX — Word documents (Python runtime)
 
-Build `.docx` files with **`python-docx`** in the interpreter (the Node `docx-js` / `pandoc` /
-`soffice` paths from the upstream skill do not run here — use python-docx directly). Save the file to
-the workspace; it renders in the side panel.
+Build `.docx` files with **`python-docx`** in the interpreter (Node `docx-js` and `pandoc`/`soffice`
+flows don't run here — use python-docx directly). Save the file to the workspace; it renders in the
+side panel.
 
 ## Get the content first
 Pull the real facts/figures/quotes from the conversation and workspace files before building. Lead
@@ -58,7 +58,7 @@ Notes:
 - **Page numbers / headers / footers**: use `doc.sections[0].header` / `.footer` and field codes if
   needed; keep it simple unless asked.
 - **Reading an existing .docx**: `Document("in.docx")` then iterate `doc.paragraphs` / `doc.tables`.
-- **Styling for a theme**: read `theme-factory` (or `brand-guidelines`) and apply its fonts/hex colors
+- **Styling for a theme**: read `theme-factory` and apply its fonts/hex colors
   via `font.name` and `RGBColor.from_string("RRGGBB")`.
 
 ## Conventions
@@ -72,6 +72,3 @@ Notes:
 ## Deliver
 Save with a slugged name (`report.docx`); tell the user it's ready in one line. To revise, open the
 saved file and modify it.
-
-> The upstream `docx` skill is Anthropic source-available (proprietary); this is a Python-runtime
-> adaptation for generation.

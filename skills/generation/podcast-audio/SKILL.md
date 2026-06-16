@@ -14,10 +14,9 @@ shows up in the artifacts panel with an inline player.
 
 ## 1. Gather the material and pick a format
 
-Source = **the conversation so far plus workspace files**. If the user named a format
-("overview", "deep-dive", "briefing", "debate", "story"), `read_skill` the matching
-`podcast-style-*` skill and follow its voice count and tone. Default: a single warm narrator
-giving a clear overview, ~3–5 minutes (roughly 500–800 words).
+Source = **the conversation so far plus workspace files**. If the user named a format ("overview",
+"deep-dive", "briefing", "debate", "story"), match its voice count and tone. Default: a single warm
+narrator giving a clear overview, ~3–5 minutes (roughly 500–800 words).
 
 ## 2. Write the script
 

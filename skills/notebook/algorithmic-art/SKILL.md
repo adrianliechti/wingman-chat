@@ -47,5 +47,3 @@ print("wrote art.html")
 Expose a few parameters (seed, density, palette) and keep the algorithm doing the work (90%
 generation, 10% parameters). Favor controlled chaos and reward sustained viewing. To export a still,
 also render a frame to `.png` if asked.
-
-> Adapted from Anthropic's open `algorithmic-art` skill (p5.js in a self-contained HTML artifact).
