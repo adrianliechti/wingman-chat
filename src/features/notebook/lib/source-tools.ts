@@ -100,6 +100,9 @@ export function createSourceTools(getSources: () => File[], options?: SourceTool
   const fail = (error: string): { type: "text"; text: string }[] => [
     { type: "text" as const, text: JSON.stringify({ error }) },
   ];
+  // Coerce a tool argument to a string. A non-string (number/object the model
+  // occasionally sends) becomes "" rather than crashing later `.trim()`/`.indexOf`.
+  const strArg = (v: unknown): string => (typeof v === "string" ? v : "");
 
   if (options?.onCreate) {
     const onCreate = options.onCreate;
@@ -123,8 +126,8 @@ export function createSourceTools(getSources: () => File[], options?: SourceTool
         required: ["path", "content"],
       },
       function: async (args: Record<string, unknown>) => {
-        const path = ((args.path as string) ?? "").trim();
-        const content = (args.content as string) ?? "";
+        const path = strArg(args.path).trim();
+        const content = strArg(args.content);
         if (!path) {
           return [{ type: "text" as const, text: JSON.stringify({ error: "path is required" }) }];
         }
@@ -174,9 +177,9 @@ export function createSourceTools(getSources: () => File[], options?: SourceTool
         required: ["path", "find", "replace"],
       },
       function: async (args: Record<string, unknown>) => {
-        const path = ((args.path as string) ?? "").trim();
-        const find = (args.find as string) ?? "";
-        const replace = typeof args.replace === "string" ? (args.replace as string) : "";
+        const path = strArg(args.path).trim();
+        const find = strArg(args.find);
+        const replace = strArg(args.replace);
         const replaceAll = args.replace_all === true;
 
         if (!path) return fail("path is required");
@@ -227,8 +230,8 @@ export function createSourceTools(getSources: () => File[], options?: SourceTool
         required: ["path", "new_path"],
       },
       function: async (args: Record<string, unknown>) => {
-        const path = ((args.path as string) ?? "").trim();
-        const newPath = ((args.new_path as string) ?? "").trim();
+        const path = strArg(args.path).trim();
+        const newPath = strArg(args.new_path).trim();
         if (!path || !newPath) return fail("path and new_path are required");
         if (!getSources().some((s) => s.path === path)) {
           return fail(`No source at ${path} — call source_list_files to see what exists.`);
@@ -256,7 +259,7 @@ export function createSourceTools(getSources: () => File[], options?: SourceTool
         required: ["path"],
       },
       function: async (args: Record<string, unknown>) => {
-        const path = ((args.path as string) ?? "").trim();
+        const path = strArg(args.path).trim();
         if (!path) return fail("path is required");
         if (!getSources().some((s) => s.path === path)) {
           return fail(`No source at ${path} — call source_list_files to see what exists.`);

@@ -6,7 +6,7 @@
  * notebook sources use this instead of duplicating tool definitions.
  */
 
-import { FilePlus2, FileSearch, Files, FileText, FolderInput, Search, Trash2 } from "lucide-react";
+import { FilePen, FilePlus2, FileSearch, Files, FileText, FolderInput, Search, Trash2 } from "lucide-react";
 import type { TextContent, Tool } from "../types/chat";
 import { isDataUrl } from "./fileContent";
 import { artifactLanguage } from "./fileTypes";
@@ -239,11 +239,239 @@ function createWriteTool(source: WritableFileSource, opts: Required<FileToolsOpt
     },
     function: async (args: Record<string, unknown>) => {
       const path = args.path as string;
-      const content = args.content as string;
-      if (!path || content == null) return error("path and content are required");
+      if (!path) return error("path is required");
+      // Require a string explicitly: an empty string is a valid (empty) file, but a
+      // non-string would otherwise be written verbatim through the `as string` cast.
+      if (typeof args.content !== "string") return error("content is required and must be a string.");
 
-      await source.write(path, content);
+      await source.write(path, args.content);
       return text(JSON.stringify({ success: true, message: `File created: ${path}`, path }));
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// edit_file helpers
+// ---------------------------------------------------------------------------
+
+/** A single find/replace operation parsed from the tool arguments. */
+interface EditOp {
+  find: string;
+  replace: string;
+  replaceAll: boolean;
+}
+
+// Unicode -> ASCII folds applied during fuzzy matching. Built from code points
+// so the source stays ASCII (no invisible characters in regex character classes).
+const FUZZY_FOLDS: Array<{ chars: number[]; to: string }> = [
+  { chars: [0x2018, 0x2019, 0x201a, 0x201b], to: "'" }, // smart single quotes
+  { chars: [0x201c, 0x201d, 0x201e, 0x201f], to: '"' }, // smart double quotes
+  { chars: [0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2015, 0x2212], to: "-" }, // hyphens/dashes/minus
+  {
+    chars: [0x00a0, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x202f, 0x205f, 0x3000],
+    to: " ",
+  }, // NBSP and assorted unicode spaces
+];
+const FUZZY_FOLD_REGEXES: Array<{ re: RegExp; to: string }> = FUZZY_FOLDS.map(({ chars, to }) => ({
+  re: new RegExp(`[${chars.map((c) => String.fromCharCode(c)).join("")}]`, "g"),
+  to,
+}));
+
+/**
+ * Normalize text so a model's snippet still matches when it drifts on whitespace
+ * or punctuation: collapse NFKC, strip trailing whitespace per line, and fold
+ * smart quotes, unicode dashes, and exotic spaces to their ASCII equivalents.
+ * Only used as a fallback after an exact match fails.
+ */
+function normalizeForFuzzyMatch(s: string): string {
+  let out = s
+    .normalize("NFKC")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n");
+  for (const { re, to } of FUZZY_FOLD_REGEXES) out = out.replace(re, to);
+  return out;
+}
+
+/**
+ * Coerce the raw tool arguments into a list of edits. Accepts the canonical
+ * `edits: [{ find, replace, replace_all }]` array, the same array sent as a JSON
+ * string (some models do this), `oldText`/`newText` aliases, and a legacy
+ * top-level single `find`/`replace`. Returns an error string instead of throwing.
+ */
+function coerceEdits(args: Record<string, unknown>): { edits: EditOp[] } | { error: string } {
+  let raw: unknown = args.edits;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) raw = parsed;
+    } catch {
+      // Leave as the raw string; handled as "not an array" below.
+    }
+  }
+
+  // Legacy / single-edit shape: top-level find+replace with no edits array.
+  if (!Array.isArray(raw)) {
+    if (typeof args.find === "string" || typeof args.oldText === "string") {
+      const find = (args.find ?? args.oldText) as string;
+      const replace = args.replace ?? args.newText;
+      if (typeof replace !== "string") {
+        return { error: 'replace is required and must be a string (use "" to delete the matched text).' };
+      }
+      return { edits: [{ find, replace, replaceAll: args.replace_all === true }] };
+    }
+    return { error: "edits is required: an array of { find, replace } objects." };
+  }
+
+  if (raw.length === 0) return { error: "edits must contain at least one { find, replace } object." };
+
+  const edits: EditOp[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const item = raw[i];
+    if (!item || typeof item !== "object") return { error: `edits[${i}] must be a { find, replace } object.` };
+    const o = item as Record<string, unknown>;
+    const find = typeof o.find === "string" ? o.find : typeof o.oldText === "string" ? o.oldText : undefined;
+    const replace = typeof o.replace === "string" ? o.replace : typeof o.newText === "string" ? o.newText : undefined;
+    if (typeof find !== "string" || find.length === 0) return { error: `edits[${i}].find is required and non-empty.` };
+    // Require `replace` explicitly: defaulting a missing value to "" would turn a
+    // truncated or incomplete call into a silent deletion of the matched text.
+    if (typeof replace !== "string") {
+      return { error: `edits[${i}].replace is required and must be a string (use "" to delete the matched text).` };
+    }
+    edits.push({ find, replace, replaceAll: o.replace_all === true });
+  }
+  return { edits };
+}
+
+/**
+ * Apply all edits against the ORIGINAL content (not sequentially): every `find`
+ * is located in the same base text, the resulting spans are checked for overlap,
+ * then applied right-to-left so earlier offsets stay valid. Matching is exact
+ * first; if any edit misses, the whole operation retries in fuzzy-normalized
+ * space (which also rewrites the untouched parts of the file to that normal form
+ * — an accepted trade since the model's text already diverged from the file).
+ */
+function applyEdits(
+  original: string,
+  edits: EditOp[],
+): { next: string; usedFuzzy: boolean; spans: number } | { error: string } {
+  const allExact = edits.every((e) => original.includes(e.find));
+  const usedFuzzy = !allExact;
+  const base = usedFuzzy ? normalizeForFuzzyMatch(original) : original;
+  const norm = (s: string) => (usedFuzzy ? normalizeForFuzzyMatch(s) : s);
+
+  interface Span {
+    start: number;
+    end: number;
+    replace: string;
+    editIndex: number;
+  }
+  const spans: Span[] = [];
+  for (let i = 0; i < edits.length; i++) {
+    const find = norm(edits[i].find);
+    const replace = edits[i].replace;
+    if (find.length === 0) return { error: `edits[${i}].find is empty after normalization.` };
+
+    const indices: number[] = [];
+    for (let from = base.indexOf(find); from >= 0; from = base.indexOf(find, from + find.length)) {
+      indices.push(from);
+    }
+    if (indices.length === 0) {
+      return {
+        error: `edits[${i}]: \`find\` text not found. An earlier read may be stale — read_file and retry with the exact current text.`,
+      };
+    }
+    if (!edits[i].replaceAll && indices.length > 1) {
+      return {
+        error: `edits[${i}]: \`find\` matches ${indices.length} places. Provide a longer, unique snippet or set replace_all: true.`,
+      };
+    }
+    for (const start of indices) spans.push({ start, end: start + find.length, replace, editIndex: i });
+  }
+
+  spans.sort((a, b) => a.start - b.start);
+  for (let i = 1; i < spans.length; i++) {
+    if (spans[i].start < spans[i - 1].end) {
+      return {
+        error: `edits[${spans[i - 1].editIndex}] and edits[${spans[i].editIndex}] target overlapping text. Merge them into one edit or target disjoint regions.`,
+      };
+    }
+  }
+
+  let next = base;
+  for (let i = spans.length - 1; i >= 0; i--) {
+    next = next.slice(0, spans[i].start) + spans[i].replace + next.slice(spans[i].end);
+  }
+  if (next === base) {
+    return { error: "No changes — the replacement(s) produced identical content." };
+  }
+  return { next, usedFuzzy, spans: spans.length };
+}
+
+function createEditTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
+  return {
+    name: `${opts.namespace}edit_file`,
+    display: {
+      header: (args, state) => ({
+        icon: FilePen,
+        label: state.error ? "Edit failed" : state.running ? "Editing file…" : "Edited file",
+        preview: typeof args?.path === "string" ? args.path.replace(/^\/+/, "") : undefined,
+      }),
+    },
+    description:
+      "Make targeted edits to an existing text file by replacing exact snippets. Prefer this over create_file when refining a file or building one up in steps — only the changed snippets are sent, avoiding a large re-escaped body. Pass one or more edits in `edits`; each `find` is matched against the ORIGINAL file (not applied in sequence), so the snippets must not overlap. `find` must match the current text (including whitespace) and be unique unless replace_all is true; minor whitespace/quote/dash differences are tolerated automatically.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Path of the file to edit (e.g., /analysis.py)." },
+        edits: {
+          type: "array",
+          description:
+            "One or more replacements applied in a single pass. Use several entries here instead of multiple edit_file calls when changing several places in one file.",
+          items: {
+            type: "object",
+            properties: {
+              find: { type: "string", description: "Exact text to replace." },
+              replace: {
+                type: "string",
+                description: "Replacement text (empty string deletes the matched text).",
+              },
+              replace_all: {
+                type: "boolean",
+                description: "Replace every occurrence of find instead of requiring a unique match (default false).",
+              },
+            },
+            required: ["find", "replace"],
+          },
+        },
+      },
+      required: ["path", "edits"],
+    },
+    function: async (args: Record<string, unknown>) => {
+      const path = args.path as string;
+      if (!path) return error("path is required");
+
+      const coerced = coerceEdits(args);
+      if ("error" in coerced) return error(coerced.error);
+
+      const file = await source.read(path);
+      if (!file) return error(`File not found: ${path}. Use list_files to see what exists.`);
+      if (isDataUrl(file.content)) return error(`${path} is a binary file and cannot be text-edited.`);
+
+      const result = applyEdits(file.content, coerced.edits);
+      if ("error" in result) return error(`${result.error.replace(/\.$/, "")} (in ${path}).`);
+
+      await source.write(path, result.next, file.contentType);
+
+      const note = result.usedFuzzy ? "; matched with whitespace/punctuation normalization" : "";
+      const count = `${result.spans} edit${result.spans === 1 ? "" : "s"}`;
+      return text(
+        JSON.stringify({
+          success: true,
+          message: `Applied ${count} to ${path} (${result.next.length} chars${note})`,
+          path,
+        }),
+      );
     },
   };
 }
@@ -473,7 +701,7 @@ export function createReadOnlyFileTools(source: ReadableFileSource, options?: Fi
 
 /**
  * Create file tools for a read-write data source.
- * Returns: list_files, read_file, create_file, delete_file, move_file, grep, glob
+ * Returns: list_files, read_file, create_file, edit_file, delete_file, move_file, grep, glob
  */
 export function createFileTools(source: WritableFileSource, options?: FileToolsOptions): Tool[] {
   const opts = { ...DEFAULTS, ...options };
@@ -481,6 +709,7 @@ export function createFileTools(source: WritableFileSource, options?: FileToolsO
     createListTool(source, opts),
     createReadTool(source, opts),
     createWriteTool(source, opts),
+    createEditTool(source, opts),
     createDeleteTool(source, opts),
     createMoveTool(source, opts),
     createGrepTool(source, opts),
