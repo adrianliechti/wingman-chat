@@ -1,4 +1,4 @@
-import { Shapes } from "lucide-react";
+import { Shapes, SquareCode, SquareTerminal } from "lucide-react";
 import { useCallback, useMemo, useRef } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
@@ -205,6 +205,16 @@ export function useArtifactsProvider(): ToolProvider | null {
     const executionTools: Tool[] = [
       {
         name: "execute_python_code",
+        display: {
+          header: (_args, state) => ({
+            icon: SquareCode,
+            label: state.error ? "Code failed" : state.running ? "Executing code…" : "Ran code",
+          }),
+          input: (args) => {
+            const code = typeof args?.code === "string" ? args.code : "";
+            return code ? [{ code, language: "python" }] : [];
+          },
+        },
         description:
           "Execute Python code with optional package dependencies. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). For long scripts heavy with quotes or backslashes (regex, nested strings), prefer writing the script to a .py artifact first and running it via `path` — this avoids JSON-escaping mistakes in the `code` string. All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back.",
         parameters: {
@@ -316,6 +326,18 @@ export function useArtifactsProvider(): ToolProvider | null {
       },
       {
         name: "execute_bash_code",
+        display: {
+          header: (args, state) => {
+            const command = String(args?.command ?? "").trim();
+            return command
+              ? { icon: SquareTerminal, label: command, mono: true, suppressPreview: true }
+              : { icon: SquareTerminal, label: state.error ? "Command failed" : "Running command…" };
+          },
+          input: (args) => {
+            const command = String(args?.command ?? "").trim();
+            return command ? [{ code: command, language: "bash" }] : [];
+          },
+        },
         description:
           "Execute bash commands or scripts in a sandboxed shell. All artifact files are preloaded and any files created, modified, or deleted are synced back. Prefer explicit paths rather than relying on prior shell state. Supports pipes, redirections, loops, variables, jq, yq, xan, sqlite3, grep, sed, awk, and more.",
         parameters: {

@@ -72,6 +72,51 @@ export type Tool = {
     args: Record<string, unknown>,
     context?: ToolContext,
   ) => Promise<(TextContent | ImageContent | AudioContent | FileContent)[]>;
+
+  /**
+   * Optional, tool-owned presentation for how a call renders in chat. Colocating
+   * it with the tool keeps the chat renderer generic; every hook is optional and
+   * falls back to a sensible default. See {@link ToolDisplay}.
+   */
+  display?: ToolDisplay;
+};
+
+/** A type icon for a tool's chat presentation (e.g. a lucide icon component). */
+export type ToolDisplayIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
+
+export type ToolDisplayState = { running?: boolean; error?: boolean };
+
+/** A code/text block rendered in a tool call's expanded view. */
+export type ToolDisplayBlock = {
+  code: string;
+  language: string;
+  /** Optional caption for the block (e.g. "Arguments", "Result", "Instructions"). */
+  name?: string;
+};
+
+/**
+ * How a tool call renders in chat. Every hook is optional and falls back to the
+ * generic default (name-cased label, argument preview, JSON result), so a tool
+ * overrides only what it cares about.
+ */
+export type ToolDisplay = {
+  /** Collapsed/running header; return only the fields that differ from the defaults. */
+  header?: (
+    args: Record<string, unknown> | null,
+    state: ToolDisplayState,
+  ) => {
+    icon?: ToolDisplayIcon;
+    label?: string;
+    mono?: boolean;
+    /** Short text shown beside the label; overrides the generic argument preview. */
+    preview?: string;
+    /** Hide the preview entirely (the label already carries the detail). */
+    suppressPreview?: boolean;
+  };
+  /** Expanded input blocks; return `[]` to hide input, omit to fall back to generic arguments. */
+  input?: (args: Record<string, unknown> | null) => ToolDisplayBlock[];
+  /** Expanded success output; return `null` to fall back to generic result rendering. */
+  output?: (result: Content[]) => ToolDisplayBlock | null;
 };
 
 export interface RenderedAppHandle {

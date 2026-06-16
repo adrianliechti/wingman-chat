@@ -6,8 +6,10 @@
  * notebook sources use this instead of duplicating tool definitions.
  */
 
+import { FilePlus2, FileSearch, Files, FileText, FolderInput, Search, Trash2 } from "lucide-react";
 import type { TextContent, Tool } from "../types/chat";
 import { isDataUrl } from "./fileContent";
+import { artifactLanguage } from "./fileTypes";
 import { formatLineOutput, getLineRange, grepText, matchGlob, splitLines, truncateLine } from "./text-utils";
 
 // ---------------------------------------------------------------------------
@@ -89,6 +91,9 @@ function error(message: string): TextContent[] {
 function createListTool(source: ReadableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}list_files`,
+    display: {
+      header: (_args, state) => ({ icon: Files, label: state.error ? "List failed" : "Listed files" }),
+    },
     description: "List all available files with their sizes.",
     parameters: {
       type: "object",
@@ -120,6 +125,12 @@ function createListTool(source: ReadableFileSource, opts: Required<FileToolsOpti
 function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}read_file`,
+    display: {
+      header: (_args, state) => ({
+        icon: FileText,
+        label: state.error ? "Read failed" : state.running ? "Reading file…" : "Read file",
+      }),
+    },
     description: `Read file content with line numbers. Output is capped at ${opts.maxReadLines} lines or ${opts.maxReadChars} chars. Use startLine/endLine to page through large files.`,
     parameters: {
       type: "object",
@@ -198,6 +209,19 @@ function createReadTool(source: ReadableFileSource, opts: Required<FileToolsOpti
 function createWriteTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}create_file`,
+    display: {
+      header: (_args, state) => ({
+        icon: FilePlus2,
+        label: state.error ? "Create failed" : state.running ? "Creating file…" : "Created file",
+      }),
+      // Show just the file content (the path is the header preview), highlighted by extension.
+      input: (args) => {
+        const content = typeof args?.content === "string" ? args.content : "";
+        if (!content) return [];
+        const path = typeof args?.path === "string" ? args.path : undefined;
+        return [{ code: content, language: path ? artifactLanguage(path) : "text" }];
+      },
+    },
     description: "Create a new file or update an existing file with the specified path and content.",
     parameters: {
       type: "object",
@@ -227,6 +251,9 @@ function createWriteTool(source: WritableFileSource, opts: Required<FileToolsOpt
 function createDeleteTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}delete_file`,
+    display: {
+      header: (_args, state) => ({ icon: Trash2, label: state.error ? "Delete failed" : "Deleted file" }),
+    },
     description: "Delete a file or folder. When deleting a folder, all files within it will be deleted.",
     parameters: {
       type: "object",
@@ -252,6 +279,17 @@ function createDeleteTool(source: WritableFileSource, opts: Required<FileToolsOp
 function createMoveTool(source: WritableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}move_file`,
+    display: {
+      header: (args, state) => {
+        const from = (typeof args?.from === "string" ? args.from : "").replace(/^\/+/, "");
+        const to = (typeof args?.to === "string" ? args.to : "").replace(/^\/+/, "");
+        return {
+          icon: FolderInput,
+          label: state.error ? "Move failed" : "Moved file",
+          preview: from && to ? `${from} → ${to}` : undefined,
+        };
+      },
+    },
     description: "Move or rename a file from one path to another.",
     parameters: {
       type: "object",
@@ -284,6 +322,13 @@ function createMoveTool(source: WritableFileSource, opts: Required<FileToolsOpti
 function createGrepTool(source: ReadableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}grep`,
+    display: {
+      header: (args, state) => ({
+        icon: Search,
+        label: state.error ? "Search failed" : state.running ? "Searching files…" : "Searched files",
+        preview: typeof args?.pattern === "string" ? args.pattern : undefined,
+      }),
+    },
     description:
       'Search for a regex pattern across files. Returns matching lines with context. Examples: "function\\s+\\w+", "TODO|FIXME"',
     parameters: {
@@ -372,6 +417,13 @@ function createGrepTool(source: ReadableFileSource, opts: Required<FileToolsOpti
 function createGlobTool(source: ReadableFileSource, opts: Required<FileToolsOptions>): Tool {
   return {
     name: `${opts.namespace}glob`,
+    display: {
+      header: (args, state) => ({
+        icon: FileSearch,
+        label: state.error ? "Glob failed" : "Found files",
+        preview: typeof args?.pattern === "string" ? args.pattern : undefined,
+      }),
+    },
     description: 'Find files matching a glob pattern. Examples: "**/*.csv", "src/**/*.{ts,tsx}"',
     parameters: {
       type: "object",

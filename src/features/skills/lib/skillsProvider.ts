@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { ScrollText, Sparkles } from "lucide-react";
 import type { Skill } from "@/features/skills/lib/skillParser";
 import skillsPrompt from "@/features/skills/prompts/skills.txt?raw";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
@@ -78,6 +78,29 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
   const tools: Tool[] = [
     {
       name: "read_skill",
+      // read_skill takes only a skill name (shown as the header preview) and returns
+      // JSON { name, description, instructions } — so hide the args and surface just
+      // the instructions.
+      display: {
+        header: (_args, state) => ({
+          icon: ScrollText,
+          label: state.error ? "Skill unavailable" : "Read skill",
+        }),
+        input: () => [],
+        output: (result) => {
+          const part = result.find((c) => c.type === "text");
+          const raw = part && part.type === "text" ? part.text : undefined;
+          if (!raw) return null;
+          try {
+            const parsed = JSON.parse(raw) as { instructions?: unknown };
+            return typeof parsed.instructions === "string"
+              ? { code: parsed.instructions, language: "markdown", name: "Instructions" }
+              : null;
+          } catch {
+            return null;
+          }
+        },
+      },
       description: "Read the full content and instructions of an available skill.",
       parameters: {
         type: "object",

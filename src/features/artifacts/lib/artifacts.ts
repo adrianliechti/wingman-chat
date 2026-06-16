@@ -68,23 +68,9 @@ export async function processUploadedFile(file: File): Promise<ProcessedFile[]> 
   return [{ path: `/${file.name}`, content, contentType }];
 }
 
-// Helper function to get the language/extension from a file path
-export function artifactLanguage(path: string): string {
-  const ext = path.split(".").pop()?.toLowerCase() || "";
-  const basename = path.split("/").pop()?.toLowerCase() || "";
-
-  // Handle Dockerfile files
-  if (basename === "dockerfile" || basename.startsWith("dockerfile.")) {
-    return "dockerfile";
-  }
-
-  // Handle Makefile files
-  if (basename === "makefile" || basename.startsWith("makefile.")) {
-    return "makefile";
-  }
-
-  return ext;
-}
+// `artifactLanguage` now lives in shared (so non-feature code can use it too);
+// re-exported here for existing importers.
+export { artifactLanguage } from "@/shared/lib/fileTypes";
 
 // Helper function to determine the kind of artifact based on file extension and content type.
 export function artifactKind(path: string, contentType?: string): ArtifactKind {

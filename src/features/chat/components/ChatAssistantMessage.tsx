@@ -3,6 +3,7 @@ import { memo, useMemo, useState } from "react";
 import { ArtifactChip } from "@/features/artifacts/components/ArtifactChip";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { SkillChip } from "@/features/skills/components/SkillChip";
+import { useToolsContext } from "@/features/tools/hooks/useToolsContext";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import type { Content, Message } from "@/shared/types/chat";
@@ -12,8 +13,8 @@ import { CopyButton } from "@/shared/ui/CopyButton";
 import { Markdown } from "@/shared/ui/Markdown";
 import { PlayButton } from "@/shared/ui/PlayButton";
 import { ChatMessageElicitation } from "./ChatMessageElicitation";
-import { collectTurnArtifactPaths, collectTurnSkillNames, getToolCallPreview, isTurnEnd } from "./chatMessageUtils";
-import { toolPresentation } from "./toolDisplay";
+import { collectTurnArtifactPaths, collectTurnSkillNames, isTurnEnd } from "./chatMessageUtils";
+import { findTool, type ResolvedToolHeader, resolveToolHeader } from "./toolDisplay";
 
 // Error message component
 function ErrorMessage({ title, message, onRetry }: { title: string; message: string; onRetry?: () => void }) {
@@ -117,6 +118,38 @@ function getMessagePartKey(part: Message["content"][number], index: number, scop
   }
 }
 
+/** Compact row shown while a tool call is still running (spinner + label + status/preview). */
+function RunningToolRow({
+  header,
+  status,
+  className,
+}: {
+  header: ResolvedToolHeader;
+  status?: string | null;
+  className?: string;
+}) {
+  return (
+    <div className={cn("rounded-lg overflow-hidden max-w-full", className)}>
+      <div className="flex items-center gap-2 min-w-0">
+        <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
+        <span
+          className={cn(
+            "text-xs whitespace-nowrap text-neutral-500 dark:text-neutral-400",
+            header.mono ? "font-mono truncate" : "font-medium",
+          )}
+        >
+          {header.label}
+        </span>
+        {status ? (
+          <span className="text-xs italic text-neutral-500 dark:text-neutral-400 truncate">{status}</span>
+        ) : header.preview ? (
+          <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">{header.preview}</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   message,
   index,
@@ -124,6 +157,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   isResponding,
 }: ChatAssistantMessageProps) {
   const { messages, pendingElicitation, resolveElicitation, retryMessage, toolMeta } = useChat();
+  const { providers } = useToolsContext();
 
   // JS-driven hover (not CSS :hover) for the action bar — Safari leaves :hover
   // sticky after trackpad taps, so the buttons wouldn't reliably hide.
@@ -227,7 +261,6 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
             {toolCallParts.map((part, index) => {
               if (part.type !== "tool_call") return null;
               const toolCall = part;
-              const preview = getToolCallPreview(toolCall.name, toolCall.arguments);
               const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === toolCall.id;
 
               // Show elicitation prompt if this tool call has a pending elicitation
@@ -246,32 +279,15 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
               const meta = toolMeta[toolCall.id];
               const status = typeof meta?.status === "string" ? meta.status : null;
-              const pres = toolPresentation(toolCall.name, toolCall.arguments, { running: true });
+              const header = resolveToolHeader(findTool(providers, toolCall.name), toolCall.name, toolCall.arguments, {
+                running: true,
+              });
               return (
-                <div
+                <RunningToolRow
                   key={getMessagePartKey(toolCall, index, "loading-tool-call")}
-                  className="rounded-lg overflow-hidden max-w-full"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
-                    <span
-                      className={cn(
-                        "text-xs whitespace-nowrap text-neutral-500 dark:text-neutral-400",
-                        pres.mono ? "font-mono truncate" : "font-medium",
-                      )}
-                    >
-                      {pres.label}
-                    </span>
-                    {!pres.Icon &&
-                      (status ? (
-                        <span className="text-xs italic text-neutral-500 dark:text-neutral-400 truncate">{status}</span>
-                      ) : preview ? (
-                        <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">
-                          {preview}
-                        </span>
-                      ) : null)}
-                  </div>
-                </div>
+                  header={header}
+                  status={status}
+                />
               );
             })}
           </div>
@@ -366,31 +382,18 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
 
             // Tool calls shown inline only when streaming
             if (!isLast || !isResponding) return null;
-            const preview = getToolCallPreview(part.name, part.arguments);
-            const pres = toolPresentation(part.name, part.arguments, { running: true });
+            const header = resolveToolHeader(findTool(providers, part.name), part.name, part.arguments, {
+              running: true,
+            });
             // Only the first tool call in a run gets top spacing (to match the
             // committed result's gap); consecutive concurrent calls stay tight.
             const isFirstToolCall = message.content[index - 1]?.type !== "tool_call";
             return (
-              <div
+              <RunningToolRow
                 key={partKey}
-                className={cn("mb-0 rounded-lg overflow-hidden max-w-full", isFirstToolCall ? "mt-2" : "mt-0.5")}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
-                  <span
-                    className={cn(
-                      "text-xs whitespace-nowrap text-neutral-500 dark:text-neutral-400",
-                      pres.mono ? "font-mono truncate" : "font-medium",
-                    )}
-                  >
-                    {pres.label}
-                  </span>
-                  {!pres.Icon && preview && (
-                    <span className="text-xs text-neutral-400 dark:text-neutral-500 font-mono truncate">{preview}</span>
-                  )}
-                </div>
-              </div>
+                header={header}
+                className={cn("mb-0", isFirstToolCall ? "mt-2" : "mt-0.5")}
+              />
             );
           }
           return null;

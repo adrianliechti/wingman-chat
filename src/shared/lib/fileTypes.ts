@@ -73,3 +73,17 @@ export function fileMatchesType(name: string, type: string, entry: string): bool
 export function fileMatchesTypeList(name: string, type: string, list: string[]): boolean {
   return list.some((entry) => fileMatchesType(name, type, entry));
 }
+
+/**
+ * Syntax-highlight language id for a file path. Returns the raw extension (shiki
+ * accepts extension aliases like `py` / `ts`), with special-cases for the common
+ * extensionless build files. Used by the artifact code editors and tool-call
+ * rendering.
+ */
+export function artifactLanguage(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() || "";
+  const basename = path.split("/").pop()?.toLowerCase() || "";
+  if (basename === "dockerfile" || basename.startsWith("dockerfile.")) return "dockerfile";
+  if (basename === "makefile" || basename.startsWith("makefile.")) return "makefile";
+  return ext;
+}

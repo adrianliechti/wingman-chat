@@ -162,6 +162,17 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
     const tools: Tool[] = [
       {
         name: "write_memory",
+        display: {
+          header: (_args, state) => ({
+            icon: BrainCircuit,
+            label: state.error ? "Save failed" : state.running ? "Saving memory…" : "Saved memory",
+            suppressPreview: true,
+          }),
+          input: (args) => {
+            const content = typeof args?.content === "string" ? args.content : "";
+            return content ? [{ code: content, language: "markdown" }] : [];
+          },
+        },
         description:
           "Write/update your persistent memory. Replaces the entire content. Max 25KB. Keep under 200 lines by consolidating older entries.",
         parameters: {

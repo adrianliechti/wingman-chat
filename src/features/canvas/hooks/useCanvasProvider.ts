@@ -71,6 +71,12 @@ export function useCanvasProvider(): ToolProvider | null {
     return [
       {
         name: "create_image",
+        display: {
+          header: (_args, state) => ({
+            icon: Image,
+            label: state.error ? "Image failed" : state.running ? "Generating image…" : "Created image",
+          }),
+        },
         description:
           "Generate an image from a text description. Optionally provide reference images to edit or build on: pass `images` (paths to image artifacts) and/or attach images to the chat. The result is saved as an artifact and returned inline.",
         parameters: {

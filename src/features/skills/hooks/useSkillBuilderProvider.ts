@@ -1,4 +1,4 @@
-import { PenTool } from "lucide-react";
+import { FilePlus2, PenTool, SquarePen } from "lucide-react";
 import { useMemo } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { validateSkillDescription, validateSkillName } from "@/features/skills/lib/skillParser";
@@ -30,6 +30,17 @@ export function useSkillBuilderProvider(): ToolProvider {
       },
       {
         name: "create_skill",
+        display: {
+          header: (_args, state) => ({
+            icon: FilePlus2,
+            label: state.error ? "Create failed" : state.running ? "Creating skill…" : "Created skill",
+          }),
+          // Show just the SKILL.md content (the name/description are metadata).
+          input: (args) => {
+            const content = typeof args?.content === "string" ? args.content : "";
+            return content ? [{ code: content, language: "markdown" }] : [];
+          },
+        },
         description:
           "Create a new skill and add it to the library. Skills are reusable, specialized prompts with a name, description, and markdown content body. When an agent is active, the new skill is also enabled on it.",
         parameters: {
@@ -110,6 +121,16 @@ export function useSkillBuilderProvider(): ToolProvider {
       },
       {
         name: "update_skill",
+        display: {
+          header: (_args, state) => ({
+            icon: SquarePen,
+            label: state.error ? "Update failed" : state.running ? "Updating skill…" : "Updated skill",
+          }),
+          input: (args) => {
+            const content = typeof args?.content === "string" ? args.content : "";
+            return content ? [{ code: content, language: "markdown" }] : [];
+          },
+        },
         description:
           "Replace an existing skill's description and/or content. This overwrites the field wholesale — pass the complete new value, not a diff. Read the skill's current content first (read_skill or list_skills) before modifying one you didn't just author.",
         parameters: {

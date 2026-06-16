@@ -187,11 +187,14 @@ export function getToolCallPreview(_toolName: string, arguments_: string): strin
     "data",
   ];
 
+  // Path-type params are shown workspace-relative — drop any leading slash.
+  const pathParams = new Set(["filename", "file", "path", "filepath", "folder", "directory"]);
+
   // Find the first matching parameter
   for (const param of commonParams) {
     const value = args[param];
     if (value && typeof value === "string") {
-      return value;
+      return pathParams.has(param) ? value.replace(/^\/+/, "") : value;
     }
   }
 
