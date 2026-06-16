@@ -54,6 +54,23 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
   const queryPreview =
     !pres.Icon && toolResult?.arguments ? getToolCallPreview(toolResult.name || "", toolResult.arguments) : null;
 
+  // `read_skill` takes only a skill name (already shown in the header) and returns
+  // JSON { name, description, instructions }. Drop the redundant arguments block and
+  // show only the instructions, not the whole JSON envelope.
+  const isReadSkill = toolResult?.name === "read_skill";
+  const skillInstructions = useMemo(() => {
+    if (!isReadSkill) return null;
+    const textPart = toolResult?.result?.find((c) => c.type === "text");
+    const text = textPart && textPart.type === "text" ? textPart.text : undefined;
+    if (!text) return null;
+    try {
+      const parsed = JSON.parse(text) as { instructions?: unknown };
+      return typeof parsed.instructions === "string" ? parsed.instructions : null;
+    } catch {
+      return null;
+    }
+  }, [isReadSkill, toolResult?.result]);
+
   // Helper to replace long data URLs with placeholder for display
   const sanitizeForDisplay = (obj: unknown): unknown => {
     if (typeof obj === "string") {
@@ -146,17 +163,21 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
 
         {toolResultExpanded && (
           <div className="mt-1">
-            {codeData ? (
-              <CodeRenderer code={codeData.code} language={codeData.language} />
-            ) : (
-              toolResult?.arguments && renderContent([{ type: "text", text: toolResult.arguments }], "Arguments")
-            )}
-            {(message.error || toolResult?.result) &&
-              (message.error ? (
-                <CodeRenderer code={message.error.message} language="text" name="Error" subtle />
+            {/* Input — skip read_skill's args; it's just the skill name, already in the header */}
+            {!isReadSkill &&
+              (codeData ? (
+                <CodeRenderer code={codeData.code} language={codeData.language} />
               ) : (
-                renderContent(toolResult?.result || [], "Result")
+                toolResult?.arguments && renderContent([{ type: "text", text: toolResult.arguments }], "Arguments")
               ))}
+            {/* Output */}
+            {message.error ? (
+              <CodeRenderer code={message.error.message} language="text" name="Error" subtle />
+            ) : isReadSkill && skillInstructions != null ? (
+              <CodeRenderer code={skillInstructions} language="markdown" name="Instructions" subtle />
+            ) : (
+              toolResult?.result && renderContent(toolResult.result, "Result")
+            )}
           </div>
         )}
 

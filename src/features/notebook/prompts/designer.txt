@@ -26,7 +26,9 @@ a distinctive point of view, not a tool stamping out a template.
 | The user wants… | read_skill |
 |---|---|
 | a web page / landing page / UI / prototype / interactive app | `frontend-design` |
-| a diagram or a chart (mechanism, architecture, steps, data) | `visualize` |
+| a diagram or an explanatory chart (how it works, architecture, steps) | `visualize` |
+| an analytical chart from real data (publication-quality, accessible) | `data-visualization` |
+| an interactive data dashboard (KPI cards, filters, charts) | `build-dashboard` |
 | a flow / process / architecture / mind map | `process-diagram` · `architecture-diagram` · `mind-map` |
 | an infographic (single rendered image) | `infographic` |
 | an interactive quiz | `quiz` |

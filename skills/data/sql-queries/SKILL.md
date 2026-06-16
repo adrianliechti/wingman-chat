@@ -1,11 +1,24 @@
 ---
 name: sql-queries
-description: Write correct, performant SQL across all major data warehouse dialects (Snowflake, BigQuery, Databricks, PostgreSQL, etc.). Use when writing queries, optimizing slow SQL, translating between dialects, or building complex analytical queries with CTEs, window functions, or aggregations.
+description: Write correct, performant SQL across all major data warehouse dialects (Snowflake, BigQuery, Databricks, PostgreSQL, etc.). Use when translating a natural-language data need into SQL, writing or optimizing queries, translating between dialects, or building complex analytical queries with CTEs, window functions, or aggregations.
 ---
 
 # SQL Queries Skill
 
 Write correct, performant, readable SQL across all major data warehouse dialects.
+
+## Workflow
+
+1. **Understand the request** — identify output columns, filters (time ranges, segments, statuses),
+   aggregations (GROUP BY, counts, sums), joins, ordering, and any top-N / sample limit.
+2. **Confirm the dialect** (see the reference below); if unknown, ask, and remember it for the session.
+3. **Discover the schema** — if a data-warehouse MCP is connected, search for the relevant tables,
+   inspect columns/types/relationships, and check partition/cluster keys and existing views.
+4. **Write the query** using the patterns below — CTEs per logical step, no `SELECT *`, filter early,
+   push down partition filters, pick the right JOIN, descriptive aliases.
+5. **Present it** — the query, a brief explanation of each CTE, performance notes, and how to vary it
+   (different range / granularity / filters).
+6. **Offer to execute** if a warehouse is connected; otherwise it's ready to copy-paste.
 
 ## Dialect-Specific Reference
 

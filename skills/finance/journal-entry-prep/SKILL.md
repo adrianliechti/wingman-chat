@@ -1,6 +1,6 @@
 ---
 name: journal-entry-prep
-description: Prepare journal entries with proper debits, credits, and supporting documentation for month-end close. Use when booking accruals, prepaid amortization, fixed asset depreciation, payroll entries, revenue recognition, or any manual journal entry.
+description: Prepare journal entries with proper debits, credits, and supporting documentation for month-end close. Use when booking accruals, prepaid amortization, fixed asset depreciation, payroll entries, revenue recognition, deferred revenue adjustments, or any manual journal entry documented for audit review.
 ---
 
 # Journal Entry Preparation
@@ -8,6 +8,28 @@ description: Prepare journal entries with proper debits, credits, and supporting
 **Important**: This skill assists with journal entry workflows but does not provide financial advice. All entries should be reviewed by qualified financial professionals before posting.
 
 Best practices, standard entry types, documentation requirements, and review workflows for journal entry preparation.
+
+## Workflow
+
+1. **Gather source data** — if an ERP / data warehouse is connected, pull the trial balance, subledger
+   detail, and the prior-period entry of the same type; otherwise ask the user for GL balances and
+   supporting schedules.
+2. **Calculate the entry** by type — see the standard entry types below for the debits and credits.
+3. **Generate the entry** in standard format:
+
+   ```
+   Journal Entry: [Type] — [Period]
+   | Line | Account Code | Account Name | Debit | Credit | Department | Memo     |
+   |------|--------------|--------------|-------|--------|------------|----------|
+   | 1    | XXXX         | [Name]       | X,XXX |        | [Dept]     | [Detail] |
+   | 2    | XXXX         | [Name]       |       | X,XXX  | [Dept]     | [Detail] |
+   |      |              | **Total**    | X,XXX | X,XXX  |            |          |
+   Reversal: [Yes/No — date]
+   ```
+4. **Review** against the checklist below (debits = credits, correct period, valid codes, within
+   approval authority, accruals flagged to auto-reverse).
+5. **Output** — the entry, supporting calculations, a prior-period comparison, and posting
+   instructions (manual entry or upload format for the user's ERP).
 
 ## Standard Accrual Types and Their Entries
 

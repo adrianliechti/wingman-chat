@@ -69,6 +69,11 @@ If I already have your seller context from a previous session, I'll confirm and 
 
 ## Output: Interactive HTML Battlecard
 
+The battlecard *content* (the research, positioning, and matrix below) is the sales work here; the
+HTML is just the medium. For a more polished visual treatment, the `frontend-design` capability can
+elevate the layout/typography — `read_skill frontend-design` if it's available. Keep it
+**self-contained and offline** (inline CSS/JS, no CDN) either way.
+
 The skill generates a **self-contained HTML file** with:
 
 ### 1. Comparison Matrix (Landing View)

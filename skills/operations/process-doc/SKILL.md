@@ -31,6 +31,9 @@ Walk me through the process — describe it, paste existing docs, or just tell m
 ### Process Flow
 [ASCII flowchart or step-by-step description]
 
+> For a rendered swimlane/BPMN diagram instead of ASCII, the `process-diagram` capability draws it as
+> Mermaid (`.mmd`) — `read_skill process-diagram` if it's available.
+
 ### Detailed Steps
 
 #### Step 1: [Name]

@@ -35,21 +35,21 @@ import { AgentWizard } from "@/features/agent/components/wizard/AgentWizard";
 import { useAgentFiles } from "@/features/agent/hooks/useAgentFiles";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
+import { DESIGNER_PROVIDER_ID } from "@/features/notebook/hooks/useDesignerProvider";
+import { OFFICE_PROVIDER_ID } from "@/features/notebook/hooks/useOfficeProvider";
 import { SKILL_BUILDER_ID } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import { useSkillTemplates } from "@/features/skills/hooks/useSkillTemplates";
-import { DESIGNER_PROVIDER_ID } from "@/features/notebook/hooks/useDesignerProvider";
-import { OFFICE_PROVIDER_ID } from "@/features/notebook/hooks/useOfficeProvider";
 import { isNotebookSkillCategory, SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
-
-/** Provider ids grouped under the "Notebook" section of the + menu (Office · Image · Designer). */
-const NOTEBOOK_SECTION_IDS = [OFFICE_PROVIDER_ID, "canvas", DESIGNER_PROVIDER_ID];
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import type { ToolProvider } from "@/shared/types/chat";
 import { ProviderState } from "@/shared/types/chat";
 import { McpProviderIcon } from "@/shared/ui/McpProviderIcon";
 import { Tooltip } from "@/shared/ui/Tooltip";
+
+/** Provider ids grouped under the "Notebook" section of the + menu (Office · Image · Designer). */
+const NOTEBOOK_SECTION_IDS = [OFFICE_PROVIDER_ID, "canvas", DESIGNER_PROVIDER_ID];
 
 interface ChatInputAddMenuProps {
   isScreenCaptureAvailable: boolean;
@@ -526,35 +526,45 @@ export function ChatInputAddMenu({
                   onMouseLeave={scheduleCloseSubmenu}
                 >
                   <div className="rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 p-1 min-w-48 flex flex-col overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => toggleSkillSource("personal")}
-                      className="flex w-full items-center gap-3 px-3 py-2 rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
+                    <Tooltip
+                      content="Skills you've created — editable in Manage Skills"
+                      side="right"
+                      className="w-full"
                     >
-                      <User size={16} className="shrink-0" />
-                      <span className="font-medium text-sm flex-1 text-left">
-                        My Skills <span className="text-neutral-400 dark:text-neutral-500">({skills.length})</span>
-                      </span>
-                      <span className="shrink-0 w-4 flex justify-center">
-                        {skillSources.personal && (
-                          <Check size={13} className="text-neutral-600 dark:text-neutral-400" />
-                        )}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleSkillSource("catalog")}
-                      className="flex w-full items-center gap-3 px-3 py-2 rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
-                    >
-                      <Library size={16} className="shrink-0" />
-                      <span className="font-medium text-sm flex-1 text-left">
-                        Catalog{" "}
-                        <span className="text-neutral-400 dark:text-neutral-500">({catalogTemplateCount})</span>
-                      </span>
-                      <span className="shrink-0 w-4 flex justify-center">
-                        {skillSources.catalog && <Check size={13} className="text-neutral-600 dark:text-neutral-400" />}
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleSkillSource("personal")}
+                        className="flex w-full items-center gap-3 px-3 py-2 rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
+                      >
+                        <User size={16} className="shrink-0" />
+                        <span className="font-medium text-sm flex-1 text-left">
+                          My Skills <span className="text-neutral-400 dark:text-neutral-500">({skills.length})</span>
+                        </span>
+                        <span className="shrink-0 w-4 flex justify-center">
+                          {skillSources.personal && (
+                            <Check size={13} className="text-neutral-600 dark:text-neutral-400" />
+                          )}
+                        </span>
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Ready-made skills shipped with the app" side="right" className="w-full">
+                      <button
+                        type="button"
+                        onClick={() => toggleSkillSource("catalog")}
+                        className="flex w-full items-center gap-3 px-3 py-2 rounded-lg hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
+                      >
+                        <Library size={16} className="shrink-0" />
+                        <span className="font-medium text-sm flex-1 text-left">
+                          Catalog{" "}
+                          <span className="text-neutral-400 dark:text-neutral-500">({catalogTemplateCount})</span>
+                        </span>
+                        <span className="shrink-0 w-4 flex justify-center">
+                          {skillSources.catalog && (
+                            <Check size={13} className="text-neutral-600 dark:text-neutral-400" />
+                          )}
+                        </span>
+                      </button>
+                    </Tooltip>
                     {skillBuilder && (
                       <button
                         type="button"

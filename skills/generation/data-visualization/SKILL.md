@@ -1,11 +1,20 @@
 ---
 name: data-visualization
-description: Create effective data visualizations with Python (matplotlib, seaborn, plotly). Use when building charts, choosing the right chart type for a dataset, creating publication-quality figures, or applying design principles like accessibility and color theory.
+description: Create effective data visualizations with Python (matplotlib, seaborn, plotly). Use when turning query results or a DataFrame into a chart, choosing the right chart type for a trend / comparison / distribution, creating publication-quality figures for a report or presentation, building an interactive chart with hover and zoom, or applying design principles like accessibility and color theory.
 ---
 
 # Data Visualization Skill
 
 Chart selection guidance, Python visualization code patterns, design principles, and accessibility considerations for creating effective data visualizations.
+
+## Before you chart
+
+Identify the **data source** — query results, pasted/uploaded data, or data from earlier in the
+conversation — and load it into a pandas DataFrame, cleaning types and nulls as needed. Note the
+**purpose and audience** (exploration, a report, a presentation, a dashboard component); a chart that
+states an insight to executives differs from one for exploring a distribution. Then pick the chart
+below. Save static charts as **PNG** (`savefig`) and interactive ones as a self-contained **HTML**
+(`include_plotlyjs=True`, so it works offline) — saving the file renders it in the side panel.
 
 ## Chart Selection Guide
 

@@ -1,11 +1,20 @@
 ---
 name: content-creation
-description: Draft marketing content across channels — blog posts, social media, email newsletters, landing pages, press releases, and case studies. Use when writing any marketing content, when you need channel-specific formatting, SEO-optimized copy, headline options, or calls to action.
+description: Draft marketing content across channels — blog posts, social media, email newsletters, landing pages, press releases, and case studies. Use when writing any marketing content, when you need channel-specific formatting, SEO-optimized copy, headline or subject-line options, calls to action, or when adapting a message for a specific platform, audience, and brand voice.
 ---
 
 # Content Creation Skill
 
 Guidelines and frameworks for creating effective marketing content across channels.
+
+## Inputs & brand voice
+
+Before drafting, gather (ask if not provided): **content type**, **topic**, **target audience** (role,
+industry, pain points), **key messages** (2–4 takeaways), **tone**, and **length**. Apply the user's
+configured **brand voice** if one is set (and say you're applying it); if none, ask for guidelines or
+default to a neutral professional tone, kept consistent throughout. When you deliver, note the
+voice/tone applied and any SEO recommendations, then offer to revise a section, adjust tone, or adapt
+the piece for another channel.
 
 ## Content Type Templates
 
