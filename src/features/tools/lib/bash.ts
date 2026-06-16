@@ -9,6 +9,7 @@ import { pythonCommands } from "./pythonCommand";
 import { renderCommands } from "./renderCommand";
 import { synthesizeCommands } from "./synthesizeCommand";
 import { transcribeCommands } from "./transcribeCommand";
+import { translateCommands } from "./translateCommand";
 import { visionCommands } from "./visionCommand";
 
 export interface BashExecutionRequest {
@@ -80,6 +81,7 @@ export function createBashInstance(files?: Record<string, { content: string; con
       ...renderCommands,
       ...synthesizeCommands,
       ...transcribeCommands,
+      ...translateCommands,
     ],
     executionLimits: {
       maxCallDepth: 50,

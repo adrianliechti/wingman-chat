@@ -33,6 +33,7 @@ import PLOTLY_IMAGE_SHIM from "./plotlyShim.py?raw";
 import RENDER_SHIM from "./renderShim.py?raw";
 import SYNTHESIZE_SHIM from "./synthesizeShim.py?raw";
 import TRANSCRIBE_SHIM from "./transcribeShim.py?raw";
+import TRANSLATE_SHIM from "./translateShim.py?raw";
 import VISION_SHIM from "./visionShim.py?raw";
 
 // Typed view of the dedicated-worker global scope (the project compiles
@@ -288,12 +289,17 @@ function loadPyodide(): Promise<PyodideInterface> {
           requestSynthesize(p, text, output, voice),
         );
         p.globals.set("_wingman_transcribe", (path: string) => requestTranscribe(p, path));
+        p.globals.set("_wingman_translate_text", (lang: string, text: string) => requestTranslateText(lang, text));
+        p.globals.set("_wingman_translate_file", (lang: string, output: string, input: string) =>
+          requestTranslateFile(p, lang, output, input),
+        );
         await p.runPythonAsync(LLM_SHIM);
         await p.runPythonAsync(OCR_SHIM);
         await p.runPythonAsync(VISION_SHIM);
         await p.runPythonAsync(RENDER_SHIM);
         await p.runPythonAsync(SYNTHESIZE_SHIM);
         await p.runPythonAsync(TRANSCRIBE_SHIM);
+        await p.runPythonAsync(TRANSLATE_SHIM);
         await p.runPythonAsync(ASYNCIO_SHIM);
         rewriteAsyncEntrypoints = p.globals.get("_wingman_rewrite_async") as (code: string) => string;
         console.log("Pyodide loaded successfully");
@@ -510,6 +516,37 @@ async function requestSynthesize(
 async function requestTranscribe(pyodide: PyodideInterface, path: string): Promise<string> {
   const data = readWorkerFile(pyodide, path, "transcribe");
   return callMain<string>((port) => ({ type: "transcribe-request", data, path, port }));
+}
+
+/**
+ * Bridge behind the Python `translate` helper (see translateShim.py); resolved
+ * by the main thread, which calls the backend translation service.
+ */
+function requestTranslateText(lang: string, text: string): Promise<string> {
+  return callMain<string>((port) => ({ type: "translate-text-request", lang, text, port }));
+}
+
+/**
+ * Bridge behind the Python `translate_file` helper (see translateShim.py). The
+ * file bytes are read from the worker's FS here; the main thread translates
+ * them via the backend and the resulting file is written back to `output`.
+ */
+async function requestTranslateFile(
+  pyodide: PyodideInterface,
+  lang: string,
+  output: string,
+  input: string,
+): Promise<string> {
+  const data = readWorkerFile(pyodide, input, "translate");
+  const result = await callMain<Uint8Array>((port) => ({
+    type: "translate-file-request",
+    lang,
+    data,
+    path: input,
+    port,
+  }));
+  writeWorkerFile(pyodide, output, result);
+  return output;
 }
 
 // Plotly render queue — manifests are written by plotlyShim.py; the actual
