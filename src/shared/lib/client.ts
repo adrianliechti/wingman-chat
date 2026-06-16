@@ -795,11 +795,22 @@ export class Client {
   }
 
   private async postRaw(path: string, data: FormData, headers?: HeadersInit): Promise<Response> {
-    const resp = await fetch(new URL(path, window.location.origin), {
-      method: "POST",
-      headers,
-      body: data,
-    });
+    // Raw fetch has no built-in timeout; without this a stalled backend (render,
+    // translate, search) hangs forever — and when called from a Python bridge it
+    // wedges the single interpreter worker and every queued sandbox call.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90_000);
+    let resp: Response;
+    try {
+      resp = await fetch(new URL(path, window.location.origin), {
+        method: "POST",
+        headers,
+        body: data,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!resp.ok) throw new Error(`${path} failed with status ${resp.status}`);
     return resp;

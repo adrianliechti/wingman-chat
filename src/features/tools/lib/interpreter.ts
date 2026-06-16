@@ -31,16 +31,29 @@ export type { CodeExecutionRequest, CodeExecutionResult } from "./interpreterPro
 
 let worker: Worker | null = null;
 
-// Outstanding execution rejects — fired if the worker dies so callers don't
-// hang on reply ports that will never receive a message.
-const pendingRejects = new Set<(error: Error) => void>();
+// Each in-flight execution registers a "worker died" callback so it settles with
+// an error instead of hanging on a reply port that will never arrive.
+const pendingFailures = new Set<() => void>();
+
+// The in-flight execution's stall watchdog. The bridge-request handler pauses it
+// while the worker is blocked on a main-thread RPC (those round trips are bounded
+// separately). Only one execution runs at a time — the sandbox lock serializes
+// them — so a single slot suffices.
+let activeBridge: { enter: () => void; leave: () => void } | null = null;
 
 async function replyOnPort(port: MessagePort, run: () => Promise<unknown>): Promise<void> {
+  // A bridge call means the worker is waiting on us, not stalled — pause its
+  // stall timer while it's in flight. Capture the slot now so a reply that lands
+  // after the run was torn down can't disturb whatever runs next.
+  const bridge = activeBridge;
+  bridge?.enter();
   let reply: RpcReply;
   try {
     reply = { ok: true, value: await run() };
   } catch (error) {
     reply = { ok: false, error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    bridge?.leave();
   }
   port.postMessage(reply);
   port.close();
@@ -77,37 +90,105 @@ function getWorker(): Worker {
       console.error("Interpreter worker error:", event.message || event);
       if (worker === created) worker = null;
       created.terminate();
-      const error = new Error(event.message || "Python interpreter worker crashed");
-      for (const reject of pendingRejects) reject(error);
-      pendingRejects.clear();
+      for (const onCrash of pendingFailures) onCrash();
+      pendingFailures.clear();
     });
     worker = created;
   }
   return worker;
 }
 
-export async function executeCode(request: CodeExecutionRequest): Promise<CodeExecutionResult> {
-  let pendingReject: ((error: Error) => void) | null = null;
+/** How long the worker may run *pure compute* with no progress before it's
+ * treated as wedged (infinite loop / hang) and force-terminated. Bridge calls
+ * (render/synthesize/…) pause this — they're bounded by their own network
+ * timeout — so a legitimately slow render or a multi-segment podcast is never
+ * killed, while an infinite loop recovers in ~this long instead of minutes. */
+const COMPUTE_STALL_MS = 120_000;
+
+export interface ExecuteCodeOptions {
+  /** Aborts the run (e.g. the user's Stop): terminates the worker and settles. */
+  signal?: AbortSignal;
+  /** Override the compute-stall ceiling. */
+  timeoutMs?: number;
+}
+
+export async function executeCode(
+  request: CodeExecutionRequest,
+  options?: ExecuteCodeOptions,
+): Promise<CodeExecutionResult> {
+  const stallMs = options?.timeoutMs ?? COMPUTE_STALL_MS;
+  const signal = options?.signal;
+
+  let target: Worker;
   try {
-    const target = getWorker();
-    return await new Promise<CodeExecutionResult>((resolve, reject) => {
-      pendingReject = reject;
-      pendingRejects.add(reject);
-      const { port1, port2 } = new MessageChannel();
-      port1.onmessage = (event: MessageEvent<CodeExecutionResult>) => {
-        port1.close();
-        resolve(event.data);
-      };
-      target.postMessage({ type: "execute", request, port: port2 } satisfies ExecuteMessage, [port2]);
-    });
+    target = getWorker();
   } catch (error) {
-    console.error("Code execution error:", error);
-    return {
-      success: false,
-      output: "",
-      error: error instanceof Error ? error.message : String(error),
-    };
-  } finally {
-    if (pendingReject) pendingRejects.delete(pendingReject);
+    return { success: false, output: "", error: error instanceof Error ? error.message : String(error) };
   }
+
+  // Every termination path (result, stall, abort, crash) funnels through a single
+  // `settle`; `fail` is settle-with-error and also tears down the wedged worker.
+  return new Promise<CodeExecutionResult>((resolve) => {
+    const { port1, port2 } = new MessageChannel();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let inFlight = 0;
+    let settled = false;
+
+    // A wedged run can't be interrupted in single-threaded Pyodide, so tear the
+    // worker down: the next call spawns a fresh one, and settling here releases
+    // the caller's sandbox lock instead of blocking every queued execution.
+    const fail = (error: string) => {
+      if (worker === target) worker = null;
+      target.terminate();
+      settle({ success: false, output: "", error });
+    };
+    // (Re)arm the stall timer; runs only while no bridge call is in flight, so it
+    // measures uninterrupted pure-compute time, not total wall-clock.
+    const arm = () => {
+      if (settled || stallMs <= 0) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(
+        () => fail(`Code execution stalled — no progress for ${Math.round(stallMs / 1000)}s (worker terminated)`),
+        stallMs,
+      );
+    };
+    const bridge = {
+      enter: () => {
+        inFlight++;
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+      },
+      leave: () => {
+        if (--inFlight <= 0) arm();
+      },
+    };
+    const onCrash = () => fail("Python interpreter worker crashed");
+    const onAbort = () => fail("Code execution aborted");
+
+    function settle(result: CodeExecutionResult) {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (activeBridge === bridge) activeBridge = null; // only the owner clears the shared slot
+      pendingFailures.delete(onCrash);
+      signal?.removeEventListener("abort", onAbort);
+      port1.close();
+      resolve(result);
+    }
+
+    port1.onmessage = (event: MessageEvent<CodeExecutionResult>) => settle(event.data);
+    pendingFailures.add(onCrash);
+    if (signal) {
+      if (signal.aborted) {
+        fail("Code execution aborted");
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+    activeBridge = bridge;
+    arm();
+    target.postMessage({ type: "execute", request, port: port2 } satisfies ExecuteMessage, [port2]);
+  });
 }
