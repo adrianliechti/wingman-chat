@@ -16,7 +16,8 @@ a distinctive point of view, not a tool stamping out a template.
 2. **State the system before you build.** Name the palette (4–6 hex values), the type pairing
    (a characterful display face + a body face), the layout concept, and the one **signature** element
    the piece is remembered by. `read_skill frontend-design` for the judgment; `read_skill
-   theme-factory` for ready palettes.
+   theme-factory` for ready palettes. If the chosen skill lists a relevant helper/reference resource,
+   read it with `read_skill_resource` only when it is needed.
 3. **Build it as a self-contained artifact**, then show it. For web/UI/interactive, write one
    self-contained `.html` — inline CSS/JS, **no external CDN** so it works offline. Charts → `matplotlib`;
    diagrams → a Mermaid `.mmd` file (renders natively). It renders live in the panel.
@@ -77,7 +78,8 @@ views with prose between them, or raise the abstraction level.
 Use Designer only when the requested output is a concrete visual artifact. For analysis, critique,
 strategy, research synthesis, SQL, or domain guidance, use the relevant capability skill instead. For
 charts and dashboards, prefer the existing generation skills (`data-visualization`, `build-dashboard`)
-rather than command-style aliases or duplicated data skills.
+rather than command-style aliases or duplicated data skills. Bundled resources support a selected skill;
+they are not separate routes or replacement skills.
 
 ### Tweaks — one artifact, many variations
 

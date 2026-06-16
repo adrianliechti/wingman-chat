@@ -12,6 +12,9 @@ python-docx / reportlab, or CSS for HTML). Keep strong contrast and readability.
 
 ## Preset themes
 
+For complete details on a preset, load its file from `themes/<theme-id>.md` with `read_skill_resource`.
+Use the table below when a quick palette is enough.
+
 | Theme | Feel | Palette (background · primary · accent · light/text) |
 |---|---|---|
 | **Ocean Depths** | calm, corporate, trust | `#1a2332` · `#2d8b8b` · `#a8dadc` · `#f1faee` |

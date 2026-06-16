@@ -9,6 +9,20 @@ Use **`reportlab`** to create PDFs, **`pypdf`** to merge/split/rotate/encrypt, a
 to extract text/tables. (JS libraries and CLI tools don't run here — these Python libraries cover the
 same operations.) Save to the workspace; the drawer renders PDFs.
 
+## Bundled helpers
+
+When filling PDF forms, use the listed helper scripts instead of rewriting the same fragile code:
+
+- `scripts/check_fillable_fields.py` — detect whether a PDF has AcroForm fields.
+- `scripts/extract_form_field_info.py` — inspect fillable fields and valid checkbox/radio values.
+- `scripts/fill_fillable_fields.py` — validate and fill AcroForm fields.
+- `scripts/extract_form_structure.py` — extract labels, lines, and checkboxes from non-fillable PDFs.
+- `scripts/check_bounding_boxes.py` — validate annotation bounding boxes before filling.
+- `scripts/fill_pdf_form_with_annotations.py` — add text annotations to non-fillable forms.
+- `scripts/create_validation_image.py` — draw field boxes over a page image for visual checking.
+
+Load the needed script with `read_skill_resource` before using or adapting it.
+
 ## Create a PDF (reportlab)
 
 ```python

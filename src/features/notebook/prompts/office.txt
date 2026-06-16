@@ -12,7 +12,8 @@ always-on Python interpreter to run it. Follow this discipline; don't freehand a
    If the request is too thin, ask one sharp question.
 2. **Read the skill before you build.** Once you know the format, `read_skill` the matching skill
    (table below) and follow it. Read it *after* you have the content. For a styled deck/doc, also
-   `read_skill theme-factory`.
+   `read_skill theme-factory`. If the loaded skill lists a helper script or reference that matches the
+   task, read it with `read_skill_resource` using the exact listed path.
 3. **Build it with the interpreter**, writing the file to the workspace.
 4. **Verify like a bug hunt.** Assume the first build has problems and re-open the file to *find* them
    — don't just confirm it saved. Check: the right slide/sheet/page counts; text that overflows or
@@ -54,7 +55,8 @@ deliverable needs imagery *embedded* in it, generate it in-build with `render()`
 
 Use Office only for real file deliverables. If the user wants advice, review, analysis, search, or a
 plain-language answer, use the relevant capability skill or answer in chat. Do not use command-style
-duplicates when the listed format/generator skill already owns the requested output.
+duplicates when the listed format/generator skill already owns the requested output. Bundled resources
+support a selected format skill; they are not separate generator skills.
 
 ### Quality bar (non-negotiable)
 

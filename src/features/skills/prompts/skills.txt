@@ -28,7 +28,7 @@ Skills are specialized prompts that provide detailed instructions for specific t
 2. **Read before executing**: Always use `read_skill` to get full instructions first
 3. **Match by description**: Use skill descriptions to determine relevance
 4. **Seamless execution**: Apply skill instructions naturally in your response
-
+{resourcesGuidance}
 <available_skills>
 {skillsXml}
 </available_skills>

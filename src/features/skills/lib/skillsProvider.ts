@@ -1,6 +1,7 @@
-import { ScrollText, Sparkles } from "lucide-react";
+import { FileCode2, ScrollText, Sparkles } from "lucide-react";
 import type { Skill } from "@/features/skills/lib/skillParser";
 import skillsPrompt from "@/features/skills/prompts/skills.txt?raw";
+import { artifactLanguage } from "@/shared/lib/fileTypes";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
 
 /** Shared provider id for the skills tool (global and agent-scoped never coexist). */
@@ -36,7 +37,10 @@ export const isNotebookSkillCategory = (category: string): boolean => NOTEBOOK_S
 export interface SkillEntry {
   name: string;
   description: string;
+  /** Bundled resource paths relative to the skill folder, e.g. "scripts/extract.py". */
+  resources?: string[];
   loadContent: () => string | Promise<string>;
+  loadResource?: (path: string) => string | Promise<string | null>;
 }
 
 /** Adapt in-memory library skills (content already loaded) to catalog entries. */
@@ -74,6 +78,7 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
   if (entries.length === 0) return null;
 
   const byName = new Map(entries.map((e) => [e.name, e]));
+  const hasResources = entries.some((e) => e.resources?.length && e.loadResource);
 
   const tools: Tool[] = [
     {
@@ -107,6 +112,7 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
         properties: {
           name: {
             type: "string",
+            enum: entries.map((entry) => entry.name),
             description: "The name of the skill to read.",
           },
         },
@@ -130,30 +136,146 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
         return [
           {
             type: "text" as const,
-            text: JSON.stringify({
-              name: entry.name,
-              description: entry.description,
-              instructions: content,
-            }),
+            text: JSON.stringify(skillContentResult(entry, content)),
           },
         ];
       },
     },
   ];
 
+  if (hasResources) {
+    tools.push({
+      name: "read_skill_resource",
+      display: {
+        header: (args, state) => ({
+          icon: FileCode2,
+          label: state.error ? "Resource unavailable" : "Read skill resource",
+          preview:
+            typeof args?.name === "string" && typeof args?.path === "string"
+              ? `${args.name}/${args.path}`
+              : undefined,
+        }),
+        input: () => [],
+        output: (result) => {
+          const part = result.find((c) => c.type === "text");
+          const raw = part && part.type === "text" ? part.text : undefined;
+          if (!raw) return null;
+          try {
+            const parsed = JSON.parse(raw) as { path?: unknown; content?: unknown };
+            return typeof parsed.content === "string" && typeof parsed.path === "string"
+              ? { code: parsed.content, language: artifactLanguage(parsed.path) || "text", name: parsed.path }
+              : null;
+          } catch {
+            return null;
+          }
+        },
+      },
+      description:
+        "Read a bundled support resource for an available skill. Use only exact resource paths listed by read_skill.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            enum: entries.filter((entry) => entry.resources?.length && entry.loadResource).map((entry) => entry.name),
+            description: "The name of the skill that owns the resource.",
+          },
+          path: {
+            type: "string",
+            description: "The exact resource path relative to the skill folder.",
+          },
+        },
+        required: ["name", "path"],
+      },
+      function: async (args: Record<string, unknown>) => {
+        const skillName = args.name as string;
+        const resourcePath = args.path as string;
+        if (!skillName || !resourcePath) {
+          return [{ type: "text" as const, text: JSON.stringify({ error: "Skill name and resource path required" }) }];
+        }
+
+        const entry = byName.get(skillName);
+        if (!entry) {
+          return [{ type: "text" as const, text: JSON.stringify({ error: `Skill "${skillName}" not found` }) }];
+        }
+
+        if (!entry.resources?.includes(resourcePath) || !entry.loadResource) {
+          return [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: `Resource "${resourcePath}" not listed for skill "${skillName}"`,
+                resources: entry.resources ?? [],
+              }),
+            },
+          ];
+        }
+
+        let content: string | null;
+        try {
+          content = await entry.loadResource(resourcePath);
+        } catch {
+          content = null;
+        }
+        if (content === null) {
+          return [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: `Failed to load resource "${resourcePath}" for skill "${skillName}"` }),
+            },
+          ];
+        }
+
+        return [
+          {
+            type: "text" as const,
+            text: JSON.stringify({ name: entry.name, path: resourcePath, content }),
+          },
+        ];
+      },
+    });
+  }
+
   const skillsXml = entries
     .map(
       (entry) =>
-        `  <skill>\n    <name>${entry.name}</name>\n    <description>${entry.description}</description>\n  </skill>`,
+        `  <skill>\n    <name>${escapeXml(entry.name)}</name>\n    <description>${escapeXml(entry.description)}</description>\n  </skill>`,
     )
     .join("\n");
+
+  // Only describe read_skill_resource when it's actually registered (some skill
+  // ships resources), so the prompt never references an absent tool.
+  const resourcesGuidance = hasResources
+    ? "\n### Bundled resources\n\nSome skills ship support files (scripts, references, assets). When `read_skill` lists them, load one with `read_skill_resource` only when the instructions reference it or the task clearly needs it — respect progressive disclosure, don't eagerly load every file, and use the exact paths returned by `read_skill`.\n"
+    : "";
 
   return {
     id: meta.id,
     name: meta.name,
     description: meta.description,
     icon: Sparkles,
-    instructions: skillsPrompt.replace("{skillsXml}", skillsXml) || undefined,
+    instructions: skillsPrompt.replace("{resourcesGuidance}", resourcesGuidance).replace("{skillsXml}", skillsXml) || undefined,
     tools,
   };
+}
+
+function skillContentResult(entry: SkillEntry, instructions: string) {
+  const resources = entry.resources ?? [];
+  const resourceList = resources.length
+    ? `\n\n<skill_resources>\n${resources.map((path) => `  <file>${escapeXml(path)}</file>`).join("\n")}\n</skill_resources>`
+    : "";
+  return {
+    name: entry.name,
+    description: entry.description,
+    instructions: `<skill_content name="${escapeXml(entry.name)}">\n${instructions}${resourceList}\n</skill_content>`,
+  };
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }

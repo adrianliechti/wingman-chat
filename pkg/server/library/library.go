@@ -110,10 +110,11 @@ func (inv *inventory[T]) serve(w http.ResponseWriter, _ *http.Request) {
 // ── Skills ──────────────────────────────────────────────────────────────────
 
 type skillEntry struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Category    string `json:"category"`
-	Path        string `json:"path"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Category    string   `json:"category"`
+	Path        string   `json:"path"`
+	Resources   []string `json:"resources,omitempty"`
 }
 
 type Skills struct {
@@ -181,6 +182,7 @@ func (h *Skills) build() []skillEntry {
 			Description: meta.Description,
 			Category:    category,
 			Path:        "/skills/" + rel,
+			Resources:   skillResources(filepath.Dir(p)),
 		})
 
 		return nil
@@ -194,6 +196,46 @@ func (h *Skills) build() []skillEntry {
 	})
 
 	return entries
+}
+
+// skillResourceExtensions limits the bundled-resource listing to text files the
+// client can fetch and read inline (read_skill_resource returns text). The skills
+// tree is curated, shipped content, so — like the SKILL.md scan in build — we
+// don't otherwise filter it.
+var skillResourceExtensions = map[string]bool{
+	".css":  true,
+	".csv":  true,
+	".html": true,
+	".js":   true,
+	".json": true,
+	".md":   true,
+	".mjs":  true,
+	".py":   true,
+	".sql":  true,
+	".ts":   true,
+	".txt":  true,
+	".xml":  true,
+	".yaml": true,
+	".yml":  true,
+}
+
+// skillResources lists a skill's bundled support files as paths relative to the
+// skill folder, so read_skill can surface them for on-demand loading.
+func skillResources(skillDir string) []string {
+	resources := []string{}
+
+	filepath.WalkDir(skillDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Name() == "SKILL.md" || !skillResourceExtensions[strings.ToLower(filepath.Ext(d.Name()))] {
+			return nil
+		}
+		if rel, err := filepath.Rel(skillDir, p); err == nil {
+			resources = append(resources, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+
+	sort.Strings(resources)
+	return resources
 }
 
 // ── Notebooks ───────────────────────────────────────────────────────────────

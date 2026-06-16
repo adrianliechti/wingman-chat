@@ -7,6 +7,7 @@ import {
   type SkillEntry,
   type SkillSources,
 } from "@/features/skills/lib/skillsProvider";
+import { loadSkillResource } from "@/features/skills/lib/templates";
 import type { SkillTemplate } from "@/features/skills/lib/templates";
 import type { ToolProvider } from "@/shared/types/chat";
 import { useSkills } from "./useSkills";
@@ -45,11 +46,13 @@ export function useSkillsProvider(sources: SkillSources): ToolProvider | null {
         .map((t) => ({
           name: t.name,
           description: t.description,
+          resources: t.resources,
           loadContent: async () => {
             const parsed = await loadTemplate(t.path);
             if (!parsed) throw new Error(`Template "${t.path}" unavailable`);
             return parsed.content;
           },
+          loadResource: (resourcePath: string) => loadSkillResource(t.path, resourcePath),
         }));
 
     if (sources.personal) {

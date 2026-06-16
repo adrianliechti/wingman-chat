@@ -12,7 +12,15 @@ import { run as agentRun } from "@/shared/lib/agent";
 import type { Client } from "@/shared/lib/client";
 import { getErrorInfo } from "@/shared/lib/errors";
 import { notify } from "@/shared/lib/notify";
-import type { Content, Message, Model, ToolCallContent, ToolContext } from "@/shared/types/chat";
+import type {
+  Content,
+  Message,
+  Model,
+  TextContent,
+  ToolCallContent,
+  ToolContext,
+  ToolResultContent,
+} from "@/shared/types/chat";
 import { Role } from "@/shared/types/chat";
 import type {
   ConsentResult,
@@ -31,9 +39,31 @@ function messagesSinceSummary(messages: Message[]): Message[] {
   return idx > 0 ? messages.slice(idx) : messages;
 }
 
-/** Drop messages before the last summary marker so API requests stay small. */
+const SKILL_TOOL_NAMES = new Set(["read_skill", "read_skill_resource"]);
+
+/**
+ * Skill instructions are durable behavioral guidance, so they must survive
+ * pruning at the summary marker (agentskills.io "manage skill context over
+ * time"). We carry the instructions across as plain assistant text rather than
+ * replaying the original tool_call/tool_result pair: a skill read batched with
+ * another tool call in the same turn would otherwise have its sibling result
+ * pruned, leaving an orphaned function_call the Responses API rejects.
+ */
+function preservedSkillContent(message: Message): Message[] {
+  const texts = message.content
+    .filter((p): p is ToolResultContent => p.type === "tool_result" && SKILL_TOOL_NAMES.has(p.name))
+    .flatMap((p) => p.result.filter((r): r is TextContent => r.type === "text").map((r) => r.text));
+  return texts.length ? [{ role: Role.Assistant, content: texts.map((text) => ({ type: "text", text })) }] : [];
+}
+
+/** Drop messages before the last summary marker so API requests stay small,
+ *  carrying skill instructions across as text so they survive compaction. */
 function pruneAtSummary(messages: Message[]): Message[] {
-  const pruned = messagesSinceSummary(messages);
+  const idx = messages.findLastIndex((m) => m.content.some((p) => p.type === "summary"));
+  if (idx <= 0) return messages;
+
+  const preserved = messages.slice(0, idx).flatMap(preservedSkillContent);
+  const pruned = [...preserved, ...messages.slice(idx)];
   if (pruned.length < messages.length) {
     console.log(`[Summary] Pruning ${messages.length - pruned.length} messages before summary marker`);
   }

@@ -19,12 +19,15 @@ export interface SkillTemplate {
   category: string;
   /** Page-absolute URL of the SKILL.md, e.g. "/skills/engineering/code-review/SKILL.md". */
   path: string;
+  /** Bundled resource paths relative to this skill's folder, e.g. "scripts/extract.py". */
+  resources?: string[];
 }
 
 const INDEX_URL = "/skills";
 
 let indexPromise: Promise<SkillTemplate[]> | null = null;
 const contentCache = new Map<string, Promise<ParsedSkill | null>>();
+const resourceCache = new Map<string, Promise<string | null>>();
 
 /**
  * Fetch and cache the template manifest. Returns an empty list when no manifest
@@ -74,5 +77,31 @@ export function loadSkillTemplate(path: string): Promise<ParsedSkill | null> {
     if (!skill) contentCache.delete(path);
   });
   contentCache.set(path, promise);
+  return promise;
+}
+
+export function skillResourceUrl(skillPath: string, resourcePath: string): string {
+  const base = skillPath.replace(/\/SKILL\.md$/, "");
+  const encoded = resourcePath.split("/").map(encodeURIComponent).join("/");
+  return `${base}/${encoded}`;
+}
+
+/** Fetch a text/code resource listed in the skill inventory. */
+export function loadSkillResource(skillPath: string, resourcePath: string): Promise<string | null> {
+  const url = skillResourceUrl(skillPath, resourcePath);
+  const cached = resourceCache.get(url);
+  if (cached) return cached;
+
+  const promise = fetch(url)
+    .then(async (resp) => {
+      if (!resp.ok) return null;
+      return resp.text();
+    })
+    .catch(() => null);
+
+  promise.then((content) => {
+    if (content === null) resourceCache.delete(url);
+  });
+  resourceCache.set(url, promise);
   return promise;
 }

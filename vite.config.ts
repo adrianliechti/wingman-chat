@@ -60,6 +60,46 @@ function walkFiles(dir: string, match: (name: string) => boolean): string[] {
 const toRel = (root: string, p: string) =>
   path.relative(root, p).split(path.sep).join("/");
 
+// Mirror of the Go server's skill-resource listing (pkg/server/library): the
+// text files the client can fetch and read inline via read_skill_resource.
+const SKILL_RESOURCE_EXTENSIONS = new Set([
+  ".css",
+  ".csv",
+  ".html",
+  ".js",
+  ".json",
+  ".md",
+  ".mjs",
+  ".py",
+  ".sql",
+  ".ts",
+  ".txt",
+  ".xml",
+  ".yaml",
+  ".yml",
+]);
+
+function inventorySkillResources(skillDir: string): string[] {
+  if (!fs.existsSync(skillDir)) return [];
+  const out: string[] = [];
+
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(p);
+        continue;
+      }
+      const rel = toRel(skillDir, p);
+      if (rel === "SKILL.md" || !SKILL_RESOURCE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
+      out.push(rel);
+    }
+  };
+
+  walk(skillDir);
+  return out.sort((a, b) => a.localeCompare(b));
+}
+
 function inventorySkills(root: string) {
   return walkFiles(root, (n) => n === "SKILL.md")
     .map((p) => {
@@ -71,6 +111,7 @@ function inventorySkills(root: string) {
         description: fm.description ?? "",
         category: parts.length > 2 ? parts[0] : "",
         path: `/skills/${r}`,
+        resources: inventorySkillResources(path.dirname(p)),
       };
     })
     .filter((e) => e.name)
