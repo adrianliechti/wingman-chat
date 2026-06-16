@@ -27,9 +27,11 @@ Pull the real material from the conversation/workspace. Then commit to ONE visua
 - **Size hierarchy:** title **32–40pt bold**, section header 24–28pt bold, body 16–18pt, caption 14pt.
   The title must be **≥ 1.75× the body size**.
 - **Pick a palette archetype** per deck — corporate-neutral / warm-editorial / bold-startup /
-  academic-muted / playful-bright — and commit to it. **Do not reflexively default to a dark-blue
-  background.** Two background colors max (content + section dividers). `read_skill theme-factory` for
-  ready palettes.
+  academic-muted / playful-bright — and commit to it. Make it **content-informed**: if swapping the
+  palette into an unrelated deck would still work, it's too generic — tie the colors to *this* topic.
+  **One color dominates** (~60% of the deck), 1–2 supporting tones, one sharp accent — never equal
+  weight. **Do not reflexively default to a dark-blue background.** Two background colors max (content +
+  section dividers). `read_skill theme-factory` for ready palettes.
 
 ## Build it
 

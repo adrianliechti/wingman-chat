@@ -16,6 +16,8 @@ const MIME_OVERRIDES: Record<string, string> = {
   ".scm": "text/x-scheme", // mime: application/vnd.lotus-screencam
   ".vhd": "text/x-vhdl", // mime: application/x-virtualbox-vhd
   ".json5": "application/json", // mime: application/json5 (not in isTextContentType)
+  ".mmd": "text/vnd.mermaid", // mime: null → would be stored as binary; it's Mermaid diagram source
+  ".mermaid": "text/vnd.mermaid",
   // Binary files with no MIME entry (null → undefined → wrongly treated as text)
   ".tgz": "application/gzip",
   ".pyc": "application/octet-stream",

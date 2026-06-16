@@ -81,7 +81,7 @@ Generate a single self-contained HTML file using the base template below. The fi
 - Print-friendly styles
 
 **Interactivity (JavaScript):**
-- Chart.js for interactive charts (included via CDN)
+- Inline SVG charts drawn with vanilla JS — **no library, no CDN, fully offline**
 - Filter dropdowns that update all charts and tables simultaneously
 - Sortable table columns
 - Hover tooltips on charts
@@ -94,15 +94,15 @@ Generate a single self-contained HTML file using the base template below. The fi
 
 ### 5. Implement Chart Types
 
-Use Chart.js for all charts. Common dashboard chart patterns:
+Draw charts as **inline SVG** with the small vanilla-JS helpers below — no library, no network, so the
+file works offline. Each helper renders into a `<div>` and is re-callable to redraw on filter change.
 
 - **Line chart**: Time series trends
 - **Bar chart**: Category comparisons
 - **Doughnut chart**: Composition (when <6 categories)
-- **Stacked bar**: Composition over time
-- **Mixed (bar + line)**: Volume with rate overlay
 
-Use the Chart.js integration patterns below for each chart type.
+Use the inline-SVG patterns below for each chart type. (For very dense statistical charts, render a
+PNG with the Python interpreter — `matplotlib` — and embed it as a base64 `data:` URI instead.)
 
 ### 6. Add Interactivity
 
@@ -128,8 +128,6 @@ Every dashboard follows this structure:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard Title</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0" integrity="sha384-cVMg8E3QFwTvGCDuK+ET4PD341jF3W8nO1auiXfuZNQkzbUUiBGLsIQUE+b1mxws" crossorigin="anonymous"></script>
     <style>
         /* Dashboard styles go here */
     </style>
@@ -245,191 +243,104 @@ function formatValue(value, format) {
 }
 ```
 
-## Chart.js Integration
+## Inline SVG Charts (no dependencies)
+
+All charts are drawn as inline SVG with plain JavaScript — no Chart.js, no CDN — so the file renders
+**offline**. Each helper renders into a `<div>` (not a `<canvas>`) and is **idempotent**: call it again
+with filtered data to redraw. `formatValue` (defined above) formats axis labels; native `<title>`
+elements give hover tooltips for free.
 
 ### Chart Container Pattern
 
 ```html
 <div class="chart-container">
     <h3 class="chart-title">Monthly Revenue Trend</h3>
-    <canvas id="revenue-chart"></canvas>
+    <div id="revenue-chart" class="chart"></div>
 </div>
 ```
 
-### Line Chart
-
 ```javascript
-function createLineChart(canvasId, labels, datasets) {
-    const ctx = document.getElementById(canvasId).getContext('2d');
-    return new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: datasets.map((ds, i) => ({
-                label: ds.label,
-                data: ds.data,
-                borderColor: COLORS[i % COLORS.length],
-                backgroundColor: COLORS[i % COLORS.length] + '20',
-                borderWidth: 2,
-                fill: ds.fill || false,
-                tension: 0.3,
-                pointRadius: 3,
-                pointHoverRadius: 6,
-            }))
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false,
-            },
-            plugins: {
-                legend: {
-                    position: 'top',
-                    labels: { usePointStyle: true, padding: 20 }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return `${context.dataset.label}: ${formatValue(context.parsed.y, 'currency')}`;
-                        }
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    grid: { display: false }
-                },
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        callback: function(value) {
-                            return formatValue(value, 'currency');
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
+const CHART_COLORS = ['#4C72B0', '#DD8452', '#55A868', '#C44E52', '#8172B3', '#937860'];
 ```
 
 ### Bar Chart
 
 ```javascript
-function createBarChart(canvasId, labels, data, options = {}) {
-    const ctx = document.getElementById(canvasId).getContext('2d');
-    const isHorizontal = options.horizontal || labels.length > 8;
-
-    return new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: options.label || 'Value',
-                data: data,
-                backgroundColor: options.colors || COLORS.map(c => c + 'CC'),
-                borderColor: options.colors || COLORS,
-                borderWidth: 1,
-                borderRadius: 4,
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            indexAxis: isHorizontal ? 'y' : 'x',
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return formatValue(context.parsed[isHorizontal ? 'x' : 'y'], options.format || 'number');
-                        }
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    beginAtZero: true,
-                    grid: { display: isHorizontal },
-                    ticks: isHorizontal ? {
-                        callback: function(value) {
-                            return formatValue(value, options.format || 'number');
-                        }
-                    } : {}
-                },
-                y: {
-                    beginAtZero: !isHorizontal,
-                    grid: { display: !isHorizontal },
-                    ticks: !isHorizontal ? {
-                        callback: function(value) {
-                            return formatValue(value, options.format || 'number');
-                        }
-                    } : {}
-                }
-            }
-        }
+function renderBarChart(elId, labels, values, opts = {}) {
+    const W = 600, H = 320, P = { l: 52, r: 16, t: 12, b: 44 };
+    const iw = W - P.l - P.r, ih = H - P.t - P.b;
+    const max = Math.max(1, ...values), bw = iw / Math.max(1, labels.length);
+    let g = '';                                            // gridlines + y-axis labels
+    for (let i = 0; i <= 4; i++) {
+        const y = P.t + ih - (ih * i) / 4;
+        g += `<line x1="${P.l}" y1="${y}" x2="${W - P.r}" y2="${y}" stroke="#e9ecef"/>`
+           + `<text x="${P.l - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="#6c757d">${formatValue((max * i) / 4, opts.format || 'number')}</text>`;
+    }
+    let bars = '';
+    values.forEach((v, i) => {
+        const h = ih * (v / max), x = P.l + bw * i + bw * 0.15, w = bw * 0.7, y = P.t + ih - h;
+        bars += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${opts.color || CHART_COLORS[0]}"><title>${labels[i]}: ${formatValue(v, opts.format || 'number')}</title></rect>`
+              + `<text x="${x + w / 2}" y="${H - P.b + 16}" text-anchor="middle" font-size="11" fill="#6c757d">${labels[i]}</text>`;
     });
+    document.getElementById(elId).innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="bar chart">${g}${bars}</svg>`;
+}
+```
+
+### Line Chart
+
+```javascript
+function renderLineChart(elId, labels, series, opts = {}) {
+    // series: [{ label, data: [...] }, ...]
+    const W = 600, H = 320, P = { l: 52, r: 16, t: 12, b: 44 };
+    const iw = W - P.l - P.r, ih = H - P.t - P.b;
+    const max = Math.max(1, ...series.flatMap((s) => s.data));
+    const X = (i) => P.l + (iw * i) / Math.max(1, labels.length - 1);
+    const Y = (v) => P.t + ih - ih * (v / max);
+    let g = '';
+    for (let i = 0; i <= 4; i++) {
+        const y = P.t + ih - (ih * i) / 4;
+        g += `<line x1="${P.l}" y1="${y}" x2="${W - P.r}" y2="${y}" stroke="#e9ecef"/>`
+           + `<text x="${P.l - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="#6c757d">${formatValue((max * i) / 4, opts.format || 'number')}</text>`;
+    }
+    let lines = '';
+    series.forEach((s, si) => {
+        const c = CHART_COLORS[si % CHART_COLORS.length];
+        lines += `<polyline points="${s.data.map((v, i) => `${X(i)},${Y(v)}`).join(' ')}" fill="none" stroke="${c}" stroke-width="2"/>`
+               + s.data.map((v, i) => `<circle cx="${X(i)}" cy="${Y(v)}" r="3" fill="${c}"><title>${labels[i]}: ${formatValue(v, opts.format || 'number')}</title></circle>`).join('');
+    });
+    const xl = labels.map((l, i) => `<text x="${X(i)}" y="${H - P.b + 16}" text-anchor="middle" font-size="11" fill="#6c757d">${l}</text>`).join('');
+    document.getElementById(elId).innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="line chart">${g}${lines}${xl}</svg>`;
 }
 ```
 
 ### Doughnut Chart
 
 ```javascript
-function createDoughnutChart(canvasId, labels, data) {
-    const ctx = document.getElementById(canvasId).getContext('2d');
-    return new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: labels,
-            datasets: [{
-                data: data,
-                backgroundColor: COLORS.map(c => c + 'CC'),
-                borderColor: '#ffffff',
-                borderWidth: 2,
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            cutout: '60%',
-            plugins: {
-                legend: {
-                    position: 'right',
-                    labels: { usePointStyle: true, padding: 15 }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            const pct = ((context.parsed / total) * 100).toFixed(1);
-                            return `${context.label}: ${formatValue(context.parsed, 'number')} (${pct}%)`;
-                        }
-                    }
-                }
-            }
-        }
+function renderDoughnutChart(elId, labels, values) {
+    const total = values.reduce((a, b) => a + b, 0) || 1;
+    const R = 70, C = 2 * Math.PI * R, cx = 90, cy = 90;
+    let off = 0, segs = '', legend = '';
+    values.forEach((v, i) => {
+        const len = C * (v / total), c = CHART_COLORS[i % CHART_COLORS.length];
+        segs += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${c}" stroke-width="28" stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-off}" transform="rotate(-90 ${cx} ${cy})"><title>${labels[i]}: ${formatValue(v, 'number')} (${((100 * v) / total).toFixed(1)}%)</title></circle>`;
+        legend += `<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin:3px 0"><span style="width:10px;height:10px;border-radius:2px;background:${c};display:inline-block"></span>${labels[i]} — ${formatValue(v, 'number')}</div>`;
+        off += len;
     });
+    document.getElementById(elId).innerHTML =
+        `<div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap;justify-content:center"><svg viewBox="0 0 180 180" width="180" height="180" role="img" aria-label="doughnut chart">${segs}</svg><div>${legend}</div></div>`;
 }
 ```
 
 ### Updating Charts on Filter Change
 
+The helpers are idempotent — recompute the arrays from `this.filteredData` and call the same `render*`
+function again. (No diffing, no animation state to manage — replacing `innerHTML` is instant.)
+
 ```javascript
-function updateChart(chart, newLabels, newData) {
-    chart.data.labels = newLabels;
-
-    if (Array.isArray(newData[0])) {
-        // Multiple datasets
-        newData.forEach((data, i) => {
-            chart.data.datasets[i].data = data;
-        });
-    } else {
-        chart.data.datasets[0].data = newData;
-    }
-
-    chart.update('none'); // 'none' disables animation for instant update
+updateCharts() {
+    // months / monthlyRevenue / categories / categoryTotals derived from this.filteredData
+    renderLineChart('revenue-chart', months, [{ label: 'Revenue', data: monthlyRevenue }], { format: 'currency' });
+    renderBarChart('category-chart', categories, categoryTotals, { format: 'currency' });
 }
 ```
 
@@ -707,8 +618,10 @@ body {
     margin-bottom: 16px;
 }
 
-.chart-container canvas {
-    max-height: 300px;
+.chart-container .chart svg {
+    width: 100%;
+    height: auto;
+    display: block;
 }
 ```
 
@@ -870,11 +783,12 @@ const CHART_DATA = {
 
 ### Chart Performance
 
-- Limit line charts to <500 data points per series (downsample if needed)
-- Limit bar charts to <50 categories
-- For scatter plots, cap at 1,000 points (use sampling for larger datasets)
-- Disable animations for dashboards with many charts: `animation: false` in Chart.js options
-- Use `Chart.update('none')` instead of `Chart.update()` for filter-triggered updates
+- Limit line charts to <500 data points per series (downsample if needed) — an SVG `<polyline>` with
+  thousands of points gets sluggish.
+- Limit bar charts to <50 categories; for many categories, switch to a horizontal layout or a table.
+- Redrawing replaces the chart's `innerHTML` — already instant, with no animation state to manage.
+- For very dense statistical charts, render a PNG with the Python interpreter (`matplotlib`) and embed
+  it as a base64 `data:` URI rather than drawing thousands of SVG nodes.
 
 ### DOM Performance
 

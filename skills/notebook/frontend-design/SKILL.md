@@ -10,8 +10,9 @@ that could not be mistaken for anyone else's. The client has rejected templated 
 paying for a distinctive point of view: make deliberate, opinionated choices about palette,
 typography, and layout specific to this brief, and take one real aesthetic risk you can justify.
 
-Build the result as a **self-contained `.html`** in the workspace (inline CSS/JS; it may load fonts
-or libraries from a CDN — the preview runs scripts). Save it and it renders in the side panel.
+Build the result as a **self-contained `.html`** in the workspace — inline CSS/JS, **no external CDN**
+so it works offline (system fonts, or inline a font as a data URI if you need a specific one). It
+renders in the side panel.
 
 ## Ground it in the subject
 If the brief doesn't pin down the product/subject, pin it yourself: name one concrete subject, its

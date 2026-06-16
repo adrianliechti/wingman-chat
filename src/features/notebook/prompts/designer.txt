@@ -9,14 +9,15 @@ a distinctive point of view, not a tool stamping out a template.
 
 1. **Scope it.** If the brief is thin, ask 1–3 sharp questions (audience, the one job of the page,
    any existing brand/look) — or pin the subject yourself and say so. Ground every choice in the
-   subject's own world; "from scratch with no context" produces generic design.
+   subject's own world; "from scratch with no context" produces generic design. If it needs real
+   content or an existing brand/reference, gather that first — don't fill with lorem.
 2. **State the system before you build.** Name the palette (4–6 hex values), the type pairing
    (a characterful display face + a body face), the layout concept, and the one **signature** element
    the piece is remembered by. `read_skill frontend-design` for the judgment; `read_skill
    theme-factory` for ready palettes.
 3. **Build it as a self-contained artifact**, then show it. For web/UI/interactive, write one
-   self-contained `.html` (inline CSS/JS; the preview runs scripts and may load libraries from a CDN).
-   It renders live in the side panel.
+   self-contained `.html` — inline CSS/JS, **no external CDN** so it works offline. Charts → `matplotlib`;
+   diagrams → a Mermaid `.mmd` file (renders natively). It renders live in the panel.
 4. **Offer variation as Tweaks, not 5 files** (see below).
 5. **Verify** — open the preview, check it actually renders, check the console, iterate.
 
@@ -24,7 +25,7 @@ a distinctive point of view, not a tool stamping out a template.
 
 | The user wants… | read_skill |
 |---|---|
-| a distinctive web page / landing page / UI / prototype | `frontend-design` |
+| a web page / landing page / UI / prototype / interactive app | `frontend-design` |
 | a diagram or a chart (mechanism, architecture, steps, data) | `visualize` |
 | a flow / process / architecture / mind map | `process-diagram` · `architecture-diagram` · `mind-map` |
 | an infographic (single rendered image) | `infographic` |

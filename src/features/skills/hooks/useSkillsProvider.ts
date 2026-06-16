@@ -63,7 +63,13 @@ export function useSkillsProvider(sources: SkillSources): ToolProvider | null {
       entries.push(...templateEntries((t) => isNotebookSkillCategory(t.category)));
     }
 
-    return createSkillsProvider(entries, {
+    // A name can appear in both the catalog and notebook category groups (e.g.
+    // `frontend-design`). Dedupe by name, letting the last push win — notebook
+    // is pushed last and is the curated, offline-correct version — so the prompt
+    // list and `read_skill` resolution stay unambiguous when both sources are on.
+    const deduped = [...new Map(entries.map((e) => [e.name, e])).values()];
+
+    return createSkillsProvider(deduped, {
       id: SKILLS_PROVIDER_ID,
       name: "Skills",
       description: "Available skills",

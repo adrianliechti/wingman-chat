@@ -9,6 +9,7 @@ export type ArtifactKind =
   | "text"
   | "code"
   | "svg"
+  | "mermaid"
   | "html"
   | "csv"
   | "markdown"
@@ -125,6 +126,11 @@ export function artifactKind(path: string, contentType?: string): ArtifactKind {
   // SVG files
   if (ext === "svg") {
     return "svg";
+  }
+
+  // Mermaid diagrams — rendered natively (offline) in the drawer
+  if (ext === "mmd" || ext === "mermaid" || normalizedContentType === "text/vnd.mermaid") {
+    return "mermaid";
   }
 
   // CSV files

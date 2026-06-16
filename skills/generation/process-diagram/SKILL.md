@@ -1,13 +1,13 @@
 ---
 name: process-diagram
-description: Design a process / workflow diagram (swimlane / BPMN-style flow) from the conversation and workspace material, delivered as an interactive Mermaid HTML diagram. Trigger with "map this process", "draw the workflow", "create a swimlane diagram", "model this as BPMN", or whenever the user wants a business/operational process visualized.
+description: Design a process / workflow diagram (swimlane / BPMN-style flow) from the conversation and workspace material, delivered as a Mermaid `.mmd` diagram that renders natively in the panel. Trigger with "map this process", "draw the workflow", "create a swimlane diagram", "model this as BPMN", or whenever the user wants a business/operational process visualized.
 ---
 
 # Process Diagram
 
 Design a disciplined process flow — not a sketch. You are acting as a business analyst: produce a
-diagram a process-owner or control function would accept. You write a self-contained Mermaid HTML
-file that previews in the artifacts panel.
+diagram a process-owner or control function would accept. You write a Mermaid `.mmd` file that renders
+natively in the panel (offline).
 
 ## 1. Gather the material
 
@@ -37,10 +37,10 @@ lane conventions.
   would draw, and **mark synthesized steps** (prefix the label or add a note with "inferred") so
   the user can review them.
 
-## 4. Build it with Mermaid in HTML
+## 4. Write it as Mermaid (.mmd)
 
-Use a `flowchart` with one `subgraph` per lane. Write a single `process.html` (Mermaid from CDN —
-the artifacts preview runs scripts and has network access):
+Use a `flowchart` with one `subgraph` per lane, and write it to a `.mmd` file — the drawer renders it
+natively, **offline**.
 
 ```python
 mermaid = """flowchart TB
@@ -59,18 +59,9 @@ mermaid = """flowchart TB
   end
   approve --> done([End: onboarded])
 """
-
-doc = """<!doctype html><html><head><meta charset="utf-8"><title>Process</title>
-<style>body{margin:0;font-family:system-ui,sans-serif}</style></head><body>
-<pre class="mermaid">__MM__</pre>
-<script type="module">
-import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-mermaid.initialize({startOnLoad:true,flowchart:{htmlLabels:true}});
-</script></body></html>"""
-
-with open("process.html", "w") as f:
-    f.write(doc.replace("__MM__", mermaid))
-print("wrote process.html")
+with open("process.mmd", "w") as f:
+    f.write(mermaid)
+print("wrote process.mmd")
 ```
 
 Use stable node ids; escape `&`, `<`, `>` in labels (`&amp;` etc.). Decision nodes use `{ }`;
@@ -79,4 +70,4 @@ start/end use `([ ])`.
 ## 5. Deliver
 
 Tell the user the diagram is ready and call out anything you marked as inferred so they can refine
-it. Offline fallback: emit an `.svg`.
+it. To revise, edit the `.mmd`.

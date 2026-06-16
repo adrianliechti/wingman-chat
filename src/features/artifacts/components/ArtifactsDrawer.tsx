@@ -35,6 +35,7 @@ import { HtmlEditor } from "@/shared/ui/editors/HtmlEditor";
 import { JsEditor } from "@/shared/ui/editors/JsEditor";
 import { MarkdownEditor } from "@/shared/ui/editors/MarkdownEditor";
 import { MediaEditor } from "@/shared/ui/editors/MediaEditor";
+import { MermaidEditor } from "@/shared/ui/editors/MermaidEditor";
 import { OfficeMarkdownEditor } from "@/shared/ui/editors/OfficeMarkdownEditor";
 import { PdfEditor } from "@/shared/ui/editors/PdfEditor";
 import { PptxEditor } from "@/shared/ui/editors/PptxEditor";
@@ -524,6 +525,15 @@ export function ArtifactsDrawer() {
             onViewModeChange={setViewMode}
           />
         );
+      case "mermaid":
+        return (
+          <MermaidEditor
+            key={editorKey}
+            content={activeFileData.content}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+          />
+        );
       case "csv":
         return (
           <CsvEditor
@@ -607,7 +617,7 @@ export function ArtifactsDrawer() {
     const kind = activeFileData
       ? artifactKind(activeFileData.path, activeFileData.contentType)
       : artifactKind(activeFile);
-    return ["html", "svg", "csv", "markdown"].includes(kind);
+    return ["html", "svg", "mermaid", "csv", "markdown"].includes(kind);
   };
 
   // Handle run button click

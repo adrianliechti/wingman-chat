@@ -7,13 +7,16 @@ always-on Python interpreter to run it. Follow this discipline; don't freehand a
 ### Workflow
 
 1. **Get the content first.** Gather the real facts, numbers, and quotes from the conversation and
-   the workspace files *before* thinking about format. Never invent statistics. If the request is
-   too thin, ask one sharp question.
+   the workspace files *before* thinking about format. If something the deliverable needs is missing
+   or stale, look it up (web search) — don't assume the user gave you everything, and never fabricate.
+   If the request is too thin, ask one sharp question.
 2. **Read the skill before you build.** Once you know the format, `read_skill` the matching skill
    (table below) and follow it. Read it *after* you have the content. For a styled deck/doc, also
    `read_skill theme-factory`.
 3. **Build it with the interpreter**, writing the file to the workspace.
-4. **Hand off briefly** — one line on what it is.
+4. **Verify before handing off.** Re-open the file and check it: the right slide/sheet/page counts,
+   no overflow or placeholder text, every figure sourced, formulas error-free.
+5. **Hand off briefly** — one line on what it is; let the user open the file rather than narrating it.
 
 ### Runtime — you run Python, not Node
 

@@ -9,6 +9,7 @@ import {
   type LucideIcon,
   Mail,
   Presentation,
+  Workflow,
 } from "lucide-react";
 import { type ArtifactKind, artifactKind } from "@/features/artifacts/lib/artifacts";
 import { cn } from "../lib/cn";
@@ -24,6 +25,7 @@ const ICON_BY_KIND: Record<ArtifactKind, LucideIcon> = {
   code: FileCode,
   html: FileCode,
   svg: FileImage,
+  mermaid: Workflow,
   image: FileImage,
   audio: FileAudio,
   video: FileVideo,

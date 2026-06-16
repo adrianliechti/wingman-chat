@@ -227,14 +227,16 @@ fig = px.line(df, x='date', y='value', color='category',
               title='Interactive Metric Trend',
               labels={'value': 'Metric Value', 'date': 'Date'})
 fig.update_layout(hovermode='x unified')
-fig.write_html('interactive_chart.html')
-fig.show()
+# include_plotlyjs=True INLINES plotly.js so the file works OFFLINE (the default
+# 'cdn' fetches ~3.5MB from cdn.plot.ly at view time). Writing the .html renders
+# it in the side panel — there's no fig.show() in this runtime.
+fig.write_html('interactive_chart.html', include_plotlyjs=True)
 
 # Interactive scatter with hover data
 fig = px.scatter(df, x='metric_a', y='metric_b', color='category',
                  size='size_metric', hover_data=['name', 'detail_field'],
                  title='Correlation Analysis')
-fig.show()
+fig.write_html('scatter_analysis.html', include_plotlyjs=True)
 ```
 
 ## Design Principles

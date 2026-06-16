@@ -88,8 +88,7 @@ ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
 
 plt.tight_layout()
-plt.savefig('chart_name.png', dpi=150, bbox_inches='tight')
-plt.show()
+plt.savefig('chart_name.png', dpi=150, bbox_inches='tight')  # saving renders it in the side panel
 ```
 
 ### 5. Apply Design Best Practices

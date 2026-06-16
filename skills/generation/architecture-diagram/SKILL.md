@@ -1,12 +1,12 @@
 ---
 name: architecture-diagram
-description: Design a software/system architecture diagram (C4 context/container, or a sequence diagram) from the conversation and workspace material, delivered as an interactive Mermaid HTML diagram. Trigger with "draw the architecture", "create a C4 diagram", "diagram the system", "show a sequence diagram", or whenever the user wants a technical system visualized.
+description: Design a software/system architecture diagram (C4 context/container, or a sequence diagram) from the conversation and workspace material, delivered as a Mermaid `.mmd` diagram that renders natively in the panel. Trigger with "draw the architecture", "create a C4 diagram", "diagram the system", "show a sequence diagram", or whenever the user wants a technical system visualized.
 ---
 
 # Architecture Diagram
 
-Design a clear technical architecture diagram. You write a self-contained Mermaid HTML file that
-previews in the artifacts panel.
+Design a clear technical architecture diagram. You write a Mermaid `.mmd` file that renders natively
+in the panel (offline).
 
 ## 1. Gather the material
 
@@ -28,7 +28,7 @@ relationships (who calls whom, over what protocol).
 - **Group boundaries** (a system boundary, a deployment node) make the diagram readable.
 - Where the source is silent, infer sensibly and **mark inferred elements** so the user can review.
 
-## 4. Build it with Mermaid in HTML
+## 4. Write it as Mermaid (.mmd)
 
 **Container/context (flowchart):**
 
@@ -56,20 +56,12 @@ mermaid = """sequenceDiagram
 """
 ```
 
-Wrap either in a single self-contained `architecture.html` that loads Mermaid from CDN (the
-artifacts preview runs scripts and has network access):
+Write either to an `architecture.mmd` file — the drawer renders it natively, **offline**:
 
 ```python
-doc = """<!doctype html><html><head><meta charset="utf-8"><title>Architecture</title>
-<style>body{margin:0;font-family:system-ui,sans-serif}</style></head><body>
-<pre class="mermaid">__MM__</pre>
-<script type="module">
-import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-mermaid.initialize({startOnLoad:true,flowchart:{htmlLabels:true}});
-</script></body></html>"""
-with open("architecture.html","w") as f:
-    f.write(doc.replace("__MM__", mermaid))
-print("wrote architecture.html")
+with open("architecture.mmd", "w") as f:
+    f.write(mermaid)
+print("wrote architecture.mmd")
 ```
 
 Escape `&`, `<`, `>` in labels. Datastores use `[( )]`; queues `[[ ]]`.
