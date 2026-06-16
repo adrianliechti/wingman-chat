@@ -55,6 +55,10 @@ const CASES = [
   ["import docx → python-docx", "import docx\ndocx.__version__"],
   ["pdfplumber → pdfminer-six → cryptography", "import pdfplumber\npdfplumber.__version__"],
   ["markdownify (+ markdown, bs4)", "import markdownify\nmarkdownify.markdownify('<b>x</b>')"],
+  // extract-msg pulls rtfde → oletools; a cyclic oletools↔pcodedmp edge in the
+  // lock makes this import hang forever (the bug PRUNED_DEPS fixes), so a clean
+  // import here proves the chain resolves.
+  ["import extract_msg (.msg → rtfde → oletools)", "import extract_msg\nextract_msg.__version__"],
 
   // --- Images (heavy) ---
   ["opencv (cv2)", "import cv2, numpy as np\ncv2.cvtColor(np.zeros((4,4,3),np.uint8),cv2.COLOR_BGR2GRAY).shape==(4,4)", { heavy: true }],

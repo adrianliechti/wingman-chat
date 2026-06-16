@@ -102,6 +102,24 @@ const PYPI_PACKAGES = [
 //   kaleido   — plotly static image export; our PLOTLY_IMAGE_SHIM renders instead.
 const MOCKED_NATIVE_DEPS = new Set(["pypdfium2", "kaleido"]);
 
+// Per-package dependency edges to drop from a dependent's `depends`. Unlike
+// MOCKED_NATIVE_DEPS (native wheels lazily imported), these are pure-Python deps
+// that either form a load-time CYCLE that hangs Pyodide's resolver or simply
+// can't run under Emscripten. We still want the dependent (for one small,
+// self-contained submodule), so we keep it but sever these edges — both from the
+// bundle (BFS) and from the lock's `depends` (so loadPackage never pulls them).
+// Keys and values must be PEP 503 normalized.
+//   oletools — only reached via extract-msg → RTFDE → `oletools.common.codepages`
+//   (a pure codepage table). Its other deps are CLI/GUI tooling we never touch:
+//     pcodedmp   — VBA p-code disassembler; depends back on oletools, so the
+//                  `oletools → pcodedmp → oletools` cycle makes loadPackage()
+//                  (hence `import extract_msg`) hang forever.
+//     easygui    — Tkinter GUI; cannot import under Emscripten (no _tkinter).
+//     colorclass — ANSI color for CLI output; dead weight headless.
+const PRUNED_DEPS = {
+  oletools: new Set(["pcodedmp", "easygui", "colorclass"]),
+};
+
 // --- Helpers ----------------------------------------------------------------
 
 const sha256 = (buffer) => crypto.createHash("sha256").update(buffer).digest("hex");
@@ -249,6 +267,7 @@ async function resolveTransitiveDeps(pypiPackages, pyodideLock, builtinTargets) 
     const pkg = queue.shift();
     for (const dep of await fetchDeps(pkg)) {
       if (MOCKED_NATIVE_DEPS.has(dep)) continue; // native dep we omit; see MOCKED_NATIVE_DEPS
+      if (PRUNED_DEPS[pkg]?.has(dep)) continue; // cycle / non-WASM edge we sever; see PRUNED_DEPS
       if (isBuiltin(dep)) {
         if (!builtins.has(dep)) {
           builtins.add(dep);
@@ -270,6 +289,7 @@ async function resolveTransitiveDeps(pypiPackages, pyodideLock, builtinTargets) 
     const deps = new Set();
     for (const dep of depsCache.get(pkg) || []) {
       if (MOCKED_NATIVE_DEPS.has(dep) || dep === pkg) continue;
+      if (PRUNED_DEPS[pkg]?.has(dep)) continue; // see PRUNED_DEPS
       if (isBuiltin(dep)) deps.add(builtinOriginal(dep));
       else if (pypi.has(dep)) deps.add(dep);
     }
@@ -427,6 +447,43 @@ function injectPypiIntoLock(entries) {
   console.log(`  Injected ${entries.length} PyPI packages into pyodide-lock.json`);
 }
 
+/**
+ * Fail the build on any cycle in the lock's `depends` graph. Pyodide's
+ * loadPackage() walks `depends` recursively with no cycle guard, so a cyclic
+ * edge makes it — and any `import` that triggers it — hang forever. That is the
+ * exact trap `oletools → pcodedmp → oletools` set for `import extract_msg`
+ * (silent infinite hang) before PRUNED_DEPS severed it. This static check turns
+ * a would-be runtime hang into a loud build failure, covering future additions.
+ */
+function assertAcyclicLock() {
+  const lockPath = path.join(OUTPUT_DIR, "pyodide-lock.json");
+  const { packages } = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+  const keyByNormalized = new Map(Object.keys(packages).map((n) => [normalizePkgName(n), n]));
+  const VISITING = 1;
+  const DONE = 2;
+  const state = new Map();
+  const stack = [];
+
+  const walk = (key) => {
+    state.set(key, VISITING);
+    stack.push(key);
+    for (const dep of packages[key].depends) {
+      const depKey = keyByNormalized.get(normalizePkgName(dep));
+      if (!depKey) continue; // dep not bundled (e.g. mocked native) — no edge
+      if (state.get(depKey) === VISITING) {
+        const cycle = stack.slice(stack.indexOf(depKey)).concat(depKey).join(" → ");
+        throw new Error(`dependency cycle in pyodide-lock.json: ${cycle}`);
+      }
+      if (!state.has(depKey)) walk(depKey);
+    }
+    stack.pop();
+    state.set(key, DONE);
+  };
+
+  for (const key of Object.keys(packages)) if (!state.has(key)) walk(key);
+  console.log("  ✓ no dependency cycles in pyodide-lock.json");
+}
+
 // --- Main -------------------------------------------------------------------
 
 function copyPyodideRuntime() {
@@ -483,6 +540,7 @@ async function main() {
   const builtinWheelFiles = await bundlePyodideBuiltins(builtins, pyodideLock, cdnBase);
   const { entries, expectedWheelFiles: pypiWheelFiles } = await bundlePypiWheels(pypi, directDepsByPkg);
   injectPypiIntoLock(entries);
+  assertAcyclicLock();
   pruneUnexpectedWheelFiles(new Set([...builtinWheelFiles, ...pypiWheelFiles]));
 
   // Remove the manifest from the previous (micropip-based) scheme if present.
