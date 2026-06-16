@@ -4,6 +4,7 @@ import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import { useCanvasProvider } from "@/features/canvas/hooks/useCanvasProvider";
+import { useNotebookGuideProvider } from "@/features/notebook/hooks/useNotebookGuideProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
 import { MCPClient } from "@/features/settings/lib/mcp";
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
@@ -26,16 +27,21 @@ const MCP_CONNECT_MAX_RETRIES = 2;
 const MCP_CONNECT_RETRY_DELAY_MS = 500;
 
 // Persisted source selection for the global Skills tool. "personal" exposes the
-// user's own skills, "catalog" the shipped templates; either, both, or neither
-// may be on. The tool is enabled whenever at least one source is selected.
+// user's own skills, "catalog" the shipped templates, "notebook" the chat
+// generation pack (output-generation skills + styles); any, all, or none may be
+// on. The tool is enabled whenever at least one source is selected.
 const SKILL_SOURCES_STORAGE_KEY = "app_skills";
 
 function loadSavedSkillSources(): SkillSources {
   try {
     const parsed = JSON.parse(localStorage.getItem(SKILL_SOURCES_STORAGE_KEY) ?? "{}");
-    return { personal: parsed?.personal === true, catalog: parsed?.catalog === true };
+    return {
+      personal: parsed?.personal === true,
+      catalog: parsed?.catalog === true,
+      notebook: parsed?.notebook === true,
+    };
   } catch {
-    return { personal: false, catalog: false };
+    return { personal: false, catalog: false, notebook: false };
   }
 }
 
@@ -168,6 +174,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const canvasProvider = useCanvasProvider();
   const artifactsProvider = useArtifactsProvider();
   const skillsProvider = useSkillsProvider(skillSources);
+  const notebookGuideProvider = useNotebookGuideProvider();
   const skillBuilderProvider = useSkillBuilderProvider();
 
   // All MCP clients & lookup set (include local wingman only when the app is detected)
@@ -204,7 +211,8 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     const merged = new Set<string>(currentAgent ? [] : userTools);
     // The global Skills tool is enabled by its source selection rather than a
     // plain userTools toggle (only outside agent mode).
-    if (!currentAgent && (skillSources.personal || skillSources.catalog)) merged.add(SKILLS_PROVIDER_ID);
+    if (!currentAgent && (skillSources.personal || skillSources.catalog || skillSources.notebook))
+      merged.add(SKILLS_PROVIDER_ID);
     for (const id of agentRequired) merged.add(id);
     for (const id of modelEnabledTools) merged.add(id);
     if (companionAvailable && companionEnabled) merged.add(COMPANION_ID);
@@ -214,6 +222,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     currentAgent,
     skillSources.personal,
     skillSources.catalog,
+    skillSources.notebook,
     agentRequired,
     modelEnabledTools,
     companionAvailable,
@@ -234,6 +243,10 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
     if (internetProvider) list.push(internetProvider);
+    // Notebook generation capability — instructions-only, no-agent mode only
+    // (pairs with the skillSources.notebook toggle that surfaces its skills).
+    // Ordered before canvas so it shows ahead of "Image Generator" in the menu.
+    if (!currentAgent) list.push(notebookGuideProvider);
     if (canvasProvider) list.push(canvasProvider);
     if (artifactsProvider) list.push(artifactsProvider);
     // Global Skills tool: only when no agent is active. With an agent, skills
@@ -251,6 +264,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     canvasProvider,
     artifactsProvider,
     skillsProvider,
+    notebookGuideProvider,
     currentAgent,
     skillBuilderProvider,
     visibleConfigMcpClients,

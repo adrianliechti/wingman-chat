@@ -37,7 +37,8 @@ import type { Agent } from "@/features/agent/types/agent";
 import { SKILL_BUILDER_ID } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import { useSkillTemplates } from "@/features/skills/hooks/useSkillTemplates";
-import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
+import { NOTEBOOK_PROVIDER_ID } from "@/features/notebook/hooks/useNotebookGuideProvider";
+import { isNotebookSkillCategory, SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import type { ToolProvider } from "@/shared/types/chat";
@@ -82,6 +83,9 @@ export function ChatInputAddMenu({
   const { agents, currentAgent, setCurrentAgent, setShowAgentDrawer, setAgentDrawerView } = useAgents();
   const { skills, openSkillCatalog } = useSkills();
   const { templates } = useSkillTemplates();
+  // The Notebook generation pack is split out of the general catalog by category.
+  const notebookTemplateCount = templates.filter((t) => isNotebookSkillCategory(t.category)).length;
+  const catalogTemplateCount = templates.length - notebookTemplateCount;
 
   // The Skills tool and Skill Builder are grouped into the "Skills" submenu, so
   // they're filtered out of the flat tool list below.
@@ -91,12 +95,22 @@ export function ChatInputAddMenu({
   // are always meaningful; the Skill Builder row is rendered only if available.
   const showSkillsMenu = !currentAgent;
 
-  // The two Skills sources toggle independently (personal + catalog).
+  // The Skills sources toggle independently (personal + catalog + notebook).
   const toggleSkillSource = useCallback(
-    (key: "personal" | "catalog") => {
+    (key: "personal" | "catalog" | "notebook") => {
       setSkillSources({ ...skillSources, [key]: !skillSources[key] });
     },
     [skillSources, setSkillSources],
+  );
+
+  // Toggle a top-level tool provider. The Notebook tool pairs its injected
+  // system prompt with its skill set, so flip `skillSources.notebook` too.
+  const toggleProvider = useCallback(
+    async (id: string, enabled: boolean) => {
+      await setProviderEnabled(id, enabled);
+      if (id === NOTEBOOK_PROVIDER_ID) setSkillSources({ ...skillSources, notebook: enabled });
+    },
+    [setProviderEnabled, setSkillSources, skillSources],
   );
 
   const [showMobileSheet, setShowMobileSheet] = useState(false);
@@ -441,7 +455,8 @@ export function ChatInputAddMenu({
                     >
                       <Library size={16} className="shrink-0" />
                       <span className="font-medium text-sm flex-1 text-left">
-                        Catalog <span className="text-neutral-400 dark:text-neutral-500">({templates.length})</span>
+                        Catalog{" "}
+                        <span className="text-neutral-400 dark:text-neutral-500">({catalogTemplateCount})</span>
                       </span>
                       <span className="shrink-0 w-4 flex justify-center">
                         {skillSources.catalog && <Check size={13} className="text-neutral-600 dark:text-neutral-400" />}
@@ -516,7 +531,7 @@ export function ChatInputAddMenu({
                         e.preventDefault();
                         if (providerInitializing) return;
                         try {
-                          await setProviderEnabled(provider.id, !providerEnabled);
+                          await toggleProvider(provider.id, !providerEnabled);
                         } catch (error) {
                           console.error(`Failed to toggle provider ${provider.name}:`, error);
                         }
@@ -677,7 +692,7 @@ export function ChatInputAddMenu({
                             e.stopPropagation();
                             if (providerInitializing) return;
                             try {
-                              await setProviderEnabled(provider.id, !providerEnabled);
+                              await toggleProvider(provider.id, !providerEnabled);
                             } catch (error) {
                               console.error(`Failed to toggle provider ${provider.name}:`, error);
                             }
@@ -764,7 +779,7 @@ export function ChatInputAddMenu({
                     >
                       <Library size={16} className="shrink-0" />
                       <span className="font-medium text-sm flex-1 text-left">
-                        Catalog <span className="text-neutral-400 dark:text-neutral-500">({templates.length})</span>
+                        Catalog <span className="text-neutral-400 dark:text-neutral-500">({catalogTemplateCount})</span>
                       </span>
                       {skillSources.catalog && (
                         <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />

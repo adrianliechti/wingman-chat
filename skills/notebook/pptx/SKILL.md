@@ -1,0 +1,70 @@
+---
+name: pptx
+description: Create or edit PowerPoint presentations (.pptx) — pitch decks, slide decks, presentations. Trigger on "deck", "slides", "presentation", ".pptx", or any request to build/modify slides. Produces an editable .pptx the user can open in PowerPoint/Keynote/Google Slides.
+---
+
+# PPTX — slide decks (Python runtime)
+
+Build `.pptx` files with **`python-pptx`** in the interpreter (the upstream skill's `pptxgenjs`
+(Node) and XML-unpack paths do not run here — use python-pptx directly). Save to the workspace; it
+renders in the side panel.
+
+## Get the content first, then design
+Pull the real material from the conversation/workspace. Then commit to ONE visual system before slide
+1 (read `theme-factory` for a ready palette + fonts, or pick your own):
+
+- **Insight titles, not topic labels** — "Enterprise ACV grew 38% as mid-market stalled", not
+  "Revenue". Lead with a verb, one line.
+- **One focal point per slide**; big numbers shown large with a small label.
+- **Vary the rhythm** — cover / section / hero-stat / chart / comparison / quote / close. Not ten
+  "title + 3 bullets" slides.
+- **8–12 slides** unless asked otherwise. Cite figures on the slide. No filler.
+
+## Build it
+
+```python
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+
+prs = Presentation()
+prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)   # 16:9
+BLANK = prs.slide_layouts[6]
+
+BG, INK, ACC = RGBColor(0x0F,0x14,0x1A), RGBColor(0xF5,0xF5,0xF5), RGBColor(0x4F,0x9C,0xF5)
+
+def bg(s, c):
+    s.background.fill.solid(); s.background.fill.fore_color.rgb = c
+
+def text(s, l, t, w, h, txt, size, color, bold=False, align=PP_ALIGN.LEFT):
+    tb = s.shapes.add_textbox(Inches(l), Inches(t), Inches(w), Inches(h)); tf = tb.text_frame
+    tf.word_wrap = True; p = tf.paragraphs[0]; p.alignment = align
+    r = p.add_run(); r.text = txt; f = r.font
+    f.size, f.bold, f.color.rgb = Pt(size), bold, color
+    return tb
+
+# Cover
+s = prs.slides.add_slide(BLANK); bg(s, BG)
+text(s, 0.9, 2.6, 11.5, 1.8, "Enterprise ACV grew 38% as mid-market stalled", 40, INK, bold=True)
+text(s, 0.9, 4.3, 11.5, 0.8, "FY24 revenue review", 20, ACC)
+
+prs.save("presentation.pptx")
+print("wrote presentation.pptx")
+```
+
+Notes:
+- Use `add_textbox` on the **blank** layout (`slide_layouts[6]`) for full control; set explicit
+  positions so nothing collides; keep ~0.7–1.0in outer margins.
+- **Charts**: native `add_chart` with `CategoryChartData` from real numbers, or `matplotlib` →
+  `savefig("c.png")` → `slide.shapes.add_picture("c.png", ...)`.
+- **Imagery**: `await render("<prompt>", "img/cover.png")` then `add_picture`.
+- **Speaker notes**: `slide.notes_slide.notes_text_frame.text = "..."`.
+- **Editing a template**: `Presentation("template.pptx")`, iterate `slide.shapes`, set
+  `shape.text_frame.text`; keep the template's masters/layouts.
+
+## Deliver
+Save as `<slug>.pptx`; one-line hand-off (topic + slide count). To revise, edit and re-run.
+
+> The upstream `pptx` skill is Anthropic source-available (proprietary); this is a Python-runtime
+> adaptation for generation.

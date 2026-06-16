@@ -23,3 +23,11 @@ Use `create_image` whenever the user wants to create, generate, or edit an image
   inventing specifics.
 - When editing, describe specific, targeted changes rather than re-describing the
   whole scene.
+
+### Applying a visual style
+
+When the user names or clearly implies a look ("Ghibli", "make it cyberpunk", "a
+Polaroid of…", "low-poly", "like a movie poster"), read the matching `image-style-*`
+skill with `read_skill` and fold its guidance into the `prompt` you pass to
+`create_image`. Browse the available `image-style-*` skills to pick the closest one.
+Still never invent a style the user did not ask for — only apply one they requested.

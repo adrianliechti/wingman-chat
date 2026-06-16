@@ -1,11 +1,13 @@
 import { useMemo } from "react";
 import {
   createSkillsProvider,
+  isNotebookSkillCategory,
   libraryEntries,
   SKILLS_PROVIDER_ID,
   type SkillEntry,
   type SkillSources,
 } from "@/features/skills/lib/skillsProvider";
+import type { SkillTemplate } from "@/features/skills/lib/templates";
 import type { ToolProvider } from "@/shared/types/chat";
 import { useSkills } from "./useSkills";
 import { useSkillTemplates } from "./useSkillTemplates";
@@ -31,16 +33,13 @@ export function useSkillsProvider(sources: SkillSources): ToolProvider | null {
 
   return useMemo<ToolProvider | null>(() => {
     const entries: SkillEntry[] = [];
+    // When personal skills are also included, drop templates they shadow by
+    // name — the user's editable version wins.
+    const personalNames = new Set(skills.map((s) => s.name));
 
-    if (sources.personal) {
-      entries.push(...libraryEntries(skills));
-    }
-
-    if (sources.catalog) {
-      // When personal skills are also included, drop templates they shadow by
-      // name — the user's editable version wins.
-      const personalNames = new Set(skills.map((s) => s.name));
-      const templateEntries: SkillEntry[] = templates
+    const templateEntries = (predicate: (t: SkillTemplate) => boolean): SkillEntry[] =>
+      templates
+        .filter(predicate)
         .filter((t) => !(sources.personal && personalNames.has(t.name)))
         .map((t) => ({
           name: t.name,
@@ -51,7 +50,17 @@ export function useSkillsProvider(sources: SkillSources): ToolProvider | null {
             return parsed.content;
           },
         }));
-      entries.push(...templateEntries);
+
+    if (sources.personal) {
+      entries.push(...libraryEntries(skills));
+    }
+    // Catalog and Notebook split the same template inventory by category so the
+    // generation pack can be toggled independently of the general catalog.
+    if (sources.catalog) {
+      entries.push(...templateEntries((t) => !isNotebookSkillCategory(t.category)));
+    }
+    if (sources.notebook) {
+      entries.push(...templateEntries((t) => isNotebookSkillCategory(t.category)));
     }
 
     return createSkillsProvider(entries, {
@@ -59,5 +68,5 @@ export function useSkillsProvider(sources: SkillSources): ToolProvider | null {
       name: "Skills",
       description: "Available skills",
     });
-  }, [skills, templates, loadTemplate, sources.personal, sources.catalog]);
+  }, [skills, templates, loadTemplate, sources.personal, sources.catalog, sources.notebook]);
 }

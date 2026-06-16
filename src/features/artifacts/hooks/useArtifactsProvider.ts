@@ -259,7 +259,12 @@ export function useArtifactsProvider(): ToolProvider | null {
               const hasPath = typeof path === "string" && path.length > 0;
 
               if (!hasCode && !hasPath) {
-                return executionFailure(context, "Error executing code: provide `code` to run.");
+                return executionFailure(
+                  context,
+                  "Error executing code: no `code` was received. If you passed inline code, it likely " +
+                    "failed to parse from unescaped quotes or backslashes — rewrite it preferring single " +
+                    "quotes, or write the script to a `.py` artifact and run it with `path`.",
+                );
               }
 
               // Prefer `code` when both are provided — some models tack on `path`
@@ -279,11 +284,14 @@ export function useArtifactsProvider(): ToolProvider | null {
                 script = file.content;
               }
 
-              const result = await executeCode({
-                code: script,
-                packages,
-                files: artifactFiles,
-              });
+              const result = await executeCode(
+                {
+                  code: script,
+                  packages,
+                  files: artifactFiles,
+                },
+                { signal: context?.signal },
+              );
 
               if (!result.success) {
                 return executionFailure(context, `Error executing code: ${result.error || "Unknown error"}`);

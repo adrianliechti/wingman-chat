@@ -13,9 +13,20 @@ export const SKILLS_PROVIDER_ID = "skills";
 export interface SkillSources {
   /** The user's own editable OPFS skills. */
   personal: boolean;
-  /** The shipped template catalog. */
+  /** The shipped template catalog (excludes the Notebook generation pack). */
   catalog: boolean;
+  /** The Notebook generation pack — output-generation skills and their styles. */
+  notebook: boolean;
 }
+
+/**
+ * Catalog categories (the first path segment of a template's SKILL.md, e.g.
+ * `skills/<category>/<name>/SKILL.md`) that make up the toggleable "Notebook"
+ * generation pack. These are surfaced as their own Skills source so the chat
+ * generation skills + their styles don't crowd the general catalog.
+ */
+export const NOTEBOOK_SKILL_CATEGORIES = new Set(["notebook", "generation", "styles"]);
+export const isNotebookSkillCategory = (category: string): boolean => NOTEBOOK_SKILL_CATEGORIES.has(category);
 
 /**
  * One skill exposed by the catalog. Content is loaded on demand so eager
