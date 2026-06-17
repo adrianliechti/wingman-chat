@@ -3,10 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
-import { useCanvasProvider } from "@/features/canvas/hooks/useCanvasProvider";
-import { useDesignerProvider } from "@/features/notebook/hooks/useDesignerProvider";
-import { useOfficeProvider } from "@/features/notebook/hooks/useOfficeProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
+import { STUDIO_PROVIDER_ID, useStudioProvider } from "@/features/studio/hooks/useStudioProvider";
 import { MCPClient } from "@/features/settings/lib/mcp";
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkillsProvider } from "@/features/skills/hooks/useSkillsProvider";
@@ -28,8 +26,8 @@ const MCP_CONNECT_MAX_RETRIES = 2;
 const MCP_CONNECT_RETRY_DELAY_MS = 500;
 
 // Persisted source selection for the global Skills tool. "personal" exposes the
-// user's own skills, "catalog" the shipped templates, "notebook" the chat
-// generation pack (output-generation skills + styles); any, all, or none may be
+// user's own skills, "catalog" the shipped templates, "studio" the Studio skill
+// pack (format/medium capabilities + output generators); any, all, or none may be
 // on. The tool is enabled whenever at least one source is selected.
 const SKILL_SOURCES_STORAGE_KEY = "app_skills";
 
@@ -39,10 +37,10 @@ function loadSavedSkillSources(): SkillSources {
     return {
       personal: parsed?.personal === true,
       catalog: parsed?.catalog === true,
-      notebook: parsed?.notebook === true,
+      studio: parsed?.studio === true,
     };
   } catch {
-    return { personal: false, catalog: false, notebook: false };
+    return { personal: false, catalog: false, studio: false };
   }
 }
 
@@ -164,19 +162,24 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
 
   // Agent
   const { currentAgent } = useAgents();
+
+  // Studio is a session capability that layers on top of an agent too, so its
+  // enable state is honored even in agent mode. When on, its skill pack must also
+  // surface — via skillSources.studio (no agent) or merged into the agent skills
+  // provider (agent mode).
+  const studioEnabled = userTools.has(STUDIO_PROVIDER_ID) || !!currentAgent?.tools?.includes(STUDIO_PROVIDER_ID);
+
   const {
     providers: agentProviders,
     enabledTools: agentTools,
     mcpClients: agentMcpClients,
-  } = useAgentProviders(currentAgent);
+  } = useAgentProviders(currentAgent, studioEnabled);
 
   // Built-in providers
   const internetProvider = useInternetProvider();
-  const canvasProvider = useCanvasProvider();
   const artifactsProvider = useArtifactsProvider();
   const skillsProvider = useSkillsProvider(skillSources);
-  const officeProvider = useOfficeProvider();
-  const designerProvider = useDesignerProvider();
+  const studioProvider = useStudioProvider();
   const skillBuilderProvider = useSkillBuilderProvider();
 
   // All MCP clients & lookup set (include local wingman only when the app is detected)
@@ -208,12 +211,14 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // MCP server because the current model has it in tools.disabled would clear this.client
   // and break any in-flight tool call.
   const mcpConnectionDesired = useMemo(() => {
-    // Sticky/user tool selections apply only outside agent mode: an active agent's
-    // own config governs its tools, and we never auto-add persisted tools on top.
-    const merged = new Set<string>(currentAgent ? [] : userTools);
+    // User/session selections layer on top of an agent: the agent's own tools are
+    // the enforced baseline (always added via agentRequired below), and the user
+    // can add more (MCP servers, built-in capabilities) on top for the session.
+    const merged = new Set<string>(userTools);
     // The global Skills tool is enabled by its source selection rather than a
-    // plain userTools toggle (only outside agent mode).
-    if (!currentAgent && (skillSources.personal || skillSources.catalog || skillSources.notebook))
+    // plain userTools toggle (only outside agent mode — with an agent, skills are
+    // its curated set, owning the same "skills" id).
+    if (!currentAgent && (skillSources.personal || skillSources.catalog || skillSources.studio))
       merged.add(SKILLS_PROVIDER_ID);
     for (const id of agentRequired) merged.add(id);
     for (const id of modelEnabledTools) merged.add(id);
@@ -224,7 +229,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     currentAgent,
     skillSources.personal,
     skillSources.catalog,
-    skillSources.notebook,
+    skillSources.studio,
     agentRequired,
     modelEnabledTools,
     companionAvailable,
@@ -245,14 +250,10 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const providers = useMemo<ToolProvider[]>(() => {
     const list: ToolProvider[] = [];
     if (internetProvider) list.push(internetProvider);
-    // The "Notebook" section — Office + Designer (instructions-only, no-agent mode;
-    // they pair with skillSources.notebook to surface their skills) + Image (canvas).
-    // Grouped into a submenu in the chat "+" menu.
-    if (!currentAgent) {
-      list.push(officeProvider);
-      list.push(designerProvider);
-    }
-    if (canvasProvider) list.push(canvasProvider);
+    // The unified "Studio" capability (documents, visuals & images). Always
+    // available — it's a session capability that layers on top of an agent too —
+    // and its create_image tool is present only when a renderer is configured.
+    list.push(studioProvider);
     if (artifactsProvider) list.push(artifactsProvider);
     // Global Skills tool: only when no agent is active. With an agent, skills
     // are governed solely by its curated set (useAgentProviders, which owns the
@@ -266,11 +267,9 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     return list;
   }, [
     internetProvider,
-    canvasProvider,
+    studioProvider,
     artifactsProvider,
     skillsProvider,
-    officeProvider,
-    designerProvider,
     currentAgent,
     skillBuilderProvider,
     visibleConfigMcpClients,

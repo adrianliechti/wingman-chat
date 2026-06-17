@@ -1,5 +1,6 @@
 import { FileCode2, ScrollText, Sparkles } from "lucide-react";
 import type { Skill } from "@/features/skills/lib/skillParser";
+import { loadSkillResource, type SkillTemplate } from "@/features/skills/lib/templates";
 import skillsPrompt from "@/features/skills/prompts/skills.txt?raw";
 import type { ArtifactFiles } from "@/features/tools/lib/interpreterProtocol";
 import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
@@ -16,20 +17,20 @@ export const SKILLS_PROVIDER_ID = "skills";
 export interface SkillSources {
   /** The user's own editable OPFS skills. */
   personal: boolean;
-  /** The shipped template catalog (excludes the Notebook generation pack). */
+  /** The shipped template catalog (excludes the Studio skill pack). */
   catalog: boolean;
-  /** The Notebook generation pack — output-generation skills and their styles. */
-  notebook: boolean;
+  /** The Studio skill pack — format/medium capabilities and output generators. */
+  studio: boolean;
 }
 
 /**
  * Catalog categories (the first path segment of a template's SKILL.md, e.g.
- * `skills/<category>/<name>/SKILL.md`) that make up the toggleable "Notebook"
- * generation pack. These are surfaced as their own Skills source so the chat
+ * `skills/<category>/<name>/SKILL.md`) that make up the toggleable "Studio"
+ * skill pack. These are surfaced as their own Skills source so the chat
  * generation skills + their styles don't crowd the general catalog.
  */
-export const NOTEBOOK_SKILL_CATEGORIES = new Set(["notebook", "generation"]);
-export const isNotebookSkillCategory = (category: string): boolean => NOTEBOOK_SKILL_CATEGORIES.has(category);
+export const STUDIO_SKILL_CATEGORIES = new Set(["studio", "generation"]);
+export const isStudioSkillCategory = (category: string): boolean => STUDIO_SKILL_CATEGORIES.has(category);
 
 /**
  * One skill exposed by the catalog. Content is loaded on demand so eager
@@ -44,7 +45,46 @@ export interface SkillEntry {
   /** Bundled resource paths relative to the skill folder, e.g. "scripts/extract.py". */
   resources?: string[];
   loadContent: () => string | Promise<string>;
-  loadResource?: (path: string) => string | Promise<string | null>;
+  loadResource?: (path: string) => string | null | Promise<string | null>;
+}
+
+/**
+ * Adapt shipped templates (content fetched lazily) to catalog entries. Both the
+ * global Skills tool and the agent-scoped provider build their template-backed
+ * entries this way, so they resolve `read_skill` / `read_skill_resource`
+ * identically. `shadowNames` drops templates a higher-priority source already
+ * supplies (e.g. a personal skill of the same name wins).
+ */
+export function templateEntries(
+  templates: SkillTemplate[],
+  loadTemplate: (path: string) => Promise<{ content: string } | null>,
+  predicate: (t: SkillTemplate) => boolean,
+  shadowNames?: Set<string>,
+): SkillEntry[] {
+  return templates
+    .filter(predicate)
+    .filter((t) => !shadowNames?.has(t.name))
+    .map((t) => ({
+      name: t.name,
+      description: t.description,
+      compatibility: t.compatibility,
+      resources: t.resources,
+      loadContent: async () => {
+        const parsed = await loadTemplate(t.path);
+        if (!parsed) throw new Error(`Template "${t.path}" unavailable`);
+        return parsed.content;
+      },
+      loadResource: (resourcePath: string) => loadSkillResource(t.path, resourcePath),
+    }));
+}
+
+/** The shipped Studio skill pack (studio + generation categories) as entries. */
+export function studioTemplateEntries(
+  templates: SkillTemplate[],
+  loadTemplate: (path: string) => Promise<{ content: string } | null>,
+  shadowNames?: Set<string>,
+): SkillEntry[] {
+  return templateEntries(templates, loadTemplate, (t) => isStudioSkillCategory(t.category), shadowNames);
 }
 
 /** Adapt in-memory library skills (content already loaded) to catalog entries. */

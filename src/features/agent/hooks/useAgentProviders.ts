@@ -6,7 +6,13 @@ import { createRepositoryTools } from "@/features/repository/lib/repository-tool
 import repositoryInstructions from "@/features/repository/prompts/repository.txt?raw";
 import { MCPClient } from "@/features/settings/lib/mcp";
 import { useSkills } from "@/features/skills/hooks/useSkills";
-import { createSkillsProvider, libraryEntries, SKILLS_PROVIDER_ID } from "@/features/skills/lib/skillsProvider";
+import { useSkillTemplates } from "@/features/skills/hooks/useSkillTemplates";
+import {
+  createSkillsProvider,
+  libraryEntries,
+  SKILLS_PROVIDER_ID,
+  studioTemplateEntries,
+} from "@/features/skills/lib/skillsProvider";
 import { getConfig } from "@/shared/config";
 import * as opfs from "@/shared/lib/opfs";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
@@ -28,10 +34,11 @@ export interface AgentProviders {
  * - Bridge MCP clients (for agent.servers)
  * Also returns the agent.tools list for ToolsProvider to know which built-in tools to activate.
  */
-export function useAgentProviders(agent: Agent | null): AgentProviders {
+export function useAgentProviders(agent: Agent | null, studioEnabled = false): AgentProviders {
   const agentId = agent?.id || "";
   const { files, queryChunks } = useAgentFiles(agentId);
   const { skills: allSkills } = useSkills();
+  const { templates, loadTemplate } = useSkillTemplates();
 
   // Track MCP clients for agent's bridge servers
   const [mcpClients, setMcpClients] = useState<MCPClient[]>([]);
@@ -109,14 +116,23 @@ export function useAgentProviders(agent: Agent | null): AgentProviders {
   }, [agent, files, queryChunks]);
 
   // --- Skills provider (the subset of the library this agent enabled) ---
+  // When the Studio capability is on for this conversation, the shipped Studio
+  // skill pack merges in on top of the agent's curated set (agent-curated names
+  // win on collision) — since the agent- and global-scoped skills providers share
+  // the "skills" id and never coexist, this is the only place to surface them.
   const skillsProvider = useMemo<ToolProvider | null>(() => {
     const ids = new Set(agent?.skills || []);
-    return createSkillsProvider(libraryEntries(allSkills.filter((s) => ids.has(s.name))), {
+    const entries = libraryEntries(allSkills.filter((s) => ids.has(s.name)));
+    if (studioEnabled) {
+      const curated = new Set(entries.map((e) => e.name));
+      entries.push(...studioTemplateEntries(templates, loadTemplate, curated));
+    }
+    return createSkillsProvider(entries, {
       id: SKILLS_PROVIDER_ID,
       name: "Skills",
       description: "Specialized agent skills",
     });
-  }, [agent?.skills, allSkills]);
+  }, [agent?.skills, allSkills, studioEnabled, templates, loadTemplate]);
 
   // --- Memory provider ---
   const config = getConfig();
