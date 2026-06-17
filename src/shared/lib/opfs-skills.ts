@@ -2,18 +2,26 @@
  * OPFS Skills — Skill CRUD and SKILL.md serialization.
  */
 
-import type { Skill } from "@/features/skills/lib/skillParser";
+import type { Skill, SkillResource } from "@/features/skills/lib/skillParser";
 import { parseSkillFile } from "@/features/skills/lib/skillParser";
+import { inferContentTypeFromPath, isTextContentType } from "./fileTypes";
 import type { IndexEntry } from "./opfs-core";
 import {
+  dataUrlToBlob,
   deleteDirectory,
+  deleteFile,
+  isDataUrl,
   listDirectories,
+  listFiles,
+  readBlob,
   readIndex,
   readText,
   removeIndexEntry,
   upsertIndexEntry,
+  writeBlob,
   writeText,
 } from "./opfs-core";
+import { readAsDataURL } from "./utils";
 
 export interface StoredSkill {
   name: string;
@@ -25,8 +33,9 @@ export interface StoredSkill {
  * Save a skill as SKILL.md in /skills/{name}/ folder.
  */
 export async function saveSkill(skill: Skill): Promise<void> {
-  const skillContent = serializeSkillToMd(skill);
-  await writeText(`skills/${skill.name}/SKILL.md`, skillContent);
+  const skillDir = `skills/${skill.name}`;
+  await writeText(`${skillDir}/SKILL.md`, serializeSkillToMd(skill));
+  await saveSkillResources(skillDir, skill.resources ?? []);
 
   // Update index
   await upsertIndexEntry("skills", {
@@ -55,9 +64,12 @@ export async function loadSkill(name: string): Promise<Skill | undefined> {
   const index = await readIndex("skills");
   const entry = index.find((e: IndexEntry) => e.title === name);
 
+  const resources = await loadSkillResources(`skills/${name}`);
+
   return {
     id: entry?.id || crypto.randomUUID(),
     ...result.skill,
+    resources: resources.length ? resources : undefined,
   };
 }
 
@@ -100,6 +112,68 @@ export async function loadAllSkills(): Promise<Skill[]> {
   }
 
   return skills;
+}
+
+/**
+ * Walk a skill folder for bundled resource files, returning paths relative to
+ * the folder (e.g. "scripts/extract.py"). Skips the SKILL.md itself and hidden
+ * files — mirrors the server's skill-resource listing.
+ */
+async function walkSkillResourcePaths(skillDir: string): Promise<string[]> {
+  const out: string[] = [];
+
+  const recurse = async (rel: string): Promise<void> => {
+    const dir = rel ? `${skillDir}/${rel}` : skillDir;
+
+    for (const name of await listFiles(dir)) {
+      if (name.startsWith(".")) continue;
+      const p = rel ? `${rel}/${name}` : name;
+      if (p === "SKILL.md") continue;
+      out.push(p);
+    }
+
+    for (const sub of await listDirectories(dir)) {
+      if (sub.startsWith(".")) continue;
+      await recurse(rel ? `${rel}/${sub}` : sub);
+    }
+  };
+
+  await recurse("");
+  return out.sort((a, b) => a.localeCompare(b));
+}
+
+/** Load every bundled resource for a skill (text inline, binary as data URL). */
+async function loadSkillResources(skillDir: string): Promise<SkillResource[]> {
+  const resources: SkillResource[] = [];
+
+  for (const path of await walkSkillResourcePaths(skillDir)) {
+    const blob = await readBlob(`${skillDir}/${path}`);
+    if (!blob) continue;
+
+    const contentType = inferContentTypeFromPath(path) || blob.type || undefined;
+    const content = isTextContentType(contentType) ? await blob.text() : await readAsDataURL(blob);
+    resources.push({ path, content, contentType });
+  }
+
+  return resources;
+}
+
+/** Persist a skill's resources, removing any files that are no longer present. */
+async function saveSkillResources(skillDir: string, resources: SkillResource[]): Promise<void> {
+  const desired = new Set(resources.map((r) => r.path));
+
+  for (const existing of await walkSkillResourcePaths(skillDir)) {
+    if (!desired.has(existing)) await deleteFile(`${skillDir}/${existing}`);
+  }
+
+  for (const r of resources) {
+    const full = `${skillDir}/${r.path}`;
+    if (isDataUrl(r.content)) {
+      await writeBlob(full, dataUrlToBlob(r.content));
+    } else {
+      await writeText(full, r.content, r.contentType || "text/plain;charset=utf-8");
+    }
+  }
 }
 
 /**

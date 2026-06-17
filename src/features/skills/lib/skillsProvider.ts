@@ -45,11 +45,18 @@ export interface SkillEntry {
 
 /** Adapt in-memory library skills (content already loaded) to catalog entries. */
 export function libraryEntries(skills: Skill[]): SkillEntry[] {
-  return skills.map((s) => ({
-    name: s.name,
-    description: s.description,
-    loadContent: () => s.content,
-  }));
+  return skills.map((s) => {
+    const resources = s.resources ?? [];
+    return {
+      name: s.name,
+      description: s.description,
+      resources: resources.length ? resources.map((r) => r.path) : undefined,
+      loadContent: () => s.content,
+      loadResource: resources.length
+        ? (path: string) => resources.find((r) => r.path === path)?.content ?? null
+        : undefined,
+    };
+  });
 }
 
 /** Identity (provider id, display name, description) of a skills tool variant. */

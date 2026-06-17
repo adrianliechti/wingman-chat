@@ -23,7 +23,7 @@ import {
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import { useSkillTemplates } from "@/features/skills/hooks/useSkillTemplates";
-import type { ParsedSkill, Skill } from "@/features/skills/lib/skillParser";
+import type { ParsedSkill, Skill, SkillResource } from "@/features/skills/lib/skillParser";
 import { downloadSkill, parseSkillFile, validateSkillName } from "@/features/skills/lib/skillParser";
 import type { SkillTemplate } from "@/features/skills/lib/templates";
 import { getConfig } from "@/shared/config";
@@ -31,6 +31,7 @@ import { cn } from "@/shared/lib/cn";
 import { confirm } from "@/shared/lib/confirm";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
 import { Markdown } from "@/shared/ui/Markdown";
+import { SkillResourcesEditor } from "./SkillResourcesEditor";
 
 interface SkillCatalogProps {
   isOpen: boolean;
@@ -52,6 +53,22 @@ interface SkillCatalogProps {
 }
 
 const NO_ENABLED_SKILLS: ReadonlySet<string> = new Set();
+
+/** Order-independent fingerprint of a resource set, for change detection. */
+function resourcesKey(resources: SkillResource[] = []): string {
+  return resources
+    .map((r) => `${r.path}:${r.content.length}`)
+    .sort()
+    .join("|");
+}
+
+// Soft filled-field style shared by the editor inputs — matches the agent
+// config's card aesthetic (faint border, subtle fill, gentle focus ring).
+const FIELD_BASE =
+  "w-full rounded-lg border bg-neutral-50/50 px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 transition-colors focus:bg-white focus:outline-none focus:ring-2 dark:bg-neutral-800/30 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:bg-neutral-800/60";
+const FIELD_NEUTRAL =
+  "border-neutral-200/70 focus:border-neutral-300 focus:ring-neutral-500/15 dark:border-neutral-700/50 dark:focus:border-neutral-600";
+const FIELD_ERROR = "border-red-400/60 focus:border-red-400 focus:ring-red-500/15";
 
 export function SkillCatalog({
   isOpen,
@@ -93,6 +110,7 @@ export function SkillCatalog({
   const [edName, setEdName] = useState("");
   const [edDescription, setEdDescription] = useState("");
   const [edContent, setEdContent] = useState("");
+  const [edResources, setEdResources] = useState<SkillResource[]>([]);
   const [isOptimizing, setIsOptimizing] = useState(false);
 
   useEffect(() => {
@@ -123,11 +141,13 @@ export function SkillCatalog({
       setEdName("");
       setEdDescription("");
       setEdContent("");
+      setEdResources([]);
     } else {
       setSelectedSkill(skill);
       setEdName(skill.name);
       setEdDescription(skill.description);
       setEdContent(skill.content);
+      setEdResources(skill.resources ?? []);
     }
     setPreviewTab("edit");
     setEditMode(true);
@@ -193,13 +213,16 @@ export function SkillCatalog({
 
   const hasUnsavedChanges = useMemo(() => {
     if (!editMode) return false;
-    if (!selectedSkill) return edName.trim() !== "" || edDescription.trim() !== "" || edContent.trim() !== "";
+    const resourcesChanged = resourcesKey(edResources) !== resourcesKey(selectedSkill?.resources);
+    if (!selectedSkill)
+      return edName.trim() !== "" || edDescription.trim() !== "" || edContent.trim() !== "" || resourcesChanged;
     return (
       edName !== selectedSkill.name ||
       edDescription.trim() !== selectedSkill.description.trim() ||
-      edContent.trim() !== selectedSkill.content.trim()
+      edContent.trim() !== selectedSkill.content.trim() ||
+      resourcesChanged
     );
-  }, [editMode, selectedSkill, edName, edDescription, edContent]);
+  }, [editMode, selectedSkill, edName, edDescription, edContent, edResources]);
 
   const discardAndRun = useCallback(
     async (action: () => void) => {
@@ -231,7 +254,12 @@ export function SkillCatalog({
     const validation = validateSkillName(edName);
     if (!validation.valid || !edDescription.trim() || !edContent.trim()) return;
 
-    const data = { name: edName, description: edDescription.trim(), content: edContent.trim() };
+    const data = {
+      name: edName,
+      description: edDescription.trim(),
+      content: edContent.trim(),
+      resources: edResources,
+    };
 
     if (selectedSkill) {
       updateSkill(selectedSkill.id, data);
@@ -827,130 +855,133 @@ export function SkillCatalog({
                     ) : editMode ? (
                       /* ── Editor ── */
                       <>
-                        <div className="flex-1 overflow-y-auto space-y-3.5 px-5 py-4">
-                          {/* Name */}
-                          <div>
-                            <label
-                              htmlFor={editorNameInputId}
-                              className="mb-1.5 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
-                            >
-                              Name
-                            </label>
-                            <input
-                              ref={editorNameInputRef}
-                              id={editorNameInputId}
-                              type="text"
-                              value={edName}
-                              onChange={(e) => setEdName(e.target.value.toLowerCase())}
-                              className={`w-full rounded-md border px-3 py-2 text-sm text-neutral-900 transition-colors dark:text-neutral-100 ${
-                                nameError
-                                  ? "border-red-400/70 focus:ring-red-500/60"
-                                  : "border-neutral-300/60 focus:ring-neutral-500/60 dark:border-neutral-700/60"
-                              } bg-white/50 backdrop-blur-sm focus:border-transparent focus:ring-2 dark:bg-neutral-800/50`}
-                              placeholder="my-skill-name"
-                            />
-                            {nameError ? (
-                              <p className="mt-1 text-xs text-red-500">{nameError}</p>
-                            ) : (
-                              <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
-                                Lowercase alphanumeric characters and hyphens only.
-                              </p>
-                            )}
-                          </div>
-
-                          {/* Description */}
-                          <div>
-                            <label
-                              htmlFor={editorDescriptionInputId}
-                              className="mb-1.5 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
-                            >
-                              Description
-                            </label>
-                            <textarea
-                              id={editorDescriptionInputId}
-                              value={edDescription}
-                              onChange={(e) => setEdDescription(e.target.value)}
-                              className="w-full resize-none rounded-md border border-neutral-300/60 bg-white/50 px-3 py-2 text-sm text-neutral-900 backdrop-blur-sm transition-colors focus:border-transparent focus:ring-2 focus:ring-neutral-500/60 dark:border-neutral-700/60 dark:bg-neutral-800/50 dark:text-neutral-100"
-                              rows={2}
-                              placeholder="Describe what this skill does and when to use it…"
-                            />
-                          </div>
-
-                          {/* Instructions with Edit/Preview tabs */}
-                          <div className="flex flex-col">
-                            <div className="mb-1.5 flex items-center justify-between">
+                        <div className="flex min-h-0 flex-1">
+                          <div className="flex-1 min-w-0 space-y-5 overflow-y-auto px-5 py-5">
+                            {/* Name */}
+                            <div>
                               <label
-                                htmlFor={editorContentInputId}
-                                className="text-xs font-medium text-neutral-700 dark:text-neutral-300"
+                                htmlFor={editorNameInputId}
+                                className="mb-1.5 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
                               >
-                                Instructions
+                                Name
                               </label>
-                              <div
-                                ref={previewSliderRef}
-                                className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0"
-                              >
-                                {previewSliderStyle.width > 0 && (
-                                  <div
-                                    className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
-                                    style={{
-                                      left: `${previewSliderStyle.left}px`,
-                                      width: `${previewSliderStyle.width}px`,
-                                      height: "calc(100% - 4px)",
-                                      top: "2px",
-                                    }}
-                                  />
-                                )}
-                                <button
-                                  type="button"
-                                  data-view="edit"
-                                  onClick={() => setPreviewTab("edit")}
-                                  title="Edit"
-                                  className={cn(
-                                    "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
-                                    previewTab === "edit"
-                                      ? "text-neutral-900 dark:text-neutral-50"
-                                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                                  )}
-                                >
-                                  <Code size={11} strokeWidth={2.25} />
-                                </button>
-                                <button
-                                  type="button"
-                                  data-view="preview"
-                                  onClick={() => setPreviewTab("preview")}
-                                  title="Preview"
-                                  className={cn(
-                                    "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
-                                    previewTab === "preview"
-                                      ? "text-neutral-900 dark:text-neutral-50"
-                                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
-                                  )}
-                                >
-                                  <Eye size={11} strokeWidth={2.25} />
-                                </button>
-                              </div>
+                              <input
+                                ref={editorNameInputRef}
+                                id={editorNameInputId}
+                                type="text"
+                                value={edName}
+                                onChange={(e) => setEdName(e.target.value.toLowerCase())}
+                                className={cn(FIELD_BASE, nameError ? FIELD_ERROR : FIELD_NEUTRAL)}
+                                placeholder="my-skill-name"
+                              />
+                              {nameError ? (
+                                <p className="mt-1 text-xs text-red-500">{nameError}</p>
+                              ) : (
+                                <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
+                                  Lowercase alphanumeric characters and hyphens only.
+                                </p>
+                              )}
                             </div>
 
-                            {previewTab === "edit" ? (
+                            {/* Description */}
+                            <div>
+                              <label
+                                htmlFor={editorDescriptionInputId}
+                                className="mb-1.5 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
+                              >
+                                Description
+                              </label>
                               <textarea
-                                id={editorContentInputId}
-                                value={edContent}
-                                onChange={(e) => setEdContent(e.target.value)}
-                                className="w-full resize-none rounded-md border border-neutral-300/60 bg-white/50 px-3 py-2 font-mono text-sm text-neutral-900 backdrop-blur-sm transition-colors focus:border-transparent focus:ring-2 focus:ring-neutral-500/60 dark:border-neutral-700/60 dark:bg-neutral-800/50 dark:text-neutral-100"
-                                rows={9}
-                                placeholder={"# Skill Instructions\n\nDetailed instructions for the agent…"}
+                                id={editorDescriptionInputId}
+                                value={edDescription}
+                                onChange={(e) => setEdDescription(e.target.value)}
+                                className={cn(FIELD_BASE, FIELD_NEUTRAL, "resize-none")}
+                                rows={2}
+                                placeholder="Describe what this skill does and when to use it…"
                               />
-                            ) : (
-                              <div className="h-49.5 overflow-y-auto rounded-md border border-neutral-200/60 bg-white/50 px-3 py-2 text-sm dark:border-neutral-700/60 dark:bg-neutral-800/50">
-                                {edContent.trim() ? (
-                                  <Markdown>{edContent}</Markdown>
-                                ) : (
-                                  <p className="text-xs italic text-neutral-400 dark:text-neutral-500">
-                                    Nothing to preview yet.
-                                  </p>
-                                )}
+                            </div>
+
+                            {/* Instructions with Edit/Preview tabs */}
+                            <div className="flex flex-col">
+                              <div className="mb-1.5 flex items-center justify-between">
+                                <label
+                                  htmlFor={editorContentInputId}
+                                  className="text-xs font-medium text-neutral-700 dark:text-neutral-300"
+                                >
+                                  Instructions
+                                </label>
+                                <div
+                                  ref={previewSliderRef}
+                                  className="relative flex items-center gap-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 backdrop-blur-sm rounded-full p-0.5 ring-1 ring-black/5 dark:ring-white/5 shrink-0"
+                                >
+                                  {previewSliderStyle.width > 0 && (
+                                    <div
+                                      className="absolute bg-white dark:bg-neutral-950 rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10 transition-[left,width] duration-300 ease-out"
+                                      style={{
+                                        left: `${previewSliderStyle.left}px`,
+                                        width: `${previewSliderStyle.width}px`,
+                                        height: "calc(100% - 4px)",
+                                        top: "2px",
+                                      }}
+                                    />
+                                  )}
+                                  <button
+                                    type="button"
+                                    data-view="edit"
+                                    onClick={() => setPreviewTab("edit")}
+                                    title="Edit"
+                                    className={cn(
+                                      "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
+                                      previewTab === "edit"
+                                        ? "text-neutral-900 dark:text-neutral-50"
+                                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                                    )}
+                                  >
+                                    <Code size={11} strokeWidth={2.25} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    data-view="preview"
+                                    onClick={() => setPreviewTab("preview")}
+                                    title="Preview"
+                                    className={cn(
+                                      "relative z-10 flex items-center justify-center w-5 h-5 rounded-full transition-colors duration-200 text-xs",
+                                      previewTab === "preview"
+                                        ? "text-neutral-900 dark:text-neutral-50"
+                                        : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200",
+                                    )}
+                                  >
+                                    <Eye size={11} strokeWidth={2.25} />
+                                  </button>
+                                </div>
                               </div>
-                            )}
+
+                              {previewTab === "edit" ? (
+                                <textarea
+                                  id={editorContentInputId}
+                                  value={edContent}
+                                  onChange={(e) => setEdContent(e.target.value)}
+                                  className={cn(FIELD_BASE, FIELD_NEUTRAL, "resize-none font-mono")}
+                                  rows={9}
+                                  placeholder={"# Skill Instructions\n\nDetailed instructions for the agent…"}
+                                />
+                              ) : (
+                                <div className="h-49.5 overflow-y-auto rounded-lg border border-neutral-200/70 bg-neutral-50/50 px-3 py-2 text-sm dark:border-neutral-700/50 dark:bg-neutral-800/30">
+                                  {edContent.trim() ? (
+                                    <Markdown>{edContent}</Markdown>
+                                  ) : (
+                                    <p className="text-xs italic text-neutral-400 dark:text-neutral-500">
+                                      Nothing to preview yet.
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Resources sidebar */}
+                          <div className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-neutral-200/60 px-4 py-4 dark:border-neutral-800/60">
+                            <SkillResourcesEditor resources={edResources} onChange={setEdResources} />
                           </div>
                         </div>
 
@@ -1089,6 +1120,11 @@ export function SkillCatalog({
                               <Markdown>{selectedSkill.content}</Markdown>
                             </div>
                           </div>
+                          {selectedSkill.resources && selectedSkill.resources.length > 0 && (
+                            <div className="mt-4">
+                              <SkillResourcesEditor resources={selectedSkill.resources} />
+                            </div>
+                          )}
                         </div>
                       </>
                     ) : (
