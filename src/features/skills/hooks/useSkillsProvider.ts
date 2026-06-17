@@ -46,6 +46,7 @@ export function useSkillsProvider(sources: SkillSources): ToolProvider | null {
         .map((t) => ({
           name: t.name,
           description: t.description,
+          compatibility: t.compatibility,
           resources: t.resources,
           loadContent: async () => {
             const parsed = await loadTemplate(t.path);

@@ -19,6 +19,8 @@ export interface SkillTemplate {
   category: string;
   /** Page-absolute URL of the SKILL.md, e.g. "/skills/engineering/code-review/SKILL.md". */
   path: string;
+  /** Optional environment requirements (agentskills `compatibility` frontmatter). */
+  compatibility?: string;
   /** Bundled resource paths relative to this skill's folder, e.g. "scripts/extract.py". */
   resources?: string[];
 }

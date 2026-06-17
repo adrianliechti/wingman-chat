@@ -180,7 +180,9 @@ async function saveSkillResources(skillDir: string, resources: SkillResource[]):
  * Serialize a skill to SKILL.md format.
  */
 function serializeSkillToMd(skill: Skill): string {
-  const lines = ["---", `name: ${skill.name}`, `description: ${skill.description}`, "---", "", skill.content];
+  const lines = ["---", `name: ${skill.name}`, `description: ${skill.description}`];
+  if (skill.compatibility) lines.push(`compatibility: ${skill.compatibility}`);
+  lines.push("---", "", skill.content);
 
   return lines.join("\n");
 }

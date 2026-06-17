@@ -1,6 +1,8 @@
 import { FileCode2, ScrollText, Sparkles } from "lucide-react";
 import type { Skill } from "@/features/skills/lib/skillParser";
 import skillsPrompt from "@/features/skills/prompts/skills.txt?raw";
+import type { ArtifactFiles } from "@/features/tools/lib/interpreterProtocol";
+import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMount";
 import { artifactLanguage } from "@/shared/lib/fileTypes";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
 
@@ -37,6 +39,8 @@ export const isNotebookSkillCategory = (category: string): boolean => NOTEBOOK_S
 export interface SkillEntry {
   name: string;
   description: string;
+  /** Optional environment requirements (agentskills `compatibility` frontmatter). */
+  compatibility?: string;
   /** Bundled resource paths relative to the skill folder, e.g. "scripts/extract.py". */
   resources?: string[];
   loadContent: () => string | Promise<string>;
@@ -50,6 +54,7 @@ export function libraryEntries(skills: Skill[]): SkillEntry[] {
     return {
       name: s.name,
       description: s.description,
+      compatibility: s.compatibility,
       resources: resources.length ? resources.map((r) => r.path) : undefined,
       loadContent: () => s.content,
       loadResource: resources.length
@@ -86,6 +91,28 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
 
   const byName = new Map(entries.map((e) => [e.name, e]));
   const hasResources = entries.some((e) => e.resources?.length && e.loadResource);
+
+  // Let the interpreter mount these skills' bundled resources on demand, so the
+  // model can run spec-style scripts (`runpy.run_path("skills/<name>/…")`).
+  // Safe to set from here: only one skills provider is active at a time.
+  setSkillResourceResolver(
+    hasResources
+      ? async (names) => {
+          const files: ArtifactFiles = {};
+          for (const name of names) {
+            const entry = byName.get(name);
+            if (!entry?.resources?.length || !entry.loadResource) continue;
+            for (const path of entry.resources) {
+              const content = await entry.loadResource(path);
+              // Leading slash matches the artifact/overlay key convention so the
+              // interpreter mounts and strips these consistently.
+              if (content != null) files[`/skills/${name}/${path}`] = { content };
+            }
+          }
+          return files;
+        }
+      : null,
+  );
 
   const tools: Tool[] = [
     {
@@ -158,9 +185,7 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
           icon: FileCode2,
           label: state.error ? "Resource unavailable" : "Read skill resource",
           preview:
-            typeof args?.name === "string" && typeof args?.path === "string"
-              ? `${args.name}/${args.path}`
-              : undefined,
+            typeof args?.name === "string" && typeof args?.path === "string" ? `${args.name}/${args.path}` : undefined,
         }),
         input: () => [],
         output: (result) => {
@@ -253,7 +278,7 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
   // Only describe read_skill_resource when it's actually registered (some skill
   // ships resources), so the prompt never references an absent tool.
   const resourcesGuidance = hasResources
-    ? "\n### Bundled resources\n\nSome skills ship support files (scripts, references, assets). When `read_skill` lists them, load one with `read_skill_resource` only when the instructions reference it or the task clearly needs it — respect progressive disclosure, don't eagerly load every file, and use the exact paths returned by `read_skill`.\n"
+    ? "\n### Bundled resources\n\nSome skills ship support files (scripts, references, assets). When `read_skill` lists them, load one with `read_skill_resource` only when the instructions reference it or the task clearly needs it — respect progressive disclosure, don't eagerly load every file, and use the exact paths returned by `read_skill`. To *run* a bundled script, prefer passing the skill name in the code interpreter's `skills` parameter (it mounts the resources under `skills/<name>/`) over pasting the script body.\n"
     : "";
 
   return {
@@ -261,20 +286,25 @@ export function createSkillsProvider(entries: SkillEntry[], meta: SkillsProvider
     name: meta.name,
     description: meta.description,
     icon: Sparkles,
-    instructions: skillsPrompt.replace("{resourcesGuidance}", resourcesGuidance).replace("{skillsXml}", skillsXml) || undefined,
+    instructions:
+      skillsPrompt.replace("{resourcesGuidance}", resourcesGuidance).replace("{skillsXml}", skillsXml) || undefined,
     tools,
   };
 }
 
 function skillContentResult(entry: SkillEntry, instructions: string) {
   const resources = entry.resources ?? [];
+  const compatibilityNote = entry.compatibility
+    ? `\n\n<compatibility>${escapeXml(entry.compatibility)}</compatibility>`
+    : "";
   const resourceList = resources.length
     ? `\n\n<skill_resources>\n${resources.map((path) => `  <file>${escapeXml(path)}</file>`).join("\n")}\n</skill_resources>`
     : "";
   return {
     name: entry.name,
     description: entry.description,
-    instructions: `<skill_content name="${escapeXml(entry.name)}">\n${instructions}${resourceList}\n</skill_content>`,
+    ...(entry.compatibility ? { compatibility: entry.compatibility } : {}),
+    instructions: `<skill_content name="${escapeXml(entry.name)}">\n${instructions}${compatibilityNote}${resourceList}\n</skill_content>`,
   };
 }
 

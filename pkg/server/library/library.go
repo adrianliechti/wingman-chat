@@ -110,11 +110,12 @@ func (inv *inventory[T]) serve(w http.ResponseWriter, _ *http.Request) {
 // ── Skills ──────────────────────────────────────────────────────────────────
 
 type skillEntry struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Category    string   `json:"category"`
-	Path        string   `json:"path"`
-	Resources   []string `json:"resources,omitempty"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	Category      string   `json:"category"`
+	Path          string   `json:"path"`
+	Compatibility string   `json:"compatibility,omitempty"`
+	Resources     []string `json:"resources,omitempty"`
 }
 
 type Skills struct {
@@ -159,8 +160,9 @@ func (h *Skills) build() []skillEntry {
 		}
 
 		var meta struct {
-			Name        string `yaml:"name"`
-			Description string `yaml:"description"`
+			Name          string `yaml:"name"`
+			Description   string `yaml:"description"`
+			Compatibility string `yaml:"compatibility"`
 		}
 		parseFrontmatter(data, &meta)
 
@@ -178,11 +180,12 @@ func (h *Skills) build() []skillEntry {
 		}
 
 		entries = append(entries, skillEntry{
-			Name:        meta.Name,
-			Description: meta.Description,
-			Category:    category,
-			Path:        "/skills/" + rel,
-			Resources:   skillResources(filepath.Dir(p)),
+			Name:          meta.Name,
+			Description:   meta.Description,
+			Category:      category,
+			Path:          "/skills/" + rel,
+			Compatibility: meta.Compatibility,
+			Resources:     skillResources(filepath.Dir(p)),
 		})
 
 		return nil

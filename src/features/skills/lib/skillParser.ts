@@ -19,6 +19,7 @@ export interface Skill {
   name: string;
   description: string;
   content: string;
+  compatibility?: string;
   resources?: SkillResource[];
 }
 
@@ -26,6 +27,7 @@ export interface ParsedSkill {
   name: string;
   description: string;
   content: string;
+  compatibility?: string;
   resources?: SkillResource[];
 }
 
@@ -173,6 +175,7 @@ export function parseSkillFile(content: string): SkillParseResult {
       name,
       description,
       content: body,
+      ...(frontmatter.compatibility ? { compatibility: frontmatter.compatibility } : {}),
     },
   };
 }
@@ -181,7 +184,9 @@ export function parseSkillFile(content: string): SkillParseResult {
  * Serialize a skill to SKILL.md format with YAML frontmatter
  */
 export function serializeSkill(skill: Skill): string {
-  const lines = ["---", `name: ${skill.name}`, `description: ${skill.description}`, "---", "", skill.content];
+  const lines = ["---", `name: ${skill.name}`, `description: ${skill.description}`];
+  if (skill.compatibility) lines.push(`compatibility: ${skill.compatibility}`);
+  lines.push("---", "", skill.content);
 
   return lines.join("\n");
 }

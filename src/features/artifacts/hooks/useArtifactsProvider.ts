@@ -14,6 +14,7 @@ import visionInstructionsText from "@/features/artifacts/prompts/vision.txt?raw"
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
 import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
+import { mountSkillFiles } from "@/features/tools/lib/skillResourceMount";
 import { getConfig } from "@/shared/config";
 import { createFileTools, type FileData, type FileEntry, type WritableFileSource } from "@/shared/lib/file-tools";
 import { isDataUrl } from "@/shared/lib/fileContent";
@@ -24,6 +25,30 @@ import { useArtifacts } from "./useArtifacts";
 function executionFailure(context: ToolContext | undefined, text: string) {
   context?.setError?.({ code: "EXECUTION_ERROR", message: text });
   return [{ type: "text" as const, text }];
+}
+
+/** Coerce a tool arg into a string[] (models sometimes send a bare string). */
+function asStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string");
+  return typeof value === "string" ? [value] : [];
+}
+
+type SandboxFiles = Record<string, { content: string; contentType?: string }>;
+
+/**
+ * Merge a skill's mounted resources into the sandbox file map, returning the
+ * keys actually injected (skipping any that would shadow a real artifact). The
+ * caller strips these from the post-run snapshot so read-only skill resources
+ * never persist as artifacts.
+ */
+function mergeSkillFiles(base: SandboxFiles, skillFiles: SandboxFiles): Set<string> {
+  const injected = new Set<string>();
+  for (const [path, file] of Object.entries(skillFiles)) {
+    if (path in base) continue;
+    base[path] = file;
+    injected.add(path);
+  }
+  return injected;
 }
 
 /**
@@ -216,7 +241,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           },
         },
         description:
-          "Execute Python code with optional package dependencies. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). For long scripts heavy with quotes or backslashes (regex, nested strings), prefer writing the script to a .py artifact first and running it via `path` — this avoids JSON-escaping mistakes in the `code` string. All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back.",
+          "Execute Python code with optional package dependencies. Pass the full script body in `code` (use `path` instead to run an existing .py artifact). For long scripts heavy with quotes or backslashes (regex, nested strings), prefer writing the script to a .py artifact first and running it via `path` — this avoids JSON-escaping mistakes in the `code` string. All artifact files are available under /home/user/, and files created, modified, or deleted there are synced back. To run a skill's bundled scripts, pass its name(s) in `skills`: its resources mount read-only under /home/user/skills/<name>/ for that run (e.g. `import runpy; runpy.run_path('skills/<name>/scripts/extract.py')`).",
         parameters: {
           type: "object",
           properties: {
@@ -235,6 +260,12 @@ export function useArtifactsProvider(): ToolProvider | null {
               description:
                 "Optional list of Python packages required (e.g., ['numpy', 'pandas']). These will be available for import.",
             },
+            skills: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Optional skill names whose bundled resources to mount under /home/user/skills/<name>/ for this run (use the resource paths from read_skill). Mounted read-only; not saved as artifacts.",
+            },
           },
           required: [],
         },
@@ -246,24 +277,21 @@ export function useArtifactsProvider(): ToolProvider | null {
             const fs = fsRef.current;
             const { code } = args;
             const path = normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
-            // Models occasionally send `packages` as a bare string ("numpy") rather
-            // than an array; coerce defensively so `executeCode` never hits a
-            // non-array `.map`. (Imports are auto-detected anyway, so this is a hint.)
-            const packages = Array.isArray(args.packages)
-              ? args.packages.filter((p): p is string => typeof p === "string")
-              : typeof args.packages === "string"
-                ? [args.packages]
-                : undefined;
+            // Imports are auto-detected, so `packages` is just a hint; coerce
+            // defensively since models occasionally send a bare string.
+            const packages = asStringArray(args.packages);
 
             try {
-              // Load artifact files into Pyodide's VFS
-              const artifactFiles: Record<string, { content: string; contentType?: string }> = {};
+              // Load artifact files into Pyodide's VFS, then mount any requested
+              // skills' bundled resources read-only for this run.
+              const artifactFiles: SandboxFiles = {};
               if (fs) {
                 const snapshot = await fs.getOverlaySnapshot();
                 for (const [path, file] of Object.entries(snapshot)) {
                   artifactFiles[path] = { content: file.content, contentType: file.contentType };
                 }
               }
+              const skillKeys = mergeSkillFiles(artifactFiles, await mountSkillFiles(asStringArray(args.skills)));
 
               const hasCode = typeof code === "string" && code.trim().length > 0;
               const hasPath = typeof path === "string" && path.length > 0;
@@ -297,7 +325,7 @@ export function useArtifactsProvider(): ToolProvider | null {
               const result = await executeCode(
                 {
                   code: script,
-                  packages,
+                  packages: packages.length ? packages : undefined,
                   files: artifactFiles,
                 },
                 { signal: context?.signal },
@@ -310,6 +338,9 @@ export function useArtifactsProvider(): ToolProvider | null {
               // Sync changed files back to artifacts and surface the ones written
               // so the chat can show them as chips on the assistant's response.
               if (fs && result.files) {
+                // Drop the read-only skill resources we mounted so they don't
+                // persist as artifacts (they were never part of the overlay).
+                for (const key of skillKeys) delete result.files[key];
                 const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
                 const written = [...summary.createdPaths, ...summary.updatedPaths];
                 if (written.length > 0) context?.setMeta?.({ artifactFiles: written });
@@ -339,7 +370,7 @@ export function useArtifactsProvider(): ToolProvider | null {
           },
         },
         description:
-          "Execute bash commands or scripts in a sandboxed shell. All artifact files are preloaded and any files created, modified, or deleted are synced back. Prefer explicit paths rather than relying on prior shell state. Supports pipes, redirections, loops, variables, jq, yq, xan, sqlite3, grep, sed, awk, and more.",
+          "Execute bash commands or scripts in a sandboxed shell. All artifact files are preloaded and any files created, modified, or deleted are synced back. Prefer explicit paths rather than relying on prior shell state. Supports pipes, redirections, loops, variables, jq, yq, xan, sqlite3, grep, sed, awk, and more. To use a skill's bundled resources (data files, references, shell scripts), pass its name(s) in `skills`: they mount read-only under /home/user/skills/<name>/ for that run.",
         parameters: {
           type: "object",
           properties: {
@@ -347,6 +378,12 @@ export function useArtifactsProvider(): ToolProvider | null {
               type: "string",
               description:
                 "The bash command or script to execute. Supports full shell syntax: pipes (|), redirections (>, >>), chaining (&&, ||, ;), variables, loops, functions, and glob patterns.",
+            },
+            skills: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Optional skill names whose bundled resources to mount under /home/user/skills/<name>/ for this run (use the resource paths from read_skill). Mounted read-only; not saved as artifacts.",
             },
           },
           required: ["command"],
@@ -363,13 +400,21 @@ export function useArtifactsProvider(): ToolProvider | null {
             }
 
             try {
-              // Load artifact files into bash's InMemoryFs before execution.
+              // Load artifact files into bash's InMemoryFs before execution, then
+              // mount any requested skills' resources read-only for this run.
               // Reconcile even without an artifacts fs — the singleton persists
               // across chats, so skipping this would leave a previous chat's
               // files readable here.
               const { memFs } = getSingleton();
-              const snapshot = fs ? await fs.getOverlaySnapshot() : {};
-              const artifactFiles = Object.entries(snapshot).map(([path, file]) => ({
+              const fileMap: SandboxFiles = {};
+              if (fs) {
+                const snapshot = await fs.getOverlaySnapshot();
+                for (const [path, file] of Object.entries(snapshot)) {
+                  fileMap[path] = { content: file.content, contentType: file.contentType };
+                }
+              }
+              const skillKeys = mergeSkillFiles(fileMap, await mountSkillFiles(asStringArray(args.skills)));
+              const artifactFiles = Object.entries(fileMap).map(([path, file]) => ({
                 path,
                 content: file.content,
                 contentType: file.contentType,
@@ -382,9 +427,11 @@ export function useArtifactsProvider(): ToolProvider | null {
 
               // Save changed files back to artifacts after execution and surface
               // the ones written so the chat can show them as chips on the
-              // assistant's response.
+              // assistant's response. Strip mounted skill resources so they don't
+              // persist as artifacts.
               if (fs) {
                 const currentFiles = await readFilesFromFs(memFs);
+                for (const key of skillKeys) delete currentFiles[key];
 
                 const summary = await fs.applyOverlaySnapshot(currentFiles, { deleteMissing: true });
                 const written = [...summary.createdPaths, ...summary.updatedPaths];
