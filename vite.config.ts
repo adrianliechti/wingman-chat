@@ -60,38 +60,22 @@ function walkFiles(dir: string, match: (name: string) => boolean): string[] {
 const toRel = (root: string, p: string) =>
   path.relative(root, p).split(path.sep).join("/");
 
-// Mirror of the Go server's skill-resource listing (pkg/server/library): the
-// text files the client can fetch and read inline via read_skill_resource.
-const SKILL_RESOURCE_EXTENSIONS = new Set([
-  ".css",
-  ".csv",
-  ".html",
-  ".js",
-  ".json",
-  ".md",
-  ".mjs",
-  ".py",
-  ".sql",
-  ".ts",
-  ".txt",
-  ".xml",
-  ".yaml",
-  ".yml",
-]);
-
+// Mirror of the Go server's skill-resource listing (pkg/server/library): list
+// every bundled file except the SKILL.md itself and hidden files (e.g. .DS_Store).
 function inventorySkillResources(skillDir: string): string[] {
   if (!fs.existsSync(skillDir)) return [];
   const out: string[] = [];
 
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith(".")) continue; // skip .DS_Store and other hidden files
       const p = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(p);
         continue;
       }
       const rel = toRel(skillDir, p);
-      if (rel === "SKILL.md" || !SKILL_RESOURCE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
+      if (rel === "SKILL.md") continue;
       out.push(rel);
     }
   };
