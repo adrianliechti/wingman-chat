@@ -80,6 +80,11 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const [modelEnabledTools, setModelEnabledTools] = useState<Set<string>>(new Set());
   const [modelDisabledTools, setModelDisabledTools] = useState<Set<string>>(new Set());
 
+  // Optional tools the user turns on for the current agent chat. Reset whenever
+  // the active agent changes (see effect below) — selecting an agent starts from
+  // its required tools, not the global selection — and never persisted.
+  const [sessionTools, setSessionTools] = useState<Set<string>>(new Set());
+
   // Source selection for the global Skills tool (persisted). The tool is enabled
   // whenever at least one source is on — see mcpConnectionDesired below.
   const [skillSources, setSkillSourcesState] = useState<SkillSources>(() => loadSavedSkillSources());
@@ -163,11 +168,20 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // Agent
   const { currentAgent } = useAgents();
 
-  // Studio is a session capability that layers on top of an agent too, so its
-  // enable state is honored even in agent mode. When on, its skill pack must also
-  // surface — via skillSources.studio (no agent) or merged into the agent skills
-  // provider (agent mode).
-  const studioEnabled = userTools.has(STUDIO_PROVIDER_ID) || !!currentAgent?.tools?.includes(STUDIO_PROVIDER_ID);
+  // Reset the session optionals whenever the active agent changes (select / switch
+  // / deselect) — an agent chat starts from the agent's required tools only.
+  useEffect(() => {
+    setSessionTools(new Set());
+  }, [currentAgent?.id]);
+
+  // The user's editable tool selection: in agent mode the session optionals (the
+  // agent's required tools are added separately as the floor); otherwise the sticky
+  // global userTools.
+  const activeSelection = currentAgent ? sessionTools : userTools;
+
+  // Studio's skill pack must surface when the capability is on — a required tool
+  // (currentAgent.tools), a session addition, or the global userTools selection.
+  const studioEnabled = activeSelection.has(STUDIO_PROVIDER_ID) || !!currentAgent?.tools?.includes(STUDIO_PROVIDER_ID);
 
   const {
     providers: agentProviders,
@@ -211,10 +225,11 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   // MCP server because the current model has it in tools.disabled would clear this.client
   // and break any in-flight tool call.
   const mcpConnectionDesired = useMemo(() => {
-    // User/session selections layer on top of an agent: the agent's own tools are
-    // the enforced baseline (always added via agentRequired below), and the user
-    // can add more (MCP servers, built-in capabilities) on top for the session.
-    const merged = new Set<string>(userTools);
+    // Baseline is the user's editable selection: outside agent mode the sticky
+    // userTools; in agent mode the session additions only (optionals reset to off
+    // on agent select — the global selection does not carry in). The agent's own
+    // tools are then unioned via agentRequired as the enforced floor.
+    const merged = new Set<string>(activeSelection);
     // The global Skills tool is enabled by its source selection rather than a
     // plain userTools toggle (only outside agent mode — with an agent, skills are
     // its curated set, owning the same "skills" id).
@@ -225,7 +240,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     if (companionAvailable && companionEnabled) merged.add(COMPANION_ID);
     return merged;
   }, [
-    userTools,
+    activeSelection,
     currentAgent,
     skillSources.personal,
     skillSources.catalog,
@@ -413,10 +428,16 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Update user tool set — this feeds into desiredTools which triggers the
-      // reconciliation effect as a safety net, but for MCP tools we also connect
-      // immediately so the tool is ready before the user can send a message.
-      setUserTools((prev) => {
+      // Agent mode: the agent's required tools are locked on — a disable is a
+      // no-op so we neither drop it nor disconnect its server.
+      if (currentAgent && !enabled && agentRequired.has(id)) return;
+
+      // Edit the active selection: session-local optionals in agent mode (reset on
+      // agent change), or the sticky global set otherwise. This feeds desiredTools
+      // which triggers the reconciliation effect as a safety net, but for MCP tools
+      // we also connect immediately so the tool is ready before the next message.
+      const setSelection = currentAgent ? setSessionTools : setUserTools;
+      setSelection((prev) => {
         const next = new Set(prev);
         if (enabled) next.add(id);
         else next.delete(id);
@@ -424,7 +445,15 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       });
       if (mcpIds.has(id)) await connectMcp(id, enabled);
     },
-    [mcpIds, connectMcp],
+    [mcpIds, connectMcp, currentAgent, agentRequired],
+  );
+
+  // Tool policy for the active agent: "required" = locked on (the agent's tools +
+  // its always-on providers); "optional" = the user toggles it freely. Everything
+  // is "optional" with no agent.
+  const getProviderPolicy = useCallback(
+    (id: string): "required" | "optional" => (currentAgent && agentRequired.has(id) ? "required" : "optional"),
+    [currentAgent, agentRequired],
   );
 
   // Restore an MCP app UI from persisted chat data
@@ -481,6 +510,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
       value={{
         providers,
         getProviderState,
+        getProviderPolicy,
         setProviderEnabled,
         setModelOverrides,
         skillSources,

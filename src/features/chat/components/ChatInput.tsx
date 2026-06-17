@@ -55,8 +55,15 @@ export function ChatInput() {
     stopCapture,
     captureFrame,
   } = useScreenCapture();
-  const { providers, getProviderState, setProviderEnabled, setModelOverrides, skillSources, setSkillSources } =
-    useToolsContext();
+  const {
+    providers,
+    getProviderState,
+    getProviderPolicy,
+    setProviderEnabled,
+    setModelOverrides,
+    skillSources,
+    setSkillSources,
+  } = useToolsContext();
   const {
     isAvailable: voiceAvailable,
     isListening,
@@ -177,10 +184,11 @@ export function ChatInput() {
     return ids;
   }, [model?.tools]);
 
-  // Providers visible in the UI: exclude model-configured and artifacts; hidden entirely when agent active
+  // Providers visible in the UI: exclude model-configured and artifacts. Shown in
+  // agent mode too — the agent's required tools render locked, optionals toggle.
   const visibleProviders = useMemo(
-    () => (currentAgent ? [] : providers.filter((p: ToolProvider) => p.id !== "artifacts" && !modelTools.has(p.id))),
-    [currentAgent, providers, modelTools],
+    () => providers.filter((p: ToolProvider) => p.id !== "artifacts" && !modelTools.has(p.id)),
+    [providers, modelTools],
   );
 
   // Tool providers indicator logic
@@ -676,6 +684,7 @@ export function ChatInput() {
                   isResponding={isResponding}
                   visibleProviders={visibleProviders}
                   getProviderState={getProviderState}
+                  getProviderPolicy={getProviderPolicy}
                   setProviderEnabled={setProviderEnabled}
                   skillSources={skillSources}
                   setSkillSources={setSkillSources}

@@ -14,6 +14,8 @@ import type {
 export interface ToolsContextValue {
   providers: ToolProvider[];
   getProviderState: (id: string) => ProviderState;
+  /** Whether the active agent locks this tool on ("required") or leaves it user-toggleable ("optional"). */
+  getProviderPolicy: (id: string) => "required" | "optional";
   setProviderEnabled: (id: string, enabled: boolean) => Promise<void>;
   setModelOverrides: (enabled: string[], disabled: string[]) => void;
   /** Which sources the global Skills tool exposes (personal and/or catalog). */

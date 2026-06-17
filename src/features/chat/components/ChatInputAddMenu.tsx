@@ -17,6 +17,7 @@ import {
   HardDrive,
   Library,
   LoaderCircle,
+  Lock,
   Mic,
   Paperclip,
   PenTool,
@@ -54,6 +55,7 @@ interface ChatInputAddMenuProps {
   isResponding: boolean;
   visibleProviders: ToolProvider[];
   getProviderState: (id: string) => ProviderState;
+  getProviderPolicy: (id: string) => "required" | "optional";
   setProviderEnabled: (id: string, enabled: boolean) => Promise<void>;
   skillSources: SkillSources;
   setSkillSources: (sources: SkillSources) => void;
@@ -71,6 +73,7 @@ export function ChatInputAddMenu({
   isResponding,
   visibleProviders,
   getProviderState,
+  getProviderPolicy,
   setProviderEnabled,
   skillSources,
   setSkillSources,
@@ -87,10 +90,13 @@ export function ChatInputAddMenu({
   const studioTemplateCount = templates.filter((t) => isStudioSkillCategory(t.category)).length;
   const catalogTemplateCount = templates.length - studioTemplateCount;
 
-  // The Skills tool / Skill Builder are grouped into their own submenu, so
-  // they're filtered out of the flat tool list below. The unified Studio
-  // capability renders as a normal flat toggle alongside the other tools.
-  const otherProviders = visibleProviders.filter((p) => p.id !== SKILLS_PROVIDER_ID && p.id !== SKILL_BUILDER_ID);
+  // The Skills tool / Skill Builder are grouped into their own submenu, and the
+  // agent-internal infra (repository/memory) isn't a user-toggleable tool, so all
+  // are filtered out of the flat tool list below. The unified Studio capability
+  // renders as a normal flat toggle alongside the other tools.
+  const otherProviders = visibleProviders.filter(
+    (p) => p.id !== SKILLS_PROVIDER_ID && p.id !== SKILL_BUILDER_ID && p.id !== "repository" && p.id !== "memory",
+  );
   const skillBuilder = visibleProviders.find((p) => p.id === SKILL_BUILDER_ID);
   // Skills submenu shows whenever no agent is active — My Skills / Catalog / Manage
   // are always meaningful; the Skill Builder row is rendered only if available.
@@ -105,16 +111,17 @@ export function ChatInputAddMenu({
   );
 
   // Toggle a tool provider. Studio pairs its injected system prompt with the
-  // shipped Studio skill pack, so mirror its state onto `skillSources.studio`
-  // (which surfaces those skills in the global Skills tool when no agent is active).
+  // shipped Studio skill pack, so (outside agent mode) mirror its state onto
+  // `skillSources.studio`, which surfaces those skills in the global Skills tool.
+  // Under an agent the pairing is handled by the agent skills merge, not skillSources.
   const toggleProvider = useCallback(
     async (id: string, enabled: boolean) => {
       await setProviderEnabled(id, enabled);
-      if (id === STUDIO_PROVIDER_ID) {
+      if (id === STUDIO_PROVIDER_ID && !currentAgent) {
         setSkillSources({ ...skillSources, studio: enabled });
       }
     },
-    [setProviderEnabled, setSkillSources, skillSources],
+    [setProviderEnabled, setSkillSources, skillSources, currentAgent],
   );
 
   const [showMobileSheet, setShowMobileSheet] = useState(false);
@@ -522,19 +529,22 @@ export function ChatInputAddMenu({
               const providerEnabled = state === ProviderState.Connected;
               const providerInitializing = state === ProviderState.Initializing;
               const providerFailed = state === ProviderState.Failed;
+              const providerRequired = getProviderPolicy(provider.id) === "required";
 
               return (
                 <MenuItem key={provider.id}>
                   <Tooltip
                     content={
-                      providerFailed
-                        ? `${provider.name} failed to connect`
-                        : providerInitializing
-                          ? `${provider.name} is connecting…`
-                          : (provider.description ??
-                            (providerEnabled
-                              ? `Disable ${provider.name} tools for this conversation`
-                              : `Enable ${provider.name} tools for this conversation`))
+                      providerRequired
+                        ? `${provider.name} is required by this agent`
+                        : providerFailed
+                          ? `${provider.name} failed to connect`
+                          : providerInitializing
+                            ? `${provider.name} is connecting…`
+                            : (provider.description ??
+                              (providerEnabled
+                                ? `Disable ${provider.name} tools for this conversation`
+                                : `Enable ${provider.name} tools for this conversation`))
                     }
                     side="right"
                     className="w-full"
@@ -543,21 +553,28 @@ export function ChatInputAddMenu({
                       type="button"
                       onClick={async (e) => {
                         e.preventDefault();
-                        if (providerInitializing) return;
+                        if (providerInitializing || providerRequired) return;
                         try {
                           await toggleProvider(provider.id, !providerEnabled);
                         } catch (error) {
                           console.error(`Failed to toggle provider ${provider.name}:`, error);
                         }
                       }}
-                      disabled={providerInitializing}
-                      className="group flex w-full items-center gap-3 px-3 py-2 rounded-lg data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors disabled:opacity-50"
+                      disabled={providerInitializing || providerRequired}
+                      className={cn(
+                        "group flex w-full items-center gap-3 px-3 py-2 rounded-lg data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors",
+                        providerInitializing && !providerRequired && "opacity-50",
+                      )}
                     >
                       {renderProviderIcon(provider, state)}
                       <span className="font-medium text-sm flex-1 text-left truncate">{provider.name}</span>
                       <span className="shrink-0 w-4 flex justify-center">
-                        {providerEnabled && !providerInitializing && !providerFailed && (
-                          <Check size={13} className="ml-1 text-neutral-600 dark:text-neutral-400" />
+                        {providerRequired ? (
+                          <Lock size={12} className="text-neutral-400 dark:text-neutral-500" />
+                        ) : (
+                          providerEnabled &&
+                          !providerInitializing &&
+                          !providerFailed && <Check size={13} className="ml-1 text-neutral-600 dark:text-neutral-400" />
                         )}
                       </span>
                     </button>
@@ -696,6 +713,7 @@ export function ChatInputAddMenu({
                       const providerEnabled = state === ProviderState.Connected;
                       const providerInitializing = state === ProviderState.Initializing;
                       const providerFailed = state === ProviderState.Failed;
+                      const providerRequired = getProviderPolicy(provider.id) === "required";
 
                       return (
                         <button
@@ -704,15 +722,17 @@ export function ChatInputAddMenu({
                           onClick={async (e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            if (providerInitializing) return;
+                            if (providerInitializing || providerRequired) return;
                             try {
                               await toggleProvider(provider.id, !providerEnabled);
                             } catch (error) {
                               console.error(`Failed to toggle provider ${provider.name}:`, error);
                             }
                           }}
-                          disabled={providerInitializing}
-                          className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50 ${
+                          disabled={providerInitializing || providerRequired}
+                          className={`flex w-full items-center gap-3 px-3 py-1.5 rounded-xl transition-colors ${
+                            providerInitializing && !providerRequired ? "opacity-50" : ""
+                          } ${
                             providerEnabled
                               ? "text-neutral-900 dark:text-neutral-100 bg-neutral-100 dark:bg-neutral-800"
                               : "text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100/60 dark:hover:bg-white/5"
@@ -723,14 +743,20 @@ export function ChatInputAddMenu({
                             <span className="font-medium text-sm">{provider.name}</span>
                             {provider.description && (
                               <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate w-full">
-                                {provider.description}
+                                {providerRequired ? "Required by this agent" : provider.description}
                               </span>
                             )}
                           </div>
-                          {providerEnabled && !providerInitializing && !providerFailed && (
-                            <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
+                          {providerRequired ? (
+                            <Lock size={15} className="shrink-0 text-neutral-400 dark:text-neutral-500" />
+                          ) : (
+                            <>
+                              {providerEnabled && !providerInitializing && !providerFailed && (
+                                <Check size={16} className="shrink-0 text-neutral-600 dark:text-neutral-400" />
+                              )}
+                              {providerFailed && <TriangleAlert size={16} className="shrink-0 text-neutral-400" />}
+                            </>
                           )}
-                          {providerFailed && <TriangleAlert size={16} className="shrink-0 text-neutral-400" />}
                         </button>
                       );
                     })}
