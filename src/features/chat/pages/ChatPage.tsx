@@ -6,7 +6,7 @@ import { SkillCatalog } from "@/features/agent/components/SkillCatalog";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { ArtifactsDrawer } from "@/features/artifacts/components/ArtifactsDrawer";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
-import { AgentHintButton } from "@/features/chat/components/AgentHintButton";
+import { AgentButton } from "@/features/chat/components/AgentButton";
 import { ChatConsentBackdrop, ChatConsentBanner } from "@/features/chat/components/ChatConsentOverlay";
 import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
@@ -197,7 +197,7 @@ export function ChatPage() {
     isResizing: isAgentResizing,
     handleMouseDown: handleAgentResizeMouseDown,
   } = useDrawerResize({
-    defaultWidthVw: 20,
+    defaultWidthVw: 22,
     closeThresholdPx: 200,
     minPanelPx: 280,
     maxPanelPx: 500,
@@ -395,7 +395,7 @@ export function ChatPage() {
             <Shapes size={20} />
           </button>
         )}
-        <AgentHintButton />
+        <AgentButton />
         <button
           type="button"
           className="p-2 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 rounded transition-all duration-150 ease-out"

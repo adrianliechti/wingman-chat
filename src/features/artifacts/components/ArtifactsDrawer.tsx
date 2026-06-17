@@ -340,19 +340,18 @@ export function ArtifactsDrawer() {
         );
       }
       return (
-        <div className="h-full flex items-center justify-center p-8">
+        <div className="h-full flex items-center justify-center p-6">
           <div className="w-full max-w-sm text-center">
             <Shapes size={28} className="text-neutral-300 dark:text-neutral-600 mb-3 mx-auto" />
             <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1">No artifacts yet</h3>
             <p className="text-xs text-neutral-400 dark:text-neutral-500 leading-relaxed mb-4">
-              Files, code, and documents created in the conversation will appear here. You can also run Python or shell
-              commands directly.
+              Drop files here or use Upload. Anything you create in the chat appears here too.
             </p>
-            <ul className="space-y-1.5 text-left mb-5">
+            <ul className="space-y-1.5 text-left">
               {[
-                "Analyze this CSV and create a chart.",
-                "Write a Python script to clean up this spreadsheet.",
+                "Make a chart from these numbers.",
                 "Turn these notes into a polished document.",
+                "Create a slide deck about this topic.",
               ].map((example) => (
                 <li
                   key={example}
@@ -362,57 +361,6 @@ export function ArtifactsDrawer() {
                 </li>
               ))}
             </ul>
-            {config.drives.length > 0 ? (
-              <DropdownMenu
-                anchor="bottom"
-                trigger={
-                  <MenuButton className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors">
-                    <Upload size={13} className="shrink-0" />
-                    Upload files
-                  </MenuButton>
-                }
-              >
-                <DropdownMenuItem icon={<Upload size={16} />} onClick={() => fileInputRef.current?.click()}>
-                  Upload
-                </DropdownMenuItem>
-                {config.drives.map((drive) => (
-                  <DropdownMenuItem
-                    key={drive.id}
-                    icon={
-                      drive.icon ? (
-                        <span
-                          className="shrink-0 bg-current inline-block"
-                          style={{
-                            width: 16,
-                            height: 16,
-                            maskImage: `url(${drive.icon})`,
-                            WebkitMaskImage: `url(${drive.icon})`,
-                            maskSize: "contain",
-                            maskRepeat: "no-repeat",
-                            maskPosition: "center",
-                          }}
-                        />
-                      ) : (
-                        <HardDrive size={16} />
-                      )
-                    }
-                    onClick={() => setActiveDrive(drive)}
-                  >
-                    {drive.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenu>
-            ) : (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 dark:hover:border-neutral-600 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
-              >
-                <Upload size={13} className="shrink-0" />
-                Upload files
-              </button>
-            )}
-            <p className="mt-3 text-xs text-neutral-300 dark:text-neutral-600">or drag &amp; drop anywhere</p>
           </div>
         </div>
       );
@@ -627,6 +575,10 @@ export function ArtifactsDrawer() {
     }
   };
 
+  // No file open and nothing in the project — the empty state. The header shows
+  // an "Artifacts" title + Upload action; the body shows the slim onboarding card.
+  const isEmpty = !activeFile && files.length === 0;
+
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: File drag-and-drop requires drag events on the drawer surface.
     <div
@@ -669,6 +621,11 @@ export function ArtifactsDrawer() {
           <div className="@container shrink-0 h-12 md:h-10 flex items-center px-2 gap-1">
             {/* File title */}
             <div className="flex-1 flex items-center min-w-0 px-1 gap-1.5 relative" ref={filePickerRef}>
+              {isEmpty && (
+                <span className="text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 truncate">
+                  Artifacts
+                </span>
+              )}
               {activeFile && (
                 <button
                   type="button"
@@ -774,6 +731,60 @@ export function ArtifactsDrawer() {
                 </div>
               )}
             </div>
+
+            {/* Empty-state Upload action — mirrors the Agent drawer's subtle header actions. */}
+            {isEmpty &&
+              (config.drives.length > 0 ? (
+                <DropdownMenu
+                  anchor="bottom end"
+                  trigger={
+                    <MenuButton className="shrink-0 flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
+                      <Upload size={12} />
+                      <span className="@[16rem]:inline hidden">Upload</span>
+                    </MenuButton>
+                  }
+                >
+                  <DropdownMenuItem icon={<Upload size={16} />} onClick={() => fileInputRef.current?.click()}>
+                    Upload
+                  </DropdownMenuItem>
+                  {config.drives.map((drive) => (
+                    <DropdownMenuItem
+                      key={drive.id}
+                      icon={
+                        drive.icon ? (
+                          <span
+                            className="shrink-0 bg-current inline-block"
+                            style={{
+                              width: 16,
+                              height: 16,
+                              maskImage: `url(${drive.icon})`,
+                              WebkitMaskImage: `url(${drive.icon})`,
+                              maskSize: "contain",
+                              maskRepeat: "no-repeat",
+                              maskPosition: "center",
+                            }}
+                          />
+                        ) : (
+                          <HardDrive size={16} />
+                        )
+                      }
+                      onClick={() => setActiveDrive(drive)}
+                    >
+                      {drive.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenu>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="shrink-0 flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                  title="Upload files"
+                >
+                  <Upload size={12} />
+                  <span className="@[16rem]:inline hidden">Upload</span>
+                </button>
+              ))}
 
             {/* File-specific action group: run, view toggle, word export, download */}
             {(runHandler || activeFileData) && (
