@@ -218,6 +218,23 @@ export function ChatInputAddMenu({
             anchor="top start"
             className="max-h-[60vh]! mb-2 rounded-xl border border-white/40 dark:border-neutral-700/60 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl shadow-lg shadow-black/20 dark:shadow-black/50 p-1 overflow-y-auto z-50 min-w-40 transition duration-100 ease-out data-closed:scale-95 data-closed:opacity-0"
           >
+            <MenuItem>
+              <button
+                ref={fileRefs.setReference}
+                type="button"
+                onClick={() => (config.drives.length === 0 ? onAttachmentClick() : undefined)}
+                onMouseEnter={() => {
+                  if (config.drives.length === 0) return;
+                  openSubmenu("file");
+                }}
+                onMouseLeave={scheduleCloseSubmenu}
+                className="group flex w-full items-center gap-3 px-3 py-2 rounded-lg data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
+              >
+                <Paperclip size={16} className="shrink-0" />
+                <span className="font-medium text-sm flex-1 text-left">Add File</span>
+                {config.drives.length > 0 && <ChevronRight size={14} className="shrink-0 text-neutral-400" />}
+              </button>
+            </MenuItem>
             {isScreenCaptureAvailable && (
               <MenuItem>
                 {({ close }) => (
@@ -252,23 +269,6 @@ export function ChatInputAddMenu({
                 )}
               </MenuItem>
             )}
-            <MenuItem>
-              <button
-                ref={fileRefs.setReference}
-                type="button"
-                onClick={() => (config.drives.length === 0 ? onAttachmentClick() : undefined)}
-                onMouseEnter={() => {
-                  if (config.drives.length === 0) return;
-                  openSubmenu("file");
-                }}
-                onMouseLeave={scheduleCloseSubmenu}
-                className="group flex w-full items-center gap-3 px-3 py-2 rounded-lg data-focus:bg-neutral-100/60 dark:data-focus:bg-white/5 hover:bg-neutral-100/60 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-colors"
-              >
-                <Paperclip size={16} className="shrink-0" />
-                <span className="font-medium text-sm flex-1 text-left">Add File</span>
-                {config.drives.length > 0 && <ChevronRight size={14} className="shrink-0 text-neutral-400" />}
-              </button>
-            </MenuItem>
             {activeSubmenu === "file" &&
               createPortal(
                 <div
