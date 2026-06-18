@@ -48,10 +48,13 @@ Vary the field, palette, particle count, and step rules to match the philosophy.
 noise/forces) and Pillow (per-pixel work, blends) are both available and fast. Favour controlled
 chaos and reward sustained viewing.
 
-## Interactive version (online only)
-If the user wants a *live, parametric* piece **and** the client has internet, you can instead write a
-self-contained `.html` that loads p5.js from a CDN and drives the same algorithm with sliders. This
-needs connectivity, so the Python→PNG path above is the default.
+## Interactive version (offline)
+The Python→PNG above is the default deliverable. When the user wants to *explore* the parameters live,
+write a self-contained `.html` instead: render the same field/particle math to an HTML5 `<canvas>` with
+**vanilla JS** — no p5.js, no library, no CDN, so it still works offline. Add a few
+`<input type="range">` sliders (particle count, field scale, step size, palette) that redraw on
+`input`, and persist their values to `localStorage` so a refresh keeps the look. Mirror the PNG
+algorithm so both render as the same piece.
 
 ## Deliver
 Save `art.png` (and `philosophy.md`) to the workspace; one line on what it is. To revise, tweak the

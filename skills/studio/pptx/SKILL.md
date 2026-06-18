@@ -5,9 +5,8 @@ description: Create or edit PowerPoint presentations (.pptx) — pitch decks, sl
 
 # PPTX — slide decks (Python runtime)
 
-Build `.pptx` files with **`python-pptx`** in the interpreter (Node tools like `pptxgenjs` and
-XML-unpack flows don't run here — use python-pptx directly). Save to the workspace; it renders in the
-side panel.
+Build `.pptx` files with **`python-pptx`** in the interpreter. Save to the workspace; it renders in
+the side panel.
 
 ## Get the content first, then design
 Pull the real material from the conversation/workspace. Then commit to ONE visual system before slide

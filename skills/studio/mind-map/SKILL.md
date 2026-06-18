@@ -10,8 +10,8 @@ drawer renders it natively — **offline, no internet needed**.
 
 ## 1. Gather the material
 
-Source = **the conversation so far plus workspace files**. The root node is the central theme;
-capture the real hierarchy from the material.
+The root node is the central theme; capture the real hierarchy from the conversation and workspace
+material.
 
 ## 2. Structure it
 

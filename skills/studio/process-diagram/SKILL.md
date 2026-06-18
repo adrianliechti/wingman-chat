@@ -11,9 +11,8 @@ natively in the panel (offline).
 
 ## 1. Gather the material
 
-Source = **the conversation so far plus workspace files**. Locate the roles, systems of record,
-triggering events, decision points and their criteria, controls/approvals, hand-offs, and
-exception paths.
+Locate the roles, systems of record, triggering events, decision points and their criteria,
+controls/approvals, hand-offs, and exception paths.
 
 ## 2. Pick a framework and style
 

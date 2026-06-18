@@ -6,8 +6,7 @@ description: Work with PDF files — create new PDFs, merge/split/rotate, extrac
 # PDF — create, combine, and extract (Python runtime)
 
 Use **`reportlab`** to create PDFs, **`pypdf`** to merge/split/rotate/encrypt, and **`pdfplumber`**
-to extract text/tables. (JS libraries and CLI tools don't run here — these Python libraries cover the
-same operations.) Save to the workspace; the drawer renders PDFs.
+to extract text/tables. Save to the workspace; the drawer renders PDFs.
 
 ## Bundled helpers
 

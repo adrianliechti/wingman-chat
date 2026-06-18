@@ -32,11 +32,17 @@ composition — like a jazz musician quoting a song. Those who know feel it; eve
 masterful abstract composition. Never announce it.
 
 ## Step 2 — Express it (.png / .pdf)
-Build with the interpreter. Two good paths:
-- **Vector/print** → `reportlab` (PDF canvas: shapes, type, precise placement) or `Pillow`/
-  `matplotlib` (PNG: generative patterns, color fields, repeated marks).
-- **Rich/painterly** → write a detailed art-direction prompt and `await render(prompt, "art.png")`,
-  then optionally composite text/marks over it with Pillow.
+Build with the interpreter. The image generator makes far richer art than hand-drawn code, so reach
+for it first:
+- **Rich / painterly / illustrative (default)** → write a detailed art-direction prompt and
+  `await render(prompt, "art.png")`. For a named look, `read_skill image-styles` and fold the matching
+  fragment in. This register is mostly visual, so keep words minimal anyway; modern renderers spell
+  short titles fine, but if a specific title or label must be exact you can composite it over the
+  result with `Pillow`.
+- **Geometric / typographic / precise** → when the piece is built on exact shapes, a strict grid, or
+  type itself (Swiss / Brutalist / concrete-poetry registers), draw it with `reportlab` (PDF: precise
+  placement) or `Pillow` / `matplotlib` (PNG: generative patterns, color fields, repeated marks) —
+  code gives the precision diffusion can't.
 
 Direction: museum/magazine quality, single page, design-forward. Favor repeating patterns, perfect
 shapes, dense accumulation of marks, a limited cohesive palette, sparse clinical typography as visual

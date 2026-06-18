@@ -5,9 +5,8 @@ description: Create or edit Word documents (.docx) — reports, memos, letters, 
 
 # DOCX — Word documents (Python runtime)
 
-Build `.docx` files with **`python-docx`** in the interpreter (Node `docx-js` and `pandoc`/`soffice`
-flows don't run here — use python-docx directly). Save the file to the workspace; it renders in the
-side panel.
+Build `.docx` files with **`python-docx`** in the interpreter. Save the file to the workspace; it
+renders in the side panel.
 
 ## Get the content first
 Pull the real facts/figures/quotes from the conversation and workspace files before building. Lead

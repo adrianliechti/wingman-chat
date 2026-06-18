@@ -10,8 +10,8 @@ Produce an interactive quiz the user can actually take. You write a single self-
 
 ## 1. Gather the material
 
-Source = **the conversation so far plus workspace files**. Base every question on real content —
-never test on facts that aren't in the material.
+Base every question on real content from the conversation and workspace files — never test on facts
+that aren't in the material.
 
 ## 2. Design the questions
 

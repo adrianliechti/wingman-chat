@@ -10,9 +10,8 @@ in the panel (offline).
 
 ## 1. Gather the material
 
-Source = **the conversation so far plus workspace files**. Identify the people/actors, systems and
-containers (apps, services, datastores), their responsibilities and tech stack, and the
-relationships (who calls whom, over what protocol).
+Identify the people/actors, systems and containers (apps, services, datastores), their
+responsibilities and tech stack, and the relationships (who calls whom, over what protocol).
 
 ## 2. Pick the kind and style
 
