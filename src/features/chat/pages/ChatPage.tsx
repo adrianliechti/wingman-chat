@@ -12,7 +12,7 @@ import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
 import { ChatToolGroup } from "@/features/chat/components/ChatToolGroup";
-import { groupRenderUnits } from "@/features/chat/components/chatMessageUtils";
+import { groupRenderUnits, isToolResultMessage } from "@/features/chat/components/chatMessageUtils";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { useDrawerAnimation } from "@/features/chat/hooks/useDrawerAnimation";
@@ -556,9 +556,7 @@ export function ChatPage() {
                 <div>
                   {renderUnits.map((unit) => {
                     if (unit.kind === "toolGroup") {
-                      // Key off the first member's tool-call id — stable as the count
-                      // grows while streaming and across the index shifts that a
-                      // stop/restart causes (the index→key map resets on truncation).
+                      // Key off the first tool-call id — stable as the group grows and across restarts.
                       const first = messages[unit.indices[0]].content.find((p) => p.type === "tool_result");
                       const groupKey =
                         first && "id" in first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
@@ -569,14 +567,16 @@ export function ChatPage() {
                       );
                     }
                     const index = unit.index;
+                    const message = messages[index];
+                    // Tool results are role "user" too; tag them so the scroll pin anchors to prompts.
+                    const dataRole = isToolResultMessage(message) ? "tool" : message.role;
                     return (
-                      <div key={messageRenderKeys[index]} className="flow-root" data-role={messages[index].role}>
+                      <div key={messageRenderKeys[index]} className="flow-root" data-role={dataRole}>
                         <ChatMessage
                           index={index}
-                          message={messages[index]}
+                          message={message}
                           isLast={index === messages.length - 1}
                           isResponding={isResponding}
-                          onGoToLatest={goToLatest}
                         />
                       </div>
                     );

@@ -146,7 +146,7 @@ function messageHasMedia(message: Message): boolean {
 }
 
 /** A user message that renders as a collapsed tool-result row (see ChatMessage). */
-function isToolResultMessage(message: Message): boolean {
+export function isToolResultMessage(message: Message): boolean {
   return (
     message.role === "user" &&
     message.content.some((p) => p.type === "tool_result") &&

@@ -15,15 +15,9 @@ type ChatUserMessageProps = {
   index: number;
   isResponding?: boolean;
   isLast?: boolean;
-  onGoToLatest?: () => void;
 };
 
-export const ChatUserMessage = memo(function ChatUserMessage({
-  message,
-  index,
-  isResponding,
-  onGoToLatest,
-}: ChatUserMessageProps) {
+export const ChatUserMessage = memo(function ChatUserMessage({ message, index, isResponding }: ChatUserMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
   // Drive the action-bar reveal with JS hover instead of CSS :hover — Safari
   // leaves :hover sticky (notably after a trackpad tap), so the buttons wouldn't
@@ -116,7 +110,6 @@ export const ChatUserMessage = memo(function ChatUserMessage({
     if ((editContent.trim() === "" && editAdditionalTextContent.length === 0 && editMediaContent.length === 0) || !chat)
       return;
 
-    onGoToLatest?.();
     setIsEditing(false);
 
     // Truncate history and send edited message, preserving additional text content (file attachments) and media

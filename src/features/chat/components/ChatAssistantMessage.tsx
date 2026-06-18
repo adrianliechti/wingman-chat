@@ -92,13 +92,15 @@ const THINKING_WORDS = [
   "Wrangling",
 ];
 
-/** Spinner + label "working" indicator — same look & feel as a running tool row. */
-function ThinkingIndicator({ className }: { className?: string }) {
+/** Spinner + label "working" indicator — identical box to a running tool row. */
+function ThinkingIndicator() {
   const [word] = useState(() => THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)]);
   return (
-    <div className={cn("flex items-center gap-2 min-w-0", className)}>
-      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
-      <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{word}…</span>
+    <div className="rounded-lg overflow-hidden max-w-full">
+      <div className="flex items-center gap-2 min-w-0">
+        <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
+        <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{word}…</span>
+      </div>
     </div>
   );
 }
@@ -299,13 +301,11 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
     return (
       <div className="pb-2">
         {hasReasoning && renderReasoning()}
-        {hasToolCalls ? (
-          <div className="mt-0 space-y-0">
-            {toolCallParts.map((part, i) => {
+        {hasToolCalls
+          ? toolCallParts.map((part, i) => {
               if (part.type !== "tool_call") return null;
               const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === part.id;
 
-              // Show the elicitation prompt if this tool call is waiting on the user.
               if (isPendingElicitation) {
                 return (
                   <ChatMessageElicitation
@@ -327,11 +327,8 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
               return (
                 <RunningToolRow key={getMessagePartKey(part, i, "loading-tool-call")} header={header} status={status} />
               );
-            })}
-          </div>
-        ) : (
-          !hasReasoning && <ThinkingIndicator />
-        )}
+            })
+          : !hasReasoning && <ThinkingIndicator />}
       </div>
     );
   }

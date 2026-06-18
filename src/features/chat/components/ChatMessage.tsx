@@ -10,16 +10,9 @@ type ChatMessageProps = {
   message: Message;
   isLast?: boolean;
   isResponding?: boolean;
-  onGoToLatest?: () => void;
 };
 
-export const ChatMessage = memo(function ChatMessage({
-  message,
-  index,
-  isResponding,
-  isLast,
-  onGoToLatest,
-}: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, index, isResponding, isLast }: ChatMessageProps) {
   const isUser = message.role === Role.User;
   const isAssistant = message.role === Role.Assistant;
 
@@ -44,15 +37,7 @@ export const ChatMessage = memo(function ChatMessage({
       return <ChatToolMessage message={message} index={index} />;
     }
 
-    return (
-      <ChatUserMessage
-        message={message}
-        index={index}
-        isResponding={isResponding}
-        isLast={isLast}
-        onGoToLatest={onGoToLatest}
-      />
-    );
+    return <ChatUserMessage message={message} index={index} isResponding={isResponding} isLast={isLast} />;
   }
 
   if (isAssistant) {

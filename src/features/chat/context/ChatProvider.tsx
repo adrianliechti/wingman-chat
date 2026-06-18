@@ -172,6 +172,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [streamingMessage, setStreamingMessage] = useState<{ chatId: string; message: Message } | null>(null);
   const streamingMessageRef = useRef<{ chatId: string; message: Message } | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Chat that owns the single in-flight turn, so navigating away can cancel it.
+  const runningChatIdRef = useRef<string | null>(null);
   const pendingModelContextRef = useRef<Map<string, string | null>>(new Map());
 
   // Keep ref in sync with state so stopStreaming can read current value synchronously
@@ -366,6 +368,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
+      runningChatIdRef.current = id;
 
       // Kick off the combined title + classification call in parallel with the model turn so
       // the consent/risk overlay can appear as soon as the user hits send, without waiting for
@@ -568,6 +571,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         const aborted = abortController.signal.aborted;
         abortControllerRef.current = null;
+        runningChatIdRef.current = null;
 
         setIsResponding(false);
 
@@ -584,6 +588,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setIsResponding(false);
         const aborted = abortControllerRef.current?.signal.aborted ?? false;
         abortControllerRef.current = null;
+        runningChatIdRef.current = null;
         updateStreamingMessage(null);
 
         // If the stream was aborted by the user, exit cleanly without
@@ -752,6 +757,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     controller.abort();
     abortControllerRef.current = null;
+    runningChatIdRef.current = null;
 
     // Commit partial streaming content to chat
     const streaming = streamingMessageRef.current;
@@ -766,6 +772,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setPendingElicitation(null);
     setToolMeta({});
   }, [updateChat, updateStreamingMessage]);
+
+  // Navigating to another/new chat cancels the in-flight turn (single run).
+  useEffect(() => {
+    const runningId = runningChatIdRef.current;
+    if (runningId && runningId !== chatId) stopStreaming();
+  }, [chatId, stopStreaming]);
 
   const value: ChatContextType = {
     // Models
