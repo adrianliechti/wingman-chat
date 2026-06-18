@@ -43,9 +43,13 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, indices }: 
 
       {expanded && (
         <div className="mt-1">
-          {indices.map((idx) => (
-            <ChatToolMessage key={idx} message={messages[idx]} index={idx} />
-          ))}
+          {indices.map((idx) => {
+            const result = messages[idx].content.find((p) => p.type === "tool_result");
+            // Key by the stable tool-call id, not the array index — stop/restart
+            // shifts indices, and index keys would reconcile the wrong rows.
+            const key = result && "id" in result ? result.id : idx;
+            return <ChatToolMessage key={key} message={messages[idx]} index={idx} />;
+          })}
         </div>
       )}
     </div>

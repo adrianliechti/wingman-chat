@@ -556,14 +556,14 @@ export function ChatPage() {
                 <div>
                   {renderUnits.map((unit) => {
                     if (unit.kind === "toolGroup") {
-                      // Stable key off the first member — count grows while streaming,
-                      // so keying on it would needlessly remount the group.
+                      // Key off the first member's tool-call id — stable as the count
+                      // grows while streaming and across the index shifts that a
+                      // stop/restart causes (the index→key map resets on truncation).
+                      const first = messages[unit.indices[0]].content.find((p) => p.type === "tool_result");
+                      const groupKey =
+                        first && "id" in first ? `group:${first.id}` : `group:${messageRenderKeys[unit.indices[0]]}`;
                       return (
-                        <div
-                          key={`group:${messageRenderKeys[unit.indices[0]]}`}
-                          className="flow-root"
-                          data-role="tool-group"
-                        >
+                        <div key={groupKey} className="flow-root" data-role="tool-group">
                           <ChatToolGroup messages={messages} indices={unit.indices} />
                         </div>
                       );

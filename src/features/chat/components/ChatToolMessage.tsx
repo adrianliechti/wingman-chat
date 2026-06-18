@@ -69,7 +69,11 @@ export const ChatToolMessage = memo(function ChatToolMessage({ message, index }:
               ) : header.Icon ? (
                 <header.Icon className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
               ) : toolIcon ? (
-                <McpProviderIcon src={toolIcon} size={12} className="shrink-0 w-3 h-3 object-contain" />
+                <McpProviderIcon
+                  src={toolIcon}
+                  size={12}
+                  className="shrink-0 w-3 h-3 object-contain text-neutral-400 dark:text-neutral-500"
+                />
               ) : (
                 <Wrench className="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" />
               )}
