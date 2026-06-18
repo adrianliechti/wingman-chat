@@ -15,10 +15,10 @@ export const STUDIO_PROVIDER_ID = "studio";
  * skill before building.
  *
  * Carries the `create_image` tool when a renderer is configured; its other
- * execution is the artifacts interpreter + HTML preview and the global
- * `read_skill` over the shipped Notebook skill pack. Toggling it pairs with that
- * skill source (no agent) / merges the pack into the agent skills (agent mode),
- * so the skills surface alongside the instructions in either case.
+ * execution is the artifacts interpreter + HTML preview and `read_skill` over the
+ * shipped Studio skill pack. Enabling the capability sets `studioEnabled`, which
+ * useSkillsProvider reads to fold the pack into the single Skills tool (in either
+ * agent or no-agent mode), so the skills surface alongside the instructions.
  */
 export function useStudioProvider(): ToolProvider {
   const imageTool = useImageTool();

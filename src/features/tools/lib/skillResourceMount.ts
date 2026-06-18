@@ -11,8 +11,8 @@ let resolver: Resolver | null = null;
  * makes the agentskills spec's tier-3 `scripts/` executable (e.g. the model can
  * `runpy.run_path("skills/<name>/scripts/extract.py")`).
  *
- * Only one skills provider is active at a time (the global and agent-scoped
- * variants never coexist), so a single module-level slot suffices.
+ * There is a single skills provider for the whole app, so one module-level slot
+ * suffices.
  */
 export function setSkillResourceResolver(fn: Resolver | null): void {
   resolver = fn;

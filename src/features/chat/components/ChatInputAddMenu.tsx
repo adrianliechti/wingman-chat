@@ -39,7 +39,6 @@ import { SKILL_BUILDER_ID } from "@/features/skills/hooks/useSkillBuilderProvide
 import { useSkills } from "@/features/skills/hooks/useSkills";
 import { useSkillTemplates } from "@/features/skills/hooks/useSkillTemplates";
 import { isStudioSkillCategory, SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
-import { STUDIO_PROVIDER_ID } from "@/features/studio/hooks/useStudioProvider";
 import { getConfig } from "@/shared/config";
 import { cn } from "@/shared/lib/cn";
 import type { ToolProvider } from "@/shared/types/chat";
@@ -102,26 +101,13 @@ export function ChatInputAddMenu({
   // are always meaningful; the Skill Builder row is rendered only if available.
   const showSkillsMenu = !currentAgent;
 
-  // The Skills sources toggle independently (personal + catalog + studio).
+  // The Skills sources toggle independently (personal + catalog). The Studio pack
+  // is not a source here — it rides the Studio capability toggle.
   const toggleSkillSource = useCallback(
-    (key: "personal" | "catalog" | "studio") => {
+    (key: "personal" | "catalog") => {
       setSkillSources({ ...skillSources, [key]: !skillSources[key] });
     },
     [skillSources, setSkillSources],
-  );
-
-  // Toggle a tool provider. Studio pairs its injected system prompt with the
-  // shipped Studio skill pack, so (outside agent mode) mirror its state onto
-  // `skillSources.studio`, which surfaces those skills in the global Skills tool.
-  // Under an agent the pairing is handled by the agent skills merge, not skillSources.
-  const toggleProvider = useCallback(
-    async (id: string, enabled: boolean) => {
-      await setProviderEnabled(id, enabled);
-      if (id === STUDIO_PROVIDER_ID && !currentAgent) {
-        setSkillSources({ ...skillSources, studio: enabled });
-      }
-    },
-    [setProviderEnabled, setSkillSources, skillSources, currentAgent],
   );
 
   const [showMobileSheet, setShowMobileSheet] = useState(false);
@@ -555,7 +541,7 @@ export function ChatInputAddMenu({
                         e.preventDefault();
                         if (providerInitializing || providerRequired) return;
                         try {
-                          await toggleProvider(provider.id, !providerEnabled);
+                          await setProviderEnabled(provider.id, !providerEnabled);
                         } catch (error) {
                           console.error(`Failed to toggle provider ${provider.name}:`, error);
                         }
@@ -724,7 +710,7 @@ export function ChatInputAddMenu({
                             e.stopPropagation();
                             if (providerInitializing || providerRequired) return;
                             try {
-                              await toggleProvider(provider.id, !providerEnabled);
+                              await setProviderEnabled(provider.id, !providerEnabled);
                             } catch (error) {
                               console.error(`Failed to toggle provider ${provider.name}:`, error);
                             }

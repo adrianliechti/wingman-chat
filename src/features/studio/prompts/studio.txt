@@ -38,13 +38,10 @@ Execution is a **Pyodide Python sandbox** (`execute_python_code`): no Node, no s
 LibreOffice. Build with the bundled libraries: **Word** → `python-docx`, **PowerPoint** →
 `python-pptx`, **Excel** → `openpyxl` (+`pandas`), **PDF** → `reportlab`/`pypdf`/`pdfplumber`,
 **charts** → `matplotlib`, **audio/TTS** → `await synthesize(text, "out.wav")`, **images** →
-`await render(prompt, "out.png")`. When a skill mentions Node (`docx-js`, `pptxgenjs`) or CLI tools
+`await render(prompt, "out.png")`. The audio and image helpers exist only when those services are
+configured; if a call reports none is available, tell the user rather than faking the output. When a
+skill mentions Node (`docx-js`, `pptxgenjs`) or CLI tools
 (`pandoc`, `soffice`, `markitdown`), use the Python equivalent.
-
-**Run code reliably.** Inline `code` is packed into a JSON string, so unescaped quotes/backslashes in
-a long script cause a dropped/empty `code` argument. Prefer **single quotes** in Python string
-literals, and for long/quote-heavy scripts **write the script to a `.py` file and run it via `path`**
-rather than a giant inline string.
 
 ### Which skill to read
 

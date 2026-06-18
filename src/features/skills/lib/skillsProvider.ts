@@ -7,30 +7,31 @@ import { setSkillResourceResolver } from "@/features/tools/lib/skillResourceMoun
 import { artifactLanguage } from "@/shared/lib/fileTypes";
 import type { Tool, ToolProvider } from "@/shared/types/chat";
 
-/** Shared provider id for the skills tool (global and agent-scoped never coexist). */
+/** Provider id for the app's single skills tool. */
 export const SKILLS_PROVIDER_ID = "skills";
 
 /**
- * Which sources the global Skills tool exposes. Both may be enabled at once; a
- * personal skill shadows a shipped template of the same name (personal wins).
+ * Which independently-toggled sources the Skills tool exposes (no-agent mode).
+ * Either may be on at once; a personal skill shadows a shipped template of the
+ * same name (personal wins). The Studio skill pack is intentionally absent — it's
+ * slaved to the Studio capability and passed to the provider as a separate
+ * `studioEnabled` flag, not a user-toggled source.
  */
 export interface SkillSources {
   /** The user's own editable OPFS skills. */
   personal: boolean;
   /** The shipped template catalog (excludes the Studio skill pack). */
   catalog: boolean;
-  /** The Studio skill pack — format/medium capabilities and output generators. */
-  studio: boolean;
 }
 
 /**
- * Catalog categories (the first path segment of a template's SKILL.md, e.g.
- * `skills/<category>/<name>/SKILL.md`) that make up the toggleable "Studio"
- * skill pack. These are surfaced as their own Skills source so the chat
- * generation skills + their styles don't crowd the general catalog.
+ * Whether a catalog category (the first path segment of a template's SKILL.md,
+ * e.g. `skills/<category>/<name>/SKILL.md`) belongs to the Studio skill pack —
+ * the format/medium capabilities and output generators shipped under
+ * `skills/studio/`. Surfaced as its own Skills source so they don't crowd the
+ * general catalog.
  */
-export const STUDIO_SKILL_CATEGORIES = new Set(["studio", "generation"]);
-export const isStudioSkillCategory = (category: string): boolean => STUDIO_SKILL_CATEGORIES.has(category);
+export const isStudioSkillCategory = (category: string): boolean => category === "studio";
 
 /**
  * One skill exposed by the catalog. Content is loaded on demand so eager
@@ -49,21 +50,18 @@ export interface SkillEntry {
 }
 
 /**
- * Adapt shipped templates (content fetched lazily) to catalog entries. Both the
- * global Skills tool and the agent-scoped provider build their template-backed
- * entries this way, so they resolve `read_skill` / `read_skill_resource`
- * identically. `shadowNames` drops templates a higher-priority source already
- * supplies (e.g. a personal skill of the same name wins).
+ * Adapt shipped templates (content fetched lazily) to catalog entries, so the
+ * Skills tool resolves `read_skill` / `read_skill_resource` identically across
+ * sources. Name collisions across sources are resolved by the caller's single
+ * dedup (push order = precedence), not here.
  */
 export function templateEntries(
   templates: SkillTemplate[],
   loadTemplate: (path: string) => Promise<{ content: string } | null>,
   predicate: (t: SkillTemplate) => boolean,
-  shadowNames?: Set<string>,
 ): SkillEntry[] {
   return templates
     .filter(predicate)
-    .filter((t) => !shadowNames?.has(t.name))
     .map((t) => ({
       name: t.name,
       description: t.description,
@@ -82,9 +80,8 @@ export function templateEntries(
 export function studioTemplateEntries(
   templates: SkillTemplate[],
   loadTemplate: (path: string) => Promise<{ content: string } | null>,
-  shadowNames?: Set<string>,
 ): SkillEntry[] {
-  return templateEntries(templates, loadTemplate, (t) => isStudioSkillCategory(t.category), shadowNames);
+  return templateEntries(templates, loadTemplate, (t) => isStudioSkillCategory(t.category));
 }
 
 /** Adapt in-memory library skills (content already loaded) to catalog entries. */
@@ -112,17 +109,11 @@ export interface SkillsProviderMeta {
 }
 
 /**
- * Builds a skills tool provider from a set of catalog entries.
- *
- * Used by two callers, each with its own meta but the same `read_skill` tool
- * and prompt:
- * - Agent-scoped (useAgentProviders): the subset enabled on the active agent.
- * - Global (useSkillsProvider): the user's library, or library + shipped
- *   templates, depending on the selected scope.
- *
- * They differ only in which entries are exposed. `read_skill` resolves against
- * the provided list (the caller pre-deduplicates by name) and loads content on
- * demand.
+ * Builds the skills tool provider from a set of catalog entries. There is one
+ * caller (useSkillsProvider) that assembles the entries for every mode — agent or
+ * no-agent — so a single `read_skill` surface exists at a time. `read_skill`
+ * resolves against the provided list (the caller pre-deduplicates by name) and
+ * loads content on demand.
  *
  * Returns null when there are no entries to expose.
  */

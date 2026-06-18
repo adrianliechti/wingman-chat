@@ -25,10 +25,10 @@ import { ToolsContext } from "./ToolsContext";
 const MCP_CONNECT_MAX_RETRIES = 2;
 const MCP_CONNECT_RETRY_DELAY_MS = 500;
 
-// Persisted source selection for the global Skills tool. "personal" exposes the
-// user's own skills, "catalog" the shipped templates, "studio" the Studio skill
-// pack (format/medium capabilities + output generators); any, all, or none may be
-// on. The tool is enabled whenever at least one source is selected.
+// Persisted source selection for the Skills tool: "personal" exposes the user's
+// own skills, "catalog" the shipped templates. Either, both, or neither may be on.
+// The Studio skill pack is not a persisted source — it's slaved to the Studio
+// capability and passed to useSkillsProvider as a separate flag.
 const SKILL_SOURCES_STORAGE_KEY = "app_skills";
 
 function loadSavedSkillSources(): SkillSources {
@@ -37,10 +37,9 @@ function loadSavedSkillSources(): SkillSources {
     return {
       personal: parsed?.personal === true,
       catalog: parsed?.catalog === true,
-      studio: parsed?.studio === true,
     };
   } catch {
-    return { personal: false, catalog: false, studio: false };
+    return { personal: false, catalog: false };
   }
 }
 
@@ -187,12 +186,12 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     providers: agentProviders,
     enabledTools: agentTools,
     mcpClients: agentMcpClients,
-  } = useAgentProviders(currentAgent, studioEnabled);
+  } = useAgentProviders(currentAgent);
 
   // Built-in providers
   const internetProvider = useInternetProvider();
   const artifactsProvider = useArtifactsProvider();
-  const skillsProvider = useSkillsProvider(skillSources);
+  const skillsProvider = useSkillsProvider(currentAgent, skillSources, studioEnabled);
   const studioProvider = useStudioProvider();
   const skillBuilderProvider = useSkillBuilderProvider();
 
@@ -230,21 +229,17 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     // on agent select — the global selection does not carry in). The agent's own
     // tools are then unioned via agentRequired as the enforced floor.
     const merged = new Set<string>(activeSelection);
-    // The global Skills tool is enabled by its source selection rather than a
-    // plain userTools toggle (only outside agent mode — with an agent, skills are
-    // its curated set, owning the same "skills" id).
-    if (!currentAgent && (skillSources.personal || skillSources.catalog || skillSources.studio))
-      merged.add(SKILLS_PROVIDER_ID);
+    // The Skills tool's connection tracks the assembled provider: it's non-null
+    // exactly when some source, the Studio pack, or an agent's curated set has
+    // skills to expose — so no source/agent branching is needed here.
+    if (skillsProvider) merged.add(SKILLS_PROVIDER_ID);
     for (const id of agentRequired) merged.add(id);
     for (const id of modelEnabledTools) merged.add(id);
     if (companionAvailable && companionEnabled) merged.add(COMPANION_ID);
     return merged;
   }, [
     activeSelection,
-    currentAgent,
-    skillSources.personal,
-    skillSources.catalog,
-    skillSources.studio,
+    skillsProvider,
     agentRequired,
     modelEnabledTools,
     companionAvailable,
@@ -270,11 +265,10 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     // and its create_image tool is present only when a renderer is configured.
     list.push(studioProvider);
     if (artifactsProvider) list.push(artifactsProvider);
-    // Global Skills tool: only when no agent is active. With an agent, skills
-    // are governed solely by its curated set (useAgentProviders, which owns the
-    // "skills" id) — otherwise a stale session toggle could leak the whole
-    // library into an agent that curated few or no skills.
-    if (!currentAgent && skillsProvider) list.push(skillsProvider);
+    // The single Skills tool (one read_skill surface): an agent's curated subset
+    // under an agent, the selected global sources otherwise, plus the Studio pack
+    // when the capability is on. Assembled by useSkillsProvider; null when empty.
+    if (skillsProvider) list.push(skillsProvider);
     list.push(skillBuilderProvider);
     list.push(...visibleConfigMcpClients);
     if (companionAvailable && companionClient) list.push(companionClient);
@@ -285,7 +279,6 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     studioProvider,
     artifactsProvider,
     skillsProvider,
-    currentAgent,
     skillBuilderProvider,
     visibleConfigMcpClients,
     companionAvailable,
