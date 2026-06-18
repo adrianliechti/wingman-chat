@@ -51,6 +51,58 @@ function ErrorMessage({ title, message, onRetry }: { title: string; message: str
   );
 }
 
+// A rotating, playful verb for the "model is working" indicator. Picked once per
+// mount so it stays put while a turn streams, but varies between turns.
+// Inspired by Claude Code's spinner verbs.
+const THINKING_WORDS = [
+  "Thinking",
+  "Pondering",
+  "Mulling",
+  "Noodling",
+  "Reasoning",
+  "Cogitating",
+  "Ruminating",
+  "Percolating",
+  "Contemplating",
+  "Considering",
+  "Deliberating",
+  "Deciphering",
+  "Brewing",
+  "Churning",
+  "Conjuring",
+  "Concocting",
+  "Distilling",
+  "Envisioning",
+  "Hatching",
+  "Ideating",
+  "Imagining",
+  "Incubating",
+  "Inferring",
+  "Marinating",
+  "Musing",
+  "Orchestrating",
+  "Puzzling",
+  "Scheming",
+  "Simmering",
+  "Sketching",
+  "Stewing",
+  "Synthesizing",
+  "Tinkering",
+  "Untangling",
+  "Wrangling",
+];
+
+/** Spinner + label "working" indicator — same look & feel as a running tool row. */
+function ThinkingIndicator({ className }: { className?: string }) {
+  const [word] = useState(() => THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)]);
+  return (
+    <div className={cn("flex items-center gap-2 min-w-0", className)}>
+      <Loader2 className="w-3 h-3 animate-spin text-slate-400 dark:text-slate-500 shrink-0" />
+      <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{word}…</span>
+    </div>
+  );
+}
+
 // Reasoning/Thinking display component - shows model's thinking process in collapsible UI
 type ReasoningDisplayProps = {
   reasoning: string;
@@ -208,23 +260,23 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
     const reasoningParts = message.content.filter((p) => p.type === "reasoning");
     const hasReasoning = reasoningParts.length > 0 && reasoningParts.some((p) => p.text || p.summary);
 
+    // isReasoningActive is already false for non-last messages, so a single
+    // helper covers the old / loading / streaming branches below.
+    const renderReasoning = () =>
+      reasoningParts.map((part, i) =>
+        part.type === "reasoning" ? (
+          <ReasoningDisplay
+            key={getMessagePartKey(part, i, "reasoning")}
+            reasoning={part.text || part.summary || ""}
+            isStreaming={isReasoningActive}
+          />
+        ) : null,
+      );
+
     // For old messages (not last), only show if there's reasoning to display
     if (!isLast) {
       if (!hasReasoning) return null;
-      return (
-        <div className="pb-2">
-          {reasoningParts.map(
-            (part, index) =>
-              part.type === "reasoning" && (
-                <ReasoningDisplay
-                  key={getMessagePartKey(part, index, "old-reasoning")}
-                  reasoning={part.text || part.summary || ""}
-                  isStreaming={false}
-                />
-              ),
-          )}
-        </div>
-      );
+      return <div className="pb-2">{renderReasoning()}</div>;
     }
 
     // Check if there's a pending elicitation for any of the tool calls
@@ -236,38 +288,28 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
       );
 
     // Show loading indicators for the last message when actively responding,
-    // has pending elicitation, or has reasoning content to display
-    if (!isLast || (!isResponding && !hasPendingElicitation && !hasReasoning)) {
+    // has a pending elicitation, or has reasoning content to display.
+    if (!isResponding && !hasPendingElicitation && !hasReasoning) {
       return null;
     }
 
-    // Show tool call indicators if there are tool calls
-    if (hasToolCalls) {
-      return (
-        <div className="pb-2">
-          {/* Show reasoning above tool calls */}
-          {hasReasoning &&
-            reasoningParts.map(
-              (part, index) =>
-                part.type === "reasoning" && (
-                  <ReasoningDisplay
-                    key={getMessagePartKey(part, index, "loading-reasoning")}
-                    reasoning={part.text || part.summary || ""}
-                    isStreaming={isReasoningActive}
-                  />
-                ),
-            )}
+    // Last message that's still working: reasoning, running tool rows, or the
+    // thinking placeholder. One pb-2 wrapper (no top padding) so every state
+    // sits at the same position as a committed tool row.
+    return (
+      <div className="pb-2">
+        {hasReasoning && renderReasoning()}
+        {hasToolCalls ? (
           <div className="mt-0 space-y-0">
-            {toolCallParts.map((part, index) => {
+            {toolCallParts.map((part, i) => {
               if (part.type !== "tool_call") return null;
-              const toolCall = part;
-              const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === toolCall.id;
+              const isPendingElicitation = pendingElicitation && pendingElicitation.toolCallId === part.id;
 
-              // Show elicitation prompt if this tool call has a pending elicitation
+              // Show the elicitation prompt if this tool call is waiting on the user.
               if (isPendingElicitation) {
                 return (
                   <ChatMessageElicitation
-                    key={getMessagePartKey(toolCall, index, "loading-tool-call")}
+                    key={getMessagePartKey(part, i, "loading-tool-call")}
                     toolName={pendingElicitation.toolName}
                     elicitation={pendingElicitation.elicitation}
                     waiting={pendingElicitation.waiting}
@@ -277,55 +319,18 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
                 );
               }
 
-              const meta = toolMeta[toolCall.id];
+              const meta = toolMeta[part.id];
               const status = typeof meta?.status === "string" ? meta.status : null;
-              const header = resolveToolHeader(findTool(providers, toolCall.name), toolCall.name, toolCall.arguments, {
+              const header = resolveToolHeader(findTool(providers, part.name), part.name, part.arguments, {
                 running: true,
               });
               return (
-                <RunningToolRow
-                  key={getMessagePartKey(toolCall, index, "loading-tool-call")}
-                  header={header}
-                  status={status}
-                />
+                <RunningToolRow key={getMessagePartKey(part, i, "loading-tool-call")} header={header} status={status} />
               );
             })}
           </div>
-        </div>
-      );
-    }
-
-    // Show loading animation or reasoning for regular assistant responses
-    return (
-      <div className="pb-4">
-        {hasReasoning ? (
-          reasoningParts.map(
-            (part, index) =>
-              part.type === "reasoning" && (
-                <ReasoningDisplay
-                  key={getMessagePartKey(part, index, "streaming-reasoning")}
-                  reasoning={part.text || part.summary || ""}
-                  isStreaming={isReasoningActive}
-                />
-              ),
-          )
         ) : (
-          <div className="space-y-2">
-            <div className="flex space-x-1">
-              <div
-                className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce"
-                style={{ animationDelay: "0ms" }}
-              ></div>
-              <div
-                className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce"
-                style={{ animationDelay: "150ms" }}
-              ></div>
-              <div
-                className="h-2 w-2 bg-neutral-400 dark:bg-neutral-600 rounded-full animate-bounce"
-                style={{ animationDelay: "300ms" }}
-              ></div>
-            </div>
-          </div>
+          !hasReasoning && <ThinkingIndicator />
         )}
       </div>
     );

@@ -130,6 +130,98 @@ export function isTurnEnd(messages: Message[], index: number): boolean {
   return !next || isUserPrompt(next);
 }
 
+// ── Tool-call grouping ──────────────────────────────────────────────────────
+// A tool-heavy turn produces many adjacent rows (one committed tool result per
+// message, plus null-rendering assistant tool-call messages between them). To
+// keep the transcript from looking scattered we fold consecutive plain tool
+// results into a single collapsible "Used N tools" group. Rich results — MCP
+// apps, inline media, errors — stay standalone so nothing important is buried.
+
+function messageHasText(message: Message): boolean {
+  return message.content.some((p) => p.type === "text" && p.text);
+}
+
+function messageHasMedia(message: Message): boolean {
+  return message.content.some((p) => p.type === "image" || p.type === "file" || p.type === "audio");
+}
+
+/** A user message that renders as a collapsed tool-result row (see ChatMessage). */
+function isToolResultMessage(message: Message): boolean {
+  return (
+    message.role === "user" &&
+    message.content.some((p) => p.type === "tool_result") &&
+    !messageHasText(message) &&
+    !messageHasMedia(message)
+  );
+}
+
+/** Tool results that must stay visible standalone (interactive/rich), never folded. */
+function isRichToolResultMessage(message: Message): boolean {
+  if (message.error) return true;
+  for (const part of message.content) {
+    if (part.type !== "tool_result") continue;
+    // MCP UI app — the app itself is the primary renderer.
+    if (typeof part.meta?.toolProvider === "string" && typeof part.meta?.toolResource === "string") return true;
+    // Inline media (images/audio/files) is worth keeping in view.
+    if (part.result?.some((c) => c.type === "image" || c.type === "audio" || c.type === "file")) return true;
+  }
+  return false;
+}
+
+/** A plain tool result eligible to be folded into a group. */
+function isGroupableToolResultMessage(message: Message): boolean {
+  return isToolResultMessage(message) && !isRichToolResultMessage(message);
+}
+
+/**
+ * Assistant message carrying only tool calls (no text/media/reasoning). These
+ * render nothing once committed, so they're transparent "connectors" that keep a
+ * run of tool results contiguous. A connector with reasoning is excluded so the
+ * thought stays visible (and naturally splits the group around it).
+ */
+function isToolConnectorMessage(message: Message): boolean {
+  if (message.role !== "assistant" || message.content.length === 0) return false;
+  const hasToolCalls = message.content.some((p) => p.type === "tool_call");
+  const hasReasoning = message.content.some((p) => p.type === "reasoning" && (p.text || p.summary));
+  return hasToolCalls && !hasReasoning && !messageHasText(message) && !messageHasMedia(message);
+}
+
+export type RenderUnit = { kind: "message"; index: number } | { kind: "toolGroup"; indices: number[] };
+
+/**
+ * Partition messages into render units: standalone messages and folded tool
+ * groups. A group is a maximal run of groupable tool results (plus connectors)
+ * with at least two results. While responding, the live final message is never
+ * folded so its running indicators stay visible.
+ */
+export function groupRenderUnits(messages: Message[], isResponding: boolean): RenderUnit[] {
+  const units: RenderUnit[] = [];
+  const limit = isResponding ? messages.length - 1 : messages.length;
+
+  let i = 0;
+  while (i < limit) {
+    if (isGroupableToolResultMessage(messages[i]) || isToolConnectorMessage(messages[i])) {
+      let j = i;
+      const indices: number[] = [];
+      while (j < limit && (isGroupableToolResultMessage(messages[j]) || isToolConnectorMessage(messages[j]))) {
+        if (isGroupableToolResultMessage(messages[j])) indices.push(j);
+        j++;
+      }
+      if (indices.length >= 2) {
+        units.push({ kind: "toolGroup", indices });
+      } else {
+        for (let k = i; k < j; k++) units.push({ kind: "message", index: k });
+      }
+      i = j;
+    } else {
+      units.push({ kind: "message", index: i });
+      i++;
+    }
+  }
+  for (; i < messages.length; i++) units.push({ kind: "message", index: i });
+  return units;
+}
+
 // Helper function to extract and format common parameters for tool calls
 export function getToolCallPreview(_toolName: string, arguments_: string): string | null {
   const args = tryParseToolArguments(arguments_);

@@ -11,6 +11,8 @@ import { ChatConsentBackdrop, ChatConsentBanner } from "@/features/chat/componen
 import { ChatInput } from "@/features/chat/components/ChatInput";
 import { ChatMessage } from "@/features/chat/components/ChatMessage";
 import { ChatSidebar } from "@/features/chat/components/ChatSidebar";
+import { ChatToolGroup } from "@/features/chat/components/ChatToolGroup";
+import { groupRenderUnits } from "@/features/chat/components/chatMessageUtils";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { useChatNavigate } from "@/features/chat/hooks/useChatNavigate";
 import { useDrawerAnimation } from "@/features/chat/hooks/useDrawerAnimation";
@@ -346,6 +348,10 @@ export function ChatPage() {
     return messageKeysRef.current.slice(0, messages.length);
   }, [chat?.id, messages.length, routeChatId]);
 
+  // Fold runs of consecutive tool results into collapsible groups so tool-heavy
+  // turns read as one tidy "Used N tools" row instead of a scattered stack.
+  const renderUnits = useMemo(() => groupRenderUnits(messages, isResponding), [messages, isResponding]);
+
   const { handleScrollContainerRef, handleSpacerRef, isAtBottom, goToLatest } = useChatScroll({
     resetKey: chat?.id ?? routeChatId ?? "__draft__",
     messages,
@@ -548,17 +554,33 @@ export function ChatPage() {
                 <Disclaimer />
 
                 <div>
-                  {messages.map((message, index) => (
-                    <div key={messageRenderKeys[index]} className="flow-root" data-role={message.role}>
-                      <ChatMessage
-                        index={index}
-                        message={message}
-                        isLast={index === messages.length - 1}
-                        isResponding={isResponding}
-                        onGoToLatest={goToLatest}
-                      />
-                    </div>
-                  ))}
+                  {renderUnits.map((unit) => {
+                    if (unit.kind === "toolGroup") {
+                      // Stable key off the first member — count grows while streaming,
+                      // so keying on it would needlessly remount the group.
+                      return (
+                        <div
+                          key={`group:${messageRenderKeys[unit.indices[0]]}`}
+                          className="flow-root"
+                          data-role="tool-group"
+                        >
+                          <ChatToolGroup messages={messages} indices={unit.indices} />
+                        </div>
+                      );
+                    }
+                    const index = unit.index;
+                    return (
+                      <div key={messageRenderKeys[index]} className="flow-root" data-role={messages[index].role}>
+                        <ChatMessage
+                          index={index}
+                          message={messages[index]}
+                          isLast={index === messages.length - 1}
+                          isResponding={isResponding}
+                          onGoToLatest={goToLatest}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
                 {/* Spacer — allows the last user message to scroll to the top */}
                 <div ref={handleSpacerRef} aria-hidden="true" />

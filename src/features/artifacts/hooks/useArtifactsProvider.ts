@@ -27,6 +27,34 @@ function executionFailure(context: ToolContext | undefined, text: string) {
   return [{ type: "text" as const, text }];
 }
 
+// A rotating, playful verb for the "running code" indicator. Seeded off the
+// snippet so it's stable across re-renders of the same call but varies between
+// calls — keeps a tool-heavy turn from reading as a wall of "Executing code…".
+const RUNNING_CODE_WORDS = [
+  "Coding",
+  "Programming",
+  "Computing",
+  "Crunching",
+  "Calculating",
+  "Compiling",
+  "Executing",
+  "Processing",
+  "Churning",
+  "Crafting",
+  "Tinkering",
+  "Cooking",
+  "Synthesizing",
+  "Wrangling",
+  "Reticulating",
+];
+
+function runningCodeLabel(code: unknown): string {
+  const text = typeof code === "string" ? code : "";
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) | 0;
+  return `${RUNNING_CODE_WORDS[Math.abs(hash) % RUNNING_CODE_WORDS.length]}…`;
+}
+
 /** Coerce a tool arg into a string[] (models sometimes send a bare string). */
 function asStringArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string");
@@ -231,9 +259,9 @@ export function useArtifactsProvider(): ToolProvider | null {
       {
         name: "execute_python_code",
         display: {
-          header: (_args, state) => ({
+          header: (args, state) => ({
             icon: SquareCode,
-            label: state.error ? "Code failed" : state.running ? "Executing code…" : "Ran code",
+            label: state.error ? "Code failed" : state.running ? runningCodeLabel(args?.code) : "Ran code",
           }),
           input: (args) => {
             const code = typeof args?.code === "string" ? args.code : "";
@@ -360,9 +388,12 @@ export function useArtifactsProvider(): ToolProvider | null {
         display: {
           header: (args, state) => {
             const command = String(args?.command ?? "").trim();
+            // Frame the command with a verb (and show the command as the mono
+            // preview) so it reads like the other tools across every state.
+            const label = state.error ? "Command failed" : state.running ? "Running" : "Ran";
             return command
-              ? { icon: SquareTerminal, label: command, mono: true, suppressPreview: true }
-              : { icon: SquareTerminal, label: state.error ? "Command failed" : "Running command…" };
+              ? { icon: SquareTerminal, label, preview: command }
+              : { icon: SquareTerminal, label: state.running ? "Running…" : label };
           },
           input: (args) => {
             const command = String(args?.command ?? "").trim();
