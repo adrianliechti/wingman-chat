@@ -2,8 +2,10 @@ import { ChevronDown } from "lucide-react";
 import { useEffect } from "react";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import type { Agent } from "@/features/agent/types/agent";
+import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { cn } from "@/shared/lib/cn";
+import { defaultModelId } from "@/shared/lib/models";
 import { ModelDropdown } from "@/shared/ui/ModelDropdown";
 import { Section } from "./Section";
 
@@ -23,8 +25,7 @@ export function ModelSection({ agent }: ModelSectionProps) {
     if (models.length === 0) return;
     const valid = agent.model && models.some((m) => m.id === agent.model);
     if (!valid) {
-      const firstVisible = models.find((m) => !m.hidden) ?? models[0];
-      updateAgent(agent.id, { model: firstVisible.id });
+      updateAgent(agent.id, { model: defaultModelId(models, getSavedModelId()) });
     }
   }, [isRealtimeAgent, agent.id, agent.model, models, updateAgent]);
 
@@ -33,7 +34,7 @@ export function ModelSection({ agent }: ModelSectionProps) {
       ? "realtime"
       : agent.model && models.some((m) => m.id === agent.model)
         ? agent.model
-        : (models.find((m) => !m.hidden)?.id ?? models[0]?.id ?? "");
+        : defaultModelId(models, getSavedModelId());
   const effectiveModelName =
     effectiveModel === "realtime"
       ? "Real-time Voice"

@@ -1,8 +1,10 @@
 import { ChevronDown, FileText, Mic, Server, ToggleLeft, ToggleRight, Wrench, Zap } from "lucide-react";
 import { type Dispatch, useId } from "react";
 import type { BridgeServer } from "@/features/agent/types/agent";
+import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { useChat } from "@/features/chat/hooks/useChat";
 import { getConfig } from "@/shared/config";
+import { defaultModelId } from "@/shared/lib/models";
 import { ModelDropdown } from "@/shared/ui/ModelDropdown";
 import type { WizardAction } from "../AgentWizard";
 import { StepHeader } from "../StepHeader";
@@ -34,7 +36,7 @@ export function ReviewStep({
   const { models } = useChat();
   const config = getConfig();
 
-  const effectiveModel = model || models.find((m) => !m.hidden)?.id || models[0]?.id || "";
+  const effectiveModel = model || defaultModelId(models, getSavedModelId());
 
   return (
     <div className="space-y-4">

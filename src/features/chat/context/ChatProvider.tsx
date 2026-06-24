@@ -188,13 +188,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // Resolve to the fresh config model so tools/instructions/supportedEfforts stay
   // current, but keep the chat's stored `effort` (the per-chat selection, which
   // starts at the model's configured default and the user can change in the picker).
-  const resolvedChatModel = currentChatModel
-    ? (models.find((m) => m.id === currentChatModel.id) ?? currentChatModel)
-    : null;
-  const chatModel =
-    resolvedChatModel && currentChatModel && "effort" in currentChatModel
-      ? { ...resolvedChatModel, effort: currentChatModel.effort }
-      : resolvedChatModel;
+  // Memoized so the effort overlay doesn't mint a new `model` object every render
+  // (which would thrash useChatContext and other model-keyed memos on each token).
+  const chatModel = useMemo(() => {
+    if (!currentChatModel) return null;
+    const resolved = models.find((m) => m.id === currentChatModel.id) ?? currentChatModel;
+    return "effort" in currentChatModel ? { ...resolved, effort: currentChatModel.effort } : resolved;
+  }, [models, currentChatModel]);
   const model = chatModel ?? agentModel ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext("chat", model);
 

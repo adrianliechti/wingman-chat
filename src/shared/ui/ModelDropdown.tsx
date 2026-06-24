@@ -40,7 +40,7 @@ const EFFORT_META: Record<Effort, { label: string; description: string }> = {
   low: { label: "Low", description: "Brief reasoning" },
   medium: { label: "Medium", description: "Balanced — recommended" },
   high: { label: "High", description: "Deeper reasoning" },
-  xhigh: { label: "Extra High", description: "Deepest reasoning — slowest" },
+  xhigh: { label: "Max", description: "Deepest reasoning — slowest" },
 };
 
 interface EffortConfig {
@@ -174,10 +174,10 @@ function EffortSubmenu({ options, value, onChange }: EffortConfig) {
         {...getReferenceProps()}
       >
         <Gauge size={14} className="shrink-0 text-neutral-400" />
-        <span className="flex-1 min-w-0">Reasoning effort</span>
-        <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">
-          {value ? EFFORT_META[value].label : "Default"}
-        </span>
+        <span className="flex-1 min-w-0">Effort</span>
+        {value && (
+          <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">{EFFORT_META[value].label}</span>
+        )}
         <ChevronRight size={14} className="shrink-0 text-neutral-400" />
       </button>
       {isOpen && (

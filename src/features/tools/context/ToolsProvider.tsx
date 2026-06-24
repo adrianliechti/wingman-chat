@@ -30,14 +30,19 @@ const MCP_CONNECT_RETRY_DELAY_MS = 500;
 // The Studio skill pack is not a persisted source — it's slaved to the Studio
 // capability and passed to useSkillsProvider as a separate flag.
 const SKILL_SOURCES_STORAGE_KEY = "app_skills";
+const SKILL_SOURCE_IDS = ["personal", "catalog"] as const;
 
+// Persisted as a presence-array of enabled source ids (e.g. ["personal"]),
+// mirroring app_tools — present means on, absent means off.
 function loadSavedSkillSources(): SkillSources {
   try {
-    const parsed = JSON.parse(localStorage.getItem(SKILL_SOURCES_STORAGE_KEY) ?? "{}");
-    return {
-      personal: parsed?.personal === true,
-      catalog: parsed?.catalog === true,
-    };
+    const parsed = JSON.parse(localStorage.getItem(SKILL_SOURCES_STORAGE_KEY) ?? "[]");
+    if (Array.isArray(parsed)) {
+      const ids = new Set(parsed);
+      return { personal: ids.has("personal"), catalog: ids.has("catalog") };
+    }
+    // Migration: the old format stored an object of booleans ({personal, catalog}).
+    return { personal: parsed?.personal === true, catalog: parsed?.catalog === true };
   } catch {
     return { personal: false, catalog: false };
   }
@@ -90,7 +95,8 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
   const setSkillSources = useCallback((sources: SkillSources) => {
     setSkillSourcesState(sources);
     try {
-      localStorage.setItem(SKILL_SOURCES_STORAGE_KEY, JSON.stringify(sources));
+      const enabled = SKILL_SOURCE_IDS.filter((id) => sources[id]);
+      localStorage.setItem(SKILL_SOURCES_STORAGE_KEY, JSON.stringify(enabled));
     } catch {
       // Silently handle localStorage errors (private mode, quota, etc.)
     }

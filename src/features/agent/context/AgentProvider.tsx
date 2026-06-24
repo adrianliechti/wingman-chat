@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent, BridgeServer } from "@/features/agent/types/agent";
+import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import type { RepositoryFile } from "@/features/repository/types/repository";
 import { clearMcpOAuthStorage } from "@/features/settings/lib/mcpAuth";
 import * as opfs from "@/shared/lib/opfs";
@@ -409,7 +410,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       const newAgent: Agent = {
         id: crypto.randomUUID(),
         name,
-        model: initialData?.model,
+        // Fall back to the user's saved default model so new agents start on it.
+        model: initialData?.model ?? getSavedModelId() ?? undefined,
         instructions: initialData?.instructions,
         skills: initialData?.skills ?? [],
         servers: initialData?.servers ?? [],
