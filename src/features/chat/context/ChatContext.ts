@@ -15,6 +15,9 @@ export interface ChatContextType {
   models: Model[];
   model: Model | null; // Current effective model (derived from chat.model || selectedModel || models[0])
   setModel: (model: Model | null) => void;
+  /** Per-chat reasoning effort selection; null means the model/backend default. */
+  effort: Model["effort"] | null;
+  setEffort: (effort: Model["effort"] | null) => void;
 
   // Chats
   chats: Chat[];

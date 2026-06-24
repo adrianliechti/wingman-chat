@@ -65,7 +65,7 @@ export interface RenderInput {
 export interface LlmCallOptions {
   model?: string;
   system?: string;
-  effort?: "none" | "minimal" | "low" | "medium" | "high";
+  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 }
 
 // Every request carries a dedicated MessagePort for its reply, so no id

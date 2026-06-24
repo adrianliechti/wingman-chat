@@ -12,7 +12,7 @@ async def llm(prompt, *, model=None, system=None, effort=None):
         prompt: The user prompt to send.
         model: Optional model id; defaults to the model of the current chat.
         system: Optional system instructions.
-        effort: Optional reasoning effort: "none", "minimal", "low", "medium" or "high".
+        effort: Optional reasoning effort: "none", "minimal", "low", "medium", "high" or "xhigh".
     """
     options = {k: v for k, v in {"model": model, "system": system, "effort": effort}.items() if v is not None}
     return await _wingman_llm(str(prompt), _json.dumps(options) if options else None)

@@ -5,7 +5,7 @@ import { parseFlags } from "./commandUtils";
 import type { LlmCallOptions } from "./interpreterProtocol";
 import { decodeStdin } from "./stdin";
 
-const EFFORT_LEVELS = new Set(["none", "minimal", "low", "medium", "high"]);
+const EFFORT_LEVELS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
 
 const LLM_FLAGS = {
   "-m": "model",

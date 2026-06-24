@@ -128,7 +128,7 @@ export class Client {
     tools: Tool[],
     handler?: (content: Content[]) => void,
     options?: {
-      effort?: "none" | "minimal" | "low" | "medium" | "high";
+      effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
       summary?: "auto" | "concise" | "detailed";
       verbosity?: "low" | "medium" | "high";
       signal?: AbortSignal;

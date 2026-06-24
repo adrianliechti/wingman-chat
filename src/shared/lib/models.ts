@@ -1,5 +1,42 @@
 import type { ModelType } from "@/shared/types/chat";
 
+type Effort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+/**
+ * Best-guess reasoning-effort levels for a model id, used as a fallback when a
+ * model's config omits `supportedEfforts`. Mirrors the substring heuristics in
+ * {@link modelType}: forgiving, with `undefined` (no picker) as the safe default.
+ * Config always wins, so an explicit `supportedEfforts: []` still hides the picker.
+ */
+export function supportedEfforts(id: string): Effort[] | undefined {
+  const lowerId = id.toLowerCase();
+
+  // OpenAI GPT-5.x — the supported effort set changed across point releases, so
+  // match specific versions before the generic GPT-5+ fallback. Accept "." or
+  // "-" as the minor-version separator (e.g. gpt-5.1 / gpt-5-1).
+  if (/gpt-?5[.-](4|5)\b/.test(lowerId)) {
+    return ["none", "low", "medium", "high", "xhigh"]; // 5.4, 5.5
+  }
+  if (/gpt-?5[.-]1\b/.test(lowerId)) {
+    return ["none", "low", "medium", "high"]; // 5.1
+  }
+  if (/gpt-?5\b/.test(lowerId)) {
+    return ["minimal", "low", "medium", "high"]; // 5 (base)
+  }
+
+  // Other OpenAI reasoning families: GPT-6+ and the o1/o3/o4 series.
+  if (/\bo[134]\b/.test(lowerId) || /gpt-?[6-9]/.test(lowerId)) {
+    return ["none", "low", "medium", "high", "xhigh"];
+  }
+
+  // Anthropic Claude and Google Gemini expose a low/medium/high thinking budget.
+  if (lowerId.includes("claude") || lowerId.includes("gemini")) {
+    return ["low", "medium", "high"];
+  }
+
+  return undefined;
+}
+
 export function modelType(id: string): ModelType | undefined {
   const lowerId = id.toLowerCase();
 

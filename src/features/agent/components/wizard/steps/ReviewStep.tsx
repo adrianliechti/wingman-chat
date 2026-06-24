@@ -66,12 +66,11 @@ export function ReviewStep({
             models={models}
             value={effectiveModel}
             onChange={(modelId) => dispatch({ type: "SET_MODEL", id: modelId })}
-            trigger={({ onClick, onPointerDownCapture }) => (
+            trigger={({ getProps }) => (
               <button
                 id={modelSelectId}
                 type="button"
-                onClick={onClick}
-                onPointerDownCapture={onPointerDownCapture}
+                {...getProps()}
                 className="w-full flex items-center justify-between rounded-lg bg-white/40 dark:bg-neutral-900/60 py-2 pl-3 pr-8 text-sm text-neutral-900 dark:text-neutral-100 border border-neutral-200/60 dark:border-neutral-700/60 focus:ring-2 focus:ring-neutral-500/60 hover:border-neutral-300/80 dark:hover:border-neutral-600/80 transition-colors backdrop-blur-lg cursor-pointer text-left"
               >
                 <span className="truncate">{models.find((m) => m.id === effectiveModel)?.name ?? effectiveModel}</span>

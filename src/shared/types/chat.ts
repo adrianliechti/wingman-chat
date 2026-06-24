@@ -16,7 +16,14 @@ export type Model = {
 
   hidden?: boolean;
 
-  effort?: "none" | "minimal" | "low" | "medium" | "high";
+  /**
+   * Reasoning effort. In config this is the model's default; on a chat's stored
+   * model it doubles as the per-chat override (the config default is recovered
+   * from the fresh model list by id). Unset means the backend/model default.
+   */
+  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  /** Reasoning-effort levels offered in the picker; empty/unset hides the effort selector. */
+  supportedEfforts?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh")[];
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
   compactThreshold?: number;

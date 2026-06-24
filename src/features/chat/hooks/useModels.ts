@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { getConfig } from "@/shared/config";
+import { supportedEfforts } from "@/shared/lib/models";
 import type { Model } from "@/shared/types/chat";
 
 const STORAGE_KEY = "app_model";
+
+// Fill in heuristic reasoning-effort levels when config didn't specify them.
+// An explicit `supportedEfforts` (including `[]` to hide the picker) is kept.
+function withEffortFallback(model: Model): Model {
+  if (model.supportedEfforts !== undefined) return model;
+  const efforts = supportedEfforts(model.id);
+  return efforts ? { ...model, supportedEfforts: efforts } : model;
+}
 
 // Helper to get saved model from localStorage
 export function getSavedModelId(): string | null {
@@ -34,9 +43,9 @@ export function useModels() {
           const configured = config.models.filter((m) => apiModelIds.has(m.id));
           const configuredIds = new Set(configured.map((m) => m.id));
           const extras = apiModels.filter((m) => !configuredIds.has(m.id)).map((m) => ({ ...m, hidden: true }));
-          resolvedModels = [...configured, ...extras];
+          resolvedModels = [...configured, ...extras].map(withEffortFallback);
         } else {
-          resolvedModels = apiModels;
+          resolvedModels = apiModels.map(withEffortFallback);
         }
 
         setModels(resolvedModels);

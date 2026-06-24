@@ -59,6 +59,7 @@ type Model struct {
 	Description      string      `json:"description,omitempty" yaml:"description,omitempty"`
 	Instructions     string      `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 	Effort           string      `json:"effort,omitempty" yaml:"effort,omitempty"`
+	SupportedEfforts []string    `json:"supportedEfforts,omitempty" yaml:"supportedEfforts,omitempty"`
 	Summary          string      `json:"summary,omitempty" yaml:"summary,omitempty"`
 	Verbosity        string      `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
 	CompactThreshold int         `json:"compactThreshold,omitempty" yaml:"compactThreshold,omitempty"`

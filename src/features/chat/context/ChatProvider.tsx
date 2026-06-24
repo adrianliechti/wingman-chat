@@ -185,7 +185,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const chat = chats.find((c) => c.id === chatId) ?? null;
   const agentModel = currentAgent?.model ? (models.find((m) => m.id === currentAgent.model) ?? null) : null;
   const currentChatModel = chat?.model;
-  const chatModel = currentChatModel ? (models.find((m) => m.id === currentChatModel.id) ?? currentChatModel) : null;
+  // Resolve to the fresh config model so tools/instructions/supportedEfforts stay
+  // current, but keep the chat's stored `effort` (the per-chat selection, which
+  // starts at the model's configured default and the user can change in the picker).
+  const resolvedChatModel = currentChatModel
+    ? (models.find((m) => m.id === currentChatModel.id) ?? currentChatModel)
+    : null;
+  const chatModel =
+    resolvedChatModel && currentChatModel && "effort" in currentChatModel
+      ? { ...resolvedChatModel, effort: currentChatModel.effort }
+      : resolvedChatModel;
   const model = chatModel ?? agentModel ?? selectedModel ?? models[0];
   const { tools: chatTools, instructions: chatInstructions } = useChatContext("chat", model);
 
@@ -277,6 +286,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
       }
     },
     [chat, updateChat, setSelectedModel],
+  );
+
+  // Per-chat reasoning effort selection. Stored as `effort` on the chat's model
+  // so it rides the existing `chat.model` persistence; it starts at the model's
+  // configured default and overrides it for this chat. null clears it.
+  const setEffort = useCallback(
+    (effort: Model["effort"] | null) => {
+      if (!model) return;
+      const next: Model = { ...model, effort: effort ?? undefined };
+      setModel(next);
+    },
+    [model, setModel],
   );
 
   // Single chat-creation path. Returns the active chat (creating it if needed)
@@ -510,7 +531,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         conversation = await agentRun(client, currentModel.id, instructions, conversation, tools, {
           agentName: "chat",
           options: {
-            effort: model?.effort,
+            effort: currentModel.effort,
             summary: model?.summary,
             verbosity: model?.verbosity,
             signal: abortController.signal,
@@ -784,6 +805,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     models,
     model,
     setModel,
+    effort: model?.effort ?? null,
+    setEffort,
 
     // Chats
     chats,

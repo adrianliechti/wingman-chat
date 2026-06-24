@@ -49,6 +49,8 @@ export function ChatInput() {
     models,
     model,
     setModel: onModelChange,
+    effort,
+    setEffort,
     messages,
     isResponding,
     stopStreaming,
@@ -671,12 +673,16 @@ export function ChatInput() {
                     const m = models.find((m) => m.id === modelId);
                     if (m) onModelChange(m);
                   }}
+                  effort={
+                    model?.supportedEfforts?.length
+                      ? { options: model.supportedEfforts, value: effort ?? null, onChange: (e) => setEffort(e) }
+                      : undefined
+                  }
                   dropdownClassName="w-auto min-w-48 whitespace-nowrap"
-                  trigger={({ onClick, onPointerDownCapture }) => (
+                  trigger={({ getProps }) => (
                     <button
                       type="button"
-                      onClick={onClick}
-                      onPointerDownCapture={onPointerDownCapture}
+                      {...getProps()}
                       className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
                     >
                       <Tooltip content="Switch model" side="bottom" className="flex items-center gap-1.5 min-w-0">
