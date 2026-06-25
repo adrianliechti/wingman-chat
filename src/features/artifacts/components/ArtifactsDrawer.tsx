@@ -738,7 +738,7 @@ export function ArtifactsDrawer() {
                 <DropdownMenu
                   anchor="bottom end"
                   trigger={
-                    <MenuButton className="shrink-0 flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
+                    <MenuButton className="shrink-0 flex items-center gap-1 mr-2 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
                       <Upload size={12} />
                       <span className="@[16rem]:inline hidden">Upload</span>
                     </MenuButton>
@@ -778,7 +778,7 @@ export function ArtifactsDrawer() {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="shrink-0 flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                  className="shrink-0 flex items-center gap-1 mr-2 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
                   title="Upload files"
                 >
                   <Upload size={12} />

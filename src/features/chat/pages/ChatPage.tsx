@@ -192,8 +192,10 @@ export function ChatPage() {
   // Track if we're on mobile for drawer positioning
   const isMobile = !useMediaQuery("(min-width: 768px)");
 
+  const APP_MIN_PX = 360;
+  const ARTIFACTS_MIN_PX = 360;
+
   // Drawer resize state — each hook owns widthVw + isResizing + the mousedown handler.
-  // getSiblingOffsetPx is called once at drag-start to snapshot the combined sibling offset.
   const {
     widthVw: agentWidthVw,
     setWidthVw: setAgentWidthVw,
@@ -211,6 +213,9 @@ export function ChatPage() {
         : showAppDrawer
           ? (appWidthVw / 100) * window.innerWidth
           : 0,
+    setSiblingWidthVw: (widthVw) =>
+      showArtifactsDrawer ? setArtifactsWidthVw(widthVw) : showAppDrawer ? setAppWidthVw(widthVw) : undefined,
+    siblingMinPx: showArtifactsDrawer ? ARTIFACTS_MIN_PX : showAppDrawer ? APP_MIN_PX : 0,
     setShow: setShowAgentDrawer,
   });
 
@@ -222,7 +227,10 @@ export function ChatPage() {
   } = useDrawerResize({
     defaultWidthVw: 50,
     closeThresholdPx: 120,
+    minPanelPx: APP_MIN_PX,
     getSiblingOffsetPx: () => (showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth : 0),
+    setSiblingWidthVw: (widthVw) => (showAgentDrawer ? setAgentWidthVw(widthVw) : undefined),
+    siblingMinPx: 280,
     setShow: setShowAppDrawer,
   });
 
@@ -234,8 +242,10 @@ export function ChatPage() {
   } = useDrawerResize({
     defaultWidthVw: 50,
     closeThresholdPx: 220,
-    minPanelPx: 360,
+    minPanelPx: ARTIFACTS_MIN_PX,
     getSiblingOffsetPx: () => (showAgentDrawer ? (agentWidthVw / 100) * window.innerWidth : 0),
+    setSiblingWidthVw: (widthVw) => (showAgentDrawer ? setAgentWidthVw(widthVw) : undefined),
+    siblingMinPx: 280,
     setShow: setShowArtifactsDrawer,
   });
 
@@ -243,9 +253,13 @@ export function ChatPage() {
   // desktop, their combined width can squeeze the chat column below its 400px
   // minimum. Shrink the agent toward its minimum first (it's the secondary config
   // panel), then take any remaining overflow out of the larger sibling.
+  // Skipped while a drawer is actively being resized — the drag handler already
+  // enforces the chat minimum live, and running this in parallel causes a
+  // setState ping-pong (flicker) that fights the drag.
   useEffect(() => {
     const siblingOpen = showArtifactsDrawer || showAppDrawer;
     if (!showAgentDrawer || !siblingOpen || window.innerWidth < 768) return;
+    if (isAgentResizing || isAppResizing || isArtifactsResizing) return;
 
     const vw = window.innerWidth;
     const MIN_CHAT_PX = 400;
@@ -272,6 +286,9 @@ export function ChatPage() {
     showArtifactsDrawer,
     showAppDrawer,
     showAgentDrawer,
+    isAgentResizing,
+    isAppResizing,
+    isArtifactsResizing,
     agentWidthVw,
     artifactsWidthVw,
     appWidthVw,

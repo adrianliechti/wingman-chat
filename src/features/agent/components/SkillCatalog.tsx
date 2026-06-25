@@ -518,7 +518,7 @@ export function SkillCatalog({
                 <div className="flex min-h-0 flex-1 sm:flex-row flex-col">
                   {/* ── Left panel: skill list ── */}
                   <div
-                    className={`${selectedSkill || editMode || selectedTemplate ? "hidden sm:flex" : "flex"} w-full shrink-0 flex-col border-b border-neutral-200/60 sm:w-64 sm:border-b-0 sm:border-r dark:border-neutral-800/60`}
+                    className={`${selectedSkill || editMode || selectedTemplate ? "hidden sm:flex" : "flex"} min-h-0 w-full flex-1 sm:flex-none sm:shrink-0 flex-col border-b border-neutral-200/60 sm:w-64 sm:border-b-0 sm:border-r dark:border-neutral-800/60`}
                   >
                     {/* Tabs: my skills vs. templates */}
                     <div className="flex shrink-0 items-center gap-1 border-b border-neutral-200/40 px-2 py-1.5 dark:border-neutral-800/40">
@@ -784,7 +784,7 @@ export function SkillCatalog({
 
                   {/* ── Right panel ── */}
                   <div
-                    className={`${!selectedSkill && !editMode && !selectedTemplate ? "hidden sm:flex" : "flex"} min-w-0 flex-1 flex-col`}
+                    className={`${!selectedSkill && !editMode && !selectedTemplate ? "hidden sm:flex" : "flex"} min-h-0 min-w-0 flex-1 flex-col`}
                   >
                     {selectedTemplate ? (
                       /* ── Template preview ── */
@@ -855,8 +855,8 @@ export function SkillCatalog({
                     ) : editMode ? (
                       /* ── Editor ── */
                       <>
-                        <div className="flex min-h-0 flex-1">
-                          <div className="flex-1 min-w-0 space-y-5 overflow-y-auto px-5 py-5">
+                        <div className="flex min-h-0 flex-1 flex-col sm:flex-row overflow-y-auto sm:overflow-y-visible">
+                          <div className="flex-1 min-w-0 space-y-5 sm:overflow-y-auto px-5 py-5">
                             {/* Name */}
                             <div>
                               <label
@@ -980,7 +980,7 @@ export function SkillCatalog({
                           </div>
 
                           {/* Resources sidebar */}
-                          <div className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-neutral-200/60 px-4 py-4 dark:border-neutral-800/60">
+                          <div className="flex w-full sm:w-72 shrink-0 flex-col overflow-y-auto border-t sm:border-t-0 sm:border-l border-neutral-200/60 px-4 py-4 dark:border-neutral-800/60">
                             <SkillResourcesEditor resources={edResources} onChange={setEdResources} />
                           </div>
                         </div>

@@ -112,11 +112,11 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: hover only toggles the action bar; the buttons stay focusable on their own
     <div
-      className="flex justify-end pb-2 text-neutral-900 dark:text-neutral-200"
+      className="flex justify-end pb-2 text-neutral-900 dark:text-neutral-200 min-w-0 overflow-hidden"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className={cn("flex flex-col items-end", isEditing ? "flex-1" : "max-w-[85%]")}>
+      <div className={cn("flex flex-col items-end min-w-0", isEditing ? "flex-1" : "max-w-[85%]")}>
         {isEditing ? (
           <ChatMessageEditor
             editContent={editContent}
@@ -131,8 +131,8 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
           />
         ) : (
           <>
-            <div className="rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 wrap-break-words overflow-x-auto">
-              <pre className="whitespace-pre-wrap font-sans">{textContent}</pre>
+            <div className="rounded-lg py-3 px-3 bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 overflow-hidden min-w-0 w-full">
+              <pre className="whitespace-pre-wrap font-sans [overflow-wrap:anywhere] min-w-0">{textContent}</pre>
               {/* Artifact attachments — clickable chips that open the file in the editor */}
               {attachedArtifactPaths.length > 0 && (
                 <div className="pt-2 flex flex-wrap gap-2">

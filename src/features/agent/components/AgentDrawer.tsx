@@ -53,7 +53,7 @@ function AgentDetails({ agent, onDelete, onExport }: AgentDetailsProps) {
       <SkillsSection agent={agent} />
       {config.repository && <FilesSection agent={agent} />}
       {config.memory && <MemorySection agent={agent} />}
-      <div className="shrink-0 px-3 py-3 mt-auto border-t border-neutral-200/60 dark:border-neutral-700/60 flex items-center gap-2">
+      <div className="shrink-0 px-3 py-3 mt-auto border-t border-neutral-200/60 dark:border-neutral-700/60 flex items-center justify-end gap-2">
         <button
           type="button"
           onClick={onExport}
@@ -190,7 +190,7 @@ export function AgentDrawer() {
                 <button
                   type="button"
                   onClick={openWizard}
-                  className="shrink-0 flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                  className="shrink-0 flex items-center gap-1 mr-2 text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
                   title="Create a new agent"
                 >
                   <Plus size={12} />

@@ -341,7 +341,7 @@ export const ChatAssistantMessage = memo(function ChatAssistantMessage({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="flex-1 py-3 wrap-break-words overflow-x-auto">
+      <div className="flex-1 py-3 [overflow-wrap:anywhere] min-w-0 overflow-hidden">
         {/* Render content parts in order */}
         {message.content.map((part, index) => {
           const partKey = getMessagePartKey(part, index, "content");

@@ -7,12 +7,10 @@ export interface DrawerResizeConfig {
   minPanelPx?: number;
   /** Maximum panel width in px. */
   maxPanelPx?: number;
-  /**
-   * Called once at drag-start to snapshot the combined sibling-drawer offset.
-   * Using a callback instead of a value prevents stale-closure drift if sibling
-   * state changes between renders but before the drag begins.
-   */
   getSiblingOffsetPx: () => number;
+  setSiblingWidthVw?: (widthVw: number) => void;
+  /** Minimum width in px the sibling drawer may be shrunk to during a drag. */
+  siblingMinPx?: number;
   setShow: (show: boolean) => void;
   /**
    * When true, the panel is anchored at right:0 (e.g. the agent drawer).
@@ -36,6 +34,8 @@ export function useDrawerResize({
   minPanelPx,
   maxPanelPx,
   getSiblingOffsetPx,
+  setSiblingWidthVw,
+  siblingMinPx,
   setShow,
   anchoredAtRight = false,
 }: DrawerResizeConfig): DrawerResizeReturn {
@@ -50,8 +50,6 @@ export function useDrawerResize({
       setIsResizing(true);
       document.body.classList.add("resizing");
 
-      // Snapshot sibling offset at drag-start — won't drift during the drag.
-      const siblingOffset = getSiblingOffsetPx();
       const minChatPx = 400;
 
       // Track raw (unclamped) intended width for the close threshold check.
@@ -60,18 +58,35 @@ export function useDrawerResize({
       const onMouseMove = (ev: MouseEvent) => {
         if (!resizingRef.current) return;
         const vw = window.innerWidth;
+        const siblingOffset = getSiblingOffsetPx();
+
         let targetWidthPx: number;
         if (anchoredAtRight) {
-          // Panel sits at right:0 — width is simply distance from cursor to right edge.
-          // Cap so chat area + any sibling panels stay above minChatPx.
-          const maxWidth = vw - siblingOffset - minChatPx;
-          targetWidthPx = Math.min(vw - ev.clientX, maxWidth);
+          targetWidthPx = vw - ev.clientX;
         } else {
           const panelRightEdge = vw - siblingOffset;
-          targetWidthPx = Math.min(panelRightEdge - minChatPx, panelRightEdge - ev.clientX);
+          targetWidthPx = panelRightEdge - ev.clientX;
         }
         if (maxPanelPx !== undefined) targetWidthPx = Math.min(targetWidthPx, maxPanelPx);
-        intendedWidthPx = Math.max(0, targetWidthPx);
+        targetWidthPx = Math.max(0, targetWidthPx);
+
+        const overflow = targetWidthPx + siblingOffset + minChatPx - vw;
+        if (overflow > 0) {
+          if (setSiblingWidthVw !== undefined && siblingMinPx !== undefined) {
+            const shrinkable = Math.max(0, siblingOffset - siblingMinPx);
+            const shrinkBy = Math.min(overflow, shrinkable);
+            if (shrinkBy > 0) {
+              setSiblingWidthVw(((siblingOffset - shrinkBy) / vw) * 100);
+            }
+            const remaining = overflow - shrinkBy;
+            if (remaining > 0) targetWidthPx -= remaining;
+          } else {
+            targetWidthPx -= overflow;
+          }
+        }
+        targetWidthPx = Math.max(0, targetWidthPx);
+
+        intendedWidthPx = targetWidthPx;
         const visibleWidthPx = minPanelPx !== undefined ? Math.max(minPanelPx, intendedWidthPx) : intendedWidthPx;
         setWidthVw((visibleWidthPx / vw) * 100);
       };
@@ -91,9 +106,19 @@ export function useDrawerResize({
       window.addEventListener("mousemove", onMouseMove);
       window.addEventListener("mouseup", onMouseUp);
     },
-    // widthVw is needed only for the initial intendedWidthPx snapshot;
-    // getSiblingOffsetPx is called fresh each drag so it stays current.
-    [widthVw, getSiblingOffsetPx, maxPanelPx, minPanelPx, closeThresholdPx, defaultWidthVw, setShow, anchoredAtRight],
+    // widthVw is needed only for the initial intendedWidthPx snapshot.
+    [
+      widthVw,
+      getSiblingOffsetPx,
+      setSiblingWidthVw,
+      siblingMinPx,
+      maxPanelPx,
+      minPanelPx,
+      closeThresholdPx,
+      defaultWidthVw,
+      setShow,
+      anchoredAtRight,
+    ],
   );
 
   return { widthVw, setWidthVw, isResizing, handleMouseDown };

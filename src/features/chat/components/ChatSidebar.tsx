@@ -335,7 +335,7 @@ export function ChatSidebar() {
                 setShowSidebar(false);
               }
             }}
-            className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap pr-4 text-left text-base md:text-sm text-neutral-800 dark:text-neutral-200"
+            className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap pr-4 group-hover:pr-8 transition-all duration-200 text-left text-base md:text-sm text-neutral-800 dark:text-neutral-200"
             title={displayTitle}
           >
             {displayTitle}
