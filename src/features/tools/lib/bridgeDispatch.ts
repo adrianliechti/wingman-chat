@@ -22,7 +22,7 @@ export function dispatchBridgeRpc(message: WorkerToMainMessage): Promise<unknown
     case "vision-request":
       return runVision(message.data, message.path, message.prompt);
     case "render-request":
-      return runRenderImage(message.prompt, message.inputs);
+      return runRenderImage(message.prompt, message.inputs, message.options);
     case "synthesize-request":
       return runSynthesize(message.text, message.voice);
     case "transcribe-request":

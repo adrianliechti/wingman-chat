@@ -4,6 +4,8 @@
  * need the main thread, so the worker calls back over RPC.
  */
 
+import type { ImageRenderOptions } from "@/shared/lib/client";
+
 export interface ArtifactFile {
   content: string;
   contentType?: string;
@@ -51,7 +53,7 @@ export type WorkerToMainMessage =
   | { type: "llm-request"; prompt: string; options?: LlmCallOptions; port: MessagePort }
   | { type: "ocr-request"; data: Uint8Array; path: string; port: MessagePort }
   | { type: "vision-request"; data: Uint8Array; path: string; prompt?: string; port: MessagePort }
-  | { type: "render-request"; prompt: string; inputs: RenderInput[]; port: MessagePort }
+  | { type: "render-request"; prompt: string; inputs: RenderInput[]; options?: ImageRenderOptions; port: MessagePort }
   | { type: "synthesize-request"; text: string; voice?: string; port: MessagePort }
   | { type: "transcribe-request"; data: Uint8Array; path: string; port: MessagePort }
   | { type: "translate-text-request"; lang: string; text: string; port: MessagePort }

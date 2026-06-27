@@ -188,8 +188,11 @@ async function readSource(notebookId: string, path: string): Promise<File | unde
   if (!blob) {
     return readLegacySource(notebookId, path);
   }
-  const dataUrl = await blobToDataUrl(blob);
-  return { path, content: dataUrl, contentType: contentType ?? "application/octet-stream" };
+  // Stored as an extension-less `content` file, so stamp the inferred type onto
+  // the data URL rather than trusting the read-back blob type (see blobToDataUrl).
+  const resolvedType = contentType ?? "application/octet-stream";
+  const dataUrl = await blobToDataUrl(blob, resolvedType);
+  return { path, content: dataUrl, contentType: resolvedType };
 }
 
 /**

@@ -5,6 +5,7 @@
  * `interpreterProtocol.ts`.
  */
 
+import type { ImageRenderOptions } from "@/shared/lib/client";
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { normalizeArtifactPath } from "@/shared/lib/sandbox";
@@ -266,12 +267,18 @@ function buildBridges(vfs: Vfs) {
       const data = await callMain<Uint8Array>((port) => ({ type: "synthesize-request", text, voice, port }));
       return writeBytes(output, data);
     },
-    render: async (prompt: string, output: string, inputs: string[] = []): Promise<string> => {
+    render: async (
+      prompt: string,
+      output: string,
+      inputs: string[] = [],
+      options?: ImageRenderOptions,
+    ): Promise<string> => {
       const renderInputs = inputs.map((path) => ({ data: readBytes(path), path }));
       const data = await callMain<Uint8Array>((port) => ({
         type: "render-request",
         prompt,
         inputs: renderInputs,
+        options,
         port,
       }));
       return writeBytes(output, data);

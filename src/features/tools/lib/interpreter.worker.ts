@@ -5,6 +5,7 @@
  */
 
 import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodide";
+import type { ImageRenderOptions } from "@/shared/lib/client";
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { SANDBOX_HOME } from "@/shared/lib/sandbox";
@@ -258,8 +259,10 @@ function loadPyodide(): Promise<PyodideInterface> {
         p.globals.set("_wingman_llm", requestLlm);
         p.globals.set("_wingman_ocr", (path: string) => requestOcr(p, path));
         p.globals.set("_wingman_vision", (path: string, prompt: string | null) => requestVision(p, path, prompt));
-        p.globals.set("_wingman_render", (prompt: string, output: string, inputsJson: string) =>
-          requestRenderImage(p, prompt, output, inputsJson),
+        p.globals.set(
+          "_wingman_render",
+          (prompt: string, output: string, inputsJson: string, optionsJson: string | null) =>
+            requestRenderImage(p, prompt, output, inputsJson, optionsJson),
         );
         p.globals.set("_wingman_synthesize", (text: string, output: string, voice: string | null) =>
           requestSynthesize(p, text, output, voice),
@@ -431,13 +434,23 @@ async function requestRenderImage(
   prompt: string,
   output: string,
   inputsJson: string,
+  optionsJson?: string | null,
 ): Promise<string> {
   const inputs: RenderInput[] = (JSON.parse(inputsJson) as string[]).map((path) => ({
     data: readWorkerFile(pyodide, path, "render"),
     path,
   }));
 
-  const data = await callMain<Uint8Array>((port) => ({ type: "render-request", prompt, inputs, port }));
+  let options: ImageRenderOptions | undefined;
+  if (optionsJson) {
+    try {
+      options = JSON.parse(optionsJson) as ImageRenderOptions;
+    } catch {
+      // Malformed options — proceed with defaults rather than failing the call.
+    }
+  }
+
+  const data = await callMain<Uint8Array>((port) => ({ type: "render-request", prompt, inputs, options, port }));
   writeWorkerFile(pyodide, output, data);
   return output;
 }

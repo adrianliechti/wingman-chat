@@ -1,14 +1,31 @@
 import { type Command, type CommandContext, defineCommand, type ExecResult } from "just-bash/browser";
 import { getConfig } from "@/shared/config";
+import type { ImageRenderOptions } from "@/shared/lib/client";
 import { inferContentTypeFromPath } from "@/shared/lib/fileTypes";
 import { getFileName } from "@/shared/lib/utils";
 import { parseFlags, resolveModel, resolvePath, writeOutputFile } from "./commandUtils";
 import type { RenderInput } from "./interpreterProtocol";
 
-const RENDER_FLAGS = { "-i": "input", "--input": "input", "-o": "output", "--output": "output" };
-const RENDER_USAGE = 'usage: render [-i input.png ...] -o output.png "prompt"';
+const RENDER_FLAGS = {
+  "-i": "input",
+  "--input": "input",
+  "-o": "output",
+  "--output": "output",
+  "-a": "aspect",
+  "--aspect": "aspect",
+  "-q": "quality",
+  "--quality": "quality",
+  "-b": "background",
+  "--background": "background",
+};
+const RENDER_USAGE =
+  'usage: render [-i input.png ...] [-a 16:9] [-q low|medium|high] [-b transparent|opaque] -o output.png "prompt"';
 
-export async function runRenderImage(prompt: string, inputs: RenderInput[]): Promise<Uint8Array> {
+export async function runRenderImage(
+  prompt: string,
+  inputs: RenderInput[],
+  options?: ImageRenderOptions,
+): Promise<Uint8Array> {
   const config = getConfig();
   if (!config.renderer) {
     throw new Error("render: no image rendering service configured");
@@ -32,7 +49,7 @@ export async function runRenderImage(prompt: string, inputs: RenderInput[]): Pro
   });
 
   const model = await resolveModel(config.renderer.model, "renderer");
-  const blob = await config.client.generateImage(model, prompt, images);
+  const blob = await config.client.generateImage(model, prompt, images, options);
   const data = new Uint8Array(await blob.arrayBuffer());
   if (data.length === 0) {
     throw new Error("render: service returned an empty image");
@@ -53,6 +70,16 @@ async function executeRender(args: string[], ctx: CommandContext): Promise<ExecR
     return { stdout: "", stderr: `${RENDER_USAGE}\n`, exitCode: 2 };
   }
 
+  // Invalid values are dropped (the backend ignores them too); the usage line
+  // documents the accepted ones.
+  const renderOptions: ImageRenderOptions = {};
+  const aspect = options.aspect?.at(-1);
+  if (aspect) renderOptions.aspectRatio = aspect;
+  const quality = options.quality?.at(-1);
+  if (quality === "low" || quality === "medium" || quality === "high") renderOptions.quality = quality;
+  const background = options.background?.at(-1);
+  if (background === "transparent" || background === "opaque") renderOptions.background = background;
+
   const images: RenderInput[] = [];
   for (const input of options.input ?? []) {
     const fsPath = resolvePath(input, ctx.cwd);
@@ -66,7 +93,7 @@ async function executeRender(args: string[], ctx: CommandContext): Promise<ExecR
   }
 
   try {
-    const data = await runRenderImage(prompt, images);
+    const data = await runRenderImage(prompt, images, renderOptions);
     await writeOutputFile(ctx.fs, resolvePath(output, ctx.cwd), data);
     return { stdout: "", stderr: "", exitCode: 0 };
   } catch (error) {

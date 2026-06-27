@@ -7,6 +7,7 @@ import { parseSkillFile } from "@/features/skills/lib/skillParser";
 import { inferContentTypeFromPath, isTextContentType } from "./fileTypes";
 import type { IndexEntry } from "./opfs-core";
 import {
+  blobToDataUrl,
   dataUrlToBlob,
   deleteDirectory,
   deleteFile,
@@ -21,7 +22,6 @@ import {
   writeBlob,
   writeText,
 } from "./opfs-core";
-import { readAsDataURL } from "./utils";
 
 export interface StoredSkill {
   name: string;
@@ -151,7 +151,7 @@ async function loadSkillResources(skillDir: string): Promise<SkillResource[]> {
     if (!blob) continue;
 
     const contentType = inferContentTypeFromPath(path) || blob.type || undefined;
-    const content = isTextContentType(contentType) ? await blob.text() : await readAsDataURL(blob);
+    const content = isTextContentType(contentType) ? await blob.text() : await blobToDataUrl(blob, contentType);
     resources.push({ path, content, contentType });
   }
 

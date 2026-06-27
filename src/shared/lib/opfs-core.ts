@@ -454,10 +454,15 @@ export function dataUrlToBlob(dataUrl: string): Blob {
 }
 
 /**
- * Convert a Blob to a data URL.
+ * Convert a Blob to a data URL. Pass `contentType` to stamp the MIME explicitly:
+ * OPFS stores raw bytes, so a blob read back from storage carries a type the
+ * browser guessed from the filename (empty, application/octet-stream, or
+ * application/macbinary on Safari) — never the original. Embedding that guess in
+ * the data URL makes the backend reject the attachment, so callers that know the
+ * real type should pass it.
  */
-export function blobToDataUrl(blob: Blob): Promise<string> {
-  return readAsDataURL(blob);
+export function blobToDataUrl(blob: Blob, contentType?: string): Promise<string> {
+  return readAsDataURL(contentType && contentType !== blob.type ? new Blob([blob], { type: contentType }) : blob);
 }
 
 /**

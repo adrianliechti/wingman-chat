@@ -67,6 +67,26 @@ const TRANSCRIBE_EXTENSIONS: Record<string, string> = {
   "audio/flac": "flac",
 };
 
+/**
+ * Optional geometry/quality knobs for image generation, forwarded to the
+ * backend's `/v1/render`. All are provider-neutral: the backend maps each to the
+ * target model's supported values (aspect ratios snap to the nearest available)
+ * and silently drops what a model can't honor, so the same options work across
+ * providers.
+ */
+export interface ImageRenderOptions {
+  /** Aspect ratio like "1:1" or "16:9"; snapped to the nearest the model supports. */
+  aspectRatio?: string;
+  /** Quality tier; higher is slower and may cost more. */
+  quality?: "low" | "medium" | "high";
+  /** Output resolution. */
+  resolution?: "512" | "1K" | "2K" | "4K";
+  /** Background handling (only honored by models that support it). */
+  background?: "transparent" | "opaque";
+  /** Desired output format; negotiated via the `Accept` header, not a form field. */
+  format?: "png" | "jpeg" | "webp";
+}
+
 export class Client {
   private oai: OpenAI;
 
@@ -706,14 +726,20 @@ export class Client {
     return result.content || "";
   }
 
-  async generateImage(model: string, prompt: string, images?: Blob[]): Promise<Blob> {
+  async generateImage(model: string, prompt: string, images?: Blob[], options?: ImageRenderOptions): Promise<Blob> {
     const data = new FormData();
     data.append("input", prompt);
     if (model) data.append("model", model);
     images?.forEach((blob, i) => {
       data.append("file", blob, `image_${i}.${mime.getExtension(blob.type) || "image"}`);
     });
-    return (await this.postRaw("/api/v1/render", data)).blob();
+    if (options?.aspectRatio) data.append("aspect_ratio", options.aspectRatio);
+    if (options?.quality) data.append("quality", options.quality);
+    if (options?.resolution) data.append("resolution", options.resolution);
+    if (options?.background) data.append("background", options.background);
+    // Output format is negotiated via Accept, not a form field (see /v1/render).
+    const headers = options?.format ? { Accept: `image/${options.format}` } : undefined;
+    return (await this.postRaw("/api/v1/render", data, headers)).blob();
   }
 
   private toTools(tools: Tool[]): OpenAI.Responses.Tool[] | undefined {

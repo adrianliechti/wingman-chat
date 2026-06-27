@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef } from "react";
 import { useArtifacts } from "@/features/artifacts/hooks/useArtifacts";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import { getConfig } from "@/shared/config";
+import type { ImageRenderOptions } from "@/shared/lib/client";
 import { isDataUrl } from "@/shared/lib/fileContent";
 import { readAsDataURL } from "@/shared/lib/utils";
 import type { TextContent, Tool, ToolContext } from "@/shared/types/chat";
@@ -98,6 +99,23 @@ export function useImageTool(): Tool | null {
             description:
               'Optional paths to image artifacts to use as references, e.g. ["/a-red-fox.png"]. Images attached to the current message are used automatically.',
           },
+          aspect_ratio: {
+            type: "string",
+            enum: ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"],
+            description:
+              'Optional aspect ratio, e.g. "16:9" for widescreen or "9:16" for portrait. Snapped to the nearest the model supports. Omit for the model default (usually square).',
+          },
+          quality: {
+            type: "string",
+            enum: ["low", "medium", "high"],
+            description: "Optional quality tier. Higher quality is slower and may cost more.",
+          },
+          background: {
+            type: "string",
+            enum: ["transparent", "opaque"],
+            description:
+              'Set "transparent" for a cut-out subject with no background. Only honored by models that support it.',
+          },
         },
         required: ["prompt"],
       },
@@ -125,7 +143,16 @@ export function useImageTool(): Tool | null {
             if (part.type === "image") references.push(await blobFromDataUrl(part.data));
           }
 
-          const imageBlob = await client.generateImage(model, prompt, references);
+          const options: ImageRenderOptions = {};
+          if (typeof args.aspect_ratio === "string") options.aspectRatio = args.aspect_ratio;
+          if (args.quality === "low" || args.quality === "medium" || args.quality === "high") {
+            options.quality = args.quality;
+          }
+          if (args.background === "transparent" || args.background === "opaque") {
+            options.background = args.background;
+          }
+
+          const imageBlob = await client.generateImage(model, prompt, references, options);
           const dataUrl = await readAsDataURL(imageBlob);
 
           // Save to the artifacts workspace so the image is downloadable, editable
