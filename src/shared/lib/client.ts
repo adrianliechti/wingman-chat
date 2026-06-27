@@ -87,6 +87,35 @@ export interface ImageRenderOptions {
   format?: "png" | "jpeg" | "webp";
 }
 
+/**
+ * Best-effort human-readable detail from a failed response body, so tool errors
+ * surface the backend's reason instead of a bare status code. Handles both
+ * plain-text errors (e.g. /api/v1/render) and `{ error: { message } }` /
+ * `{ error }` JSON envelopes, truncated so a stray HTML error page can't flood
+ * the message.
+ */
+async function readErrorBody(resp: Response): Promise<string> {
+  let text: string;
+  try {
+    text = (await resp.text()).trim();
+  } catch {
+    return "";
+  }
+  if (!text) return "";
+
+  if (text.startsWith("{") || text.startsWith("[")) {
+    try {
+      const body = JSON.parse(text);
+      const message = body?.error?.message ?? body?.error ?? body?.message;
+      if (typeof message === "string" && message.trim()) text = message.trim();
+    } catch {
+      // Not JSON after all — fall back to the raw text.
+    }
+  }
+
+  return text.length > 300 ? `${text.slice(0, 300)}…` : text;
+}
+
 export class Client {
   private oai: OpenAI;
 
@@ -838,7 +867,10 @@ export class Client {
       clearTimeout(timer);
     }
 
-    if (!resp.ok) throw new Error(`${path} failed with status ${resp.status}`);
+    if (!resp.ok) {
+      const detail = await readErrorBody(resp);
+      throw new Error(`${path} failed with status ${resp.status}${detail ? `: ${detail}` : ""}`);
+    }
     return resp;
   }
 }
