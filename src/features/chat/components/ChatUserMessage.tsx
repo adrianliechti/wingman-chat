@@ -8,7 +8,7 @@ import { RenderContents } from "@/shared/ui/ContentRenderer";
 import { CopyButton } from "@/shared/ui/CopyButton";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { ChatMessageEditor } from "./ChatMessageEditor";
-import { parseArtifactReference } from "./chatMessageUtils";
+import { formatArtifactReference, parseArtifactReference } from "./chatMessageUtils";
 
 type ChatUserMessageProps = {
   message: Message;
@@ -46,12 +46,25 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   // open the file in the artifacts editor — from any other plain text parts.
   const attachedArtifactPaths: string[] = [];
   const plainTextAttachments: TextContent[] = [];
+  // For the editor: a reference that only points at inline media (images) would
+  // render a second time as a file tile, so split those paths out into
+  // `mediaRefPaths` (re-attached on submit, tied to the surviving media) and keep
+  // just the genuine file/plain-text parts editable.
+  const mediaRefPaths: string[] = [];
+  const editableAdditionalText: TextContent[] = [];
   for (const part of additionalTextContent) {
     const paths = parseArtifactReference(part.text);
-    if (paths.length) attachedArtifactPaths.push(...paths.filter((p) => !inlineMediaNames.has(basename(p))));
-    else plainTextAttachments.push(part);
+    if (!paths.length) {
+      plainTextAttachments.push(part);
+      editableAdditionalText.push(part);
+      continue;
+    }
+    const nonInline = paths.filter((p) => !inlineMediaNames.has(basename(p)));
+    attachedArtifactPaths.push(...nonInline);
+    mediaRefPaths.push(...paths.filter((p) => inlineMediaNames.has(basename(p))));
+    if (nonInline.length) editableAdditionalText.push({ type: "text", text: formatArtifactReference(nonInline) });
   }
-  const [editAdditionalTextContent, setEditAdditionalTextContent] = useState<TextContent[]>(additionalTextContent);
+  const [editAdditionalTextContent, setEditAdditionalTextContent] = useState<TextContent[]>(editableAdditionalText);
   // Get media content (images, audio, files) for editing
   const mediaContent = message.content.filter(
     (p): p is ImageContent | AudioContent | FileContent =>
@@ -73,7 +86,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   const handleStartEdit = () => {
     if (isResponding) return;
     setEditContent(textContent);
-    setEditAdditionalTextContent(additionalTextContent);
+    setEditAdditionalTextContent(editableAdditionalText);
     setEditMediaContent(mediaContent);
     setIsEditing(true);
   };
@@ -81,7 +94,7 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   const handleCancelEdit = () => {
     setIsEditing(false);
     setEditContent(textContent);
-    setEditAdditionalTextContent(additionalTextContent);
+    setEditAdditionalTextContent(editableAdditionalText);
     setEditMediaContent(mediaContent);
   };
 
@@ -108,6 +121,14 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
     }
     newContent.push(...editAdditionalTextContent);
     newContent.push(...editMediaContent);
+    // Re-attach the workspace reference for media that survived editing (it was
+    // hidden from the editor to avoid showing the image twice) so the model still
+    // learns each image's artifact path. Dropped media drops its reference.
+    const survivingMediaNames = new Set(editMediaContent.map((m) => m.name).filter((n): n is string => !!n));
+    const keptMediaRefs = mediaRefPaths.filter((p) => survivingMediaNames.has(basename(p)));
+    if (keptMediaRefs.length) {
+      newContent.push({ type: "text", text: formatArtifactReference(keptMediaRefs) });
+    }
     const editedMessage = { ...message, content: newContent };
     await sendMessage(editedMessage, truncatedHistory);
   };
