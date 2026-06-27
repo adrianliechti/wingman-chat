@@ -19,8 +19,9 @@
  *     `mediabunny`/`echarts`/`jsPDF` modules are injected lazily when referenced.
  *   - Node-isms that LLM-authored code reaches for (`Buffer`, `process`,
  *     `global`, `setImmediate`) are shimmed so common snippets run unchanged.
- *   - The `llm(...)` helper is proxied to the main thread over RPC (it needs the
- *     chat client/config), mirroring the Python `llm` global.
+ *   - AI helpers (`llm`, `ocr`, `vision`, `transcribe`, `synthesize`, `render`,
+ *     `translate`/`translateFile`) are proxied to the main thread over RPC (they
+ *     need the chat client/config), mirroring the Python globals.
  */
 
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
@@ -122,38 +123,47 @@ function toBytes(data: unknown): Uint8Array {
   throw new Error("write: data must be a string, Uint8Array, ArrayBuffer, or typed array");
 }
 
-// The `vfs` helper handed to user code. Paths are artifact paths (leading
-// slash); inputs are normalized so "data.csv", "/data.csv", and
-// "/home/user/data.csv" all resolve to the same file.
-function buildVfs(vfs: Vfs) {
+// Path-normalized byte access over the VFS, shared by the `vfs` helper and the
+// AI bridges (both read inputs and write outputs by path). `writeBytes` returns
+// the normalized key so callers can echo the written path back.
+function vfsAccess(vfs: Vfs) {
   const requireKey = (path: string): string => {
     const key = normalizePath(path);
     if (!key) throw new Error(`invalid path: ${path}`);
     return key;
   };
-  const readEntry = (path: string): VfsEntry => {
+  const readBytes = (path: string): Uint8Array => {
     const entry = vfs.get(requireKey(path));
     if (!entry) throw new Error(`file not found: ${path}`);
-    return entry;
+    return entry.bytes;
   };
-  const writeBytes = (path: string, data: unknown, contentType?: string): void => {
+  const writeBytes = (path: string, data: unknown, contentType?: string): string => {
     const key = requireKey(path);
     const bytes = toBytes(data);
     const ct = contentType ?? inferContentTypeFromPath(key) ?? (typeof data === "string" ? "text/plain" : undefined);
     vfs.set(key, { bytes, contentType: ct, dirty: true });
+    return key;
   };
+  return { requireKey, readBytes, writeBytes };
+}
+
+// The `vfs` helper handed to user code. Paths are artifact paths (leading
+// slash); inputs are normalized so "data.csv", "/data.csv", and
+// "/home/user/data.csv" all resolve to the same file.
+function buildVfs(vfs: Vfs) {
+  const { requireKey, readBytes, writeBytes } = vfsAccess(vfs);
   return {
     list: (): string[] => [...vfs.keys()].sort(),
     exists: (path: string): boolean => vfs.has(requireKey(path)),
-    readBytes: (path: string): Uint8Array => readEntry(path).bytes,
-    readText: (path: string): string => decoder.decode(readEntry(path).bytes),
-    read: (path: string): string => decoder.decode(readEntry(path).bytes),
-    readJSON: (path: string): unknown => JSON.parse(decoder.decode(readEntry(path).bytes)),
-    write: (path: string, data: unknown, contentType?: string): void => writeBytes(path, data, contentType),
-    writeBytes,
-    writeText: (path: string, text: string, contentType?: string): void =>
+    readBytes,
+    readText: (path: string): string => decoder.decode(readBytes(path)),
+    read: (path: string): string => decoder.decode(readBytes(path)),
+    readJSON: (path: string): unknown => JSON.parse(decoder.decode(readBytes(path))),
+    write: (path: string, data: unknown, contentType?: string): string => writeBytes(path, data, contentType),
+    writeBytes: (path: string, data: unknown, contentType?: string): string => writeBytes(path, data, contentType),
+    writeText: (path: string, text: string, contentType?: string): string =>
       writeBytes(path, String(text), contentType ?? "text/plain"),
-    writeJSON: (path: string, value: unknown): void =>
+    writeJSON: (path: string, value: unknown): string =>
       writeBytes(path, JSON.stringify(value, null, 2), "application/json"),
     remove: (path: string): boolean => vfs.delete(requireKey(path)),
   };
@@ -252,9 +262,56 @@ function llm(prompt: string, options?: LlmCallOptions): Promise<string> {
 }
 
 /**
+ * The file-backed AI helpers, mirroring the Python globals. File inputs are read
+ * from the VFS; file outputs are written back to it. Each is proxied to the main
+ * thread (which has the chat client/config) and rejects with a clear error when
+ * its backing service isn't configured. Built per-run so they bind to that run's
+ * VFS.
+ */
+function buildBridges(vfs: Vfs) {
+  const { readBytes, writeBytes } = vfsAccess(vfs);
+  return {
+    ocr: (path: string): Promise<string> =>
+      callMain<string>((port) => ({ type: "ocr-request", data: readBytes(path), path, port })),
+    vision: (path: string, prompt?: string): Promise<string> =>
+      callMain<string>((port) => ({ type: "vision-request", data: readBytes(path), path, prompt, port })),
+    transcribe: (path: string): Promise<string> =>
+      callMain<string>((port) => ({ type: "transcribe-request", data: readBytes(path), path, port })),
+    // Arg order mirrors the Python helpers: translate(text, lang) and
+    // translateFile(input, lang, output).
+    translate: (text: string, lang: string): Promise<string> =>
+      callMain<string>((port) => ({ type: "translate-text-request", lang, text, port })),
+    translateFile: async (input: string, lang: string, output: string): Promise<string> => {
+      const data = await callMain<Uint8Array>((port) => ({
+        type: "translate-file-request",
+        lang,
+        data: readBytes(input),
+        path: input,
+        port,
+      }));
+      return writeBytes(output, data);
+    },
+    synthesize: async (text: string, output: string, voice?: string): Promise<string> => {
+      const data = await callMain<Uint8Array>((port) => ({ type: "synthesize-request", text, voice, port }));
+      return writeBytes(output, data);
+    },
+    render: async (prompt: string, output: string, inputs: string[] = []): Promise<string> => {
+      const renderInputs = inputs.map((path) => ({ data: readBytes(path), path }));
+      const data = await callMain<Uint8Array>((port) => ({
+        type: "render-request",
+        prompt,
+        inputs: renderInputs,
+        port,
+      }));
+      return writeBytes(output, data);
+    },
+  };
+}
+
+/**
  * Rasterize an SVG string to PNG bytes via OffscreenCanvas — handed to user code
- * as a global because echarts (and hand-written SVG) produce vector output but
- * some targets want a raster image.
+ * because echarts (and hand-written SVG) produce vector output but some targets
+ * want a raster image.
  */
 async function svgToPng(svg: string, options?: { width?: number; height?: number }): Promise<Uint8Array> {
   const bitmap = await createImageBitmap(new Blob([svg], { type: "image/svg+xml" }));
@@ -271,7 +328,7 @@ async function svgToPng(svg: string, options?: { width?: number; height?: number
 
 // ── Console capture ──────────────────────────────────────────────────────────
 
-function formatValue(value: unknown, seen = new WeakSet<object>()): string {
+function formatValue(value: unknown): string {
   if (typeof value === "string") return value;
   if (value === undefined) return "undefined";
   if (value === null) return "null";
@@ -280,9 +337,8 @@ function formatValue(value: unknown, seen = new WeakSet<object>()): string {
   if (typeof value === "symbol") return value.toString();
   if (value instanceof Error) return value.stack || `${value.name}: ${value.message}`;
   if (typeof value === "object") {
-    if (seen.has(value)) return "[Circular]";
-    seen.add(value);
     try {
+      // JSON.stringify throws on circular references — fall back to String().
       return JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? `${v}n` : v), 2) ?? String(value);
     } catch {
       return String(value);
@@ -316,6 +372,15 @@ function makeConsole(append: (line: string) => void) {
 // still `const Buffer = …` without a duplicate-declaration error, and only for
 // `process`/`Buffer` when a run references them — so the bundled libraries'
 // own environment detection stays untouched on runs that don't.
+
+// CommonJS `require` isn't supported (no npm in the sandbox). Provide it anyway
+// so the failure is a clear, actionable message instead of a bare ReferenceError.
+function sandboxRequire(name: unknown): never {
+  throw new Error(
+    `require(${JSON.stringify(name)}) is not available — the sandbox has no npm or CommonJS. ` +
+      "Use the provided globals (vfs, llm, Buffer, mediabunny, echarts, jsPDF) and browser APIs.",
+  );
+}
 
 function makeProcessStub() {
   const write = (chunk: unknown): boolean => {
@@ -366,7 +431,7 @@ async function ensureRuntimeCompat(code: string): Promise<void> {
 // ── Execution ────────────────────────────────────────────────────────────────
 
 // `new AsyncFunction(...)` lets user code use top-level await and `return` a
-// value, while keeping injected helpers out of the global namespace.
+// value; the parameter helpers (vfs, console, …) stay lexically scoped to it.
 const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
   ...args: string[]
 ) => (...args: unknown[]) => Promise<unknown>;
@@ -402,6 +467,13 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
     output += `${line}\n`;
   });
 
+  // The AI helpers go on globalThis (not as AsyncFunction parameters) so user
+  // code can still declare locals named `render`, `translate`, … without a
+  // duplicate-parameter SyntaxError. Bound to this run's VFS; removed in finally.
+  const g = globalThis as Record<string, unknown>;
+  const bridges: Record<string, unknown> = { llm, ...buildBridges(vfs) };
+  Object.assign(g, bridges);
+
   try {
     await ensureRuntimeCompat(code);
 
@@ -418,12 +490,16 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
       }),
     );
 
-    const paramNames = ["vfs", "console", "llm", "svgToPng", ...LAZY_GLOBALS.map((lib) => lib.name)];
+    // Helpers passed as parameters (kept lexically scoped). `console` must be a
+    // parameter — to shadow the worker console for capture without globally
+    // replacing it; the others are uncommon enough as identifiers to be safe.
+    // Keep these names aligned with the argument list below.
+    const paramNames = ["vfs", "console", "svgToPng", "require", ...LAZY_GLOBALS.map((lib) => lib.name)];
     const fn = new AsyncFunction(...paramNames, code);
 
     onStarted?.();
 
-    const value = await fn(buildVfs(vfs), sandboxConsole, llm, svgToPng, ...lazyValues);
+    const value = await fn(buildVfs(vfs), sandboxConsole, svgToPng, sandboxRequire, ...lazyValues);
 
     const trimmed = output.trim();
     const resolvedOutput =
@@ -437,6 +513,7 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
       error: error instanceof Error ? (error.stack ?? error.message) : String(error),
     };
   } finally {
+    for (const key of Object.keys(bridges)) delete g[key];
     currentVfs = null;
     currentStdout = null;
   }

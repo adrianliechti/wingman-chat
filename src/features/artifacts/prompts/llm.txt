@@ -1,10 +1,11 @@
 ### LLM helper (`llm`)
 
-Both interpreters expose an `llm` helper that calls a language model with a prompt string and returns its text response. By default it uses the model of the current chat; per-call parameters can override it.
+All interpreters expose an `llm` helper that calls a language model with a prompt string and returns its text response. By default it uses the model of the current chat; per-call parameters can override it.
 
 - Python: `await llm("your prompt")` — async, returns `str`
   - Optional keyword arguments: `model` (model id), `system` (system instructions), `effort` (`"none"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`)
   - Example: `await llm(text, system="Reply with a single word: positive, negative or neutral.", effort="none")`
+- JavaScript: `await llm("your prompt")` — async, returns a string; an optional second argument is an options object: `await llm(text, { system: "Reply with a single word: positive, negative or neutral.", effort: "none" })` (keys: `model`, `system`, `effort`)
 - Bash: `llm "your prompt"` (or pipe via stdin: `cat file.txt | llm "summarize this"`) — writes the response to stdout
   - Optional flags: `-m/--model <id>`, `-s/--system <instructions>`, `-e/--effort <level>`
 

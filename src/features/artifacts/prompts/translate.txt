@@ -1,9 +1,11 @@
 ### Translation helper (`translate`)
 
-Both interpreters expose a `translate` helper that translates text or whole files into another language via the configured translation service. Supported file formats and target languages depend on the configuration.
+All interpreters expose a `translate` helper that translates text or whole files into another language via the configured translation service. Supported file formats and target languages depend on the configuration.
 
 - Python (text): `text = await translate("Hello, world", "de")` — async, returns `str`
 - Python (file): `await translate_file("report.pdf", "de", "report_de.pdf")` — async, writes the translated file (preserving its format) and returns its path
+- JavaScript (text): `const text = await translate("Hello, world", "de")` — async, returns a string
+- JavaScript (file): `await translateFile("report.pdf", "de", "report_de.pdf")` — async, writes the translated file and returns its path
 - Bash (text): `translate -l de "Hello, world"` — writes the translation to stdout; `-o/--output <file>` writes it to a file, and text can also be piped via stdin
 - Bash (file): `translate -l de -i report.pdf -o report_de.pdf` — `-i/--input` and `-o/--output` are required for file translation
 

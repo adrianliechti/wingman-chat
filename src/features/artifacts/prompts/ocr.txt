@@ -1,8 +1,9 @@
 ### OCR helper (`ocr`)
 
-Both interpreters expose an `ocr` helper that sends a document file to a cloud extraction service (OCR + layout analysis) and returns the recognized text. It handles scanned PDFs, images of documents, and Office files.
+All interpreters expose an `ocr` helper that sends a document file to a cloud extraction service (OCR + layout analysis) and returns the recognized text. It handles scanned PDFs, images of documents, and Office files.
 
 - Python: `text = await ocr("/home/user/scan.pdf")` — async, returns `str`
+- JavaScript: `const text = await ocr("/scan.pdf")` — async, returns a string
 - Bash: `ocr scan.pdf` — writes the text to stdout; `-o/--output <file>` writes it to a file instead
 
 When to use it:
