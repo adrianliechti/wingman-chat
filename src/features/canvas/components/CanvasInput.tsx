@@ -1,7 +1,27 @@
-import { ArrowRight, HardDrive, ImagePlus, Loader2, Paintbrush, Sparkles, Upload, X } from "lucide-react";
+import { ArrowRight, Gauge, HardDrive, ImagePlus, Loader2, Paintbrush, Proportions, Sparkles, Upload, X } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import type { Model } from "@/shared/types/chat";
 import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
+import { ModelDropdown } from "@/shared/ui/ModelDropdown";
+
+export type ImageQuality = "low" | "medium" | "high";
+
+/** Curated aspect ratios; the backend snaps each to the nearest the model supports. */
+const ASPECT_OPTIONS = [
+  { value: "1:1", label: "1:1", description: "Square" },
+  { value: "16:9", label: "16:9", description: "Widescreen" },
+  { value: "9:16", label: "9:16", description: "Vertical" },
+  { value: "4:3", label: "4:3", description: "Landscape" },
+  { value: "3:4", label: "3:4", description: "Portrait" },
+  { value: "3:2", label: "3:2", description: "Photo" },
+  { value: "2:3", label: "2:3", description: "Photo (tall)" },
+];
+
+const QUALITY_OPTIONS: { value: ImageQuality; label: string; description: string }[] = [
+  { value: "low", label: "Low", description: "Fastest, lower detail" },
+  { value: "medium", label: "Medium", description: "Balanced" },
+  { value: "high", label: "High", description: "Slowest, best detail" },
+];
 
 interface CanvasInputProps {
   prompt: string;
@@ -20,6 +40,10 @@ interface CanvasInputProps {
   availableStyles: string[];
   selectedStyle: string | null;
   onSelectStyle: (style: string | null) => void;
+  selectedAspect: string | null;
+  onSelectAspect: (aspect: string | null) => void;
+  selectedQuality: ImageQuality | null;
+  onSelectQuality: (quality: ImageQuality | null) => void;
   placeholder?: string;
   helperText?: string;
   disabled?: boolean;
@@ -44,6 +68,10 @@ export function CanvasInput({
   availableStyles,
   selectedStyle,
   onSelectStyle,
+  selectedAspect,
+  onSelectAspect,
+  selectedQuality,
+  onSelectQuality,
   placeholder = "Describe the image you want to generate...",
   helperText,
   disabled,
@@ -135,29 +163,48 @@ export function CanvasInput({
       {/* Controls bar */}
       <div className="flex items-center justify-between gap-3 px-3 pb-3">
         <div className="flex min-w-0 items-center gap-3">
-          {/* Model dropdown */}
-          <DropdownMenu
-            anchor="bottom start"
-            panelClassName="max-h-[50vh]! whitespace-nowrap"
-            trigger={
-              <MenuButton className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48">
+          {/* Model dropdown — aspect & quality hang off it as flyout submenus */}
+          <ModelDropdown
+            models={models}
+            value={selectedModel?.id ?? ""}
+            onChange={(modelId) => {
+              const m = models.find((mm) => mm.id === modelId);
+              if (m) onSelectModel(m);
+            }}
+            dropdownClassName="w-auto min-w-48 whitespace-nowrap"
+            submenus={[
+              {
+                icon: <Proportions size={14} />,
+                label: "Aspect",
+                options: ASPECT_OPTIONS,
+                value: selectedAspect,
+                onChange: onSelectAspect,
+                defaultLabel: "Auto",
+                defaultDescription: "Model default",
+              },
+              {
+                icon: <Gauge size={14} />,
+                label: "Quality",
+                options: QUALITY_OPTIONS,
+                value: selectedQuality,
+                onChange: (v) => onSelectQuality(v as ImageQuality | null),
+                defaultLabel: "Auto",
+                defaultDescription: "Model default",
+              },
+            ]}
+            trigger={({ getProps }) => (
+              <button
+                type="button"
+                {...getProps()}
+                className="flex items-center gap-1.5 pl-1 py-0 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors max-w-48"
+              >
                 <span className="shrink-0 flex justify-center">
                   <Sparkles size={14} />
                 </span>
-                <span className="truncate min-w-0">{selectedModel?.name || "Model"}</span>
-              </MenuButton>
-            }
-          >
-            {models.length === 0 ? (
-              <div className="px-3 py-2 text-neutral-500 dark:text-neutral-400 text-sm">Loading models...</div>
-            ) : (
-              models.map((model) => (
-                <DropdownMenuItem key={model.id} description={model.description} onClick={() => onSelectModel(model)}>
-                  {model.name ?? model.id}
-                </DropdownMenuItem>
-              ))
+                <span className="truncate min-w-0">{selectedModel?.name ?? selectedModel?.id ?? "Model"}</span>
+              </button>
             )}
-          </DropdownMenu>
+          />
 
           {/* Style dropdown */}
           <DropdownMenu

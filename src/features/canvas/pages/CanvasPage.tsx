@@ -1,6 +1,6 @@
 import { Download, ImagePlus, Info, Loader2, PlusIcon, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CanvasInput } from "@/features/canvas/components/CanvasInput";
+import { CanvasInput, type ImageQuality } from "@/features/canvas/components/CanvasInput";
 import { useImages } from "@/features/canvas/hooks/useImages";
 import { getConfig } from "@/shared/config";
 import { useDropZone } from "@/shared/hooks/useDropZone";
@@ -155,6 +155,8 @@ export function CanvasPage() {
   const [models, setModels] = useState<Model[]>([]);
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
   const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
+  const [selectedAspect, setSelectedAspect] = useState<string | null>(null);
+  const [selectedQuality, setSelectedQuality] = useState<ImageQuality | null>(null);
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -331,6 +333,10 @@ export function CanvasPage() {
         model,
         fullPrompt,
         refImages.length > 0 ? refImages : undefined,
+        {
+          aspectRatio: selectedAspect ?? undefined,
+          quality: selectedQuality ?? undefined,
+        },
       );
 
       // Convert to data URL for persistence and display
@@ -486,6 +492,10 @@ export function CanvasPage() {
                 availableStyles={AVAILABLE_STYLES}
                 selectedStyle={selectedStyle}
                 onSelectStyle={setSelectedStyle}
+                selectedAspect={selectedAspect}
+                onSelectAspect={setSelectedAspect}
+                selectedQuality={selectedQuality}
+                onSelectQuality={setSelectedQuality}
                 placeholder="Generate something new..."
                 disabled={isGenerating}
                 autoFocus
@@ -514,6 +524,10 @@ export function CanvasPage() {
                 availableStyles={AVAILABLE_STYLES}
                 selectedStyle={selectedStyle}
                 onSelectStyle={setSelectedStyle}
+                selectedAspect={selectedAspect}
+                onSelectAspect={setSelectedAspect}
+                selectedQuality={selectedQuality}
+                onSelectQuality={setSelectedQuality}
                 placeholder="Refine the selected image..."
                 disabled={isGenerating}
                 className="pointer-events-auto max-w-4xl"

@@ -768,7 +768,9 @@ export class Client {
     if (options?.background) data.append("background", options.background);
     // Output format is negotiated via Accept, not a form field (see /v1/render).
     const headers = options?.format ? { Accept: `image/${options.format}` } : undefined;
-    return (await this.postRaw("/api/v1/render", data, headers)).blob();
+    // Rendering — especially high quality or large sizes — can take minutes, so
+    // allow well beyond the default render/translate/search budget.
+    return (await this.postRaw("/api/v1/render", data, headers, 300_000)).blob();
   }
 
   private toTools(tools: Tool[]): OpenAI.Responses.Tool[] | undefined {
@@ -849,12 +851,23 @@ export class Client {
     return this.postRaw(path, data);
   }
 
-  private async postRaw(path: string, data: FormData, headers?: HeadersInit): Promise<Response> {
+  private async postRaw(
+    path: string,
+    data: FormData,
+    headers?: HeadersInit,
+    timeoutMs = 90_000,
+  ): Promise<Response> {
     // Raw fetch has no built-in timeout; without this a stalled backend (render,
     // translate, search) hangs forever — and when called from a Python bridge it
-    // wedges the single interpreter worker and every queued sandbox call.
+    // wedges the single interpreter worker and every queued sandbox call. Image
+    // generation can legitimately run for minutes, so its caller passes a larger
+    // budget (see generateImage).
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 90_000);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
     let resp: Response;
     try {
       resp = await fetch(new URL(path, window.location.origin), {
@@ -863,6 +876,11 @@ export class Client {
         body: data,
         signal: controller.signal,
       });
+    } catch (error) {
+      // Surface a readable timeout instead of the runtime's opaque abort message
+      // (WebKit reports a timed-out fetch as the cryptic "Fetch is aborted").
+      if (timedOut) throw new Error(`${path} timed out after ${Math.round(timeoutMs / 1000)}s`);
+      throw error;
     } finally {
       clearTimeout(timer);
     }

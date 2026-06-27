@@ -52,6 +52,29 @@ interface EffortConfig {
   onChange: (effort: Effort | null) => void;
 }
 
+export interface SubmenuOption {
+  value: string;
+  /** Primary row text and the badge shown on the collapsed trigger. */
+  label: string;
+  /** Optional secondary line. */
+  description?: string;
+}
+
+/** A flyout submenu of single-select options, shown below the model list. */
+export interface SubmenuConfig {
+  icon?: React.ReactNode;
+  /** Trigger row label, e.g. "Aspect". */
+  label: string;
+  options: SubmenuOption[];
+  /** Current selection, or null for the default. */
+  value: string | null;
+  /** Pass null to clear back to the default. */
+  onChange: (value: string | null) => void;
+  /** Reset-row text (defaults to "Default"). */
+  defaultLabel?: string;
+  defaultDescription?: string;
+}
+
 interface ModelDropdownProps {
   models: Model[];
   value: string;
@@ -60,6 +83,8 @@ interface ModelDropdownProps {
   dropdownClassName?: string;
   /** When set, renders a reasoning-effort submenu at the bottom of the model list. */
   effort?: EffortConfig;
+  /** Extra single-select flyout submenus, rendered below the model list (after effort). */
+  submenus?: SubmenuConfig[];
   /**
    * Renders the trigger element. Spread `getProps()` (which includes the
    * reference `ref` and open/keyboard handlers) onto the interactive element.
@@ -120,9 +145,17 @@ function OptionRow({
 
 const TreeCloseContext = createContext<() => void>(() => {});
 
-// ─── Effort flyout submenu ────────────────────────────────────────────────────
+// ─── Flyout submenu ───────────────────────────────────────────────────────────
 
-function EffortSubmenu({ options, value, onChange }: EffortConfig) {
+function OptionSubmenu({
+  icon,
+  label,
+  options,
+  value,
+  onChange,
+  defaultLabel = "Default",
+  defaultDescription,
+}: SubmenuConfig) {
   const closeAll = useContext(TreeCloseContext);
 
   const [isOpen, setIsOpen] = useState(false);
@@ -150,8 +183,7 @@ function EffortSubmenu({ options, value, onChange }: EffortConfig) {
   const role = useRole(context, { role: "menu" });
   const { getReferenceProps, getFloatingProps } = useInteractions([hover, click, dismiss, role]);
 
-  // Collapse when a sibling submenu opens (none today, but keeps parity with the
-  // Add menu and is correct if more flyouts are added).
+  // Collapse when a sibling submenu opens so only one flyout is open at a time.
   useEffect(() => {
     if (!tree) return;
     const onSiblingOpen = (event: { nodeId: string; parentId: string | null }) => {
@@ -164,6 +196,8 @@ function EffortSubmenu({ options, value, onChange }: EffortConfig) {
     if (isOpen && tree) tree.events.emit("menuopen", { nodeId, parentId });
   }, [tree, isOpen, nodeId, parentId]);
 
+  const selectedLabel = options.find((o) => o.value === value)?.label;
+
   return (
     <FloatingNode id={nodeId}>
       <button
@@ -173,10 +207,10 @@ function EffortSubmenu({ options, value, onChange }: EffortConfig) {
         className="group flex w-full items-center gap-2 px-3 py-2 rounded-lg text-left text-sm text-neutral-800 dark:text-neutral-200 transition-colors hover:bg-neutral-100/60 focus:bg-neutral-100/60 focus:outline-none data-open:bg-neutral-100/60 dark:hover:bg-white/5 dark:focus:bg-white/5 dark:data-open:bg-white/5"
         {...getReferenceProps()}
       >
-        <Gauge size={14} className="shrink-0 text-neutral-400" />
-        <span className="flex-1 min-w-0">Effort</span>
-        {value && (
-          <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">{EFFORT_META[value].label}</span>
+        {icon && <span className="shrink-0 flex justify-center text-neutral-400">{icon}</span>}
+        <span className="flex-1 min-w-0">{label}</span>
+        {selectedLabel && (
+          <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">{selectedLabel}</span>
         )}
         <ChevronRight size={14} className="shrink-0 text-neutral-400" />
       </button>
@@ -185,8 +219,8 @@ function EffortSubmenu({ options, value, onChange }: EffortConfig) {
           <div ref={refs.setFloating} style={floatingStyles} className="z-9999" {...getFloatingProps()}>
             <div className={cn(PANEL_CLASS, "w-auto min-w-44")}>
               <OptionRow
-                name="Default"
-                description="Let the model decide"
+                name={defaultLabel}
+                description={defaultDescription}
                 selected={value === null}
                 onSelect={() => {
                   onChange(null);
@@ -196,12 +230,12 @@ function EffortSubmenu({ options, value, onChange }: EffortConfig) {
               <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
               {options.map((opt) => (
                 <OptionRow
-                  key={opt}
-                  name={EFFORT_META[opt].label}
-                  description={EFFORT_META[opt].description}
-                  selected={opt === value}
+                  key={opt.value}
+                  name={opt.label}
+                  description={opt.description}
+                  selected={opt.value === value}
                   onSelect={() => {
-                    onChange(opt);
+                    onChange(opt.value);
                     closeAll();
                   }}
                 />
@@ -223,6 +257,7 @@ function ModelDropdownRoot({
   includeRealtime,
   dropdownClassName,
   effort,
+  submenus,
   trigger,
 }: ModelDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -288,6 +323,29 @@ function ModelDropdownRoot({
     onChange(id);
     closeAll();
   };
+
+  // Effort is just a submenu with model-specific labels; flatten it in with any
+  // caller-provided submenus so they render uniformly below the model list.
+  const allSubmenus: SubmenuConfig[] = [
+    ...(effort && effort.options.length > 0
+      ? [
+          {
+            icon: <Gauge size={14} />,
+            label: "Effort",
+            options: effort.options.map((o) => ({
+              value: o,
+              label: EFFORT_META[o].label,
+              description: EFFORT_META[o].description,
+            })),
+            value: effort.value,
+            onChange: (v: string | null) => effort.onChange(v as Effort | null),
+            defaultLabel: "Default",
+            defaultDescription: "Let the model decide",
+          },
+        ]
+      : []),
+    ...(submenus ?? []),
+  ];
 
   return (
     <FloatingNode id={nodeId}>
@@ -382,10 +440,12 @@ function ModelDropdownRoot({
                       )}
                     </div>
 
-                    {effort && effort.options.length > 0 && !q && (
+                    {allSubmenus.length > 0 && !q && (
                       <>
                         <div className="my-1 h-px bg-neutral-200/60 dark:bg-white/10" />
-                        <EffortSubmenu {...effort} />
+                        {allSubmenus.map((cfg) => (
+                          <OptionSubmenu key={cfg.label} {...cfg} />
+                        ))}
                       </>
                     )}
                   </div>
