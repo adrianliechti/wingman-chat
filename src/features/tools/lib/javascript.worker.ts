@@ -1,27 +1,8 @@
 /**
- * JavaScript interpreter worker.
- *
- * Runs LLM-authored JavaScript off the main thread (so CPU-bound code can't
- * freeze the UI) and isolated from the app's DOM and origin globals. The
- * main-thread counterpart is `javascript.ts`; the shared worker lifecycle is in
- * `workerHost.ts`; the message protocol is `interpreterProtocol.ts` (shared with
- * the Pyodide worker).
- *
- * Sandbox model:
- *   - Network is disabled: `fetch`/`XMLHttpRequest`/`WebSocket`/… are replaced
- *     with throwing stubs. `fetch` is repurposed to read the in-memory VFS for
- *     relative paths (and still serves `data:`/`blob:` URLs, which never touch
- *     the network).
- *   - Files arrive as the run's VFS and are written back as artifacts; binary
- *     output is encoded as a data URL, exactly like the Pyodide worker.
- *   - Worker-scope Web APIs (WebCodecs, OffscreenCanvas, createImageBitmap,
- *     crypto.subtle, WebAssembly, …) are available to user code unchanged. The
- *     `mediabunny`/`echarts`/`jsPDF` modules are injected lazily when referenced.
- *   - Node-isms that LLM-authored code reaches for (`Buffer`, `process`,
- *     `global`, `setImmediate`) are shimmed so common snippets run unchanged.
- *   - AI helpers (`llm`, `ocr`, `vision`, `transcribe`, `synthesize`, `render`,
- *     `translate`/`translateFile`) are proxied to the main thread over RPC (they
- *     need the chat client/config), mirroring the Python globals.
+ * JavaScript interpreter worker: runs LLM-authored JS off the main thread,
+ * isolated from the app's DOM/origin globals. Main-thread counterpart is
+ * `javascript.ts`; shared lifecycle in `workerHost.ts`; protocol in
+ * `interpreterProtocol.ts`.
  */
 
 import { bytesToDataUrl, dataUrlToBytes, isDataUrl } from "@/shared/lib/fileContent";
@@ -39,8 +20,8 @@ import type {
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 
-// Typed view of the dedicated-worker global scope (the project compiles against
-// the DOM lib, so we avoid referencing the webworker lib globally).
+// Typed view of the worker global scope (project compiles against the DOM lib,
+// not the webworker lib).
 const ctx = self as unknown as {
   postMessage(message: WorkerToMainMessage, transfer: Transferable[]): void;
   addEventListener(type: "message", listener: (event: MessageEvent<ExecuteMessage>) => void): void;
@@ -52,10 +33,9 @@ const NETWORK_DISABLED = "Network access is disabled in the JavaScript sandbox";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-// ── Virtual filesystem ──────────────────────────────────────────────────────
-// Keyed by artifact path (leading slash). `dirty` distinguishes files the run
-// wrote/changed (which must be re-encoded) from untouched inputs (returned
-// verbatim from `original`, avoiding a needless decode/encode round trip).
+// `dirty` distinguishes files the run wrote/changed (must be re-encoded) from
+// untouched inputs (returned verbatim from `original`, skipping a decode/encode
+// round trip).
 
 interface VfsEntry {
   bytes: Uint8Array;
@@ -70,8 +50,7 @@ type Vfs = Map<string, VfsEntry>;
 // this. Runs are serialized, so a single slot suffices.
 let currentVfs: Vfs | null = null;
 
-// Sink for the current run's `process.stdout`/`stderr` writes (raw, no newline),
-// so Node-style CLI output lands in the run's captured output. Serialized runs.
+// Sink for the current run's `process.stdout`/`stderr` writes (raw, no newline).
 let currentStdout: ((text: string) => void) | null = null;
 
 function normalizePath(path: string): string | undefined {
@@ -124,8 +103,7 @@ function toBytes(data: unknown): Uint8Array {
 }
 
 // Path-normalized byte access over the VFS, shared by the `vfs` helper and the
-// AI bridges (both read inputs and write outputs by path). `writeBytes` returns
-// the normalized key so callers can echo the written path back.
+// AI bridges. `writeBytes` returns the normalized key.
 function vfsAccess(vfs: Vfs) {
   const requireKey = (path: string): string => {
     const key = normalizePath(path);
@@ -147,9 +125,8 @@ function vfsAccess(vfs: Vfs) {
   return { requireKey, readBytes, writeBytes };
 }
 
-// The `vfs` helper handed to user code. Paths are artifact paths (leading
-// slash); inputs are normalized so "data.csv", "/data.csv", and
-// "/home/user/data.csv" all resolve to the same file.
+// The `vfs` helper handed to user code. Inputs are normalized so "data.csv",
+// "/data.csv", and "/home/user/data.csv" all resolve to the same file.
 function buildVfs(vfs: Vfs) {
   const { requireKey, readBytes, writeBytes } = vfsAccess(vfs);
   return {
@@ -168,8 +145,6 @@ function buildVfs(vfs: Vfs) {
     remove: (path: string): boolean => vfs.delete(requireKey(path)),
   };
 }
-
-// ── Network blocking ─────────────────────────────────────────────────────────
 
 let networkPatched = false;
 
@@ -241,8 +216,6 @@ function patchNetwork(): void {
   }
 }
 
-// ── Bridges to the main thread (capabilities needing the chat client) ────────
-
 function callMain<T>(build: (port: MessagePort) => WorkerToMainMessage): Promise<T> {
   const { port1, port2 } = new MessageChannel();
   return new Promise<T>((resolve, reject) => {
@@ -262,11 +235,9 @@ function llm(prompt: string, options?: LlmCallOptions): Promise<string> {
 }
 
 /**
- * The file-backed AI helpers, mirroring the Python globals. File inputs are read
- * from the VFS; file outputs are written back to it. Each is proxied to the main
- * thread (which has the chat client/config) and rejects with a clear error when
- * its backing service isn't configured. Built per-run so they bind to that run's
- * VFS.
+ * File-backed AI helpers (mirroring the Python globals): inputs read from the
+ * VFS, outputs written back, proxied to the main thread. Built per-run so they
+ * bind to that run's VFS.
  */
 function buildBridges(vfs: Vfs) {
   const { readBytes, writeBytes } = vfsAccess(vfs);
@@ -308,11 +279,8 @@ function buildBridges(vfs: Vfs) {
   };
 }
 
-/**
- * Rasterize an SVG string to PNG bytes via OffscreenCanvas — handed to user code
- * because echarts (and hand-written SVG) produce vector output but some targets
- * want a raster image.
- */
+/** Rasterize an SVG string to PNG bytes via OffscreenCanvas — echarts produces
+ * vector output but some targets want raster. */
 async function svgToPng(svg: string, options?: { width?: number; height?: number }): Promise<Uint8Array> {
   const bitmap = await createImageBitmap(new Blob([svg], { type: "image/svg+xml" }));
   const width = options?.width ?? bitmap.width;
@@ -325,8 +293,6 @@ async function svgToPng(svg: string, options?: { width?: number; height?: number
   const blob = await canvas.convertToBlob({ type: "image/png" });
   return new Uint8Array(await blob.arrayBuffer());
 }
-
-// ── Console capture ──────────────────────────────────────────────────────────
 
 function formatValue(value: unknown): string {
   if (typeof value === "string") return value;
@@ -366,12 +332,10 @@ function makeConsole(append: (line: string) => void) {
   };
 }
 
-// ── Node-compatibility shims ─────────────────────────────────────────────────
-// LLM-authored JS routinely reaches for Node globals a browser Worker doesn't
-// define. We add them on `globalThis` (not as function params) so user code can
-// still `const Buffer = …` without a duplicate-declaration error, and only for
-// `process`/`Buffer` when a run references them — so the bundled libraries'
-// own environment detection stays untouched on runs that don't.
+// LLM-authored JS reaches for Node globals a Worker lacks. Added on `globalThis`
+// (not as function params) so user code can still `const Buffer = …` without a
+// duplicate-declaration error, and `process`/`Buffer` only when referenced so
+// the bundled libraries' environment detection stays untouched otherwise.
 
 // CommonJS `require` isn't supported (no npm in the sandbox). Provide it anyway
 // so the failure is a clear, actionable message instead of a bare ReferenceError.
@@ -413,8 +377,8 @@ function makeProcessStub() {
 
 async function ensureRuntimeCompat(code: string): Promise<void> {
   const g = globalThis as Record<string, unknown>;
-  // Libraries (e.g. echarts) and Node snippets read the Node-only `global` when
-  // `window` is absent; a Worker has neither, so point it at globalThis.
+  // echarts and Node snippets read the Node-only `global` when `window` is
+  // absent; a Worker has neither, so point it at globalThis.
   g.global ??= globalThis;
   g.setImmediate ??= (cb: (...a: unknown[]) => void, ...args: unknown[]) => setTimeout(cb, 0, ...args);
   // Fresh `process` each run so `process.env` writes don't leak between runs.
@@ -428,27 +392,20 @@ async function ensureRuntimeCompat(code: string): Promise<void> {
   }
 }
 
-// ── Execution ────────────────────────────────────────────────────────────────
-
 // `new AsyncFunction(...)` lets user code use top-level await and `return` a
-// value; the parameter helpers (vfs, console, …) stay lexically scoped to it.
+// value; the parameter helpers stay lexically scoped to it.
 const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
   ...args: string[]
 ) => (...args: unknown[]) => Promise<unknown>;
 
 // Bundled libraries injected as globals only when the code references them, so a
-// run that doesn't use one pays neither its download nor its parse cost. Each
-// dynamic import is a separate chunk that Vite code-splits. `name` is both the
-// global handed to user code and the token matched against the source.
+// run that doesn't use one pays neither download nor parse cost. `name` is both
+// the global handed to user code and the token matched against the source.
 const LAZY_GLOBALS: { name: string; test: RegExp; load: () => Promise<unknown> }[] = [
-  // Media containers + transcoding (WebCodecs based).
   { name: "mediabunny", test: /\bmediabunny\b/, load: () => import("mediabunny") },
-  // Charts: headless SSR mode → SVG string (echarts.init(null, null,
-  // { renderer: "svg", ssr: true, width, height }).renderToSVGString()). echarts
-  // reads the Node-only `global` when `window` is absent; `ensureRuntimeCompat`
-  // defines it before any library loads.
+  // echarts reads the Node-only `global` when `window` is absent;
+  // `ensureRuntimeCompat` defines it before any library loads.
   { name: "echarts", test: /\becharts\b/, load: () => import("echarts") },
-  // PDF generation: the `jsPDF` class (new jsPDF(); doc.output("arraybuffer")).
   { name: "jsPDF", test: /\bjsPDF\b/, load: async () => (await import("jspdf")).jsPDF },
 ];
 
@@ -467,9 +424,9 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
     output += `${line}\n`;
   });
 
-  // The AI helpers go on globalThis (not as AsyncFunction parameters) so user
-  // code can still declare locals named `render`, `translate`, … without a
-  // duplicate-parameter SyntaxError. Bound to this run's VFS; removed in finally.
+  // AI helpers go on globalThis (not as AsyncFunction params) so user code can
+  // declare locals named `render`, `translate`, … without a duplicate-parameter
+  // SyntaxError. Removed in finally.
   const g = globalThis as Record<string, unknown>;
   const bridges: Record<string, unknown> = { llm, ...buildBridges(vfs) };
   Object.assign(g, bridges);
@@ -477,7 +434,6 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
   try {
     await ensureRuntimeCompat(code);
 
-    // Resolve the bundled libraries this run actually references.
     const lazyValues = await Promise.all(
       LAZY_GLOBALS.map(async (lib) => {
         if (!lib.test.test(code)) return undefined;
@@ -490,10 +446,8 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
       }),
     );
 
-    // Helpers passed as parameters (kept lexically scoped). `console` must be a
-    // parameter — to shadow the worker console for capture without globally
-    // replacing it; the others are uncommon enough as identifiers to be safe.
-    // Keep these names aligned with the argument list below.
+    // `console` must be a parameter to shadow the worker console for capture
+    // without globally replacing it. Keep aligned with the argument list below.
     const paramNames = ["vfs", "console", "svgToPng", "require", ...LAZY_GLOBALS.map((lib) => lib.name)];
     const fn = new AsyncFunction(...paramNames, code);
 
@@ -519,7 +473,6 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
   }
 }
 
-// ── Message loop ─────────────────────────────────────────────────────────────
 // Executions are serialized: the VFS-backed `fetch` closes over a single
 // `currentVfs` slot, so concurrent runs would interleave at await points. RPC
 // replies arrive on their own ports and bypass this chain.

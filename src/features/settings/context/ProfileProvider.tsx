@@ -75,8 +75,6 @@ export function ProfileProvider({ children }: ProfileProviderProps) {
   };
 
   return (
-    <ProfileContext value={{ settings, updateSettings, generateInstructions, isLoaded }}>
-      {children}
-    </ProfileContext>
+    <ProfileContext value={{ settings, updateSettings, generateInstructions, isLoaded }}>{children}</ProfileContext>
   );
 }

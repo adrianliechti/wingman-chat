@@ -70,6 +70,33 @@ function pruneAtSummary(messages: Message[]): Message[] {
   return pruned;
 }
 
+/** Replace inline images before the latest user message with a placeholder.
+ *  They're persisted as artifacts (see useFileAttachments) so the model can
+ *  re-read them; dropping the base64 from earlier turns keeps requests small.
+ *  Model-bound copy only — stored/displayed messages keep their images. */
+function stripHistoryImages(messages: Message[]): Message[] {
+  const lastUserIndex = messages.findLastIndex((m) => m.role === Role.User);
+  if (lastUserIndex <= 0) return messages; // nothing earlier to strip
+
+  let changed = false;
+  const result = messages.map((message, index) => {
+    if (index >= lastUserIndex || !message.content.some((p) => p.type === "image")) return message;
+    changed = true;
+    return {
+      ...message,
+      content: message.content.map((part) =>
+        part.type === "image"
+          ? ({
+              type: "text",
+              text: `[image "${part.name ?? "image"}" omitted to save context — read it from the artifacts workspace if you need it]`,
+            } satisfies TextContent)
+          : part,
+      ),
+    };
+  });
+  return changed ? result : messages;
+}
+
 /**
  * Rough token estimate (chars / 4) approximating the replay payload. Skips
  * reasoning (not replayed to the API) and binary content (images/files).
@@ -536,7 +563,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             verbosity: model?.verbosity,
             signal: abortController.signal,
           },
-          prepareMessages: pruneAtSummary,
+          prepareMessages: (msgs) => stripHistoryImages(pruneAtSummary(msgs)),
           onTurnStart: () => {
             updateStreamingMessage({ chatId: id, message: { role: Role.Assistant, content: [] } });
           },

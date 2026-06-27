@@ -22,8 +22,10 @@ don't freehand a deliverable.
    lists a helper script or reference that matches the task, read it with `read_skill_resource` using
    the exact listed path (only when it's actually needed).
 3. **Build it with the interpreter**, writing the file to the workspace. For web/UI/interactive, write
-   one self-contained `.html` — inline CSS/JS, **no external CDN** so it works offline. Charts →
-   `matplotlib`; diagrams → a Mermaid `.mmd` file. Saved files render natively in the side panel.
+   one `.html` with inline CSS/JS and **no external CDN** so it works offline; reference local images
+   and data by relative path (the preview serves sibling artifacts same-origin) rather than
+   base64-inlining them. Charts → `matplotlib`; diagrams → a Mermaid `.mmd` file. Saved files render
+   natively in the side panel.
 4. **Verify like a bug hunt.** Assume the first build has problems and re-open it to *find* them — don't
    just confirm it saved. Check: the right slide/sheet/page counts; text that overflows, overlaps, or
    sits below ~11px; leftover placeholder copy; unsourced or fabricated figures; formula errors; low

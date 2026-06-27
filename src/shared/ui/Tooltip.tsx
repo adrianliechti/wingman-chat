@@ -1,9 +1,9 @@
 import {
   arrow,
   autoUpdate,
-  flip,
   FloatingArrow,
   FloatingPortal,
+  flip,
   offset,
   shift,
   useFloating,

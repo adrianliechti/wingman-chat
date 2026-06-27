@@ -1,13 +1,7 @@
 /**
- * Generic main-thread host for an interpreter Web Worker.
- *
- * Both interpreters — Pyodide (`interpreter.worker.ts`) and JavaScript
- * (`javascript.worker.ts`) — run user code in a dedicated module worker so
- * CPU-bound code cannot freeze the UI, and both need the exact same lifecycle
- * around that worker: a stall watchdog, abort handling, crash recovery, and a
- * way to answer the worker's main-thread RPCs (each carrying its own reply
- * MessagePort — see interpreterProtocol.ts). This module owns all of that; an
- * engine plugs in only its worker factory and its RPC dispatcher.
+ * Generic main-thread host for an interpreter Web Worker: stall watchdog, abort
+ * handling, crash recovery, and RPC reply plumbing. An engine plugs in only its
+ * worker factory and RPC dispatcher.
  */
 
 import type {
@@ -29,10 +23,7 @@ export interface ExecuteCodeOptions {
 export interface WorkerHostConfig {
   /** Spawn a fresh worker. Called on first use and after a crash/teardown. */
   createWorker(): Worker;
-  /**
-   * Answer one worker→main RPC. The resolved value is posted back on the
-   * request's reply port; a rejection is forwarded as an error reply.
-   */
+  /** Answer one worker→main RPC; the resolved value is posted back on the reply port. */
   handleMessage(message: WorkerToMainMessage): Promise<unknown>;
   /** Message used when the worker dies on an uncaught error. */
   crashMessage: string;
@@ -42,18 +33,14 @@ export interface WorkerHostConfig {
   startupStallMs?: number;
 }
 
-/** How long the worker may run *pure compute* with no progress before it's
- * treated as wedged (infinite loop / hang) and force-terminated. Bridge calls
- * (render/synthesize/…) pause this — they're bounded by their own network
- * timeout — so a legitimately slow render or a multi-segment podcast is never
- * killed, while an infinite loop recovers in ~this long instead of minutes. */
+/** Pure-compute no-progress ceiling before the run is treated as wedged and
+ * force-terminated. Bridge calls pause this (they have their own network
+ * timeout), so a slow render isn't killed but an infinite loop still recovers. */
 const DEFAULT_COMPUTE_STALL_MS = 120_000;
 
-/** Budget for the bootstrap phase (worker module load + runtime init + wheel
- * downloads) before the worker reports user code has started. Kept separate from
- * — and more generous than — the compute-stall budget so a slow first run on a
- * cold cache isn't mistaken for a wedged infinite loop and killed mid-download.
- * It's only a backstop to release the sandbox lock if the load truly hangs. */
+/** Bootstrap budget (module load + runtime init) before user code starts. Kept
+ * separate from — and more generous than — the compute-stall budget so a slow
+ * cold start isn't mistaken for a wedged loop. */
 const DEFAULT_STARTUP_STALL_MS = 180_000;
 
 export interface WorkerHost {
@@ -70,16 +57,14 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
   // with an error instead of hanging on a reply port that will never arrive.
   const pendingFailures = new Set<() => void>();
 
-  // The in-flight execution's stall watchdog. The bridge-request handler pauses
-  // it while the worker is blocked on a main-thread RPC (those round trips are
-  // bounded separately). Only one execution runs at a time — the sandbox lock
-  // serializes them — so a single slot suffices.
+  // The in-flight execution's stall watchdog, paused while the worker is blocked
+  // on a main-thread RPC (those round trips are bounded separately). Runs are
+  // serialized, so a single slot suffices.
   let activeBridge: { enter: () => void; leave: () => void } | null = null;
 
   async function replyOnPort(port: MessagePort, run: () => Promise<unknown>): Promise<void> {
-    // A bridge call means the worker is waiting on us, not stalled — pause its
-    // stall timer while it's in flight. Capture the slot now so a reply that
-    // lands after the run was torn down can't disturb whatever runs next.
+    // The worker is waiting on us, not stalled — pause its stall timer. Capture
+    // the slot now so a reply that lands after teardown can't disturb the next run.
     const bridge = activeBridge;
     bridge?.enter();
     let reply: RpcReply;
@@ -99,15 +84,13 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
       const created = config.createWorker();
       created.addEventListener("message", (event: MessageEvent<WorkerToMainMessage>) => {
         const message = event.data;
-        // Defensive: a genuine RPC always ships its reply port. Sandboxed user
-        // code can call `self.postMessage(...)` directly; ignore anything that
-        // isn't shaped like an RPC so it can't wedge the dispatcher.
+        // Sandboxed user code can `self.postMessage(...)` directly; ignore
+        // anything not shaped like an RPC so it can't wedge the dispatcher.
         if (typeof message?.port?.postMessage !== "function") return;
         void replyOnPort(message.port, () => config.handleMessage(message));
       });
       created.addEventListener("error", (event) => {
-        // The worker script failed to load or died on an uncaught error. Drop it
-        // so the next call spawns a fresh one (which rebuilds runtime state).
+        // Drop the dead worker so the next call spawns a fresh one.
         console.error("Interpreter worker error:", event.message || event);
         if (worker === created) worker = null;
         created.terminate();
@@ -134,9 +117,8 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
       });
     }
 
-    // Every termination path (result, stall, abort, crash) funnels through a
-    // single `settle`; `fail` is settle-with-error and also tears down the
-    // wedged worker.
+    // Every termination path funnels through `settle`; `fail` is settle-with-
+    // error that also tears down the wedged worker.
     return new Promise<CodeExecutionResult>((resolve) => {
       const { port1, port2 } = new MessageChannel();
       let timer: ReturnType<typeof setTimeout> | null = null;
@@ -144,16 +126,15 @@ export function createWorkerHost(config: WorkerHostConfig): WorkerHost {
       let settled = false;
       let started = false;
 
-      // A wedged run can't be interrupted cooperatively, so tear the worker
-      // down: the next call spawns a fresh one, and settling here releases the
-      // caller's sandbox lock instead of blocking every queued execution.
+      // A wedged run can't be interrupted cooperatively — tear the worker down
+      // (next call respawns) and settle so the caller's sandbox lock releases.
       const fail = (error: string) => {
         if (worker === target) worker = null;
         target.terminate();
         settle({ success: false, output: "", error });
       };
-      // (Re)arm the stall timer; runs only while no bridge call is in flight, so
-      // it measures uninterrupted pure-compute time, not total wall-clock.
+      // (Re)arm the stall timer — only while no bridge call is in flight, so it
+      // measures uninterrupted compute time, not wall-clock.
       const arm = () => {
         if (settled) return;
         const ms = started ? stallMs : startupStallMs;

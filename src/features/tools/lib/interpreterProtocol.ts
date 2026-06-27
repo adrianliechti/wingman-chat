@@ -1,16 +1,7 @@
 /**
  * Message protocol between the main thread and the Pyodide interpreter worker.
- *
- * Python execution runs in a dedicated module worker so CPU-bound code (e.g.
- * pdfplumber over a large PDF) cannot freeze the UI thread. Some capabilities
- * still require the main thread, so the worker calls back over RPC:
- *   - the `llm(...)` Python global — needs the chat client/config
- *   - the `ocr(...)` Python global — needs the chat client/config
- *   - the `vision(...)` Python global — needs the chat client/config
- *   - the `render(...)` Python global — needs the chat client/config
- *   - the `synthesize(...)` Python global — needs the chat client/config
- *   - the `transcribe(...)` Python global — needs the chat client/config
- *   - the `translate(...)` Python global — needs the chat client/config
+ * Some Python globals (llm/ocr/vision/render/synthesize/transcribe/translate)
+ * need the main thread, so the worker calls back over RPC.
  */
 
 export interface ArtifactFile {
@@ -41,10 +32,7 @@ export interface RenderInput {
   path: string;
 }
 
-/**
- * Per-call options for the `llm` helper. Everything is optional — `model`
- * falls back to the model currently selected in the chat.
- */
+/** Per-call options for the `llm` helper; `model` falls back to the chat's currently selected model. */
 export interface LlmCallOptions {
   model?: string;
   system?: string;
@@ -52,8 +40,7 @@ export interface LlmCallOptions {
 }
 
 // Every request carries a dedicated MessagePort for its reply, so no id
-// bookkeeping is needed on either side; worker→main RPC replies use the
-// `RpcReply` envelope below.
+// bookkeeping is needed on either side.
 export interface ExecuteMessage {
   type: "execute";
   request: CodeExecutionRequest;
@@ -62,25 +49,12 @@ export interface ExecuteMessage {
 
 export type WorkerToMainMessage =
   | { type: "llm-request"; prompt: string; options?: LlmCallOptions; port: MessagePort }
-  // Document bytes read from the worker FS, extracted on the main thread via
-  // the backend extractor service; the basename of `path` lets it route by format.
   | { type: "ocr-request"; data: Uint8Array; path: string; port: MessagePort }
-  // Image bytes read from the worker FS, analyzed on the main thread via a
-  // vision-capable chat model.
   | { type: "vision-request"; data: Uint8Array; path: string; prompt?: string; port: MessagePort }
-  // Image generation/editing via the backend renderer service; replies with
-  // the image bytes, which the worker writes to the requested output path.
   | { type: "render-request"; prompt: string; inputs: RenderInput[]; port: MessagePort }
-  // Text-to-speech via the backend; replies with the WAV bytes, which the
-  // worker writes to the requested output path.
   | { type: "synthesize-request"; text: string; voice?: string; port: MessagePort }
-  // Audio bytes read from the worker FS, transcribed on the main thread via
-  // the backend speech-to-text service.
   | { type: "transcribe-request"; data: Uint8Array; path: string; port: MessagePort }
-  // Text translated on the main thread via the backend translation service.
   | { type: "translate-text-request"; lang: string; text: string; port: MessagePort }
-  // File bytes read from the worker FS, translated on the main thread; replies
-  // with the translated file bytes, which the worker writes to the output path.
   | { type: "translate-file-request"; lang: string; data: Uint8Array; path: string; port: MessagePort };
 
 export type RpcReply = { ok: true; value: unknown } | { ok: false; error: string };

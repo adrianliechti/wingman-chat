@@ -56,10 +56,7 @@ function toOverlayFile(path: string, content: Uint8Array): OverlayFile {
 
 let singleton: BashInstance | null = null;
 
-/**
- * Create a new Bash + InMemoryFs pair, optionally preloaded with files.
- * Files keys are artifact paths (e.g. "/script.sh"), mapped to /home/user/...
- */
+/** Create a Bash + InMemoryFs pair. File keys are artifact paths (e.g. "/script.sh"), mapped under /home/user/. */
 export function createBashInstance(files?: Record<string, { content: string; contentType?: string }>): BashInstance {
   const initialFiles: InitialFiles = {};
 
@@ -117,10 +114,7 @@ export async function resolveBashCwd(memFs: InMemoryFs, cwd?: string | null): Pr
   }
 }
 
-/**
- * Execute a bash command using the singleton instance.
- * The singleton persists filesystem state across calls within one session.
- */
+/** Execute a bash command on the singleton instance, which persists FS state across calls in one session. */
 export async function executeBash(request: BashExecutionRequest): Promise<BashExecutionResult> {
   const { command } = request;
 
@@ -146,7 +140,6 @@ export async function executeBash(request: BashExecutionRequest): Promise<BashEx
   }
 }
 
-/** Get the singleton BashInstance (creating it if needed). */
 export function getSingleton(): BashInstance {
   if (!singleton) {
     singleton = createBashInstance();
@@ -154,10 +147,7 @@ export function getSingleton(): BashInstance {
   return singleton;
 }
 
-/**
- * Load artifact files into an InMemoryFs under /home/user/.
- * Existing files at those paths are overwritten and stale files are removed.
- */
+/** Sync artifact files into an InMemoryFs under /home/user/: overwrite existing files and remove stale ones. */
 export async function loadArtifactsIntoFs(
   memFs: InMemoryFs,
   files: { path: string; content: string; contentType?: string }[],
@@ -190,7 +180,6 @@ export async function loadArtifactsIntoFs(
     const relativePath = file.path.startsWith("/") ? file.path.slice(1) : file.path;
     const fsPath = `${SANDBOX_HOME}/${relativePath}`;
 
-    // Ensure parent directories exist
     const dir = fsPath.substring(0, fsPath.lastIndexOf("/"));
     if (dir) {
       await memFs.mkdir(dir, { recursive: true });
@@ -200,11 +189,7 @@ export async function loadArtifactsIntoFs(
   }
 }
 
-/**
- * Read all user files from an InMemoryFs under /home/user/.
- * Returns a map of artifact path (e.g. "/script.sh") → content.
- * Uses InMemoryFs.getAllPaths() (synchronous) instead of bash `find`.
- */
+/** Read all user files under /home/user/ into a map of artifact path (e.g. "/script.sh") → content. */
 export async function readFilesFromFs(memFs: InMemoryFs): Promise<Record<string, OverlayFile>> {
   const result: Record<string, OverlayFile> = {};
   const allPaths = memFs.getAllPaths();

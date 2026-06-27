@@ -21,7 +21,6 @@ export const pdfAssetOptions = {
   standardFontDataUrl: `${pdfAssetBase}standard_fonts/`,
 } as const;
 
-
 /**
  * Converts a PDF file to Markdown using pdf.js text extraction.
  *

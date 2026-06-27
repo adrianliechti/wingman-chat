@@ -60,20 +60,18 @@ export function templateEntries(
   loadTemplate: (path: string) => Promise<{ content: string } | null>,
   predicate: (t: SkillTemplate) => boolean,
 ): SkillEntry[] {
-  return templates
-    .filter(predicate)
-    .map((t) => ({
-      name: t.name,
-      description: t.description,
-      compatibility: t.compatibility,
-      resources: t.resources,
-      loadContent: async () => {
-        const parsed = await loadTemplate(t.path);
-        if (!parsed) throw new Error(`Template "${t.path}" unavailable`);
-        return parsed.content;
-      },
-      loadResource: (resourcePath: string) => loadSkillResource(t.path, resourcePath),
-    }));
+  return templates.filter(predicate).map((t) => ({
+    name: t.name,
+    description: t.description,
+    compatibility: t.compatibility,
+    resources: t.resources,
+    loadContent: async () => {
+      const parsed = await loadTemplate(t.path);
+      if (!parsed) throw new Error(`Template "${t.path}" unavailable`);
+      return parsed.content;
+    },
+    loadResource: (resourcePath: string) => loadSkillResource(t.path, resourcePath),
+  }));
 }
 
 /** The shipped Studio skill pack (studio + generation categories) as entries. */

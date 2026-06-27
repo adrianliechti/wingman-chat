@@ -39,3 +39,9 @@ When it's unclear, answer in chat and offer to put it in a file ("want this as a
 ### Preview support
 
 The workspace renders HTML/CSS/JS pages, Markdown, SVG, CSV/JSON, office documents (DOCX/PPTX/XLSX/PDF), and syntax-highlighted code.
+
+HTML is served from a real same-origin URL (not `srcdoc`), so a previewed page behaves like a normal web server:
+
+- Relative URLs resolve against sibling artifacts by path: `<img src="chart.png">` (also `./chart.png` or `/chart.png`) loads the artifact `/chart.png`; `fetch("data.json")`, `<link href="styles.css">`, `<script src="app.js">`, and subfolders all work the same way.
+- Everything is served same-origin, so JS can read a referenced image's pixels back (`canvas` `getImageData`) with no CORS or `crossOrigin` needed.
+- Reference companion files (images, CSS, JS, data) by relative path instead of inlining them as base64/data-URIs — it keeps the HTML small, readable, and diffable, and the assets already sit next to it in the workspace. Inline only when a file must work standalone outside the workspace (e.g. the user wants one downloadable/emailable file), and say so. The "single file" default above means avoid unnecessary extra documents, not inline every asset.

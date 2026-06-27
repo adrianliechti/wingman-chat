@@ -4,11 +4,11 @@ import { useAgentProviders } from "@/features/agent/hooks/useAgentProviders";
 import { useAgents } from "@/features/agent/hooks/useAgents";
 import { useArtifactsProvider } from "@/features/artifacts/hooks/useArtifactsProvider";
 import { useInternetProvider } from "@/features/research/hooks/useInternetProvider";
-import { STUDIO_PROVIDER_ID, useStudioProvider } from "@/features/studio/hooks/useStudioProvider";
 import { MCPClient } from "@/features/settings/lib/mcp";
 import { useSkillBuilderProvider } from "@/features/skills/hooks/useSkillBuilderProvider";
 import { useSkillsProvider } from "@/features/skills/hooks/useSkillsProvider";
 import { SKILLS_PROVIDER_ID, type SkillSources } from "@/features/skills/lib/skillsProvider";
+import { STUDIO_PROVIDER_ID, useStudioProvider } from "@/features/studio/hooks/useStudioProvider";
 import { COMPANION_ID, companionMcpUrl, useCompanion } from "@/features/tools/hooks/useCompanion";
 import { getConfig } from "@/shared/config";
 import type {
@@ -243,14 +243,7 @@ export function ToolsProvider({ children }: { children: React.ReactNode }) {
     for (const id of modelEnabledTools) merged.add(id);
     if (companionAvailable && companionEnabled) merged.add(COMPANION_ID);
     return merged;
-  }, [
-    activeSelection,
-    skillsProvider,
-    agentRequired,
-    modelEnabledTools,
-    companionAvailable,
-    companionEnabled,
-  ]);
+  }, [activeSelection, skillsProvider, agentRequired, modelEnabledTools, companionAvailable, companionEnabled]);
 
   // Full desired set including model overrides — used by getProviderState for non-MCP
   // built-in providers (internet, canvas, …) which have no lifecycle to manage.

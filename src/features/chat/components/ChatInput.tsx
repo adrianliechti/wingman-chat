@@ -86,7 +86,6 @@ export function ChatInput() {
   } = useVoice();
   const { inputDeviceId, inputDevices, setInputDevice, requestPermission: requestAudioPermission } = useAudioDevices();
 
-  // Track if realtime mode model is selected (either via model picker or agent's model)
   const isRealtimeSelected = model?.id === "realtime" || currentAgent?.model === "realtime";
 
   // Request mic permission once per voice-mode entry so the device selector shows real names.
@@ -124,6 +123,7 @@ export function ChatInput() {
   const {
     attachments,
     pendingFiles,
+    pendingImages,
     extractingAttachments,
     setExtractingAttachments,
     setPendingFiles,
@@ -144,7 +144,6 @@ export function ChatInput() {
   const containerRef = useRef<HTMLDivElement>(null);
   const profileName = profile?.name;
 
-  // Generate static random placeholder text for new chats only
   const randomPlaceholder = useMemo(() => {
     const personalizedVariations = [
       "Hi [Name], ready to get started?",
@@ -170,17 +169,14 @@ export function ChatInput() {
 
   const placeholderText = messages.length === 0 ? randomPlaceholder : "Ask anything";
 
-  // Accept-attribute kept in sync with the intake rule in `useFileAttachments`:
-  // images always; any file when the artifacts workspace can hold it.
+  // Accept-attribute kept in sync with the intake rule in `useFileAttachments`.
   const acceptString = useMemo(
     () => chatAcceptString(config.vision?.files ?? [], artifactsAvailable),
     [config.vision?.files, artifactsAvailable],
   );
 
-  // Show placeholder when input is empty (regardless of focus state)
   const shouldShowPlaceholder = !content.trim();
 
-  // Transcription hook
   const { canTranscribe, isTranscribing, startTranscription, stopTranscription } = useTranscription();
 
   const modelTools = useMemo(() => {
@@ -201,26 +197,20 @@ export function ChatInput() {
     [providers, modelTools],
   );
 
-  // Tool providers indicator logic
   const toolIndicator = useMemo(() => {
-    // Check if any providers are connected
     const hasConnectedProviders = visibleProviders.some(
       (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Connected,
     );
 
-    // Check if any providers are initializing
     const hasInitializingProviders = visibleProviders.some(
       (provider: ToolProvider) => getProviderState(provider.id) === ProviderState.Initializing,
     );
 
     if (hasInitializingProviders) {
-      // At least one provider initializing - show loading spinner
       return <LoaderCircle size={14} className="animate-spin" />;
     } else if (hasConnectedProviders) {
-      // At least one provider connected - show rocket
       return <Rocket size={14} />;
     } else {
-      // No providers connected - show sparkles
       return <Sparkles size={14} />;
     }
   }, [visibleProviders, getProviderState]);
@@ -235,7 +225,6 @@ export function ChatInput() {
   // Force layout recalculation on mount to fix initial sizing issues
   useEffect(() => {
     if (containerRef.current) {
-      // Force a repaint by reading offsetHeight
       void containerRef.current.offsetHeight;
     }
     if (contentInputRef.current) {
@@ -257,7 +246,6 @@ export function ChatInput() {
     async (e: FormEvent) => {
       e.preventDefault();
 
-      // Prevent submission while responding
       if (isResponding) {
         return;
       }
@@ -265,7 +253,6 @@ export function ChatInput() {
       if (content.trim()) {
         let finalAttachments: Content[] = [...attachments];
 
-        // If continuous capture is active, automatically capture current screen
         if (isContinuousCaptureActive) {
           try {
             const blob = await captureFrame();
@@ -276,7 +263,6 @@ export function ChatInput() {
                 name: `screen-capture-${Date.now()}.png`,
                 data: dataUrl,
               };
-              // Add screen capture as the first attachment
               finalAttachments = [screenContent, ...finalAttachments];
             }
           } catch (error) {
@@ -286,11 +272,10 @@ export function ChatInput() {
 
         const messageContent: Content[] = [{ type: "text", text: content }, ...finalAttachments];
 
-        // Process pending document attachments into artifact files now (at send).
-        // `sendMessage` writes them into the chat's workspace once it exists.
-        const artifactFiles = (
-          await Promise.all(
-            pendingFiles.map(async (file) => {
+        // Persist pending files (and original images) to the workspace at send.
+        const toArtifacts = (list: File[]) =>
+          Promise.all(
+            list.map(async (file) => {
               try {
                 return await processUploadedFile(file);
               } catch (error) {
@@ -298,15 +283,17 @@ export function ChatInput() {
                 return [];
               }
             }),
-          )
-        ).flat();
+          ).then((results) => results.flat());
 
-        // Tell the model which files are available in the artifacts workspace so
-        // it reads them. The UI renders this line back as clickable chips.
-        if (artifactFiles.length > 0) {
+        const fileArtifacts = await toArtifacts(pendingFiles);
+        const imageArtifacts = await toArtifacts(pendingImages.filter((f): f is File => f != null));
+        const artifacts = [...fileArtifacts, ...imageArtifacts];
+
+        // Reference only non-image files — images are already shown inline.
+        if (fileArtifacts.length > 0) {
           const reference: TextContent = {
             type: "text",
-            text: formatArtifactReference(artifactFiles.map((f) => f.path)),
+            text: formatArtifactReference(fileArtifacts.map((f) => f.path)),
           };
           messageContent.push(reference);
         }
@@ -316,7 +303,7 @@ export function ChatInput() {
           content: messageContent,
         };
 
-        sendMessage(message, undefined, artifactFiles.length > 0 ? artifactFiles : undefined);
+        sendMessage(message, undefined, artifacts.length > 0 ? artifacts : undefined);
         setContent("");
         clearAttachments();
       }
@@ -326,6 +313,7 @@ export function ChatInput() {
       content,
       attachments,
       pendingFiles,
+      pendingImages,
       isContinuousCaptureActive,
       captureFrame,
       sendMessage,
@@ -341,7 +329,6 @@ export function ChatInput() {
 
   const handleDriveFiles = useCallback(
     async (files: SelectedFile[]) => {
-      // Show extracting state for each file while downloading
       const names = files.map((f) => f.name);
       setExtractingAttachments((prev) => new Set([...prev, ...names]));
 
@@ -424,7 +411,6 @@ export function ChatInput() {
     [handleSubmit, isResponding, stopStreaming],
   );
 
-  // Handle transcription button click
   const handleTranscriptionClick = useCallback(async () => {
     if (isTranscribing) {
       setTranscribingContent(true);
@@ -469,7 +455,6 @@ export function ChatInput() {
             onChange={handleFileChange}
           />
 
-          {/* Drop zone overlay */}
           {isDragging && (
             <div className="absolute inset-0 bg-linear-to-r from-slate-500/20 via-slate-600/30 to-slate-500/20 dark:from-slate-400/20 dark:via-slate-500/30 dark:to-slate-400/20 md:rounded-2xl flex flex-col items-center justify-center pointer-events-none z-10 backdrop-blur-xl">
               <div className="text-slate-700 dark:text-slate-300 font-semibold text-lg text-center">
@@ -481,7 +466,6 @@ export function ChatInput() {
             </div>
           )}
 
-          {/* Attachments display */}
           {(attachments.length > 0 || pendingFiles.length > 0 || extractingAttachments.size > 0) && (
             <div className={cn("p-3 transition-all duration-200", isDragging && "blur-sm")}>
               <ChatInputAttachments
@@ -494,7 +478,6 @@ export function ChatInput() {
             </div>
           )}
 
-          {/* Input area */}
           <div className={cn("relative flex-1 transition-all duration-200", isDragging && "blur-sm")}>
             {isRealtimeSelected ? (
               <textarea
@@ -561,7 +544,6 @@ export function ChatInput() {
                   aria-label="Chat message input"
                 />
 
-                {/* CSS-animated placeholder */}
                 {shouldShowPlaceholder && (
                   <div
                     className={cn(
@@ -584,7 +566,6 @@ export function ChatInput() {
             )}
           </div>
 
-          {/* Controls */}
           <div
             className={cn(
               "relative flex items-center justify-between p-3 pt-0 pb-3 transition-all duration-200",
@@ -630,7 +611,6 @@ export function ChatInput() {
               </div>
             )}
             <div className="flex items-center gap-2">
-              {/* Listening hint — bottom row, left side */}
               {isRealtimeSelected && isListening && !voiceTextInput && (
                 <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400" aria-live="polite">
                   <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
@@ -664,7 +644,6 @@ export function ChatInput() {
                   onDriveSelect={setActiveDrive}
                 />
               )}
-              {/* Model selector */}
               {models.length > 0 && !isRealtimeSelected && !currentAgent && (
                 <ModelDropdown
                   models={models}
@@ -716,7 +695,6 @@ export function ChatInput() {
                   <span className="truncate max-w-28">{currentAgent.name}</span>
                 </button>
               )}
-              {/* Screen share active indicator */}
               {!isRealtimeSelected && isContinuousCaptureActive && (
                 <button
                   type="button"
@@ -737,7 +715,6 @@ export function ChatInput() {
             </div>
 
             <div className="flex items-center gap-2 md:gap-1 min-h-9 md:min-h-7">
-              {/* Dynamic Send/Mic/Voice/Loading Button */}
               {isRealtimeSelected ? (
                 <>
                   {isListening && voiceTextInput.trim() ? (
@@ -874,7 +851,6 @@ export function ChatInput() {
                     <Loader2 size={16} className="animate-spin" />
                   </button>
                 ) : isTranscribing ? (
-                  // Recording in progress — show stop button on all devices
                   <button
                     type="button"
                     className="p-2.5 md:p-1.5 transition-colors text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"

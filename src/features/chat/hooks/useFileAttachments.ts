@@ -11,12 +11,7 @@ interface UseFileAttachmentsOptions {
   artifactsMaxFileSize?: number;
 }
 
-/**
- * Accept-attribute for the chat file picker, kept in sync with `handleFiles`'
- * intake rule (single source of truth): vision images always; any file when the
- * artifacts workspace is available to hold it ("" = browser shows all files,
- * matching the artifacts drawer). Without artifacts, only vision images.
- */
+/** Accept-attribute for the chat file picker, kept in sync with `handleFiles`' intake rule. */
 export function chatAcceptString(visionFiles: string[], artifactsAvailable: boolean): string {
   return artifactsAvailable ? "" : visionFiles.join(",");
 }
@@ -24,6 +19,8 @@ export function chatAcceptString(visionFiles: string[], artifactsAvailable: bool
 export interface UseFileAttachmentsReturn {
   attachments: Content[];
   pendingFiles: File[];
+  /** Original image files aligned 1:1 with `attachments`, persisted at send. */
+  pendingImages: (File | null)[];
   extractingAttachments: Set<string>;
   setExtractingAttachments: React.Dispatch<React.SetStateAction<Set<string>>>;
   setPendingFiles: React.Dispatch<React.SetStateAction<File[]>>;
@@ -40,14 +37,15 @@ export function useFileAttachments({
 }: UseFileAttachmentsOptions): UseFileAttachmentsReturn {
   const [attachments, setAttachments] = useState<Content[]>([]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  // Original image files aligned 1:1 with `attachments`, persisted at send.
+  const [pendingImages, setPendingImages] = useState<(File | null)[]>([]);
   const [extractingAttachments, setExtractingAttachments] = useState<Set<string>>(new Set());
 
   const handleFiles = useCallback(
     async (files: File[]) => {
-      // Normalize MIME types up front (browsers sometimes omit/guess them), then
-      // split into vision images (sent inline) and documents (→ artifacts).
-      const imageFiles: File[] = [];
-      const docFiles: File[] = [];
+      // Normalize MIME types up front (browsers sometimes omit/guess them).
+      const images: { file: File; keepOriginal: boolean }[] = [];
+      const artifacts: File[] = [];
       for (const file of files) {
         const effectiveType =
           file.type && file.type !== "application/octet-stream"
@@ -55,49 +53,54 @@ export function useFileAttachments({
             : (inferContentTypeFromPath(file.name) ?? file.type);
         const effectiveFile = effectiveType !== file.type ? new File([file], file.name, { type: effectiveType }) : file;
 
-        // Vision images are sent inline; any other file goes to the artifacts
-        // workspace when available. Oversized files (per config) are rejected.
-        if (visionFiles.includes(effectiveType)) {
+        const isVisionImage = visionFiles.includes(effectiveType);
+        const overArtifactLimit = artifactsMaxFileSize != null && effectiveFile.size > artifactsMaxFileSize;
+
+        if (isVisionImage) {
           if (visionMaxFileSize != null && effectiveFile.size > visionMaxFileSize) {
             notify.error("Image too large", `"${file.name}" exceeds the ${formatBytes(visionMaxFileSize)} limit.`);
-          } else {
-            imageFiles.push(effectiveFile);
+            continue;
           }
+          // Sent inline as vision (resized); the original is also kept as an artifact.
+          images.push({ file: effectiveFile, keepOriginal: artifactsAvailable && !overArtifactLimit });
         } else if (artifactsAvailable) {
           if (artifactsMaxFileSize != null && effectiveFile.size > artifactsMaxFileSize) {
             notify.error("File too large", `"${file.name}" exceeds the ${formatBytes(artifactsMaxFileSize)} limit.`);
           } else {
-            docFiles.push(effectiveFile);
+            artifacts.push(effectiveFile);
           }
         }
       }
 
-      // Documents: hold them pending until send. The actual write into the
-      // workspace happens at send time — nothing is persisted if the attachment
-      // is removed or never sent. Artifacts is always active when available, so
-      // the model already has the tools.
-      if (docFiles.length > 0) {
-        setPendingFiles((prev) => [...prev, ...docFiles]);
+      // Held pending until send, then written to the workspace by `sendMessage`.
+      if (artifacts.length > 0) {
+        setPendingFiles((prev) => [...prev, ...artifacts]);
       }
 
-      // Images: resize/encode now (async) — shown via the extracting spinner.
-      if (imageFiles.length > 0) {
-        const ids = imageFiles.map((file, index) => `${file.name}-${index}`);
+      // Resize/encode images now; keep each original (or null) aligned with its
+      // attachment so removal and send stay in step.
+      if (images.length > 0) {
+        const ids = images.map((image, index) => `${image.file.name}-${index}`);
         setExtractingAttachments((prev) => new Set([...prev, ...ids]));
 
         const settled = await Promise.allSettled(
-          imageFiles.map(async (file) => {
+          images.map(async ({ file, keepOriginal }) => {
             const blob = await resizeImageBlob(file, 1920, 1920);
             const dataUrl = await readAsDataURL(blob);
-            return { type: "image", name: file.name, data: dataUrl } as ImageContent;
+            const content = { type: "image", name: file.name, data: dataUrl } as ImageContent;
+            return { content, original: keepOriginal ? file : null };
           }),
         );
 
         const valid = settled
-          .filter((r): r is PromiseFulfilledResult<ImageContent> => r.status === "fulfilled")
+          .filter(
+            (r): r is PromiseFulfilledResult<{ content: ImageContent; original: File | null }> =>
+              r.status === "fulfilled",
+          )
           .map((r) => r.value);
 
-        setAttachments((prev) => [...prev, ...valid]);
+        setAttachments((prev) => [...prev, ...valid.map((v) => v.content)]);
+        setPendingImages((prev) => [...prev, ...valid.map((v) => v.original)]);
         setExtractingAttachments((prev) => {
           const next = new Set(prev);
           for (const id of ids) next.delete(id);
@@ -111,15 +114,18 @@ export function useFileAttachments({
   const clearAttachments = useCallback(() => {
     setAttachments([]);
     setPendingFiles([]);
+    setPendingImages([]);
   }, []);
 
   const removeAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
+    setPendingImages((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
   return {
     attachments,
     pendingFiles,
+    pendingImages,
     extractingAttachments,
     setExtractingAttachments,
     setPendingFiles,

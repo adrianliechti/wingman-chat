@@ -10,8 +10,10 @@ that could not be mistaken for anyone else's. The client has rejected templated 
 paying for a distinctive point of view: make deliberate, opinionated choices about palette,
 typography, and layout specific to this brief, and take one real aesthetic risk you can justify.
 
-Build the result as a **self-contained `.html`** in the workspace — inline CSS/JS, **no external CDN**
-so it works offline (system fonts, or inline a font as a data URI if you need a specific one). It
+Build the result in the workspace as one `.html` with inline CSS/JS and **no external CDN** so it
+works offline (system fonts, or inline a font as a data URI if you need a specific one). Reference
+local image/data assets by relative path — the preview serves sibling artifacts same-origin, so
+`<img src="hero.jpg">` and `fetch("data.json")` just work — rather than base64-inlining them. It
 renders in the side panel.
 
 ## Ground it in the subject

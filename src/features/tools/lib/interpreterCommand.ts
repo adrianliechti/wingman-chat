@@ -1,11 +1,7 @@
 /**
  * Shared filesystem bridge for the interpreter shell commands (`python3`/`python`
- * and `node`/`js`).
- *
- * Both commands do the same thing around their interpreter: snapshot every file
- * under the sandbox home into an artifact map, run the code against it, write the
- * results back, and propagate deletions. Only the interpreter they call differs,
- * so that one function is passed in.
+ * and `node`/`js`): snapshot the sandbox home into an artifact map, run the code,
+ * write results back, and propagate deletions. Only the interpreter differs.
  */
 
 import type { CommandContext, ExecResult } from "just-bash/browser";
@@ -86,10 +82,9 @@ async function syncResultFiles(ctx: CommandContext, resultFiles: SandboxCommandF
 }
 
 /**
- * Snapshot the command's files, run `code` through `execute`, then write the
- * results back to the command filesystem and propagate deletions. Both
- * interpreters share one artifact filesystem this way, so files created by one
- * command are visible to the others on subsequent runs.
+ * Snapshot the command's files, run `code` through `execute`, write results back,
+ * and propagate deletions. Both interpreters share one artifact filesystem, so
+ * files created by one command are visible to the others on later runs.
  */
 export async function runCodeInSandbox(
   ctx: CommandContext,
@@ -103,9 +98,8 @@ export async function runCodeInSandbox(
     if (result.files) {
       await syncResultFiles(ctx, result.files);
 
-      // Propagate deletions: a file that existed before the run but is absent
-      // from the result snapshot was removed by the code — without this it would
-      // survive in the command FS and get resurrected on sync-back.
+      // A file present before the run but absent from the result was deleted by
+      // the code; without this it would survive in the command FS.
       for (const path of Object.keys(files)) {
         if (path in result.files) continue;
         try {

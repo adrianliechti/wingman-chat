@@ -6,14 +6,12 @@ import { decodeStdin } from "./stdin";
 const PYODIDE_VERSION = "3.13 (Pyodide)";
 
 async function executePython(args: string[], ctx: CommandContext): Promise<ExecResult> {
-  // --version / -V
   if (args.includes("--version") || args.includes("-V")) {
     return { stdout: `Python ${PYODIDE_VERSION}\n`, stderr: "", exitCode: 0 };
   }
 
   let code: string | undefined;
 
-  // -c "code"
   const cIdx = args.indexOf("-c");
   if (cIdx !== -1) {
     code = args[cIdx + 1];
@@ -22,7 +20,6 @@ async function executePython(args: string[], ctx: CommandContext): Promise<ExecR
     }
   }
 
-  // script.py
   if (code === undefined && args.length > 0 && !args[0].startsWith("-")) {
     const scriptPath = args[0].startsWith("/") ? args[0] : `${ctx.cwd}/${args[0]}`;
     try {
@@ -36,7 +33,6 @@ async function executePython(args: string[], ctx: CommandContext): Promise<ExecR
     }
   }
 
-  // stdin
   if (code === undefined) {
     const stdinText = decodeStdin(ctx.stdin);
     if (stdinText) {
@@ -44,7 +40,6 @@ async function executePython(args: string[], ctx: CommandContext): Promise<ExecR
     }
   }
 
-  // no input at all
   if (code === undefined) {
     return {
       stdout: "",

@@ -4,10 +4,10 @@ import {
   ChevronDown,
   Coffee,
   GraduationCap,
-  NotebookPen,
   Image,
   Languages,
   MessageCircle,
+  NotebookPen,
   PanelLeftOpen,
   Settings,
 } from "lucide-react";

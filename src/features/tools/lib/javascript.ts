@@ -1,13 +1,7 @@
 /**
- * Main-thread client for the JavaScript interpreter worker.
- *
- * JavaScript runs in a dedicated module worker (`javascript.worker.ts`) so
- * CPU-bound code can't freeze the UI and runs isolated from the app's DOM and
- * origin globals. The shared worker lifecycle (stall watchdog, abort, crash
- * recovery, RPC plumbing) lives in `workerHost.ts`, and the main-thread bridge
- * dispatch (`llm`/`ocr`/`vision`/`render`/`synthesize`/`transcribe`/`translate`)
- * is shared with the Pyodide client in `bridgeDispatch.ts`; this file supplies
- * only the worker factory.
+ * Main-thread client for the JavaScript interpreter worker. The shared lifecycle
+ * and bridge dispatch live in `workerHost.ts` / `bridgeDispatch.ts`; this file
+ * supplies only the worker factory.
  */
 
 import { dispatchBridgeRpc } from "./bridgeDispatch";
@@ -19,7 +13,7 @@ const host = createWorkerHost({
   handleMessage: dispatchBridgeRpc,
   crashMessage: "JavaScript interpreter worker crashed",
   // No heavy runtime to bootstrap (unlike Pyodide) — a short startup budget is
-  // plenty, after which the compute-stall ceiling governs.
+  // plenty.
   startupStallMs: 30_000,
 });
 

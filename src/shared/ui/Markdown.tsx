@@ -601,7 +601,10 @@ function createComponents(
     li: ({ children, className, ...props }) => {
       const isTask = typeof className === "string" && className.includes("task-list-item");
       return (
-        <li className={cn("ml-0", compact ? "py-0.5 leading-normal" : "py-0.5 leading-7", isTask && "task-list-item")} {...props}>
+        <li
+          className={cn("ml-0", compact ? "py-0.5 leading-normal" : "py-0.5 leading-7", isTask && "task-list-item")}
+          {...props}
+        >
           {children}
         </li>
       );
@@ -678,7 +681,9 @@ function createComponents(
       return (
         <h1
           id={slugify(children)}
-          className={compact ? "text-base font-semibold mt-4 mb-1 first:mt-0" : "text-3xl font-semibold mt-8 mb-3 first:mt-0"}
+          className={
+            compact ? "text-base font-semibold mt-4 mb-1 first:mt-0" : "text-3xl font-semibold mt-8 mb-3 first:mt-0"
+          }
           {...props}
         >
           {children}
@@ -689,7 +694,9 @@ function createComponents(
       return (
         <h2
           id={slugify(children)}
-          className={compact ? "text-sm font-semibold mt-4 mb-1 first:mt-0" : "text-2xl font-semibold mt-8 mb-3 first:mt-0"}
+          className={
+            compact ? "text-sm font-semibold mt-4 mb-1 first:mt-0" : "text-2xl font-semibold mt-8 mb-3 first:mt-0"
+          }
           {...props}
         >
           {children}
@@ -700,7 +707,9 @@ function createComponents(
       return (
         <h3
           id={slugify(children)}
-          className={compact ? "text-sm font-semibold mt-3 mb-1 first:mt-0" : "text-xl font-semibold mt-6 mb-2 first:mt-0"}
+          className={
+            compact ? "text-sm font-semibold mt-3 mb-1 first:mt-0" : "text-xl font-semibold mt-6 mb-2 first:mt-0"
+          }
           {...props}
         >
           {children}
@@ -711,7 +720,9 @@ function createComponents(
       return (
         <h4
           id={slugify(children)}
-          className={compact ? "text-sm font-semibold mt-2 mb-1 first:mt-0" : "text-lg font-semibold mt-6 mb-2 first:mt-0"}
+          className={
+            compact ? "text-sm font-semibold mt-2 mb-1 first:mt-0" : "text-lg font-semibold mt-6 mb-2 first:mt-0"
+          }
           {...props}
         >
           {children}
@@ -722,7 +733,9 @@ function createComponents(
       return (
         <h5
           id={slugify(children)}
-          className={compact ? "text-sm font-semibold mt-2 mb-1 first:mt-0" : "text-base font-semibold mt-5 mb-1 first:mt-0"}
+          className={
+            compact ? "text-sm font-semibold mt-2 mb-1 first:mt-0" : "text-base font-semibold mt-5 mb-1 first:mt-0"
+          }
           {...props}
         >
           {children}
@@ -733,7 +746,9 @@ function createComponents(
       return (
         <h6
           id={slugify(children)}
-          className={compact ? "text-xs font-semibold mt-2 mb-1 first:mt-0" : "text-sm font-semibold mt-5 mb-1 first:mt-0"}
+          className={
+            compact ? "text-xs font-semibold mt-2 mb-1 first:mt-0" : "text-sm font-semibold mt-5 mb-1 first:mt-0"
+          }
           {...props}
         >
           {children}

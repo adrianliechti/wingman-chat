@@ -1,12 +1,7 @@
 /**
- * Shared worker→main bridge dispatch for both interpreters.
- *
- * The Pyodide and JavaScript workers expose the same main-thread-backed helpers
- * (`llm`, `ocr`, `vision`, `render`, `synthesize`, `transcribe`, `translate`) —
- * each needs the chat client/config, so the worker proxies them over RPC, every
- * request carrying its own reply port (see interpreterProtocol.ts). This routes
- * a request to the runner that owns it, so neither interpreter client repeats
- * the switch.
+ * Shared worker→main bridge dispatch for both interpreters: routes an RPC
+ * request to the runner that owns it so neither interpreter client repeats the
+ * switch.
  */
 
 import type { WorkerToMainMessage } from "./interpreterProtocol";

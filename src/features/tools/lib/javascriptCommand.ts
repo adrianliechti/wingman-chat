@@ -8,14 +8,12 @@ import { decodeStdin } from "./stdin";
 const JS_RUNTIME_VERSION = "v22 (sandboxed Web Worker)";
 
 async function executeNode(args: string[], ctx: CommandContext): Promise<ExecResult> {
-  // --version / -v
   if (args.includes("--version") || args.includes("-v")) {
     return { stdout: `${JS_RUNTIME_VERSION}\n`, stderr: "", exitCode: 0 };
   }
 
   let code: string | undefined;
 
-  // -e "code" (also --eval)
   const eIdx = args.findIndex((a) => a === "-e" || a === "--eval");
   if (eIdx !== -1) {
     code = args[eIdx + 1];
@@ -24,7 +22,6 @@ async function executeNode(args: string[], ctx: CommandContext): Promise<ExecRes
     }
   }
 
-  // script.js
   if (code === undefined && args.length > 0 && !args[0].startsWith("-")) {
     const scriptPath = args[0].startsWith("/") ? args[0] : `${ctx.cwd}/${args[0]}`;
     try {
@@ -34,7 +31,6 @@ async function executeNode(args: string[], ctx: CommandContext): Promise<ExecRes
     }
   }
 
-  // stdin
   if (code === undefined) {
     const stdinText = decodeStdin(ctx.stdin);
     if (stdinText) {
@@ -42,7 +38,6 @@ async function executeNode(args: string[], ctx: CommandContext): Promise<ExecRes
     }
   }
 
-  // no input at all
   if (code === undefined) {
     return {
       stdout: "",

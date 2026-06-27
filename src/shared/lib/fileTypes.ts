@@ -4,7 +4,6 @@ import { lookupContentType } from "./utils";
 // 1. Text/code files where `mime` maps to a wrong binary type
 // 2. Binary files where `mime` returns null (→ undefined → wrongly treated as text)
 const MIME_OVERRIDES: Record<string, string> = {
-  // Text files with wrong binary MIME types
   ".ts": "text/typescript", // mime: video/mp2t
   ".rs": "text/x-rustsrc", // mime: application/rls-services+xml
   ".cjs": "text/javascript", // mime: application/node
@@ -18,7 +17,6 @@ const MIME_OVERRIDES: Record<string, string> = {
   ".json5": "application/json", // mime: application/json5 (not in isTextContentType)
   ".mmd": "text/vnd.mermaid", // mime: null → would be stored as binary; it's Mermaid diagram source
   ".mermaid": "text/vnd.mermaid",
-  // Binary files with no MIME entry (null → undefined → wrongly treated as text)
   ".tgz": "application/gzip",
   ".pyc": "application/octet-stream",
   ".pkl": "application/octet-stream",
@@ -26,9 +24,8 @@ const MIME_OVERRIDES: Record<string, string> = {
   ".sqlite": "application/octet-stream",
   ".db": "application/octet-stream",
   // Scientific / data binaries from the Python stack (numpy, pandas, scipy,
-  // sklearn). `mime` doesn't know these, so without an override they default to
-  // text and get corrupted by the UTF-8 round trip through the sandbox FS — e.g.
-  // a saved `.npy` then fails to load as "pickled object data".
+  // sklearn) that `mime` doesn't know — without an override they default to text
+  // and get corrupted by the UTF-8 round trip through the sandbox FS.
   ".npy": "application/octet-stream",
   ".npz": "application/octet-stream",
   ".parquet": "application/octet-stream",
@@ -91,8 +88,7 @@ export function fileMatchesTypeList(name: string, type: string, list: string[]):
 /**
  * Syntax-highlight language id for a file path. Returns the raw extension (shiki
  * accepts extension aliases like `py` / `ts`), with special-cases for the common
- * extensionless build files. Used by the artifact code editors and tool-call
- * rendering.
+ * extensionless build files.
  */
 export function artifactLanguage(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() || "";

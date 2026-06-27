@@ -1,8 +1,8 @@
 import { ChevronDown, FileText, Mic, Server, ToggleLeft, ToggleRight, Wrench, Zap } from "lucide-react";
 import { type Dispatch, useId } from "react";
 import type { BridgeServer } from "@/features/agent/types/agent";
-import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { useChat } from "@/features/chat/hooks/useChat";
+import { getSavedModelId } from "@/features/chat/hooks/useModels";
 import { getConfig } from "@/shared/config";
 import { defaultModelId } from "@/shared/lib/models";
 import { ModelDropdown } from "@/shared/ui/ModelDropdown";

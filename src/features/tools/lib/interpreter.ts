@@ -1,17 +1,7 @@
 /**
- * Main-thread client for the Pyodide interpreter worker.
- *
- * Python runs in a dedicated module worker (`interpreter.worker.ts`) so
- * CPU-bound code cannot freeze the UI — module workers are supported by all
- * recent Edge and Safari (incl. iOS) versions. The shared worker lifecycle
- * (stall watchdog, abort, crash recovery, RPC plumbing) lives in
- * `workerHost.ts`, and the main-thread bridge dispatch (the `llm`/`ocr`/`vision`/
- * `render`/`synthesize`/`transcribe`/`translate` helpers) is shared with the
- * JavaScript client in `bridgeDispatch.ts`; this file supplies only the worker
- * factory.
- *
- * Each request carries its own MessagePort for the reply (see
- * interpreterProtocol.ts), so there is no id correlation in either direction.
+ * Main-thread client for the Pyodide interpreter worker. Python runs off-thread
+ * so CPU-bound code can't freeze the UI; this file only supplies the worker
+ * factory (lifecycle lives in workerHost.ts, RPC dispatch in bridgeDispatch.ts).
  */
 
 import { dispatchBridgeRpc } from "./bridgeDispatch";
