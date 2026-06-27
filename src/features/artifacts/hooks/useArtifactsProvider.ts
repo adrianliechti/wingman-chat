@@ -1,4 +1,4 @@
-import { Shapes, SquareCode, SquareTerminal } from "lucide-react";
+import { Braces, Shapes, SquareCode, SquareTerminal } from "lucide-react";
 import { useCallback, useMemo, useRef } from "react";
 import type { FileSystemManager } from "@/features/artifacts/lib/fs";
 import artifactsInstructionsText from "@/features/artifacts/prompts/artifacts.txt?raw";
@@ -13,6 +13,7 @@ import translateInstructionsText from "@/features/artifacts/prompts/translate.tx
 import visionInstructionsText from "@/features/artifacts/prompts/vision.txt?raw";
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
+import { executeJavaScript } from "@/features/tools/lib/javascript";
 import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
 import { mountSkillFiles } from "@/features/tools/lib/skillResourceMount";
 import { getConfig } from "@/shared/config";
@@ -371,6 +372,119 @@ export function useArtifactsProvider(): ToolProvider | null {
                 // Drop the read-only skill resources we mounted so they don't
                 // persist as artifacts (they were never part of the overlay).
                 for (const key of skillKeys) delete result.files[key];
+                const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
+                const written = [...summary.createdPaths, ...summary.updatedPaths];
+                if (written.length > 0) context?.setMeta?.({ artifactFiles: written });
+              }
+
+              return [{ type: "text" as const, text: result.output }];
+            } catch (error) {
+              return executionFailure(
+                context,
+                `Code execution failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+              );
+            }
+          }),
+      },
+      {
+        name: "execute_javascript_code",
+        display: {
+          header: (args, state) => ({
+            icon: Braces,
+            label: state.error ? "Code failed" : state.running ? runningCodeLabel(args?.code) : "Ran code",
+          }),
+          input: (args) => {
+            const code = typeof args?.code === "string" ? args.code : "";
+            return code ? [{ code, language: "javascript" }] : [];
+          },
+        },
+        description:
+          "Execute JavaScript in a sandboxed Web Worker (off the UI thread, isolated from the page, no network). " +
+          "Use it for browser-native work: WebCodecs, OffscreenCanvas, createImageBitmap, crypto.subtle, WebAssembly, " +
+          "TextEncoder/Decoder, and the bundled `mediabunny` media library (available as a global when your code " +
+          "references it). Files are NOT mounted as a real filesystem — read and write artifacts through the injected " +
+          "`vfs` helper: `vfs.read(path)` / `vfs.readBytes(path)` / `vfs.readJSON(path)` and `vfs.write(path, data, " +
+          "contentType?)` / `vfs.writeBytes` / `vfs.writeJSON`, plus `vfs.list()`, `vfs.exists(path)`, `vfs.remove(path)`. " +
+          "Paths are artifact paths like `/data.csv`. `fetch('/data.csv')` also reads the VFS (remote URLs are blocked). " +
+          "Anything you write or delete via `vfs` is synced back as artifacts. Use top-level `await` directly, and " +
+          "`return` a value or `console.log(...)` to produce output. Pass the full script in `code`, or `path` to run an " +
+          "existing .js artifact. Prefer Python (`execute_python_code`) for data/number crunching and document libraries.",
+        strict: true,
+        parameters: {
+          type: "object",
+          properties: {
+            code: {
+              type: ["string", "null"],
+              description: "Inline JavaScript to execute. This is the standard way to run code.",
+            },
+            path: {
+              type: ["string", "null"],
+              description:
+                "Optional: path to an existing JavaScript artifact to execute (e.g., `/transform.js`). Ignored when `code` is also provided.",
+            },
+          },
+          required: ["code", "path"],
+          additionalProperties: false,
+        },
+        // Same snapshot → execute → sync-back section under the sandbox lock as
+        // the Python/Bash tools: parallel tool calls would otherwise commit
+        // stale full snapshots over each other's outputs.
+        function: (args: Record<string, unknown>, context?: ToolContext) =>
+          withSandboxLock(async () => {
+            const fs = fsRef.current;
+            const { code } = args;
+            const path = normalizeArtifactPath(typeof args.path === "string" ? args.path : undefined);
+
+            try {
+              const artifactFiles: SandboxFiles = {};
+              if (fs) {
+                const snapshot = await fs.getOverlaySnapshot();
+                for (const [path, file] of Object.entries(snapshot)) {
+                  artifactFiles[path] = { content: file.content, contentType: file.contentType };
+                }
+              }
+
+              const hasCode = typeof code === "string" && code.trim().length > 0;
+              const hasPath = typeof path === "string" && path.length > 0;
+
+              if (!hasCode && !hasPath) {
+                return executionFailure(
+                  context,
+                  "Error executing code: no `code` was received. If you passed inline code, it likely " +
+                    "failed to parse from unescaped quotes or backslashes — rewrite it preferring single " +
+                    "quotes, or write the script to a `.js` artifact and run it with `path`.",
+                );
+              }
+
+              // Prefer `code` when both are provided — some models tack on `path`
+              // thinking it's a working-directory hint.
+              let script = code as string;
+
+              if (!hasCode && hasPath) {
+                if (!fs) {
+                  return executionFailure(context, "Error executing code: file system not available.");
+                }
+
+                const file = await fs.getFile(path);
+                if (!file) {
+                  return executionFailure(context, `Error executing code: file not found: ${path}`);
+                }
+
+                script = file.content;
+              }
+
+              const result = await executeJavaScript(
+                { code: script, files: artifactFiles },
+                { signal: context?.signal },
+              );
+
+              if (!result.success) {
+                return executionFailure(context, `Error executing code: ${result.error || "Unknown error"}`);
+              }
+
+              // Sync changed files back to artifacts and surface the ones written
+              // so the chat can show them as chips on the assistant's response.
+              if (fs && result.files) {
                 const summary = await fs.applyOverlaySnapshot(result.files, { deleteMissing: true });
                 const written = [...summary.createdPaths, ...summary.updatedPaths];
                 if (written.length > 0) context?.setMeta?.({ artifactFiles: written });

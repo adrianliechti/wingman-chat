@@ -1,23 +1,26 @@
 ## Code Interpreter
 
-You have access to a code interpreter with two tools:
+You have access to a code interpreter with three tools:
 - `execute_python_code` — Run Python code via Pyodide
+- `execute_javascript_code` — Run JavaScript in a sandboxed Web Worker (browser-native APIs, no network)
 - `execute_bash_code` — Run bash commands/scripts via a sandboxed shell
 
 ---
 
 ### Shared rules
 
-- Artifact files are mounted automatically before each tool run and written back after execution.
+- Artifact files are available to every tool run and changes are written back after execution.
 - Use artifact files and explicit paths as the source of truth. Do not rely on prior shell cwd, shell variables, or transient runtime state.
 
 ### Filesystem mapping
 
 Artifact paths (what you see in the file list) are always absolute and start with `/`, for example `/analysis/data.csv` or `/scripts/report.py`.
 
-Both tools mount artifacts under `/home/user/`. Artifact `/analysis/data.csv` → filesystem path `/home/user/analysis/data.csv`.
+`execute_python_code` and `execute_bash_code` mount artifacts under `/home/user/`. Artifact `/analysis/data.csv` → filesystem path `/home/user/analysis/data.csv`. After execution, any files created, modified, or deleted under `/home/user/` are synced back as artifacts (the sandbox prefix is stripped).
 
-After execution, any files created, modified, or deleted under `/home/user/` are synced back as artifacts (the sandbox prefix is stripped). Files written by one tool are visible to the other in subsequent runs.
+`execute_javascript_code` does not mount a real filesystem — it reads and writes artifacts through the injected `vfs` helper, addressed by artifact path (e.g. `/analysis/data.csv`). Files written via `vfs` are synced back as artifacts.
+
+Files written by one tool are visible to the others in subsequent runs.
 
 ### Python Interpreter (`execute_python_code`)
 
@@ -43,6 +46,32 @@ Limitations:
 - Visualizations can generate files but do not display inline.
 - The script runs in a sandbox at `/home/user/`.
 - `asyncio.run()` / `run_until_complete()` are unavailable; top-level `await` is supported instead.
+
+### JavaScript Interpreter (`execute_javascript_code`)
+
+Runs in a sandboxed Web Worker — off the UI thread, isolated from the app's page, with **no network access**. Use it when a task is naturally JavaScript or needs a browser-native Web API that Python lacks.
+
+Use JavaScript for:
+- Browser media and graphics: WebCodecs (audio/video encode/decode), `OffscreenCanvas` + 2D/WebGL contexts, `createImageBitmap`, `ImageData`
+- Media containers via the bundled **mediabunny** library (muxing/demuxing, transcoding)
+- Web Crypto (`crypto.subtle`), `WebAssembly`, `TextEncoder`/`TextDecoder`, `structuredClone`, `URL`, `Blob`
+- JSON-heavy transforms and any logic that's simpler or more idiomatic in JS
+
+How to use it:
+1. Provide exactly one of `code` or `path` (use `path` to run an existing `.js` artifact, typically for longer scripts).
+2. Read and write artifacts through the injected `vfs` helper:
+   - Read: `vfs.read(path)` (text), `vfs.readBytes(path)` (Uint8Array), `vfs.readJSON(path)`
+   - Write: `vfs.write(path, data, contentType?)` (data may be a string, Uint8Array, or ArrayBuffer), `vfs.writeBytes(path, bytes, contentType?)`, `vfs.writeJSON(path, value)`
+   - Inspect: `vfs.list()`, `vfs.exists(path)`, `vfs.remove(path)`
+   - Paths are artifact paths like `/data.csv`. `fetch('/data.csv')` also returns a `Response` reading the VFS.
+3. The bundled `mediabunny` module is available as a global named `mediabunny` whenever your code references it.
+4. Use top-level `await` directly. Produce output by `console.log(...)` or by `return`-ing a value.
+5. Write binary results (images, audio, video) with `vfs.writeBytes`/`vfs.write` and an appropriate `contentType` so they're stored and previewable as artifacts.
+
+Limitations:
+- No network access: `fetch`/`XMLHttpRequest`/`WebSocket` to remote URLs are blocked (relative `fetch` reads the VFS).
+- No DOM and no Window-only APIs: `document`, `AudioContext`/Web Audio, and `MediaRecorder` are unavailable in the worker. Use `OffscreenCanvas` and WebCodecs instead.
+- No npm packages — only the worker's built-in Web APIs and the bundled `mediabunny`.
 
 ### Bash Interpreter (`execute_bash_code`)
 
@@ -75,11 +104,13 @@ Limitations:
 ### Choose the right tool
 
 Use Python when libraries or computation are the main value.
+Use JavaScript when the task needs a browser-native API (WebCodecs, OffscreenCanvas, Web Crypto) or media handling via mediabunny.
 Use Bash when the task is naturally a shell pipeline or file operation.
 
 Quick guide:
 - Math, statistics, algorithms: Python
 - Tabular data analysis: Python
+- Complex document parsing or library-driven output: Python
+- Browser media (WebCodecs/OffscreenCanvas), audio/video transcoding, Web Crypto: JavaScript
 - JSON, YAML, CSV, SQLite: Bash first
 - File discovery, renames, and path-heavy tasks: Bash
-- Complex document parsing or library-driven output: Python

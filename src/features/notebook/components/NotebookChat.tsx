@@ -27,6 +27,7 @@ const TOOL_VERBS: Record<string, string> = {
   source_rename: "rename",
   source_delete: "delete",
   execute_python_code: "python",
+  execute_javascript_code: "javascript",
   execute_bash_code: "bash",
 };
 

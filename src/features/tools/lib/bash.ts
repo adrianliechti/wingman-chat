@@ -3,6 +3,7 @@ import type { OverlayFile } from "@/features/artifacts/lib/fs";
 import { bytesToDataUrl, dataUrlToBytes } from "@/shared/lib/fileContent";
 import { inferContentTypeFromPath, isTextContentType } from "@/shared/lib/fileTypes";
 import { SANDBOX_HOME } from "@/shared/lib/sandbox";
+import { javascriptCommands } from "./javascriptCommand";
 import { llmCommands } from "./llmCommand";
 import { ocrCommands } from "./ocrCommand";
 import { pythonCommands } from "./pythonCommand";
@@ -75,6 +76,7 @@ export function createBashInstance(files?: Record<string, { content: string; con
     cwd: SANDBOX_HOME,
     customCommands: [
       ...pythonCommands,
+      ...javascriptCommands,
       ...llmCommands,
       ...ocrCommands,
       ...visionCommands,

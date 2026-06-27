@@ -18,6 +18,7 @@
 
 import { executeBash, getSingleton, loadArtifactsIntoFs, readFilesFromFs } from "@/features/tools/lib/bash";
 import { executeCode } from "@/features/tools/lib/interpreter";
+import { executeJavaScript } from "@/features/tools/lib/javascript";
 import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
 import type { Tool } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
@@ -162,6 +163,59 @@ export function createSourceExecTools(getSources: () => readonly File[], options
               {
                 type: "text" as const,
                 text: `Python execution failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+              },
+            ];
+          }
+        });
+      },
+    },
+    {
+      name: "execute_javascript_code",
+      description:
+        "Execute JavaScript in a sandboxed Web Worker (off the UI thread, no network). Read and write notebook sources through the injected `vfs` helper: `vfs.read(path)` / `vfs.readBytes` / `vfs.readJSON` and `vfs.write(path, data, contentType?)` / `vfs.writeBytes` / `vfs.writeJSON`, plus `vfs.list()`, `vfs.exists(path)`, `vfs.remove(path)`. Files you write are saved back as sources. Browser-native APIs (WebCodecs, OffscreenCanvas, crypto.subtle, WebAssembly) and the bundled `mediabunny` global are available. Use top-level `await` directly; `return` a value or `console.log(...)` for output.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          code: {
+            type: "string",
+            description: "JavaScript to execute. Use the `vfs` helper to read and write sources.",
+          },
+        },
+        required: ["code"],
+        additionalProperties: false,
+      },
+      function: async (args: Record<string, unknown>) => {
+        const code = typeof args.code === "string" ? args.code : "";
+        if (!code.trim()) {
+          return [{ type: "text" as const, text: "Error: `code` is required." }];
+        }
+
+        // Same locking rationale as the python tool — the sandbox runtimes are
+        // shared singletons and must not interleave on the source snapshot.
+        return withSandboxLock(async () => {
+          const before = sourcesToFileMap(getSources());
+
+          try {
+            const result = await executeJavaScript({ code, files: before });
+
+            if (!result.success) {
+              return [{ type: "text" as const, text: `Error executing code: ${result.error || "Unknown error"}` }];
+            }
+
+            const after = normalizeMapKeys(result.files ?? {});
+            const written = await persistWrites(before, after);
+
+            const parts: string[] = [result.output || "(no output)"];
+            if (written.length > 0) {
+              parts.push(`\nSaved sources: ${written.join(", ")}`);
+            }
+            return [{ type: "text" as const, text: parts.join("") }];
+          } catch (err) {
+            return [
+              {
+                type: "text" as const,
+                text: `JavaScript execution failed: ${err instanceof Error ? err.message : "Unknown error"}`,
               },
             ];
           }
