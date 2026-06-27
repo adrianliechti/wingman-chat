@@ -25,6 +25,20 @@ const MIME_OVERRIDES: Record<string, string> = {
   ".pickle": "application/octet-stream",
   ".sqlite": "application/octet-stream",
   ".db": "application/octet-stream",
+  // Scientific / data binaries from the Python stack (numpy, pandas, scipy,
+  // sklearn). `mime` doesn't know these, so without an override they default to
+  // text and get corrupted by the UTF-8 round trip through the sandbox FS — e.g.
+  // a saved `.npy` then fails to load as "pickled object data".
+  ".npy": "application/octet-stream",
+  ".npz": "application/octet-stream",
+  ".parquet": "application/octet-stream",
+  ".feather": "application/octet-stream",
+  ".arrow": "application/octet-stream",
+  ".h5": "application/octet-stream",
+  ".hdf5": "application/octet-stream",
+  ".mat": "application/octet-stream",
+  ".joblib": "application/octet-stream",
+  ".bin": "application/octet-stream",
 };
 
 export function inferContentTypeFromPath(path: string): string | undefined {
