@@ -34,6 +34,7 @@
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.14.4",
     "@xyflow/react": "^12.11.1",
+    "buffer": "^6.0.3",
     "clsx": "^2.1.1",
     "docx": "^9.7.1",
     "dompurify": "^3.4.11",

@@ -75,7 +75,7 @@ export const ArtifactChip = memo(function ArtifactChip({ path, className }: { pa
         {ext && (
           <span
             className={cn(
-              "absolute -bottom-0.5 left-1/2 -translate-x-1/2 rounded bg-neutral-500 px-1 text-[8px] font-bold leading-snug text-white transition-opacity dark:bg-neutral-600",
+              "absolute -bottom-0.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-neutral-500 px-1 text-[8px] font-bold leading-snug text-white transition-opacity dark:bg-neutral-600",
               exists && "group-hover/artifact:opacity-0",
             )}
           >

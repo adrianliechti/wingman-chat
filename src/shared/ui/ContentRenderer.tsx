@@ -144,7 +144,7 @@ function FileDisplay({ content, className }: { content: FileContent; className?:
       <span className="relative shrink-0">
         <File className="h-9 w-9 text-neutral-400 dark:text-neutral-500" strokeWidth={1.5} />
         {ext && (
-          <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 rounded bg-neutral-500 px-1 text-[8px] font-bold leading-snug text-white dark:bg-neutral-600">
+          <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-neutral-500 px-1 text-[8px] font-bold leading-snug text-white dark:bg-neutral-600">
             {ext}
           </span>
         )}

@@ -276,6 +276,12 @@ function loadPyodide(): Promise<PyodideInterface> {
         // relative-path writes (open("out.csv", "w")) would be silently lost.
         p.FS.mkdirTree(SANDBOX_HOME);
         p.FS.chdir(SANDBOX_HOME);
+        // Matplotlib's default backend wants a DOM canvas the worker doesn't
+        // have, so `plt.show()` and figure creation would fail. Force the
+        // file-only Agg backend (savefig still works) so charts render headless
+        // without the model having to set it; an explicit matplotlib.use(...) in
+        // user code still wins.
+        p.runPython("import os; os.environ.setdefault('MPLBACKEND', 'Agg')");
         p.globals.set("_wingman_llm", requestLlm);
         p.globals.set("_wingman_ocr", (path: string) => requestOcr(p, path));
         p.globals.set("_wingman_vision", (path: string, prompt: string | null) => requestVision(p, path, prompt));

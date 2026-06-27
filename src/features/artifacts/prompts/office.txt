@@ -58,11 +58,9 @@ print(m["from"], m["subject"], body.get_content() if body else "")
 
 ### Chart → Office embed
 
-For charts inside a DOCX/PPTX/PDF, render with matplotlib (or seaborn) to `/home/user/chart.png`, then insert with the library's image API (`doc.add_picture`, `slide.shapes.add_picture`, `Image(...)`). Use a non-interactive backend:
+For charts inside a DOCX/PPTX/PDF, render with matplotlib (or seaborn) to `/home/user/chart.png`, then insert with the library's image API (`doc.add_picture`, `slide.shapes.add_picture`, `Image(...)`). The headless Agg backend is already the default, so `savefig` just works:
 
 ```python
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 fig, ax = plt.subplots(figsize=(8, 4), dpi=150)

@@ -16,7 +16,9 @@
  *     output is encoded as a data URL, exactly like the Pyodide worker.
  *   - Worker-scope Web APIs (WebCodecs, OffscreenCanvas, createImageBitmap,
  *     crypto.subtle, WebAssembly, …) are available to user code unchanged. The
- *     `mediabunny` module is injected lazily when the code references it.
+ *     `mediabunny`/`echarts`/`jsPDF` modules are injected lazily when referenced.
+ *   - Node-isms that LLM-authored code reaches for (`Buffer`, `process`,
+ *     `global`, `setImmediate`) are shimmed so common snippets run unchanged.
  *   - The `llm(...)` helper is proxied to the main thread over RPC (it needs the
  *     chat client/config), mirroring the Python `llm` global.
  */
@@ -66,6 +68,10 @@ type Vfs = Map<string, VfsEntry>;
 // The VFS for the run currently executing — the sandboxed `fetch` closes over
 // this. Runs are serialized, so a single slot suffices.
 let currentVfs: Vfs | null = null;
+
+// Sink for the current run's `process.stdout`/`stderr` writes (raw, no newline),
+// so Node-style CLI output lands in the run's captured output. Serialized runs.
+let currentStdout: ((text: string) => void) | null = null;
 
 function normalizePath(path: string): string | undefined {
   return normalizeArtifactPath(path);
@@ -304,6 +310,59 @@ function makeConsole(append: (line: string) => void) {
   };
 }
 
+// ── Node-compatibility shims ─────────────────────────────────────────────────
+// LLM-authored JS routinely reaches for Node globals a browser Worker doesn't
+// define. We add them on `globalThis` (not as function params) so user code can
+// still `const Buffer = …` without a duplicate-declaration error, and only for
+// `process`/`Buffer` when a run references them — so the bundled libraries'
+// own environment detection stays untouched on runs that don't.
+
+function makeProcessStub() {
+  const write = (chunk: unknown): boolean => {
+    currentStdout?.(typeof chunk === "string" ? chunk : decoder.decode(toBytes(chunk)));
+    return true;
+  };
+  const noop = () => {};
+  return {
+    browser: true,
+    env: {} as Record<string, string | undefined>,
+    argv: ["node", "sandbox.js"],
+    platform: "browser",
+    arch: "wasm32",
+    pid: 1,
+    title: "wingman-sandbox",
+    version: "",
+    versions: {} as Record<string, string>,
+    cwd: () => "/",
+    chdir: noop,
+    exit: noop,
+    nextTick: (cb: (...a: unknown[]) => void, ...args: unknown[]) => queueMicrotask(() => cb(...args)),
+    stdout: { write, isTTY: false },
+    stderr: { write, isTTY: false },
+    on: noop,
+    once: noop,
+    off: noop,
+    emit: () => false,
+  };
+}
+
+async function ensureRuntimeCompat(code: string): Promise<void> {
+  const g = globalThis as Record<string, unknown>;
+  // Libraries (e.g. echarts) and Node snippets read the Node-only `global` when
+  // `window` is absent; a Worker has neither, so point it at globalThis.
+  g.global ??= globalThis;
+  g.setImmediate ??= (cb: (...a: unknown[]) => void, ...args: unknown[]) => setTimeout(cb, 0, ...args);
+  // Fresh `process` each run so `process.env` writes don't leak between runs.
+  if (/\bprocess\b/.test(code)) g.process = makeProcessStub();
+  if (/\bBuffer\b/.test(code) && !g.Buffer) {
+    try {
+      g.Buffer = (await import("buffer")).Buffer;
+    } catch (error) {
+      console.error("Failed to load Buffer polyfill:", error);
+    }
+  }
+}
+
 // ── Execution ────────────────────────────────────────────────────────────────
 
 // `new AsyncFunction(...)` lets user code use top-level await and `return` a
@@ -320,7 +379,9 @@ const LAZY_GLOBALS: { name: string; test: RegExp; load: () => Promise<unknown> }
   // Media containers + transcoding (WebCodecs based).
   { name: "mediabunny", test: /\bmediabunny\b/, load: () => import("mediabunny") },
   // Charts: headless SSR mode → SVG string (echarts.init(null, null,
-  // { renderer: "svg", ssr: true, width, height }).renderToSVGString()).
+  // { renderer: "svg", ssr: true, width, height }).renderToSVGString()). echarts
+  // reads the Node-only `global` when `window` is absent; `ensureRuntimeCompat`
+  // defines it before any library loads.
   { name: "echarts", test: /\becharts\b/, load: () => import("echarts") },
   // PDF generation: the `jsPDF` class (new jsPDF(); doc.output("arraybuffer")).
   { name: "jsPDF", test: /\bjsPDF\b/, load: async () => (await import("jspdf")).jsPDF },
@@ -334,11 +395,16 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
   currentVfs = vfs;
 
   let output = "";
+  currentStdout = (text) => {
+    output += text;
+  };
   const sandboxConsole = makeConsole((line) => {
     output += `${line}\n`;
   });
 
   try {
+    await ensureRuntimeCompat(code);
+
     // Resolve the bundled libraries this run actually references.
     const lazyValues = await Promise.all(
       LAZY_GLOBALS.map(async (lib) => {
@@ -372,6 +438,7 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
     };
   } finally {
     currentVfs = null;
+    currentStdout = null;
   }
 }
 

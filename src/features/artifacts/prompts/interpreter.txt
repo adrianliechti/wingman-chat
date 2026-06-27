@@ -43,7 +43,7 @@ How to use it:
 Limitations:
 - No network access.
 - Only Pyodide built-ins and bundled offline packages are available.
-- Visualizations can generate files but do not display inline.
+- Visualizations generate files but do not display inline. Matplotlib defaults to the headless Agg backend, so `plt.savefig(...)` works and `plt.show()` is a harmless no-op — no need to set the backend yourself.
 - The script runs in a sandbox at `/home/user/`.
 - `asyncio.run()` / `run_until_complete()` are unavailable; top-level `await` is supported instead.
 
@@ -84,6 +84,7 @@ How to use it:
      ```
 4. Use top-level `await` directly. Produce output by `console.log(...)` or by `return`-ing a value.
 5. Write binary results (images, audio, video) with `vfs.writeBytes`/`vfs.write` and an appropriate `contentType` so they're stored and previewable as artifacts.
+6. Common Node globals are shimmed for convenience: `Buffer` (binary/base64), a minimal `process` (`process.env`, `argv`, `platform`, `stdout.write`), `global`, and `setImmediate`. There is no `require` or npm — use the provided globals, the bundled libraries, and browser APIs.
 
 Limitations:
 - No network access: `fetch`/`XMLHttpRequest`/`WebSocket` to remote URLs are blocked (relative `fetch` reads the VFS).
