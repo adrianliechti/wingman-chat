@@ -29,13 +29,26 @@ export const ChatUserMessage = memo(function ChatUserMessage({ message, index, i
   // Get additional text parts (file attachments) - all text content after the first one
   const textParts = message.content.filter((p): p is TextContent => p.type === "text");
   const additionalTextContent = textParts.slice(1);
+  // Names of attachments already rendered inline (images/audio/files). Their
+  // artifact reference is still sent so the model knows the workspace path, but
+  // the chip would just duplicate the inline preview — so suppress it here.
+  const inlineMediaNames = new Set(
+    message.content
+      .filter(
+        (p): p is ImageContent | AudioContent | FileContent =>
+          p.type === "image" || p.type === "audio" || p.type === "file",
+      )
+      .map((p) => p.name)
+      .filter((n): n is string => !!n),
+  );
+  const basename = (path: string) => path.split("/").pop() ?? path;
   // Split off artifact-attachment references — rendered as clickable chips that
   // open the file in the artifacts editor — from any other plain text parts.
   const attachedArtifactPaths: string[] = [];
   const plainTextAttachments: TextContent[] = [];
   for (const part of additionalTextContent) {
     const paths = parseArtifactReference(part.text);
-    if (paths.length) attachedArtifactPaths.push(...paths);
+    if (paths.length) attachedArtifactPaths.push(...paths.filter((p) => !inlineMediaNames.has(basename(p))));
     else plainTextAttachments.push(part);
   }
   const [editAdditionalTextContent, setEditAdditionalTextContent] = useState<TextContent[]>(additionalTextContent);

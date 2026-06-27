@@ -289,11 +289,16 @@ export function ChatInput() {
         const imageArtifacts = await toArtifacts(pendingImages.filter((f): f is File => f != null));
         const artifacts = [...fileArtifacts, ...imageArtifacts];
 
-        // Reference only non-image files — images are already shown inline.
-        if (fileArtifacts.length > 0) {
+        // Reference every persisted attachment by its workspace path so the
+        // model can read/edit it by name. Images are also shown inline (vision),
+        // but the inline copy carries no filename — without this the model can't
+        // name the file it's looking at. The redundant chip is suppressed in the
+        // UI (see ChatUserMessage) since the image already renders inline.
+        const referencedPaths = [...fileArtifacts, ...imageArtifacts].map((f) => f.path);
+        if (referencedPaths.length > 0) {
           const reference: TextContent = {
             type: "text",
-            text: formatArtifactReference(fileArtifacts.map((f) => f.path)),
+            text: formatArtifactReference(referencedPaths),
           };
           messageContent.push(reference);
         }
