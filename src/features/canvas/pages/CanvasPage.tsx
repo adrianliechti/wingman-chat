@@ -156,7 +156,10 @@ export function CanvasPage() {
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
   const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
   const [selectedAspect, setSelectedAspect] = useState<string | null>(null);
-  const [selectedQuality, setSelectedQuality] = useState<ImageQuality | null>(null);
+  // Canvas images are crafted and kept, so default to medium (the production
+  // baseline); the chat create_image tool defaults to low for casual asks. Users
+  // can still pick low/high/Auto from the submenu.
+  const [selectedQuality, setSelectedQuality] = useState<ImageQuality | null>("medium");
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);

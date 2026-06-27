@@ -108,7 +108,8 @@ export function useImageTool(): Tool | null {
           quality: {
             type: "string",
             enum: ["low", "medium", "high"],
-            description: "Optional quality tier. Higher quality is slower and may cost more.",
+            description:
+              'Quality tier. Start with "low" (the default) — on this model low is fast, cheap, and genuinely capable, ideal for casual requests, drafts, and iteration. Step up to "medium" for polished production assets: social/marketing graphics, logos and brand work, UI mockups, product compositing, and normal-size embedded text. Use "high" only when precision is non-negotiable — small or dense text and detailed infographics, close-up faces or identity-sensitive edits, transparent backgrounds, or large-format/print output. Higher tiers are slower and cost more (~4x medium→high, ~15x low→high).',
           },
           background: {
             type: "string",
@@ -145,9 +146,11 @@ export function useImageTool(): Tool | null {
 
           const options: ImageRenderOptions = {};
           if (typeof args.aspect_ratio === "string") options.aspectRatio = args.aspect_ratio;
-          if (args.quality === "low" || args.quality === "medium" || args.quality === "high") {
-            options.quality = args.quality;
-          }
+          // Start low: on this model low is fast, cheap, and capable, and left to
+          // the API's "auto" generation trends toward the slow, pricey "high" tier.
+          // The model steps up to medium/high explicitly (see the param doc) when
+          // the request actually warrants it.
+          options.quality = args.quality === "medium" || args.quality === "high" ? args.quality : "low";
           if (args.background === "transparent" || args.background === "opaque") {
             options.background = args.background;
           }
