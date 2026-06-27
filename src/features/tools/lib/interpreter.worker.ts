@@ -5,8 +5,8 @@
  * parsing, dataframe crunching, ...) cannot freeze the UI. The main-thread
  * counterpart is `interpreter.ts`; the message protocol lives in
  * `interpreterProtocol.ts`. Capabilities that need the main thread (the `llm`,
- * `ocr`, `vision`, `render`, `synthesize`, and `transcribe` Python globals,
- * Plotly DOM rendering) are proxied back over RPC.
+ * `ocr`, `vision`, `render`, `synthesize`, and `transcribe` Python globals) are
+ * proxied back over RPC.
  */
 
 import { loadPyodide as loadPyodideRuntime, type PyodideInterface } from "pyodide";
@@ -22,15 +22,12 @@ import type {
   ExecuteMessage,
   ExecuteReply,
   LlmCallOptions,
-  PlotlyManifest,
-  PlotlyResult,
   RenderInput,
   RpcReply,
   WorkerToMainMessage,
 } from "./interpreterProtocol";
 import LLM_SHIM from "./llmShim.py?raw";
 import OCR_SHIM from "./ocrShim.py?raw";
-import PLOTLY_IMAGE_SHIM from "./plotlyShim.py?raw";
 import RENDER_SHIM from "./renderShim.py?raw";
 import SYNTHESIZE_SHIM from "./synthesizeShim.py?raw";
 import TRANSCRIBE_SHIM from "./transcribeShim.py?raw";
@@ -84,7 +81,6 @@ function needsTzdata(code: string): boolean {
 }
 
 let pyodideReady: Promise<PyodideInterface> | null = null;
-let plotlyShimApplied = false;
 
 // `_wingman_rewrite_async` from asyncioShim.py — rewrites blocking asyncio
 // entrypoints (asyncio.run, run_until_complete) into top-level await, which
@@ -315,10 +311,7 @@ function loadPyodide(): Promise<PyodideInterface> {
   return pyodideReady;
 }
 
-async function executeCode(
-  request: CodeExecutionRequest,
-  onStarted?: () => void,
-): Promise<CodeExecutionResult> {
+async function executeCode(request: CodeExecutionRequest, onStarted?: () => void): Promise<CodeExecutionResult> {
   const { packages = [], files = {} } = request;
 
   try {
@@ -337,18 +330,10 @@ async function executeCode(
     syncFilesToPyodide(pyodide, files);
     await ensurePackagesLoaded(pyodide, code, packages);
 
-    // Apply plotly shim after packages are loaded (once per session)
-    if (!plotlyShimApplied && "plotly" in pyodide.loadedPackages) {
-      await pyodide.runPythonAsync(PLOTLY_IMAGE_SHIM);
-      plotlyShimApplied = true;
-    }
-
     onStarted?.();
 
-    clearRenderQueue(pyodide);
     const runStart = Date.now();
     const output = await runPythonCode(pyodide, code);
-    await processRenderQueue(pyodide);
 
     const resultFiles = collectPyodideFiles(pyodide, files, runStart);
     // Remember the materialized tree so the next call can sync incrementally.
@@ -553,80 +538,6 @@ async function requestTranslateFile(
   }));
   writeWorkerFile(pyodide, output, result);
   return output;
-}
-
-// Plotly render queue — manifests are written by plotlyShim.py; the actual
-// rendering needs a DOM, so it happens on the main thread.
-
-const RENDER_QUEUE_DIR = "/tmp/__plotly_render_queue__";
-let plotlyJsSent = false;
-
-function clearRenderQueue(pyodide: PyodideInterface): void {
-  try {
-    const entries = (pyodide.FS.readdir(RENDER_QUEUE_DIR) as string[]).filter((e: string) => e !== "." && e !== "..");
-    for (const entry of entries) {
-      pyodide.FS.unlink(`${RENDER_QUEUE_DIR}/${entry}`);
-    }
-  } catch {
-    // Queue directory may not exist yet.
-  }
-}
-
-function readRenderManifests(pyodide: PyodideInterface): PlotlyManifest[] {
-  let entries: string[];
-  try {
-    entries = (pyodide.FS.readdir(RENDER_QUEUE_DIR) as string[])
-      .filter((e: string) => e !== "." && e !== ".." && e.endsWith(".json"))
-      .sort();
-  } catch {
-    return [];
-  }
-
-  const manifests: PlotlyManifest[] = [];
-  for (const entry of entries) {
-    try {
-      const json = pyodide.FS.readFile(`${RENDER_QUEUE_DIR}/${entry}`, { encoding: "utf8" }) as string;
-      manifests.push(JSON.parse(json) as PlotlyManifest);
-    } catch (error) {
-      console.error(`Failed to read plotly manifest ${entry}:`, error);
-    }
-  }
-  return manifests;
-}
-
-function readPlotlyJsSource(pyodide: PyodideInterface): string {
-  const plotlyJsPath = String(
-    pyodide.runPython(
-      "import plotly, os; os.path.join(os.path.dirname(plotly.__file__), 'package_data', 'plotly.min.js')",
-    ),
-  ).trim();
-  return pyodide.FS.readFile(plotlyJsPath, { encoding: "utf8" }) as string;
-}
-
-async function processRenderQueue(pyodide: PyodideInterface): Promise<void> {
-  const manifests = readRenderManifests(pyodide);
-  if (manifests.length === 0) return;
-
-  try {
-    const plotlyJs = plotlyJsSent ? undefined : readPlotlyJsSource(pyodide);
-    const results = await callMain<PlotlyResult[]>((port) => ({
-      type: "plotly-request",
-      manifests,
-      plotlyJs,
-      port,
-    }));
-    plotlyJsSent = true;
-
-    for (const result of results) {
-      const dir = result.path.substring(0, result.path.lastIndexOf("/"));
-      if (dir) ensureDir(pyodide, dir);
-      pyodide.FS.writeFile(result.path, result.data);
-    }
-  } catch (error) {
-    console.error("Failed to render plotly figures:", error);
-  }
-
-  clearRenderQueue(pyodide);
 }
 
 // Message loop — executions are serialized: the Pyodide FS and the

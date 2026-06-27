@@ -3,7 +3,7 @@
  * Downloads Python wheels for offline use into public/pyodide/:
  *   - Pyodide built-in wheels (numpy, pandas, …) from the Pyodide CDN.
  *     Hashes are verified against pyodide-lock.json on download and on cache.
- *   - Pure-Python PyPI wheels (seaborn, plotly, …) from PyPI.
+ *   - Pure-Python PyPI wheels (seaborn, openpyxl, …) from PyPI.
  *     Hashes are verified against PyPI's published digests.sha256.
  *
  * The PyPI wheels aren't in Pyodide's lock, so we *inject* them into the copied
@@ -70,8 +70,6 @@ const PYODIDE_BUILTIN_TARGETS = [
 
 const PYPI_PACKAGES = [
   "seaborn",
-  "tenacity",
-  "plotly",
   "et-xmlfile",
   "openpyxl",
   "xlsxwriter",
@@ -99,8 +97,7 @@ const PYPI_PACKAGES = [
 // 503 normalized.
 //   pypdfium2 — pdfplumber needs it only for page.to_image() rendering, not for
 //               extract_text()/extract_tables().
-//   kaleido   — plotly static image export; our PLOTLY_IMAGE_SHIM renders instead.
-const MOCKED_NATIVE_DEPS = new Set(["pypdfium2", "kaleido"]);
+const MOCKED_NATIVE_DEPS = new Set(["pypdfium2"]);
 
 // Per-package dependency edges to drop from a dependent's `depends`. Unlike
 // MOCKED_NATIVE_DEPS (native wheels lazily imported), these are pure-Python deps

@@ -27,7 +27,7 @@ Files written by one tool are visible to the others in subsequent runs.
 Use Python for:
 - Math, statistics, algorithms, and data analysis
 - Pandas/numpy-style table and array work
-- Plot or chart generation that writes files
+- Analytical and statistical charts with matplotlib / seaborn (write PNG or SVG files)
 - Office document processing such as Excel, Word, PowerPoint, and PDF (see the Office Documents section for library-specific guidance)
 - Complex parsing or multi-step logic that benefits from real execution
 
@@ -35,7 +35,7 @@ How to use it:
 1. Provide exactly one of `code` or `path`.
 2. Use `path` only for an existing artifact file, typically for longer scripts.
 3. Use `code` for short one-off snippets and temporary experiments.
-4. Add `packages` when needed. Common bundled packages include numpy, pandas, scipy, scikit-learn, statsmodels, sympy, xgboost, lightgbm, pydantic, matplotlib, plotly, seaborn, Pillow, opencv-python, scikit-image, openpyxl, xlsxwriter, xlrd, python-calamine, `docx`, `pptx`, docx2txt, pdfminer.six, pdfplumber, markdownify, and tabulate. Imports are auto-detected, so listing `packages` is usually optional. The full Python 3.14 standard library (including sqlite3, ssl, and lzma) is built in — just `import` it.
+4. Add `packages` when needed. Common bundled packages include numpy, pandas, scipy, scikit-learn, statsmodels, sympy, xgboost, lightgbm, pydantic, matplotlib, seaborn, Pillow, opencv-python, scikit-image, openpyxl, xlsxwriter, xlrd, python-calamine, `docx`, `pptx`, docx2txt, pdfminer.six, pdfplumber, markdownify, and tabulate. Imports are auto-detected, so listing `packages` is usually optional. The full Python 3.14 standard library (including sqlite3, ssl, and lzma) is built in — just `import` it.
 5. Print important intermediate results when the output needs explanation.
 6. For async code, use top-level `await` directly (e.g. `result = await main()`). Never call `asyncio.run(...)` or `loop.run_until_complete(...)` — they cannot block inside the browser event loop.
 7. To run a skill's bundled scripts, pass its name(s) in `skills`. Its resources mount read-only under `/home/user/skills/<name>/` for that run (using the exact paths from `read_skill`), so you can `runpy.run_path("skills/<name>/scripts/extract.py")`, import them, or open sibling `references/`/`assets/` files. They are not saved as artifacts.
@@ -54,6 +54,8 @@ Runs in a sandboxed Web Worker — off the UI thread, isolated from the app's pa
 Use JavaScript for:
 - Browser media and graphics: WebCodecs (audio/video encode/decode), `OffscreenCanvas` + 2D/WebGL contexts, `createImageBitmap`, `ImageData`
 - Media containers via the bundled **mediabunny** library (muxing/demuxing, transcoding)
+- Charts via the bundled **echarts** library (headless SSR → SVG)
+- PDF generation via the bundled **jsPDF** library
 - Web Crypto (`crypto.subtle`), `WebAssembly`, `TextEncoder`/`TextDecoder`, `structuredClone`, `URL`, `Blob`
 - JSON-heavy transforms and any logic that's simpler or more idiomatic in JS
 
@@ -64,14 +66,29 @@ How to use it:
    - Write: `vfs.write(path, data, contentType?)` (data may be a string, Uint8Array, or ArrayBuffer), `vfs.writeBytes(path, bytes, contentType?)`, `vfs.writeJSON(path, value)`
    - Inspect: `vfs.list()`, `vfs.exists(path)`, `vfs.remove(path)`
    - Paths are artifact paths like `/data.csv`. `fetch('/data.csv')` also returns a `Response` reading the VFS.
-3. The bundled `mediabunny` module is available as a global named `mediabunny` whenever your code references it.
+3. Bundled libraries are available as globals whenever your code references them by name:
+   - `mediabunny` — media containers and transcoding.
+   - `echarts` — charts in headless SSR mode. Render to an SVG string and write it as an artifact:
+     ```js
+     const chart = echarts.init(null, null, { renderer: "svg", ssr: true, width: 800, height: 500 });
+     chart.setOption({ xAxis: { type: "category", data: ["A","B","C"] }, yAxis: {}, series: [{ type: "bar", data: [5, 20, 36] }] });
+     vfs.write("/chart.svg", chart.renderToSVGString(), "image/svg+xml");
+     chart.dispose();
+     ```
+     Prefer SVG (scalable and previewable). For a raster PNG, call `await svgToPng(svgString, { width, height })` to get a `Uint8Array`.
+   - `jsPDF` — the jsPDF class for PDF generation:
+     ```js
+     const doc = new jsPDF();
+     doc.text("Report", 10, 10);
+     vfs.writeBytes("/report.pdf", new Uint8Array(doc.output("arraybuffer")), "application/pdf");
+     ```
 4. Use top-level `await` directly. Produce output by `console.log(...)` or by `return`-ing a value.
 5. Write binary results (images, audio, video) with `vfs.writeBytes`/`vfs.write` and an appropriate `contentType` so they're stored and previewable as artifacts.
 
 Limitations:
 - No network access: `fetch`/`XMLHttpRequest`/`WebSocket` to remote URLs are blocked (relative `fetch` reads the VFS).
 - No DOM and no Window-only APIs: `document`, `AudioContext`/Web Audio, and `MediaRecorder` are unavailable in the worker. Use `OffscreenCanvas` and WebCodecs instead.
-- No npm packages — only the worker's built-in Web APIs and the bundled `mediabunny`.
+- No npm packages — only the worker's built-in Web APIs and the bundled `mediabunny`, `echarts`, and `jsPDF`.
 
 ### Bash Interpreter (`execute_bash_code`)
 
@@ -104,13 +121,19 @@ Limitations:
 ### Choose the right tool
 
 Use Python when libraries or computation are the main value.
-Use JavaScript when the task needs a browser-native API (WebCodecs, OffscreenCanvas, Web Crypto) or media handling via mediabunny.
+Use JavaScript when the task needs a browser-native API (WebCodecs, OffscreenCanvas, Web Crypto) or a clean vector chart/PDF deliverable.
 Use Bash when the task is naturally a shell pipeline or file operation.
 
 Quick guide:
 - Math, statistics, algorithms: Python
 - Tabular data analysis: Python
 - Complex document parsing or library-driven output: Python
+- Charts:
+  - Analytical or statistical charts, especially when the data is already in a DataFrame: Python (matplotlib / seaborn).
+  - A polished, scalable vector chart as a deliverable (report, slide, dashboard): JavaScript (echarts SSR → SVG).
+  - Don't move a DataFrame into JavaScript just to chart it — chart where the data already lives.
 - Browser media (WebCodecs/OffscreenCanvas), audio/video transcoding, Web Crypto: JavaScript
 - JSON, YAML, CSV, SQLite: Bash first
 - File discovery, renames, and path-heavy tasks: Bash
+
+Combining runtimes: the tools share one artifact filesystem, so hand work off by writing an intermediate artifact. A common pattern is to crunch data in Python and write `/chart_data.json`, then read it in JavaScript and render an echarts SVG.

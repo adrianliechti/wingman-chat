@@ -11,7 +11,6 @@
  *   - the `synthesize(...)` Python global — needs the chat client/config
  *   - the `transcribe(...)` Python global — needs the chat client/config
  *   - the `translate(...)` Python global — needs the chat client/config
- *   - Plotly figure rendering — plotly.js requires a real DOM
  */
 
 export interface ArtifactFile {
@@ -35,22 +34,6 @@ export interface CodeExecutionResult {
 }
 
 export type ExecuteReply = { type: "started" } | { type: "result"; result: CodeExecutionResult };
-
-/** Render request written by plotlyShim.py into the in-FS render queue. */
-export interface PlotlyManifest {
-  fig: { data: unknown[]; layout?: Record<string, unknown>; config?: Record<string, unknown> };
-  file: string;
-  format: string;
-  width: number | null;
-  height: number | null;
-  scale: number | null;
-}
-
-export interface PlotlyResult {
-  path: string;
-  /** Binary image bytes, or SVG markup as text. */
-  data: Uint8Array | string;
-}
 
 /** Input image for the `render` helper — bytes plus the path whose basename routes the upload by format. */
 export interface RenderInput {
@@ -98,10 +81,6 @@ export type WorkerToMainMessage =
   | { type: "translate-text-request"; lang: string; text: string; port: MessagePort }
   // File bytes read from the worker FS, translated on the main thread; replies
   // with the translated file bytes, which the worker writes to the output path.
-  | { type: "translate-file-request"; lang: string; data: Uint8Array; path: string; port: MessagePort }
-  // `plotlyJs` carries the plotly.js source (read from the wheel inside the
-  // worker's FS) on the first render request; the main thread caches the
-  // loaded script, so subsequent requests omit it.
-  | { type: "plotly-request"; manifests: PlotlyManifest[]; plotlyJs?: string; port: MessagePort };
+  | { type: "translate-file-request"; lang: string; data: Uint8Array; path: string; port: MessagePort };
 
 export type RpcReply = { ok: true; value: unknown } | { ok: false; error: string };

@@ -8,7 +8,8 @@ Tools:
 - `source_edit` — targeted find/replace edit of an existing text source. **This is the default way to refine a file** — fix wording, restructure a section, correct data. `find` must match the current text exactly; re-read first if your last read was a while ago or truncated.
 - `source_create` — create a new source (or overwrite an existing path). For new notes, summaries, outlines, syntheses. Overwriting replaces the whole file — prefer `source_edit` for changes to existing files.
 - `source_rename` / `source_delete` — reorganize the notebook. Delete only when the user asked for it.
-- `execute_python_code` — Python for analysis, transformation, or derived artifacts. Sources are mounted under `/home/user/`; numpy, pandas, matplotlib, plotly, pillow, openpyxl, pypdf, python-docx, and beautifulsoup4 are preloaded. Files written under `/home/user/` are saved back as sources.
+- `execute_python_code` — Python for analysis, transformation, or derived artifacts. Sources are mounted under `/home/user/`; numpy, pandas, matplotlib, seaborn, pillow, openpyxl, pypdf, python-docx, and beautifulsoup4 are preloaded. Files written under `/home/user/` are saved back as sources.
+- `execute_javascript_code` — JavaScript in a sandboxed Web Worker for browser-native work (WebCodecs, OffscreenCanvas, `echarts` SVG charts, `jsPDF`). Read and write sources via the `vfs` helper; no network.
 - `execute_bash_code` — shell work: jq/yq, sqlite3, grep/sed/awk pipelines, unzip, csv munging. Same mount and save-back behavior.
 
 The notebook brief — `brief.md`:

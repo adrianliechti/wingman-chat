@@ -37,6 +37,7 @@
     "clsx": "^2.1.1",
     "docx": "^9.7.1",
     "dompurify": "^3.4.11",
+    "echarts": "^6.1.0",
     "emoji-regex": "^10.6.0",
     "html2canvas": "^1.4.1",
     "jsonrepair": "^3.14.1",

@@ -10,7 +10,7 @@ Available libraries (all preloaded, no network install needed):
 - XLSX: `openpyxl`, `xlsxwriter`, `pandas` (`pd.read_excel` / `df.to_excel`)
 - PDF: `reportlab` (create), `pypdf` (merge, split, watermark, rotate, quick text), `pdfminer.six` (import `pdfminer`; high-fidelity text & layout extraction — prefer over `pypdf` for prose or columns), `pdfplumber` (structured **table** extraction — `page.extract_tables()`, and `page.extract_text()`)
 - Email: `extract-msg` (import `extract_msg`) for `.msg`; stdlib `email`/`email.parser` for `.eml`
-- Charts: `matplotlib`, `seaborn`, `plotly` (write PNG/SVG and embed)
+- Charts: `matplotlib`, `seaborn` (write PNG/SVG and embed)
 
 Sandbox notes (these traps apply even outside Studio):
 - There is no LibreOffice, Pandoc, `markitdown`, `pdftoppm`, or `recalc.py` here, so any skill or habit that shells out to one does not apply. Don't render slides/docs to images or recalculate formulas externally.
@@ -58,7 +58,7 @@ print(m["from"], m["subject"], body.get_content() if body else "")
 
 ### Chart → Office embed
 
-For charts inside a DOCX/PPTX/PDF, render with matplotlib (or seaborn/plotly→png) to `/home/user/chart.png`, then insert with the library's image API (`doc.add_picture`, `slide.shapes.add_picture`, `Image(...)`). Use a non-interactive backend:
+For charts inside a DOCX/PPTX/PDF, render with matplotlib (or seaborn) to `/home/user/chart.png`, then insert with the library's image API (`doc.add_picture`, `slide.shapes.add_picture`, `Image(...)`). Use a non-interactive backend:
 
 ```python
 import matplotlib

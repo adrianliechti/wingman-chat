@@ -8,7 +8,7 @@
  * `workerHost.ts`; this file supplies only the Pyodide-specific bits: the
  * worker factory and the dispatcher for capabilities that need the main thread
  * (the `llm`/`ocr`/`vision`/`render`/`synthesize`/`transcribe`/`translate`
- * Python globals and Plotly DOM rendering).
+ * Python globals).
  *
  * Each request carries its own MessagePort for the reply (see
  * interpreterProtocol.ts), so there is no id correlation in either direction.
@@ -17,7 +17,6 @@
 import type { CodeExecutionRequest, CodeExecutionResult, WorkerToMainMessage } from "./interpreterProtocol";
 import { runLlm } from "./llmCommand";
 import { runOcr } from "./ocrCommand";
-import { renderPlotlyFigures } from "./plotlyRenderer";
 import { runRenderImage } from "./renderCommand";
 import { runSynthesize } from "./synthesizeCommand";
 import { runTranscribe } from "./transcribeCommand";
@@ -47,8 +46,6 @@ function handleMessage(message: WorkerToMainMessage): Promise<unknown> {
       return runTranslateText(message.lang, message.text);
     case "translate-file-request":
       return runTranslateFile(message.lang, message.data, message.path);
-    case "plotly-request":
-      return renderPlotlyFigures(message.manifests, message.plotlyJs);
   }
 }
 

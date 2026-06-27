@@ -245,6 +245,24 @@ function llm(prompt: string, options?: LlmCallOptions): Promise<string> {
   return callMain<string>((port) => ({ type: "llm-request", prompt, options, port }));
 }
 
+/**
+ * Rasterize an SVG string to PNG bytes via OffscreenCanvas — handed to user code
+ * as a global because echarts (and hand-written SVG) produce vector output but
+ * some targets want a raster image.
+ */
+async function svgToPng(svg: string, options?: { width?: number; height?: number }): Promise<Uint8Array> {
+  const bitmap = await createImageBitmap(new Blob([svg], { type: "image/svg+xml" }));
+  const width = options?.width ?? bitmap.width;
+  const height = options?.height ?? bitmap.height;
+  const canvas = new OffscreenCanvas(width, height);
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("svgToPng: 2D canvas context unavailable");
+  context.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+  const blob = await canvas.convertToBlob({ type: "image/png" });
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
 // ── Console capture ──────────────────────────────────────────────────────────
 
 function formatValue(value: unknown, seen = new WeakSet<object>()): string {
@@ -294,6 +312,20 @@ const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
   ...args: string[]
 ) => (...args: unknown[]) => Promise<unknown>;
 
+// Bundled libraries injected as globals only when the code references them, so a
+// run that doesn't use one pays neither its download nor its parse cost. Each
+// dynamic import is a separate chunk that Vite code-splits. `name` is both the
+// global handed to user code and the token matched against the source.
+const LAZY_GLOBALS: { name: string; test: RegExp; load: () => Promise<unknown> }[] = [
+  // Media containers + transcoding (WebCodecs based).
+  { name: "mediabunny", test: /\bmediabunny\b/, load: () => import("mediabunny") },
+  // Charts: headless SSR mode → SVG string (echarts.init(null, null,
+  // { renderer: "svg", ssr: true, width, height }).renderToSVGString()).
+  { name: "echarts", test: /\becharts\b/, load: () => import("echarts") },
+  // PDF generation: the `jsPDF` class (new jsPDF(); doc.output("arraybuffer")).
+  { name: "jsPDF", test: /\bjsPDF\b/, load: async () => (await import("jspdf")).jsPDF },
+];
+
 async function executeJs(request: CodeExecutionRequest, onStarted?: () => void): Promise<CodeExecutionResult> {
   patchNetwork();
   const { code, files = {} } = request;
@@ -307,22 +339,25 @@ async function executeJs(request: CodeExecutionRequest, onStarted?: () => void):
   });
 
   try {
-    // Inject the bundled media library only when referenced — it pulls in a
-    // WebCodecs-heavy chunk we don't want to load on every run.
-    let mediabunny: unknown;
-    if (/\bmediabunny\b/.test(code)) {
-      try {
-        mediabunny = await import("mediabunny");
-      } catch (error) {
-        console.error("Failed to load mediabunny:", error);
-      }
-    }
+    // Resolve the bundled libraries this run actually references.
+    const lazyValues = await Promise.all(
+      LAZY_GLOBALS.map(async (lib) => {
+        if (!lib.test.test(code)) return undefined;
+        try {
+          return await lib.load();
+        } catch (error) {
+          console.error(`Failed to load ${lib.name}:`, error);
+          return undefined;
+        }
+      }),
+    );
 
-    const fn = new AsyncFunction("vfs", "console", "llm", "mediabunny", code);
+    const paramNames = ["vfs", "console", "llm", "svgToPng", ...LAZY_GLOBALS.map((lib) => lib.name)];
+    const fn = new AsyncFunction(...paramNames, code);
 
     onStarted?.();
 
-    const value = await fn(buildVfs(vfs), sandboxConsole, llm, mediabunny);
+    const value = await fn(buildVfs(vfs), sandboxConsole, llm, svgToPng, ...lazyValues);
 
     const trimmed = output.trim();
     const resolvedOutput =

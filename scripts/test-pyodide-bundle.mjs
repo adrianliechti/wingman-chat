@@ -72,7 +72,6 @@ const CASES = [
   // --- Misc helpers ---
   ["regex (unicode props)", "import regex\nbool(regex.fullmatch(r'\\p{Greek}+','αβγ'))"],
   ["requests import (no network)", "import requests\nhasattr(requests,'get')"],
-  ["plotly (kaleido excluded)", "import plotly\nplotly.__version__"],
 
   // --- Explicit `packages` arg path (tolerant): junk name must not abort ---
   ["explicit junk pkg tolerated", "1+1", { extras: ["json", "definitely-not-a-real-pkg"] }],

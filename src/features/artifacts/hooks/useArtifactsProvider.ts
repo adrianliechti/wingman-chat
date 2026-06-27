@@ -401,8 +401,9 @@ export function useArtifactsProvider(): ToolProvider | null {
         description:
           "Execute JavaScript in a sandboxed Web Worker (off the UI thread, isolated from the page, no network). " +
           "Use it for browser-native work: WebCodecs, OffscreenCanvas, createImageBitmap, crypto.subtle, WebAssembly, " +
-          "TextEncoder/Decoder, and the bundled `mediabunny` media library (available as a global when your code " +
-          "references it). Files are NOT mounted as a real filesystem — read and write artifacts through the injected " +
+          "TextEncoder/Decoder, and bundled libraries available as globals when referenced: `mediabunny` (media " +
+          "transcoding), `echarts` (headless SSR charts → SVG), and `jsPDF` (PDF generation). Files are NOT mounted " +
+          "as a real filesystem — read and write artifacts through the injected " +
           "`vfs` helper: `vfs.read(path)` / `vfs.readBytes(path)` / `vfs.readJSON(path)` and `vfs.write(path, data, " +
           "contentType?)` / `vfs.writeBytes` / `vfs.writeJSON`, plus `vfs.list()`, `vfs.exists(path)`, `vfs.remove(path)`. " +
           "Paths are artifact paths like `/data.csv`. `fetch('/data.csv')` also reads the VFS (remote URLs are blocked). " +
