@@ -18,7 +18,7 @@ function truncate(text: string): string {
   return `${text.slice(0, MAX_TOOL_TEXT_CHARS)}\n…[truncated ${text.length - MAX_TOOL_TEXT_CHARS} chars — re-read the source if you need the full current text]`;
 }
 
-/** Elide long string fields inside a tool-call arguments JSON (e.g. source_create content). */
+/** Elide long string fields inside a tool-call arguments JSON (e.g. source_create_file content). */
 function compactArguments(raw: string): string {
   if (raw.length <= MAX_TOOL_TEXT_CHARS) return raw;
   try {

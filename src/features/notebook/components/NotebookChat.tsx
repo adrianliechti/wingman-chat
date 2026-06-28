@@ -23,10 +23,10 @@ const TOOL_VERBS: Record<string, string> = {
   source_read_file: "read",
   source_grep: "grep",
   source_glob: "glob",
-  source_create: "create",
-  source_edit: "edit",
-  source_rename: "rename",
-  source_delete: "delete",
+  source_create_file: "create",
+  source_edit_file: "edit",
+  source_move_file: "move",
+  source_delete_file: "delete",
   execute_python_code: "python",
   execute_javascript_code: "javascript",
   execute_bash_code: "bash",
@@ -43,7 +43,7 @@ function toolActivityLabels(msg: NotebookMessage): string[] | null {
     if (part.type !== "tool_result") return "";
     const verb = TOOL_VERBS[part.name] ?? part.name;
     const args = tryParseToolArguments(part.arguments) ?? {};
-    const detail = String(args.path ?? args.pattern ?? args.new_path ?? "");
+    const detail = String(args.path ?? args.to ?? args.pattern ?? "");
     return detail ? `${verb} · ${detail}` : verb;
   });
 }

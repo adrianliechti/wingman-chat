@@ -5,7 +5,7 @@
  * Symmetric mapping: notebook source `data.csv` ↔ sandbox `/home/user/data.csv`.
  *
  * Deletions are NOT propagated — sources are treated as append-only from code
- * execution (the model should use `source_create` to explicitly replace, and
+ * execution (the model should use `source_create_file` to explicitly replace, and
  * users remove sources through the UI).
  */
 
@@ -15,6 +15,7 @@ import { executeJavaScript } from "@/features/tools/lib/javascript";
 import { withSandboxLock } from "@/features/tools/lib/sandboxLock";
 import type { Tool } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
+import { normalizeSourceKey } from "./opfs-notebook";
 
 interface FileRecord {
   content: string;
@@ -22,18 +23,6 @@ interface FileRecord {
 }
 
 type FileMap = Record<string, FileRecord>;
-
-/**
- * Normalize a path to the notebook-source canonical form (no leading slash).
- * Sandbox runtimes return `/foo.csv` but sources are stored without one; without
- * this, diffing would create duplicate (`foo.csv` / `/foo.csv`) entries every
- * time the sandbox writes a file.
- */
-function normalizeSourceKey(path: string): string {
-  let p = path.trim();
-  while (p.startsWith("/")) p = p.slice(1);
-  return p;
-}
 
 function normalizeMapKeys(map: FileMap): FileMap {
   const out: FileMap = {};

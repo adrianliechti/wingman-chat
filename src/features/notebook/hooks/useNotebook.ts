@@ -543,7 +543,6 @@ export function useNotebook(notebookId?: string) {
       try {
         const tools = [
           ...createSourceTools(() => sourcesRef.current, {
-            onCreate: (path, content) => addTextSource(path, content),
             onWrite: writeSource,
             onRename: renameSource,
             onDelete: deleteSource,
@@ -601,7 +600,7 @@ export function useNotebook(notebookId?: string) {
         setIsChatting(false);
       }
     },
-    [notebook, messages, client, getModel, isChatting, addTextSource, writeSource, renameSource, deleteSource],
+    [notebook, messages, client, getModel, isChatting, writeSource, renameSource, deleteSource],
   );
 
   // ── Outputs ────────────────────────────────────────────────────────

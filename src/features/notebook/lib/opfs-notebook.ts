@@ -130,6 +130,21 @@ export function normalizeSourcePath(raw: string): string {
 }
 
 /**
+ * Canonicalize a path to the form sources are keyed by: no leading slash.
+ *
+ * Tool boundaries (the chat file tools, the code sandbox) may hand us `/foo.csv`
+ * while sources are stored as `foo.csv`; normalizing on the way in keeps a
+ * `/foo.csv` from becoming a duplicate of an existing `foo.csv`. Unlike
+ * {@link normalizeSourcePath} this only strips leading slashes and never throws,
+ * so it's safe to apply to every path crossing a tool boundary.
+ */
+export function normalizeSourceKey(path: string): string {
+  let p = path.trim();
+  while (p.startsWith("/")) p = p.slice(1);
+  return p;
+}
+
+/**
  * Append a default extension to the last path segment if it has none.
  * Short trailing tokens (1–5 chars, alphanumeric) are treated as existing
  * extensions. `ext` should be provided without a leading dot.
