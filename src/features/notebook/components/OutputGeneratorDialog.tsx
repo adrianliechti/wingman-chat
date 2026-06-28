@@ -3,8 +3,10 @@ import {
   AudioLines,
   BarChart3,
   Check,
+  CircleHelp,
   Image as ImageIcon,
   LayoutTemplate,
+  Network,
   Presentation,
   Sparkles,
   Table2,
@@ -68,6 +70,15 @@ const SLIDE_PRESETS: { id: SlidePreset; label: string; count: number | null }[] 
   { id: "custom", label: "Custom", count: null },
 ];
 
+const QUIZ_COUNT_MIN = 3;
+const QUIZ_COUNT_MAX = 20;
+const QUIZ_COUNT_DEFAULT = 8;
+const DIFFICULTIES = ["easy", "medium", "hard", "mixed"] as const;
+
+const MIND_DEPTH_MIN = 2;
+const MIND_DEPTH_MAX = 5;
+const MIND_DEPTH_DEFAULT = 3;
+
 const TYPE_META: Record<
   string,
   {
@@ -107,6 +118,16 @@ const TYPE_META: Record<
     placeholder: "Describe the infographic you want to create…",
     styles: infographicStyles,
   },
+  quiz: {
+    icon: CircleHelp,
+    title: "Generate Quiz",
+    placeholder: "What to test, the audience, topics to emphasize or skip…",
+  },
+  mindmap: {
+    icon: Network,
+    title: "Generate Mind Map",
+    placeholder: "Central topic, branches to emphasize, what to leave out…",
+  },
 };
 
 // ── Component ──────────────────────────────────────────────────────────
@@ -123,8 +144,13 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
   const [preset, setPreset] = useState<SlidePreset>("standard");
   const [customCount, setCustomCount] = useState(SLIDE_COUNT_DEFAULT);
   const [instructions, setInstructions] = useState("");
+  const [quizCount, setQuizCount] = useState(QUIZ_COUNT_DEFAULT);
+  const [difficulty, setDifficulty] = useState<(typeof DIFFICULTIES)[number]>("mixed");
+  const [mindDepth, setMindDepth] = useState(MIND_DEPTH_DEFAULT);
 
   const isSlides = type === "slides";
+  const isQuiz = type === "quiz";
+  const isMindmap = type === "mindmap";
   const showDescriptionCards = meta?.descriptionCards ?? false;
   const showStylePicker = styles.length > 0;
 
@@ -137,6 +163,9 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
       setPreset("standard");
       setCustomCount(SLIDE_COUNT_DEFAULT);
       setInstructions("");
+      setQuizCount(QUIZ_COUNT_DEFAULT);
+      setDifficulty("mixed");
+      setMindDepth(MIND_DEPTH_DEFAULT);
     }
   }, [open, styles]);
 
@@ -164,6 +193,13 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
     if (isSlides) {
       opts.slideCount = resolvedCount();
       opts.slideMode = slideMode;
+    }
+    if (isQuiz) {
+      opts.questionCount = quizCount;
+      opts.difficulty = difficulty;
+    }
+    if (isMindmap) {
+      opts.depth = mindDepth;
     }
     onGenerate(type, opts);
     onClose();
@@ -422,6 +458,93 @@ export function OutputGeneratorDialog({ open, type, onClose, onGenerate }: Outpu
                       />
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* ── Quiz controls ── */}
+              {isQuiz && (
+                <>
+                  <div>
+                    <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">
+                      Number of questions
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={QUIZ_COUNT_MIN}
+                        max={QUIZ_COUNT_MAX}
+                        value={quizCount}
+                        onChange={(e) => setQuizCount(Number(e.target.value))}
+                        className="flex-1 accent-neutral-600 dark:accent-neutral-400"
+                      />
+                      <input
+                        type="number"
+                        min={QUIZ_COUNT_MIN}
+                        max={QUIZ_COUNT_MAX}
+                        value={quizCount}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (Number.isFinite(n)) {
+                            setQuizCount(Math.min(QUIZ_COUNT_MAX, Math.max(QUIZ_COUNT_MIN, Math.round(n))));
+                          }
+                        }}
+                        className="w-14 px-2 py-1.5 text-xs text-center rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 text-neutral-800 dark:text-neutral-200 tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 backdrop-blur-sm"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">
+                      Difficulty
+                    </p>
+                    <div className="flex rounded-lg overflow-hidden border border-neutral-300/50 dark:border-neutral-700/50">
+                      {DIFFICULTIES.map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setDifficulty(d)}
+                          className={`flex-1 py-2 px-2 text-xs font-medium capitalize transition-colors ${
+                            difficulty === d
+                              ? "bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100"
+                              : "bg-white/50 dark:bg-neutral-800/50 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300"
+                          }`}
+                        >
+                          {d}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ── Mind map controls ── */}
+              {isMindmap && (
+                <div>
+                  <p className="block text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5">
+                    Depth <span className="font-normal opacity-60">(levels)</span>
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={MIND_DEPTH_MIN}
+                      max={MIND_DEPTH_MAX}
+                      value={mindDepth}
+                      onChange={(e) => setMindDepth(Number(e.target.value))}
+                      className="flex-1 accent-neutral-600 dark:accent-neutral-400"
+                    />
+                    <input
+                      type="number"
+                      min={MIND_DEPTH_MIN}
+                      max={MIND_DEPTH_MAX}
+                      value={mindDepth}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (Number.isFinite(n)) {
+                          setMindDepth(Math.min(MIND_DEPTH_MAX, Math.max(MIND_DEPTH_MIN, Math.round(n))));
+                        }
+                      }}
+                      className="w-14 px-2 py-1.5 text-xs text-center rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-neutral-300/50 dark:border-neutral-700/50 text-neutral-800 dark:text-neutral-200 tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 backdrop-blur-sm"
+                    />
+                  </div>
                 </div>
               )}
 

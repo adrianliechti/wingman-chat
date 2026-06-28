@@ -8,6 +8,7 @@ import { blobToDataUrl } from "@/shared/lib/opfs-core";
 import type { Message, TextContent, Tool } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
 import { assembleSlideHtml } from "./html-slide-assembly";
+import { notebookImageOptions } from "./image-options";
 import { CANVAS_H, CANVAS_W } from "./pptx-utils";
 
 const OVERFLOW_TOLERANCE = 8; // px – ignore sub-pixel rounding noise
@@ -595,7 +596,6 @@ export function createHtmlSlideTools(
         onWrite();
 
         if (!isSlidePath(path)) {
-          console.log(`[HTML Slides] Wrote ${path} (${content.length} bytes)`);
           return textResult(`OK: wrote ${path} (${content.length} bytes)`);
         }
 
@@ -661,7 +661,6 @@ export function createHtmlSlideTools(
         onWrite();
 
         if (!isSlidePath(path)) {
-          console.log(`[HTML Slides] Edited ${path} (${next.length} bytes)`);
           return textResult(`OK: edited ${path} (${next.length} bytes)`);
         }
 
@@ -759,7 +758,6 @@ export function createHtmlSlideTools(
         const filename = sanitizeFilename(requestedFilename || sourcePath);
         const path = `images/${filename}`;
         fs.set(path, source.content);
-        console.log(`[HTML Slides] Imported ${sourcePath} → ${path}`);
         onWrite();
         return textResult(
           `OK: imported ${sourcePath} as ${path}. Reference it in HTML as src="images/${filename}" or in CSS as url('images/${filename}').`,
@@ -781,6 +779,11 @@ export function createHtmlSlideTools(
             type: "string",
             description: "Filename for the image, e.g. 'hero.png' or 'chart-bg.png'",
           },
+          aspect_ratio: {
+            type: "string",
+            description:
+              "Aspect ratio for the image, snapped to the nearest the model supports: '1:1' (icon/square), '3:2' (wide/hero), '2:3' (portrait). Defaults to '3:2'.",
+          },
         },
         required: ["prompt", "filename"],
       },
@@ -788,12 +791,13 @@ export function createHtmlSlideTools(
         const prompt = args.prompt as string;
         const filename = args.filename as string;
         const path = `images/${filename}`;
+        const aspect = typeof args.aspect_ratio === "string" && args.aspect_ratio.trim() ? args.aspect_ratio : "3:2";
 
         try {
-          const blob = await client.generateImage(rendererModel, prompt);
+          const options = notebookImageOptions(rendererModel, { aspect, quality: "medium" });
+          const blob = await client.generateImage(rendererModel, prompt, undefined, options);
           const dataUrl = await blobToDataUrl(blob);
           fs.set(path, dataUrl);
-          console.log(`[HTML Slides] Generated image ${path}`);
           onWrite();
           return textResult(
             `OK: generated and stored ${path}. Reference it in HTML as src="images/${filename}" or in CSS as url('images/${filename}').`,

@@ -21,7 +21,7 @@ import type { File } from "@/shared/types/file";
 import type { MindMapNode, NotebookOutput } from "../types/notebook";
 import { assembleSlideHtml, getOrderedHtmlSlides } from "./html-slide-assembly";
 import { createHtmlSlideTools, pruneSlideWriteHistory } from "./html-slide-tools";
-import { createImageSlideTools } from "./image-slide-tools";
+import { notebookImageOptions } from "./image-options";
 import { type BuildInstructionsOptions, buildSlidePrompts, podcastStyles } from "./styles";
 import { mergeWavBlobs } from "./wav-utils";
 
@@ -135,7 +135,10 @@ export async function generateInfographic(ctx: GenerateContext): Promise<Result>
   if (!imagePrompt?.trim()) throw new Error("Could not generate image prompt");
 
   const rendererModel = config.notebook?.renderer || config.renderer?.model || "";
-  const imageBlob = await ctx.client.generateImage(rendererModel, imagePrompt);
+  // An infographic is a tall, text-dense poster — render it portrait and at the
+  // top quality/resolution the model offers so the type stays legible.
+  const options = notebookImageOptions(rendererModel, { aspect: "2:3", quality: "high", resolution: "2K" });
+  const imageBlob = await ctx.client.generateImage(rendererModel, imagePrompt, undefined, options);
   const imageUrl = await blobToDataUrl(imageBlob);
 
   return { content: imagePrompt, imageUrl };
@@ -305,7 +308,6 @@ export async function generateHtmlSlides(
   const theme = slideFs.get("styles/theme.css") ?? "";
   const spine = deckPlan.map((s, i) => `${i + 1}. ${s.title} — ${s.archetype}`).join("\n");
   const pad = (n: number) => String(n).padStart(2, "0");
-  console.log(`[HTML Slides] Plan ready — ${total} slides. Writing with concurrency ${WRITER_CONCURRENCY}.`);
 
   // ── Phase 2: write slides in parallel ──
   await mapWithConcurrency(deckPlan, WRITER_CONCURRENCY, async (item, i) => {
@@ -346,7 +348,6 @@ export async function generateHtmlSlides(
 
 function finishHtmlSlides(slideFs: Map<string, string>, content?: string): Result {
   const rawSlides = getOrderedHtmlSlides(slideFs);
-  console.log("[HTML Slides] Generation complete, slides:", rawSlides.length);
   if (rawSlides.length === 0) throw new Error("No slides generated");
 
   const htmlSlides = rawSlides.map((html) => assembleSlideHtml(html, slideFs));
@@ -359,43 +360,95 @@ function finishHtmlSlides(slideFs: Map<string, string>, content?: string): Resul
 
 // ── Slides — image mode ────────────────────────────────────────────────
 
+const IMAGE_SLIDE_CONCURRENCY = 3;
+
+/**
+ * Image-mode deck generation in two phases:
+ *
+ *   Phase 1 (plan): one agent studies the sources and submits the complete
+ *   ordered list of slide image prompts via `set_slide_plan`.
+ *
+ *   Phase 2 (render): slide 1 is rendered first to establish the deck's visual
+ *   identity, then the rest are rendered in parallel with slide 1 as a style
+ *   reference. Collecting the prompts up front is what lets the renders fan out
+ *   — the old per-slide tool loop forced them strictly sequential.
+ */
 export async function generateImageSlides(ctx: GenerateContext): Promise<Result> {
   const config = getConfig();
   const rendererModel = config.notebook?.renderer || config.renderer?.model || "";
-  const slideMap = new Map<number, string>();
+  const options = notebookImageOptions(rendererModel, { aspect: "3:2", quality: "medium" });
 
-  const imgTools = createImageSlideTools(slideMap, ctx.client, rendererModel, () => {
-    const ordered = Array.from(slideMap.entries())
-      .sort(([a], [b]) => a - b)
-      .map(([, url]) => url);
-    if (ordered.length > 0) {
-      ctx.onProgress({ slides: [...ordered], slideContentType: "image/png" });
-    }
-  });
+  let plan: string[] = [];
+  const planTool: Tool = {
+    name: "set_slide_plan",
+    description:
+      "Submit the complete, ordered list of slide image prompts for the deck. Each prompt fully describes one full-bleed landscape slide — layout, text content, colours, imagery, and style. Slide 1 establishes the deck's visual identity (palette, type, motif) and the rest are rendered with it as a reference, so describe one coherent visual system across all slides.",
+    parameters: {
+      type: "object",
+      properties: {
+        slides: {
+          type: "array",
+          items: { type: "string", description: "Detailed image-generation prompt for one slide." },
+          description: "Ordered list of slide image prompts.",
+        },
+      },
+      required: ["slides"],
+    },
+    function: async (args: Record<string, unknown>) => {
+      plan = Array.isArray(args.slides)
+        ? args.slides.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+        : [];
+      return [{ type: "text" as const, text: `OK: planned ${plan.length} slides.` }];
+    },
+  };
 
   const message = {
     role: "user" as const,
     content: [
       {
         type: "text" as const,
-        text: "Create a visually striking slide deck from the available sources. Generate each slide as an AI-generated image.",
+        text: "Plan a visually striking, image-based slide deck from the available sources, then submit every slide's image prompt with set_slide_plan.",
       },
     ],
   };
+  await run(ctx.client, ctx.model, ctx.instructions, [message], [...ctx.sourceTools, planTool]);
+  if (plan.length === 0) throw new Error("No slides planned");
 
-  await run(ctx.client, ctx.model, ctx.instructions, [message], [...ctx.sourceTools, ...imgTools]);
+  const frame = (prompt: string) => `A professional full-bleed landscape presentation slide (clean design). ${prompt}`;
+  const slides: (string | undefined)[] = new Array(plan.length);
 
-  const ordered = Array.from(slideMap.entries())
-    .sort(([a], [b]) => a - b)
-    .map(([, url]) => url);
-  console.log("[Image Slides] Generation complete, slides:", ordered.length);
+  // Stream the contiguous run of finished slides from the start, so the preview
+  // never shows a later slide in an earlier slot while holes are still filling.
+  const emitProgress = () => {
+    const done: string[] = [];
+    for (const slide of slides) {
+      if (!slide) break;
+      done.push(slide);
+    }
+    if (done.length > 0) ctx.onProgress({ slides: done, slideContentType: "image/png" });
+  };
+
+  // Slide 1 first — it's the style reference every other slide builds on.
+  const firstBlob = await ctx.client.generateImage(rendererModel, frame(plan[0]), undefined, options);
+  slides[0] = await blobToDataUrl(firstBlob);
+  emitProgress();
+
+  // Remaining slides render concurrently against the reference. A single failed
+  // slide leaves its slot empty rather than sinking the whole deck.
+  await mapWithConcurrency(plan.slice(1), IMAGE_SLIDE_CONCURRENCY, async (prompt, i) => {
+    try {
+      const blob = await ctx.client.generateImage(rendererModel, frame(prompt), [firstBlob], options);
+      slides[i + 1] = await blobToDataUrl(blob);
+      emitProgress();
+    } catch (err) {
+      console.warn(`[Image Slides] slide ${i + 2} failed:`, err instanceof Error ? err.message : err);
+    }
+  });
+
+  const ordered = slides.filter((s): s is string => Boolean(s));
   if (ordered.length === 0) throw new Error("No slides generated");
 
-  return {
-    content: `${ordered.length} slides generated`,
-    slides: ordered,
-    slideContentType: "image/png",
-  };
+  return { content: `${ordered.length} slides generated`, slides: ordered, slideContentType: "image/png" };
 }
 
 // ── Quiz ───────────────────────────────────────────────────────────────

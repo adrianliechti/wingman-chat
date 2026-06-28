@@ -235,6 +235,10 @@ export function modelName(id: string): string {
         return "GPT";
       }
 
+      if (lowerWord === "mai") {
+        return "MAI";
+      }
+
       if (lowerWord === "glm") {
         return "GLM";
       }

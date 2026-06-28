@@ -141,8 +141,8 @@ export function NotebookChat({
                     Start building your notebook
                   </p>
                   <p className="text-sm text-neutral-400 dark:text-neutral-500 mb-6 leading-relaxed">
-                    Add sources from the web or upload files, then chat with your sources or generate outputs in the
-                    studio.
+                    Add sources from the web or upload files — or just start chatting to draft notes and build sources
+                    as you go.
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-neutral-400 dark:text-neutral-500">
                     <div className="flex items-center gap-1.5">
@@ -300,15 +300,14 @@ export function NotebookChat({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={hasSources ? "Ask about your sources..." : "Add sources first to start chatting"}
-            disabled={!hasSources}
+            placeholder={hasSources ? "Ask about your sources..." : "Ask anything, or start drafting content..."}
             rows={1}
             className="flex-1 bg-transparent text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 outline-none resize-none py-2 max-h-30 overflow-y-auto field-sizing-content disabled:opacity-50"
           />
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={!input.trim() || isChatting || !hasSources}
+            disabled={!input.trim() || isChatting}
             className="rounded-xl p-2 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors hover:bg-neutral-100/70 dark:hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
           >
             <ArrowRight size={18} />
