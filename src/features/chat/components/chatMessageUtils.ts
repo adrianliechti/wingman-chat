@@ -94,13 +94,10 @@ function toolResultSkillName(result: ToolResultContent): string | null {
       // fall through
     }
   }
-  // Fallback: read from arguments
-  try {
-    const args = JSON.parse(result.arguments ?? "{}");
-    if (typeof args?.name === "string") return args.name;
-  } catch {
-    // ignore
-  }
+  // Fallback: read from arguments (recovers the name even when a sibling code
+  // field left the JSON mis-escaped).
+  const args = tryParseToolArguments(result.arguments);
+  if (typeof args?.name === "string") return args.name;
   return null;
 }
 

@@ -10,6 +10,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { tryParseToolArguments } from "@/shared/lib/toolArguments";
 import type { Content } from "@/shared/types/chat";
 import { getTextFromContent } from "@/shared/types/chat";
 import type { File } from "@/shared/types/file";
@@ -41,13 +42,8 @@ function toolActivityLabels(msg: NotebookMessage): string[] | null {
   return msg.content.map((part) => {
     if (part.type !== "tool_result") return "";
     const verb = TOOL_VERBS[part.name] ?? part.name;
-    let detail = "";
-    try {
-      const args = JSON.parse(part.arguments || "{}") as Record<string, unknown>;
-      detail = String(args.path ?? args.pattern ?? args.new_path ?? "");
-    } catch {
-      /* unparseable args — verb only */
-    }
+    const args = tryParseToolArguments(part.arguments) ?? {};
+    const detail = String(args.path ?? args.pattern ?? args.new_path ?? "");
     return detail ? `${verb} · ${detail}` : verb;
   });
 }

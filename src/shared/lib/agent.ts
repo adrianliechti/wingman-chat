@@ -2,7 +2,7 @@ import type { Content, Message, MessageError, Tool, ToolCallContent, ToolContext
 import type { AgentContext } from "../types/telemetry";
 import type { Client } from "./client";
 import { traceExecuteTool, traceInvokeAgent } from "./otel";
-import { parseToolArguments, ToolArgumentsParseError } from "./toolArguments";
+import { parseToolArguments, ToolArgumentsParseError, toolArgumentHints } from "./toolArguments";
 
 /** Options forwarded verbatim to `client.complete`. */
 export type CompleteOptions = Parameters<Client["complete"]>[5];
@@ -126,7 +126,10 @@ async function dispatchToolCall(
   // genuinely unrecoverable.
   let args: Record<string, unknown>;
   try {
-    args = parseToolArguments(toolCall.arguments);
+    // Pass the tool's schema so a mis-escaped code/command field can be sliced
+    // out by structural boundaries instead of guessed at (or truncated) by the
+    // generic repair pass.
+    args = parseToolArguments(toolCall.arguments, toolArgumentHints(tool.parameters));
   } catch (error) {
     if (error instanceof ToolArgumentsParseError) {
       return toolErrorMessage(

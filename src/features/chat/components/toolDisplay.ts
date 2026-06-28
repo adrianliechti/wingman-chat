@@ -1,4 +1,4 @@
-import { tryParseToolArguments } from "@/shared/lib/toolArguments";
+import { toolArgumentHints, tryParseToolArguments } from "@/shared/lib/toolArguments";
 import { getToolDisplayName } from "@/shared/lib/utils";
 import type {
   Content,
@@ -38,7 +38,7 @@ export function resolveToolHeader(
   rawArgs: string | undefined,
   state: ToolDisplayState,
 ): ResolvedToolHeader {
-  const h = tool?.display?.header?.(tryParseToolArguments(rawArgs ?? ""), state);
+  const h = tool?.display?.header?.(tryParseToolArguments(rawArgs ?? "", toolArgumentHints(tool?.parameters)), state);
   return {
     Icon: h?.icon,
     label: h?.label ?? tool?.title ?? getToolDisplayName(name),
@@ -50,7 +50,9 @@ export function resolveToolHeader(
 /** Expanded input blocks: the tool's `display.input`, else a best-effort arguments block. */
 export function resolveToolInput(tool: Tool | undefined, rawArgs: string | undefined): ToolDisplayBlock[] {
   const input = tool?.display?.input;
-  return input ? input(tryParseToolArguments(rawArgs ?? "")) : defaultInputBlocks(rawArgs);
+  return input
+    ? input(tryParseToolArguments(rawArgs ?? "", toolArgumentHints(tool?.parameters)))
+    : defaultInputBlocks(rawArgs);
 }
 
 /**
