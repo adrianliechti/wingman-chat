@@ -1,12 +1,24 @@
-import { ArrowRight, Gauge, HardDrive, ImagePlus, Loader2, Paintbrush, Proportions, Sparkles, Upload, X } from "lucide-react";
-import { useCallback, useMemo } from "react";
-import type { Model } from "@/shared/types/chat";
-import { DropdownMenu, DropdownMenuItem, MenuButton } from "@/shared/ui/DropdownMenu";
-import { ModelDropdown } from "@/shared/ui/ModelDropdown";
+import {
+  ArrowRight,
+  Expand,
+  Gauge,
+  HardDrive,
+  ImagePlus,
+  Layers,
+  Loader2,
+  Paintbrush,
+  Proportions,
+  Sparkles,
+  Upload,
+  X,
+} from "lucide-react";
+import { Fragment, useCallback, useMemo } from "react";
+import type { ImageStyle } from "@/shared/lib/imageStyles";
+import type { ImageBackground, ImageQuality, ImageResolution, Model } from "@/shared/types/chat";
+import { DropdownMenu, DropdownMenuItem, DropdownMenuLabel, MenuButton } from "@/shared/ui/DropdownMenu";
+import { ModelDropdown, type SubmenuConfig } from "@/shared/ui/ModelDropdown";
 
-export type ImageQuality = "low" | "medium" | "high";
-
-/** Curated aspect ratios; the backend snaps each to the nearest the model supports. */
+/** Aspect-ratio option metadata; only those the selected model supports are shown. */
 const ASPECT_OPTIONS = [
   { value: "1:1", label: "1:1", description: "Square" },
   { value: "16:9", label: "16:9", description: "Widescreen" },
@@ -23,6 +35,17 @@ const QUALITY_OPTIONS: { value: ImageQuality; label: string; description: string
   { value: "high", label: "High", description: "Slowest, best detail" },
 ];
 
+const RESOLUTION_OPTIONS: { value: ImageResolution; label: string; description: string }[] = [
+  { value: "1K", label: "1K", description: "1024px (default)" },
+  { value: "2K", label: "2K", description: "Sharper, slower" },
+  { value: "4K", label: "4K", description: "Highest, slowest" },
+];
+
+const BACKGROUND_OPTIONS: { value: ImageBackground; label: string; description: string }[] = [
+  { value: "opaque", label: "Opaque", description: "Solid background" },
+  { value: "transparent", label: "Transparent", description: "Cut-out, no background" },
+];
+
 interface CanvasInputProps {
   prompt: string;
   onPromptChange: (prompt: string) => void;
@@ -37,13 +60,17 @@ interface CanvasInputProps {
   models: Model[];
   selectedModel: Model | null;
   onSelectModel: (model: Model) => void;
-  availableStyles: string[];
+  styles: ImageStyle[];
   selectedStyle: string | null;
   onSelectStyle: (style: string | null) => void;
   selectedAspect: string | null;
   onSelectAspect: (aspect: string | null) => void;
   selectedQuality: ImageQuality | null;
   onSelectQuality: (quality: ImageQuality | null) => void;
+  selectedResolution: ImageResolution | null;
+  onSelectResolution: (resolution: ImageResolution | null) => void;
+  selectedBackground: ImageBackground | null;
+  onSelectBackground: (background: ImageBackground | null) => void;
   placeholder?: string;
   helperText?: string;
   disabled?: boolean;
@@ -65,13 +92,17 @@ export function CanvasInput({
   models,
   selectedModel,
   onSelectModel,
-  availableStyles,
+  styles,
   selectedStyle,
   onSelectStyle,
   selectedAspect,
   onSelectAspect,
   selectedQuality,
   onSelectQuality,
+  selectedResolution,
+  onSelectResolution,
+  selectedBackground,
+  onSelectBackground,
   placeholder = "Describe the image you want to generate...",
   helperText,
   disabled,
@@ -88,6 +119,18 @@ export function CanvasInput({
       return { img, index, key: `${baseKey}:${occurrence}` };
     });
   }, [referenceImages]);
+
+  // Group styles by category, preserving order, so the picker shows headings
+  // (e.g. Photography, Illustration) for the served list.
+  const styleGroups = useMemo(() => {
+    const groups: { category: string; items: ImageStyle[] }[] = [];
+    for (const style of styles) {
+      const last = groups.at(-1);
+      if (last && last.category === style.category) last.items.push(style);
+      else groups.push({ category: style.category, items: [style] });
+    }
+    return groups;
+  }, [styles]);
 
   const canSubmit = (prompt.trim() || referenceImages.length > 0) && !disabled;
 
@@ -109,6 +152,60 @@ export function CanvasInput({
     },
     [canSubmit, onSubmit],
   );
+
+  // Show only the controls the selected model supports — capabilities come from
+  // the renderer model mapping. Background appears only for models that do
+  // transparent/opaque (e.g. gpt-image-1 / 1.5).
+  const aspectOptions = ASPECT_OPTIONS.filter((o) => selectedModel?.supportedAspectRatios?.includes(o.value));
+  const qualityOptions = QUALITY_OPTIONS.filter((o) => selectedModel?.supportedQualities?.includes(o.value));
+  const resolutionOptions = RESOLUTION_OPTIONS.filter((o) => selectedModel?.supportedResolutions?.includes(o.value));
+  const backgroundOptions = BACKGROUND_OPTIONS.filter((o) => selectedModel?.supportedBackgrounds?.includes(o.value));
+
+  const submenus: SubmenuConfig[] = [];
+  if (aspectOptions.length) {
+    submenus.push({
+      icon: <Proportions size={14} />,
+      label: "Aspect",
+      options: aspectOptions,
+      value: selectedAspect,
+      onChange: onSelectAspect,
+      defaultLabel: "Auto",
+      defaultDescription: "Model default",
+    });
+  }
+  if (qualityOptions.length) {
+    submenus.push({
+      icon: <Gauge size={14} />,
+      label: "Quality",
+      options: qualityOptions,
+      value: selectedQuality,
+      onChange: (v) => onSelectQuality(v as ImageQuality | null),
+      defaultLabel: "Auto",
+      defaultDescription: "Model default",
+    });
+  }
+  if (resolutionOptions.length) {
+    submenus.push({
+      icon: <Expand size={14} />,
+      label: "Resolution",
+      options: resolutionOptions,
+      value: selectedResolution,
+      onChange: (v) => onSelectResolution(v as ImageResolution | null),
+      defaultLabel: "Auto",
+      defaultDescription: "Model default",
+    });
+  }
+  if (backgroundOptions.length) {
+    submenus.push({
+      icon: <Layers size={14} />,
+      label: "Background",
+      options: backgroundOptions,
+      value: selectedBackground,
+      onChange: (v) => onSelectBackground(v as ImageBackground | null),
+      defaultLabel: "Auto",
+      defaultDescription: "Model default",
+    });
+  }
 
   return (
     <div
@@ -163,7 +260,8 @@ export function CanvasInput({
       {/* Controls bar */}
       <div className="flex items-center justify-between gap-3 px-3 pb-3">
         <div className="flex min-w-0 items-center gap-3">
-          {/* Model dropdown — aspect & quality hang off it as flyout submenus */}
+          {/* Model dropdown — aspect, quality & background hang off it as flyout
+              submenus, filtered to what the selected model supports. */}
           <ModelDropdown
             models={models}
             value={selectedModel?.id ?? ""}
@@ -172,26 +270,7 @@ export function CanvasInput({
               if (m) onSelectModel(m);
             }}
             dropdownClassName="w-auto min-w-48 whitespace-nowrap"
-            submenus={[
-              {
-                icon: <Proportions size={14} />,
-                label: "Aspect",
-                options: ASPECT_OPTIONS,
-                value: selectedAspect,
-                onChange: onSelectAspect,
-                defaultLabel: "Auto",
-                defaultDescription: "Model default",
-              },
-              {
-                icon: <Gauge size={14} />,
-                label: "Quality",
-                options: QUALITY_OPTIONS,
-                value: selectedQuality,
-                onChange: (v) => onSelectQuality(v as ImageQuality | null),
-                defaultLabel: "Auto",
-                defaultDescription: "Model default",
-              },
-            ]}
+            submenus={submenus}
             trigger={({ getProps }) => (
               <button
                 type="button"
@@ -230,14 +309,21 @@ export function CanvasInput({
                 <span className="italic text-neutral-500 dark:text-neutral-400">No style</span>
               </DropdownMenuItem>
             )}
-            {availableStyles.map((style) => (
-              <DropdownMenuItem
-                key={style}
-                selected={selectedStyle === style}
-                onClick={() => onSelectStyle(selectedStyle === style ? null : style)}
-              >
-                <span className={selectedStyle === style ? "text-blue-600 dark:text-blue-400" : ""}>{style}</span>
-              </DropdownMenuItem>
+            {styleGroups.map((group) => (
+              <Fragment key={group.category || "styles"}>
+                {group.category && <DropdownMenuLabel>{group.category}</DropdownMenuLabel>}
+                {group.items.map((style) => (
+                  <DropdownMenuItem
+                    key={style.name}
+                    selected={selectedStyle === style.name}
+                    onClick={() => onSelectStyle(selectedStyle === style.name ? null : style.name)}
+                  >
+                    <span className={selectedStyle === style.name ? "text-blue-600 dark:text-blue-400" : ""}>
+                      {style.name}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </Fragment>
             ))}
           </DropdownMenu>
         </div>

@@ -5,6 +5,13 @@ export type ToolIcon = React.ComponentType<React.SVGProps<SVGSVGElement>> | stri
 
 export type ModelType = "completer" | "embedder" | "renderer" | "reranker" | "synthesizer" | "transcriber";
 
+/** Image-generation quality tier (renderer models). */
+export type ImageQuality = "low" | "medium" | "high";
+/** Image-generation output resolution (e.g. Gemini's 1K/2K/4K lever). */
+export type ImageResolution = "512" | "1K" | "2K" | "4K";
+/** Image-generation background mode beyond the default "auto" (which is omitted). */
+export type ImageBackground = "opaque" | "transparent";
+
 export type Model = {
   id: string;
   name: string;
@@ -27,6 +34,18 @@ export type Model = {
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
   compactThreshold?: number;
+
+  /**
+   * Renderer (image) model capabilities, mirroring `supportedEfforts` for chat:
+   * config wins, else a per-family heuristic fills them in. Each drives the
+   * matching Canvas picker — an empty/unset list hides that control.
+   */
+  supportedQualities?: ImageQuality[];
+  supportedAspectRatios?: string[];
+  /** Output resolutions, for models whose size lever is resolution (e.g. Gemini) rather than a quality tier. */
+  supportedResolutions?: ImageResolution[];
+  /** Background modes beyond the always-available "auto" default (opaque/transparent). */
+  supportedBackgrounds?: ImageBackground[];
 
   tools?: {
     enabled: string[];

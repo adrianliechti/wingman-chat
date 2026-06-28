@@ -31,6 +31,11 @@ interface ModelConfig {
   summary?: "auto" | "concise" | "detailed";
   verbosity?: "low" | "medium" | "high";
   compactThreshold?: number;
+  // Renderer (image) model capabilities; config overrides the per-family heuristic.
+  supportedQualities?: ("low" | "medium" | "high")[];
+  supportedAspectRatios?: string[];
+  supportedResolutions?: ("512" | "1K" | "2K" | "4K")[];
+  supportedBackgrounds?: ("opaque" | "transparent")[];
   tools?: {
     enabled: string[];
     disabled: string[];

@@ -1,42 +1,55 @@
 ---
 name: image-styles
-description: Apply a named visual style to a generated image — photographic, illustrative, retro, 3D, painterly, and more. Use when the user names or implies a look (Ghibli, Leica, cyberpunk, low-poly, watercolor, pixel art, claymation, …). Fold the matching fragment into the create_image / render() prompt.
+description: Apply a named visual style to a generated image — corporate and product photography, flat/isometric illustration, infographics, marketing and brand looks, plus a few playful styles. Use when the user names or implies a look (corporate portrait, flat illustration, isometric, tech gradient, product render, infographic, watercolor, Ghibli, …). Fold the matching fragment into the create_image / render() prompt.
 ---
 
 # Image styles
 
 When the user asks for a specific look, append the matching fragment below to the image prompt you
-pass to `create_image` (or `render()`). Pick the closest match; never invent a style the user did
-not ask for.
+pass to `create_image` (or `render()`). Pick the closest match; never invent a style the user did not
+ask for. The fragments are written as plain descriptions (not keyword lists) because that is what the
+image model responds to best; keep any headline or label text the user wants in the main prompt, since
+the model renders real text well.
 
-- **3D Cartoon** — in Pixar/Disney 3D animation style, smooth subsurface scattering on skin, soft global illumination, appealing character proportions with slightly oversized head, rich detailed textures, vibrant color palette, professional studio render quality with subtle ambient occlusion
-- **Anime** — in modern anime style with large expressive eyes, vibrant saturated colors, clean cel-shading with precise line art, soft gradient lighting, dynamic composition, characteristic Japanese animation aesthetics with detailed hair rendering and atmospheric effects
-- **Art Deco** — in Art Deco style with bold geometric patterns, symmetrical composition, metallic gold and rich jewel-tone color palette, elegant streamlined forms, 1920s glamour aesthetic, Chrysler Building-inspired ornamental details, luxury and sophistication
-- **B&W Studio** — professional black and white studio portrait photography, dramatic Rembrandt lighting with soft key light and deep shadows, high contrast tonal range, clean seamless backdrop, tack-sharp focus on eyes, elegant and timeless editorial aesthetic, rich silver gelatin print quality
-- **Chibi Crochet** — as an adorable chibi-style crocheted amigurumi doll, handmade yarn texture with visible individual stitches, big cute head with small body proportions, kawaii embroidered eyes, soft pastel yarn colors, cozy handcrafted plushie aesthetic, photographed on light background
-- **Cinematic** — cinematic film still, anamorphic lens with subtle horizontal flare, teal and orange color grading, dramatic depth of field, 2.39:1 widescreen composition feel, volumetric lighting, atmospheric haze, Hollywood blockbuster production quality
-- **Claymation** — in stop-motion claymation style, visible fingerprint impressions on smooth clay surfaces, slightly imperfect handmade charm, warm studio lighting with soft shadows, miniature set design with tactile textures, Aardman or Laika Studios inspired quality
-- **Comic Book** — in Western comic book illustration style, bold ink lines with dynamic hatching, vivid superhero-grade colors, dramatic foreshortening and action poses, CMYK halftone dot printing texture, speech bubble-ready composition, classic Marvel/DC aesthetic
-- **Cyberpunk** — in cyberpunk style with vivid neon lights reflecting on rain-slicked streets, holographic displays and AR overlays, high-tech low-life aesthetic, dramatic purple and cyan color grading, volumetric fog with light rays, dense urban futuristic environment
-- **Flat Vector** — in modern flat vector illustration style, clean geometric shapes with no outlines, limited harmonious color palette, minimal gradients, UI-friendly proportions, contemporary graphic design aesthetic, suitable for web and print, inspired by Kurzgesagt visual style
-- **Ghibli** — in Studio Ghibli anime style, lush hand-painted watercolor backgrounds with extraordinary environmental detail, soft cel-shaded characters with gentle round features, warm nostalgic color palette with rich greens and dreamy skies, whimsical and serene atmosphere, Hayao Miyazaki aesthetic with sense of wonder and magic in everyday scenes
-- **Isometric** — in isometric pixel art style with precise 30-degree angles, no perspective distortion, clean geometric shapes, vibrant limited color palette, tiny detailed elements, video game diorama aesthetic, satisfying visual tidiness
-- **Kodak Film** — vintage Kodak Portra 400 film photograph, warm golden tones, natural film grain, slightly lifted blacks, soft halation around highlights, authentic 35mm analog feel, candid composition, nostalgic color rendering with rich skin tones
-- **Leica** — classic Leica rangefinder photograph with Summilux lens rendering, smooth creamy bokeh with gentle out-of-focus transitions, distinctive 3D pop and subject separation, beautiful highlight rolloff with subtle glow, natural micro-contrast and tack-sharp focus plane, authentic color rendering without oversaturation, shallow depth of field, 35mm or 50mm focal length perspective, natural available light, documentary street photography aesthetic
-- **Low Poly** — in low poly 3D render style with flat shaded triangular faces, geometric simplification of organic forms, subtle gradient coloring across faces, modern digital art aesthetic, clean minimal lighting, slightly glossy material
-- **Macro** — extreme macro photography, razor-thin depth of field with silky smooth bokeh, hyper-detailed textures at microscopic level, studio ring light with soft diffusion, crystal-clear sharpness on focal plane, vivid natural colors, scientific precision meets artistic beauty
-- **Movie Poster** — cinematic movie poster design with dramatic three-point lighting, bold typography space reserved at top and bottom, high contrast with rich shadows, epic layered composition, Hollywood blockbuster aesthetic, theatrical one-sheet style with hero positioning
-- **Neon** — as a glowing neon sign against a dark background, bright luminous tube lighting with realistic glass tube bends, color bleeding and soft glow halos, subtle reflection on surface below, electric buzzing atmosphere, classic bar or storefront signage aesthetic
-- **Object Extract** — clean product photography style with pure white background, isolated subject with precise edge extraction, soft contact shadow only, professional e-commerce aesthetic, even studio lighting from all angles, transparent background ready
-- **Oil Painting** — as a classical oil painting with rich impasto texture and visible palette knife work, deep saturated colors with luminous glazing layers, dramatic chiaroscuro lighting, old master composition techniques, canvas texture visible in thin passages
-- **Pixel Art** — in retro pixel art style with strict limited 16-color palette, crisp hard-edged pixels, no anti-aliasing or smoothing, 16-bit SNES/Genesis video game aesthetic, dithering for gradients, nostalgic and charming
-- **Plushy** — as a cute plush toy with soft minky fabric texture, rounded puffy forms, embroidered eyes and details, visible seam stitching, huggable proportions with kawaii aesthetic, professional product photography lighting
-- **Polaroid** — instant Polaroid photograph aesthetic with characteristic white frame border, slightly washed-out colors with warm color shift, soft focus, subtle light leaks, nostalgic candid snapshot quality, slightly overexposed flash, square format composition, early 2000s party vibes
-- **Pop Art** — in pop art style with bold flat primary colors, halftone Ben-Day dots pattern, thick black outlines, high contrast graphic composition, inspired by Roy Lichtenstein and Andy Warhol, silk-screen print aesthetic with slight misregistration
-- **Professional** — professional corporate photography in modern office environment, clean and polished look, natural window lighting with soft fill, shallow depth of field, business casual aesthetic, crisp detail, neutral color grading, LinkedIn profile quality
-- **Sketch** — as a pencil sketch on cream paper with confident gestural lines, cross-hatching for tonal depth, visible construction lines and proportional guides, smudged graphite for soft shadows, loose artistic hand-drawn quality with raw energy
-- **Steampunk** — in steampunk style with intricate brass gears, copper pipes with verdigris patina, Victorian-era machinery and clockwork mechanisms, warm amber lighting, leather and rivets, industrial revolution meets fantasy, Jules Verne inspired aesthetic
-- **Sticker** — as a cute die-cut sticker design with thick white border outline, vibrant flat colors, slightly glossy finish, kawaii-inspired simplified forms, clean vector-sharp edges, perfect for laptop or water bottle, transparent background ready
-- **Ukiyo-e** — in traditional Japanese ukiyo-e woodblock print style, flat areas of bold color with black outlines, decorative wave and cloud patterns, elegant calligraphic line quality, Hokusai and Hiroshige inspired composition, handmade washi paper texture
-- **Vaporwave** — in vaporwave aesthetic with pink and cyan gradients, Greek marble statue elements, retro computer graphics and grid patterns, palm tree silhouettes, 80s/90s nostalgic dreamscape, lo-fi VHS scan lines, Japanese text accents, surreal and melancholic beauty
-- **Watercolor** — in watercolor painting style with soft wet-on-wet blending, visible organic brushstrokes on textured cold-press paper, flowing pigments with beautiful bleeds, delicate transparent washes, areas of white paper showing through, spontaneous and luminous quality
+## Photography
+
+- **Corporate Portrait** — a polished corporate portrait in a bright modern office, soft natural window light with gentle fill, shallow depth of field and neutral color grading, confident and approachable, LinkedIn-quality
+- **B&W Studio** — a black-and-white studio portrait with dramatic Rembrandt lighting, deep shadows and a clean seamless backdrop, sharp focus on the eyes, timeless and editorial
+- **Editorial** — an editorial magazine photograph with intentional negative space for a headline, soft directional light and a refined, muted color grade, aspirational and brand-forward
+- **Stock Business** — a clean, candid corporate scene of real people collaborating in a bright modern workspace, natural light and shallow depth of field, optimistic and authentic rather than staged
+- **Leica** — a premium lifestyle photograph with a fast-prime look: creamy background blur, gentle subject separation and natural, true-to-life color in available light, understated and refined
+- **Kodak Film** — a warm 35mm film photograph in the Kodak Portra tradition: golden tones, fine natural grain, soft highlight halation and rich, flattering skin tones, nostalgic and inviting
+- **Cinematic** — a cinematic film still with anamorphic framing, a soft teal-and-orange grade, shallow depth of field and atmospheric light, dramatic and premium, hero-image quality
+- **Macro** — an extreme close-up macro photograph with a razor-thin focal plane and smooth bokeh, crisp detail and soft studio light, ideal for showing material and texture
+- **Flat Lay** — a tidy overhead flat-lay of the subject with a few complementary props on a clean surface, soft even light and generous negative space for text, polished and brand-ready
+
+## Product
+
+- **Product Cutout** — clean e-commerce product photography: the subject crisply isolated on a pure white background with a soft contact shadow and even, shadowless studio light, catalog-ready and easy to cut out
+- **Product Render** — a photorealistic 3D product render on a seamless studio backdrop, soft global illumination, accurate materials and reflections and subtle ambient occlusion, premium and tactile
+
+## Illustration & graphics
+
+- **Flat Illustration** — a modern flat vector illustration with clean geometric shapes, a limited harmonious palette and minimal gradients, friendly and explanatory in the Kurzgesagt tradition, crisp and presentation-ready
+- **Isometric 3D** — a clean isometric 3D illustration at a true 30-degree angle with simple geometric forms, soft shading and a tidy limited palette, the polished SaaS and landing-page look (not pixel art)
+- **Line Art** — minimal single-weight line art on a plain background, clean continuous strokes with no fill or shading, an elegant icon-like illustration that reads at any size
+- **Tech Gradient** — a modern tech-brand visual built from a smooth vibrant mesh gradient with soft abstract 3D shapes and a gentle glow, lots of clean space for text, the Stripe and Linear aesthetic
+- **Infographic** — a clean infographic-poster look with bold flat shapes, a tight palette and clear visual hierarchy, with deliberate space reserved for figures and short labels, accurate and uncluttered
+- **Whiteboard Sketch** — a hand-drawn whiteboard sketchnote with confident black marker lines, one or two accent colors on a clean white background, simple icons and arrows, friendly and explanatory
+- **Blueprint** — a technical blueprint and schematic look with precise thin white linework on a deep blue ground, measured and diagrammatic, with room for callouts and labels
+- **3D Cartoon** — a friendly 3D cartoon character in the Pixar and Disney tradition, soft global illumination, appealing rounded proportions and rich but clean textures, a polished studio render, great for a brand mascot
+- **Sticker** — a die-cut sticker design with a thick white border, bold flat colors and clean vector edges on a plain background, simple and playful, ready for social or swag
+
+## Artistic
+
+- **Watercolor** — a soft watercolor illustration with wet-on-wet blends, gentle pigment bleeds and visible paper texture, light and approachable, with areas of white space left to breathe
+- **Sketch** — a loose pencil sketch on toned paper with confident gestural lines, light cross-hatching and visible construction lines, an early-concept hand-drawn feel
+- **Art Deco** — an Art Deco design with bold symmetrical geometry, elegant streamlined forms and a metallic gold and jewel-tone palette, luxurious and premium, well suited to event and brand graphics
+- **Pop Art** — a bold pop-art treatment with flat saturated colors, thick outlines and halftone dots, high-energy and graphic, eye-catching for a punchy campaign
+
+## Playful
+
+- **Ghibli** — in the painterly Studio Ghibli tradition, with lush hand-painted backgrounds, soft warm light and gentle characters, a sense of wonder and calm
+- **Claymation** — a stop-motion claymation look with smooth hand-shaped clay, subtle fingerprints and warm soft studio light, charming and tactile
+- **Low Poly** — a low-poly 3D look with flat-shaded triangular facets, simple geometric forms and a clean limited palette, modern and minimal
+- **Wingman** — the Wingman mascot, drawn as a Miffy-style white rabbit (after Dick Bruna): a friendly white rabbit with two long ears, dot eyes and a small cross-shaped mouth, clean bold black outlines and flat solid colors with no shading or gradients — a flat 2D picture-book illustration, not photorealistic and not 3D, simple and clean but not bare, with a flat-illustrated setting drawn around the character rather than an empty background, calm and childlike and on-brand

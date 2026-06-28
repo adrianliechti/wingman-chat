@@ -1,4 +1,4 @@
-import type { Model, ModelType } from "@/shared/types/chat";
+import type { ImageBackground, ImageQuality, ImageResolution, Model, ModelType } from "@/shared/types/chat";
 
 type Effort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -86,6 +86,86 @@ export function supportedEfforts(id: string): Effort[] | undefined {
   return undefined;
 }
 
+export interface RendererCapabilities {
+  qualities?: ImageQuality[];
+  aspectRatios?: string[];
+  resolutions?: ImageResolution[];
+  backgrounds?: ImageBackground[];
+}
+
+// A broad set of aspect ratios most image models can approximate; the backend
+// snaps each request to the nearest the target model actually supports.
+const GENERIC_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"];
+
+/**
+ * Best-guess image-generation capabilities for a renderer model id, the fallback
+ * when config omits them (the renderer analogue of {@link supportedEfforts}).
+ * Config always wins; an unknown id falls back to a permissive generic profile so
+ * the Canvas pickers still work — the backend silently drops anything the target
+ * model can't honor.
+ */
+export function rendererCapabilities(id: string): RendererCapabilities {
+  const lowerId = id.toLowerCase();
+
+  // ── OpenAI gpt-image ──
+  // gpt-image-1 / 1.5 expose low/medium/high quality plus an opaque/transparent
+  // background control; gpt-image-2 keeps the quality tiers but drops background.
+  if (/gpt-?image-?2/.test(lowerId)) {
+    return { qualities: ["low", "medium", "high"], aspectRatios: ["1:1", "3:2", "2:3"] };
+  }
+  if (lowerId.includes("gpt-image") || lowerId.includes("gptimage")) {
+    return {
+      qualities: ["low", "medium", "high"],
+      aspectRatios: ["1:1", "3:2", "2:3"],
+      backgrounds: ["opaque", "transparent"],
+    };
+  }
+
+  // ── OpenAI DALL·E 3 ── standard/hd quality, three fixed sizes, no transparency.
+  if (/dall-?e-?3/.test(lowerId)) {
+    return { qualities: ["medium", "high"], aspectRatios: ["1:1", "16:9", "9:16"] };
+  }
+
+  // ── Google Gemini image ("nano-banana") ── no quality tiers; the size lever is
+  // a 1K/2K/4K output resolution instead.
+  if (/gemini.*image|nano-?banana/.test(lowerId)) {
+    return {
+      aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9"],
+      resolutions: ["1K", "2K", "4K"],
+    };
+  }
+
+  // ── Google Imagen ── aspect only.
+  if (lowerId.includes("imagen")) {
+    return { aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9"] };
+  }
+
+  // ── Black Forest Labs FLUX ── aspect only, no quality tiers or transparency.
+  if (lowerId.includes("flux")) {
+    return { aspectRatios: GENERIC_ASPECTS };
+  }
+
+  // Unknown renderer: permissive generic profile (quality + common aspects, no
+  // background) so the pickers stay useful.
+  return { qualities: ["low", "medium", "high"], aspectRatios: GENERIC_ASPECTS };
+}
+
+/**
+ * Fill in heuristic renderer capabilities a model's config didn't specify. An
+ * explicit config value (including `[]` to hide a picker) is kept, exactly like
+ * `withEffortFallback` does for chat reasoning efforts.
+ */
+export function withRendererFallback(model: Model): Model {
+  const caps = rendererCapabilities(model.id);
+  return {
+    ...model,
+    supportedQualities: model.supportedQualities ?? caps.qualities,
+    supportedAspectRatios: model.supportedAspectRatios ?? caps.aspectRatios,
+    supportedResolutions: model.supportedResolutions ?? caps.resolutions,
+    supportedBackgrounds: model.supportedBackgrounds ?? caps.backgrounds,
+  };
+}
+
 export function modelType(id: string): ModelType | undefined {
   const lowerId = id.toLowerCase();
 
@@ -101,14 +181,22 @@ export function modelType(id: string): ModelType | undefined {
     return "embedder";
   }
 
-  // Check for text-to-speech models
-  if (lowerId.includes("tts") || lowerId.includes("audio") || lowerId.includes("eleven")) {
-    return "synthesizer";
-  }
-
-  // Check for transcription models
+  // Check for transcription models first — these speech-to-text ids ("…-stt",
+  // whisper, gpt-4o-transcribe) often also contain "voice"/"audio", so match the
+  // more specific transcriber cue before the text-to-speech catch-all below.
   if (lowerId.includes("stt") || lowerId.includes("transcribe") || lowerId.includes("whisper")) {
     return "transcriber";
+  }
+
+  // Check for text-to-speech / voice models
+  if (
+    lowerId.includes("tts") ||
+    lowerId.includes("voice") ||
+    lowerId.includes("speech") ||
+    lowerId.includes("audio") ||
+    lowerId.includes("eleven")
+  ) {
+    return "synthesizer";
   }
 
   // Check for reranker models
