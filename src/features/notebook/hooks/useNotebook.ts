@@ -10,56 +10,19 @@ import { compactAgentMessage } from "../lib/chat-history";
 import * as store from "../lib/opfs-notebook";
 import {
   type GenerateContext,
-  generateArchitecture,
-  generateDataCatalog,
   generateHtmlSlides,
   generateImageSlides,
   generateInfographic,
   generateMindMap,
   generatePodcast,
-  generateProcess,
   generateQuiz,
   generateText,
 } from "../lib/output-generators";
 import { createSourceExecTools } from "../lib/source-exec-tools";
 import { createSourceTools } from "../lib/source-tools";
-import {
-  architectureStyles,
-  type BuildInstructionsOptions,
-  buildInstructions,
-  chatInstructions,
-  infographicStyles,
-  OUTPUT_META,
-  podcastStyles,
-  processStyles,
-  reportStyles,
-  slideStyles,
-} from "../lib/styles";
+import { type BuildInstructionsOptions, buildInstructions, chatInstructions, OUTPUT_META } from "../lib/styles";
 import type { Notebook, NotebookMessage, NotebookOutput, OutputType } from "../types/notebook";
-
-export function getSlideStyles() {
-  return slideStyles.getAll();
-}
-
-export function getPodcastStyles() {
-  return podcastStyles.getAll();
-}
-
-export function getReportStyles() {
-  return reportStyles.getAll();
-}
-
-export function getInfographicStyles() {
-  return infographicStyles.getAll();
-}
-
-export function getProcessStyles() {
-  return processStyles.getAll();
-}
-
-export function getArchitectureStyles() {
-  return architectureStyles.getAll();
-}
+import { useNotebookSkills } from "./useNotebookSkills";
 
 function generateId(): string {
   return crypto.randomUUID();
@@ -134,6 +97,11 @@ function uniquePath(path: string, existing: Set<string>): string {
 export function useNotebook(notebookId?: string) {
   const config = getConfig();
   const client = config.client;
+
+  // Domain-capability skills the source-chat can `read_skill` while analyzing
+  // sources (null when no skill library is served). Folded into the chat run
+  // below — the Studio generators don't use it.
+  const skills = useNotebookSkills();
 
   const [notebook, setNotebook] = useState<Notebook | null>(null);
   const [sources, setSources] = useState<File[]>([]);
@@ -550,12 +518,17 @@ export function useNotebook(notebookId?: string) {
           ...createSourceExecTools(() => sourcesRef.current, {
             onWrite: writeSource,
           }),
+          ...(skills?.tools ?? []),
         ];
+
+        // Fold the skills provider's guidance into the system prompt the same
+        // way the main chat composes tool-provider instructions.
+        const instructions = [chatInstructions, skills?.instructions].filter(Boolean).join("\n\n");
 
         // Build Message[] for the LLM (strip timestamps)
         const conversation = newMessages.map(({ timestamp, ...msg }) => msg);
 
-        const result = await run(client, getModel(), chatInstructions, conversation, tools, {
+        const result = await run(client, getModel(), instructions, conversation, tools, {
           agentName: "notebook",
           onStream: (content) => setStreamingContent(content),
         });
@@ -600,7 +573,7 @@ export function useNotebook(notebookId?: string) {
         setIsChatting(false);
       }
     },
-    [notebook, messages, client, getModel, isChatting, writeSource, renameSource, deleteSource],
+    [notebook, messages, client, getModel, isChatting, skills, writeSource, renameSource, deleteSource],
   );
 
   // ── Outputs ────────────────────────────────────────────────────────
@@ -664,12 +637,6 @@ export function useNotebook(notebookId?: string) {
               return generateQuiz(ctx);
             case "mindmap":
               return generateMindMap(ctx);
-            case "process":
-              return generateProcess(ctx, styleId ?? OUTPUT_META.process.defaultStyleId);
-            case "architecture":
-              return generateArchitecture(ctx);
-            case "data-catalog":
-              return generateDataCatalog(ctx);
             default:
               return generateText(ctx, OUTPUT_META[type].title);
           }

@@ -10,15 +10,12 @@
  *
  * Dispatch logic:
  *   - HTML slides → multi-step PDF/PPTX/PNG overlay (the existing slide one)
- *   - Diagram / data-catalog outputs → unified PNG/SVG/PDF/JSON-LD/YAML modal
  *   - Podcast / infographic / image-slides / report → direct download
  */
 
 import { AlertCircle, FileImage, FileText, Loader2, Presentation, X } from "lucide-react";
 import { useState } from "react";
 import { downloadFromUrl } from "@/shared/lib/utils";
-import { ExportModal, exportFormatsToOptions } from "../components/ExportModal";
-import { downloadFormat, getExportFormats, type ExportFormat as OutputExportFormat } from "../lib/output-export";
 import type { NotebookOutput } from "../types/notebook";
 
 type SlideFormat = "pdf" | "pptx-image" | "pptx-hybrid" | "png";
@@ -28,7 +25,6 @@ export function canDownload(output: NotebookOutput): boolean {
   if (output.type === "infographic" && output.imageUrl) return true;
   if (output.type === "slides" && output.slides?.length) return true;
   if (output.type === "report" && output.content) return true;
-  if (getExportFormats(output).length > 0) return true;
   return false;
 }
 
@@ -39,23 +35,11 @@ export function useOutputDownload() {
   const [slideError, setSlideError] = useState<string | null>(null);
   const [slideProgress, setSlideProgress] = useState<string | null>(null);
 
-  // Unified format-picker for diagram + data-catalog outputs.
-  const [unifiedTarget, setUnifiedTarget] = useState<NotebookOutput | null>(null);
-  const [unifiedBusy, setUnifiedBusy] = useState(false);
-  const [unifiedError, setUnifiedError] = useState<string | null>(null);
-
   const trigger = async (output: NotebookOutput): Promise<void> => {
     // HTML slides — multi-step export overlay.
     if (output.type === "slides" && output.slideContentType === "text/html" && output.slides?.length) {
       setSlideOverlay(output);
       setSlideError(null);
-      return;
-    }
-
-    // Diagram + data-catalog — unified format picker.
-    if (getExportFormats(output).length > 0) {
-      setUnifiedTarget(output);
-      setUnifiedError(null);
       return;
     }
 
@@ -118,22 +102,6 @@ export function useOutputDownload() {
     } finally {
       setSlideExporting(false);
       setSlideProgress(null);
-    }
-  };
-
-  const runUnifiedExport = async (format: OutputExportFormat) => {
-    if (!unifiedTarget) return;
-    setUnifiedBusy(true);
-    setUnifiedError(null);
-    try {
-      await downloadFormat(unifiedTarget, format);
-      setUnifiedTarget(null);
-    } catch (err) {
-      console.error("Export failed:", err);
-      // Keep the modal open and show why — the user can pick another format.
-      setUnifiedError(err instanceof Error ? err.message : "Export failed");
-    } finally {
-      setUnifiedBusy(false);
     }
   };
 
@@ -209,19 +177,6 @@ export function useOutputDownload() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Unified format picker for diagram + data-catalog outputs. */}
-      {unifiedTarget && (
-        <ExportModal
-          title={`Export ${unifiedTarget.title}`}
-          busy={unifiedBusy}
-          error={unifiedError}
-          onClose={() => {
-            if (!unifiedBusy) setUnifiedTarget(null);
-          }}
-          options={exportFormatsToOptions(getExportFormats(unifiedTarget), runUnifiedExport)}
-        />
       )}
     </>
   );

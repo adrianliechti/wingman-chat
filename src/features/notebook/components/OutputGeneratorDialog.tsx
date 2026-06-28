@@ -2,29 +2,19 @@ import { Transition, TransitionChild } from "@headlessui/react";
 import {
   AudioLines,
   BarChart3,
-  BookMarked,
-  Boxes,
   Check,
   Image as ImageIcon,
   LayoutTemplate,
   Presentation,
   Sparkles,
   Table2,
-  Workflow,
   X,
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { getConfig } from "@/shared/config";
 import { SelectMenu } from "@/shared/ui/SelectMenu";
 import type { BuildInstructionsOptions, Style } from "../lib/styles";
-import {
-  architectureStyles,
-  infographicStyles,
-  podcastStyles,
-  processStyles,
-  reportStyles,
-  slideStyles,
-} from "../lib/styles";
+import { infographicStyles, podcastStyles, reportStyles, slideStyles } from "../lib/styles";
 import type { OutputType } from "../types/notebook";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -116,26 +106,6 @@ const TYPE_META: Record<
     title: "Generate Infographic",
     placeholder: "Describe the infographic you want to create…",
     styles: infographicStyles,
-  },
-  process: {
-    icon: Workflow,
-    title: "Generate Process Diagram",
-    placeholder: "Audience, scope, controls to highlight (e.g. SOX, KYC, ITGC change-management gates)…",
-    styles: processStyles,
-    descriptionCards: true,
-  },
-  architecture: {
-    icon: Boxes,
-    title: "Generate Architecture Diagram",
-    placeholder: "Target audience + constraints (e.g. cloud provider, regulatory scope, scale, pattern preference)…",
-    styles: architectureStyles,
-    descriptionCards: true,
-  },
-  "data-catalog": {
-    icon: BookMarked,
-    title: "Generate Data Catalog",
-    placeholder: "Scope + audience (e.g. trading book; BCBS 239 review; classify PII; align to FIBO)…",
-    // No style picker — the catalog generation populates all four sections.
   },
 };
 

@@ -2,8 +2,6 @@ import {
   AlertCircle,
   AudioLines,
   BarChart3,
-  BookMarked,
-  Boxes,
   CircleHelp,
   Download,
   Loader2,
@@ -13,7 +11,6 @@ import {
   StickyNote,
   Table2,
   Trash2,
-  Workflow,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { cn } from "@/shared/lib/cn";
@@ -48,9 +45,6 @@ const OUTPUT_TYPES: {
   { type: "infographic", label: "Infographic", icon: BarChart3 },
   { type: "quiz", label: "Quiz", icon: CircleHelp },
   { type: "mindmap", label: "Mind Map", icon: Network },
-  { type: "process", label: "Process", icon: Workflow },
-  { type: "architecture", label: "Architecture", icon: Boxes },
-  { type: "data-catalog", label: "Data Catalog", icon: BookMarked },
 ];
 
 export function StudioPanel({
@@ -68,15 +62,7 @@ export function StudioPanel({
   const stableDialogType = useRef<OutputType>("slides");
   if (dialogType) stableDialogType.current = dialogType;
 
-  const DIALOG_TYPES = new Set<OutputType>([
-    "slides",
-    "podcast",
-    "report",
-    "infographic",
-    "process",
-    "architecture",
-    "data-catalog",
-  ]);
+  const DIALOG_TYPES = new Set<OutputType>(["slides", "podcast", "report", "infographic"]);
 
   const handleDialogGenerate = (_type: OutputType, { styleId, ...rest }: GeneratorOptions) => {
     onGenerate(_type, styleId, rest);

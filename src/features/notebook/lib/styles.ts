@@ -16,12 +16,9 @@
 import { getConfig } from "@/shared/config";
 import chatInstructions from "../prompts/chat.txt?raw";
 import slideCommonRules from "../prompts/slide-style-common.txt?raw";
-import studioArchitectureInstructions from "../prompts/studio-architecture.txt?raw";
 import studioAudioInstructions from "../prompts/studio-audio-overview.txt?raw";
-import studioDataCatalogInstructions from "../prompts/studio-data-catalog.txt?raw";
 import studioInfographicInstructions from "../prompts/studio-infographic.txt?raw";
 import studioMindMapInstructions from "../prompts/studio-mind-map.txt?raw";
-import studioProcessInstructions from "../prompts/studio-process.txt?raw";
 import studioQuizInstructions from "../prompts/studio-quiz.txt?raw";
 import studioReportInstructions from "../prompts/studio-report.txt?raw";
 import studioSlideInstructions from "../prompts/studio-slide-deck.txt?raw";
@@ -84,7 +81,7 @@ export interface StyleRegistry {
   get(id?: string): Style | undefined;
 }
 
-type NotebookStyleType = "slides" | "podcasts" | "reports" | "processes" | "architectures" | "infographics";
+type NotebookStyleType = "slides" | "podcasts" | "reports" | "infographics";
 
 /**
  * Registry for one output type. Built-in styles come from the server notebook
@@ -117,8 +114,6 @@ const toId = (name: string) => name.toLowerCase().replace(/\s+/g, "-");
 export const slideStyles = styleRegistry("slides");
 export const podcastStyles = styleRegistry("podcasts");
 export const reportStyles = styleRegistry("reports");
-export const processStyles = styleRegistry("processes");
-export const architectureStyles = styleRegistry("architectures");
 export const infographicStyles = styleRegistry("infographics");
 
 // ── Output metadata ────────────────────────────────────────────────────
@@ -159,24 +154,6 @@ export const OUTPUT_META: Record<OutputType, OutputMeta> = {
   },
   quiz: { title: "Quiz", template: studioQuizInstructions },
   mindmap: { title: "Mind Map", template: studioMindMapInstructions },
-  process: {
-    title: "Process",
-    template: studioProcessInstructions,
-    styles: processStyles,
-    defaultStyleId: "bpmn",
-  },
-  architecture: {
-    title: "Architecture",
-    template: studioArchitectureInstructions,
-    styles: architectureStyles,
-    defaultStyleId: "c4",
-  },
-  "data-catalog": {
-    title: "Data Catalog",
-    template: studioDataCatalogInstructions,
-    // No style picker — the catalog generation populates all four sections
-    // (inventory / glossary / lineage / contracts) in a single pass.
-  },
 };
 
 // ── Instruction assembly ───────────────────────────────────────────────

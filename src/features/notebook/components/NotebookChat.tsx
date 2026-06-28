@@ -27,6 +27,8 @@ const TOOL_VERBS: Record<string, string> = {
   source_edit_file: "edit",
   source_move_file: "move",
   source_delete_file: "delete",
+  read_skill: "skill",
+  read_skill_resource: "skill file",
   execute_python_code: "python",
   execute_javascript_code: "javascript",
   execute_bash_code: "bash",
@@ -43,7 +45,7 @@ function toolActivityLabels(msg: NotebookMessage): string[] | null {
     if (part.type !== "tool_result") return "";
     const verb = TOOL_VERBS[part.name] ?? part.name;
     const args = tryParseToolArguments(part.arguments) ?? {};
-    const detail = String(args.path ?? args.to ?? args.pattern ?? "");
+    const detail = String(args.path ?? args.to ?? args.pattern ?? args.name ?? "");
     return detail ? `${verb} · ${detail}` : verb;
   });
 }

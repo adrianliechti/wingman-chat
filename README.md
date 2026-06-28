@@ -39,8 +39,8 @@ and download. Browse, preview, and iterate on artifacts side-by-side with the ch
 
 ### Notebook
 Turn source material into polished, long-form output: **reports**, **slide decks**, **infographics**,
-**process maps** (BPMN / ITIL / SDLC / three-lines), **architecture diagrams** (C4, sequence), and
 **podcasts** (briefing, debate, deep-dive, overview, story formats).
+**quizzes**, **mind maps**, and **podcasts** (briefing, debate, deep-dive, overview, story formats).
 
 ### Repository (retrieval)
 Upload files into a repository; Wingman extracts and embeds them so the model can answer questions
