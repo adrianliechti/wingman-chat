@@ -5,8 +5,8 @@ import { dataUrlToBytes } from "@/shared/lib/fileContent";
 import { downloadBlob, downloadFromUrl, fileExtension, formatBytes } from "@/shared/lib/utils";
 import type { AudioContent, Content, FileContent, ImageContent } from "@/shared/types/chat";
 import { Markdown } from "./Markdown";
-import { CsvRenderer } from "./renderers/CsvRenderer";
 import { HtmlRenderer } from "./renderers/HtmlRenderer";
+import { LazyCsvRenderer } from "./renderers/LazyCsvRenderer";
 import { PdfRenderer } from "./renderers/PdfRenderer";
 
 type RenderableContent = AudioContent | FileContent | ImageContent;
@@ -184,7 +184,7 @@ function MarkdownDisplay({ content }: { content: FileContent }) {
 function CsvDisplay({ content }: { content: FileContent }) {
   const csv = extractTextFromDataUrl(content.data);
 
-  return <CsvRenderer csv={csv} language="html" name={content.name} />;
+  return <LazyCsvRenderer csv={csv} language="html" name={content.name} />;
 }
 
 export function ContentRenderer({ content, className }: { content: Content; className?: string }) {

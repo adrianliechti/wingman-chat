@@ -15,6 +15,7 @@
 
 import { AlertCircle, FileImage, FileText, Loader2, Presentation, X } from "lucide-react";
 import { useState } from "react";
+import { loadHtml2Canvas, loadJsPDF } from "@/shared/lib/lazy";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import type { NotebookOutput } from "../types/notebook";
 
@@ -52,7 +53,7 @@ export function useOutputDownload() {
       } else if (output.type === "infographic" && output.imageUrl) {
         downloadFromUrl(output.imageUrl, `${slug}.png`);
       } else if (output.type === "slides" && output.slides?.length) {
-        const { jsPDF } = await import("jspdf");
+        const jsPDF = await loadJsPDF();
         const firstImg = await loadImage(output.slides[0]);
         const w = firstImg.naturalWidth;
         const h = firstImg.naturalHeight;
@@ -232,8 +233,8 @@ async function renderReportPdf(html: string, slug: string): Promise<void> {
     await new Promise<void>((resolve) => {
       iframe.onload = () => resolve();
     });
-    const { jsPDF } = await import("jspdf");
-    const html2canvas = (await import("html2canvas")).default;
+    const jsPDF = await loadJsPDF();
+    const html2canvas = await loadHtml2Canvas();
     const body = iframe.contentDocument?.body;
     if (!body) return;
     const canvas = await html2canvas(body, { scale: 2, useCORS: true, logging: false, windowWidth: 800 });

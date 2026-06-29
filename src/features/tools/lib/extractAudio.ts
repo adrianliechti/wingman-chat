@@ -1,5 +1,6 @@
 import type { OutputFormat } from "mediabunny";
 import type { STTFormat } from "@/shared/config";
+import { loadMediabunny } from "@/shared/lib/lazy";
 
 // Pulls the audio track out of a media file (typically a video container) and
 // re-encodes it to a small, speech-optimized audio file for transcription.
@@ -51,7 +52,7 @@ export async function extractAudioForTranscription(
     Mp4OutputFormat,
     WavOutputFormat,
     canEncodeAudio,
-  } = await import("mediabunny");
+  } = await loadMediabunny();
 
   type Spec = { Format: new () => OutputFormat; codec?: "opus" | "aac"; mime: string };
   const specs: Record<STTFormat, Spec> = {

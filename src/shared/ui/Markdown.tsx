@@ -1,20 +1,16 @@
 import { Dialog, Transition } from "@headlessui/react";
 import type { Components } from "hast-util-to-jsx-runtime";
-import katex from "katex";
 import { Copy, CopyCheck, Download, Maximize2, Printer, X } from "lucide-react";
 import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
-import rehypeKatex from "rehype-katex";
 import rehypeReact from "rehype-react";
 import remarkBreaks from "remark-breaks";
 import remarkGemoji from "remark-gemoji";
 import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
-import { unified } from "unified";
+import { type PluggableList, unified } from "unified";
 import { cn } from "@/shared/lib/cn";
-import "katex/dist/katex.min.css";
 import type { ReactNode } from "react";
 import { copyToClipboard } from "@/shared/lib/copy";
 import { isAudioUrl, isVideoUrl } from "@/shared/lib/mediaTypes";
@@ -24,9 +20,10 @@ import { downloadBlob } from "@/shared/lib/utils";
 import type { FileSystem } from "@/shared/types/file";
 import { ACTION_ICON_SIZE, actionButtonClassName } from "./actionButton";
 import { CodeRenderer } from "./CodeRenderer";
+import { contentHasMath, loadKatex, loadMathPlugins, type MathPlugins } from "./markdownMath";
 import { MediaPlayer } from "./MediaPlayer";
-import { CsvRenderer } from "./renderers/CsvRenderer";
 import { HtmlRenderer } from "./renderers/HtmlRenderer";
+import { LazyCsvRenderer } from "./renderers/LazyCsvRenderer";
 import { MarkdownRenderer } from "./renderers/MarkdownRenderer";
 import { RendererFrame } from "./renderers/RendererFrame";
 import { SvgRenderer } from "./renderers/SvgRenderer";
@@ -74,25 +71,36 @@ function LatexRenderer({ code, filename }: { code: string; filename?: string }) 
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) {
+    if (!containerRef.current) {
       return;
     }
 
-    try {
-      katex.render(code, container, {
-        displayMode: true,
-        throwOnError: false,
-        strict: "ignore",
-        errorColor: "transparent",
-        trust: true,
-        fleqn: false,
+    let cancelled = false;
+    // KaTeX is loaded on demand (split out of the initial bundle); render once
+    // it resolves, guarding against cleanup while the chunk is in flight.
+    loadKatex()
+      .then((katex) => {
+        const container = containerRef.current;
+        if (cancelled || !container) return;
+        katex.render(code, container, {
+          displayMode: true,
+          throwOnError: false,
+          strict: "ignore",
+          errorColor: "transparent",
+          trust: true,
+          fleqn: false,
+        });
+        setFailed(false);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.warn("KaTeX rendering failed:", error);
+        setFailed(true);
       });
-      setFailed(false);
-    } catch (error) {
-      console.warn("KaTeX rendering failed:", error);
-      setFailed(true);
-    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [code]);
 
   if (failed) {
@@ -853,7 +861,7 @@ function createComponents(
       }
 
       if (language === "csv" || language === "tsv") {
-        return <CsvRenderer csv={text} language={language} />;
+        return <LazyCsvRenderer csv={text} language={language} />;
       }
 
       if (language === "undefined" || language === "text" || language === "plain") {
@@ -878,11 +886,6 @@ function createComponents(
     },
   };
 }
-
-const katexPluginOptions: Parameters<typeof rehypeKatex>[0] = {
-  strict: "ignore",
-  errorColor: "transparent",
-};
 
 const baseRehypeReactOptions: Parameters<typeof rehypeReact>[0] = {
   Fragment,
@@ -1006,20 +1009,25 @@ function createMarkdownProcessor(
   resolveAsset: (url: string) => string | undefined,
   blockCounterRef: { current: number },
   compact = false,
+  math: MathPlugins | null = null,
 ) {
-  return unified()
-    .use(remarkParse)
-    .use(remarkGfm)
-    .use(remarkBreaks)
-    .use(remarkGemoji)
-    .use(remarkMath, { singleDollarTextMath: false })
-    .use(remarkRehype, { allowDangerousHtml: true })
-    .use(rehypeKatex, katexPluginOptions)
-    .use(rehypeNotoEmoji)
-    .use(rehypeReact, {
+  // remark-math + rehype-katex are wired in only once the content is known to
+  // contain `$$…$$` math, keeping KaTeX out of first paint.
+  const remarkPlugins: PluggableList = [remarkParse, remarkGfm, remarkBreaks, remarkGemoji];
+  if (math) remarkPlugins.push([math.remarkMath, { singleDollarTextMath: false }]);
+
+  const rehypePlugins: PluggableList = [];
+  if (math) rehypePlugins.push([math.rehypeKatex, { strict: "ignore", errorColor: "transparent" }]);
+  rehypePlugins.push(rehypeNotoEmoji);
+  rehypePlugins.push([
+    rehypeReact,
+    {
       ...baseRehypeReactOptions,
       components: createComponents(scopeId, isStreaming, resolveAsset, blockCounterRef, compact),
-    });
+    },
+  ]);
+
+  return unified().use(remarkPlugins).use(remarkRehype, { allowDangerousHtml: true }).use(rehypePlugins);
 }
 
 type MarkdownProps = {
@@ -1046,6 +1054,7 @@ let markdownInstanceCounter = 0;
 
 const NonMemoizedMarkdown = ({ children, isStreaming = false, compact = false, fs, basePath }: MarkdownProps) => {
   const [throttled, setThrottled] = useState(children);
+  const [mathPlugins, setMathPlugins] = useState<MathPlugins | null>(null);
   const lastFlushRef = useRef(0);
   const timerRef = useRef<number>(undefined);
   const scopeIdRef = useRef<string | null>(null);
@@ -1059,8 +1068,15 @@ const NonMemoizedMarkdown = ({ children, isStreaming = false, compact = false, f
 
   const processor = useMemo(
     () =>
-      createMarkdownProcessor(scopeIdRef.current ?? "markdown", isStreaming, resolveAsset, blockCounterRef, compact),
-    [isStreaming, resolveAsset, compact],
+      createMarkdownProcessor(
+        scopeIdRef.current ?? "markdown",
+        isStreaming,
+        resolveAsset,
+        blockCounterRef,
+        compact,
+        mathPlugins,
+      ),
+    [isStreaming, resolveAsset, compact, mathPlugins],
   );
 
   useEffect(() => {
@@ -1083,13 +1099,34 @@ const NonMemoizedMarkdown = ({ children, isStreaming = false, compact = false, f
   // Throttle limits parse frequency during streaming; useDeferredValue
   // lets React interrupt long renders to keep the UI responsive.
   const input = useDeferredValue(isStreaming ? throttled : children);
+  const processed = input ? preprocessMarkdown(input, isStreaming) : "";
+
+  // Load the KaTeX pipeline the first time content actually contains `$$…$$`
+  // math, then re-render with math support. Until then the raw `$$` shows.
+  useEffect(() => {
+    if (mathPlugins || !contentHasMath(processed)) return;
+    let cancelled = false;
+    loadMathPlugins()
+      .then((plugins) => {
+        if (!cancelled) setMathPlugins(plugins);
+      })
+      .catch((error) => {
+        // Leave math unrendered (raw `$$`) on a failed chunk load; the registry
+        // evicts the failure so a later render can retry.
+        console.warn("Failed to load math plugins:", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [processed, mathPlugins]);
+
   if (!input) return null;
 
   // Reset block counter before each processSync so code block keys are
   // stable across re-renders (code:0, code:1, …), preventing CodeRenderer
   // from unmounting/remounting on every streaming update.
   blockCounterRef.current = 0;
-  return processor.processSync(preprocessMarkdown(input, isStreaming)).result;
+  return processor.processSync(processed).result;
 };
 
 export const Markdown = memo(

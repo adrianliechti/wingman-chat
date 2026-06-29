@@ -1,4 +1,11 @@
-import { createRootRoute, createRoute, createRouter, lazyRouteComponent, Outlet, redirect } from "@tanstack/react-router";
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  lazyRouteComponent,
+  Outlet,
+  redirect,
+} from "@tanstack/react-router";
 import { ChatPage } from "./features/chat/pages/ChatPage";
 import { getConfig } from "./shared/config";
 import { AppLayout } from "./shell/AppLayout";

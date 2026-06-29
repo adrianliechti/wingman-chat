@@ -1,14 +1,9 @@
 import { memo, useEffect, useMemo, useState } from "react";
+import { loadShiki } from "@/shared/lib/lazy";
 import { sanitizeHtmlToReact } from "@/shared/lib/htmlToReact";
 import { useTheme } from "@/shell/hooks/useTheme";
 import { CopyButton } from "./CopyButton";
 import { RendererFrame } from "./renderers/RendererFrame";
-
-let shikiPromise: Promise<typeof import("shiki")> | null = null;
-function getShiki() {
-  if (!shikiPromise) shikiPromise = import("shiki");
-  return shikiPromise;
-}
 
 const HIGHLIGHT_DEBOUNCE_MS = 120;
 const MAX_HIGHLIGHT_CACHE_SIZE = 200;
@@ -112,7 +107,7 @@ const CodeRenderer = memo(
 
       const highlight = async () => {
         try {
-          const { codeToHtml } = await getShiki();
+          const { codeToHtml } = await loadShiki();
           const highlighted = await codeToHtml(code, {
             lang: normalizedLanguage,
             theme: isDark ? "one-dark-pro" : "one-light",

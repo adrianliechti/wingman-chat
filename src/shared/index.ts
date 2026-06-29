@@ -96,8 +96,6 @@ export {
   formatBytes,
   getFileName,
   lookupContentType,
-  markdownToHtml,
-  markdownToText,
   parseDataUrl,
   readAsDataURL,
   resizeImageBlob,

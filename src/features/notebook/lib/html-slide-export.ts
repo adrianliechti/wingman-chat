@@ -16,6 +16,7 @@
  */
 
 import JSZip from "jszip";
+import { loadJsPDF } from "@/shared/lib/lazy";
 import { downloadFromUrl } from "@/shared/lib/utils";
 import { addPptxBoilerplate, CANVAS_H, CANVAS_W, imgToDataUrl, SLIDE_CX, SLIDE_CY } from "./pptx-utils";
 
@@ -781,7 +782,7 @@ export async function renderSlideToJpegDataUrl(html: string, options: { hideText
 // ── PDF export ───────────────────────────────────────────────────────────────
 
 export async function downloadHtmlSlidesAsPdf(htmlSlides: string[], slug: string) {
-  const { jsPDF } = await import("jspdf");
+  const jsPDF = await loadJsPDF();
 
   const w = CANVAS_W * RASTER_SCALE;
   const h = CANVAS_H * RASTER_SCALE;

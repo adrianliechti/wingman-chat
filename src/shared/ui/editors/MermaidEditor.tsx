@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { loadMermaid } from "@/shared/lib/lazy";
 import { CodeEditor } from "./CodeEditor";
 
 // Monotonic id so each render gets a unique mermaid element id.
@@ -42,7 +43,7 @@ function MermaidPreview({ content }: { content: string }) {
     setError(null);
     void (async () => {
       try {
-        const mermaid = (await import("mermaid")).default;
+        const mermaid = await loadMermaid();
         const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
         mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "default", securityLevel: "strict" });
         renderSeq += 1;
